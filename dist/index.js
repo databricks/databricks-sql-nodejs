@@ -25,20 +25,13 @@ var HiveUtils_1 = __importDefault(require("./utils/HiveUtils"));
 var NoSaslAuthentication_1 = __importDefault(require("./connection/auth/NoSaslAuthentication"));
 var PlainTcpAuthentication_1 = __importDefault(require("./connection/auth/PlainTcpAuthentication"));
 var PlainHttpAuthentication_1 = __importDefault(require("./connection/auth/PlainHttpAuthentication"));
-var KerberosTcpAuthentication_1 = __importDefault(require("./connection/auth/KerberosTcpAuthentication"));
-var KerberosHttpAuthentication_1 = __importDefault(require("./connection/auth/KerberosHttpAuthentication"));
-var MongoKerberosAuthProcess_1 = __importDefault(require("./connection/auth/helpers/MongoKerberosAuthProcess"));
 var HttpConnection_1 = __importDefault(require("./connection/connections/HttpConnection"));
 var TcpConnection_1 = __importDefault(require("./connection/connections/TcpConnection"));
 exports.auth = {
-    helpers: {
-        MongoKerberosAuthProcess: MongoKerberosAuthProcess_1.default
-    },
+    helpers: {},
     NoSaslAuthentication: NoSaslAuthentication_1.default,
     PlainTcpAuthentication: PlainTcpAuthentication_1.default,
     PlainHttpAuthentication: PlainHttpAuthentication_1.default,
-    KerberosTcpAuthentication: KerberosTcpAuthentication_1.default,
-    KerberosHttpAuthentication: KerberosHttpAuthentication_1.default,
 };
 exports.connections = {
     HttpConnection: HttpConnection_1.default,

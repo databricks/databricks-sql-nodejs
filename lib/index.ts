@@ -6,21 +6,14 @@ import _HiveUtils from "./utils/HiveUtils";
 import NoSaslAuthentication from "./connection/auth/NoSaslAuthentication";
 import PlainTcpAuthentication from "./connection/auth/PlainTcpAuthentication";
 import PlainHttpAuthentication from "./connection/auth/PlainHttpAuthentication";
-import KerberosTcpAuthentication from "./connection/auth/KerberosTcpAuthentication";
-import KerberosHttpAuthentication from "./connection/auth/KerberosHttpAuthentication";
-import MongoKerberosAuthProcess from "./connection/auth/helpers/MongoKerberosAuthProcess";
 import HttpConnection from "./connection/connections/HttpConnection";
 import TcpConnection from "./connection/connections/TcpConnection";
 
 export const auth = {
-    helpers: {
-        MongoKerberosAuthProcess
-    },
+    helpers: {},
     NoSaslAuthentication,
     PlainTcpAuthentication,
     PlainHttpAuthentication,
-    KerberosTcpAuthentication,
-    KerberosHttpAuthentication,
 };
 
 export const connections = {

@@ -9,11 +9,7 @@ const auth = driver.auth;
 const connections = driver.connections;
 
 const runInstance = (authType, connectionType, logger) => {
-    if (authType === 'kerberos') {
-        return instanceHelper.upKrb(connectionType, logger);
-    } else {
-        return instanceHelper.up(connectionType, logger);
-    }
+    return instanceHelper.up(connectionType, logger);
 };
 
 const executeTest = (connect) => {
@@ -41,12 +37,6 @@ const executeTest = (connect) => {
 
 const runConnectionTest = (connect, connectionType, logger) => {
     return runInstance('', connectionType, logger).then(() => {
-        return executeTest(connect);
-    });
-};
-
-const runKerberosConnectionTest = (connect, connectionType, logger) => {
-    return runInstance('kerberos', connectionType, logger).then(() => {
         return executeTest(connect);
     });
 };
@@ -110,25 +100,6 @@ describe('Driver should connect to Hive via', function () {
 
         it('http', () => {
             return reloadConnectionTest(require('./connections/http.ldap'), 'http.ldap', logger);
-        });
-    });
-
-    describe('kerberos', () => {
-        after(stopInstance);
-        it('tcp', () => {
-            return runKerberosConnectionTest(require('./connections/tcp.kerberos'), 'tcp.kerberos', logger);
-        });
-
-        it('http', () => {
-            return reloadConnectionTest(require('./connections/http.kerberos'), 'http.kerberos', logger);
-        });
-
-        it('tcp SSL', () => {
-            return reloadConnectionTest(require('./connections/tcp.kerberos.ssl'), 'tcp.kerberos.ssl', logger);
-        });
-
-        it('http SSL', () => {
-            return reloadConnectionTest(require('./connections/http.kerberos.ssl'), 'http.kerberos.ssl', logger);
         });
     });
 });
