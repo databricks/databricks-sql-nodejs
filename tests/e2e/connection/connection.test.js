@@ -57,14 +57,6 @@ describe('Driver should connect to Hive via', function () {
     this.timeout(1000 * 60 * 5);
 
     describe('nosasl', () => {
-        it('tcp', () => {
-            return runConnectionTest(require('./connections/tcp.nosasl'), 'tcp.nosasl', logger);
-        });
-    
-        it('tcp SSL', () => {
-            return reloadConnectionTest(require('./connections/tcp.nosasl.ssl'), 'tcp.nosasl.ssl', logger);
-        });
-    
         it('http', () => {
             return reloadConnectionTest(require('./connections/http.nosasl'), 'http.nosasl', logger);
         });
@@ -75,14 +67,6 @@ describe('Driver should connect to Hive via', function () {
     });
     
     describe('plain', () => {
-        it('tcp', () => {
-            return reloadConnectionTest(require('./connections/tcp.plain'), 'tcp.plain', logger);
-        });
-
-        it('tcp SSL', () => {
-            return reloadConnectionTest(require('./connections/tcp.plain.ssl'), 'tcp.plain.ssl', logger);
-        });
-
         it('http', () => {
             return reloadConnectionTest(require('./connections/http.plain'), 'http.plain', logger);
         });
@@ -94,9 +78,6 @@ describe('Driver should connect to Hive via', function () {
 
     describe('ldap', () => {
         after(stopInstance);
-        it('tcp', () => {
-            return reloadConnectionTest(require('./connections/tcp.ldap'), 'tcp.ldap', logger);
-        });
 
         it('http', () => {
             return reloadConnectionTest(require('./connections/http.ldap'), 'http.ldap', logger);

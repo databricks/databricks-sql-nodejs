@@ -2,7 +2,7 @@ const { expect } = require('chai');
 const HiveClient = require('../../dist/HiveClient').default;
 const HiveSession = require('../../dist/HiveSession').default;
 const { TCLIService_types, TCLIService } = require('../../').thrift;
-const { auth: { NoSaslAuthentication }, connections: { TcpConnection } } = require('../../');
+const { auth: { NoSaslAuthentication }, connections: { HttpConnection } } = require('../../');
 
 const ConnectionProviderMock = (connection) => ({
     connect(options, auth) {
@@ -64,18 +64,18 @@ describe('HiveClient.connect', () => {
         });
     });
 
-    it('should use tcp connection by default', (cb) => {
+    it('should use http connection by default', (cb) => {
         const client = new HiveClient(TCLIService, TCLIService_types);
         client.thrift = {
             createClient() {}
         };
 
-        client.on('error', (error) => {
-            expect(client.connectionProvider).instanceOf(TcpConnection);
-            cb();
-        });
-
-        client.connect({path: '', port: 0}).catch(cb);
+        client.connect({path: '', port: 0})
+            .then(() => {
+                expect(client.connectionProvider).instanceOf(HttpConnection);
+                cb();
+            })
+            .catch(cb);
     });
 });
 

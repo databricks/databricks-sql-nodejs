@@ -10,7 +10,7 @@ import IThriftConnection from './connection/contracts/IThriftConnection';
 import IConnectionProvider from './connection/contracts/IConnectionProvider';
 import IAuthentication from './connection/contracts/IAuthentication';
 import NoSaslAuthentication from './connection/auth/NoSaslAuthentication';
-import TcpConnection from './connection/connections/TcpConnection';
+import HttpConnection from './connection/connections/HttpConnection';
 import IConnectionOptions from './connection/contracts/IConnectionOptions';
 import { EventEmitter } from 'events';
 import StatusFactory from './factory/StatusFactory';
@@ -36,7 +36,7 @@ export default class HiveClient extends EventEmitter implements IHiveClient {
         this.thrift = thrift;
         this.TCLIService = TCLIService;
         this.TCLIService_types = TCLIService_types;
-        this.connectionProvider = new TcpConnection();
+        this.connectionProvider = new HttpConnection();
         this.authProvider = new NoSaslAuthentication();
         this.statusFactory = new StatusFactory(TCLIService_types);
         this.client = null;
