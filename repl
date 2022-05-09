@@ -1,0 +1,107 @@
+#!/usr/bin/env node
+
+const hive = require('.');
+const { TCLIService, TCLIService_types } = hive.thrift;
+const repl = require('node:repl');
+const { Console } = require('node:console');
+const { Transform } = require('node:stream');
+const { program } = require('commander');
+
+const ts = new Transform({ transform(chunk, enc, cb) { cb(null, chunk) } })
+const logger = new Console({ stdout: ts })
+
+async function initClient({ host, endpointId, token }) {
+    const client = new hive.DBSQLClient(TCLIService, TCLIService_types);
+    return client.connect({
+        host,
+        path: `/sql/1.0/endpoints/${endpointId}`,
+        token,
+    });
+}
+
+async function runQuery(session, query) {
+    const utils = new hive.HiveUtils(TCLIService_types);
+
+    const queryOperation = await session.executeStatement(query, { runAsync: true });
+    await utils.waitUntilReady(queryOperation, false, () => {});
+    await utils.fetchAll(queryOperation);
+    await queryOperation.close();
+
+    return utils.getResult(queryOperation).getValue();
+}
+
+const format = {
+    reset: '\x1b[0m',
+    bold: '\x1b[1m',
+
+    fg: {
+        black: '\x1b[30m',
+        red: '\x1b[31m',
+        green: '\x1b[32m',
+        yellow: '\x1b[33m',
+        blue: '\x1b[34m',
+        magenta: '\x1b[35m',
+        cyan: '\x1b[36m',
+        white: '\x1b[37m',
+    },
+
+    bg: {
+        black: '\x1b[40m',
+        red: '\x1b[41m',
+        green: '\x1b[42m',
+        yellow: '\x1b[43m',
+        blue: '\x1b[44m',
+        magenta: '\x1b[45m',
+        cyan: '\x1b[46m',
+        white: '\x1b[47m',
+    },
+};
+
+async function main(args) {
+    const client = await initClient(args);
+    const session = await client.openSession();
+
+    repl.start({
+        prompt: `${format.bold}dbsql > ${format.reset}`,
+        useColors: true,
+        eval: async (input, context, filename, callback) => {
+            try {
+                const result = await runQuery(session, input);
+                callback(null, result);
+            } catch (e) {
+                callback(null, e);
+            }
+        },
+        writer: (output) => {
+            if (output instanceof Error) {
+                const message = output?.response?.errorMessage || output.message;
+                return `${format.fg.red}Error: ${message}${format.reset}`;
+            } else {
+                if (!output?.length) {
+                    return `${format.fg.cyan}Query executed successfully, but returned no results${format.reset}`;
+                }
+                logger.table(output)
+                return (ts.read() || '').toString();
+            }
+        },
+    }).on('exit', async () => {
+        await session.close();
+        await client.close();
+
+        process.exit();
+    });
+}
+
+program
+    .requiredOption('-h, --host <host>', 'Host (required)')
+    .requiredOption('-e, --endpoint <endpointId>', 'SQL endpoint ID (required)')
+    .requiredOption('-t, --token <token>', 'Personal access token (required)')
+    .showHelpAfterError();
+
+program.parse(process.argv);
+
+main({
+    host: program.opts().host,
+    endpointId: program.opts().endpoint,
+    token: program.opts().token,
+});
