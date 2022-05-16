@@ -48,12 +48,9 @@
     "codecov": "^3.7.1",
     "commitizen": "^4.2.4",
     "cz-conventional-changelog": "^3.1.0",
-    "get-fqdn": "0.0.4",
-    "jks-js": "^1.0.1",
     "mocha": "^8.4.0",
     "nyc": "^15.0.0",
-    "typescript": "^3.7.4",
-    "zookeeper": "^4.9.0"
+    "typescript": "^3.7.4"
   },
   "dependencies": {
     "commander": "^9.2.0",
