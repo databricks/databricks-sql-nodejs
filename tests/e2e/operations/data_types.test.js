@@ -1,6 +1,5 @@
 const { expect } = require('chai');
 const logger = require('../utils/logger')(process.env.HIVE_E2E_LOG);
-const instanceHelper = require('../utils/instanceHelper');
 const driver = require('../../../');
 const HiveClient = driver.HiveClient;
 const { TCLIService, TCLIService_types } = require('../../../').thrift;
@@ -8,14 +7,6 @@ const { TCLIService, TCLIService_types } = require('../../../').thrift;
 const utils = new driver.HiveUtils(
     TCLIService_types
 );
-
-const runInstance = () => {
-    return instanceHelper.up('tcp.nosasl', logger);
-};
-
-const stopInstance = () => {
-    return instanceHelper.down(logger);
-};
 
 const openSession = () => {
     const client = new HiveClient(
@@ -27,7 +18,7 @@ const openSession = () => {
             hostname: 'localhost',
             port: 10000
         },
-        new driver.connections.TcpConnection(),
+        new driver.connections.HttpConnection(),
         new driver.auth.NoSaslAuthentication()
     ).then(client => {
         return client.openSession({
@@ -56,10 +47,8 @@ const handleOperation = (operation, {
     .then(() => utils.getResult(operation).getValue());
 };
 
-describe('Data types', () => {
-    before(runInstance);
-    after(stopInstance);
-
+// TODO: These tests should be updated to use new API
+describe.skip('Data types', () => {
     it('primitive data types should presented correctly', () => {
         return openSession().then(session => {
             return execute(session, `DROP TABLE IF EXISTS primitiveTypes`)
@@ -444,13 +433,3 @@ describe('Data types', () => {
         });
     });
 });
-// !connect jdbc:hive2://localhost:10000/default;auth=noSasl
-// !connect jdbc:hive2://zookeeper:2181/;serviceDiscoveryMode=zooKeeper;zooKeeperNamespace=hive_zookeeper_namespace
-// !connect jdbc:hive2://zookeeper:2181/default;serviceDiscoveryMode=zooKeeper;zooKeeperNamespace=hiveserver2
-// insert into booleanTypes (
-//     bool1, bool2, bool3, bool4
-// ) values (
-//     false, true, false, false
-// );
-
-// select * from booleanTypes;
