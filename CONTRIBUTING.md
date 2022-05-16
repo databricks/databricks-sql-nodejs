@@ -32,8 +32,6 @@ npm run test
 npm run e2e
 ```
 
-To run develop hive instance see: [.docker](.docker/)
-
 ## Commit messages
 
 Please follow the [Angular commit style][angular-commit-style].

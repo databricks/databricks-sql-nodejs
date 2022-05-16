@@ -77,8 +77,6 @@ client.connect(
 });
 ```
 
-For testing, you can use docker images from this repository. How to set up a testing environment described here: [.docker](/.docker/).
-
 ## HiveDriver
 
 The core of the library is [HiveDriver](/lib/hive/HiveDriver.ts). It is the facade for [TCLIService.thrift](https://github.com/apache/hive/blob/master/service-rpc/if/TCLIService.thrift) methods. You can use it directly following the [example](/examples/driver.js).
@@ -125,59 +123,18 @@ TCLIService_types contains a number of constants that API uses, you do not have 
 
 ### Connection
 
-Connection to the database includes choosing both transport and authentication. By default, the driver works in binary mode (TCP) with NoSASL authentication. To find out how your server works you should look at the *hive-site.xml* configuration.
+Connection to the database includes choosing both transport and authentication.
 
-*hive-site.xml*
-```xml
-...
-<property>
-    <name>hive.server2.transport.mode</name>
-    <value>http|binary</value>
-</property>
-<property>
-    <name>hive.server2.authentication</name>
-    <value>nosasl|none|ldap|kerberos</value>
-</property>
-```
-
-To connect via binary mode you should use [TcpConnection](/lib/connection/connections/TcpConnection.ts) and via http [HttpConnection](/lib/connection/connections/HttpConnection.ts).
+To connect via http [HttpConnection](/lib/connection/connections/HttpConnection.ts).
 
 *NOTICE*: HTTP transport mode also requires a "path" parameter which is passed by options.
 
-For authentication, the driver supports NoSasl, None, LDAP and Kerberos. For each of type you can choose appropriate handler:
-
-- [NoSaslAuthentication.ts](/lib/connection/auth/NoSaslAuthentication.ts)
+For authentication you can choose appropriate handler:
 
 - [PlainHttpAuthentication.ts](/lib/connection/auth/PlainHttpAuthentication.ts)
 
-- [PlainTcpAuthentication.ts](/lib/connection/auth/PlainTcpAuthentication.ts)
-
-- [KerberosHttpAuthentication.ts](/lib/connection/auth/KerberosHttpAuthentication.ts)
-
-- [KerberosTcpAuthentication.ts](/lib/connection/auth/KerberosTcpAuthentication.ts)
-
-*NOTICE*
-
-- for None and LDAP you should use PlainHttpAuthentication or PlainTcpAuthentication.
-
-- the current Kerberos process uses the MongoDB [kerberos](https://www.npmjs.com/package/kerberos) module, which does not support different kinds of QOP, so make sure you use "auth":
-
-*hive-site.xml*
-```xml
-...
-<property>
-    <name>hive.server2.thrift.sasl.qop</name>
-    <value>auth</value>
-</property>
-```
-
-- to use kerberos you have to install and build npm [kerberos](https://www.npmjs.com/package/kerberos) module on your own, it is not included to the driver as dependency.
-
-- you may write your own implementation of kerberos auth process by implementing [IKerberosAuthProcess](/lib/connection/contracts/IKerberosAuthProcess.ts) and pass it to the constructor of KerberosHttpAuthentication or KerberosTcpAuthentication
-
 ### Example
 
-http/ldap
 ```javascript
 const hive = require('hive-driver');
 ...
@@ -196,30 +153,6 @@ await client.connect(
     })
 );
 ```
-
-binary/ldap
-```javascript
-const hive = require('hive-driver');
-...
-await client.connect(
-    {
-        host: 'localhost',
-        port: 10000
-    },
-    new hive.connections.TcpConnection(),
-    new hive.auth.PlainTcpAuthentication({
-        username: 'admin',
-        password: '123456'
-    })
-);
-```
-
-For more details see:
-
-- [connections.md](/docs/connections.md)
-- [examples/connections/](/examples/connections/)
-- [tests/e2e/connection/connection.test.js](/tests/e2e/connection/connection.test.js)
-- [.docker/confs](/.docker/confs/)
 
 ## HiveSession
 
