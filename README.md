@@ -2,7 +2,7 @@
 
 ## Description
 
-Hive Driver is a Java Script driver for connection to [Apache Hive](https://hive.apache.org/) via [Thrift API](https://github.com/apache/hive/blob/master/service-rpc/if/TCLIService.thrift).
+Hive Driver is a JavaScript driver for connection to [Apache Hive](https://hive.apache.org/) via [Thrift API](https://github.com/apache/hive/blob/master/service-rpc/if/TCLIService.thrift).
 
 ## Installation
 
@@ -54,6 +54,8 @@ e2e tests:
 ```bash
 npm run e2e
 ```
+
+Before running e2e tests, create local [configuration file](tests/e2e/utils/config.js)
 
 ## Contributing
 

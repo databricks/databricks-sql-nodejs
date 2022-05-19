@@ -3,16 +3,14 @@
 ## Table of Contents
 
 1. [Foreword](#foreword) 
-2. [Example](#example) 
-3. [HiveDriver](#hivedriver)
-4. [HiveClient](#hiveclient) \
-   3.1 [TCLIService and TCLIService_types](#tcliservice-and-tcliservice_types)\
-   3.2 [Connection](#connection)
-5. [HiveSession](#hivesession) 
-6. [HiveOperation](#hiveoperation) \
-   5.1 [HiveUtils](#hiveutils)
-7. [Status](#status) 
-8. [Finalize](#finalize)
+2. [Example](#example) \
+   2.1. [Error handling](#error-handling) \
+   2.2. [TCLIService and TCLIService_types](#tcliservice-and-tcliservice_types)
+3. [HiveSession](#hivesession) 
+4. [HiveOperation](#hiveoperation) \
+   4.1. [HiveUtils](#hiveutils)
+5. [Status](#status) 
+6. [Finalize](#finalize)
 
 ## Foreword
 
@@ -22,29 +20,25 @@ If you find any mistakes, misleading or some confusion feel free to create an is
 
 ## Example
 
-[example.js](/examples/example.js)
 ```javascript
-const hive = require('hive-driver');
+const hive = require('../');
 const { TCLIService, TCLIService_types } = hive.thrift;
-const client = new hive.HiveClient(
+
+const client = new hive.DBSQLClient(
     TCLIService,
     TCLIService_types
 );
+
 const utils = new hive.HiveUtils(
     TCLIService_types
 );
 
-client.connect(
-    {
-        host: 'localhost',
-        port: 10000
-    },
-    new hive.connections.TcpConnection(),
-    new hive.auth.NoSaslAuthentication()
-).then(async client => {
-    const session = await client.openSession({
-        client_protocol: TCLIService_types.TProtocolVersion.HIVE_CLI_SERVICE_PROTOCOL_V10
-    });
+client.connect({ 
+    host: '...', 
+    path: '/sql/1.0/endpoints/****************', 
+    token: 'dapi********************************', 
+}).then(async client => {
+    const session = await client.openSession();
     
     const createTableOperation = await session.executeStatement(
         'CREATE TABLE IF NOT EXISTS pokes (foo INT, bar STRING)'
@@ -53,13 +47,13 @@ client.connect(
     await createTableOperation.close();
     
     const loadDataOperation = await session.executeStatement(
-        'LOAD DATA LOCAL INPATH \'/opt/apache-hive-2.3.6-bin/examples/files/kv1.txt\' OVERWRITE INTO TABLE pokes'
+        'INSERT INTO pokes VALUES(123, "Hello, world!"'
     );
     await utils.waitUntilReady(loadDataOperation, false, () => {});
     await loadDataOperation.close();
     
     const selectDataOperation = await session.executeStatement(
-        'select * from pokes', { runAsync: true }
+        'SELECT * FROM pokes', { runAsync: true }
     );
     await utils.waitUntilReady(selectDataOperation, false, () => {});
     await utils.fetchAll(selectDataOperation);
@@ -77,29 +71,7 @@ client.connect(
 });
 ```
 
-## HiveDriver
-
-The core of the library is [HiveDriver](/lib/hive/HiveDriver.ts). It is the facade for [TCLIService.thrift](https://github.com/apache/hive/blob/master/service-rpc/if/TCLIService.thrift) methods. You can use it directly following the [example](/examples/driver.js).
-
-But, the simpler way is to use [HiveClient](/lib/HiveClient.ts). The library splits the logic of HiveDriver semantically into three classes [HiveClient](/lib/HiveClient.ts), [HiveSession](/lib/HiveSession.ts), [HiveOperation](/lib/HiveOperation.ts). The main process is the following: HiveClient produces HiveSession, and HiveSession produces HiveOperation.
-
-## HiveClient
-
-The entry point is class [HiveClient](/lib/HiveClient.ts). Client initiates connection to the server.
-
-```javascript
-const hive = require('hive-driver');
-const client = new HiveClient(
-    hive.thrift.TCLIService,
-    hive.thrift.TCLIService_types,
-);
-
-client.on('error', error => /* ... */);
-
-await client.connect({ host: 'localhost', port: 10000 });
-...
-await client.close();
-```
+### Error handling
 
 You may guess that some errors related to the network are thrown asynchronously and the driver does not maintain these cases, you should handle it on your own. The simplest way is to subscribe on "error" event:
 
@@ -121,48 +93,13 @@ thrift -r --gen js TCLIService.thrift
 
 TCLIService_types contains a number of constants that API uses, you do not have to know all of them, but sometimes it is useful to refer to [TCLIService.thrift](/thrift/TCLIService.thrift). Also, you may notice that most of the internal structures repeat the structures from [TCLIService.thrift](/thrift/TCLIService.thrift).
 
-### Connection
-
-Connection to the database includes choosing both transport and authentication.
-
-To connect via http [HttpConnection](/lib/connection/connections/HttpConnection.ts).
-
-*NOTICE*: HTTP transport mode also requires a "path" parameter which is passed by options.
-
-For authentication you can choose appropriate handler:
-
-- [PlainHttpAuthentication.ts](/lib/connection/auth/PlainHttpAuthentication.ts)
-
-### Example
-
-```javascript
-const hive = require('hive-driver');
-...
-await client.connect(
-    {
-        host: 'localhost',
-        port: 10001,
-        options: {
-            path: '/hive'
-        }
-    },
-    new hive.connections.HttpConnection(),
-    new hive.auth.PlainHttpAuthentication({
-        username: 'admin',
-        password: '123456'
-    })
-);
-```
-
 ## HiveSession
 
 After you connect to the server you should open session to start working with Hive server.
 
 ```javascript
 ...
-const session = await client.openSeesion({
-    client_protocol: hive.thrift.TCLIService_types.TProtocolVersion.HIVE_CLI_SERVICE_PROTOCOL_V10
-});
+const session = await client.openSeesion();
 ```
 
 To open session you must provide [OpenSessionRequest](/lib/hive/Commands/OpenSessionCommand.ts#L20) - the only required parameter is "client_protocol", which synchronizes the version of HiveServer2 API.
