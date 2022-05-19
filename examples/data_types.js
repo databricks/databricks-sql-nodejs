@@ -1,32 +1,36 @@
 const hive = require('../');
-const TCLIService_types = hive.thrift.TCLIService_types;
-const connection = require('./connections/hdinsight');
+const { TCLIService, TCLIService_types } = hive.thrift;
+
+const client = new hive.DBSQLClient(
+    TCLIService,
+    TCLIService_types
+);
 
 const utils = new hive.HiveUtils(
     TCLIService_types
 );
 
-connection().then(client => {
-    client.on('error', (error) => {
-        console.error(error);
-    });
-    
-    return client.openSession({
-        client_protocol: TCLIService_types.TProtocolVersion.HIVE_CLI_SERVICE_PROTOCOL_V8
-    }).then(async (session) => {
-        await testPrimitiveTypes(session);
-        await testComplexTypes(session); 
-        await testIntervals(session);
-        
-        return await session.close();
-    }).then(status => {
-        console.log(status.success());
+const [host, path, token] = process.argv.slice(2);
 
-        return client.close();
-    }).catch(error => {
-        console.log(error);
-        return client.close();
-    });
+client.connect({ host, path, token }).then(async client => {
+    try {
+        client.on('error', (error) => {
+            console.error(error);
+        });
+
+        const session = await client.openSession();
+
+        await testPrimitiveTypes(session);
+        await testComplexTypes(session);
+        await testIntervals(session);
+
+        const status = await session.close();
+        console.log(status.success());
+        await client.close();
+    } catch (error) {
+        console.error(error);
+        await client.close();
+    }
 });
 
 const testPrimitiveTypes = async (session) => {
@@ -68,8 +72,8 @@ const testPrimitiveTypes = async (session) => {
             dat
         ) values (
             true,
-            255,
-            65535,
+            127,
+            32000,
             4000000,
             372036854775807,
             1.2,
@@ -111,6 +115,7 @@ const testIntervals = async (session) => {
 const testComplexTypes = async (session) => {
     try {
         console.log('[info] create dummy');
+        await execute(session, `drop table if exists dummy`)
         await execute(session, `create table dummy( id string )`)
         console.log('[info] insert dummy value');
         await execute(session, `insert into dummy (id) values (1)`);
@@ -119,8 +124,7 @@ const testComplexTypes = async (session) => {
             CREATE TABLE complexTypes (
                 arr_type array<string>,
                 map_type map<string, int>,
-                struct_type struct<city:string,State:string>,
-                union_type uniontype<string,double,int>
+                struct_type struct<city:string,State:string>
             )
         `);
         console.log('[info] 1. insert complexTypes');
@@ -128,8 +132,7 @@ const testComplexTypes = async (session) => {
             INSERT INTO table complexTypes SELECT
                 array('a', 'b') as arr_type,
                 map('key', 12) as map_type,
-                named_struct('city','Tampa','State','FL') as struct_type,
-                create_union(0, 'value', cast(0.0 as double), 0) as union_type
+                named_struct('city','Tampa','State','FL') as struct_type
             FROM dummy
         `);
         console.log('[info] 2. insert complexTypes');
@@ -137,8 +140,7 @@ const testComplexTypes = async (session) => {
             INSERT INTO table complexTypes SELECT
                 array('c', 'd') as arr_type,
                 map('key2', 12) as map_type,
-                named_struct('city','Albany','State','NY') as struct_type,
-                create_union(1, '', cast(0.1 as double), 0) as union_type
+                named_struct('city','Albany','State','NY') as struct_type
             FROM dummy
         `);
         console.log('[info] 3. insert complexTypes');
@@ -146,8 +148,7 @@ const testComplexTypes = async (session) => {
             INSERT INTO table complexTypes SELECT
                 array('e', 'd') as arr_type,
                 map('key2', 13) as map_type,
-                named_struct('city','Los Angeles','State','CA') as struct_type,
-                create_union(2, '', cast(0.0 as double), 12) as union_type
+                named_struct('city','Los Angeles','State','CA') as struct_type
             FROM dummy
         `);
         console.log('[info] fetch complexTypes');
@@ -162,27 +163,17 @@ const testComplexTypes = async (session) => {
 
 const execute = async (session, statement) => {
     const operation = await session.executeStatement(statement, { runAsync: true });
-    
-    return await handleOperation(operation, {
-        progress: true,
-        callback: (stateResponse) => {
-            if (stateResponse.taskStatus) {
-                console.log(stateResponse.taskStatus);
-            } else {
-                console.log(utils.formatProgress(stateResponse.progressUpdateResponse));
-            }
+
+    await utils.waitUntilReady(operation, true, (stateResponse) => {
+        return;
+        if (stateResponse.taskStatus) {
+            console.log(stateResponse.taskStatus);
+        } else {
+            console.log(utils.formatProgress(stateResponse.progressUpdateResponse));
         }
     });
-};
-
-const handleOperation = async (operation, {
-    progress = false,
-    callback = () => {},
-}) => {
-    await utils.waitUntilReady(operation, progress, callback)
     await utils.fetchAll(operation);
     await operation.close();
-    
+
     return utils.getResult(operation).getValue();
 };
-

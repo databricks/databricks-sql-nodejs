@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 
-const hive = require('.');
+const hive = require('..');
 const { TCLIService, TCLIService_types } = hive.thrift;
 const repl = require('node:repl');
 const { Console } = require('node:console');
