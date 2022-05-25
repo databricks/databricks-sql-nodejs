@@ -25,6 +25,7 @@
   },
   "homepage": "https://github.com/databricks/databricks-sql-node#readme",
   "keywords": [
+    "databricks sql",
     "hiveserver2",
     "apache",
     "hive",
@@ -36,8 +37,7 @@
     "hive",
     "hive js"
   ],
-  "author": "Liench Volodymyr <lenchvov@gmail.com>",
-  "license": "MIT",
+  "license": "Apache 2.0",
   "devDependencies": {
     "@types/node": "^13.1.4",
     "chai": "^4.2.0",

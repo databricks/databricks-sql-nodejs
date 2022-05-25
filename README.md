@@ -67,4 +67,4 @@ If you find some issues, feel free to create an issue or send a pull request.
 
 ## License
  
-[MIT License](LICENSE)
+[Apache License 2.0](LICENSE)
