@@ -26,7 +26,7 @@ hive-site.xml
 
 ## Lost connection
 
-In this case HiveClient you have to reconnect.
+In this case DBSQLClient you have to reconnect.
 
 To define if the connection lost, you should subscribe on event "close":
 
@@ -39,46 +39,38 @@ client.on('close', () => {
 Here is an example how you can manage reconnection:
 
 ```javascript
-const hive = require('hive-driver');
+const driver = require('databricks-sql-node');
 
 const RECONNECT_ATTEMPTS = 50;
 const RECONNECT_TIMEOUT = 3000; // millisecond
 
-const client = new hive.HiveClient(
-    hive.thrift.TCLIService,
-    hive.thrift.TCLIService_types
+const client = new driver.DBSQLClient(
+    driver.thrift.TCLIService,
+    driver.thrift.TCLIService_types
 );
 
 client.on('close', () => {
-    console.error('[Hive Connection Lost]');
+    console.error('[Connection Lost]');
 
     connect(RECONNECT_ATTEMPTS).catch(error => {
-        console.error('[Hive Connection Failed]', error);
+        console.error('[Connection Failed]', error);
     });
 });
 
 connect(RECONNECT_ATTEMPTS).then(async client => {
     // work with client
 }, (error) => {
-    console.error('[Hive Connection Failed]', error);
+    console.error('[Connection Failed]', error);
 });
 
 function connect(attempts) => new Promise((resolve, reject) => {
     setTimeout(() => {
-        client.connect(
-            {
-                host: 'localhost',
-                port: 10000,
-                options: {}
-            },
-            new hive.connections.TcpConnection(),
-            new hive.auth.NoSaslAuthentication() 
-        ).then((client) => {
-            console.log('Connected successfully to hive server!');
+        client.connect(...).then((client) => {
+            console.log('Connected successfully!');
 
             resolve(client);
         }, (error) => {
-            console.error('[Hive Connection Failed] attempt:' + attempts, error.message);
+            console.error('[Connection Failed] attempt:' + attempts, error.message);
 
             if (!attempts) {
                 reject(error);

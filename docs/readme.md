@@ -21,15 +21,15 @@ If you find any mistakes, misleading or some confusion feel free to create an is
 ## Example
 
 ```javascript
-const hive = require('../');
-const { TCLIService, TCLIService_types } = hive.thrift;
+const driver = require('databricks-sql-node');
+const { TCLIService, TCLIService_types } = driver.thrift;
 
-const client = new hive.DBSQLClient(
+const client = new driver.DBSQLClient(
     TCLIService,
     TCLIService_types
 );
 
-const utils = new hive.HiveUtils(
+const utils = new driver.HiveUtils(
     TCLIService_types
 );
 
@@ -85,7 +85,7 @@ client.on('error', (error) => {
 
 TCLIService and TCLIService_types are generated from [TCLIService.thrift](https://github.com/apache/hive/blob/master/service-rpc/if/TCLIService.thrift).
 
-You can use the ones are provided by the driver or you can compile it on your own and provide via constructor to HiveClient ([details](https://thrift.apache.org/tutorial/)).
+You can use the ones are provided by the driver or you can compile it on your own and provide via constructor to DBSQLClient ([details](https://thrift.apache.org/tutorial/)).
 
 ```
 thrift -r --gen js TCLIService.thrift
@@ -210,8 +210,8 @@ For more details see [IOperation](/lib/contracts/IOperation.ts).
 ### Example
 
 ```javascript
-const hive = require('hive-driver');
-const utils = new hive.HiveUtils(hive.thrift.TCLIService_types);
+const driver = require('databricks-sql-node');
+const utils = new driver.HiveUtils(driver.thrift.TCLIService_types);
 ...
 await utils.waitUntilReady(
     operation,

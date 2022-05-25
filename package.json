@@ -1,7 +1,7 @@
 {
-  "name": "hive-driver",
+  "name": "databricks-sql-node",
   "version": "0.1.7",
-  "description": "Driver for connection to Apache Hive via Thrift API.",
+  "description": "Driver for connection to Databricks SQL via Thrift API.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "directories": {
@@ -18,21 +18,17 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/lenchv/hive-driver/"
+    "url": "https://github.com/databricks/databricks-sql-node/"
   },
   "bugs": {
-    "url": "https://github.com/lenchv/hive-driver/issues"
+    "url": "https://github.com/databricks/databricks-sql-node/issues"
   },
-  "homepage": "https://github.com/lenchv/hive-driver#readme",
+  "homepage": "https://github.com/databricks/databricks-sql-node#readme",
   "keywords": [
     "hiveserver2",
     "apache",
     "hive",
     "hs2",
-    "kerberos",
-    "sasl",
-    "ldap",
-    "hadoop",
     "client",
     "thrift",
     "nodejs",

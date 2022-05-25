@@ -2,21 +2,21 @@
 
 ## Description
 
-Hive Driver is a JavaScript driver for connection to [Apache Hive](https://hive.apache.org/) via [Thrift API](https://github.com/apache/hive/blob/master/service-rpc/if/TCLIService.thrift).
+Databricks SQL Driver is a JavaScript driver for connection to [Databricks SQL](https://databricks.com/product/databricks-sql) via [Thrift API](https://github.com/apache/hive/blob/master/service-rpc/if/TCLIService.thrift).
 
 ## Installation
 
 ```bash
-npm i hive-driver
+npm i databricks-sql-node
 ```
 
 ## Usage
 
 [examples/usage.js](examples/usage.js)
 ```javascript
-const hive = require('hive-driver');
-const { TCLIService, TCLIService_types } = hive.thrift;
-const client = new hive.DBSQLClient(
+const driver = require('databricks-sql-node');
+const { TCLIService, TCLIService_types } = driver.thrift;
+const client = new driver.DBSQLClient(
     TCLIService,
     TCLIService_types
 );
@@ -68,5 +68,3 @@ If you find some issues, feel free to create an issue or send a pull request.
 ## License
  
 [MIT License](LICENSE)
-
-Copyright (c) 2020 Volodymyr Liench

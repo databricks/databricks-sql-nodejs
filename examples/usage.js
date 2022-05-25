@@ -1,7 +1,7 @@
-const hive = require('../');
-const { TCLIService, TCLIService_types } = hive.thrift;
+const driver = require('../');
+const { TCLIService, TCLIService_types } = driver.thrift;
 
-const client = new hive.DBSQLClient(
+const client = new driver.DBSQLClient(
     TCLIService,
     TCLIService_types
 );
