@@ -39,15 +39,12 @@ client.on('close', () => {
 Here is an example how you can manage reconnection:
 
 ```javascript
-const driver = require('databricks-sql-node');
+const { DBSQLClient } = require('databricks-sql-node');
 
 const RECONNECT_ATTEMPTS = 50;
 const RECONNECT_TIMEOUT = 3000; // millisecond
 
-const client = new driver.DBSQLClient(
-    driver.thrift.TCLIService,
-    driver.thrift.TCLIService_types
-);
+const client = new DBSQLClient();
 
 client.on('close', () => {
     console.error('[Connection Lost]');
@@ -63,7 +60,7 @@ connect(RECONNECT_ATTEMPTS).then(async client => {
     console.error('[Connection Failed]', error);
 });
 
-function connect(attempts) => new Promise((resolve, reject) => {
+const connect = (attempts) => new Promise((resolve, reject) => {
     setTimeout(() => {
         client.connect(...).then((client) => {
             console.log('Connected successfully!');

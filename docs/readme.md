@@ -21,17 +21,10 @@ If you find any mistakes, misleading or some confusion feel free to create an is
 ## Example
 
 ```javascript
-const driver = require('databricks-sql-node');
-const { TCLIService, TCLIService_types } = driver.thrift;
+const { DBSQLClient } = require('databricks-sql-node');
 
-const client = new driver.DBSQLClient(
-    TCLIService,
-    TCLIService_types
-);
-
-const utils = new driver.HiveUtils(
-    TCLIService_types
-);
+const client = new DBSQLClient();
+const utils = DBSQLClient.utils;
 
 client.connect({ 
     host: '...', 
@@ -99,7 +92,7 @@ After you connect to the server you should open session to start working with Hi
 
 ```javascript
 ...
-const session = await client.openSeesion();
+const session = await client.openSession();
 ```
 
 To open session you must provide [OpenSessionRequest](/lib/hive/Commands/OpenSessionCommand.ts#L20) - the only required parameter is "client_protocol", which synchronizes the version of HiveServer2 API.
@@ -210,8 +203,8 @@ For more details see [IOperation](/lib/contracts/IOperation.ts).
 ### Example
 
 ```javascript
-const driver = require('databricks-sql-node');
-const utils = new driver.HiveUtils(driver.thrift.TCLIService_types);
+const { DBSQLClient } = require('databricks-sql-node');
+const utils = DBSQLClient.utils;
 ...
 await utils.waitUntilReady(
     operation,

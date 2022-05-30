@@ -1,19 +1,12 @@
 const { expect } = require('chai');
 const config = require('./utils/config');
 const logger = require('./utils/logger')(config.logger);
-const driver = require('../..');
+const { DBSQLClient, thrift } = require('../..');
 
-const { TCLIService, TCLIService_types } = driver.thrift;
-
-const utils = new driver.HiveUtils(
-    TCLIService_types
-);
+const utils = DBSQLClient.utils;
 
 const openSession = async () => {
-    const client = new driver.DBSQLClient(
-        TCLIService,
-        TCLIService_types
-    );
+    const client = new DBSQLClient();
 
     const connection = await client.connect({
         host: config.host,
@@ -22,7 +15,7 @@ const openSession = async () => {
     });
 
     const session = await connection.openSession({
-        client_protocol: TCLIService_types.TProtocolVersion.HIVE_CLI_SERVICE_PROTOCOL_V10
+        client_protocol: thrift.TCLIService_types.TProtocolVersion.HIVE_CLI_SERVICE_PROTOCOL_V10
     });
 
     if (config.database.length === 2) {

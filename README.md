@@ -14,12 +14,10 @@ npm i databricks-sql-node
 
 [examples/usage.js](examples/usage.js)
 ```javascript
-const driver = require('databricks-sql-node');
-const { TCLIService, TCLIService_types } = driver.thrift;
-const client = new driver.DBSQLClient(
-    TCLIService,
-    TCLIService_types
-);
+const { DBSQLClient } = require('databricks-sql-node');
+
+const client = new DBSQLClient();
+const utils = DBSQLClient.utils;
 
 client.connect({
     host: '********.databricks.com',
@@ -27,13 +25,17 @@ client.connect({
     token: 'dapi********************************',
 }).then(async client => {
     const session = await client.openSession();
-    const response = await session.getInfo(
-        TCLIService_types.TGetInfoType.CLI_DBMS_VER
-    );
 
-    console.log(response.getValue());
+    const queryOperation = await session.executeStatement('SELECT "Hello, World!"', { runAsync: true });
+    await utils.waitUntilReady(queryOperation, false, () => {});
+    await utils.fetchAll(queryOperation);
+    await queryOperation.close();
+
+    const result = utils.getResult(queryOperation).getValue();
+    console.table(result);
 
     await session.close();
+    await client.close();
 }).catch(error => {
     console.log(error);
 });
