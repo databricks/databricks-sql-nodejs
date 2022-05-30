@@ -19,6 +19,8 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.DBSQLClient = exports.HiveUtils = exports.HiveDriver = exports.HiveClient = exports.thrift = exports.connections = exports.auth = void 0;
 var TCLIService = require('../thrift/gen-nodejs/TCLIService');
 var TCLIService_types = require('../thrift/gen-nodejs/TCLIService_types');
+var DBSQLClient_1 = __importDefault(require("./DBSQLClient"));
+exports.DBSQLClient = DBSQLClient_1.default;
 var HiveClient_1 = __importDefault(require("./HiveClient"));
 var HiveDriver_1 = __importDefault(require("./hive/HiveDriver"));
 var HiveUtils_1 = __importDefault(require("./utils/HiveUtils"));
@@ -60,31 +62,4 @@ var HiveUtils = /** @class */ (function (_super) {
     return HiveUtils;
 }(HiveUtils_1.default));
 exports.HiveUtils = HiveUtils;
-var DBSQLClient = /** @class */ (function (_super) {
-    __extends(DBSQLClient, _super);
-    function DBSQLClient() {
-        return _super !== null && _super.apply(this, arguments) || this;
-    }
-    // @ts-expect-error Need to replace inheritance with composition and just redirect other methods
-    DBSQLClient.prototype.connect = function (options) {
-        return _super.prototype.connect.call(this, {
-            host: options.host,
-            port: options.port || 443,
-            options: {
-                path: options.path,
-                https: true,
-            }
-        }, new HttpConnection_1.default(), new PlainHttpAuthentication_1.default({
-            username: 'token',
-            password: options.token,
-        }));
-    };
-    DBSQLClient.prototype.openSession = function () {
-        return _super.prototype.openSession.call(this, {
-            client_protocol: TCLIService_types.TProtocolVersion.HIVE_CLI_SERVICE_PROTOCOL_V11
-        });
-    };
-    return DBSQLClient;
-}(HiveClient));
-exports.DBSQLClient = DBSQLClient;
 //# sourceMappingURL=index.js.map

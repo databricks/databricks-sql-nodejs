@@ -1,14 +1,8 @@
-const driver = require('../');
-const { TCLIService, TCLIService_types } = driver.thrift;
+const { DBSQLClient } = require('../');
 
-const client = new driver.DBSQLClient(
-    TCLIService,
-    TCLIService_types
-);
+const client = new DBSQLClient();
 
-const utils = new driver.HiveUtils(
-    TCLIService_types
-);
+const utils = DBSQLClient.utils;
 
 
 const [host, path, token] = process.argv.slice(2);

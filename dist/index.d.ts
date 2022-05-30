@@ -1,11 +1,10 @@
+import DBSQLClient from "./DBSQLClient";
 import _HiveClient from "./HiveClient";
 import _HiveDriver from "./hive/HiveDriver";
 import _HiveUtils from "./utils/HiveUtils";
 import NoSaslAuthentication from "./connection/auth/NoSaslAuthentication";
 import PlainHttpAuthentication from "./connection/auth/PlainHttpAuthentication";
 import HttpConnection from "./connection/connections/HttpConnection";
-import IHiveClient from './contracts/IHiveClient';
-import IHiveSession from "./contracts/IHiveSession";
 export declare const auth: {
     NoSaslAuthentication: typeof NoSaslAuthentication;
     PlainHttpAuthentication: typeof PlainHttpAuthentication;
@@ -23,14 +22,4 @@ export declare class HiveDriver extends _HiveDriver {
 }
 export declare class HiveUtils extends _HiveUtils {
 }
-interface IConnectionOptions {
-    host: string;
-    port?: number;
-    path: string;
-    token: string;
-}
-export declare class DBSQLClient extends HiveClient {
-    connect(options: IConnectionOptions): Promise<IHiveClient>;
-    openSession(): Promise<IHiveSession>;
-}
-export {};
+export { DBSQLClient, };
