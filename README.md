@@ -1,8 +1,8 @@
-# Hive Driver
+# Databricks SQL Node.js Driver
 
 ## Description
 
-Databricks SQL Driver is a JavaScript driver for connection to [Databricks SQL](https://databricks.com/product/databricks-sql) via [Thrift API](https://github.com/apache/hive/blob/master/service-rpc/if/TCLIService.thrift).
+Databricks SQL Driver is a JavaScript driver for connection to [Databricks SQL](https://databricks.com/product/databricks-sql) and issue SQL queries.
 
 ## Installation
 
