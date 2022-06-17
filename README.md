@@ -4,7 +4,7 @@
 
 Databricks SQL Driver is a JavaScript driver for connection to [Databricks SQL](https://databricks.com/product/databricks-sql) and issue SQL queries.
 
-***NOTE: this Driver is in Preview mode
+**NOTE: This Driver is in Preview mode.**
 
 ## Installation
 
