@@ -8,6 +8,7 @@ interface IConnectionOptions {
     port?: number;
     path: string;
     token: string;
+    clientId?: string;
 }
 /**
  * @see IHiveClient
@@ -20,6 +21,7 @@ interface IDBSQLClient {
 export default class DBSQLClient implements IDBSQLClient, EventEmitter {
     static utils: HiveUtils;
     private client;
+    private getUserAgent;
     connect(options: IConnectionOptions): Promise<this>;
     openSession(): Promise<IHiveSession>;
     close(): void;

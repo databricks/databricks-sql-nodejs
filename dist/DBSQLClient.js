@@ -16,10 +16,18 @@ var HiveClient_1 = __importDefault(require("./HiveClient"));
 var HiveUtils_1 = __importDefault(require("./utils/HiveUtils"));
 var PlainHttpAuthentication_1 = __importDefault(require("./connection/auth/PlainHttpAuthentication"));
 var HttpConnection_1 = __importDefault(require("./connection/connections/HttpConnection"));
+var version_1 = __importDefault(require("./version"));
 var DBSQLClient = /** @class */ (function () {
     function DBSQLClient() {
         this.client = new HiveClient_1.default(TCLIService, TCLIService_types);
     }
+    DBSQLClient.prototype.getUserAgent = function (clientId) {
+        var userAgent = "NodejsDatabricksSqlConnector/" + version_1.default;
+        if (clientId) {
+            userAgent = userAgent + " (" + clientId + ")";
+        }
+        return userAgent;
+    };
     DBSQLClient.prototype.connect = function (options) {
         var _this = this;
         return this.client.connect({
@@ -32,6 +40,9 @@ var DBSQLClient = /** @class */ (function () {
         }, new HttpConnection_1.default(), new PlainHttpAuthentication_1.default({
             username: 'token',
             password: options.token,
+            headers: {
+                'User-Agent': this.getUserAgent(options.clientId),
+            },
         })).then(function () { return _this; });
     };
     DBSQLClient.prototype.openSession = function () {
