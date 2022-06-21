@@ -1,8 +1,10 @@
-# Databricks SQL Node.js Driver
+# Databricks SQL Node.js Driver (Beta)
 
 ## Description
 
 Databricks SQL Driver is a JavaScript driver for connection to [Databricks SQL](https://databricks.com/product/databricks-sql) and issue SQL queries.
+
+**NOTE: This Driver is Beta.**
 
 ## Installation
 
