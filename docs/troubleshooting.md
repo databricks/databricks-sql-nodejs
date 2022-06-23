@@ -39,7 +39,7 @@ client.on('close', () => {
 Here is an example how you can manage reconnection:
 
 ```javascript
-const { DBSQLClient } = require('databricks-sql-node');
+const { DBSQLClient } = require('@databricks/sql');
 
 const RECONNECT_ATTEMPTS = 50;
 const RECONNECT_TIMEOUT = 3000; // millisecond

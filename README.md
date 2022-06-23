@@ -6,17 +6,21 @@ Databricks SQL Driver is a JavaScript driver for connection to [Databricks SQL](
 
 **NOTE: This Driver is Beta.**
 
+## Requirements
+
+- Node.js 14 or newer
+
 ## Installation
 
 ```bash
-npm i databricks-sql-node
+npm i @databricks/sql
 ```
 
 ## Usage
 
 [examples/usage.js](examples/usage.js)
 ```javascript
-const { DBSQLClient } = require('databricks-sql-node');
+const { DBSQLClient } = require('@databricks/sql');
 
 const client = new DBSQLClient();
 const utils = DBSQLClient.utils;

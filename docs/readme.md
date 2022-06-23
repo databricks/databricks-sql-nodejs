@@ -21,7 +21,7 @@ If you find any mistakes, misleading or some confusion feel free to create an is
 ## Example
 
 ```javascript
-const { DBSQLClient } = require('databricks-sql-node');
+const { DBSQLClient } = require('@databricks/sql');
 
 const client = new DBSQLClient();
 const utils = DBSQLClient.utils;
@@ -203,7 +203,7 @@ For more details see [IOperation](/lib/contracts/IOperation.ts).
 ### Example
 
 ```javascript
-const { DBSQLClient } = require('databricks-sql-node');
+const { DBSQLClient } = require('@databricks/sql');
 const utils = DBSQLClient.utils;
 ...
 await utils.waitUntilReady(

@@ -1,5 +1,5 @@
 {
-  "name": "databricks-sql-node",
+  "name": "@databricks/sql",
   "version": "0.1.8-beta.1",
   "description": "Driver for connection to Databricks SQL via Thrift API.",
   "main": "dist/index.js",
@@ -7,6 +7,9 @@
   "directories": {
     "example": "examples",
     "test": "tests"
+  },
+  "engines": {
+    "node": ">=14.0.0"
   },
   "scripts": {
     "e2e": "mocha 'tests/e2e/**/*.test.js' --timeout=300000",
@@ -17,12 +20,12 @@
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/databricks/databricks-sql-node/"
+    "url": "https://github.com/databricks/databricks-sql-nodejs/"
   },
   "bugs": {
-    "url": "https://github.com/databricks/databricks-sql-node/issues"
+    "url": "https://github.com/databricks/databricks-sql-nodejs/issues"
   },
-  "homepage": "https://github.com/databricks/databricks-sql-node#readme",
+  "homepage": "https://github.com/databricks/databricks-sql-nodejs#readme",
   "keywords": [
     "databricks sql",
     "hiveserver2",
