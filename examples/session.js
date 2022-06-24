@@ -50,6 +50,6 @@ async function handleOperation(operation) {
 }
 
 const createTables = async (session) => {
-    await session.executeStatement('create table if not exists table1 ( id string, value integer )').then(handleOperation);
-    await session.executeStatement('create table if not exists table2 ( id string, table1_fk integer )').then(handleOperation);
+    await session.executeStatement('CREATE TABLE IF NOT EXISTS table1 ( id STRING, value INTEGER )').then(handleOperation);
+    await session.executeStatement('CREATE TABLE IF NOT EXISTS table2 ( id STRING, table1_fk INTEGER )').then(handleOperation);
 };

@@ -48,7 +48,7 @@ describe('StatusFactory', () => {
         error.with.property('name', 'Status Error');
     });
 
-    it('should be set as error if handling invalid', () => {
+    it('should be set as an error upon handling invalid status', () => {
         const error = expect(() => {
             statusFactory.create({
                 statusCode: TCLIService_types.TStatusCode.INVALID_HANDLE_STATUS,

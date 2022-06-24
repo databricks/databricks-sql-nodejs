@@ -20,7 +20,7 @@ const ConnectionProviderMock = (connection) => ({
 });
 
 describe('HiveClient.connect', () => {
-    it('should set nosal authenticatior by default', () => {
+    it('should set nosasl authenticator by default', () => {
         const client = new HiveClient(TCLIService, TCLIService_types);
         const connectionProvider = ConnectionProviderMock();
     
@@ -99,7 +99,7 @@ describe('HiveClient.openSession', () => {
         });
 	});
 	
-	it('should throw an exception when connection is lost', (done) => {
+	it('should throw an exception when the connection is lost', (done) => {
 		const client = new HiveClient(TCLIService, TCLIService_types);
 		client.connection = {
             isConnected() {
@@ -117,14 +117,14 @@ describe('HiveClient.openSession', () => {
 });
 
 describe('HiveClient.getClient', () => {
-    it('should throw error if client is not set', () => {
+    it('should throw an error if the client is not set', () => {
         const client = new HiveClient(TCLIService, TCLIService_types);
         expect(() => client.getClient()).to.throw('HiveClient: client is not initialized');
     });
 });
 
 describe('HiveClient.close', () => {
-    it('should close connection if it was initiated', () => {
+    it('should close the connection if it was initiated', () => {
         const client = new HiveClient(TCLIService, TCLIService_types);
         let closed = false;
         client.connection = {
@@ -136,13 +136,13 @@ describe('HiveClient.close', () => {
         expect(closed).to.be.true;
     });
 
-    it('should do nothing if connection does not exist', () => {
+    it('should do nothing if the connection does not exist', () => {
         const client = new HiveClient(TCLIService, TCLIService_types);
         client.close();
         expect(true).to.be.true;
     });
 
-    it('should do nothing if connection exists but cannot be finished', () => {
+    it('should do nothing if the connection exists but cannot be finished', () => {
         const client = new HiveClient(TCLIService, TCLIService_types);
         client.connection = {
             getConnection: () => ({})
