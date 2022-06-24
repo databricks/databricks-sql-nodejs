@@ -8,7 +8,7 @@ try {
 module.exports = {
     // Where to log: CONSOLE, FILE, QUIET
     logger: 'FILE',
-    // Host, like ****.cloud.databricks.com
+    // Host: like ****.cloud.databricks.com
     host: undefined,
     // API path: /sql/1.0/endpoints/****************
     path: undefined,
