@@ -30,17 +30,17 @@ jobs:
         npm install
         npm run build
         npm run test
-    - name: Run e2e tests
-      run: |
-        sudo echo "127.0.0.1 KERBEROS.SERVER" | sudo tee -a /etc/hosts
-        sudo echo "127.0.0.1 kerberos.server" | sudo tee -a /etc/hosts
-        sudo apt-get install krb5-user
-        cd .docker
-        make build VERSION=2.3.6
-        make generate_ssl
-        sudo cp krb/krb5.conf /etc/krb5.conf
-        cd ..
-        env HOSTNAME=$(hostname -f) npm run e2e
+    # - name: Run e2e tests
+    #   run: |
+    #     sudo echo "127.0.0.1 KERBEROS.SERVER" | sudo tee -a /etc/hosts
+    #     sudo echo "127.0.0.1 kerberos.server" | sudo tee -a /etc/hosts
+    #     sudo apt-get install krb5-user
+    #     cd .docker
+    #     make build VERSION=2.3.6
+    #     make generate_ssl
+    #     sudo cp krb/krb5.conf /etc/krb5.conf
+    #     cd ..
+    #     env HOSTNAME=$(hostname -f) npm run e2e
     - name: Coverage
       run: |
         npm run coverage -- -t ${{secrets.CODECOV_TOKEN}}
