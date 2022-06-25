@@ -42,7 +42,7 @@ describe('HttpConnection.connect', () => {
         });
     });
 
-    it('should set SSL certificates and disable reject unautorized', () => {
+    it('should set SSL certificates and disable rejectUnauthorized', () => {
         const connection = new HttpConnection();
         const authenticator = authProviderMock();
         const resultConnection = {

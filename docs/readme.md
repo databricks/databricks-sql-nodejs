@@ -161,9 +161,9 @@ To simplify this process, you may use [HiveUtils](/lib/utils/HiveUtils.ts).
 
 ```typescript
 /**
- * Executes until operation has status finished or has one of the invalid states
+ * Executes until operation has status finished or has one of the invalid states.
  * 
- * @param operation
+ * @param operation operation to perform
  * @param progress flag for operation status command. If it sets true, response will include progressUpdateResponse with progress information
  * @param callback if callback specified it will be called each time the operation status response received and it will be passed as first parameter
  */
@@ -174,7 +174,7 @@ waitUntilReady(
 ): Promise<IOperation>
 
 /**
- * Fetch data until operation hasMoreRows
+ * Fetches data until operation hasMoreRows.
  * 
  * @param operation
  */
@@ -183,8 +183,8 @@ fetchAll(operation: IOperation): Promise<IOperation>
 /**
  * Transforms operation result
  * 
- * @param operation
- * @param resultHandler - you may specify your own handler. If not specified the result is transformed to JSON
+ * @param operation operation to perform
+ * @param resultHandler you may specify your own handler. If not specified the result is transformed to JSON
  */
 getResult(
     operation: IOperation,
@@ -193,9 +193,7 @@ getResult(
 ```
 
 *NOTICE*
-
 - [node-int64](https://www.npmjs.com/package/node-int64) is used for types with capacity 64
-
 - to know how data is presented in JSON you may look at [JsonResult.test.js](/tests/unit/result/JsonResult.test.js)
 
 For more details see [IOperation](/lib/contracts/IOperation.ts).
@@ -224,4 +222,4 @@ You may notice, that most of the operations return [Status](/lib/dto/Status.ts) 
 
 ## Finalize
 
-After you finish working with the operation, session or client it is better to close it, each of them has a respective method (`close()`).
+After you finish working with the operation, session or client, it is better to close it, each of them has a respective method (`close()`).

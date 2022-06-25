@@ -2,7 +2,7 @@
 
 ## Description
 
-Databricks SQL Driver is a JavaScript driver for connection to [Databricks SQL](https://databricks.com/product/databricks-sql) and issue SQL queries.
+Databricks SQL Driver is a JavaScript driver for connecting to [Databricks SQL](https://databricks.com/product/databricks-sql) and issuing SQL queries.
 
 **NOTE: This Driver is Beta.**
 
@@ -47,9 +47,9 @@ client.connect({
 });
 ```
 
-For more details see: [Getting Started](docs/readme.md) 
+For more details see [Getting Started](docs/readme.md).
 
-## Test
+## Tests
 
 Unit tests:
 
@@ -57,13 +57,13 @@ Unit tests:
 npm run test
 ```
 
-e2e tests:
+End-to-end tests:
 
 ```bash
 npm run e2e
 ```
 
-Before running e2e tests, create local [configuration file](tests/e2e/utils/config.js)
+Before running end-to-end tests, create local [configuration file](tests/e2e/utils/config.js)
 
 ## Contributing
 
@@ -71,7 +71,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md)
 
 ## Issues
 
-If you find some issues, feel free to create an issue or send a pull request.
+If you find any issue, feel free to create an issue or send a pull request directly.
 
 ## License
  

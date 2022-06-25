@@ -1,6 +1,6 @@
 # Contributing
 
-To contribute to this repository fork it and send pull request.
+To contribute to this repository, fork it and send pull requests.
 
 ## Project structure
 
@@ -8,7 +8,7 @@ To contribute to this repository fork it and send pull request.
 - *dist/* - compiled source code and must not be changed manually
 - *tests/unit/* - unit tests
 - *tests/e2e/* - end-to-end tests
-- *index.js* - entry point of the driver
+- *dist/index.js* - entry point of the driver
 
 ## Run the project
 
@@ -24,11 +24,10 @@ Build the project
 npm run build
 ```
 
-Tests:
+Run the tests
 
 ```bash
 npm run test
-
 npm run e2e
 ```
 
@@ -44,8 +43,7 @@ npm run commit
 
 ## Pull Request Process
 
-1. Update the README.md or similar documentation with details of changes you
-   wish to make, if applicable.
+1. Update the [README.md](README.md) or similar documentation with details of changes you wish to make, if applicable.
 2. Add any appropriate tests.
 3. Make your code or other changes.
 4. Review guidelines such as
