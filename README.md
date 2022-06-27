@@ -1,10 +1,16 @@
-# Databricks SQL Node.js Driver (Beta)
+# Databricks SQL Driver for NodeJS (Beta)
+
+![http://www.apache.org/licenses/LICENSE-2.0.txt](http://img.shields.io/:license-Apache%202-brightgreen.svg)
 
 ## Description
 
-Databricks SQL Driver is a JavaScript driver for connecting to [Databricks SQL](https://databricks.com/product/databricks-sql) and issuing SQL queries.
+The Databricks SQL Driver for NodeJS is a Javascript driver for applications that connect to Databricks clusters and SQL warehouses. This project is a fork of [Hive Driver](https://github.com/lenchv/hive-driver) which connects via Thrift API.
 
 **NOTE: This Driver is Beta.**
+
+## Documentation
+
+For detailed documentation and usage examples, read the [Getting Started](docs/readme.md) guide.
 
 ## Requirements
 
@@ -47,23 +53,49 @@ client.connect({
 });
 ```
 
-For more details see [Getting Started](docs/readme.md).
+## Run Tests
 
-## Tests
-
-Unit tests:
+### Unit tests
 
 ```bash
 npm run test
 ```
 
-End-to-end tests:
+You can specify a specific test to run by changing `package.json`:
+
+```json
+"scripts": {
+    "test": "nyc --reporter=lcov mocha 'tests/unit/result/JsonResult.test.js'",
+}
+```
+
+Or to run all unit tests:
+
+```json
+"scripts": {
+    "test": "nyc --reporter=lcov mocha 'tests/unit/**/*.test.js'",
+}
+```
+
+### e2e tests
+
+
+Before running end-to-end tests, copy the [sample configuration file](tests/e2e/utils/config.js) into the repository root and set the Databricks SQL connection info:
+
+```javascript
+{
+    host: '***.databricks.com',
+    path: '/sql/1.0/endpoints/***',
+    token: 'dapi***',
+    database: ['catalog', 'database'],
+}
+```
+
+Then run
 
 ```bash
 npm run e2e
 ```
-
-Before running end-to-end tests, create local [configuration file](tests/e2e/utils/config.js)
 
 ## Contributing
 
@@ -71,7 +103,7 @@ See [CONTRIBUTING.md](CONTRIBUTING.md)
 
 ## Issues
 
-If you find any issue, feel free to create an issue or send a pull request directly.
+If you find any issues, feel free to create an issue or send a pull request directly.
 
 ## License
  
