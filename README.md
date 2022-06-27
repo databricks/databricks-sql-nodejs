@@ -41,7 +41,7 @@ client.connect({
     console.table(result);
 
     await session.close();
-    await client.close();
+    client.close();
 }).catch(error => {
     console.log(error);
 });
