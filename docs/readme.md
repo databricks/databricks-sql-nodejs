@@ -4,8 +4,7 @@
 
 1. [Foreword](#foreword) 
 2. [Example](#example) \
-   2.1. [Error handling](#error-handling) \
-   2.2. [TCLIService and TCLIService_types](#tcliservice-and-tcliservice_types)
+   2.1. [Error handling](#error-handling)
 3. [HiveSession](#hivesession) 
 4. [HiveOperation](#hiveoperation) \
    4.1. [HiveUtils](#hiveutils)
@@ -73,18 +72,6 @@ client.on('error', (error) => {
     // ...
 });
 ```
-
-### TCLIService and TCLIService_types
-
-TCLIService and TCLIService_types are generated from [TCLIService.thrift](https://github.com/apache/hive/blob/master/service-rpc/if/TCLIService.thrift).
-
-You can use the ones are provided by the driver or you can compile it on your own and provide via constructor to DBSQLClient ([details](https://thrift.apache.org/tutorial/)).
-
-```
-thrift -r --gen js TCLIService.thrift
-```
-
-TCLIService_types contains a number of constants that API uses, you do not have to know all of them, but sometimes it is useful to refer to [TCLIService.thrift](/thrift/TCLIService.thrift). Also, you may notice that most of the internal structures repeat the structures from [TCLIService.thrift](/thrift/TCLIService.thrift).
 
 ## HiveSession
 
