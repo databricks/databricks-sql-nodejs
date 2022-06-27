@@ -65,7 +65,7 @@ You can specify a specific test to run by changing `package.json`:
 
 ```json
 "scripts": {
-    "e2e": "mocha 'tests/e2e/utils/GetResult.test.js' --timeout=300000"
+    "test": "nyc --reporter=lcov mocha 'tests/unit/result/JsonResult.test.js'",
 }
 ```
 
@@ -73,7 +73,7 @@ Or to run all unit tests:
 
 ```json
 "scripts": {
-    "e2e": "mocha 'tests/e2e/**/*.test.js' --timeout=300000"
+    "test": "nyc --reporter=lcov mocha 'tests/unit/**/*.test.js'",
 }
 ```
 
