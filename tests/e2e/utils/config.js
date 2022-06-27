@@ -8,11 +8,13 @@ try {
 module.exports = {
     // Where to log: CONSOLE, FILE, QUIET
     logger: 'CONSOLE',
-    // Replace the following values with the actual connection details.
-    host: '***.databricks.com',
-    path: '/sql/1.0/endpoints/***',
-    token: 'dapi***',
-    // Make sure your client and credential actually have CREATE permission in the database.
-    database: ['catalog', 'database'],
+    // Host, like ****.cloud.databricks.com
+    host: process.env.E2E_HOST,
+    // API path: /sql/1.0/endpoints/****************
+    path: process.env.E2E_PATH,
+    // Access token: dapi********************************
+    token: process.env.E2E_ACCESS_TOKEN,
+    // Catalog and database to use for testing; specify both or leave array empty to use defaults
+    database: [],
     ...overrides,
 };
