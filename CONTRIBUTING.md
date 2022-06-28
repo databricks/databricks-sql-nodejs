@@ -43,7 +43,7 @@ npm run commit
 
 ## Pull Request Process
 
-1. Update the [README.md](README.md) or similar documentation with details of changes you wish to make, if applicable.
+1. Update the [CHANGELOG](CHANGELOG.md) with details of your changes, if applicable.
 2. Add any appropriate tests.
 3. Make your code or other changes.
 4. Review guidelines such as
