@@ -192,6 +192,8 @@ describe('Data types', () => {
             logger(error);
             await session.close()
             throw error;
+        } finally {
+            await execute(session, `DROP TABLE IF EXISTS ${table}`);
         }
     });
 
@@ -233,6 +235,8 @@ describe('Data types', () => {
             logger(error);
             await session.close();
             throw error;
+        } finally {
+            await execute(session, `DROP TABLE IF EXISTS ${table}`);
         }
     });
 
@@ -355,6 +359,9 @@ describe('Data types', () => {
             logger(error);
             await session.close()
             throw error;
+        } finally {
+            await execute(session, `DROP TABLE IF EXISTS ${table}`);
+            await execute(session, `DROP TABLE IF EXISTS ${helperTable}`);
         }
     });
 });
