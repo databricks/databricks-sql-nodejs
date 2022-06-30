@@ -4,6 +4,9 @@ try {
 } catch (e) {
 }
 
+const catalog = process.env.E2E_CATALOG || undefined;
+const database = process.env.E2E_DATABASE || undefined;
+
 // Create file named `config.local.js` in the same directory and override config there
 module.exports = {
     // Where to log: CONSOLE, FILE, QUIET
@@ -15,6 +18,6 @@ module.exports = {
     // Access token: dapi********************************
     token: process.env.E2E_ACCESS_TOKEN,
     // Catalog and database to use for testing; specify both or leave array empty to use defaults
-    database: [],
+    database: catalog || database ? [catalog, database] : [],
     ...overrides,
 };
