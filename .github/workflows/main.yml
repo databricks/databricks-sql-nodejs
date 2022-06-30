@@ -34,6 +34,9 @@ jobs:
         E2E_HOST: ${{secrets.E2E_HOST}}
         E2E_PATH: ${{secrets.E2E_PATH}}
         E2E_ACCESS_TOKEN: ${{secrets.E2E_ACCESS_TOKEN}}
+        E2E_CATALOG: hive_metastore
+        E2E_DATABASE: client_libs_test
+        E2E_TABLE_SUFFIX: ${{github.sha}}
       run: |
         npm ci
         npm run build
