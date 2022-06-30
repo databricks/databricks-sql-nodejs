@@ -24,9 +24,9 @@ var DBSQLClient = /** @class */ (function () {
         this.client = new HiveClient_1.default(TCLIService, TCLIService_types);
     }
     DBSQLClient.prototype.getUserAgent = function (clientId) {
-        var userAgent = "NodejsDatabricksSqlConnector/" + version_1.default;
+        var userAgent = "NodejsDatabricksSqlConnector/".concat(version_1.default);
         if (clientId) {
-            userAgent = userAgent + " (" + clientId + ")";
+            userAgent = "".concat(userAgent, " (").concat(clientId, ")");
         }
         return userAgent;
     };
