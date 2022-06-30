@@ -4,4 +4,6 @@ node_modules
 *.log
 .nyc_output
 coverage
+coverage_e2e
+coverage_unit
 .temp

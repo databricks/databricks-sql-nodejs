@@ -2,33 +2,11 @@
 
 This section contains recipies for common errors.
 
-- [413 FULL head](#413-full-head)
-
-## 413 FULL head
-
-Related to issue [HIVE-11720](https://issues.apache.org/jira/browse/HIVE-11720)
-
-Workaround:
-
-increase the properties
-
-hive-site.xml
-```xml
-<property>
-    <name>hive.server2.thrift.http.response.header.size</name>
-    <value>32768</value>
-</property>
-<property>
-    <name>hive.server2.thrift.http.request.header.size</name>
-    <value>32768</value>
-</property>
-```
-
 ## Lost connection
 
-In this case DBSQLClient you have to reconnect.
+In this case, you have to reconnect `DBSQLClient`.
 
-To define if the connection lost, you should subscribe on event "close":
+To determine if the connection is lost, you should subscribe to event `close`:
 
 ```javascript
 client.on('close', () => {
@@ -36,10 +14,10 @@ client.on('close', () => {
 });
 ```
 
-Here is an example how you can manage reconnection:
+Here is an example how you can manage a reconnection:
 
 ```javascript
-const { DBSQLClient } = require('databricks-sql-node');
+const { DBSQLClient } = require('@databricks/sql');
 
 const RECONNECT_ATTEMPTS = 50;
 const RECONNECT_TIMEOUT = 3000; // millisecond
@@ -79,6 +57,6 @@ const connect = (attempts) => new Promise((resolve, reject) => {
 });
 ```
 
-Please, notice, that you do not have to re-create client and pass it to your services,
-after re-connection the old client instance works just fine,
+Please notice that you do not have to re-create client and pass it to your services.
+After re-connection, the old client instance works just fine,
 and you should be able to open session and work as you did before.

@@ -18,7 +18,7 @@ const driverMock = {};
 const operationHandle = {};
 
 describe('HiveOperation.fetch', () => {
-    it('should return success status if no results or it is not initialized', (cb) => {
+    it('should return success status if there is no results or it is not initialized', (cb) => {
         const operation = new HiveOperation(
             driverMock,
             operationHandle,
@@ -33,7 +33,7 @@ describe('HiveOperation.fetch', () => {
         });
     });
 
-    it('should return executing status if initialization still not finished', (cb) => {
+    it('should return executing status if initialization still is not finished', (cb) => {
         const operation = new HiveOperation(
             driverMock,
             operationHandle,
@@ -49,7 +49,7 @@ describe('HiveOperation.fetch', () => {
         });
     });
 
-    it('should initilize schema and make first result request', (cb) => {
+    it('should initialize schema and make the first fetch request', (cb) => {
         const mockHiveOperation = getMock(HiveOperation, {
             initializeSchema() { return Promise.resolve('schema'); },
 
@@ -74,7 +74,7 @@ describe('HiveOperation.fetch', () => {
         });
     });
 
-    it('should make next result request if schema has been set', (cb) => {
+    it('should make the next fetch request if the schema has been set', (cb) => {
         const mockHiveOperation = getMock(HiveOperation, {
             nextFetch() { return Promise.resolve('data'); },
 
@@ -99,7 +99,7 @@ describe('HiveOperation.fetch', () => {
 });
 
 describe('HiveOperation.status', () => {
-    it('should set operation state and hasResultSet', (cb) => {
+    it('should set operationState and hasResultSet', (cb) => {
         const operation = new HiveOperation(
             {
                 getOperationStatus() {
@@ -125,7 +125,7 @@ describe('HiveOperation.status', () => {
         });
     });
 
-    it('should throw error if status error', (cb) => {
+    it('should throw an error in case of a status error', (cb) => {
         const operation = new HiveOperation(
             {
                 getOperationStatus() {
@@ -151,7 +151,7 @@ describe('HiveOperation.status', () => {
 });
 
 describe('HiveOperation.cancel', () => {
-    it('should run cancelOperation and return status', (cb) => {
+    it('should run cancelOperation and return the status', (cb) => {
         const operation = new HiveOperation(
             {
                 cancelOperation() {
@@ -176,7 +176,7 @@ describe('HiveOperation.cancel', () => {
 });
 
 describe('HiveOperation.close', () => {
-    it('should run closeOperation and return status', (cb) => {
+    it('should run closeOperation and return the status', (cb) => {
         const operation = new HiveOperation(
             {
                 closeOperation() {
@@ -222,7 +222,7 @@ describe('HiveOperation.getQueryId', () => {
 });
 
 describe('HiveOperation.checkIfOperationHasMoreRows', () => {
-    it('should return true if response has hasMoreRows', () => {
+    it('should return True if hasMoreRows is set True', () => {
         const operation = new HiveOperation(
             driverMock,
             operationHandle,
@@ -236,7 +236,7 @@ describe('HiveOperation.checkIfOperationHasMoreRows', () => {
         expect(result).to.be.true;
     });
 
-    it('should return false if response does not have columns', () => {
+    it('should return False if the response has no columns', () => {
         const operation = new HiveOperation(
             driverMock,
             operationHandle,
@@ -248,7 +248,7 @@ describe('HiveOperation.checkIfOperationHasMoreRows', () => {
         expect(result).to.be.false;
     });
 
-    it('should return true if at least one of the columns not empty', () => {
+    it('should return True if at least one of the columns is not empty', () => {
         const operation = new HiveOperation(
             driverMock,
             operationHandle,
@@ -270,7 +270,7 @@ describe('HiveOperation.checkIfOperationHasMoreRows', () => {
         expect(result('not_existed_type')).to.be.false;
     });
 
-    it('should return false if all columns are empty', () => {
+    it('should return False if all columns are empty', () => {
         const operation = new HiveOperation(
             driverMock,
             operationHandle,
@@ -286,7 +286,7 @@ describe('HiveOperation.checkIfOperationHasMoreRows', () => {
 });
 
 describe('HiveOperation.processFetchResponse', () => {
-    it('should throw error if status an error', () => {
+    it('should throw an error if the status is an error', () => {
         const operation = new HiveOperation(
             driverMock,
             operationHandle,

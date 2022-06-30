@@ -51,11 +51,13 @@ function removeTrailingMetadata(columns) {
 
 describe('Data types', () => {
     it('primitive data types should presented correctly', async () => {
+        const table = `dbsql_nodejs_sdk_e2e_primitive_types_${config.tableSuffix}`;
+
         const session = await openSession();
         try {
-            await execute(session, `DROP TABLE IF EXISTS primitiveTypes`);
+            await execute(session, `DROP TABLE IF EXISTS ${table}`);
             await execute(session, `
-                CREATE TABLE IF NOT EXISTS primitiveTypes (
+                CREATE TABLE IF NOT EXISTS ${table} (
                     bool
                     boolean,
                     tiny_int
@@ -81,7 +83,7 @@ describe('Data types', () => {
                 )
             `);
 
-            const columns = await execute(session, 'describe primitiveTypes');
+            const columns = await execute(session, `DESCRIBE ${table}`);
             expect(removeTrailingMetadata(columns)).to.be.deep.eq([
                 {
                     "col_name": "bool",
@@ -156,16 +158,16 @@ describe('Data types', () => {
             ]);
 
             await execute(session, `
-                insert into primitiveTypes (
+                INSERT INTO ${table} (
                     bool, tiny_int, small_int, int_type, big_int, flt, dbl,
                     dec, str, ts, bin, chr, vchr, dat
-                ) values (
+                ) VALUES (
                     true, 127, 32000, 4000000, 372036854775807, 1.2, 2.2, 3.2, 'data',
                     '2014-01-17 00:17:13', 'data', 'a', 'b', '2014-01-17'
                 )
             `);
 
-            const records = await execute(session, 'select * from primitiveTypes');
+            const records = await execute(session, `SELECT * FROM ${table}`);
             expect(records).to.be.deep.eq([
                 {
                     "bool": true,
@@ -190,19 +192,23 @@ describe('Data types', () => {
             logger(error);
             await session.close()
             throw error;
+        } finally {
+            await execute(session, `DROP TABLE IF EXISTS ${table}`);
         }
     });
 
     it('interval types should be presented correctly', async () => {
+        const table = `dbsql_nodejs_sdk_e2e_interval_types_${config.tableSuffix}`;
+
         const session = await openSession();
         try {
-            await execute(session, `DROP TABLE IF EXISTS intervalTypes`);
+            await execute(session, `DROP TABLE IF EXISTS ${table}`);
             await execute(session, `
-                CREATE TABLE intervalTypes AS
+                CREATE TABLE ${table} AS
                 SELECT INTERVAL '1' day AS day_interval, INTERVAL '1' month AS month_interval
             `);
 
-            const columns = await execute(session, 'describe intervalTypes');
+            const columns = await execute(session, `DESCRIBE ${table}`);
             expect(removeTrailingMetadata(columns)).to.be.deep.eq([
                 {
                     "col_name": "day_interval",
@@ -216,7 +222,7 @@ describe('Data types', () => {
                 }
             ]);
 
-            const records = await execute(session, 'select * from intervalTypes');
+            const records = await execute(session, `SELECT * FROM ${table}`);
             expect(records).to.be.deep.eq([
                 {
                     day_interval: "1 00:00:00.000000000",
@@ -229,18 +235,23 @@ describe('Data types', () => {
             logger(error);
             await session.close();
             throw error;
+        } finally {
+            await execute(session, `DROP TABLE IF EXISTS ${table}`);
         }
     });
 
     it('complex types should be presented correctly', async () => {
+        const table = `dbsql_nodejs_sdk_e2e_complex_types_${config.tableSuffix}`;
+        const helperTable = `dbsql_nodejs_sdk_e2e_complex_types_helper_${config.tableSuffix}`;
+
         const session = await openSession();
         try {
-            await execute(session, `DROP TABLE IF EXISTS dummy`);
-            await execute(session, `DROP TABLE IF EXISTS complexTypes`);
-            await execute(session, `create table dummy( id string )`);
-            await execute(session, `insert into dummy (id) values (1)`);
+            await execute(session, `DROP TABLE IF EXISTS ${helperTable}`);
+            await execute(session, `DROP TABLE IF EXISTS ${table}`);
+            await execute(session, `CREATE TABLE ${helperTable}( id string )`);
+            await execute(session, `INSERT INTO ${helperTable} (id) VALUES (1)`);
             await execute(session, `
-                CREATE TABLE complexTypes (
+                CREATE TABLE ${table} (
                     id int,
                     arr_type array<string>,
                     map_type map<string, int>,
@@ -248,7 +259,7 @@ describe('Data types', () => {
                 )
             `);
 
-            const columns = await execute(session, 'describe complexTypes');
+            const columns = await execute(session, `DESCRIBE ${table}`);
             expect(removeTrailingMetadata(columns)).to.be.deep.eq([
                 {
                     "col_name": "id",
@@ -273,31 +284,31 @@ describe('Data types', () => {
             ]);
 
             await execute(session, `
-                INSERT INTO table complexTypes SELECT
-                    POSITIVE(1) as id,
-                    array('a', 'b') as arr_type,
-                    map('key', 12) as map_type,
-                    named_struct('city','Tampa','State','FL') as struct_type
-                FROM dummy
+                INSERT INTO table ${table} SELECT
+                    POSITIVE(1) AS id,
+                    array('a', 'b') AS arr_type,
+                    map('key', 12) AS map_type,
+                    named_struct('city','Tampa','State','FL') AS struct_type
+                FROM ${helperTable}
             `);
             await execute(session, `
-                INSERT INTO table complexTypes SELECT
-                    POSITIVE(2) as id,
-                    array('c', 'd') as arr_type,
-                    map('key2', 12) as map_type,
-                    named_struct('city','Albany','State','NY') as struct_type
-                FROM dummy
+                INSERT INTO table ${table} SELECT
+                    POSITIVE(2) AS id,
+                    array('c', 'd') AS arr_type,
+                    map('key2', 12) AS map_type,
+                    named_struct('city','Albany','State','NY') AS struct_type
+                FROM ${helperTable}
             `);
             await execute(session, `
-                INSERT INTO table complexTypes SELECT
-                    POSITIVE(3) as id,
-                    array('e', 'd') as arr_type,
-                    map('key2', 13) as map_type,
-                    named_struct('city','Los Angeles','State','CA') as struct_type
-                FROM dummy
+                INSERT INTO TABLE ${table} SELECT
+                    POSITIVE(3) AS id,
+                    array('e', 'd') AS arr_type,
+                    map('key2', 13) AS map_type,
+                    named_struct('city','Los Angeles','State','CA') AS struct_type
+                FROM ${helperTable}
             `);
 
-            const records = await execute(session, 'select * from complexTypes order by id asc');
+            const records = await execute(session, `SELECT * FROM ${table} ORDER BY id ASC`);
             expect(records).to.be.deep.eq([
                 {
                     "id": 1,
@@ -348,6 +359,9 @@ describe('Data types', () => {
             logger(error);
             await session.close()
             throw error;
+        } finally {
+            await execute(session, `DROP TABLE IF EXISTS ${table}`);
+            await execute(session, `DROP TABLE IF EXISTS ${helperTable}`);
         }
     });
 });

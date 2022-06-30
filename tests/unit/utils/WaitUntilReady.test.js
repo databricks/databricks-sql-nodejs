@@ -75,7 +75,7 @@ describe('WaitUntilReady', () => {
         ]);
     });
 
-    it('should wait untill callback will be finished', () => {
+    it('should wait until callback is finished', () => {
         const op = operation(TCLIService_types.TOperationState.INITIALIZED_STATE);
         const waitUntilReady = new WaitUntilReady(op, TCLIService_types);
         let i = 0;

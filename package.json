@@ -1,6 +1,6 @@
 {
-  "name": "databricks-sql-node",
-  "version": "0.1.7",
+  "name": "@databricks/sql",
+  "version": "0.1.8-beta.1",
   "description": "Driver for connection to Databricks SQL via Thrift API.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -8,22 +8,24 @@
     "example": "examples",
     "test": "tests"
   },
+  "engines": {
+    "node": ">=14.0.0"
+  },
   "scripts": {
-    "e2e": "mocha 'tests/e2e/**/*.test.js' --timeout=300000",
-    "test": "nyc --reporter=lcov mocha 'tests/unit/**/*.test.js'",
+    "e2e": "nyc --reporter=lcov --report-dir=coverage_e2e mocha 'tests/e2e/**/*.test.js' --timeout=300000",
+    "test": "nyc --reporter=lcov --report-dir=coverage_unit mocha 'tests/unit/**/*.test.js'",
     "coverage": "codecov",
     "build": "tsc",
-    "watch": "tsc -w",
-    "commit": "git-cz"
+    "watch": "tsc -w"
   },
   "repository": {
     "type": "git",
-    "url": "https://github.com/databricks/databricks-sql-node/"
+    "url": "https://github.com/databricks/databricks-sql-nodejs/"
   },
   "bugs": {
-    "url": "https://github.com/databricks/databricks-sql-node/issues"
+    "url": "https://github.com/databricks/databricks-sql-nodejs/issues"
   },
-  "homepage": "https://github.com/databricks/databricks-sql-node#readme",
+  "homepage": "https://github.com/databricks/databricks-sql-nodejs#readme",
   "keywords": [
     "databricks sql",
     "hiveserver2",
@@ -39,21 +41,16 @@
   ],
   "license": "Apache 2.0",
   "devDependencies": {
-    "@types/node": "^13.1.4",
-    "chai": "^4.2.0",
-    "codecov": "^3.7.1",
-    "commitizen": "^4.2.4",
-    "cz-conventional-changelog": "^3.1.0",
-    "mocha": "^8.4.0",
-    "nyc": "^15.0.0",
-    "typescript": "^3.7.4"
+    "@types/node": "^18.0.0",
+    "chai": "^4.3.6",
+    "codecov": "^3.8.3",
+    "mocha": "^10.0.0",
+    "nyc": "^15.1.0",
+    "typescript": "^4.7.4"
   },
   "dependencies": {
-    "commander": "^9.2.0",
+    "commander": "^9.3.0",
     "node-int64": "^0.4.0",
-    "thrift": "0.12.0"
-  },
-  "czConfig": {
-    "path": "node_modules/cz-conventional-changelog"
+    "thrift": "^0.16.0"
   }
 }

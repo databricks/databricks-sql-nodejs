@@ -30,7 +30,7 @@ describe('HiveDriver', () => {
     });
 
     it('should execute executeStatement', () => {
-        return testCommand('executeStatement', { sessionHandle, statement: 'select * from t' });
+        return testCommand('executeStatement', { sessionHandle, statement: 'SELECT * FROM t' });
     });
 
     it('should execute getResultSetMetadata', () => {

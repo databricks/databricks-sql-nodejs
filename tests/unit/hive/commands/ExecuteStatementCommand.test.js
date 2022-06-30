@@ -5,7 +5,7 @@ const requestMock = {
     sessionHandle: {
         sessionId: { guid: '', secret: '' }
     },
-    statement: 'show tables',
+    statement: 'SHOW TABLES',
     confOverlay: {},
     runAsync: false,
     queryTimeout: 0

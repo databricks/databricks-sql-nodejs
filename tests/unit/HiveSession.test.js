@@ -28,10 +28,10 @@ describe('HiveSession', () => {
         })
     });
     it('executeStatement', () => {
-        return testMethod('executeStatement', [ 'select * from table', { runAsync: true } ]).then(result => {
+        return testMethod('executeStatement', [ 'SELECT * FROM table', { runAsync: true } ]).then(result => {
             expect(result).instanceOf(HiveOperation);
         }).then(() => {
-            return testMethod('executeStatement', [ 'select * from table' ]);
+            return testMethod('executeStatement', [ 'SELECT * FROM table' ]);
         }).then(result => {
             expect(result).instanceOf(HiveOperation);
         });

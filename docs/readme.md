@@ -4,8 +4,7 @@
 
 1. [Foreword](#foreword) 
 2. [Example](#example) \
-   2.1. [Error handling](#error-handling) \
-   2.2. [TCLIService and TCLIService_types](#tcliservice-and-tcliservice_types)
+   2.1. [Error handling](#error-handling)
 3. [HiveSession](#hivesession) 
 4. [HiveOperation](#hiveoperation) \
    4.1. [HiveUtils](#hiveutils)
@@ -21,7 +20,7 @@ If you find any mistakes, misleading or some confusion feel free to create an is
 ## Example
 
 ```javascript
-const { DBSQLClient } = require('databricks-sql-node');
+const { DBSQLClient } = require('@databricks/sql');
 
 const client = new DBSQLClient();
 const utils = DBSQLClient.utils;
@@ -74,18 +73,6 @@ client.on('error', (error) => {
 });
 ```
 
-### TCLIService and TCLIService_types
-
-TCLIService and TCLIService_types are generated from [TCLIService.thrift](https://github.com/apache/hive/blob/master/service-rpc/if/TCLIService.thrift).
-
-You can use the ones are provided by the driver or you can compile it on your own and provide via constructor to DBSQLClient ([details](https://thrift.apache.org/tutorial/)).
-
-```
-thrift -r --gen js TCLIService.thrift
-```
-
-TCLIService_types contains a number of constants that API uses, you do not have to know all of them, but sometimes it is useful to refer to [TCLIService.thrift](/thrift/TCLIService.thrift). Also, you may notice that most of the internal structures repeat the structures from [TCLIService.thrift](/thrift/TCLIService.thrift).
-
 ## HiveSession
 
 After you connect to the server you should open session to start working with Hive server.
@@ -133,7 +120,7 @@ After you fetch the result, the operation will have [TableSchema](/lib/hive/Type
 
 ### HiveUtils
 
-Operation is executed asynchrnously, so before retrieving the result, you have to wait until it has finished state.
+Operation is executed asynchronously, so before retrieving the result, you have to wait until it has finished state.
 
 ```javascript
 ...
@@ -141,7 +128,7 @@ const response = await operation.status();
 const isReady = response.operationState === TCLIService_types.TOperationState.FINISHED_STATE;
 ```
 
-Also, the result is fetched by portitions, the size of a portion you can set by method [setMaxRows()](/lib/HiveOperation.ts#L115).
+Also, the result is fetched by portions, the size of a portion you can set by method [setMaxRows()](/lib/HiveOperation.ts#L115).
 
 ```javascript
 ...
@@ -161,9 +148,9 @@ To simplify this process, you may use [HiveUtils](/lib/utils/HiveUtils.ts).
 
 ```typescript
 /**
- * Executes until operation has status finished or has one of the invalid states
+ * Executes until operation has status finished or has one of the invalid states.
  * 
- * @param operation
+ * @param operation operation to perform
  * @param progress flag for operation status command. If it sets true, response will include progressUpdateResponse with progress information
  * @param callback if callback specified it will be called each time the operation status response received and it will be passed as first parameter
  */
@@ -174,7 +161,7 @@ waitUntilReady(
 ): Promise<IOperation>
 
 /**
- * Fetch data until operation hasMoreRows
+ * Fetches data until operation hasMoreRows.
  * 
  * @param operation
  */
@@ -183,8 +170,8 @@ fetchAll(operation: IOperation): Promise<IOperation>
 /**
  * Transforms operation result
  * 
- * @param operation
- * @param resultHandler - you may specify your own handler. If not specified the result is transformed to JSON
+ * @param operation operation to perform
+ * @param resultHandler you may specify your own handler. If not specified the result is transformed to JSON
  */
 getResult(
     operation: IOperation,
@@ -193,9 +180,7 @@ getResult(
 ```
 
 *NOTICE*
-
 - [node-int64](https://www.npmjs.com/package/node-int64) is used for types with capacity 64
-
 - to know how data is presented in JSON you may look at [JsonResult.test.js](/tests/unit/result/JsonResult.test.js)
 
 For more details see [IOperation](/lib/contracts/IOperation.ts).
@@ -203,7 +188,7 @@ For more details see [IOperation](/lib/contracts/IOperation.ts).
 ### Example
 
 ```javascript
-const { DBSQLClient } = require('databricks-sql-node');
+const { DBSQLClient } = require('@databricks/sql');
 const utils = DBSQLClient.utils;
 ...
 await utils.waitUntilReady(
@@ -224,4 +209,4 @@ You may notice, that most of the operations return [Status](/lib/dto/Status.ts) 
 
 ## Finalize
 
-After you finish working with the operation, session or client it is better to close it, each of them has a respective method (`close()`).
+After you finish working with the operation, session or client, it is better to close it, each of them has a respective method (`close()`).
