@@ -120,7 +120,7 @@ After you fetch the result, the operation will have [TableSchema](/lib/hive/Type
 
 ### HiveUtils
 
-Operation is executed asynchrnously, so before retrieving the result, you have to wait until it has finished state.
+Operation is executed asynchronously, so before retrieving the result, you have to wait until it has finished state.
 
 ```javascript
 ...
@@ -128,7 +128,7 @@ const response = await operation.status();
 const isReady = response.operationState === TCLIService_types.TOperationState.FINISHED_STATE;
 ```
 
-Also, the result is fetched by portitions, the size of a portion you can set by method [setMaxRows()](/lib/HiveOperation.ts#L115).
+Also, the result is fetched by portions, the size of a portion you can set by method [setMaxRows()](/lib/HiveOperation.ts#L115).
 
 ```javascript
 ...
