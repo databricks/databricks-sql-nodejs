@@ -19,5 +19,7 @@ module.exports = {
     token: process.env.E2E_ACCESS_TOKEN,
     // Catalog and database to use for testing; specify both or leave array empty to use defaults
     database: catalog || database ? [catalog, database] : [],
+    // Suffix used for tables that will be created during tests
+    tableSuffix: process.env.E2E_TABLE_SUFFIX,
     ...overrides,
 };

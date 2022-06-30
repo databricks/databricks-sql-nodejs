@@ -51,7 +51,7 @@ function removeTrailingMetadata(columns) {
 
 describe('Data types', () => {
     it('primitive data types should presented correctly', async () => {
-        const table = 'dbsql_nodejs_sdk_e2e_primitive_types';
+        const table = `dbsql_nodejs_sdk_e2e_primitive_types_${config.tableSuffix}`;
 
         const session = await openSession();
         try {
@@ -196,7 +196,7 @@ describe('Data types', () => {
     });
 
     it('interval types should be presented correctly', async () => {
-        const table = 'dbsql_nodejs_sdk_e2e_interval_types';
+        const table = `dbsql_nodejs_sdk_e2e_interval_types_${config.tableSuffix}`;
 
         const session = await openSession();
         try {
@@ -237,8 +237,8 @@ describe('Data types', () => {
     });
 
     it('complex types should be presented correctly', async () => {
-        const table = 'dbsql_nodejs_sdk_e2e_complex_types';
-        const helperTable = 'dbsql_nodejs_sdk_e2e_complex_types_helper';
+        const table = `dbsql_nodejs_sdk_e2e_complex_types_${config.tableSuffix}`;
+        const helperTable = `dbsql_nodejs_sdk_e2e_complex_types_helper_${config.tableSuffix}`;
 
         const session = await openSession();
         try {
