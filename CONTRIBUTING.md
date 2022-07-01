@@ -31,14 +31,11 @@ npm run test
 npm run e2e
 ```
 
-## Commit messages
-
-Please follow the [Angular commit style][angular-commit-style].
-
-To make it easy, just run the command
+Code style:
 
 ```bash
-npm run commit
+npm run prettier:check
+npm run prettier:fix
 ```
 
 ## Pull Request Process
@@ -46,8 +43,8 @@ npm run commit
 1. Update the [CHANGELOG](CHANGELOG.md) with details of your changes, if applicable.
 2. Add any appropriate tests.
 3. Make your code or other changes.
-4. Review guidelines such as
+4. Follow code style: `npm run prettier:fix`
+5. Review guidelines such as
    [How to write the perfect pull request][github-perfect-pr], thanks!
 
-[angular-commit-style]: https://github.com/angular/angular.js/blob/master/DEVELOPERS.md#commits
 [github-perfect-pr]: https://blog.github.com/2015-01-21-how-to-write-the-perfect-pull-request/
