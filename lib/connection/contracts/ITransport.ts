@@ -1,21 +1,21 @@
 export type ThriftConnection = any;
 
 export default interface ITransport {
-    getTransport(): any;
+  getTransport(): any;
 
-    setOptions(option: string, value: any): void;
+  setOptions(option: string, value: any): void;
 
-    getOptions(): object;
+  getOptions(): object;
 
-    connect(): any;
+  connect(): any;
 
-    addListener(eventName: string, listener: Function): void;
+  addListener(eventName: string, listener: Function): void;
 
-    removeListener(eventName: string, listener: Function): void;
+  removeListener(eventName: string, listener: Function): void;
 
-    emit(eventName: string): void;
+  emit(eventName: string): void;
 
-    write(data: Buffer | String): void;
+  write(data: Buffer | String): void;
 
-    end(): void;
+  end(): void;
 }

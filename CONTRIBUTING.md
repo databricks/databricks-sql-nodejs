@@ -4,11 +4,11 @@ To contribute to this repository, fork it and send pull requests.
 
 ## Project structure
 
-- *lib/* - source code written on TypeScript
-- *dist/* - compiled source code and must not be changed manually
-- *tests/unit/* - unit tests
-- *tests/e2e/* - end-to-end tests
-- *dist/index.js* - entry point of the driver
+- _lib/_ - source code written on TypeScript
+- _dist/_ - compiled source code and must not be changed manually
+- _tests/unit/_ - unit tests
+- _tests/e2e/_ - end-to-end tests
+- _dist/index.js_ - entry point of the driver
 
 ## Run the project
 

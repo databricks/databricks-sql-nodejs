@@ -1,24 +1,24 @@
-import { ProgressUpdateResponse } from "../hive/Types";
+import { ProgressUpdateResponse } from '../hive/Types';
 
 export default class ProgressUpdateTransformer {
-    private progressUpdate: ProgressUpdateResponse;
-    private rowWidth: number = 10;
+  private progressUpdate: ProgressUpdateResponse;
+  private rowWidth: number = 10;
 
-    constructor(progressUpdate: ProgressUpdateResponse) {
-        this.progressUpdate = progressUpdate;
-    }
+  constructor(progressUpdate: ProgressUpdateResponse) {
+    this.progressUpdate = progressUpdate;
+  }
 
-    formatRow(row: Array<string>): string {
-        return row.map(cell => cell.padEnd(this.rowWidth, ' ')).join('|');
-    }
+  formatRow(row: Array<string>): string {
+    return row.map((cell) => cell.padEnd(this.rowWidth, ' ')).join('|');
+  }
 
-    toString() {
-        const header = this.formatRow(this.progressUpdate.headerNames);
-        const footer = this.progressUpdate.footerSummary;
-        const rows = this.progressUpdate.rows.map((row: Array<string>) => {
-            return this.formatRow(row);
-        });
+  toString() {
+    const header = this.formatRow(this.progressUpdate.headerNames);
+    const footer = this.progressUpdate.footerSummary;
+    const rows = this.progressUpdate.rows.map((row: Array<string>) => {
+      return this.formatRow(row);
+    });
 
-        return [ header, ...rows, footer ].join('\n');
-    }
+    return [header, ...rows, footer].join('\n');
+  }
 }
