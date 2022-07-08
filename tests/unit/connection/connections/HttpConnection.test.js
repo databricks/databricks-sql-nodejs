@@ -158,7 +158,7 @@ describe('HttpConnection.connect', () => {
       .then(() => {
         resultConnection.responseCallback({ headers: {} });
         expect(resultConnection.executed).to.be.true;
-        expect(connection.thrift.options.nodeOptions).to.be.deep.eq({});
+        expect(Object.keys(connection.thrift.options.nodeOptions)).to.be.deep.eq(['agent']);
       });
   });
 });
