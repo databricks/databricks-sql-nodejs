@@ -1,19 +1,19 @@
-import BaseCommand from "./BaseCommand";
-import { Status, SessionHandle } from "../Types";
+import BaseCommand from './BaseCommand';
+import { Status, SessionHandle } from '../Types';
 
 export type CancelDelegationTokenRequest = {
-    sessionHandle: SessionHandle,
-    delegationToken: string,
+  sessionHandle: SessionHandle;
+  delegationToken: string;
 };
 
 export type CancelDelegationTokenResponse = {
-    status: Status,
+  status: Status;
 };
 
 export default class CancelDelegationTokenCommand extends BaseCommand {
-    execute(data: CancelDelegationTokenRequest): Promise<CancelDelegationTokenResponse> {
-        const request = new this.TCLIService_types.TCancelDelegationTokenReq(data);
+  execute(data: CancelDelegationTokenRequest): Promise<CancelDelegationTokenResponse> {
+    const request = new this.TCLIService_types.TCancelDelegationTokenReq(data);
 
-        return this.executeCommand<CancelDelegationTokenResponse>(request, this.client.CancelDelegationToken);
-    }   
+    return this.executeCommand<CancelDelegationTokenResponse>(request, this.client.CancelDelegationToken);
+  }
 }

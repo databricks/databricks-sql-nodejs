@@ -3,7 +3,7 @@ name: release
 on:
   release:
     types: [published]
-  
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -19,4 +19,3 @@ jobs:
       - run: npm publish --access public
         env:
           NODE_AUTH_TOKEN: ${{secrets.NPM_TOKEN}}
-

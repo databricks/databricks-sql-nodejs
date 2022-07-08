@@ -1,5 +1,5 @@
 export default interface IThriftConnection {
-	getConnection(): any;
+  getConnection(): any;
 
-	isConnected(): boolean;
+  isConnected(): boolean;
 }

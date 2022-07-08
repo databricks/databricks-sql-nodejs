@@ -10,7 +10,7 @@ To determine if the connection is lost, you should subscribe to event `close`:
 
 ```javascript
 client.on('close', () => {
-    // do reconnect
+  // do reconnect
 });
 ```
 
