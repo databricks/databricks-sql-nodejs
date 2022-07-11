@@ -16,7 +16,7 @@ export default class HiveOperation implements IOperation {
   private data: Array<RowSet>;
   private statusFactory: StatusFactory;
 
-  private maxRows: number = 100;
+  private maxRows: number = 10000;
   private fetchType: number = 0;
 
   private _hasMoreRows: boolean = false;
