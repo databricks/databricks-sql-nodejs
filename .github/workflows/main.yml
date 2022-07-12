@@ -47,7 +47,6 @@ jobs:
       - name: Run unit tests
         run: |
           npm ci
-          npm run build
           npm run test
       - name: Run e2e tests
         env:
@@ -59,7 +58,6 @@ jobs:
           E2E_TABLE_SUFFIX: ${{github.sha}}
         run: |
           npm ci
-          npm run build
           npm run e2e
       - name: Coverage
         run: |
