@@ -25,6 +25,13 @@ interface IDBSQLClient {
   close(): void;
 }
 
+function prependSlash(str: string): string {
+  if (str.length > 0 && str.charAt(0) !== '/') {
+    return `/${str}`;
+  }
+  return str;
+}
+
 export default class DBSQLClient implements IDBSQLClient, EventEmitter {
   static utils = new HiveUtils(TCLIService_types);
 
@@ -37,7 +44,7 @@ export default class DBSQLClient implements IDBSQLClient, EventEmitter {
           host: options.host,
           port: options.port || 443,
           options: {
-            path: options.path,
+            path: prependSlash(options.path),
             https: true,
           },
         },
