@@ -12,8 +12,7 @@
     "node": ">=14.0.0"
   },
   "scripts": {
-    "prepack": "npm run build",
-    "prepublish": "npm run build",
+    "prepare": "npm run build",
     "e2e": "nyc --reporter=lcov --report-dir=coverage_e2e mocha 'tests/e2e/**/*.test.js' --timeout=300000",
     "test": "nyc --reporter=lcov --report-dir=coverage_unit mocha 'tests/unit/**/*.test.js'",
     "coverage": "codecov",
