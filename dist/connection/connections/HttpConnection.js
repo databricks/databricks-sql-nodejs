@@ -64,7 +64,8 @@ var HttpConnection = /** @class */ (function () {
         this.connection.responseCallback = function (response) {
             if (Array.isArray(response.headers['set-cookie'])) {
                 var cookie = [_this.connection.nodeOptions.headers['cookie']];
-                _this.connection.nodeOptions.headers['cookie'] = cookie.concat(response.headers['set-cookie'])
+                _this.connection.nodeOptions.headers['cookie'] = cookie
+                    .concat(response.headers['set-cookie'])
                     .filter(Boolean)
                     .join(';');
             }

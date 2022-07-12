@@ -38,7 +38,7 @@ exports.connections = {
 };
 exports.thrift = {
     TCLIService: TCLIService,
-    TCLIService_types: TCLIService_types
+    TCLIService_types: TCLIService_types,
 };
 var HiveClient = /** @class */ (function (_super) {
     __extends(HiveClient, _super);

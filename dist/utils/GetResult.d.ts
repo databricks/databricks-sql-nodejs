@@ -1,5 +1,5 @@
-import { TCLIServiceTypes } from "../hive/Types";
-import IOperationResult from "../result/IOperationResult";
+import { TCLIServiceTypes } from '../hive/Types';
+import IOperationResult from '../result/IOperationResult';
 import IOperation from '../contracts/IOperation';
 export default class GetResult {
     private TCLIService_types;

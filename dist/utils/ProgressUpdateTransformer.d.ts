@@ -1,4 +1,4 @@
-import { ProgressUpdateResponse } from "../hive/Types";
+import { ProgressUpdateResponse } from '../hive/Types';
 export default class ProgressUpdateTransformer {
     private progressUpdate;
     private rowWidth;

@@ -1,5 +1,5 @@
-import { TCLIServiceTypes, Status as TStatus } from "../hive/Types";
-import Status from "../dto/Status";
+import { TCLIServiceTypes, Status as TStatus } from '../hive/Types';
+import Status from '../dto/Status';
 export default class StatusFactory {
     private TCLIService_types;
     constructor(TCLIService_types: TCLIServiceTypes);

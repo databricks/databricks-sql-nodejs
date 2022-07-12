@@ -1,1 +1,1 @@
-{"version":3,"file":"NullResult.js","sourceRoot":"","sources":["../../lib/result/NullResult.ts"],"names":[],"mappings":";;AAGA;IAAA;IAMA,CAAC;IALG,iCAAY,GAAZ,UAAa,SAAqB,IAAG,CAAC;IAEtC,6BAAQ,GAAR;QACI,OAAO,IAAI,CAAC;IAChB,CAAC;IACL,iBAAC;AAAD,CAAC,AAND,IAMC"}
+{"version":3,"file":"NullResult.js","sourceRoot":"","sources":["../../lib/result/NullResult.ts"],"names":[],"mappings":";;AAGA;IAAA;IAMA,CAAC;IALC,iCAAY,GAAZ,UAAa,SAAqB,IAAG,CAAC;IAEtC,6BAAQ,GAAR;QACE,OAAO,IAAI,CAAC;IACd,CAAC;IACH,iBAAC;AAAD,CAAC,AAND,IAMC"}

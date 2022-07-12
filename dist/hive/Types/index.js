@@ -12,5 +12,4 @@ var ColumnCode;
     ColumnCode["stringVal"] = "stringVal";
     ColumnCode["binaryVal"] = "binaryVal";
 })(ColumnCode = exports.ColumnCode || (exports.ColumnCode = {}));
-;
 //# sourceMappingURL=index.js.map

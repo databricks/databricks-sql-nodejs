@@ -27,7 +27,6 @@ var HttpTransport = /** @class */ (function () {
         return this.httpOptions;
     };
     HttpTransport.prototype.connect = function () { };
-    ;
     HttpTransport.prototype.addListener = function () { };
     HttpTransport.prototype.removeListener = function () { };
     HttpTransport.prototype.write = function () { };

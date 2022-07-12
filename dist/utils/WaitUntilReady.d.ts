@@ -1,5 +1,5 @@
-import IOperation from "../contracts/IOperation";
-import { TCLIServiceTypes } from "../hive/Types";
+import IOperation from '../contracts/IOperation';
+import { TCLIServiceTypes } from '../hive/Types';
 export default class WaitUntilReady {
     private operation;
     private TCLIService_types;

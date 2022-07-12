@@ -28,19 +28,21 @@ var HiveOperation = /** @class */ (function () {
         var _this = this;
         if (!this.hasResultSet) {
             return Promise.resolve(this.statusFactory.create({
-                statusCode: this.TCLIService_type.TStatusCode.SUCCESS_STATUS
+                statusCode: this.TCLIService_type.TStatusCode.SUCCESS_STATUS,
             }));
         }
         if (!this.finished()) {
             return Promise.resolve(this.statusFactory.create({
-                statusCode: this.TCLIService_type.TStatusCode.STILL_EXECUTING_STATUS
+                statusCode: this.TCLIService_type.TStatusCode.STILL_EXECUTING_STATUS,
             }));
         }
         if (this.schema === null) {
-            return this.initializeSchema().then(function (schema) {
+            return this.initializeSchema()
+                .then(function (schema) {
                 _this.schema = schema;
                 return _this.firstFetch();
-            }).then(function (response) { return _this.processFetchResponse(response); });
+            })
+                .then(function (response) { return _this.processFetchResponse(response); });
         }
         else {
             return this.nextFetch().then(function (response) { return _this.processFetchResponse(response); });
@@ -54,10 +56,12 @@ var HiveOperation = /** @class */ (function () {
     HiveOperation.prototype.status = function (progress) {
         var _this = this;
         if (progress === void 0) { progress = false; }
-        return this.driver.getOperationStatus({
+        return this.driver
+            .getOperationStatus({
             operationHandle: this.operationHandle,
-            getProgressUpdate: progress
-        }).then(function (response) {
+            getProgressUpdate: progress,
+        })
+            .then(function (response) {
             var _a;
             _this.statusFactory.create(response.status);
             _this.state = (_a = response.operationState) !== null && _a !== void 0 ? _a : _this.state;
@@ -73,9 +77,11 @@ var HiveOperation = /** @class */ (function () {
      */
     HiveOperation.prototype.cancel = function () {
         var _this = this;
-        return this.driver.cancelOperation({
-            operationHandle: this.operationHandle
-        }).then(function (response) {
+        return this.driver
+            .cancelOperation({
+            operationHandle: this.operationHandle,
+        })
+            .then(function (response) {
             return _this.statusFactory.create(response.status);
         });
     };
@@ -85,9 +91,11 @@ var HiveOperation = /** @class */ (function () {
      */
     HiveOperation.prototype.close = function () {
         var _this = this;
-        return this.driver.closeOperation({
-            operationHandle: this.operationHandle
-        }).then(function (response) {
+        return this.driver
+            .closeOperation({
+            operationHandle: this.operationHandle,
+        })
+            .then(function (response) {
             return _this.statusFactory.create(response.status);
         });
     };
@@ -110,9 +118,11 @@ var HiveOperation = /** @class */ (function () {
         return this.data;
     };
     HiveOperation.prototype.getQueryId = function () {
-        return this.driver.getQueryId({
-            operationHandle: this.operationHandle
-        }).then(function (response) {
+        return this.driver
+            .getQueryId({
+            operationHandle: this.operationHandle,
+        })
+            .then(function (response) {
             return response.queryId;
         });
     };
@@ -129,9 +139,11 @@ var HiveOperation = /** @class */ (function () {
      */
     HiveOperation.prototype.initializeSchema = function () {
         var _this = this;
-        return this.driver.getResultSetMetadata({
-            operationHandle: this.operationHandle
-        }).then(function (schema) {
+        return this.driver
+            .getResultSetMetadata({
+            operationHandle: this.operationHandle,
+        })
+            .then(function (schema) {
             _this.statusFactory.create(schema.status);
             return schema.schema;
         });
@@ -174,14 +186,14 @@ var HiveOperation = /** @class */ (function () {
             return false;
         }
         var column = columns[0];
-        var columnValue = column[Types_1.ColumnCode.binaryVal]
-            || column[Types_1.ColumnCode.boolVal]
-            || column[Types_1.ColumnCode.byteVal]
-            || column[Types_1.ColumnCode.doubleVal]
-            || column[Types_1.ColumnCode.i16Val]
-            || column[Types_1.ColumnCode.i32Val]
-            || column[Types_1.ColumnCode.i64Val]
-            || column[Types_1.ColumnCode.stringVal];
+        var columnValue = column[Types_1.ColumnCode.binaryVal] ||
+            column[Types_1.ColumnCode.boolVal] ||
+            column[Types_1.ColumnCode.byteVal] ||
+            column[Types_1.ColumnCode.doubleVal] ||
+            column[Types_1.ColumnCode.i16Val] ||
+            column[Types_1.ColumnCode.i32Val] ||
+            column[Types_1.ColumnCode.i64Val] ||
+            column[Types_1.ColumnCode.stringVal];
         return ((_b = columnValue === null || columnValue === void 0 ? void 0 : columnValue.values) === null || _b === void 0 ? void 0 : _b.length) > 0;
     };
     return HiveOperation;

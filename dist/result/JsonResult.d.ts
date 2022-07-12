@@ -1,6 +1,6 @@
-import { TCLIServiceTypes } from "../hive/Types";
-import IOperationResult from "./IOperationResult";
-import IOperation from "../contracts/IOperation";
+import { TCLIServiceTypes } from '../hive/Types';
+import IOperationResult from './IOperationResult';
+import IOperation from '../contracts/IOperation';
 export default class JsonResult implements IOperationResult {
     private TCLIService_types;
     private schema;

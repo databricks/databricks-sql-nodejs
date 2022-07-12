@@ -1,5 +1,5 @@
-import { SessionHandle, Status } from "../Types";
-import BaseCommand from "./BaseCommand";
+import { SessionHandle, Status } from '../Types';
+import BaseCommand from './BaseCommand';
 export declare type CloseSessionRequest = {
     sessionHandle: SessionHandle;
 };

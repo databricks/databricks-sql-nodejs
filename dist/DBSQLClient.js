@@ -18,27 +18,35 @@ var HiveClient_1 = __importDefault(require("./HiveClient"));
 var HiveUtils_1 = __importDefault(require("./utils/HiveUtils"));
 var PlainHttpAuthentication_1 = __importDefault(require("./connection/auth/PlainHttpAuthentication"));
 var HttpConnection_1 = __importDefault(require("./connection/connections/HttpConnection"));
+function prependSlash(str) {
+    if (str.length > 0 && str.charAt(0) !== '/') {
+        return "/".concat(str);
+    }
+    return str;
+}
 var DBSQLClient = /** @class */ (function () {
     function DBSQLClient() {
         this.client = new HiveClient_1.default(TCLIService, TCLIService_types);
     }
     DBSQLClient.prototype.connect = function (options) {
         var _this = this;
-        return this.client.connect({
+        return this.client
+            .connect({
             host: options.host,
             port: options.port || 443,
             options: {
-                path: options.path,
+                path: prependSlash(options.path),
                 https: true,
-            }
+            },
         }, new HttpConnection_1.default(), new PlainHttpAuthentication_1.default({
             username: 'token',
             password: options.token,
-        })).then(function () { return _this; });
+        }))
+            .then(function () { return _this; });
     };
     DBSQLClient.prototype.openSession = function () {
         return this.client.openSession({
-            client_protocol: TCLIService_types.TProtocolVersion.HIVE_CLI_SERVICE_PROTOCOL_V11
+            client_protocol: TCLIService_types.TProtocolVersion.HIVE_CLI_SERVICE_PROTOCOL_V11,
         });
     };
     DBSQLClient.prototype.close = function () {

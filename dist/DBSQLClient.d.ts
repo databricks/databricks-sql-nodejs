@@ -1,6 +1,6 @@
 /// <reference types="node" />
-import HiveUtils from "./utils/HiveUtils";
-import IHiveSession from "./contracts/IHiveSession";
+import HiveUtils from './utils/HiveUtils';
+import IHiveSession from './contracts/IHiveSession';
 interface EventEmitter extends NodeJS.EventEmitter {
 }
 interface IConnectionOptions {

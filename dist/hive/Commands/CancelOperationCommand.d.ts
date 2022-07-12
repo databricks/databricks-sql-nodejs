@@ -1,5 +1,5 @@
-import BaseCommand from "./BaseCommand";
-import { Status, OperationHandle } from "../Types";
+import BaseCommand from './BaseCommand';
+import { Status, OperationHandle } from '../Types';
 export declare type CancelOperationRequest = {
     operationHandle: OperationHandle;
 };

@@ -1,5 +1,5 @@
-import BaseCommand from "./BaseCommand";
-import { Status, SessionHandle } from "../Types";
+import BaseCommand from './BaseCommand';
+import { Status, SessionHandle } from '../Types';
 export declare type RenewDelegationTokenRequest = {
     sessionHandle: SessionHandle;
     delegationToken: string;

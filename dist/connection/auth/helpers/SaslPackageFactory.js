@@ -9,7 +9,6 @@ var StatusCode;
     StatusCode[StatusCode["ERROR"] = 4] = "ERROR";
     StatusCode[StatusCode["COMPLETE"] = 5] = "COMPLETE";
 })(StatusCode = exports.StatusCode || (exports.StatusCode = {}));
-;
 var SaslPackageFactory = /** @class */ (function () {
     function SaslPackageFactory() {
     }

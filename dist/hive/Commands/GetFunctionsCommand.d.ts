@@ -1,5 +1,5 @@
-import BaseCommand from "./BaseCommand";
-import { Status, SessionHandle, OperationHandle } from "../Types";
+import BaseCommand from './BaseCommand';
+import { Status, SessionHandle, OperationHandle } from '../Types';
 export declare type GetFunctionsRequest = {
     sessionHandle: SessionHandle;
     catalogName?: string;

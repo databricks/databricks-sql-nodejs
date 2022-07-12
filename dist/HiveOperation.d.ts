@@ -1,8 +1,8 @@
-import IOperation from "./contracts/IOperation";
-import HiveDriver from "./hive/HiveDriver";
-import { OperationHandle, TCLIServiceTypes, TableSchema, RowSet } from "./hive/Types";
-import Status from "./dto/Status";
-import { GetOperationStatusResponse } from "./hive/Commands/GetOperationStatusCommand";
+import IOperation from './contracts/IOperation';
+import HiveDriver from './hive/HiveDriver';
+import { OperationHandle, TCLIServiceTypes, TableSchema, RowSet } from './hive/Types';
+import Status from './dto/Status';
+import { GetOperationStatusResponse } from './hive/Commands/GetOperationStatusCommand';
 export default class HiveOperation implements IOperation {
     private driver;
     private operationHandle;

@@ -1,6 +1,6 @@
 /// <reference types="node" />
-import BaseCommand from "./BaseCommand";
-import { Status, OperationHandle, ProgressUpdateResponse } from "../Types";
+import BaseCommand from './BaseCommand';
+import { Status, OperationHandle, ProgressUpdateResponse } from '../Types';
 export declare type GetOperationStatusRequest = {
     operationHandle: OperationHandle;
     getProgressUpdate?: boolean;

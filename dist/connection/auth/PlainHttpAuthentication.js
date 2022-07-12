@@ -18,7 +18,7 @@ var PlainHttpAuthentication = /** @class */ (function () {
         this.headers = (options === null || options === void 0 ? void 0 : options.headers) || {};
     }
     PlainHttpAuthentication.prototype.authenticate = function (transport) {
-        transport.setOptions('headers', __assign(__assign({}, (this.headers)), { Authorization: this.getToken(this.username, this.password) }));
+        transport.setOptions('headers', __assign(__assign({}, this.headers), { Authorization: this.getToken(this.username, this.password) }));
         return Promise.resolve(transport);
     };
     PlainHttpAuthentication.prototype.getToken = function (username, password) {

@@ -1,5 +1,5 @@
-import { Status, SessionHandle } from "../Types";
-import BaseCommand from "./BaseCommand";
+import { Status, SessionHandle } from '../Types';
+import BaseCommand from './BaseCommand';
 /**
  * For auth mechanism GSSAPI the host and service should be provided when session is opened.
  */

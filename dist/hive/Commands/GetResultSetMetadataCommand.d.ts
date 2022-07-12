@@ -1,5 +1,5 @@
-import { TableSchema, Status, OperationHandle } from "../Types";
-import BaseCommand from "./BaseCommand";
+import { TableSchema, Status, OperationHandle } from '../Types';
+import BaseCommand from './BaseCommand';
 export declare type GetResultSetMetadataRequest = {
     operationHandle: OperationHandle;
 };

@@ -1,6 +1,6 @@
-import { TCLIServiceTypes, ProgressUpdateResponse } from "../hive/Types";
-import IOperation from "../contracts/IOperation";
-import IOperationResult from "../result/IOperationResult";
+import { TCLIServiceTypes, ProgressUpdateResponse } from '../hive/Types';
+import IOperation from '../contracts/IOperation';
+import IOperationResult from '../result/IOperationResult';
 export default class HiveUtils {
     private TCLIService_types;
     constructor(TCLIService_types: TCLIServiceTypes);

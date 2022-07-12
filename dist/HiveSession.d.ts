@@ -1,9 +1,9 @@
-import HiveDriver from "./hive/HiveDriver";
+import HiveDriver from './hive/HiveDriver';
 import IHiveSession, { ExecuteStatementOptions, SchemasRequest, TablesRequest, ColumnRequest, PrimaryKeysRequest, FunctionNameRequest, CrossReferenceRequest } from './contracts/IHiveSession';
-import { SessionHandle, TCLIServiceTypes } from "./hive/Types";
-import IOperation from "./contracts/IOperation";
-import Status from "./dto/Status";
-import InfoValue from "./dto/InfoValue";
+import { SessionHandle, TCLIServiceTypes } from './hive/Types';
+import IOperation from './contracts/IOperation';
+import Status from './dto/Status';
+import InfoValue from './dto/InfoValue';
 export default class HiveSession implements IHiveSession {
     private driver;
     private sessionHandle;

@@ -1,5 +1,5 @@
-import IAuthentication from "../contracts/IAuthentication";
-import ITransport from "../contracts/ITransport";
+import IAuthentication from '../contracts/IAuthentication';
+import ITransport from '../contracts/ITransport';
 import { AuthOptions } from '../types/AuthOptions';
 declare type HttpAuthOptions = AuthOptions & {
     headers?: object;

@@ -36,7 +36,7 @@ var JsonResult = /** @class */ (function () {
         if (!this.schema) {
             return [];
         }
-        return __spreadArray([], (this.schema.columns), true).sort(function (c1, c2) { return c1.position - c2.position; });
+        return __spreadArray([], this.schema.columns, true).sort(function (c1, c2) { return c1.position - c2.position; });
     };
     JsonResult.prototype.getRows = function (columns, descriptors) {
         var _this = this;
@@ -122,14 +122,14 @@ var JsonResult = /** @class */ (function () {
         return value.toNumber();
     };
     JsonResult.prototype.getColumnValue = function (column) {
-        return column[Types_1.ColumnCode.binaryVal]
-            || column[Types_1.ColumnCode.boolVal]
-            || column[Types_1.ColumnCode.byteVal]
-            || column[Types_1.ColumnCode.doubleVal]
-            || column[Types_1.ColumnCode.i16Val]
-            || column[Types_1.ColumnCode.i32Val]
-            || column[Types_1.ColumnCode.i64Val]
-            || column[Types_1.ColumnCode.stringVal];
+        return (column[Types_1.ColumnCode.binaryVal] ||
+            column[Types_1.ColumnCode.boolVal] ||
+            column[Types_1.ColumnCode.byteVal] ||
+            column[Types_1.ColumnCode.doubleVal] ||
+            column[Types_1.ColumnCode.i16Val] ||
+            column[Types_1.ColumnCode.i32Val] ||
+            column[Types_1.ColumnCode.i64Val] ||
+            column[Types_1.ColumnCode.stringVal]);
     };
     return JsonResult;
 }());

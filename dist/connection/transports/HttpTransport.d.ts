@@ -1,4 +1,4 @@
-import ITransport from "../contracts/ITransport";
+import ITransport from '../contracts/ITransport';
 export default class HttpTransport implements ITransport {
     private httpOptions;
     constructor(httpOptions?: object);

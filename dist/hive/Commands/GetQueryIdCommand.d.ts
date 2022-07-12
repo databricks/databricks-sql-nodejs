@@ -1,5 +1,5 @@
-import BaseCommand from "./BaseCommand";
-import { OperationHandle } from "../Types";
+import BaseCommand from './BaseCommand';
+import { OperationHandle } from '../Types';
 export declare type GetQueryIdRequest = {
     operationHandle: OperationHandle;
 };

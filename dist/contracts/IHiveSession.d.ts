@@ -1,7 +1,7 @@
 /// <reference types="node" />
-import IOperation from "./IOperation";
-import Status from "../dto/Status";
-import InfoValue from "../dto/InfoValue";
+import IOperation from './IOperation';
+import Status from '../dto/Status';
+import InfoValue from '../dto/InfoValue';
 export declare type CrossReferenceRequest = {
     parentCatalogName: string;
     parentSchemaName: string;

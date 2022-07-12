@@ -24,12 +24,12 @@ var StatusFactory = /** @class */ (function () {
         });
     };
     StatusFactory.prototype.isSuccess = function (status) {
-        return (status.statusCode === this.TCLIService_types.TStatusCode.SUCCESS_STATUS
-            || status.statusCode === this.TCLIService_types.TStatusCode.SUCCESS_WITH_INFO_STATUS);
+        return (status.statusCode === this.TCLIService_types.TStatusCode.SUCCESS_STATUS ||
+            status.statusCode === this.TCLIService_types.TStatusCode.SUCCESS_WITH_INFO_STATUS);
     };
     StatusFactory.prototype.isError = function (status) {
-        return (status.statusCode === this.TCLIService_types.TStatusCode.ERROR_STATUS
-            || status.statusCode === this.TCLIService_types.TStatusCode.INVALID_HANDLE_STATUS);
+        return (status.statusCode === this.TCLIService_types.TStatusCode.ERROR_STATUS ||
+            status.statusCode === this.TCLIService_types.TStatusCode.INVALID_HANDLE_STATUS);
     };
     StatusFactory.prototype.isExecuting = function (status) {
         return status.statusCode === this.TCLIService_types.TStatusCode.STILL_EXECUTING_STATUS;

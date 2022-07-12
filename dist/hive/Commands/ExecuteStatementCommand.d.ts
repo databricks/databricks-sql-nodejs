@@ -1,6 +1,6 @@
 /// <reference types="node" />
-import { SessionHandle, Status, OperationHandle } from "../Types";
-import BaseCommand from "./BaseCommand";
+import { SessionHandle, Status, OperationHandle } from '../Types';
+import BaseCommand from './BaseCommand';
 export declare type ExecuteStatementRequest = {
     sessionHandle: SessionHandle;
     statement: string;

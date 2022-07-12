@@ -1,10 +1,10 @@
-import DBSQLClient from "./DBSQLClient";
-import _HiveClient from "./HiveClient";
-import _HiveDriver from "./hive/HiveDriver";
-import _HiveUtils from "./utils/HiveUtils";
-import NoSaslAuthentication from "./connection/auth/NoSaslAuthentication";
-import PlainHttpAuthentication from "./connection/auth/PlainHttpAuthentication";
-import HttpConnection from "./connection/connections/HttpConnection";
+import DBSQLClient from './DBSQLClient';
+import _HiveClient from './HiveClient';
+import _HiveDriver from './hive/HiveDriver';
+import _HiveUtils from './utils/HiveUtils';
+import NoSaslAuthentication from './connection/auth/NoSaslAuthentication';
+import PlainHttpAuthentication from './connection/auth/PlainHttpAuthentication';
+import HttpConnection from './connection/connections/HttpConnection';
 export declare const auth: {
     NoSaslAuthentication: typeof NoSaslAuthentication;
     PlainHttpAuthentication: typeof PlainHttpAuthentication;
@@ -22,4 +22,4 @@ export declare class HiveDriver extends _HiveDriver {
 }
 export declare class HiveUtils extends _HiveUtils {
 }
-export { DBSQLClient, };
+export { DBSQLClient };

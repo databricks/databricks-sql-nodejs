@@ -20,8 +20,7 @@ var HiveUtils = /** @class */ (function () {
     };
     HiveUtils.prototype.fetchAll = function (operation) {
         var _this = this;
-        return operation.fetch()
-            .then(function () {
+        return operation.fetch().then(function () {
             if (operation.hasMoreRows()) {
                 return _this.fetchAll(operation);
             }

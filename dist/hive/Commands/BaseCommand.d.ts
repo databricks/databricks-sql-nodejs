@@ -1,4 +1,4 @@
-import { ThriftClient, TCLIServiceTypes } from "../Types";
+import { ThriftClient, TCLIServiceTypes } from '../Types';
 export default abstract class BaseCommand {
     protected client: ThriftClient;
     protected TCLIService_types: TCLIServiceTypes;
