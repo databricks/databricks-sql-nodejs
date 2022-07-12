@@ -1,3 +1,9 @@
-lib/
-.docker
-.github
+*
+
+!dist/**/*
+!thrift/**/*
+
+!LICENSE
+!NOTICE
+!package.json
+!README.md
