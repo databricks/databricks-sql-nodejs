@@ -7,7 +7,7 @@ import HttpConnection from './connection/connections/HttpConnection';
 
 import IHiveSession from './contracts/IHiveSession';
 
-import version from "./version";
+import version from './version';
 
 interface EventEmitter extends NodeJS.EventEmitter {}
 
@@ -16,7 +16,7 @@ interface IConnectionOptions {
   port?: number;
   path: string;
   token: string;
-    clientId?: string;
+  clientId?: string;
 }
 
 /**
@@ -40,13 +40,13 @@ export default class DBSQLClient implements IDBSQLClient, EventEmitter {
 
   private client: HiveClient = new HiveClient(TCLIService, TCLIService_types);
 
-    private getUserAgent(clientId?: string): string {
-        let userAgent = `NodejsDatabricksSqlConnector/${version}`;
-        if (clientId) {
-            userAgent = `${userAgent} (${clientId})`;
-        }
-        return userAgent;
+  private getUserAgent(clientId?: string): string {
+    let userAgent = `NodejsDatabricksSqlConnector/${version}`;
+    if (clientId) {
+      userAgent = `${userAgent} (${clientId})`;
     }
+    return userAgent;
+  }
 
   connect(options: IConnectionOptions) {
     return this.client
@@ -63,9 +63,9 @@ export default class DBSQLClient implements IDBSQLClient, EventEmitter {
         new PlainHttpAuthentication({
           username: 'token',
           password: options.token,
-            headers: {
-                'User-Agent': this.getUserAgent(options.clientId),
-            },
+          headers: {
+            'User-Agent': this.getUserAgent(options.clientId),
+          },
         }),
       )
       .then(() => this);
