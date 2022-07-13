@@ -41,11 +41,8 @@ export default class DBSQLClient implements IDBSQLClient, EventEmitter {
   private client: HiveClient = new HiveClient(TCLIService, TCLIService_types);
 
   private getUserAgent(clientId?: string): string {
-    let userAgent = `NodejsDatabricksSqlConnector/${version}`;
-    if (clientId) {
-      userAgent = `${userAgent} (${clientId})`;
-    }
-    return userAgent;
+    const extra = [clientId, version.node, version.osVersion, version.osCore].filter(Boolean);
+    return `NodejsDatabricksSqlConnector/${version.package} (${extra.join('; ')})`;
   }
 
   connect(options: IConnectionOptions) {
