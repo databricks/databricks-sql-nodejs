@@ -1,4 +1,5 @@
 const thrift = require('thrift');
+const https = require('https');
 
 import IThriftConnection from '../contracts/IThriftConnection';
 import IConnectionProvider from '../contracts/IConnectionProvider';
@@ -24,6 +25,11 @@ export default class HttpConnection implements IConnectionProvider, IThriftConne
       protocol: thrift.TBinaryProtocol,
       ...options.options,
       nodeOptions: {
+        agent: new https.Agent({
+          keepAlive: true,
+          maxSockets: 5,
+          keepAliveMsecs: 10000,
+        }),
         ...this.getNodeOptions(options.options || {}),
         ...(options.options?.nodeOptions || {}),
       },
