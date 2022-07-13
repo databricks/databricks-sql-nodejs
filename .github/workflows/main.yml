@@ -3,45 +3,63 @@ name: test
 on:
   push:
     branches:
-    - master
+      - master
   pull_request:
     branches:
-    - master
+      - master
 
 jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Cache node modules
+        uses: actions/cache@v1
+        env:
+          cache-name: cache-node-modules
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-build-${{ env.cache-name }}-
+            ${{ runner.os }}-build-
+            ${{ runner.os }}-
+      - name: Check code style
+        run: |
+          npm ci
+          npm run prettier:check
+
   test:
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v2
-    - name: Cache node modules
-      uses: actions/cache@v1
-      env:
-        cache-name: cache-node-modules
-      with:
-        path: ~/.npm
-        key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('**/package-lock.json') }}
-        restore-keys: |
-          ${{ runner.os }}-build-${{ env.cache-name }}-
-          ${{ runner.os }}-build-
-          ${{ runner.os }}-
-    - name: Run unit tests
-      run: |
-        npm ci
-        npm run build
-        npm run test
-    - name: Run e2e tests
-      env:
-        E2E_HOST: ${{secrets.E2E_HOST}}
-        E2E_PATH: ${{secrets.E2E_PATH}}
-        E2E_ACCESS_TOKEN: ${{secrets.E2E_ACCESS_TOKEN}}
-        E2E_CATALOG: hive_metastore
-        E2E_DATABASE: client_libs_test
-        E2E_TABLE_SUFFIX: ${{github.sha}}
-      run: |
-        npm ci
-        npm run build
-        npm run e2e
-    - name: Coverage
-      run: |
-        npm run coverage -- -t ${{secrets.CODECOV_TOKEN}}
-        bash <(curl -s https://codecov.io/bash) -t ${{secrets.CODECOV_TOKEN}}
+      - uses: actions/checkout@v2
+      - name: Cache node modules
+        uses: actions/cache@v1
+        env:
+          cache-name: cache-node-modules
+        with:
+          path: ~/.npm
+          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('**/package-lock.json') }}
+          restore-keys: |
+            ${{ runner.os }}-build-${{ env.cache-name }}-
+            ${{ runner.os }}-build-
+            ${{ runner.os }}-
+      - name: Run unit tests
+        run: |
+          npm ci
+          npm run test
+      - name: Run e2e tests
+        env:
+          E2E_HOST: ${{secrets.E2E_HOST}}
+          E2E_PATH: ${{secrets.E2E_PATH}}
+          E2E_ACCESS_TOKEN: ${{secrets.E2E_ACCESS_TOKEN}}
+          E2E_CATALOG: hive_metastore
+          E2E_DATABASE: client_libs_test
+          E2E_TABLE_SUFFIX: ${{github.sha}}
+        run: |
+          npm ci
+          npm run e2e
+      - name: Coverage
+        run: |
+          npm run coverage -- -t ${{secrets.CODECOV_TOKEN}}
+          bash <(curl -s https://codecov.io/bash) -t ${{secrets.CODECOV_TOKEN}}

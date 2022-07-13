@@ -1,13 +1,13 @@
-import { Status, SessionHandle } from "../Types";
-import BaseCommand from "./BaseCommand";
+import { Status, SessionHandle } from '../Types';
+import BaseCommand from './BaseCommand';
 
 /**
  * For auth mechanism GSSAPI the host and service should be provided when session is opened.
  */
 type SessionConfiguration = {
-    krb_host?: string,
-    krb_service?: string,
-    [key: string]: any,
+  krb_host?: string;
+  krb_service?: string;
+  [key: string]: any;
 };
 
 /**
@@ -18,23 +18,23 @@ type SessionConfiguration = {
  * @param configuration    in case of GSSAPI you should define configuration
  */
 export type OpenSessionRequest = {
-    client_protocol: number,
-    username?: string,
-    password?: string,
-    configuration?: SessionConfiguration,
+  client_protocol: number;
+  username?: string;
+  password?: string;
+  configuration?: SessionConfiguration;
 };
 
 export type OpenSessionResponse = {
-    status: Status,
-    serverProtocolVersion: number,
-    sessionHandle: SessionHandle, 
-    configuration?: SessionConfiguration,
+  status: Status;
+  serverProtocolVersion: number;
+  sessionHandle: SessionHandle;
+  configuration?: SessionConfiguration;
 };
 
 export default class OpenSessionCommand extends BaseCommand {
-    execute(openSessionRequest: OpenSessionRequest): Promise<OpenSessionResponse> {
-        const request = new this.TCLIService_types.TOpenSessionReq(openSessionRequest);
+  execute(openSessionRequest: OpenSessionRequest): Promise<OpenSessionResponse> {
+    const request = new this.TCLIService_types.TOpenSessionReq(openSessionRequest);
 
-        return this.executeCommand<OpenSessionResponse>(request, this.client.OpenSession);
-    }
+    return this.executeCommand<OpenSessionResponse>(request, this.client.OpenSession);
+  }
 }

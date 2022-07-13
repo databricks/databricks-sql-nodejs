@@ -7,3 +7,5 @@ coverage_e2e
 coverage_unit
 
 dist
+thrift
+package-lock.json

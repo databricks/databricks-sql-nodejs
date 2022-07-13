@@ -1,57 +1,57 @@
-import { GetOperationStatusResponse } from "../hive/Commands/GetOperationStatusCommand";
-import Status from "../dto/Status";
-import { TableSchema, RowSet } from "../hive/Types";
+import { GetOperationStatusResponse } from '../hive/Commands/GetOperationStatusCommand';
+import Status from '../dto/Status';
+import { TableSchema, RowSet } from '../hive/Types';
 
 export default interface IOperation {
-    /**
-     * Fetch schema and a portion of data
-     */
-    fetch(): Promise<Status>;
+  /**
+   * Fetch schema and a portion of data
+   */
+  fetch(): Promise<Status>;
 
-    /**
-     * Request status of operation
-     * 
-     * @param progress 
-     */
-    status(progress: boolean): Promise<GetOperationStatusResponse>;
-    
-    /**
-     * Cancel operation
-     */
-    cancel(): Promise<Status>;
+  /**
+   * Request status of operation
+   *
+   * @param progress
+   */
+  status(progress: boolean): Promise<GetOperationStatusResponse>;
 
-    /**
-     * Close operation
-     */
-    close(): Promise<Status>;
+  /**
+   * Cancel operation
+   */
+  cancel(): Promise<Status>;
 
-    /**
-     * Check if operation is finished
-     */
-    finished(): boolean;
+  /**
+   * Close operation
+   */
+  close(): Promise<Status>;
 
-    /**
-     * Check if operation hasMoreRows
-     */
-    hasMoreRows(): boolean;
+  /**
+   * Check if operation is finished
+   */
+  finished(): boolean;
 
-    /**
-     * Set the max fetch size
-     */
-    setMaxRows(maxRows: number): void;
+  /**
+   * Check if operation hasMoreRows
+   */
+  hasMoreRows(): boolean;
 
-    /**
-     * Return retrieved schema
-     */
-    getSchema(): TableSchema | null;
+  /**
+   * Set the max fetch size
+   */
+  setMaxRows(maxRows: number): void;
 
-    /**
-     * Return retrieved data
-     */
-    getData(): Array<RowSet>;
+  /**
+   * Return retrieved schema
+   */
+  getSchema(): TableSchema | null;
 
-    /**
-     * Request queryId
-     */
-    getQueryId(): Promise<string>;
+  /**
+   * Return retrieved data
+   */
+  getData(): Array<RowSet>;
+
+  /**
+   * Request queryId
+   */
+  getQueryId(): Promise<string>;
 }

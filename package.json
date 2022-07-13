@@ -12,11 +12,14 @@
     "node": ">=14.0.0"
   },
   "scripts": {
+    "prepare": "npm run build",
     "e2e": "nyc --reporter=lcov --report-dir=coverage_e2e mocha 'tests/e2e/**/*.test.js' --timeout=300000",
     "test": "nyc --reporter=lcov --report-dir=coverage_unit mocha 'tests/unit/**/*.test.js'",
     "coverage": "codecov",
     "build": "tsc",
-    "watch": "tsc -w"
+    "watch": "tsc -w",
+    "prettier:fix": "prettier . --write",
+    "prettier:check": "prettier . --check"
   },
   "repository": {
     "type": "git",
@@ -46,6 +49,7 @@
     "codecov": "^3.8.3",
     "mocha": "^10.0.0",
     "nyc": "^15.1.0",
+    "prettier": "^2.7.1",
     "typescript": "^4.7.4"
   },
   "dependencies": {

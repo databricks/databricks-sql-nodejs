@@ -2,13 +2,13 @@
 
 ## Table of Contents
 
-1. [Foreword](#foreword) 
+1. [Foreword](#foreword)
 2. [Example](#example) \
    2.1. [Error handling](#error-handling)
-3. [HiveSession](#hivesession) 
+3. [HiveSession](#hivesession)
 4. [HiveOperation](#hiveoperation) \
    4.1. [HiveUtils](#hiveutils)
-5. [Status](#status) 
+5. [Status](#status)
 6. [Finalize](#finalize)
 
 ## Foreword
@@ -25,42 +25,40 @@ const { DBSQLClient } = require('@databricks/sql');
 const client = new DBSQLClient();
 const utils = DBSQLClient.utils;
 
-client.connect({ 
-    host: '...', 
-    path: '/sql/1.0/endpoints/****************', 
-    token: 'dapi********************************', 
-}).then(async client => {
+client
+  .connect({
+    host: '...',
+    path: '/sql/1.0/endpoints/****************',
+    token: 'dapi********************************',
+  })
+  .then(async (client) => {
     const session = await client.openSession();
-    
+
     const createTableOperation = await session.executeStatement(
-        'CREATE TABLE IF NOT EXISTS pokes (foo INT, bar STRING)'
+      'CREATE TABLE IF NOT EXISTS pokes (foo INT, bar STRING)',
     );
     await utils.waitUntilReady(createTableOperation, false, () => {});
     await createTableOperation.close();
-    
-    const loadDataOperation = await session.executeStatement(
-        'INSERT INTO pokes VALUES(123, "Hello, world!"'
-    );
+
+    const loadDataOperation = await session.executeStatement('INSERT INTO pokes VALUES(123, "Hello, world!"');
     await utils.waitUntilReady(loadDataOperation, false, () => {});
     await loadDataOperation.close();
-    
-    const selectDataOperation = await session.executeStatement(
-        'SELECT * FROM pokes', { runAsync: true }
-    );
+
+    const selectDataOperation = await session.executeStatement('SELECT * FROM pokes', { runAsync: true });
     await utils.waitUntilReady(selectDataOperation, false, () => {});
     await utils.fetchAll(selectDataOperation);
     await selectDataOperation.close();
-    
+
     const result = utils.getResult(selectDataOperation).getValue();
-    
+
     console.log(JSON.stringify(result, null, '\t'));
-    
+
     await session.close();
     await client.close();
-})
-.catch(error => {
+  })
+  .catch((error) => {
     console.error(error);
-});
+  });
 ```
 
 ### Error handling
@@ -69,7 +67,7 @@ You may guess that some errors related to the network are thrown asynchronously 
 
 ```javascript
 client.on('error', (error) => {
-    // ...
+  // ...
 });
 ```
 
@@ -104,11 +102,11 @@ const operation = await session.executeStatement(
 
 - [options](/lib/contracts/IHiveSession.ts#L14)
 
-   - runAsync allows executing operation asynchronously.
+  - runAsync allows executing operation asynchronously.
 
-   - confOverlay overrides session configuration properties.
+  - confOverlay overrides session configuration properties.
 
-   - timeout is the maximum time to execute an operation. It has Buffer type because timestamp in Hive has capacity 64. So for such value, you should use [node-int64](https://www.npmjs.com/package/node-int64) npm module.
+  - timeout is the maximum time to execute an operation. It has Buffer type because timestamp in Hive has capacity 64. So for such value, you should use [node-int64](https://www.npmjs.com/package/node-int64) npm module.
 
 To know other methods see [IHiveSession](/lib/contracts/IHiveSession.ts) and [examples/session.js](/examples/session.js).
 
@@ -136,7 +134,7 @@ operation.setMaxRows(500);
 const status = await operation.fetch();
 ```
 
-After you fetch all data and you have schema and set of data, you can transfrom data in readable format. 
+After you fetch all data and you have schema and set of data, you can transfrom data in readable format.
 
 ```javascript
 ...
@@ -149,7 +147,7 @@ To simplify this process, you may use [HiveUtils](/lib/utils/HiveUtils.ts).
 ```typescript
 /**
  * Executes until operation has status finished or has one of the invalid states.
- * 
+ *
  * @param operation operation to perform
  * @param progress flag for operation status command. If it sets true, response will include progressUpdateResponse with progress information
  * @param callback if callback specified it will be called each time the operation status response received and it will be passed as first parameter
@@ -162,14 +160,14 @@ waitUntilReady(
 
 /**
  * Fetches data until operation hasMoreRows.
- * 
+ *
  * @param operation
  */
 fetchAll(operation: IOperation): Promise<IOperation>
 
 /**
  * Transforms operation result
- * 
+ *
  * @param operation operation to perform
  * @param resultHandler you may specify your own handler. If not specified the result is transformed to JSON
  */
@@ -179,7 +177,8 @@ getResult(
 ): IOperationResult
 ```
 
-*NOTICE*
+_NOTICE_
+
 - [node-int64](https://www.npmjs.com/package/node-int64) is used for types with capacity 64
 - to know how data is presented in JSON you may look at [JsonResult.test.js](/tests/unit/result/JsonResult.test.js)
 

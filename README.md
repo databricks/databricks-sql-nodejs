@@ -28,17 +28,20 @@ npm i @databricks/sql
 ## Usage
 
 [examples/usage.js](examples/usage.js)
+
 ```javascript
 const { DBSQLClient } = require('@databricks/sql');
 
 const client = new DBSQLClient();
 const utils = DBSQLClient.utils;
 
-client.connect({
+client
+  .connect({
     host: '********.databricks.com',
     path: '/sql/1.0/endpoints/****************',
     token: 'dapi********************************',
-}).then(async client => {
+  })
+  .then(async (client) => {
     const session = await client.openSession();
 
     const queryOperation = await session.executeStatement('SELECT "Hello, World!"', { runAsync: true });
@@ -51,9 +54,10 @@ client.connect({
 
     await session.close();
     client.close();
-}).catch(error => {
+  })
+  .catch((error) => {
     console.log(error);
-});
+  });
 ```
 
 ## Run Tests
@@ -82,7 +86,6 @@ Or to run all unit tests:
 
 ### e2e tests
 
-
 Before running end-to-end tests, copy the [sample configuration file](tests/e2e/utils/config.js) into the repository root and set the Databricks SQL connection info:
 
 ```javascript
@@ -109,5 +112,5 @@ See [CONTRIBUTING.md](CONTRIBUTING.md)
 If you find any issues, feel free to create an issue or send a pull request directly.
 
 ## License
- 
+
 [Apache License 2.0](LICENSE)
