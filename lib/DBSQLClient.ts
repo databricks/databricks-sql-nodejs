@@ -7,6 +7,8 @@ import HttpConnection from './connection/connections/HttpConnection';
 
 import IHiveSession from './contracts/IHiveSession';
 
+import { buildUserAgentString } from './utils';
+
 interface EventEmitter extends NodeJS.EventEmitter {}
 
 interface IConnectionOptions {
@@ -14,6 +16,7 @@ interface IConnectionOptions {
   port?: number;
   path: string;
   token: string;
+  clientId?: string;
 }
 
 /**
@@ -52,6 +55,9 @@ export default class DBSQLClient implements IDBSQLClient, EventEmitter {
         new PlainHttpAuthentication({
           username: 'token',
           password: options.token,
+          headers: {
+            'User-Agent': buildUserAgentString(options.clientId),
+          },
         }),
       )
       .then(() => this);

@@ -15,6 +15,7 @@ async function initClient({ host, endpointId, token }) {
         host,
         path: `/sql/1.0/endpoints/${endpointId}`,
         token,
+        clientId: 'REPL',
     });
 }
 
