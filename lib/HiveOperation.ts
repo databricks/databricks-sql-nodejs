@@ -1,12 +1,11 @@
 import IOperation from './contracts/IOperation';
 import HiveDriver from './hive/HiveDriver';
-import { OperationHandle, TCLIServiceTypes, TableSchema, RowSet, ColumnCode, Column } from './hive/Types';
+import { OperationHandle, TCLIServiceTypes, TableSchema, RowSet, ColumnCode, Column, Int64 } from './hive/Types';
 import Status from './dto/Status';
 import { GetOperationStatusResponse } from './hive/Commands/GetOperationStatusCommand';
 import { GetResultSetMetadataResponse } from './hive/Commands/GetResultSetMetadataCommand';
 import { FetchResultsResponse } from './hive/Commands/FetchResultsCommand';
 import StatusFactory from './factory/StatusFactory';
-import { GetQueryIdResponse } from './hive/Commands/GetQueryIdCommand';
 
 export default class HiveOperation implements IOperation {
   private driver: HiveDriver;
@@ -16,7 +15,7 @@ export default class HiveOperation implements IOperation {
   private data: Array<RowSet>;
   private statusFactory: StatusFactory;
 
-  private maxRows: number = 100000;
+  private maxRows: Int64 = new Int64(100000);
   private fetchType: number = 0;
 
   private _hasMoreRows: boolean = false;
@@ -130,7 +129,7 @@ export default class HiveOperation implements IOperation {
   }
 
   setMaxRows(maxRows: number): void {
-    this.maxRows = maxRows;
+    this.maxRows = new Int64(maxRows);
   }
 
   setFetchType(fetchType: number): void {
@@ -143,16 +142,6 @@ export default class HiveOperation implements IOperation {
 
   getData(): Array<RowSet> {
     return this.data;
-  }
-
-  getQueryId(): Promise<string> {
-    return this.driver
-      .getQueryId({
-        operationHandle: this.operationHandle,
-      })
-      .then((response: GetQueryIdResponse) => {
-        return response.queryId;
-      });
   }
 
   /**

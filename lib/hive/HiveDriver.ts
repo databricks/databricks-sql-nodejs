@@ -44,8 +44,6 @@ import RenewDelegationTokenCommand, {
   RenewDelegationTokenRequest,
   RenewDelegationTokenResponse,
 } from './Commands/RenewDelegationTokenCommand';
-import GetQueryIdCommand, { GetQueryIdRequest, GetQueryIdResponse } from './Commands/GetQueryIdCommand';
-import SetClientInfoCommand, { SetClientInfoRequest, SetClientInfoResponse } from './Commands/SetClientInfoCommand';
 
 export default class HiveDriver {
   private TCLIService_types: TCLIServiceTypes;
@@ -178,18 +176,6 @@ export default class HiveDriver {
 
   renewDelegationToken(request: RenewDelegationTokenRequest): Promise<RenewDelegationTokenResponse> {
     const command = new RenewDelegationTokenCommand(this.client, this.TCLIService_types);
-
-    return command.execute(request);
-  }
-
-  getQueryId(request: GetQueryIdRequest): Promise<GetQueryIdResponse> {
-    const command = new GetQueryIdCommand(this.client, this.TCLIService_types);
-
-    return command.execute(request);
-  }
-
-  setClientInfo(request: SetClientInfoRequest): Promise<SetClientInfoResponse> {
-    const command = new SetClientInfoCommand(this.client, this.TCLIService_types);
 
     return command.execute(request);
   }

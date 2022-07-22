@@ -1,5 +1,5 @@
-const TCLIService = require('../thrift/gen-nodejs/TCLIService');
-const TCLIService_types = require('../thrift/gen-nodejs/TCLIService_types');
+import TCLIService from '../thrift/TCLIService';
+import TCLIService_types from '../thrift/TCLIService_types';
 import HiveClient from './HiveClient';
 import HiveUtils from './utils/HiveUtils';
 import PlainHttpAuthentication from './connection/auth/PlainHttpAuthentication';
@@ -65,7 +65,7 @@ export default class DBSQLClient implements IDBSQLClient, EventEmitter {
 
   openSession() {
     return this.client.openSession({
-      client_protocol: TCLIService_types.TProtocolVersion.HIVE_CLI_SERVICE_PROTOCOL_V11,
+      client_protocol: TCLIService_types.TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V6,
     });
   }
 

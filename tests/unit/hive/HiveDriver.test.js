@@ -104,12 +104,4 @@ describe('HiveDriver', () => {
   it('should execute renewDelegationToken', () => {
     return testCommand('renewDelegationToken', { sessionHandle, delegationToken: 'delegationToken' });
   });
-
-  it('should execute getQueryId', () => {
-    return testCommand('getQueryId', { operationHandle });
-  });
-
-  it('should execute setClientInfo', () => {
-    return testCommand('setClientInfo', { sessionHandle });
-  });
 });

@@ -1,12 +1,12 @@
-import { SessionHandle, Status, OperationHandle } from '../Types';
+import { SessionHandle, Status, OperationHandle, Int64 } from '../Types';
 import BaseCommand from './BaseCommand';
 
 export type ExecuteStatementRequest = {
   sessionHandle: SessionHandle;
   statement: string;
-  confOverlay?: Map<string, string>;
+  confOverlay?: Record<string, string>;
   runAsync?: boolean;
-  queryTimeout?: Buffer;
+  queryTimeout?: Int64;
 };
 
 export type ExecuteStatementResponse = {

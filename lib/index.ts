@@ -1,5 +1,5 @@
-const TCLIService = require('../thrift/gen-nodejs/TCLIService');
-const TCLIService_types = require('../thrift/gen-nodejs/TCLIService_types');
+import TCLIService from '../thrift/TCLIService';
+import TCLIService_types from '../thrift/TCLIService_types';
 import DBSQLClient from './DBSQLClient';
 import _HiveClient from './HiveClient';
 import _HiveDriver from './hive/HiveDriver';
