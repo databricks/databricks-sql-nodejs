@@ -18,6 +18,7 @@
     "coverage": "codecov",
     "build": "tsc",
     "watch": "tsc -w",
+    "type-check": "tsc --noEmit",
     "prettier:fix": "prettier . --write",
     "prettier:check": "prettier . --check"
   },
@@ -45,6 +46,8 @@
   "license": "Apache 2.0",
   "devDependencies": {
     "@types/node": "^18.0.0",
+    "@types/node-int64": "^0.4.29",
+    "@types/thrift": "^0.10.11",
     "chai": "^4.3.6",
     "codecov": "^3.8.3",
     "mocha": "^10.0.0",

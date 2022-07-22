@@ -1,5 +1,5 @@
 import BaseCommand from './BaseCommand';
-import { OperationHandle, Status, RowSet } from '../Types';
+import { OperationHandle, Status, RowSet, Int64 } from '../Types';
 
 /**
  * @param orientation - TCLIService_types.TFetchOrientation
@@ -8,7 +8,7 @@ import { OperationHandle, Status, RowSet } from '../Types';
 export type FetchResultsRequest = {
   operationHandle: OperationHandle;
   orientation: number;
-  maxRows: number;
+  maxRows: Int64;
   fetchType?: number;
 };
 

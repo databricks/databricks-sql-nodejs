@@ -218,30 +218,6 @@ describe('HiveOperation.close', () => {
   });
 });
 
-describe('HiveOperation.getQueryId', () => {
-  it('should return queryId', (cb) => {
-    const operation = new HiveOperation(
-      {
-        getQueryId() {
-          return Promise.resolve({ queryId: 'id' });
-        },
-      },
-      operationHandle,
-      TCLIService_types,
-    );
-
-    operation
-      .getQueryId()
-      .then((queryId) => {
-        expect(queryId).to.be.eq('id');
-        cb();
-      })
-      .catch((error) => {
-        cb(error);
-      });
-  });
-});
-
 describe('HiveOperation.checkIfOperationHasMoreRows', () => {
   it('should return True if hasMoreRows is set True', () => {
     const operation = new HiveOperation(driverMock, operationHandle, TCLIService_types);

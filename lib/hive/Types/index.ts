@@ -1,59 +1,12 @@
-export type ThriftClient = {
-  OpenSession: Function;
-  CloseSession: Function;
-  GetResultSetMetadata: Function;
-  ExecuteStatement: Function;
-  FetchResults: Function;
-  GetInfo: Function;
-  GetTypeInfo: Function;
-  GetCatalogs: Function;
-  GetSchemas: Function;
-  GetTables: Function;
-  GetTableTypes: Function;
-  GetColumns: Function;
-  GetFunctions: Function;
-  GetPrimaryKeys: Function;
-  GetCrossReference: Function;
-  GetOperationStatus: Function;
-  CancelOperation: Function;
-  CloseOperation: Function;
-  GetDelegationToken: Function;
-  CancelDelegationToken: Function;
-  RenewDelegationToken: Function;
-  GetQueryId: Function;
-  SetClientInfo: Function;
-};
+import Int64 from 'node-int64';
+import TCLIService from '../../../thrift/TCLIService';
+import * as TCLIService_types from '../../../thrift/TCLIService_types';
 
-export type TCLIServiceTypes = {
-  TOpenSessionReq: any;
-  TCloseSessionReq: any;
-  TProtocolVersion: any;
-  TExecuteStatementReq: any;
-  TFetchResultsReq: any;
-  TGetInfoReq: any;
-  TFetchOrientation: any;
-  TGetResultSetMetadataReq: any;
-  TGetTypeInfoReq: any;
-  TGetCatalogsReq: any;
-  TGetSchemasReq: any;
-  TGetTablesReq: any;
-  TGetTableTypesReq: any;
-  TGetColumnsReq: any;
-  TGetFunctionsReq: any;
-  TGetPrimaryKeysReq: any;
-  TGetCrossReferenceReq: any;
-  TGetOperationStatusReq: any;
-  TCancelOperationReq: any;
-  TCloseOperationReq: any;
-  TGetDelegationTokenReq: any;
-  TCancelDelegationTokenReq: any;
-  TRenewDelegationTokenReq: any;
-  TGetQueryIdReq: any;
-  TSetClientInfoReq: any;
-  TTypeId: any;
-  TStatusCode: any;
-  TOperationState: any;
-};
+export { Int64 };
+
+export type ThriftClient = TCLIService.Client;
+
+export type TCLIServiceTypes = typeof TCLIService_types;
 
 export type ThriftSession = {
   sessionHandle: any;

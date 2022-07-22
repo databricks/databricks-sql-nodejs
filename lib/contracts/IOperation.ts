@@ -49,9 +49,4 @@ export default interface IOperation {
    * Return retrieved data
    */
   getData(): Array<RowSet>;
-
-  /**
-   * Request queryId
-   */
-  getQueryId(): Promise<string>;
 }

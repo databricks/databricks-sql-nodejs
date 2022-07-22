@@ -1,6 +1,7 @@
 import IOperation from './IOperation';
 import Status from '../dto/Status';
 import InfoValue from '../dto/InfoValue';
+import { Int64 } from '../hive/Types';
 
 export type CrossReferenceRequest = {
   parentCatalogName: string;
@@ -13,8 +14,8 @@ export type CrossReferenceRequest = {
 
 export type ExecuteStatementOptions = {
   runAsync?: boolean;
-  confOverlay?: Map<string, string>;
-  queryTimeout?: Buffer;
+  confOverlay?: Record<string, string>;
+  queryTimeout?: Int64;
 };
 
 export type SchemasRequest = {
