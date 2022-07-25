@@ -2,8 +2,8 @@
 
 ![http://www.apache.org/licenses/LICENSE-2.0.txt](http://img.shields.io/:license-Apache%202-brightgreen.svg)
 [![npm](https://img.shields.io/npm/v/@databricks/sql?color=blue&style=flat)](https://www.npmjs.com/package/@databricks/sql)
-[![test](https://github.com/databricks/databricks-sql-nodejs/workflows/test/badge.svg?branch=master)](https://github.com/databricks/databricks-sql-nodejs/actions?query=workflow%3Atest+branch%3Amaster)
-[![coverage](https://codecov.io/gh/databricks/databricks-sql-nodejs/branch/master/graph/badge.svg)](https://codecov.io/gh/databricks/databricks-sql-nodejs)
+[![test](https://github.com/databricks/databricks-sql-nodejs/workflows/test/badge.svg?branch=main)](https://github.com/databricks/databricks-sql-nodejs/actions?query=workflow%3Atest+branch%3Amain)
+[![coverage](https://codecov.io/gh/databricks/databricks-sql-nodejs/branch/main/graph/badge.svg)](https://codecov.io/gh/databricks/databricks-sql-nodejs)
 
 ## Description
 
