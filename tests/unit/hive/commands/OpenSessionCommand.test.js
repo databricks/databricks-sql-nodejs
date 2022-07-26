@@ -1,15 +1,10 @@
 const { expect } = require('chai');
+const sinon = require('sinon');
+const TCLIService_types = require('../../../../thrift/TCLIService_types');
 const OpenSessionCommand = require('../../../../dist/hive/Commands/OpenSessionCommand').default;
 
 const CLIENT_PROTOCOL = 8;
 
-const TCLIService_types = {
-  TOpenSessionReq: function (options) {
-    this.options = options;
-
-    expect(options.client_protocol).to.be.eq(CLIENT_PROTOCOL);
-  },
-};
 const responseMock = {
   status: { statusCode: 0 },
   serverProtocolVersion: CLIENT_PROTOCOL,
@@ -18,6 +13,13 @@ const responseMock = {
   },
   configuration: {},
 };
+
+function TOpenSessionReqMock(options) {
+  this.options = options;
+
+  expect(options.client_protocol).to.be.eq(CLIENT_PROTOCOL);
+}
+
 const thriftClientMock = {
   OpenSession(request, callback) {
     return callback(null, responseMock);
@@ -25,8 +27,19 @@ const thriftClientMock = {
 };
 
 describe('OpenSessionCommand', () => {
+  let sandbox;
+
+  before(() => {
+    sandbox = sinon.createSandbox();
+    sandbox.replace(TCLIService_types, 'TOpenSessionReq', TOpenSessionReqMock);
+  });
+
+  after(() => {
+    sandbox.restore();
+  });
+
   it('should return response', (cb) => {
-    const command = new OpenSessionCommand(thriftClientMock, TCLIService_types);
+    const command = new OpenSessionCommand(thriftClientMock);
 
     command
       .execute({

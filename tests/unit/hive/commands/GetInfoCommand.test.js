@@ -1,4 +1,6 @@
 const { expect } = require('chai');
+const sinon = require('sinon');
+const TCLIService_types = require('../../../../thrift/TCLIService_types');
 const GetInfoCommand = require('../../../../dist/hive/Commands/GetInfoCommand').default;
 
 const requestMock = {
@@ -6,14 +8,6 @@ const requestMock = {
     sessionId: { guid: '', secret: '' },
   },
   infoType: 0,
-};
-
-const TCLIService_types = {
-  TGetInfoReq: function (options) {
-    this.options = options;
-
-    expect(options).to.be.deep.eq(requestMock);
-  },
 };
 
 const responseMock = {
@@ -27,6 +21,13 @@ const responseMock = {
     lenValue: Buffer.from([]),
   },
 };
+
+function TGetInfoReqMock(options) {
+  this.options = options;
+
+  expect(options).to.be.deep.eq(requestMock);
+}
+
 const thriftClientMock = {
   GetInfo(request, callback) {
     return callback(null, responseMock);
@@ -34,8 +35,19 @@ const thriftClientMock = {
 };
 
 describe('GetInfoCommand', () => {
+  let sandbox;
+
+  before(() => {
+    sandbox = sinon.createSandbox();
+    sandbox.replace(TCLIService_types, 'TGetInfoReq', TGetInfoReqMock);
+  });
+
+  after(() => {
+    sandbox.restore();
+  });
+
   it('should return response', (cb) => {
-    const command = new GetInfoCommand(thriftClientMock, TCLIService_types);
+    const command = new GetInfoCommand(thriftClientMock);
 
     command
       .execute(requestMock)

@@ -1,4 +1,6 @@
 const { expect } = require('chai');
+const sinon = require('sinon');
+const TCLIService_types = require('../../../../thrift/TCLIService_types');
 const FetchResultsCommand = require('../../../../dist/hive/Commands/FetchResultsCommand').default;
 
 const requestMock = {
@@ -8,14 +10,6 @@ const requestMock = {
   orientation: 0,
   maxRows: 100,
   fetchType: 0,
-};
-
-const TCLIService_types = {
-  TFetchResultsReq: function (options) {
-    this.options = options;
-
-    expect(options).to.be.deep.eq(requestMock);
-  },
 };
 
 const responseMock = {
@@ -40,6 +34,13 @@ const responseMock = {
     columnCount: 2,
   },
 };
+
+function TFetchResultsReqMock(options) {
+  this.options = options;
+
+  expect(options).to.be.deep.eq(requestMock);
+}
+
 const thriftClientMock = {
   FetchResults(request, callback) {
     return callback(null, responseMock);
@@ -47,8 +48,19 @@ const thriftClientMock = {
 };
 
 describe('FetchResultsCommand', () => {
+  let sandbox;
+
+  before(() => {
+    sandbox = sinon.createSandbox();
+    sandbox.replace(TCLIService_types, 'TFetchResultsReq', TFetchResultsReqMock);
+  });
+
+  after(() => {
+    sandbox.restore();
+  });
+
   it('should return response', (cb) => {
-    const command = new FetchResultsCommand(thriftClientMock, TCLIService_types);
+    const command = new FetchResultsCommand(thriftClientMock);
 
     command
       .execute(requestMock)

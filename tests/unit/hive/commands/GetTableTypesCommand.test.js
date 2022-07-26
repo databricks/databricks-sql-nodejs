@@ -1,17 +1,11 @@
 const { expect } = require('chai');
+const sinon = require('sinon');
+const TCLIService_types = require('../../../../thrift/TCLIService_types');
 const GetTableTypesCommand = require('../../../../dist/hive/Commands/GetTableTypesCommand').default;
 
 const requestMock = {
   sessionHandle: {
     sessionId: { guid: '', secret: '' },
-  },
-};
-
-const TCLIService_types = {
-  TGetTableTypesReq: function (options) {
-    this.options = options;
-
-    expect(options).to.be.deep.eq(requestMock);
   },
 };
 
@@ -26,6 +20,13 @@ const responseMock = {
     modifiedRowCount: 0,
   },
 };
+
+function TGetTableTypesReqMock(options) {
+  this.options = options;
+
+  expect(options).to.be.deep.eq(requestMock);
+}
+
 const thriftClientMock = {
   GetTableTypes(request, callback) {
     return callback(null, responseMock);
@@ -33,8 +34,19 @@ const thriftClientMock = {
 };
 
 describe('GetTableTypesCommand', () => {
+  let sandbox;
+
+  before(() => {
+    sandbox = sinon.createSandbox();
+    sandbox.replace(TCLIService_types, 'TGetTableTypesReq', TGetTableTypesReqMock);
+  });
+
+  after(() => {
+    sandbox.restore();
+  });
+
   it('should return response', (cb) => {
-    const command = new GetTableTypesCommand(thriftClientMock, TCLIService_types);
+    const command = new GetTableTypesCommand(thriftClientMock);
 
     command
       .execute(requestMock)

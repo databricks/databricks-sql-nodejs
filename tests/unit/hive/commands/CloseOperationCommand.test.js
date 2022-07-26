@@ -1,4 +1,6 @@
 const { expect } = require('chai');
+const sinon = require('sinon');
+const TCLIService_types = require('../../../../thrift/TCLIService_types');
 const CloseOperationCommand = require('../../../../dist/hive/Commands/CloseOperationCommand').default;
 
 const requestMock = {
@@ -10,17 +12,16 @@ const requestMock = {
   },
 };
 
-const TCLIService_types = {
-  TCloseOperationReq: function (options) {
-    this.options = options;
-
-    expect(options).to.be.deep.eq(requestMock);
-  },
-};
-
 const responseMock = {
   status: { statusCode: 0 },
 };
+
+function TCloseOperationReqMock(options) {
+  this.options = options;
+
+  expect(options).to.be.deep.eq(requestMock);
+}
+
 const thriftClientMock = {
   CloseOperation(request, callback) {
     return callback(null, responseMock);
@@ -28,8 +29,19 @@ const thriftClientMock = {
 };
 
 describe('CloseOperationCommand', () => {
+  let sandbox;
+
+  before(() => {
+    sandbox = sinon.createSandbox();
+    sandbox.replace(TCLIService_types, 'TCloseOperationReq', TCloseOperationReqMock);
+  });
+
+  after(() => {
+    sandbox.restore();
+  });
+
   it('should return response', (cb) => {
-    const command = new CloseOperationCommand(thriftClientMock, TCLIService_types);
+    const command = new CloseOperationCommand(thriftClientMock);
 
     command
       .execute(requestMock)

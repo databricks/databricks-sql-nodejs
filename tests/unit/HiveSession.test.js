@@ -17,7 +17,7 @@ const testMethod = (methodName, parameters, delegationToken) => {
         delegationToken,
       }),
   };
-  const session = new HiveSession(driver, { sessionId: 'id' }, TCLIService_types);
+  const session = new HiveSession(driver, { sessionId: 'id' });
 
   return session[methodName].apply(session, parameters);
 };
@@ -157,7 +157,7 @@ describe('HiveSession', () => {
           },
         }),
     };
-    const session = new HiveSession(driver, { sessionId: 'id' }, TCLIService_types);
+    const session = new HiveSession(driver, { sessionId: 'id' });
 
     return session.close().then((result) => {
       expect(result).instanceOf(Status);

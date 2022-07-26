@@ -15,7 +15,7 @@ const operation = (state) => ({
 describe('WaitUntilReady', () => {
   it('should return operation when state is finished', (cb) => {
     const op = operation(TCLIService_types.TOperationState.FINISHED_STATE);
-    const waitUntilReady = new WaitUntilReady(op, TCLIService_types);
+    const waitUntilReady = new WaitUntilReady(op);
 
     waitUntilReady
       .execute()
@@ -28,7 +28,7 @@ describe('WaitUntilReady', () => {
 
   it('should call callback until state is not finished', (cb) => {
     const op = operation(TCLIService_types.TOperationState.INITIALIZED_STATE);
-    const waitUntilReady = new WaitUntilReady(op, TCLIService_types);
+    const waitUntilReady = new WaitUntilReady(op);
     let states = [
       TCLIService_types.TOperationState.INITIALIZED_STATE,
       TCLIService_types.TOperationState.RUNNING_STATE,
@@ -49,7 +49,7 @@ describe('WaitUntilReady', () => {
 
   it('should throw error if state is invalid', () => {
     const execute = (state) => {
-      const waitUntilReady = new WaitUntilReady(operation(state), TCLIService_types);
+      const waitUntilReady = new WaitUntilReady(operation(state));
       return waitUntilReady.execute();
     };
 
@@ -83,7 +83,7 @@ describe('WaitUntilReady', () => {
 
   it('should wait until callback is finished', () => {
     const op = operation(TCLIService_types.TOperationState.INITIALIZED_STATE);
-    const waitUntilReady = new WaitUntilReady(op, TCLIService_types);
+    const waitUntilReady = new WaitUntilReady(op);
     let i = 0;
 
     return waitUntilReady

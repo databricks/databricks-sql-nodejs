@@ -1,7 +1,6 @@
 const { expect } = require('chai');
 const HiveUtils = require('../../../dist/utils/HiveUtils').default;
 const NullResult = require('../../../dist/result/NullResult').default;
-const { TCLIService_types } = require('../../../').thrift;
 
 describe('HiveUtils', () => {
   it('waitUntilReady', () => {
@@ -11,7 +10,7 @@ describe('HiveUtils', () => {
           operationState: 2,
         }),
     };
-    const utils = new HiveUtils(TCLIService_types);
+    const utils = new HiveUtils();
     let executed = false;
 
     return utils
@@ -25,7 +24,7 @@ describe('HiveUtils', () => {
   });
 
   it('getResult', () => {
-    const utils = new HiveUtils(TCLIService_types);
+    const utils = new HiveUtils();
     const result = utils.getResult({
       getSchema: () => null,
     });
@@ -33,7 +32,7 @@ describe('HiveUtils', () => {
   });
 
   it('fetchAll', () => {
-    const utils = new HiveUtils(TCLIService_types);
+    const utils = new HiveUtils();
     const operation = {
       n: 0,
       _hasMoreRows: true,
@@ -53,7 +52,7 @@ describe('HiveUtils', () => {
   });
 
   it('formatProgress', () => {
-    const utils = new HiveUtils(TCLIService_types);
+    const utils = new HiveUtils();
     const result = utils.formatProgress({
       headerNames: [],
       rows: [],

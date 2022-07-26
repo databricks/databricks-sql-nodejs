@@ -1,4 +1,6 @@
 const { expect } = require('chai');
+const sinon = require('sinon');
+const TCLIService_types = require('../../../../thrift/TCLIService_types');
 const GetDelegationTokenCommand = require('../../../../dist/hive/Commands/GetDelegationTokenCommand').default;
 
 const requestMock = {
@@ -9,18 +11,17 @@ const requestMock = {
   renewer: 'user2',
 };
 
-const TCLIService_types = {
-  TGetDelegationTokenReq: function (options) {
-    this.options = options;
-
-    expect(options).to.be.deep.eq(requestMock);
-  },
-};
-
 const responseMock = {
   status: { statusCode: 0 },
   delegationToken: 'token',
 };
+
+function TGetDelegationTokenReqMock(options) {
+  this.options = options;
+
+  expect(options).to.be.deep.eq(requestMock);
+}
+
 const thriftClientMock = {
   GetDelegationToken(request, callback) {
     return callback(null, responseMock);
@@ -28,8 +29,19 @@ const thriftClientMock = {
 };
 
 describe('GetDelegationTokenCommand', () => {
+  let sandbox;
+
+  before(() => {
+    sandbox = sinon.createSandbox();
+    sandbox.replace(TCLIService_types, 'TGetDelegationTokenReq', TGetDelegationTokenReqMock);
+  });
+
+  after(() => {
+    sandbox.restore();
+  });
+
   it('should return response', (cb) => {
-    const command = new GetDelegationTokenCommand(thriftClientMock, TCLIService_types);
+    const command = new GetDelegationTokenCommand(thriftClientMock);
 
     command
       .execute(requestMock)

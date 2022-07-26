@@ -1,4 +1,6 @@
 const { expect } = require('chai');
+const sinon = require('sinon');
+const TCLIService_types = require('../../../../thrift/TCLIService_types');
 const GetCrossReferenceCommand = require('../../../../dist/hive/Commands/GetCrossReferenceCommand').default;
 
 const requestMock = {
@@ -13,14 +15,6 @@ const requestMock = {
   foreignTableName: 'foreignTableName',
 };
 
-const TCLIService_types = {
-  TGetCrossReferenceReq: function (options) {
-    this.options = options;
-
-    expect(options).to.be.deep.eq(requestMock);
-  },
-};
-
 const GET_CROSS_REFERENCE = 7;
 
 const responseMock = {
@@ -32,6 +26,13 @@ const responseMock = {
     modifiedRowCount: 0,
   },
 };
+
+function TGetCrossReferenceReqMock(options) {
+  this.options = options;
+
+  expect(options).to.be.deep.eq(requestMock);
+}
+
 const thriftClientMock = {
   GetCrossReference(request, callback) {
     return callback(null, responseMock);
@@ -39,8 +40,19 @@ const thriftClientMock = {
 };
 
 describe('GetCrossReferenceCommand', () => {
+  let sandbox;
+
+  before(() => {
+    sandbox = sinon.createSandbox();
+    sandbox.replace(TCLIService_types, 'TGetCrossReferenceReq', TGetCrossReferenceReqMock);
+  });
+
+  after(() => {
+    sandbox.restore();
+  });
+
   it('should return response', (cb) => {
-    const command = new GetCrossReferenceCommand(thriftClientMock, TCLIService_types);
+    const command = new GetCrossReferenceCommand(thriftClientMock);
 
     command
       .execute(requestMock)

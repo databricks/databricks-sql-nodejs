@@ -1,4 +1,6 @@
 const { expect } = require('chai');
+const sinon = require('sinon');
+const TCLIService_types = require('../../../../thrift/TCLIService_types');
 const GetOperationStatusCommand = require('../../../../dist/hive/Commands/GetOperationStatusCommand').default;
 
 const requestMock = {
@@ -9,14 +11,6 @@ const requestMock = {
     modifiedRowCount: 0,
   },
   getProgressUpdate: true,
-};
-
-const TCLIService_types = {
-  TGetOperationStatusReq: function (options) {
-    this.options = options;
-
-    expect(options).to.be.deep.eq(requestMock);
-  },
 };
 
 const responseMock = {
@@ -39,6 +33,13 @@ const responseMock = {
   },
   numModifiedRows: Buffer.from([]),
 };
+
+function TGetOperationStatusReqMock(options) {
+  this.options = options;
+
+  expect(options).to.be.deep.eq(requestMock);
+}
+
 const thriftClientMock = {
   GetOperationStatus(request, callback) {
     return callback(null, responseMock);
@@ -46,8 +47,19 @@ const thriftClientMock = {
 };
 
 describe('GetOperationStatusCommand', () => {
+  let sandbox;
+
+  before(() => {
+    sandbox = sinon.createSandbox();
+    sandbox.replace(TCLIService_types, 'TGetOperationStatusReq', TGetOperationStatusReqMock);
+  });
+
+  after(() => {
+    sandbox.restore();
+  });
+
   it('should return response', (cb) => {
-    const command = new GetOperationStatusCommand(thriftClientMock, TCLIService_types);
+    const command = new GetOperationStatusCommand(thriftClientMock);
 
     command
       .execute(requestMock)

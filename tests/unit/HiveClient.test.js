@@ -1,7 +1,7 @@
 const { expect } = require('chai');
 const HiveClient = require('../../dist/HiveClient').default;
 const HiveSession = require('../../dist/HiveSession').default;
-const { TCLIService_types, TCLIService } = require('../../').thrift;
+const { TCLIService_types } = require('../../').thrift;
 const {
   auth: { NoSaslAuthentication },
   connections: { HttpConnection },
@@ -26,7 +26,7 @@ const ConnectionProviderMock = (connection) => ({
 
 describe('HiveClient.connect', () => {
   it('should set nosasl authenticator by default', () => {
-    const client = new HiveClient(TCLIService, TCLIService_types);
+    const client = new HiveClient();
     const connectionProvider = ConnectionProviderMock();
 
     return client.connect({}, connectionProvider).catch((error) => {
@@ -35,7 +35,7 @@ describe('HiveClient.connect', () => {
   });
 
   it('should handle network errors', (cb) => {
-    const client = new HiveClient(TCLIService, TCLIService_types);
+    const client = new HiveClient();
     client.thrift = {
       createClient() {},
     };
@@ -56,7 +56,7 @@ describe('HiveClient.connect', () => {
   });
 
   it('should use client auth provider', () => {
-    const client = new HiveClient(TCLIService, TCLIService_types);
+    const client = new HiveClient();
     client.thrift = {
       createClient() {},
     };
@@ -70,7 +70,7 @@ describe('HiveClient.connect', () => {
   });
 
   it('should use http connection by default', (cb) => {
-    const client = new HiveClient(TCLIService, TCLIService_types);
+    const client = new HiveClient();
     client.thrift = {
       createClient() {},
     };
@@ -87,7 +87,7 @@ describe('HiveClient.connect', () => {
 
 describe('HiveClient.openSession', () => {
   it('should successfully open session', () => {
-    const client = new HiveClient(TCLIService, TCLIService_types);
+    const client = new HiveClient();
     client.client = {
       OpenSession(req, cb) {
         cb(null, { status: {}, sessionHandle: {} });
@@ -108,7 +108,7 @@ describe('HiveClient.openSession', () => {
   });
 
   it('should throw an exception when the connection is lost', (done) => {
-    const client = new HiveClient(TCLIService, TCLIService_types);
+    const client = new HiveClient();
     client.connection = {
       isConnected() {
         return false;
@@ -128,14 +128,14 @@ describe('HiveClient.openSession', () => {
 
 describe('HiveClient.getClient', () => {
   it('should throw an error if the client is not set', () => {
-    const client = new HiveClient(TCLIService, TCLIService_types);
+    const client = new HiveClient();
     expect(() => client.getClient()).to.throw('HiveClient: client is not initialized');
   });
 });
 
 describe('HiveClient.close', () => {
   it('should close the connection if it was initiated', () => {
-    const client = new HiveClient(TCLIService, TCLIService_types);
+    const client = new HiveClient();
     let closed = false;
     client.connection = {
       getConnection: () => ({
@@ -149,13 +149,13 @@ describe('HiveClient.close', () => {
   });
 
   it('should do nothing if the connection does not exist', () => {
-    const client = new HiveClient(TCLIService, TCLIService_types);
+    const client = new HiveClient();
     client.close();
     expect(true).to.be.true;
   });
 
   it('should do nothing if the connection exists but cannot be finished', () => {
-    const client = new HiveClient(TCLIService, TCLIService_types);
+    const client = new HiveClient();
     client.connection = {
       getConnection: () => ({}),
     };
