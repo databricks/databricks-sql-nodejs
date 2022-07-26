@@ -1,6 +1,7 @@
 import IOperation from './contracts/IOperation';
 import HiveDriver from './hive/HiveDriver';
-import { OperationHandle, TCLIServiceTypes, TableSchema, RowSet, ColumnCode, Column, Int64 } from './hive/Types';
+import TCLIService_types from '../thrift/TCLIService_types';
+import { OperationHandle, TableSchema, RowSet, ColumnCode, Column, Int64 } from './hive/Types';
 import Status from './dto/Status';
 import { GetOperationStatusResponse } from './hive/Commands/GetOperationStatusCommand';
 import { GetResultSetMetadataResponse } from './hive/Commands/GetResultSetMetadataCommand';
@@ -10,7 +11,6 @@ import StatusFactory from './factory/StatusFactory';
 export default class HiveOperation implements IOperation {
   private driver: HiveDriver;
   private operationHandle: OperationHandle;
-  private TCLIService_type: TCLIServiceTypes;
   private schema: TableSchema | null;
   private data: Array<RowSet>;
   private statusFactory: StatusFactory;
@@ -22,13 +22,12 @@ export default class HiveOperation implements IOperation {
   private state: number;
   private hasResultSet: boolean = false;
 
-  constructor(driver: HiveDriver, operationHandle: OperationHandle, TCLIService_type: TCLIServiceTypes) {
+  constructor(driver: HiveDriver, operationHandle: OperationHandle) {
     this.driver = driver;
     this.operationHandle = operationHandle;
     this.hasResultSet = operationHandle.hasResultSet;
-    this.TCLIService_type = TCLIService_type;
-    this.statusFactory = new StatusFactory(TCLIService_type);
-    this.state = TCLIService_type.TOperationState.INITIALIZED_STATE;
+    this.statusFactory = new StatusFactory();
+    this.state = TCLIService_types.TOperationState.INITIALIZED_STATE;
 
     this.schema = null;
     this.data = [];
@@ -42,7 +41,7 @@ export default class HiveOperation implements IOperation {
     if (!this.hasResultSet) {
       return Promise.resolve(
         this.statusFactory.create({
-          statusCode: this.TCLIService_type.TStatusCode.SUCCESS_STATUS,
+          statusCode: TCLIService_types.TStatusCode.SUCCESS_STATUS,
         }),
       );
     }
@@ -50,7 +49,7 @@ export default class HiveOperation implements IOperation {
     if (!this.finished()) {
       return Promise.resolve(
         this.statusFactory.create({
-          statusCode: this.TCLIService_type.TStatusCode.STILL_EXECUTING_STATUS,
+          statusCode: TCLIService_types.TStatusCode.STILL_EXECUTING_STATUS,
         }),
       );
     }
@@ -121,7 +120,7 @@ export default class HiveOperation implements IOperation {
   }
 
   finished(): boolean {
-    return this.state === this.TCLIService_type.TOperationState.FINISHED_STATE;
+    return this.state === TCLIService_types.TOperationState.FINISHED_STATE;
   }
 
   hasMoreRows(): boolean {
@@ -171,7 +170,7 @@ export default class HiveOperation implements IOperation {
   private firstFetch(): Promise<FetchResultsResponse> {
     return this.driver.fetchResults({
       operationHandle: this.operationHandle,
-      orientation: this.TCLIService_type.TFetchOrientation.FETCH_FIRST,
+      orientation: TCLIService_types.TFetchOrientation.FETCH_FIRST,
       maxRows: this.maxRows,
       fetchType: this.fetchType,
     });
@@ -180,7 +179,7 @@ export default class HiveOperation implements IOperation {
   private nextFetch(): Promise<FetchResultsResponse> {
     return this.driver.fetchResults({
       operationHandle: this.operationHandle,
-      orientation: this.TCLIService_type.TFetchOrientation.FETCH_NEXT,
+      orientation: TCLIService_types.TFetchOrientation.FETCH_NEXT,
       maxRows: this.maxRows,
       fetchType: this.fetchType,
     });

@@ -1,5 +1,6 @@
 import { Status, SessionHandle } from '../Types';
 import BaseCommand from './BaseCommand';
+import TCLIService_types from '../../../thrift/TCLIService_types';
 
 /**
  * For auth mechanism GSSAPI the host and service should be provided when session is opened.
@@ -33,7 +34,7 @@ export type OpenSessionResponse = {
 
 export default class OpenSessionCommand extends BaseCommand {
   execute(openSessionRequest: OpenSessionRequest): Promise<OpenSessionResponse> {
-    const request = new this.TCLIService_types.TOpenSessionReq(openSessionRequest);
+    const request = new TCLIService_types.TOpenSessionReq(openSessionRequest);
 
     return this.executeCommand<OpenSessionResponse>(request, this.client.OpenSession);
   }

@@ -1,4 +1,4 @@
-import { ThriftClient, TCLIServiceTypes } from './Types/';
+import { ThriftClient } from './Types/';
 import OpenSessionCommand, { OpenSessionRequest, OpenSessionResponse } from './Commands/OpenSessionCommand';
 import CloseSessionCommand, { CloseSessionRequest, CloseSessionResponse } from './Commands/CloseSessionCommand';
 import ExecuteStatementCommand, {
@@ -46,136 +46,134 @@ import RenewDelegationTokenCommand, {
 } from './Commands/RenewDelegationTokenCommand';
 
 export default class HiveDriver {
-  private TCLIService_types: TCLIServiceTypes;
   private client: ThriftClient;
 
-  constructor(TCLIService_types: TCLIServiceTypes, client: ThriftClient) {
-    this.TCLIService_types = TCLIService_types;
+  constructor(client: ThriftClient) {
     this.client = client;
   }
 
   openSession(request: OpenSessionRequest): Promise<OpenSessionResponse> {
-    const action = new OpenSessionCommand(this.client, this.TCLIService_types);
+    const action = new OpenSessionCommand(this.client);
 
     return action.execute(request);
   }
 
   closeSession(request: CloseSessionRequest): Promise<CloseSessionResponse> {
-    const command = new CloseSessionCommand(this.client, this.TCLIService_types);
+    const command = new CloseSessionCommand(this.client);
 
     return command.execute(request);
   }
 
   executeStatement(request: ExecuteStatementRequest): Promise<ExecuteStatementResponse> {
-    const command = new ExecuteStatementCommand(this.client, this.TCLIService_types);
+    const command = new ExecuteStatementCommand(this.client);
 
     return command.execute(request);
   }
 
   getResultSetMetadata(request: GetResultSetMetadataRequest): Promise<GetResultSetMetadataResponse> {
-    const command = new GetResultSetMetadataCommand(this.client, this.TCLIService_types);
+    const command = new GetResultSetMetadataCommand(this.client);
 
     return command.execute(request);
   }
 
   fetchResults(request: FetchResultsRequest): Promise<FetchResultsResponse> {
-    const command = new FetchResultsCommand(this.client, this.TCLIService_types);
+    const command = new FetchResultsCommand(this.client);
 
     return command.execute(request);
   }
 
   getInfo(request: GetInfoRequest): Promise<GetInfoResponse> {
-    const command = new GetInfoCommand(this.client, this.TCLIService_types);
+    const command = new GetInfoCommand(this.client);
 
     return command.execute(request);
   }
 
   getTypeInfo(request: GetTypeInfoRequest): Promise<GetTypeInfoResponse> {
-    const command = new GetTypeInfoCommand(this.client, this.TCLIService_types);
+    const command = new GetTypeInfoCommand(this.client);
 
     return command.execute(request);
   }
 
   getCatalogs(request: GetCatalogsRequest): Promise<GetCatalogsResponse> {
-    const command = new GetCatalogsCommand(this.client, this.TCLIService_types);
+    const command = new GetCatalogsCommand(this.client);
 
     return command.execute(request);
   }
 
   getSchemas(request: GetSchemasRequest): Promise<GetSchemasResponse> {
-    const command = new GetSchemasCommand(this.client, this.TCLIService_types);
+    const command = new GetSchemasCommand(this.client);
 
     return command.execute(request);
   }
 
   getTables(request: GetTablesRequest): Promise<GetTablesResponse> {
-    const command = new GetTablesCommand(this.client, this.TCLIService_types);
+    const command = new GetTablesCommand(this.client);
 
     return command.execute(request);
   }
 
   getTableTypes(request: GetTableTypesRequest): Promise<GetTableTypesResponse> {
-    const command = new GetTableTypesCommand(this.client, this.TCLIService_types);
+    const command = new GetTableTypesCommand(this.client);
 
     return command.execute(request);
   }
 
   getColumns(request: GetColumnsRequest): Promise<GetColumnsResponse> {
-    const command = new GetColumnsCommand(this.client, this.TCLIService_types);
+    const command = new GetColumnsCommand(this.client);
 
     return command.execute(request);
   }
 
   getFunctions(request: GetFunctionsRequest): Promise<GetFunctionsResponse> {
-    const command = new GetFunctionsCommand(this.client, this.TCLIService_types);
+    const command = new GetFunctionsCommand(this.client);
 
     return command.execute(request);
   }
 
   getPrimaryKeys(request: GetPrimaryKeysRequest): Promise<GetPrimaryKeysResponse> {
-    const command = new GetPrimaryKeysCommand(this.client, this.TCLIService_types);
+    const command = new GetPrimaryKeysCommand(this.client);
 
     return command.execute(request);
   }
 
   getCrossReference(request: GetCrossReferenceRequest): Promise<GetCrossReferenceResponse> {
-    const command = new GetCrossReferenceCommand(this.client, this.TCLIService_types);
+    const command = new GetCrossReferenceCommand(this.client);
 
     return command.execute(request);
   }
 
   getOperationStatus(request: GetOperationStatusRequest): Promise<GetOperationStatusResponse> {
-    const command = new GetOperationStatusCommand(this.client, this.TCLIService_types);
+    const command = new GetOperationStatusCommand(this.client);
 
     return command.execute(request);
   }
 
   cancelOperation(request: CancelOperationRequest): Promise<CancelOperationResponse> {
-    const command = new CancelOperationCommand(this.client, this.TCLIService_types);
+    const command = new CancelOperationCommand(this.client);
 
     return command.execute(request);
   }
 
   closeOperation(request: CloseOperationRequest): Promise<CloseOperationResponse> {
-    const command = new CloseOperationCommand(this.client, this.TCLIService_types);
+    const command = new CloseOperationCommand(this.client);
 
     return command.execute(request);
   }
 
   getDelegationToken(request: GetDelegationTokenRequest): Promise<GetDelegationTokenResponse> {
-    const command = new GetDelegationTokenCommand(this.client, this.TCLIService_types);
+    const command = new GetDelegationTokenCommand(this.client);
 
     return command.execute(request);
   }
 
   cancelDelegationToken(request: CancelDelegationTokenRequest): Promise<CancelDelegationTokenResponse> {
-    const command = new CancelDelegationTokenCommand(this.client, this.TCLIService_types);
+    const command = new CancelDelegationTokenCommand(this.client);
 
     return command.execute(request);
   }
 
   renewDelegationToken(request: RenewDelegationTokenRequest): Promise<RenewDelegationTokenResponse> {
-    const command = new RenewDelegationTokenCommand(this.client, this.TCLIService_types);
+    const command = new RenewDelegationTokenCommand(this.client);
 
     return command.execute(request);
   }

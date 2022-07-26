@@ -1,5 +1,6 @@
 import BaseCommand from './BaseCommand';
 import { Status, SessionHandle, OperationHandle } from '../Types';
+import TCLIService_types from '../../../thrift/TCLIService_types';
 
 export type GetFunctionsRequest = {
   sessionHandle: SessionHandle;
@@ -15,7 +16,7 @@ export type GetFunctionsResponse = {
 
 export default class GetFunctionsCommand extends BaseCommand {
   execute(data: GetFunctionsRequest): Promise<GetFunctionsResponse> {
-    const request = new this.TCLIService_types.TGetFunctionsReq(data);
+    const request = new TCLIService_types.TGetFunctionsReq(data);
 
     return this.executeCommand<GetFunctionsResponse>(request, this.client.GetFunctions);
   }

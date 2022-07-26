@@ -1,4 +1,3 @@
-import TCLIService from '../thrift/TCLIService';
 import TCLIService_types from '../thrift/TCLIService_types';
 import HiveClient from './HiveClient';
 import HiveUtils from './utils/HiveUtils';
@@ -36,9 +35,9 @@ function prependSlash(str: string): string {
 }
 
 export default class DBSQLClient implements IDBSQLClient, EventEmitter {
-  static utils = new HiveUtils(TCLIService_types);
+  static utils = new HiveUtils();
 
-  private client: HiveClient = new HiveClient(TCLIService, TCLIService_types);
+  private client: HiveClient = new HiveClient();
 
   connect(options: IConnectionOptions) {
     return this.client

@@ -1,5 +1,6 @@
 import BaseCommand from './BaseCommand';
 import { Status, SessionHandle, OperationHandle } from '../Types';
+import TCLIService_types from '../../../thrift/TCLIService_types';
 
 export type GetPrimaryKeysRequest = {
   sessionHandle: SessionHandle;
@@ -15,7 +16,7 @@ export type GetPrimaryKeysResponse = {
 
 export default class GetPrimaryKeysCommand extends BaseCommand {
   execute(data: GetPrimaryKeysRequest): Promise<GetPrimaryKeysResponse> {
-    const request = new this.TCLIService_types.TGetPrimaryKeysReq(data);
+    const request = new TCLIService_types.TGetPrimaryKeysReq(data);
 
     return this.executeCommand<GetPrimaryKeysResponse>(request, this.client.GetPrimaryKeys);
   }
