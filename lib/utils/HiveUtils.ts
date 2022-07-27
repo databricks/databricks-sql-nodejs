@@ -1,4 +1,4 @@
-import { ProgressUpdateResponse } from '../hive/Types';
+import { TProgressUpdateResp } from '../../thrift/TCLIService_types';
 import IOperation from '../contracts/IOperation';
 import WaitUntilReady from './WaitUntilReady';
 import IOperationResult from '../result/IOperationResult';
@@ -28,7 +28,7 @@ export default class HiveUtils {
     });
   }
 
-  formatProgress(progressUpdate: ProgressUpdateResponse): string {
+  formatProgress(progressUpdate: TProgressUpdateResp): string {
     return String(new ProgressUpdateTransformer(progressUpdate));
   }
 }

@@ -1,11 +1,12 @@
-import { GetInfoValue } from '../hive/Types';
+import { TGetInfoValue } from '../../thrift/TCLIService_types';
+import { Int64 } from '../hive/Types';
 
-type InfoResultType = string | number | Buffer | null;
+type InfoResultType = string | number | Buffer | Int64 | null;
 
 export default class InfoValue {
-  private value: GetInfoValue;
+  private value: TGetInfoValue;
 
-  constructor(value: GetInfoValue) {
+  constructor(value: TGetInfoValue) {
     this.value = value;
   }
 

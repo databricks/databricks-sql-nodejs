@@ -1,10 +1,10 @@
-import { ProgressUpdateResponse } from '../hive/Types';
+import { TProgressUpdateResp } from '../../thrift/TCLIService_types';
 
 export default class ProgressUpdateTransformer {
-  private progressUpdate: ProgressUpdateResponse;
+  private progressUpdate: TProgressUpdateResp;
   private rowWidth: number = 10;
 
-  constructor(progressUpdate: ProgressUpdateResponse) {
+  constructor(progressUpdate: TProgressUpdateResp) {
     this.progressUpdate = progressUpdate;
   }
 

@@ -1,178 +1,177 @@
-import { ThriftClient } from './Types/';
-import OpenSessionCommand, { OpenSessionRequest, OpenSessionResponse } from './Commands/OpenSessionCommand';
-import CloseSessionCommand, { CloseSessionRequest, CloseSessionResponse } from './Commands/CloseSessionCommand';
-import ExecuteStatementCommand, {
-  ExecuteStatementResponse,
-  ExecuteStatementRequest,
-} from './Commands/ExecuteStatementCommand';
-import GetResultSetMetadataCommand, {
-  GetResultSetMetadataRequest,
-  GetResultSetMetadataResponse,
-} from './Commands/GetResultSetMetadataCommand';
-import FetchResultsCommand, { FetchResultsRequest, FetchResultsResponse } from './Commands/FetchResultsCommand';
-import GetInfoCommand, { GetInfoRequest, GetInfoResponse } from './Commands/GetInfoCommand';
-import GetTypeInfoCommand, { GetTypeInfoRequest, GetTypeInfoResponse } from './Commands/GetTypeInfoCommand';
-import GetCatalogsCommand, { GetCatalogsRequest, GetCatalogsResponse } from './Commands/GetCatalogsCommand';
-import GetSchemasCommand, { GetSchemasRequest, GetSchemasResponse } from './Commands/GetSchemasCommand';
-import GetTablesCommand, { GetTablesRequest, GetTablesResponse } from './Commands/GetTablesCommand';
-import GetTableTypesCommand, { GetTableTypesRequest, GetTableTypesResponse } from './Commands/GetTableTypesCommand';
-import GetColumnsCommand, { GetColumnsRequest, GetColumnsResponse } from './Commands/GetColumnsCommand';
-import GetFunctionsCommand, { GetFunctionsRequest, GetFunctionsResponse } from './Commands/GetFunctionsCommand';
-import GetPrimaryKeysCommand, { GetPrimaryKeysRequest, GetPrimaryKeysResponse } from './Commands/GetPrimaryKeysCommand';
-import GetCrossReferenceCommand, {
-  GetCrossReferenceRequest,
-  GetCrossReferenceResponse,
-} from './Commands/GetCrossReferenceCommand';
-import GetOperationStatusCommand, {
-  GetOperationStatusRequest,
-  GetOperationStatusResponse,
-} from './Commands/GetOperationStatusCommand';
-import CancelOperationCommand, {
-  CancelOperationRequest,
-  CancelOperationResponse,
-} from './Commands/CancelOperationCommand';
-import CloseOperationCommand, { CloseOperationRequest, CloseOperationResponse } from './Commands/CloseOperationCommand';
-import GetDelegationTokenCommand, {
-  GetDelegationTokenRequest,
-  GetDelegationTokenResponse,
-} from './Commands/GetDelegationTokenCommand';
-import CancelDelegationTokenCommand, {
-  CancelDelegationTokenRequest,
-  CancelDelegationTokenResponse,
-} from './Commands/CancelDelegationTokenCommand';
-import RenewDelegationTokenCommand, {
-  RenewDelegationTokenRequest,
-  RenewDelegationTokenResponse,
-} from './Commands/RenewDelegationTokenCommand';
+import TCLIService from '../../thrift/TCLIService';
+import {
+  TOpenSessionReq,
+  TCloseSessionReq,
+  TExecuteStatementReq,
+  TGetResultSetMetadataReq,
+  TFetchResultsReq,
+  TGetInfoReq,
+  TGetTypeInfoReq,
+  TGetCatalogsReq,
+  TGetSchemasReq,
+  TGetTablesReq,
+  TGetTableTypesReq,
+  TGetColumnsReq,
+  TGetFunctionsReq,
+  TGetPrimaryKeysReq,
+  TGetCrossReferenceReq,
+  TGetOperationStatusReq,
+  TCancelOperationReq,
+  TCloseOperationReq,
+  TGetDelegationTokenReq,
+  TCancelDelegationTokenReq,
+  TRenewDelegationTokenReq,
+} from '../../thrift/TCLIService_types';
+import OpenSessionCommand from './Commands/OpenSessionCommand';
+import CloseSessionCommand from './Commands/CloseSessionCommand';
+import ExecuteStatementCommand from './Commands/ExecuteStatementCommand';
+import GetResultSetMetadataCommand from './Commands/GetResultSetMetadataCommand';
+import FetchResultsCommand from './Commands/FetchResultsCommand';
+import GetInfoCommand from './Commands/GetInfoCommand';
+import GetTypeInfoCommand from './Commands/GetTypeInfoCommand';
+import GetCatalogsCommand from './Commands/GetCatalogsCommand';
+import GetSchemasCommand from './Commands/GetSchemasCommand';
+import GetTablesCommand from './Commands/GetTablesCommand';
+import GetTableTypesCommand from './Commands/GetTableTypesCommand';
+import GetColumnsCommand from './Commands/GetColumnsCommand';
+import GetFunctionsCommand from './Commands/GetFunctionsCommand';
+import GetPrimaryKeysCommand from './Commands/GetPrimaryKeysCommand';
+import GetCrossReferenceCommand from './Commands/GetCrossReferenceCommand';
+import GetOperationStatusCommand from './Commands/GetOperationStatusCommand';
+import CancelOperationCommand from './Commands/CancelOperationCommand';
+import CloseOperationCommand from './Commands/CloseOperationCommand';
+import GetDelegationTokenCommand from './Commands/GetDelegationTokenCommand';
+import CancelDelegationTokenCommand from './Commands/CancelDelegationTokenCommand';
+import RenewDelegationTokenCommand from './Commands/RenewDelegationTokenCommand';
 
 export default class HiveDriver {
-  private client: ThriftClient;
+  private client: TCLIService.Client;
 
-  constructor(client: ThriftClient) {
+  constructor(client: TCLIService.Client) {
     this.client = client;
   }
 
-  openSession(request: OpenSessionRequest): Promise<OpenSessionResponse> {
+  openSession(request: TOpenSessionReq) {
     const action = new OpenSessionCommand(this.client);
 
     return action.execute(request);
   }
 
-  closeSession(request: CloseSessionRequest): Promise<CloseSessionResponse> {
+  closeSession(request: TCloseSessionReq) {
     const command = new CloseSessionCommand(this.client);
 
     return command.execute(request);
   }
 
-  executeStatement(request: ExecuteStatementRequest): Promise<ExecuteStatementResponse> {
+  executeStatement(request: TExecuteStatementReq) {
     const command = new ExecuteStatementCommand(this.client);
 
     return command.execute(request);
   }
 
-  getResultSetMetadata(request: GetResultSetMetadataRequest): Promise<GetResultSetMetadataResponse> {
+  getResultSetMetadata(request: TGetResultSetMetadataReq) {
     const command = new GetResultSetMetadataCommand(this.client);
 
     return command.execute(request);
   }
 
-  fetchResults(request: FetchResultsRequest): Promise<FetchResultsResponse> {
+  fetchResults(request: TFetchResultsReq) {
     const command = new FetchResultsCommand(this.client);
 
     return command.execute(request);
   }
 
-  getInfo(request: GetInfoRequest): Promise<GetInfoResponse> {
+  getInfo(request: TGetInfoReq) {
     const command = new GetInfoCommand(this.client);
 
     return command.execute(request);
   }
 
-  getTypeInfo(request: GetTypeInfoRequest): Promise<GetTypeInfoResponse> {
+  getTypeInfo(request: TGetTypeInfoReq) {
     const command = new GetTypeInfoCommand(this.client);
 
     return command.execute(request);
   }
 
-  getCatalogs(request: GetCatalogsRequest): Promise<GetCatalogsResponse> {
+  getCatalogs(request: TGetCatalogsReq) {
     const command = new GetCatalogsCommand(this.client);
 
     return command.execute(request);
   }
 
-  getSchemas(request: GetSchemasRequest): Promise<GetSchemasResponse> {
+  getSchemas(request: TGetSchemasReq) {
     const command = new GetSchemasCommand(this.client);
 
     return command.execute(request);
   }
 
-  getTables(request: GetTablesRequest): Promise<GetTablesResponse> {
+  getTables(request: TGetTablesReq) {
     const command = new GetTablesCommand(this.client);
 
     return command.execute(request);
   }
 
-  getTableTypes(request: GetTableTypesRequest): Promise<GetTableTypesResponse> {
+  getTableTypes(request: TGetTableTypesReq) {
     const command = new GetTableTypesCommand(this.client);
 
     return command.execute(request);
   }
 
-  getColumns(request: GetColumnsRequest): Promise<GetColumnsResponse> {
+  getColumns(request: TGetColumnsReq) {
     const command = new GetColumnsCommand(this.client);
 
     return command.execute(request);
   }
 
-  getFunctions(request: GetFunctionsRequest): Promise<GetFunctionsResponse> {
+  getFunctions(request: TGetFunctionsReq) {
     const command = new GetFunctionsCommand(this.client);
 
     return command.execute(request);
   }
 
-  getPrimaryKeys(request: GetPrimaryKeysRequest): Promise<GetPrimaryKeysResponse> {
+  getPrimaryKeys(request: TGetPrimaryKeysReq) {
     const command = new GetPrimaryKeysCommand(this.client);
 
     return command.execute(request);
   }
 
-  getCrossReference(request: GetCrossReferenceRequest): Promise<GetCrossReferenceResponse> {
+  getCrossReference(request: TGetCrossReferenceReq) {
     const command = new GetCrossReferenceCommand(this.client);
 
     return command.execute(request);
   }
 
-  getOperationStatus(request: GetOperationStatusRequest): Promise<GetOperationStatusResponse> {
+  getOperationStatus(request: TGetOperationStatusReq) {
     const command = new GetOperationStatusCommand(this.client);
 
     return command.execute(request);
   }
 
-  cancelOperation(request: CancelOperationRequest): Promise<CancelOperationResponse> {
+  cancelOperation(request: TCancelOperationReq) {
     const command = new CancelOperationCommand(this.client);
 
     return command.execute(request);
   }
 
-  closeOperation(request: CloseOperationRequest): Promise<CloseOperationResponse> {
+  closeOperation(request: TCloseOperationReq) {
     const command = new CloseOperationCommand(this.client);
 
     return command.execute(request);
   }
 
-  getDelegationToken(request: GetDelegationTokenRequest): Promise<GetDelegationTokenResponse> {
+  getDelegationToken(request: TGetDelegationTokenReq) {
     const command = new GetDelegationTokenCommand(this.client);
 
     return command.execute(request);
   }
 
-  cancelDelegationToken(request: CancelDelegationTokenRequest): Promise<CancelDelegationTokenResponse> {
+  cancelDelegationToken(request: TCancelDelegationTokenReq) {
     const command = new CancelDelegationTokenCommand(this.client);
 
     return command.execute(request);
   }
 
-  renewDelegationToken(request: RenewDelegationTokenRequest): Promise<RenewDelegationTokenResponse> {
+  renewDelegationToken(request: TRenewDelegationTokenReq) {
     const command = new RenewDelegationTokenCommand(this.client);
 
     return command.execute(request);

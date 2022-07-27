@@ -1,22 +1,18 @@
+import { ColumnCode, ColumnType } from '../hive/Types';
 import {
-  RowSet,
-  TableSchema,
-  ColumnDesc,
-  Column,
-  PrimitiveTypeEntry,
-  ColumnCode,
-  ColumnType,
-  TBoolColumn,
-  TByteColumn,
-  ThriftBuffer,
-} from '../hive/Types';
-import TCLIService_types from '../../thrift/TCLIService_types';
+  TTypeId,
+  TRowSet,
+  TTableSchema,
+  TColumn,
+  TColumnDesc,
+  TPrimitiveTypeEntry,
+} from '../../thrift/TCLIService_types';
 import IOperationResult from './IOperationResult';
 import IOperation from '../contracts/IOperation';
 
 export default class JsonResult implements IOperationResult {
-  private schema: TableSchema | null;
-  private data: Array<RowSet> | null;
+  private schema: TTableSchema | null;
+  private data: Array<TRowSet> | null;
 
   constructor() {
     this.schema = null;
@@ -35,7 +31,7 @@ export default class JsonResult implements IOperationResult {
 
     const descriptors = this.getSchemaColumns();
 
-    return this.data.reduce((result: Array<any>, rowSet: RowSet) => {
+    return this.data.reduce((result: Array<any>, rowSet: TRowSet) => {
       const columns = rowSet.columns || [];
       const rows = this.getRows(columns, descriptors);
 
@@ -43,7 +39,7 @@ export default class JsonResult implements IOperationResult {
     }, []);
   }
 
-  private getSchemaColumns(): Array<ColumnDesc> {
+  private getSchemaColumns(): Array<TColumnDesc> {
     if (!this.schema) {
       return [];
     }
@@ -51,7 +47,7 @@ export default class JsonResult implements IOperationResult {
     return [...this.schema.columns].sort((c1, c2) => c1.position - c2.position);
   }
 
-  private getRows(columns: Array<Column>, descriptors: Array<ColumnDesc>): Array<any> {
+  private getRows(columns: Array<TColumn>, descriptors: Array<TColumnDesc>): Array<any> {
     return descriptors.reduce((rows, descriptor) => {
       return this.getSchemaValues(descriptor, columns[descriptor.position - 1]).reduce((result, value, i) => {
         if (!result[i]) {
@@ -67,8 +63,8 @@ export default class JsonResult implements IOperationResult {
     }, []);
   }
 
-  private getSchemaValues(descriptor: ColumnDesc, column: Column): Array<any> {
-    const typeDescriptor = descriptor.typeDesc.types[0]?.primitiveEntry || {};
+  private getSchemaValues(descriptor: TColumnDesc, column: TColumn): Array<any> {
+    const typeDescriptor = descriptor.typeDesc.types[0]?.primitiveEntry;
     const columnValue = this.getColumnValue(column);
 
     if (!columnValue) {
@@ -84,41 +80,45 @@ export default class JsonResult implements IOperationResult {
     });
   }
 
-  private getColumnName(column: ColumnDesc): string {
+  private getColumnName(column: TColumnDesc): string {
     const name = column.columnName || '';
 
     return name.split('.').pop() || '';
   }
 
-  private convertData(typeDescriptor: PrimitiveTypeEntry, value: ColumnType): any {
+  private convertData(typeDescriptor: TPrimitiveTypeEntry | undefined, value: ColumnType): any {
+    if (!typeDescriptor) {
+      return value;
+    }
+
     switch (typeDescriptor.type) {
-      case TCLIService_types.TTypeId.TIMESTAMP_TYPE:
-      case TCLIService_types.TTypeId.DATE_TYPE:
-      case TCLIService_types.TTypeId.UNION_TYPE:
-      case TCLIService_types.TTypeId.USER_DEFINED_TYPE:
+      case TTypeId.TIMESTAMP_TYPE:
+      case TTypeId.DATE_TYPE:
+      case TTypeId.UNION_TYPE:
+      case TTypeId.USER_DEFINED_TYPE:
         return String(value);
-      case TCLIService_types.TTypeId.DECIMAL_TYPE:
+      case TTypeId.DECIMAL_TYPE:
         return Number(value);
-      case TCLIService_types.TTypeId.STRUCT_TYPE:
-      case TCLIService_types.TTypeId.MAP_TYPE:
+      case TTypeId.STRUCT_TYPE:
+      case TTypeId.MAP_TYPE:
         return this.toJSON(value, {});
-      case TCLIService_types.TTypeId.ARRAY_TYPE:
+      case TTypeId.ARRAY_TYPE:
         return this.toJSON(value, []);
-      case TCLIService_types.TTypeId.BIGINT_TYPE:
+      case TTypeId.BIGINT_TYPE:
         return this.convertBigInt(value);
-      case TCLIService_types.TTypeId.NULL_TYPE:
-      case TCLIService_types.TTypeId.BINARY_TYPE:
-      case TCLIService_types.TTypeId.INTERVAL_YEAR_MONTH_TYPE:
-      case TCLIService_types.TTypeId.INTERVAL_DAY_TIME_TYPE:
-      case TCLIService_types.TTypeId.FLOAT_TYPE:
-      case TCLIService_types.TTypeId.DOUBLE_TYPE:
-      case TCLIService_types.TTypeId.INT_TYPE:
-      case TCLIService_types.TTypeId.SMALLINT_TYPE:
-      case TCLIService_types.TTypeId.TINYINT_TYPE:
-      case TCLIService_types.TTypeId.BOOLEAN_TYPE:
-      case TCLIService_types.TTypeId.STRING_TYPE:
-      case TCLIService_types.TTypeId.CHAR_TYPE:
-      case TCLIService_types.TTypeId.VARCHAR_TYPE:
+      case TTypeId.NULL_TYPE:
+      case TTypeId.BINARY_TYPE:
+      case TTypeId.INTERVAL_YEAR_MONTH_TYPE:
+      case TTypeId.INTERVAL_DAY_TIME_TYPE:
+      case TTypeId.FLOAT_TYPE:
+      case TTypeId.DOUBLE_TYPE:
+      case TTypeId.INT_TYPE:
+      case TTypeId.SMALLINT_TYPE:
+      case TTypeId.TINYINT_TYPE:
+      case TTypeId.BOOLEAN_TYPE:
+      case TTypeId.STRING_TYPE:
+      case TTypeId.CHAR_TYPE:
+      case TTypeId.VARCHAR_TYPE:
       default:
         return value;
     }
@@ -143,7 +143,7 @@ export default class JsonResult implements IOperationResult {
     return value.toNumber();
   }
 
-  private getColumnValue(column: Column) {
+  private getColumnValue(column: TColumn) {
     return (
       column[ColumnCode.binaryVal] ||
       column[ColumnCode.boolVal] ||

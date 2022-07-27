@@ -1,22 +1,10 @@
 import BaseCommand from './BaseCommand';
-import { Status, SessionHandle, OperationHandle } from '../Types';
-import TCLIService_types from '../../../thrift/TCLIService_types';
-
-export type GetSchemasRequest = {
-  sessionHandle: SessionHandle;
-  catalogName?: string;
-  schemaName?: string;
-};
-
-export type GetSchemasResponse = {
-  status: Status;
-  operationHandle: OperationHandle;
-};
+import { TGetSchemasReq, TGetSchemasResp } from '../../../thrift/TCLIService_types';
 
 export default class GetSchemasCommand extends BaseCommand {
-  execute(data: GetSchemasRequest): Promise<GetSchemasResponse> {
-    const request = new TCLIService_types.TGetSchemasReq(data);
+  execute(data: TGetSchemasReq): Promise<TGetSchemasResp> {
+    const request = new TGetSchemasReq(data);
 
-    return this.executeCommand<GetSchemasResponse>(request, this.client.GetSchemas);
+    return this.executeCommand<TGetSchemasResp>(request, this.client.GetSchemas);
   }
 }

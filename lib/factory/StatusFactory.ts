@@ -1,5 +1,4 @@
-import { Status as TStatus } from '../hive/Types';
-import TCLIService_types from '../../thrift/TCLIService_types';
+import { TStatusCode, TStatus } from '../../thrift/TCLIService_types';
 import Status from '../dto/Status';
 import StatusError from '../errors/StatusError';
 
@@ -22,19 +21,15 @@ export default class StatusFactory {
 
   private isSuccess(status: TStatus): boolean {
     return (
-      status.statusCode === TCLIService_types.TStatusCode.SUCCESS_STATUS ||
-      status.statusCode === TCLIService_types.TStatusCode.SUCCESS_WITH_INFO_STATUS
+      status.statusCode === TStatusCode.SUCCESS_STATUS || status.statusCode === TStatusCode.SUCCESS_WITH_INFO_STATUS
     );
   }
 
   private isError(status: TStatus): boolean {
-    return (
-      status.statusCode === TCLIService_types.TStatusCode.ERROR_STATUS ||
-      status.statusCode === TCLIService_types.TStatusCode.INVALID_HANDLE_STATUS
-    );
+    return status.statusCode === TStatusCode.ERROR_STATUS || status.statusCode === TStatusCode.INVALID_HANDLE_STATUS;
   }
 
   private isExecuting(status: TStatus): boolean {
-    return status.statusCode === TCLIService_types.TStatusCode.STILL_EXECUTING_STATUS;
+    return status.statusCode === TStatusCode.STILL_EXECUTING_STATUS;
   }
 }

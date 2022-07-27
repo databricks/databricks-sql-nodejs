@@ -1,6 +1,5 @@
-import { GetOperationStatusResponse } from '../hive/Commands/GetOperationStatusCommand';
+import { TGetOperationStatusResp, TTableSchema, TRowSet } from '../../thrift/TCLIService_types';
 import Status from '../dto/Status';
-import { TableSchema, RowSet } from '../hive/Types';
 
 export default interface IOperation {
   /**
@@ -13,7 +12,7 @@ export default interface IOperation {
    *
    * @param progress
    */
-  status(progress: boolean): Promise<GetOperationStatusResponse>;
+  status(progress: boolean): Promise<TGetOperationStatusResp>;
 
   /**
    * Cancel operation
@@ -43,10 +42,10 @@ export default interface IOperation {
   /**
    * Return retrieved schema
    */
-  getSchema(): TableSchema | null;
+  getSchema(): TTableSchema | null;
 
   /**
    * Return retrieved data
    */
-  getData(): Array<RowSet>;
+  getData(): Array<TRowSet>;
 }
