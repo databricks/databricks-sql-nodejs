@@ -1,5 +1,5 @@
-const thrift = require('thrift');
-const https = require('https');
+import thrift from 'thrift';
+import https from 'https';
 
 import IThriftConnection from '../contracts/IThriftConnection';
 import IConnectionProvider from '../contracts/IConnectionProvider';
@@ -16,7 +16,7 @@ type NodeOptions = {
 };
 
 export default class HttpConnection implements IConnectionProvider, IThriftConnection {
-  private thrift: any = thrift;
+  private thrift = thrift;
   private connection: any;
 
   connect(options: IConnectionOptions, authProvider: IAuthentication): Promise<IThriftConnection> {

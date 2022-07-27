@@ -1,4 +1,4 @@
-const thrift = require('thrift');
+import thrift from 'thrift';
 
 import TCLIService from '../thrift/TCLIService';
 import { TOpenSessionReq } from '../thrift/TCLIService_types';
@@ -23,11 +23,10 @@ export default class HiveClient extends EventEmitter implements IHiveClient {
   private statusFactory: StatusFactory;
   private connectionProvider: IConnectionProvider;
   private authProvider: IAuthentication;
-  private thrift: any;
+  private thrift = thrift;
 
   constructor() {
     super();
-    this.thrift = thrift;
     this.connectionProvider = new HttpConnection();
     this.authProvider = new NoSaslAuthentication();
     this.statusFactory = new StatusFactory();

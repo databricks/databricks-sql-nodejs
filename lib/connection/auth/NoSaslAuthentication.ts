@@ -1,4 +1,4 @@
-const thrift = require('thrift');
+import thrift from 'thrift';
 import IAuthentication from '../contracts/IAuthentication';
 import ITransport from '../contracts/ITransport';
 
