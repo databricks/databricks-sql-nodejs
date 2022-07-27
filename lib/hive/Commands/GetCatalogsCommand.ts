@@ -1,20 +1,10 @@
 import BaseCommand from './BaseCommand';
-import { Status, SessionHandle, OperationHandle } from '../Types';
-import TCLIService_types from '../../../thrift/TCLIService_types';
-
-export type GetCatalogsRequest = {
-  sessionHandle: SessionHandle;
-};
-
-export type GetCatalogsResponse = {
-  status: Status;
-  operationHandle: OperationHandle;
-};
+import { TGetCatalogsReq, TGetCatalogsResp } from '../../../thrift/TCLIService_types';
 
 export default class GetCatalogsCommand extends BaseCommand {
-  execute(data: GetCatalogsRequest): Promise<GetCatalogsResponse> {
-    const request = new TCLIService_types.TGetCatalogsReq(data);
+  execute(data: TGetCatalogsReq): Promise<TGetCatalogsResp> {
+    const request = new TGetCatalogsReq(data);
 
-    return this.executeCommand<GetCatalogsResponse>(request, this.client.GetCatalogs);
+    return this.executeCommand<TGetCatalogsResp>(request, this.client.GetCatalogs);
   }
 }

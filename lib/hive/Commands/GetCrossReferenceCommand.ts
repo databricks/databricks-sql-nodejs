@@ -1,26 +1,10 @@
 import BaseCommand from './BaseCommand';
-import { Status, SessionHandle, OperationHandle } from '../Types';
-import TCLIService_types from '../../../thrift/TCLIService_types';
-
-export type GetCrossReferenceRequest = {
-  sessionHandle: SessionHandle;
-  parentCatalogName?: string;
-  parentSchemaName: string;
-  parentTableName: string;
-  foreignCatalogName?: string;
-  foreignSchemaName: string;
-  foreignTableName: string;
-};
-
-export type GetCrossReferenceResponse = {
-  status: Status;
-  operationHandle: OperationHandle;
-};
+import { TGetCrossReferenceReq, TGetCrossReferenceResp } from '../../../thrift/TCLIService_types';
 
 export default class GetCrossReferenceCommand extends BaseCommand {
-  execute(data: GetCrossReferenceRequest): Promise<GetCrossReferenceResponse> {
-    const request = new TCLIService_types.TGetCrossReferenceReq(data);
+  execute(data: TGetCrossReferenceReq): Promise<TGetCrossReferenceResp> {
+    const request = new TGetCrossReferenceReq(data);
 
-    return this.executeCommand<GetCrossReferenceResponse>(request, this.client.GetCrossReference);
+    return this.executeCommand<TGetCrossReferenceResp>(request, this.client.GetCrossReference);
   }
 }

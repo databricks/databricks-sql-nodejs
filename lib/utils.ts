@@ -4,6 +4,13 @@ import os from 'os';
 
 const productName = 'NodejsDatabricksSqlConnector';
 
+export function definedOrError<T>(value: T | undefined): T {
+  if (value === undefined) {
+    throw new TypeError('Value is undefined');
+  }
+  return value;
+}
+
 function getPackageVersion(): string {
   const json = JSON.parse(fs.readFileSync(path.join(__dirname, '../package.json')).toString());
   return json.version;

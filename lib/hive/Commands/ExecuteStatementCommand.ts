@@ -1,24 +1,10 @@
-import { SessionHandle, Status, OperationHandle, Int64 } from '../Types';
 import BaseCommand from './BaseCommand';
-import TCLIService_types from '../../../thrift/TCLIService_types';
-
-export type ExecuteStatementRequest = {
-  sessionHandle: SessionHandle;
-  statement: string;
-  confOverlay?: Record<string, string>;
-  runAsync?: boolean;
-  queryTimeout?: Int64;
-};
-
-export type ExecuteStatementResponse = {
-  status: Status;
-  operationHandle: OperationHandle;
-};
+import { TExecuteStatementReq, TExecuteStatementResp } from '../../../thrift/TCLIService_types';
 
 export default class ExecuteStatementCommand extends BaseCommand {
-  execute(executeStatementRequest: ExecuteStatementRequest): Promise<ExecuteStatementResponse> {
-    const request = new TCLIService_types.TExecuteStatementReq(executeStatementRequest);
+  execute(executeStatementRequest: TExecuteStatementReq): Promise<TExecuteStatementResp> {
+    const request = new TExecuteStatementReq(executeStatementRequest);
 
-    return this.executeCommand<ExecuteStatementResponse>(request, this.client.ExecuteStatement);
+    return this.executeCommand<TExecuteStatementResp>(request, this.client.ExecuteStatement);
   }
 }

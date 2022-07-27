@@ -1,22 +1,10 @@
 import BaseCommand from './BaseCommand';
-import { Status, SessionHandle } from '../Types';
-import TCLIService_types from '../../../thrift/TCLIService_types';
-
-export type GetDelegationTokenRequest = {
-  sessionHandle: SessionHandle;
-  owner: string;
-  renewer: string;
-};
-
-export type GetDelegationTokenResponse = {
-  status: Status;
-  delegationToken?: string;
-};
+import { TGetDelegationTokenReq, TGetDelegationTokenResp } from '../../../thrift/TCLIService_types';
 
 export default class GetDelegationTokenCommand extends BaseCommand {
-  execute(data: GetDelegationTokenRequest): Promise<GetDelegationTokenResponse> {
-    const request = new TCLIService_types.TGetDelegationTokenReq(data);
+  execute(data: TGetDelegationTokenReq): Promise<TGetDelegationTokenResp> {
+    const request = new TGetDelegationTokenReq(data);
 
-    return this.executeCommand<GetDelegationTokenResponse>(request, this.client.GetDelegationToken);
+    return this.executeCommand<TGetDelegationTokenResp>(request, this.client.GetDelegationToken);
   }
 }

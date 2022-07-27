@@ -1,19 +1,10 @@
 import BaseCommand from './BaseCommand';
-import { Status, OperationHandle } from '../Types';
-import TCLIService_types from '../../../thrift/TCLIService_types';
-
-export type CloseOperationRequest = {
-  operationHandle: OperationHandle;
-};
-
-export type CloseOperationResponse = {
-  status: Status;
-};
+import { TCloseOperationReq, TCloseOperationResp } from '../../../thrift/TCLIService_types';
 
 export default class CloseOperationCommand extends BaseCommand {
-  execute(data: CloseOperationRequest): Promise<CloseOperationResponse> {
-    const request = new TCLIService_types.TCloseOperationReq(data);
+  execute(data: TCloseOperationReq): Promise<TCloseOperationResp> {
+    const request = new TCloseOperationReq(data);
 
-    return this.executeCommand<CloseOperationResponse>(request, this.client.CloseOperation);
+    return this.executeCommand<TCloseOperationResp>(request, this.client.CloseOperation);
   }
 }

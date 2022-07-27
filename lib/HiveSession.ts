@@ -1,3 +1,4 @@
+import { TSessionHandle, TStatus, TOperationHandle } from '../thrift/TCLIService_types';
 import HiveDriver from './hive/HiveDriver';
 import IHiveSession, {
   ExecuteStatementOptions,
@@ -8,20 +9,19 @@ import IHiveSession, {
   FunctionNameRequest,
   CrossReferenceRequest,
 } from './contracts/IHiveSession';
-import { SessionHandle, Status as TStatus, OperationHandle } from './hive/Types';
-import { ExecuteStatementResponse } from './hive/Commands/ExecuteStatementCommand';
 import IOperation from './contracts/IOperation';
 import HiveOperation from './HiveOperation';
 import Status from './dto/Status';
 import StatusFactory from './factory/StatusFactory';
 import InfoValue from './dto/InfoValue';
+import { definedOrError } from './utils';
 
 export default class HiveSession implements IHiveSession {
   private driver: HiveDriver;
-  private sessionHandle: SessionHandle;
+  private sessionHandle: TSessionHandle;
   private statusFactory: StatusFactory;
 
-  constructor(driver: HiveDriver, sessionHandle: SessionHandle) {
+  constructor(driver: HiveDriver, sessionHandle: TSessionHandle) {
     this.driver = driver;
     this.sessionHandle = sessionHandle;
     this.statusFactory = new StatusFactory();
@@ -52,10 +52,10 @@ export default class HiveSession implements IHiveSession {
         statement,
         ...options,
       })
-      .then((response: ExecuteStatementResponse) => {
+      .then((response) => {
         this.assertStatus(response.status);
 
-        return this.createOperation(response.operationHandle);
+        return this.createOperation(definedOrError(response.operationHandle));
       });
   }
 
@@ -67,7 +67,7 @@ export default class HiveSession implements IHiveSession {
       .then((response) => {
         this.assertStatus(response.status);
 
-        return this.createOperation(response.operationHandle);
+        return this.createOperation(definedOrError(response.operationHandle));
       });
   }
 
@@ -79,7 +79,7 @@ export default class HiveSession implements IHiveSession {
       .then((response) => {
         this.assertStatus(response.status);
 
-        return this.createOperation(response.operationHandle);
+        return this.createOperation(definedOrError(response.operationHandle));
       });
   }
 
@@ -93,7 +93,7 @@ export default class HiveSession implements IHiveSession {
       .then((response) => {
         this.assertStatus(response.status);
 
-        return this.createOperation(response.operationHandle);
+        return this.createOperation(definedOrError(response.operationHandle));
       });
   }
 
@@ -109,7 +109,7 @@ export default class HiveSession implements IHiveSession {
       .then((response) => {
         this.assertStatus(response.status);
 
-        return this.createOperation(response.operationHandle);
+        return this.createOperation(definedOrError(response.operationHandle));
       });
   }
 
@@ -121,7 +121,7 @@ export default class HiveSession implements IHiveSession {
       .then((response) => {
         this.assertStatus(response.status);
 
-        return this.createOperation(response.operationHandle);
+        return this.createOperation(definedOrError(response.operationHandle));
       });
   }
 
@@ -137,7 +137,7 @@ export default class HiveSession implements IHiveSession {
       .then((response) => {
         this.assertStatus(response.status);
 
-        return this.createOperation(response.operationHandle);
+        return this.createOperation(definedOrError(response.operationHandle));
       });
   }
 
@@ -152,7 +152,7 @@ export default class HiveSession implements IHiveSession {
       .then((response) => {
         this.assertStatus(response.status);
 
-        return this.createOperation(response.operationHandle);
+        return this.createOperation(definedOrError(response.operationHandle));
       });
   }
 
@@ -167,7 +167,7 @@ export default class HiveSession implements IHiveSession {
       .then((response) => {
         this.assertStatus(response.status);
 
-        return this.createOperation(response.operationHandle);
+        return this.createOperation(definedOrError(response.operationHandle));
       });
   }
 
@@ -185,7 +185,7 @@ export default class HiveSession implements IHiveSession {
       .then((response) => {
         this.assertStatus(response.status);
 
-        return this.createOperation(response.operationHandle);
+        return this.createOperation(definedOrError(response.operationHandle));
       });
   }
 
@@ -239,7 +239,7 @@ export default class HiveSession implements IHiveSession {
       });
   }
 
-  private createOperation(handle: OperationHandle): IOperation {
+  private createOperation(handle: TOperationHandle): IOperation {
     return new HiveOperation(this.driver, handle);
   }
 

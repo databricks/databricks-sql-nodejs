@@ -1,4 +1,3 @@
-import { TableSchema, RowSet } from '../hive/Types';
 import IOperation from '../contracts/IOperation';
 
 export default interface IOperationResult {

@@ -1,4 +1,4 @@
-import { Status } from '../hive/Types';
+import { TStatus } from '../../thrift/TCLIService_types';
 
 export default class StatusError implements Error {
   public name: string;
@@ -6,7 +6,7 @@ export default class StatusError implements Error {
   public code: number;
   public stack?: string;
 
-  constructor(status: Status) {
+  constructor(status: TStatus) {
     this.name = 'Status Error';
     this.message = status.errorMessage || '';
     this.code = status.errorCode || -1;

@@ -1,5 +1,5 @@
+import { TOpenSessionReq } from '../../thrift/TCLIService_types';
 import IHiveSession from './IHiveSession';
-import { OpenSessionRequest } from '../hive/Commands/OpenSessionCommand';
 import IConnectionOptions from '../connection/contracts/IConnectionOptions';
 import IConnectionProvider from '../connection/contracts/IConnectionProvider';
 import IAuthentication from '../connection/contracts/IAuthentication';
@@ -11,7 +11,7 @@ export default interface IHiveClient {
     authProvider: IAuthentication,
   ): Promise<IHiveClient>;
 
-  openSession(request: OpenSessionRequest): Promise<IHiveSession>;
+  openSession(request: TOpenSessionReq): Promise<IHiveSession>;
 
   close(): void;
 }

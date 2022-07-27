@@ -1,18 +1,25 @@
 import IOperation from './contracts/IOperation';
 import HiveDriver from './hive/HiveDriver';
-import TCLIService_types from '../thrift/TCLIService_types';
-import { OperationHandle, TableSchema, RowSet, ColumnCode, Column, Int64 } from './hive/Types';
+import {
+  TOperationState,
+  TStatusCode,
+  TFetchOrientation,
+  TFetchResultsResp,
+  TColumn,
+  TTableSchema,
+  TRowSet,
+  TOperationHandle,
+} from '../thrift/TCLIService_types';
+import { ColumnCode, Int64 } from './hive/Types';
 import Status from './dto/Status';
-import { GetOperationStatusResponse } from './hive/Commands/GetOperationStatusCommand';
-import { GetResultSetMetadataResponse } from './hive/Commands/GetResultSetMetadataCommand';
-import { FetchResultsResponse } from './hive/Commands/FetchResultsCommand';
 import StatusFactory from './factory/StatusFactory';
+import { definedOrError } from './utils';
 
 export default class HiveOperation implements IOperation {
   private driver: HiveDriver;
-  private operationHandle: OperationHandle;
-  private schema: TableSchema | null;
-  private data: Array<RowSet>;
+  private operationHandle: TOperationHandle;
+  private schema: TTableSchema | null;
+  private data: Array<TRowSet>;
   private statusFactory: StatusFactory;
 
   private maxRows: Int64 = new Int64(100000);
@@ -22,12 +29,12 @@ export default class HiveOperation implements IOperation {
   private state: number;
   private hasResultSet: boolean = false;
 
-  constructor(driver: HiveDriver, operationHandle: OperationHandle) {
+  constructor(driver: HiveDriver, operationHandle: TOperationHandle) {
     this.driver = driver;
     this.operationHandle = operationHandle;
     this.hasResultSet = operationHandle.hasResultSet;
     this.statusFactory = new StatusFactory();
-    this.state = TCLIService_types.TOperationState.INITIALIZED_STATE;
+    this.state = TOperationState.INITIALIZED_STATE;
 
     this.schema = null;
     this.data = [];
@@ -41,7 +48,7 @@ export default class HiveOperation implements IOperation {
     if (!this.hasResultSet) {
       return Promise.resolve(
         this.statusFactory.create({
-          statusCode: TCLIService_types.TStatusCode.SUCCESS_STATUS,
+          statusCode: TStatusCode.SUCCESS_STATUS,
         }),
       );
     }
@@ -49,14 +56,14 @@ export default class HiveOperation implements IOperation {
     if (!this.finished()) {
       return Promise.resolve(
         this.statusFactory.create({
-          statusCode: TCLIService_types.TStatusCode.STILL_EXECUTING_STATUS,
+          statusCode: TStatusCode.STILL_EXECUTING_STATUS,
         }),
       );
     }
 
     if (this.schema === null) {
       return this.initializeSchema()
-        .then((schema: TableSchema) => {
+        .then((schema) => {
           this.schema = schema;
 
           return this.firstFetch();
@@ -72,13 +79,13 @@ export default class HiveOperation implements IOperation {
    * @param progress
    * @throws {StatusError}
    */
-  status(progress: boolean = false): Promise<GetOperationStatusResponse> {
+  status(progress: boolean = false) {
     return this.driver
       .getOperationStatus({
         operationHandle: this.operationHandle,
         getProgressUpdate: progress,
       })
-      .then((response: GetOperationStatusResponse) => {
+      .then((response) => {
         this.statusFactory.create(response.status);
 
         this.state = response.operationState ?? this.state;
@@ -120,7 +127,7 @@ export default class HiveOperation implements IOperation {
   }
 
   finished(): boolean {
-    return this.state === TCLIService_types.TOperationState.FINISHED_STATE;
+    return this.state === TOperationState.FINISHED_STATE;
   }
 
   hasMoreRows(): boolean {
@@ -135,11 +142,11 @@ export default class HiveOperation implements IOperation {
     this.fetchType = fetchType;
   }
 
-  getSchema(): TableSchema | null {
+  getSchema() {
     return this.schema;
   }
 
-  getData(): Array<RowSet> {
+  getData() {
     return this.data;
   }
 
@@ -155,31 +162,31 @@ export default class HiveOperation implements IOperation {
    * Retrieves schema
    * @throws {StatusError}
    */
-  private initializeSchema(): Promise<TableSchema> {
+  private initializeSchema(): Promise<TTableSchema> {
     return this.driver
       .getResultSetMetadata({
         operationHandle: this.operationHandle,
       })
-      .then((schema: GetResultSetMetadataResponse) => {
+      .then((schema) => {
         this.statusFactory.create(schema.status);
 
-        return schema.schema;
+        return definedOrError(schema.schema);
       });
   }
 
-  private firstFetch(): Promise<FetchResultsResponse> {
+  private firstFetch() {
     return this.driver.fetchResults({
       operationHandle: this.operationHandle,
-      orientation: TCLIService_types.TFetchOrientation.FETCH_FIRST,
+      orientation: TFetchOrientation.FETCH_FIRST,
       maxRows: this.maxRows,
       fetchType: this.fetchType,
     });
   }
 
-  private nextFetch(): Promise<FetchResultsResponse> {
+  private nextFetch() {
     return this.driver.fetchResults({
       operationHandle: this.operationHandle,
-      orientation: TCLIService_types.TFetchOrientation.FETCH_NEXT,
+      orientation: TFetchOrientation.FETCH_NEXT,
       maxRows: this.maxRows,
       fetchType: this.fetchType,
     });
@@ -189,7 +196,7 @@ export default class HiveOperation implements IOperation {
    * @param response
    * @throws {StatusError}
    */
-  private processFetchResponse(response: FetchResultsResponse): Status {
+  private processFetchResponse(response: TFetchResultsResp): Status {
     const status = this.statusFactory.create(response.status);
 
     this._hasMoreRows = this.checkIfOperationHasMoreRows(response);
@@ -201,7 +208,7 @@ export default class HiveOperation implements IOperation {
     return status;
   }
 
-  private checkIfOperationHasMoreRows(response: FetchResultsResponse): boolean {
+  private checkIfOperationHasMoreRows(response: TFetchResultsResp): boolean {
     if (response.hasMoreRows) {
       return true;
     }
@@ -212,7 +219,7 @@ export default class HiveOperation implements IOperation {
       return false;
     }
 
-    const column: Column = columns[0];
+    const column: TColumn = columns[0];
 
     const columnValue =
       column[ColumnCode.binaryVal] ||
@@ -224,6 +231,6 @@ export default class HiveOperation implements IOperation {
       column[ColumnCode.i64Val] ||
       column[ColumnCode.stringVal];
 
-    return columnValue?.values?.length > 0;
+    return (columnValue?.values?.length || 0) > 0;
   }
 }

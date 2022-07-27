@@ -2,9 +2,9 @@ const thrift = require('thrift');
 
 import { ThriftClient } from './hive/Types/';
 import TCLIService from '../thrift/TCLIService';
+import { TOpenSessionReq } from '../thrift/TCLIService_types';
 import IHiveClient from './contracts/IHiveClient';
 import HiveDriver from './hive/HiveDriver';
-import { OpenSessionRequest, OpenSessionResponse } from './hive/Commands/OpenSessionCommand';
 import HiveSession from './HiveSession';
 import IHiveSession from './contracts/IHiveSession';
 import IThriftConnection from './connection/contracts/IThriftConnection';
@@ -16,6 +16,7 @@ import IConnectionOptions from './connection/contracts/IConnectionOptions';
 import { EventEmitter } from 'events';
 import StatusFactory from './factory/StatusFactory';
 import HiveDriverError from './errors/HiveDriverError';
+import { definedOrError } from './utils';
 
 export default class HiveClient extends EventEmitter implements IHiveClient {
   private client: ThriftClient | null;
@@ -77,17 +78,17 @@ export default class HiveClient extends EventEmitter implements IHiveClient {
    * @param request
    * @throws {StatusError}
    */
-  openSession(request: OpenSessionRequest): Promise<IHiveSession> {
+  openSession(request: TOpenSessionReq): Promise<IHiveSession> {
     if (!this.connection?.isConnected()) {
       return Promise.reject(new HiveDriverError('HiveClient: connection is lost'));
     }
 
     const driver = new HiveDriver(this.getClient());
 
-    return driver.openSession(request).then((response: OpenSessionResponse) => {
+    return driver.openSession(request).then((response) => {
       this.statusFactory.create(response.status);
 
-      const session = new HiveSession(driver, response.sessionHandle);
+      const session = new HiveSession(driver, definedOrError(response.sessionHandle));
 
       return session;
     });
