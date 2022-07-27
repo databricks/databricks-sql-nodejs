@@ -1,5 +1,4 @@
 import Int64 from 'node-int64';
-import TCLIService from '../../../thrift/TCLIService';
 import {
   TBoolColumn,
   TByteColumn,
@@ -12,8 +11,6 @@ import {
 } from '../../../thrift/TCLIService_types';
 
 export { Int64 };
-
-export type ThriftClient = TCLIService.Client;
 
 export enum ColumnCode {
   boolVal = 'boolVal',

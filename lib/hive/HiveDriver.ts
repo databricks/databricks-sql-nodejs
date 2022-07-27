@@ -1,4 +1,4 @@
-import { ThriftClient } from './Types/';
+import TCLIService from '../../thrift/TCLIService';
 import {
   TOpenSessionReq,
   TCloseSessionReq,
@@ -45,9 +45,9 @@ import CancelDelegationTokenCommand from './Commands/CancelDelegationTokenComman
 import RenewDelegationTokenCommand from './Commands/RenewDelegationTokenCommand';
 
 export default class HiveDriver {
-  private client: ThriftClient;
+  private client: TCLIService.Client;
 
-  constructor(client: ThriftClient) {
+  constructor(client: TCLIService.Client) {
     this.client = client;
   }
 

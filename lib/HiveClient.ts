@@ -1,6 +1,5 @@
 const thrift = require('thrift');
 
-import { ThriftClient } from './hive/Types/';
 import TCLIService from '../thrift/TCLIService';
 import { TOpenSessionReq } from '../thrift/TCLIService_types';
 import IHiveClient from './contracts/IHiveClient';
@@ -19,7 +18,7 @@ import HiveDriverError from './errors/HiveDriverError';
 import { definedOrError } from './utils';
 
 export default class HiveClient extends EventEmitter implements IHiveClient {
-  private client: ThriftClient | null;
+  private client: TCLIService.Client | null;
   private connection: IThriftConnection | null;
   private statusFactory: StatusFactory;
   private connectionProvider: IConnectionProvider;
@@ -94,7 +93,7 @@ export default class HiveClient extends EventEmitter implements IHiveClient {
     });
   }
 
-  getClient(): ThriftClient {
+  getClient() {
     if (!this.client) {
       throw new HiveDriverError('HiveClient: client is not initialized');
     }
