@@ -1,5 +1,4 @@
 import {
-  TCLIServiceTypes,
   RowSet,
   TableSchema,
   ColumnDesc,
@@ -11,16 +10,15 @@ import {
   TByteColumn,
   ThriftBuffer,
 } from '../hive/Types';
+import TCLIService_types from '../../thrift/TCLIService_types';
 import IOperationResult from './IOperationResult';
 import IOperation from '../contracts/IOperation';
 
 export default class JsonResult implements IOperationResult {
-  private TCLIService_types: TCLIServiceTypes;
   private schema: TableSchema | null;
   private data: Array<RowSet> | null;
 
-  constructor(TCLIService_types: TCLIServiceTypes) {
-    this.TCLIService_types = TCLIService_types;
+  constructor() {
     this.schema = null;
     this.data = null;
   }
@@ -94,33 +92,33 @@ export default class JsonResult implements IOperationResult {
 
   private convertData(typeDescriptor: PrimitiveTypeEntry, value: ColumnType): any {
     switch (typeDescriptor.type) {
-      case this.TCLIService_types.TTypeId.TIMESTAMP_TYPE:
-      case this.TCLIService_types.TTypeId.DATE_TYPE:
-      case this.TCLIService_types.TTypeId.UNION_TYPE:
-      case this.TCLIService_types.TTypeId.USER_DEFINED_TYPE:
+      case TCLIService_types.TTypeId.TIMESTAMP_TYPE:
+      case TCLIService_types.TTypeId.DATE_TYPE:
+      case TCLIService_types.TTypeId.UNION_TYPE:
+      case TCLIService_types.TTypeId.USER_DEFINED_TYPE:
         return String(value);
-      case this.TCLIService_types.TTypeId.DECIMAL_TYPE:
+      case TCLIService_types.TTypeId.DECIMAL_TYPE:
         return Number(value);
-      case this.TCLIService_types.TTypeId.STRUCT_TYPE:
-      case this.TCLIService_types.TTypeId.MAP_TYPE:
+      case TCLIService_types.TTypeId.STRUCT_TYPE:
+      case TCLIService_types.TTypeId.MAP_TYPE:
         return this.toJSON(value, {});
-      case this.TCLIService_types.TTypeId.ARRAY_TYPE:
+      case TCLIService_types.TTypeId.ARRAY_TYPE:
         return this.toJSON(value, []);
-      case this.TCLIService_types.TTypeId.BIGINT_TYPE:
+      case TCLIService_types.TTypeId.BIGINT_TYPE:
         return this.convertBigInt(value);
-      case this.TCLIService_types.TTypeId.NULL_TYPE:
-      case this.TCLIService_types.TTypeId.BINARY_TYPE:
-      case this.TCLIService_types.TTypeId.INTERVAL_YEAR_MONTH_TYPE:
-      case this.TCLIService_types.TTypeId.INTERVAL_DAY_TIME_TYPE:
-      case this.TCLIService_types.TTypeId.FLOAT_TYPE:
-      case this.TCLIService_types.TTypeId.DOUBLE_TYPE:
-      case this.TCLIService_types.TTypeId.INT_TYPE:
-      case this.TCLIService_types.TTypeId.SMALLINT_TYPE:
-      case this.TCLIService_types.TTypeId.TINYINT_TYPE:
-      case this.TCLIService_types.TTypeId.BOOLEAN_TYPE:
-      case this.TCLIService_types.TTypeId.STRING_TYPE:
-      case this.TCLIService_types.TTypeId.CHAR_TYPE:
-      case this.TCLIService_types.TTypeId.VARCHAR_TYPE:
+      case TCLIService_types.TTypeId.NULL_TYPE:
+      case TCLIService_types.TTypeId.BINARY_TYPE:
+      case TCLIService_types.TTypeId.INTERVAL_YEAR_MONTH_TYPE:
+      case TCLIService_types.TTypeId.INTERVAL_DAY_TIME_TYPE:
+      case TCLIService_types.TTypeId.FLOAT_TYPE:
+      case TCLIService_types.TTypeId.DOUBLE_TYPE:
+      case TCLIService_types.TTypeId.INT_TYPE:
+      case TCLIService_types.TTypeId.SMALLINT_TYPE:
+      case TCLIService_types.TTypeId.TINYINT_TYPE:
+      case TCLIService_types.TTypeId.BOOLEAN_TYPE:
+      case TCLIService_types.TTypeId.STRING_TYPE:
+      case TCLIService_types.TTypeId.CHAR_TYPE:
+      case TCLIService_types.TTypeId.VARCHAR_TYPE:
       default:
         return value;
     }

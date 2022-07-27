@@ -1,4 +1,6 @@
 const { expect } = require('chai');
+const sinon = require('sinon');
+const TCLIService_types = require('../../../../thrift/TCLIService_types');
 const ExecuteStatementCommand = require('../../../../dist/hive/Commands/ExecuteStatementCommand').default;
 
 const requestMock = {
@@ -9,14 +11,6 @@ const requestMock = {
   confOverlay: {},
   runAsync: false,
   queryTimeout: 0,
-};
-
-const TCLIService_types = {
-  TExecuteStatementReq: function (options) {
-    this.options = options;
-
-    expect(options).to.be.deep.eq(requestMock);
-  },
 };
 
 const EXECUTE_STATEMENT = 0;
@@ -30,6 +24,13 @@ const responseMock = {
     modifiedRowCount: 0,
   },
 };
+
+function TExecuteStatementReqMock(options) {
+  this.options = options;
+
+  expect(options).to.be.deep.eq(requestMock);
+}
+
 const thriftClientMock = {
   ExecuteStatement(request, callback) {
     return callback(null, responseMock);
@@ -37,8 +38,19 @@ const thriftClientMock = {
 };
 
 describe('ExecuteStatementCommand', () => {
+  let sandbox;
+
+  before(() => {
+    sandbox = sinon.createSandbox();
+    sandbox.replace(TCLIService_types, 'TExecuteStatementReq', TExecuteStatementReqMock);
+  });
+
+  after(() => {
+    sandbox.restore();
+  });
+
   it('should return response', (cb) => {
-    const command = new ExecuteStatementCommand(thriftClientMock, TCLIService_types);
+    const command = new ExecuteStatementCommand(thriftClientMock);
 
     command
       .execute(requestMock)

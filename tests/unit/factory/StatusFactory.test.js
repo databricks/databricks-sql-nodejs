@@ -2,7 +2,7 @@ const { expect } = require('chai');
 const { TCLIService_types } = require('../../../').thrift;
 const StatusFactory = require('../../../dist/factory/StatusFactory').default;
 
-const statusFactory = new StatusFactory(TCLIService_types);
+const statusFactory = new StatusFactory();
 
 describe('StatusFactory', () => {
   it('should be success', () => {

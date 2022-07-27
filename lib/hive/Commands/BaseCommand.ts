@@ -1,13 +1,11 @@
-import { ThriftClient, TCLIServiceTypes } from '../Types';
+import { ThriftClient } from '../Types';
 import HiveDriverError from '../../errors/HiveDriverError';
 
 export default abstract class BaseCommand {
   protected client: ThriftClient;
-  protected TCLIService_types: TCLIServiceTypes;
 
-  constructor(client: ThriftClient, TCLIService_types: TCLIServiceTypes) {
+  constructor(client: ThriftClient) {
     this.client = client;
-    this.TCLIService_types = TCLIService_types;
   }
 
   executeCommand<Response>(request: object, command: Function | void): Promise<Response> {

@@ -1,17 +1,11 @@
 const { expect } = require('chai');
+const sinon = require('sinon');
+const TCLIService_types = require('../../../../thrift/TCLIService_types');
 const GetPrimaryKeysCommand = require('../../../../dist/hive/Commands/GetPrimaryKeysCommand').default;
 
 const requestMock = {
   sessionHandle: {
     sessionId: { guid: '', secret: '' },
-  },
-};
-
-const TCLIService_types = {
-  TGetPrimaryKeysReq: function (options) {
-    this.options = options;
-
-    expect(options).to.be.deep.eq(requestMock);
   },
 };
 
@@ -26,6 +20,13 @@ const responseMock = {
     modifiedRowCount: 0,
   },
 };
+
+function TGetPrimaryKeysReqMock(options) {
+  this.options = options;
+
+  expect(options).to.be.deep.eq(requestMock);
+}
+
 const thriftClientMock = {
   GetPrimaryKeys(request, callback) {
     return callback(null, responseMock);
@@ -33,8 +34,19 @@ const thriftClientMock = {
 };
 
 describe('GetPrimaryKeysCommand', () => {
+  let sandbox;
+
+  before(() => {
+    sandbox = sinon.createSandbox();
+    sandbox.replace(TCLIService_types, 'TGetPrimaryKeysReq', TGetPrimaryKeysReqMock);
+  });
+
+  after(() => {
+    sandbox.restore();
+  });
+
   it('should return response', (cb) => {
-    const command = new GetPrimaryKeysCommand(thriftClientMock, TCLIService_types);
+    const command = new GetPrimaryKeysCommand(thriftClientMock);
 
     command
       .execute(requestMock)

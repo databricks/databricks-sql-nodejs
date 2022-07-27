@@ -1,5 +1,6 @@
 import BaseCommand from './BaseCommand';
 import { Status, SessionHandle, OperationHandle } from '../Types';
+import TCLIService_types from '../../../thrift/TCLIService_types';
 
 export type GetTableTypesRequest = {
   sessionHandle: SessionHandle;
@@ -12,7 +13,7 @@ export type GetTableTypesResponse = {
 
 export default class GetTableTypesCommand extends BaseCommand {
   execute(data: GetTableTypesRequest): Promise<GetTableTypesResponse> {
-    const request = new this.TCLIService_types.TGetTableTypesReq(data);
+    const request = new TCLIService_types.TGetTableTypesReq(data);
 
     return this.executeCommand<GetTableTypesResponse>(request, this.client.GetTableTypes);
   }

@@ -1,5 +1,6 @@
 import BaseCommand from './BaseCommand';
 import { Status, SessionHandle, OperationHandle } from '../Types';
+import TCLIService_types from '../../../thrift/TCLIService_types';
 
 export type GetSchemasRequest = {
   sessionHandle: SessionHandle;
@@ -14,7 +15,7 @@ export type GetSchemasResponse = {
 
 export default class GetSchemasCommand extends BaseCommand {
   execute(data: GetSchemasRequest): Promise<GetSchemasResponse> {
-    const request = new this.TCLIService_types.TGetSchemasReq(data);
+    const request = new TCLIService_types.TGetSchemasReq(data);
 
     return this.executeCommand<GetSchemasResponse>(request, this.client.GetSchemas);
   }

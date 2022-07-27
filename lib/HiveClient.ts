@@ -1,6 +1,7 @@
 const thrift = require('thrift');
 
-import { ThriftClient, TCLIServiceTypes } from './hive/Types/';
+import { ThriftClient } from './hive/Types/';
+import TCLIService from '../thrift/TCLIService';
 import IHiveClient from './contracts/IHiveClient';
 import HiveDriver from './hive/HiveDriver';
 import { OpenSessionRequest, OpenSessionResponse } from './hive/Commands/OpenSessionCommand';
@@ -17,8 +18,6 @@ import StatusFactory from './factory/StatusFactory';
 import HiveDriverError from './errors/HiveDriverError';
 
 export default class HiveClient extends EventEmitter implements IHiveClient {
-  private TCLIService: object;
-  private TCLIService_types: TCLIServiceTypes;
   private client: ThriftClient | null;
   private connection: IThriftConnection | null;
   private statusFactory: StatusFactory;
@@ -26,19 +25,12 @@ export default class HiveClient extends EventEmitter implements IHiveClient {
   private authProvider: IAuthentication;
   private thrift: any;
 
-  /**
-   *
-   * @param TCLIService generated from TCLIService.thrift (https://github.com/apache/hive/blob/master/service-rpc/if/TCLIService.thrift)
-   * @param TCLIService_types object generated from TCLIService.thrift
-   */
-  constructor(TCLIService: object, TCLIService_types: TCLIServiceTypes) {
+  constructor() {
     super();
     this.thrift = thrift;
-    this.TCLIService = TCLIService;
-    this.TCLIService_types = TCLIService_types;
     this.connectionProvider = new HttpConnection();
     this.authProvider = new NoSaslAuthentication();
-    this.statusFactory = new StatusFactory(TCLIService_types);
+    this.statusFactory = new StatusFactory();
     this.client = null;
     this.connection = null;
   }
@@ -58,7 +50,7 @@ export default class HiveClient extends EventEmitter implements IHiveClient {
 
     this.connection = await this.connectionProvider.connect(options, this.authProvider);
 
-    this.client = this.thrift.createClient(this.TCLIService, this.connection.getConnection());
+    this.client = this.thrift.createClient(TCLIService, this.connection.getConnection());
 
     this.connection.getConnection().on('error', (error: Error) => {
       this.emit('error', error);
@@ -90,12 +82,12 @@ export default class HiveClient extends EventEmitter implements IHiveClient {
       return Promise.reject(new HiveDriverError('HiveClient: connection is lost'));
     }
 
-    const driver = new HiveDriver(this.TCLIService_types, this.getClient());
+    const driver = new HiveDriver(this.getClient());
 
     return driver.openSession(request).then((response: OpenSessionResponse) => {
       this.statusFactory.create(response.status);
 
-      const session = new HiveSession(driver, response.sessionHandle, this.TCLIService_types);
+      const session = new HiveSession(driver, response.sessionHandle);
 
       return session;
     });

@@ -1,5 +1,6 @@
 import BaseCommand from './BaseCommand';
 import { Status, SessionHandle } from '../Types';
+import TCLIService_types from '../../../thrift/TCLIService_types';
 
 export type RenewDelegationTokenRequest = {
   sessionHandle: SessionHandle;
@@ -12,7 +13,7 @@ export type RenewDelegationTokenResponse = {
 
 export default class RenewDelegationTokenCommand extends BaseCommand {
   execute(data: RenewDelegationTokenRequest): Promise<RenewDelegationTokenResponse> {
-    const request = new this.TCLIService_types.TRenewDelegationTokenReq(data);
+    const request = new TCLIService_types.TRenewDelegationTokenReq(data);
 
     return this.executeCommand<RenewDelegationTokenResponse>(request, this.client.RenewDelegationToken);
   }

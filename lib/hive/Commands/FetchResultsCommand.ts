@@ -1,5 +1,6 @@
 import BaseCommand from './BaseCommand';
 import { OperationHandle, Status, RowSet, Int64 } from '../Types';
+import TCLIService_types from '../../../thrift/TCLIService_types';
 
 /**
  * @param orientation - TCLIService_types.TFetchOrientation
@@ -20,7 +21,7 @@ export type FetchResultsResponse = {
 
 export default class FetchResultsCommand extends BaseCommand {
   execute(data: FetchResultsRequest): Promise<FetchResultsResponse> {
-    const request = new this.TCLIService_types.TFetchResultsReq(data);
+    const request = new TCLIService_types.TFetchResultsReq(data);
 
     return this.executeCommand<FetchResultsResponse>(request, this.client.FetchResults);
   }

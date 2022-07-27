@@ -1,15 +1,12 @@
-import { TCLIServiceTypes } from '../hive/Types';
 import IOperationResult from '../result/IOperationResult';
 import NullResult from '../result/NullResult';
 import JsonResult from '../result/JsonResult';
 import IOperation from '../contracts/IOperation';
 
 export default class GetResult {
-  private TCLIService_types: TCLIServiceTypes;
   private operation: IOperation;
 
-  constructor(operation: IOperation, TCLIService_types: TCLIServiceTypes) {
-    this.TCLIService_types = TCLIService_types;
+  constructor(operation: IOperation) {
     this.operation = operation;
   }
 
@@ -35,7 +32,7 @@ export default class GetResult {
     if (schema === null) {
       return new NullResult();
     } else {
-      return new JsonResult(this.TCLIService_types);
+      return new JsonResult();
     }
   }
 }

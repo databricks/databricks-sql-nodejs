@@ -101,7 +101,7 @@ describe('JsonResult', () => {
       },
     ];
 
-    const result = new JsonResult(TCLIService_types);
+    const result = new JsonResult();
     result.setOperation({
       getSchema: () => schema,
       getData: () => data,
@@ -175,7 +175,7 @@ describe('JsonResult', () => {
       },
     ];
 
-    const result = new JsonResult(TCLIService_types);
+    const result = new JsonResult();
     result.setOperation({
       getSchema: () => schema,
       getData: () => data,
@@ -218,7 +218,7 @@ describe('JsonResult', () => {
       },
     ];
 
-    const result = new JsonResult(TCLIService_types);
+    const result = new JsonResult();
     result.setOperation({
       getSchema: () => schema,
       getData: () => data,
@@ -228,7 +228,7 @@ describe('JsonResult', () => {
   });
 
   it('should detect nulls', () => {
-    const result = new JsonResult(TCLIService_types);
+    const result = new JsonResult();
     const buf = Buffer.from([0x55, 0xaa, 0xc3]);
 
     [
@@ -340,7 +340,7 @@ describe('JsonResult', () => {
       },
     ];
 
-    const result = new JsonResult(TCLIService_types);
+    const result = new JsonResult();
     result.setOperation({
       getSchema: () => schema,
       getData: () => data,

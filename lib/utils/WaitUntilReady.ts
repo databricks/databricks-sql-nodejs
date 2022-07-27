@@ -1,15 +1,13 @@
 import IOperation from '../contracts/IOperation';
-import { TCLIServiceTypes } from '../hive/Types';
+import TCLIService_types from '../../thrift/TCLIService_types';
 import { GetOperationStatusResponse } from '../hive/Commands/GetOperationStatusCommand';
 import OperationStateError from '../errors/OperationStateError';
 
 export default class WaitUntilReady {
   private operation: IOperation;
-  private TCLIService_types: TCLIServiceTypes;
 
-  constructor(operation: IOperation, TCLIService_types: TCLIServiceTypes) {
+  constructor(operation: IOperation) {
     this.operation = operation;
-    this.TCLIService_types = TCLIService_types;
   }
 
   /**
@@ -40,23 +38,23 @@ export default class WaitUntilReady {
 
   private isReady(response: GetOperationStatusResponse): boolean {
     switch (response.operationState) {
-      case this.TCLIService_types.TOperationState.INITIALIZED_STATE:
+      case TCLIService_types.TOperationState.INITIALIZED_STATE:
         return false;
-      case this.TCLIService_types.TOperationState.RUNNING_STATE:
+      case TCLIService_types.TOperationState.RUNNING_STATE:
         return false;
-      case this.TCLIService_types.TOperationState.FINISHED_STATE:
+      case TCLIService_types.TOperationState.FINISHED_STATE:
         return true;
-      case this.TCLIService_types.TOperationState.CANCELED_STATE:
+      case TCLIService_types.TOperationState.CANCELED_STATE:
         throw new OperationStateError('The operation was canceled by a client', response);
-      case this.TCLIService_types.TOperationState.CLOSED_STATE:
+      case TCLIService_types.TOperationState.CLOSED_STATE:
         throw new OperationStateError('The operation was closed by a client', response);
-      case this.TCLIService_types.TOperationState.ERROR_STATE:
+      case TCLIService_types.TOperationState.ERROR_STATE:
         throw new OperationStateError('The operation failed due to an error', response);
-      case this.TCLIService_types.TOperationState.PENDING_STATE:
+      case TCLIService_types.TOperationState.PENDING_STATE:
         throw new OperationStateError('The operation is in a pending state', response);
-      case this.TCLIService_types.TOperationState.TIMEDOUT_STATE:
+      case TCLIService_types.TOperationState.TIMEDOUT_STATE:
         throw new OperationStateError('The operation is in a timedout state', response);
-      case this.TCLIService_types.TOperationState.UKNOWN_STATE:
+      case TCLIService_types.TOperationState.UKNOWN_STATE:
       default:
         throw new OperationStateError('The operation is in an unrecognized state', response);
     }

@@ -8,7 +8,7 @@ import IHiveSession, {
   FunctionNameRequest,
   CrossReferenceRequest,
 } from './contracts/IHiveSession';
-import { SessionHandle, TCLIServiceTypes, Status as TStatus, OperationHandle } from './hive/Types';
+import { SessionHandle, Status as TStatus, OperationHandle } from './hive/Types';
 import { ExecuteStatementResponse } from './hive/Commands/ExecuteStatementCommand';
 import IOperation from './contracts/IOperation';
 import HiveOperation from './HiveOperation';
@@ -19,14 +19,12 @@ import InfoValue from './dto/InfoValue';
 export default class HiveSession implements IHiveSession {
   private driver: HiveDriver;
   private sessionHandle: SessionHandle;
-  private TCLIService_types: TCLIServiceTypes;
   private statusFactory: StatusFactory;
 
-  constructor(driver: HiveDriver, sessionHandle: SessionHandle, TCLIService_types: TCLIServiceTypes) {
+  constructor(driver: HiveDriver, sessionHandle: SessionHandle) {
     this.driver = driver;
     this.sessionHandle = sessionHandle;
-    this.TCLIService_types = TCLIService_types;
-    this.statusFactory = new StatusFactory(TCLIService_types);
+    this.statusFactory = new StatusFactory();
   }
 
   getInfo(infoType: number): Promise<InfoValue> {
@@ -242,7 +240,7 @@ export default class HiveSession implements IHiveSession {
   }
 
   private createOperation(handle: OperationHandle): IOperation {
-    return new HiveOperation(this.driver, handle, this.TCLIService_types);
+    return new HiveOperation(this.driver, handle);
   }
 
   private assertStatus(responseStatus: TStatus): void {
