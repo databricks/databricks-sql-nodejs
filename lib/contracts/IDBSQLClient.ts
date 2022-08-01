@@ -1,5 +1,5 @@
 import { TOpenSessionReq } from '../../thrift/TCLIService_types';
-import IHiveSession from './IHiveSession';
+import IDBSQLSession from './IDBSQLSession';
 
 export interface IDBSQLConnectionOptions {
   host: string;
@@ -12,7 +12,7 @@ export interface IDBSQLConnectionOptions {
 export default interface IDBSQLClient {
   connect(options: IDBSQLConnectionOptions): Promise<IDBSQLClient>;
 
-  openSession(request?: TOpenSessionReq): Promise<IHiveSession>;
+  openSession(request?: TOpenSessionReq): Promise<IDBSQLSession>;
 
   close(): Promise<void>;
 }

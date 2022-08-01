@@ -15,7 +15,7 @@ import Status from './dto/Status';
 import StatusFactory from './factory/StatusFactory';
 import { definedOrError } from './utils';
 
-export default class HiveOperation implements IOperation {
+export default class DBSQLOperation implements IOperation {
   private driver: HiveDriver;
   private operationHandle: TOperationHandle;
   private schema: TTableSchema | null;

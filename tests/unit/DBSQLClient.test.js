@@ -1,7 +1,6 @@
 const { expect } = require('chai');
 const DBSQLClient = require('../../dist/DBSQLClient').default;
-const HiveSession = require('../../dist/HiveSession').default;
-const { TCLIService_types } = require('../../').thrift;
+const DBSQLSession = require('../../dist/DBSQLSession').default;
 const {
   auth: { PlainHttpAuthentication },
   connections: { HttpConnection },
@@ -93,7 +92,7 @@ describe('DBSQLClient.openSession', () => {
       },
     };
     return client.openSession().then((session) => {
-      expect(session).instanceOf(HiveSession);
+      expect(session).instanceOf(DBSQLSession);
     });
   });
 

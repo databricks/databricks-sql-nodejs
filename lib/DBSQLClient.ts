@@ -4,8 +4,8 @@ import TCLIService from '../thrift/TCLIService';
 import TCLIService_types, { TOpenSessionReq } from '../thrift/TCLIService_types';
 import IDBSQLClient, { IDBSQLConnectionOptions } from './contracts/IDBSQLClient';
 import HiveDriver from './hive/HiveDriver';
-import HiveSession from './HiveSession';
-import IHiveSession from './contracts/IHiveSession';
+import DBSQLSession from './DBSQLSession';
+import IDBSQLSession from './contracts/IDBSQLSession';
 import IThriftConnection from './connection/contracts/IThriftConnection';
 import IConnectionProvider from './connection/contracts/IConnectionProvider';
 import IAuthentication from './connection/contracts/IAuthentication';
@@ -88,7 +88,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
    * @param request
    * @throws {StatusError}
    */
-  openSession(request?: TOpenSessionReq): Promise<IHiveSession> {
+  openSession(request?: TOpenSessionReq): Promise<IDBSQLSession> {
     if (!this.connection?.isConnected()) {
       return Promise.reject(new HiveDriverError('DBSQLClient: connection is lost'));
     }
@@ -104,7 +104,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
     return driver.openSession(request).then((response) => {
       this.statusFactory.create(response.status);
 
-      const session = new HiveSession(driver, definedOrError(response.sessionHandle));
+      const session = new DBSQLSession(driver, definedOrError(response.sessionHandle));
 
       return session;
     });
