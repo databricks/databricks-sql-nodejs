@@ -1,130 +1,134 @@
-import TCLIService_types from '../thrift/TCLIService_types';
-import HiveClient from './HiveClient';
-import HiveUtils from './utils/HiveUtils';
-import PlainHttpAuthentication from './connection/auth/PlainHttpAuthentication';
-import HttpConnection from './connection/connections/HttpConnection';
+import thrift from 'thrift';
 
+import TCLIService from '../thrift/TCLIService';
+import TCLIService_types, { TOpenSessionReq } from '../thrift/TCLIService_types';
+import IDBSQLClient, { IDBSQLConnectionOptions } from './contracts/IDBSQLClient';
+import HiveDriver from './hive/HiveDriver';
+import HiveSession from './HiveSession';
 import IHiveSession from './contracts/IHiveSession';
+import IThriftConnection from './connection/contracts/IThriftConnection';
+import IConnectionProvider from './connection/contracts/IConnectionProvider';
+import IAuthentication from './connection/contracts/IAuthentication';
+import NoSaslAuthentication from './connection/auth/NoSaslAuthentication';
+import HttpConnection from './connection/connections/HttpConnection';
+import IConnectionOptions from './connection/contracts/IConnectionOptions';
+import { EventEmitter } from 'events';
+import StatusFactory from './factory/StatusFactory';
+import HiveDriverError from './errors/HiveDriverError';
+import { buildUserAgentString, definedOrError } from './utils';
+import PlainHttpAuthentication from './connection/auth/PlainHttpAuthentication';
+import HiveUtils from './utils/HiveUtils';
 
-import { buildUserAgentString } from './utils';
-
-interface EventEmitter extends NodeJS.EventEmitter {}
-
-interface IConnectionOptions {
-  host: string;
-  port?: number;
-  path: string;
-  token: string;
-  clientId?: string;
-}
-
-/**
- * @see IHiveClient
- */
-interface IDBSQLClient {
-  connect(options: IConnectionOptions): Promise<IDBSQLClient>;
-  openSession(): Promise<IHiveSession>;
-  close(): void;
-}
-
-function prependSlash(str: string): string {
-  if (str.length > 0 && str.charAt(0) !== '/') {
-    return `/${str}`;
-  }
-  return str;
-}
-
-export default class DBSQLClient implements IDBSQLClient, EventEmitter {
+export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
   static utils = new HiveUtils();
 
-  private client: HiveClient = new HiveClient();
+  private client: TCLIService.Client | null;
+  private connection: IThriftConnection | null;
+  private statusFactory: StatusFactory;
+  private connectionProvider: IConnectionProvider;
+  private authProvider: IAuthentication;
+  private thrift = thrift;
 
-  connect(options: IConnectionOptions) {
-    return this.client
-      .connect(
-        {
-          host: options.host,
-          port: options.port || 443,
-          options: {
-            path: prependSlash(options.path),
-            https: true,
-          },
-        },
-        new HttpConnection(),
-        new PlainHttpAuthentication({
-          username: 'token',
-          password: options.token,
-          headers: {
-            'User-Agent': buildUserAgentString(options.clientId),
-          },
-        }),
-      )
-      .then(() => this);
+  constructor() {
+    super();
+    this.connectionProvider = new HttpConnection();
+    this.authProvider = new NoSaslAuthentication();
+    this.statusFactory = new StatusFactory();
+    this.client = null;
+    this.connection = null;
   }
 
-  openSession() {
-    return this.client.openSession({
-      client_protocol: TCLIService_types.TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V6,
+  private getConnectionOptions(options: IDBSQLConnectionOptions): IConnectionOptions {
+    const { host, port, token, clientId, ...otherOptions } = options;
+    return {
+      host,
+      port: port || 443,
+      options: {
+        https: true,
+        ...otherOptions,
+      },
+    };
+  }
+
+  async connect(options: IDBSQLConnectionOptions): Promise<IDBSQLClient> {
+    this.authProvider = new PlainHttpAuthentication({
+      username: 'token',
+      password: options.token,
+      headers: {
+        'User-Agent': buildUserAgentString(options.clientId),
+      },
+    });
+
+    this.connection = await this.connectionProvider.connect(this.getConnectionOptions(options), this.authProvider);
+
+    this.client = this.thrift.createClient(TCLIService, this.connection.getConnection());
+
+    this.connection.getConnection().on('error', (error: Error) => {
+      this.emit('error', error);
+    });
+
+    this.connection.getConnection().on('reconnecting', (params: { delay: number; attempt: number }) => {
+      this.emit('reconnecting', params);
+    });
+
+    this.connection.getConnection().on('close', () => {
+      this.emit('close');
+    });
+
+    this.connection.getConnection().on('timeout', () => {
+      this.emit('timeout');
+    });
+
+    return this;
+  }
+
+  /**
+   * Starts new session
+   *
+   * @param request
+   * @throws {StatusError}
+   */
+  openSession(request?: TOpenSessionReq): Promise<IHiveSession> {
+    if (!this.connection?.isConnected()) {
+      return Promise.reject(new HiveDriverError('DBSQLClient: connection is lost'));
+    }
+
+    const driver = new HiveDriver(this.getClient());
+
+    if (!request) {
+      request = {
+        client_protocol: TCLIService_types.TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V6,
+      };
+    }
+
+    return driver.openSession(request).then((response) => {
+      this.statusFactory.create(response.status);
+
+      const session = new HiveSession(driver, definedOrError(response.sessionHandle));
+
+      return session;
     });
   }
 
-  close() {
-    this.client.close();
+  getClient() {
+    if (!this.client) {
+      throw new HiveDriverError('DBSQLClient: client is not initialized');
+    }
+
+    return this.client;
   }
 
-  // EventEmitter
-  addListener(event: string | symbol, listener: (...args: any[]) => void) {
-    this.client.addListener(event, listener);
-    return this;
-  }
-  on(event: string | symbol, listener: (...args: any[]) => void) {
-    this.client.on(event, listener);
-    return this;
-  }
-  once(event: string | symbol, listener: (...args: any[]) => void) {
-    this.client.once(event, listener);
-    return this;
-  }
-  removeListener(event: string | symbol, listener: (...args: any[]) => void) {
-    this.client.removeListener(event, listener);
-    return this;
-  }
-  off(event: string | symbol, listener: (...args: any[]) => void) {
-    this.client.off(event, listener);
-    return this;
-  }
-  removeAllListeners(event?: string | symbol) {
-    this.client.removeAllListeners(event);
-    return this;
-  }
-  setMaxListeners(n: number) {
-    this.client.setMaxListeners(n);
-    return this;
-  }
-  getMaxListeners() {
-    return this.client.getMaxListeners();
-  }
-  listeners(event: string | symbol) {
-    return this.client.listeners(event);
-  }
-  rawListeners(event: string | symbol) {
-    return this.client.rawListeners(event);
-  }
-  emit(event: string | symbol, ...args: any[]) {
-    return this.client.emit(event, ...args);
-  }
-  listenerCount(type: string | symbol) {
-    return this.client.listenerCount(type);
-  }
-  prependListener(event: string | symbol, listener: (...args: any[]) => void) {
-    this.client.prependListener(event, listener);
-    return this;
-  }
-  prependOnceListener(event: string | symbol, listener: (...args: any[]) => void) {
-    this.client.prependOnceListener(event, listener);
-    return this;
-  }
-  eventNames() {
-    return this.client.eventNames();
+  close(): Promise<void> {
+    if (!this.connection) {
+      return Promise.resolve();
+    }
+
+    const thriftConnection = this.connection.getConnection();
+
+    if (typeof thriftConnection.end === 'function') {
+      this.connection.getConnection().end();
+    }
+
+    return Promise.resolve();
   }
 }
