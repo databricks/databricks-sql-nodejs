@@ -41,9 +41,9 @@ client
     console.log('Running query...');
     const queryOperation = await session.executeStatement(
       `
-        select * 
-        from some_large_table
-        order by random() + 2 asc
+        SELECT id 
+        FROM RANGE(100000000)
+        ORDER BY RANDOM() + 2 asc
       `,
       { runAsync: true },
     );
