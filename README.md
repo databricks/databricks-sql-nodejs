@@ -53,7 +53,7 @@ client
     console.table(result);
 
     await session.close();
-    client.close();
+    await client.close();
   })
   .catch((error) => {
     console.log(error);

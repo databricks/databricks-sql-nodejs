@@ -1,9 +1,8 @@
 const { expect } = require('chai');
-const { TCLIService_types } = require('../..').thrift;
-const HiveSession = require('../../dist/HiveSession').default;
+const DBSQLSession = require('../../dist/DBSQLSession').default;
 const InfoValue = require('../../dist/dto/InfoValue').default;
 const Status = require('../../dist/dto/Status').default;
-const HiveOperation = require('../../dist/HiveOperation').default;
+const DBSQLOperation = require('../../dist/DBSQLOperation').default;
 
 const testMethod = (methodName, parameters, delegationToken) => {
   const driver = {
@@ -17,12 +16,12 @@ const testMethod = (methodName, parameters, delegationToken) => {
         delegationToken,
       }),
   };
-  const session = new HiveSession(driver, { sessionId: 'id' });
+  const session = new DBSQLSession(driver, { sessionId: 'id' });
 
   return session[methodName].apply(session, parameters);
 };
 
-describe('HiveSession', () => {
+describe('DBSQLSession', () => {
   it('getInfo', () => {
     return testMethod('getInfo', [1]).then((result) => {
       expect(result).instanceOf(InfoValue);
@@ -31,23 +30,23 @@ describe('HiveSession', () => {
   it('executeStatement', () => {
     return testMethod('executeStatement', ['SELECT * FROM table', { runAsync: true }])
       .then((result) => {
-        expect(result).instanceOf(HiveOperation);
+        expect(result).instanceOf(DBSQLOperation);
       })
       .then(() => {
         return testMethod('executeStatement', ['SELECT * FROM table']);
       })
       .then((result) => {
-        expect(result).instanceOf(HiveOperation);
+        expect(result).instanceOf(DBSQLOperation);
       });
   });
   it('getTypeInfo', () => {
     return testMethod('getTypeInfo', []).then((result) => {
-      expect(result).instanceOf(HiveOperation);
+      expect(result).instanceOf(DBSQLOperation);
     });
   });
   it('getCatalogs', () => {
     return testMethod('getCatalogs', []).then((result) => {
-      expect(result).instanceOf(HiveOperation);
+      expect(result).instanceOf(DBSQLOperation);
     });
   });
   it('getSchemas', () => {
@@ -57,7 +56,7 @@ describe('HiveSession', () => {
         schemaName: 'schema',
       },
     ]).then((result) => {
-      expect(result).instanceOf(HiveOperation);
+      expect(result).instanceOf(DBSQLOperation);
     });
   });
   it('getTables', () => {
@@ -69,12 +68,12 @@ describe('HiveSession', () => {
         tableTypes: ['external'],
       },
     ]).then((result) => {
-      expect(result).instanceOf(HiveOperation);
+      expect(result).instanceOf(DBSQLOperation);
     });
   });
   it('getTableTypes', () => {
     return testMethod('getTableTypes', []).then((result) => {
-      expect(result).instanceOf(HiveOperation);
+      expect(result).instanceOf(DBSQLOperation);
     });
   });
   it('getColumns', () => {
@@ -86,7 +85,7 @@ describe('HiveSession', () => {
         columnName: 'column',
       },
     ]).then((result) => {
-      expect(result).instanceOf(HiveOperation);
+      expect(result).instanceOf(DBSQLOperation);
     });
   });
   it('getFunctions', () => {
@@ -97,7 +96,7 @@ describe('HiveSession', () => {
         functionName: 'avg',
       },
     ]).then((result) => {
-      expect(result).instanceOf(HiveOperation);
+      expect(result).instanceOf(DBSQLOperation);
     });
   });
   it('getPrimaryKeys', () => {
@@ -108,7 +107,7 @@ describe('HiveSession', () => {
         tableName: 't1',
       },
     ]).then((result) => {
-      expect(result).instanceOf(HiveOperation);
+      expect(result).instanceOf(DBSQLOperation);
     });
   });
   it('getCrossReference', () => {
@@ -122,7 +121,7 @@ describe('HiveSession', () => {
         foreignTableName: 'foreignTableName',
       },
     ]).then((result) => {
-      expect(result).instanceOf(HiveOperation);
+      expect(result).instanceOf(DBSQLOperation);
     });
   });
   it('getDelegationToken', () => {
@@ -157,7 +156,7 @@ describe('HiveSession', () => {
           },
         }),
     };
-    const session = new HiveSession(driver, { sessionId: 'id' });
+    const session = new DBSQLSession(driver, { sessionId: 'id' });
 
     return session.close().then((result) => {
       expect(result).instanceOf(Status);

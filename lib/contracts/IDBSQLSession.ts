@@ -49,7 +49,7 @@ export type PrimaryKeysRequest = {
   catalogName?: string;
 };
 
-export default interface IHiveSession {
+export default interface IDBSQLSession {
   /**
    * Returns general information about the data source
    *

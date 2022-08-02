@@ -13,6 +13,7 @@ client
     console.log(response.getValue());
 
     await session.close();
+    await client.close();
   })
   .catch((error) => {
     console.log(error);

@@ -1,6 +1,6 @@
 import { TSessionHandle, TStatus, TOperationHandle } from '../thrift/TCLIService_types';
 import HiveDriver from './hive/HiveDriver';
-import IHiveSession, {
+import IDBSQLSession, {
   ExecuteStatementOptions,
   SchemasRequest,
   TablesRequest,
@@ -8,15 +8,15 @@ import IHiveSession, {
   PrimaryKeysRequest,
   FunctionNameRequest,
   CrossReferenceRequest,
-} from './contracts/IHiveSession';
+} from './contracts/IDBSQLSession';
 import IOperation from './contracts/IOperation';
-import HiveOperation from './HiveOperation';
+import DBSQLOperation from './DBSQLOperation';
 import Status from './dto/Status';
 import StatusFactory from './factory/StatusFactory';
 import InfoValue from './dto/InfoValue';
 import { definedOrError } from './utils';
 
-export default class HiveSession implements IHiveSession {
+export default class DBSQLSession implements IDBSQLSession {
   private driver: HiveDriver;
   private sessionHandle: TSessionHandle;
   private statusFactory: StatusFactory;
@@ -240,7 +240,7 @@ export default class HiveSession implements IHiveSession {
   }
 
   private createOperation(handle: TOperationHandle): IOperation {
-    return new HiveOperation(this.driver, handle);
+    return new DBSQLOperation(this.driver, handle);
   }
 
   private assertStatus(responseStatus: TStatus): void {

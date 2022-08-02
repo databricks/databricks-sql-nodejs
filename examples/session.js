@@ -37,6 +37,7 @@ client
     console.log();
 
     await session.close();
+    await client.close();
   })
   .catch((error) => {
     console.log(error);

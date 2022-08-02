@@ -14,14 +14,16 @@ const openSession = async () => {
     token: config.token,
   });
 
-  const session = await connection.openSession({
-    client_protocol: thrift.TCLIService_types.TProtocolVersion.HIVE_CLI_SERVICE_PROTOCOL_V10,
-  });
+  const openSessionRequest = {};
 
   if (config.database.length === 2) {
-    await execute(session, `USE CATALOG ${config.database[0]}`);
-    await execute(session, `USE DATABASE ${config.database[1]}`);
+    openSessionRequest.initialNamespace = {
+      catalogName: config.database[0],
+      schemaName: config.database[1],
+    };
   }
+
+  const session = await connection.openSession(openSessionRequest);
 
   return session;
 };

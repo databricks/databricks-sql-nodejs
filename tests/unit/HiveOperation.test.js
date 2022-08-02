@@ -1,5 +1,5 @@
 const { expect } = require('chai');
-const HiveOperation = require('../../dist/HiveOperation').default;
+const DBSQLOperation = require('../../dist/DBSQLOperation').default;
 const { TCLIService_types } = require('../../').thrift;
 
 const getMock = (parent, prototype) => {
@@ -17,9 +17,9 @@ const getMock = (parent, prototype) => {
 const driverMock = {};
 const operationHandle = {};
 
-describe('HiveOperation.fetch', () => {
+describe('DBSQLOperation.fetch', () => {
   it('should return success status if there is no results or it is not initialized', (cb) => {
-    const operation = new HiveOperation(driverMock, operationHandle, TCLIService_types);
+    const operation = new DBSQLOperation(driverMock, operationHandle, TCLIService_types);
 
     operation
       .fetch()
@@ -33,7 +33,7 @@ describe('HiveOperation.fetch', () => {
   });
 
   it('should return executing status if initialization still is not finished', (cb) => {
-    const operation = new HiveOperation(driverMock, operationHandle, TCLIService_types);
+    const operation = new DBSQLOperation(driverMock, operationHandle, TCLIService_types);
     operation.hasResultSet = true;
 
     operation
@@ -48,7 +48,7 @@ describe('HiveOperation.fetch', () => {
   });
 
   it('should initialize schema and make the first fetch request', (cb) => {
-    const mockHiveOperation = getMock(HiveOperation, {
+    const mockOperation = getMock(DBSQLOperation, {
       initializeSchema() {
         return Promise.resolve('schema');
       },
@@ -61,7 +61,7 @@ describe('HiveOperation.fetch', () => {
         this.data.push(data);
       },
     });
-    const operation = new mockHiveOperation(driverMock, operationHandle, TCLIService_types);
+    const operation = new mockOperation(driverMock, operationHandle, TCLIService_types);
     operation.hasResultSet = true;
     operation.state = TCLIService_types.TOperationState.FINISHED_STATE;
 
@@ -78,7 +78,7 @@ describe('HiveOperation.fetch', () => {
   });
 
   it('should make the next fetch request if the schema has been set', (cb) => {
-    const mockHiveOperation = getMock(HiveOperation, {
+    const mockOperation = getMock(DBSQLOperation, {
       nextFetch() {
         return Promise.resolve('data');
       },
@@ -87,7 +87,7 @@ describe('HiveOperation.fetch', () => {
         this.data.push(data);
       },
     });
-    const operation = new mockHiveOperation(driverMock, operationHandle, TCLIService_types);
+    const operation = new mockOperation(driverMock, operationHandle, TCLIService_types);
     operation.schema = 'schema';
     operation.hasResultSet = true;
     operation.state = TCLIService_types.TOperationState.FINISHED_STATE;
@@ -104,9 +104,9 @@ describe('HiveOperation.fetch', () => {
   });
 });
 
-describe('HiveOperation.status', () => {
+describe('DBSQLOperation.status', () => {
   it('should set operationState and hasResultSet', (cb) => {
-    const operation = new HiveOperation(
+    const operation = new DBSQLOperation(
       {
         getOperationStatus() {
           return Promise.resolve({
@@ -135,7 +135,7 @@ describe('HiveOperation.status', () => {
   });
 
   it('should throw an error in case of a status error', (cb) => {
-    const operation = new HiveOperation(
+    const operation = new DBSQLOperation(
       {
         getOperationStatus() {
           return Promise.resolve({
@@ -162,9 +162,9 @@ describe('HiveOperation.status', () => {
   });
 });
 
-describe('HiveOperation.cancel', () => {
+describe('DBSQLOperation.cancel', () => {
   it('should run cancelOperation and return the status', (cb) => {
-    const operation = new HiveOperation(
+    const operation = new DBSQLOperation(
       {
         cancelOperation() {
           return Promise.resolve({
@@ -190,9 +190,9 @@ describe('HiveOperation.cancel', () => {
   });
 });
 
-describe('HiveOperation.close', () => {
+describe('DBSQLOperation.close', () => {
   it('should run closeOperation and return the status', (cb) => {
-    const operation = new HiveOperation(
+    const operation = new DBSQLOperation(
       {
         closeOperation() {
           return Promise.resolve({
@@ -218,9 +218,9 @@ describe('HiveOperation.close', () => {
   });
 });
 
-describe('HiveOperation.checkIfOperationHasMoreRows', () => {
+describe('DBSQLOperation.checkIfOperationHasMoreRows', () => {
   it('should return True if hasMoreRows is set True', () => {
-    const operation = new HiveOperation(driverMock, operationHandle, TCLIService_types);
+    const operation = new DBSQLOperation(driverMock, operationHandle, TCLIService_types);
 
     const result = operation.checkIfOperationHasMoreRows({
       hasMoreRows: true,
@@ -230,7 +230,7 @@ describe('HiveOperation.checkIfOperationHasMoreRows', () => {
   });
 
   it('should return False if the response has no columns', () => {
-    const operation = new HiveOperation(driverMock, operationHandle, TCLIService_types);
+    const operation = new DBSQLOperation(driverMock, operationHandle, TCLIService_types);
 
     const result = operation.checkIfOperationHasMoreRows({});
 
@@ -238,7 +238,7 @@ describe('HiveOperation.checkIfOperationHasMoreRows', () => {
   });
 
   it('should return True if at least one of the columns is not empty', () => {
-    const operation = new HiveOperation(driverMock, operationHandle, TCLIService_types);
+    const operation = new DBSQLOperation(driverMock, operationHandle, TCLIService_types);
 
     const result = (columnType) =>
       operation.checkIfOperationHasMoreRows({
@@ -257,7 +257,7 @@ describe('HiveOperation.checkIfOperationHasMoreRows', () => {
   });
 
   it('should return False if all columns are empty', () => {
-    const operation = new HiveOperation(driverMock, operationHandle, TCLIService_types);
+    const operation = new DBSQLOperation(driverMock, operationHandle, TCLIService_types);
 
     const result = operation.checkIfOperationHasMoreRows({
       results: { columns: [{ boolVal: { values: [] } }] },
@@ -267,9 +267,9 @@ describe('HiveOperation.checkIfOperationHasMoreRows', () => {
   });
 });
 
-describe('HiveOperation.processFetchResponse', () => {
+describe('DBSQLOperation.processFetchResponse', () => {
   it('should throw an error if the status is an error', () => {
-    const operation = new HiveOperation(driverMock, operationHandle, TCLIService_types);
+    const operation = new DBSQLOperation(driverMock, operationHandle, TCLIService_types);
 
     expect(() =>
       operation.processFetchResponse({
@@ -282,12 +282,12 @@ describe('HiveOperation.processFetchResponse', () => {
   });
 
   it('should set hasMoreRows and push data', () => {
-    const mockHiveOperation = getMock(HiveOperation, {
+    const mockOperation = getMock(DBSQLOperation, {
       checkIfOperationHasMoreRows() {
         return true;
       },
     });
-    const operation = new mockHiveOperation(driverMock, operationHandle, TCLIService_types);
+    const operation = new mockOperation(driverMock, operationHandle, TCLIService_types);
     const result = operation.processFetchResponse({
       status: {
         statusCode: TCLIService_types.TStatusCode.SUCCESS_STATUS,
@@ -301,9 +301,9 @@ describe('HiveOperation.processFetchResponse', () => {
   });
 });
 
-describe('HiveOperation.flush', () => {
+describe('DBSQLOperation.flush', () => {
   it('should flush data', () => {
-    const operation = new HiveOperation(driverMock, operationHandle, TCLIService_types);
+    const operation = new DBSQLOperation(driverMock, operationHandle, TCLIService_types);
     operation.data = [1, 2, 3];
     operation.flush();
 
