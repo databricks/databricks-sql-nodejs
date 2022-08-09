@@ -9,11 +9,14 @@ import {
   TTableSchema,
   TRowSet,
   TOperationHandle,
+  TRow,
 } from '../thrift/TCLIService_types';
 import { ColumnCode, Int64 } from './hive/Types';
 import Status from './dto/Status';
 import StatusFactory from './factory/StatusFactory';
 import { definedOrError } from './utils';
+import WaitUntilReady from './utils/WaitUntilReady';
+import { parse } from 'path';
 
 export default class DBSQLOperation implements IOperation {
   private driver: HiveDriver;
@@ -44,7 +47,7 @@ export default class DBSQLOperation implements IOperation {
    * Fetches result and schema from operation
    * @throws {StatusError}
    */
-  fetch(): Promise<Status> {
+  fetch(maxRowSize = this.maxRows): Promise<Status> {
     if (!this.hasResultSet) {
       return Promise.resolve(
         this.statusFactory.create({
@@ -70,8 +73,45 @@ export default class DBSQLOperation implements IOperation {
         })
         .then((response) => this.processFetchResponse(response));
     } else {
-      return this.nextFetch().then((response) => this.processFetchResponse(response));
+      return this.nextFetch(maxRowSize).then((response) => this.processFetchResponse(response));
     }
+  }
+
+  async fetchAll(): Promise<TRowSet[] | null> {
+    return this.fetchChunk(new Int64(Number.MAX_SAFE_INTEGER));
+  }
+
+  async fetchChunk(chunkSize: Int64): Promise<TRowSet[] | null>  {
+    let rowsWritten = new Int64(0);
+    let resultSet = this.data;
+    if (!this.hasResultSet) {
+      return Promise.resolve(
+        null,
+      );
+    }
+
+    await new WaitUntilReady(this).execute();
+
+    let fetchSize = new Int64(Math.min(Number(this.maxRows), Number(chunkSize) - Number(rowsWritten)));
+    
+    // Need initial fetch to populate _hasMoreRows
+    //
+    await this.fetch(fetchSize).then(() => {
+      while(this.hasMoreRows()) {
+        rowsWritten = new Int64(Number(rowsWritten) + Number(fetchSize));
+        if(rowsWritten >= chunkSize) {
+          this.flush();
+          return Promise.resolve(
+            resultSet,);
+        }
+        fetchSize = new Int64(Math.min(Number(this.maxRows), Number(chunkSize) - Number(rowsWritten)));
+        this.fetch(fetchSize);
+      }
+      this.flush();
+      return Promise.resolve(
+        resultSet,);
+      });
+    return null;
   }
 
   /**
@@ -183,11 +223,11 @@ export default class DBSQLOperation implements IOperation {
     });
   }
 
-  private nextFetch() {
+  private nextFetch(maxRowSize = this.maxRows) {
     return this.driver.fetchResults({
       operationHandle: this.operationHandle,
       orientation: TFetchOrientation.FETCH_NEXT,
-      maxRows: this.maxRows,
+      maxRows: maxRowSize,
       fetchType: this.fetchType,
     });
   }
