@@ -78,11 +78,11 @@ export default class DBSQLOperation implements IOperation {
   }
 
   async fetchAll(): Promise<TRowSet[] | null> {
-    return this.fetchChunk(new Int64(Number.MAX_SAFE_INTEGER));
+    return this.fetchChunk(Number.MAX_SAFE_INTEGER);
   }
 
-  async fetchChunk(chunkSize: Int64): Promise<TRowSet[] | null>  {
-    let rowsWritten = new Int64(0);
+  async fetchChunk(chunkSize: Number): Promise<TRowSet[] | null>  {
+    let rowsWritten = 0;
     let resultSet = this.data;
     if (!this.hasResultSet) {
       return Promise.resolve(
@@ -98,7 +98,7 @@ export default class DBSQLOperation implements IOperation {
     //
     await this.fetch(fetchSize).then(() => {
       while(this.hasMoreRows()) {
-        rowsWritten = new Int64(Number(rowsWritten) + Number(fetchSize));
+        rowsWritten = rowsWritten + Number(fetchSize);
         if(rowsWritten >= chunkSize) {
           this.flush();
           return Promise.resolve(
