@@ -30,7 +30,8 @@ const openSession = async () => {
 
 it('fetch chunks should return a max row set of chunkSize', async () => {
     const session = await openSession();
-    const operation = await session.executeStatement(`SELECT * FROM trips`, { runAsync: true });
+    const operation = await session.executeStatement(`SELECT * FROM samples.nyctaxi.trips LIMIT 1000`, { runAsync: true });
     let chunkedOp = await operation.fetchChunk(100);
+    logger(chunkedOp.length);
     expect(chunkedOp.length == 100);
 })
