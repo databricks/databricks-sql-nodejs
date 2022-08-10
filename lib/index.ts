@@ -1,6 +1,7 @@
 import TCLIService from '../thrift/TCLIService';
 import TCLIService_types from '../thrift/TCLIService_types';
 import DBSQLClient from './DBSQLClient';
+import DBSQLSession from './DBSQLSession';
 import NoSaslAuthentication from './connection/auth/NoSaslAuthentication';
 import PlainHttpAuthentication from './connection/auth/PlainHttpAuthentication';
 import HttpConnection from './connection/connections/HttpConnection';
@@ -19,4 +20,4 @@ export const thrift = {
   TCLIService_types,
 };
 
-export { DBSQLClient };
+export { DBSQLClient, DBSQLSession };
