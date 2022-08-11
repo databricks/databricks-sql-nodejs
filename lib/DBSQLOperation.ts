@@ -43,14 +43,13 @@ export default class DBSQLOperation implements IOperation {
   }
 
   private async wait(): Promise<void> {
-    if(this.finished()) {
-      return
+    if (this.finished()) {
+      return;
     }
-    if(await this.isReady()) {
-      return
-    }
-    else{
-      return this.wait()
+    if (await this.isReady()) {
+      return;
+    } else {
+      return this.wait();
     }
   }
 
@@ -89,30 +88,27 @@ export default class DBSQLOperation implements IOperation {
   }
 
   async fetchAll(): Promise<Array<object> | null> {
-    let data = new Array<object>;
+    let data = new Array<object>();
     do {
-      let chunk = await this.fetchChunk()
-      if(chunk) {
+      let chunk = await this.fetchChunk();
+      if (chunk) {
         data.push(...chunk);
       }
-    }
-    while(this.hasMoreRows())
+    } while (this.hasMoreRows());
     return data;
   }
 
-  async fetchChunk(chunkSize: Int64 = new Int64(100000)): Promise<Array<object> | null>  {
+  async fetchChunk(chunkSize: Int64 = new Int64(100000)): Promise<Array<object> | null> {
     if (!this.hasResultSet) {
-      return Promise.resolve(
-        null,
-      );
+      return Promise.resolve(null);
     }
 
     await this.wait();
-    
+
     return await this.fetch(chunkSize).then(() => {
       let data = new GetResult(this).execute().getValue();
       this.flush();
-      return Promise.resolve(data,);
+      return Promise.resolve(data);
     });
   }
 
@@ -296,5 +292,3 @@ export default class DBSQLOperation implements IOperation {
     }
   }
 }
-
-

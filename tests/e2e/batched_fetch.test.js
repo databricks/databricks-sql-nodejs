@@ -29,14 +29,14 @@ const openSession = async () => {
 };
 
 it('fetch chunks should return a max row set of chunkSize', async () => {
-    const session = await openSession();
-    const operation = await session.executeStatement(`SELECT * FROM default.diamonds`, { runAsync: true });
-    let chunkedOp = await operation.fetchChunk(100).catch(error=>logger(error));
-    expect(chunkedOp.length == 100);
-})
+  const session = await openSession();
+  const operation = await session.executeStatement(`SELECT * FROM default.diamonds`, { runAsync: true });
+  let chunkedOp = await operation.fetchChunk(100).catch((error) => logger(error));
+  expect(chunkedOp.length == 100);
+});
 it('fetch all should fetch all records', async () => {
-    const session = await openSession();
-    const operation = await session.executeStatement(`SELECT * FROM default.diamonds LIMIT 1000`, { runAsync: true });
-    let all = await operation.fetchAll();
-    expect(all.length == 1000);
-})
+  const session = await openSession();
+  const operation = await session.executeStatement(`SELECT * FROM default.diamonds LIMIT 1000`, { runAsync: true });
+  let all = await operation.fetchAll();
+  expect(all.length == 1000);
+});
