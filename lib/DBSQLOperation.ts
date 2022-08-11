@@ -20,6 +20,7 @@ import WaitUntilReady from './utils/WaitUntilReady';
 import { parse } from 'path';
 import OperationStateError from './errors/OperationStateError';
 import { time } from 'console';
+import GetResult from './utils/GetResult';
 
 export default class DBSQLOperation implements IOperation {
   private driver: HiveDriver;
@@ -46,26 +47,23 @@ export default class DBSQLOperation implements IOperation {
     this.data = [];
   }
 
-  async wait(maxWaitMs = 600000): Promise<void> {
-    let startTime = Date.now();
-    let timeElapsed = Date.now() - startTime;
-    while(timeElapsed < maxWaitMs) {
-      if(await this.isReady()) {
-        break;
-      }
-      timeElapsed = Date.now() - startTime;
+  private async wait(): Promise<void> {
+    if(this.finished()) {
+      return
     }
-    if(timeElapsed >= maxWaitMs) {
-      throw new Error("Operation exceeded max wait time");
+    if(await this.isReady()) {
+      return
     }
-    return
+    else{
+      return this.wait()
+    }
   }
 
   /**
    * Fetches result and schema from operation
    * @throws {StatusError}
    */
-  fetch(maxRowSize = this.maxRows): Promise<Status> {
+  fetch(chunkSize = new Int64(100000)): Promise<Status> {
     if (!this.hasResultSet) {
       return Promise.resolve(
         this.statusFactory.create({
@@ -87,50 +85,40 @@ export default class DBSQLOperation implements IOperation {
         .then((schema) => {
           this.schema = schema;
 
-          return this.firstFetch();
+          return this.firstFetch(chunkSize);
         })
         .then((response) => this.processFetchResponse(response));
     } else {
-      return this.nextFetch(maxRowSize).then((response) => this.processFetchResponse(response));
+      return this.nextFetch(chunkSize).then((response) => this.processFetchResponse(response));
     }
   }
 
-  async fetchAll(): Promise<TRowSet[] | null> {
-    return this.fetchChunk(Number.MAX_SAFE_INTEGER);
+  async fetchAll(): Promise<Array<object> | null> {
+    let data = new Array<object>;
+    do {
+      let chunk = await this.fetchChunk()
+      if(chunk) {
+        data.push(...chunk);
+      }
+    }
+    while(this.hasMoreRows())
+    return data;
   }
 
-  async fetchChunk(chunkSize: Number): Promise<TRowSet[] | null>  {
-    let rowsWritten = 0;
-    let resultSet = this.data;
+  async fetchChunk(chunkSize: Int64 = new Int64(100000)): Promise<Array<object> | null>  {
     if (!this.hasResultSet) {
       return Promise.resolve(
         null,
       );
     }
 
-    // await new WaitUntilReady(this).execute();
     await this.wait();
-
-    let fetchSize = new Int64(Math.min(Number(this.maxRows), Number(chunkSize) - Number(rowsWritten)));
     
-    // Need initial fetch to populate _hasMoreRows
-    //
-    await this.fetch(fetchSize).then(() => {
-      while(this.hasMoreRows()) {
-        rowsWritten = rowsWritten + Number(fetchSize);
-        if(rowsWritten >= chunkSize) {
-          this.flush();
-          return Promise.resolve(
-            resultSet,);
-        }
-        fetchSize = new Int64(Math.min(Number(this.maxRows), Number(chunkSize) - Number(rowsWritten)));
-        this.fetch(fetchSize);
-      }
+    return await this.fetch(chunkSize).then(() => {
+      let data = new GetResult(this).execute().getValue();
       this.flush();
-      return Promise.resolve(
-        resultSet,);
-      });
-    return null;
+      return Promise.resolve(data,);
+    });
   }
 
   /**
@@ -193,10 +181,6 @@ export default class DBSQLOperation implements IOperation {
     return this._hasMoreRows;
   }
 
-  setMaxRows(maxRows: number): void {
-    this.maxRows = new Int64(maxRows);
-  }
-
   setFetchType(fetchType: number): void {
     this.fetchType = fetchType;
   }
@@ -233,20 +217,20 @@ export default class DBSQLOperation implements IOperation {
       });
   }
 
-  private firstFetch() {
+  private firstFetch(chunkSize = new Int64(100000)) {
     return this.driver.fetchResults({
       operationHandle: this.operationHandle,
       orientation: TFetchOrientation.FETCH_FIRST,
-      maxRows: this.maxRows,
+      maxRows: chunkSize,
       fetchType: this.fetchType,
     });
   }
 
-  private nextFetch(maxRowSize = this.maxRows) {
+  private nextFetch(chunkSize = new Int64(100000)) {
     return this.driver.fetchResults({
       operationHandle: this.operationHandle,
       orientation: TFetchOrientation.FETCH_NEXT,
-      maxRows: maxRowSize,
+      maxRows: chunkSize,
       fetchType: this.fetchType,
     });
   }
@@ -292,7 +276,7 @@ export default class DBSQLOperation implements IOperation {
 
     return (columnValue?.values?.length || 0) > 0;
   }
-  async isReady(): Promise<boolean> {
+  private async isReady(): Promise<boolean> {
     let response = await this.status();
     switch (response.operationState) {
       case TOperationState.INITIALIZED_STATE:
