@@ -9,17 +9,12 @@ import {
   TTableSchema,
   TRowSet,
   TOperationHandle,
-  TGetOperationStatusResp,
-  TRow,
 } from '../thrift/TCLIService_types';
 import { ColumnCode, Int64 } from './hive/Types';
 import Status from './dto/Status';
 import StatusFactory from './factory/StatusFactory';
 import { definedOrError } from './utils';
-import WaitUntilReady from './utils/WaitUntilReady';
-import { parse } from 'path';
 import OperationStateError from './errors/OperationStateError';
-import { time } from 'console';
 import GetResult from './utils/GetResult';
 
 export default class DBSQLOperation implements IOperation {
