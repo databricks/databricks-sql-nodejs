@@ -24,7 +24,6 @@ export default class DBSQLOperation implements IOperation {
   private data: Array<TRowSet>;
   private statusFactory: StatusFactory;
 
-  private maxRows: Int64 = new Int64(100000);
   private fetchType: number = 0;
 
   private _hasMoreRows: boolean = false;
@@ -42,14 +41,14 @@ export default class DBSQLOperation implements IOperation {
     this.data = [];
   }
 
-  private async wait(): Promise<void> {
+  private async waitUntilReady(): Promise<void> {
     if (this.finished()) {
       return;
     }
     if (await this.isReady()) {
       return;
     } else {
-      return this.wait();
+      return this.waitUntilReady();
     }
   }
 
@@ -57,7 +56,7 @@ export default class DBSQLOperation implements IOperation {
    * Fetches result and schema from operation
    * @throws {StatusError}
    */
-  fetch(chunkSize = new Int64(100000)): Promise<Status> {
+  fetch(chunkSize = 100000): Promise<Status> {
     if (!this.hasResultSet) {
       return Promise.resolve(
         this.statusFactory.create({
@@ -78,7 +77,6 @@ export default class DBSQLOperation implements IOperation {
       return this.initializeSchema()
         .then((schema) => {
           this.schema = schema;
-
           return this.firstFetch(chunkSize);
         })
         .then((response) => this.processFetchResponse(response));
@@ -87,8 +85,8 @@ export default class DBSQLOperation implements IOperation {
     }
   }
 
-  async fetchAll(): Promise<Array<object> | null> {
-    let data = new Array<object>();
+  async fetchAll(): Promise<Array<object>> {
+    let data: Array<object> = [];
     do {
       let chunk = await this.fetchChunk();
       if (chunk) {
@@ -98,12 +96,12 @@ export default class DBSQLOperation implements IOperation {
     return data;
   }
 
-  async fetchChunk(chunkSize: Int64 = new Int64(100000)): Promise<Array<object> | null> {
+  async fetchChunk(chunkSize = 100000): Promise<Array<object>> {
     if (!this.hasResultSet) {
-      return Promise.resolve(null);
+      return Promise.resolve([]);
     }
 
-    await this.wait();
+    await this.waitUntilReady();
 
     return await this.fetch(chunkSize).then(() => {
       let data = new GetResult(this).execute().getValue();
@@ -208,20 +206,20 @@ export default class DBSQLOperation implements IOperation {
       });
   }
 
-  private firstFetch(chunkSize = new Int64(100000)) {
+  private firstFetch(chunkSize: number) {
     return this.driver.fetchResults({
       operationHandle: this.operationHandle,
       orientation: TFetchOrientation.FETCH_FIRST,
-      maxRows: chunkSize,
+      maxRows: new Int64(chunkSize),
       fetchType: this.fetchType,
     });
   }
 
-  private nextFetch(chunkSize = new Int64(100000)) {
+  private nextFetch(chunkSize: number) {
     return this.driver.fetchResults({
       operationHandle: this.operationHandle,
       orientation: TFetchOrientation.FETCH_NEXT,
-      maxRows: chunkSize,
+      maxRows: new Int64(chunkSize),
       fetchType: this.fetchType,
     });
   }
@@ -267,6 +265,7 @@ export default class DBSQLOperation implements IOperation {
 
     return (columnValue?.values?.length || 0) > 0;
   }
+
   private async isReady(): Promise<boolean> {
     let response = await this.status();
     switch (response.operationState) {

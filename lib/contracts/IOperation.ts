@@ -5,7 +5,7 @@ export default interface IOperation {
   /**
    * Fetch schema and a portion of data
    */
-  fetch(): Promise<Status>;
+  fetch(chunkSize?: number): Promise<Status>;
 
   /**
    * Request status of operation
