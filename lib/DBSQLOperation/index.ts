@@ -1,4 +1,4 @@
-import IOperation from '../contracts/IOperation';
+import IOperation, { IFetchOptions, defaultFetchOptions } from '../contracts/IOperation';
 import HiveDriver from '../hive/HiveDriver';
 import {
   TOperationState,
@@ -70,10 +70,10 @@ export default class DBSQLOperation implements IOperation {
     }
   }
 
-  async fetchAll(): Promise<Array<object>> {
+  async fetchAll(options?: IFetchOptions): Promise<Array<object>> {
     let data: Array<object> = [];
     do {
-      let chunk = await this.fetchChunk();
+      let chunk = await this.fetchChunk(options);
       if (chunk) {
         data.push(...chunk);
       }
@@ -81,14 +81,14 @@ export default class DBSQLOperation implements IOperation {
     return data;
   }
 
-  async fetchChunk(chunkSize = 100000): Promise<Array<object>> {
+  async fetchChunk(options: IFetchOptions = defaultFetchOptions): Promise<Array<object>> {
     if (!this.hasResultSet) {
       return Promise.resolve([]);
     }
 
-    await waitUntilReady(this);
+    await waitUntilReady(this, options.progress, options.callback);
 
-    return await this.fetch(chunkSize).then(() => {
+    return await this.fetch(options.maxRows).then(() => {
       let data = getResult(this.getSchema(), this.getData());
       this.flush();
       return Promise.resolve(data);

@@ -1,9 +1,18 @@
-import IOperation from '../contracts/IOperation';
+import IOperation, { OperationStatusCallback } from '../contracts/IOperation';
 import { TOperationState } from '../../thrift/TCLIService_types';
 import OperationStateError from '../errors/OperationStateError';
 
-async function isReady(operation: IOperation): Promise<boolean> {
-  let response = await operation.status(false); // TODO: Report progress
+async function isReady(
+  operation: IOperation,
+  progress?: boolean,
+  callback?: OperationStatusCallback,
+): Promise<boolean> {
+  let response = await operation.status(Boolean(progress));
+
+  if (callback) {
+    await Promise.resolve(callback(response));
+  }
+
   switch (response.operationState) {
     case TOperationState.INITIALIZED_STATE:
       return false;
@@ -27,13 +36,17 @@ async function isReady(operation: IOperation): Promise<boolean> {
   }
 }
 
-export default async function waitUntilReady(operation: IOperation): Promise<void> {
+export default async function waitUntilReady(
+  operation: IOperation,
+  progress?: boolean,
+  callback?: OperationStatusCallback,
+): Promise<void> {
   if (operation.finished()) {
     return;
   }
-  if (await isReady(operation)) {
+  if (await isReady(operation, progress, callback)) {
     return;
   } else {
-    return waitUntilReady(operation);
+    return waitUntilReady(operation, progress, callback);
   }
 }

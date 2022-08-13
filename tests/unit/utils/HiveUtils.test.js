@@ -2,26 +2,6 @@ const { expect } = require('chai');
 const HiveUtils = require('../../../dist/utils/HiveUtils').default;
 
 describe('HiveUtils', () => {
-  it('waitUntilReady', () => {
-    const operation = {
-      status: () =>
-        Promise.resolve({
-          operationState: 2,
-        }),
-    };
-    const utils = new HiveUtils();
-    let executed = false;
-
-    return utils
-      .waitUntilReady(operation, true, () => {
-        executed = true;
-      })
-      .then((op) => {
-        expect(executed).to.be.true;
-        expect(op).to.be.eq(operation);
-      });
-  });
-
   it('fetchAll', () => {
     const utils = new HiveUtils();
     const operation = {

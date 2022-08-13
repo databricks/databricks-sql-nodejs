@@ -1,6 +1,8 @@
 const { expect } = require('chai');
+const { TOperationState } = require('../../thrift/TCLIService_types');
 const DBSQLOperation = require('../../dist/DBSQLOperation').default;
 const getResult = require('../../dist/DBSQLOperation/getResult').default;
+const waitUntilReady = require('../../dist/DBSQLOperation/waitUntilReady').default;
 const checkIfOperationHasMoreRows = require('../../dist/DBSQLOperation/checkIfOperationHasMoreRows').default;
 const { TCLIService_types } = require('../../').thrift;
 
@@ -309,5 +311,116 @@ describe('DBSQLOperation.getResult', () => {
   it('should return json result', () => {
     const t = getResult({ columns: [] }, []);
     expect(t).to.deep.equal([]);
+  });
+});
+
+describe('DBSQLOperation.waitUntilReady', () => {
+  const operation = (state) => ({
+    state,
+    status() {
+      return Promise.resolve({
+        type: 'GetOperationStatusResponse',
+        operationState: this.state,
+      });
+    },
+    finished() {
+      return this.state === TCLIService_types.TOperationState.FINISHED_STATE;
+    },
+  });
+
+  it('should wait until operation is ready', async () => {
+    const op = operation(TCLIService_types.TOperationState.INITIALIZED_STATE);
+    let executed = false;
+
+    return waitUntilReady(op, false, () => {
+      op.state = TCLIService_types.TOperationState.FINISHED_STATE;
+      executed = true;
+    }).then(() => {
+      expect(executed).to.be.true;
+    });
+  });
+
+  it('should call callback until state is not finished', (cb) => {
+    const op = operation(TCLIService_types.TOperationState.INITIALIZED_STATE);
+    const states = [
+      TCLIService_types.TOperationState.INITIALIZED_STATE,
+      TCLIService_types.TOperationState.RUNNING_STATE,
+      TCLIService_types.TOperationState.FINISHED_STATE,
+    ];
+    let i = 0;
+
+    waitUntilReady(op, false, (response) => {
+      expect(response.operationState).to.be.eq(states[i]);
+      i += 1;
+      op.state = states[i];
+    })
+      .then(() => cb())
+      .catch(cb);
+  });
+
+  it('should throw error if state is invalid', () => {
+    const execute = (state) => {
+      return waitUntilReady(operation(state));
+    };
+
+    return Promise.all([
+      execute(TCLIService_types.TOperationState.CANCELED_STATE).catch((error) => {
+        expect(error.message).to.be.eq('The operation was canceled by a client');
+        expect(error.response.type).to.be.eq('GetOperationStatusResponse');
+      }),
+      execute(TCLIService_types.TOperationState.CLOSED_STATE).catch((error) => {
+        expect(error.message).to.be.eq('The operation was closed by a client');
+        expect(error.response.type).to.be.eq('GetOperationStatusResponse');
+      }),
+      execute(TCLIService_types.TOperationState.ERROR_STATE).catch((error) => {
+        expect(error.message).to.be.eq('The operation failed due to an error');
+        expect(error.response.type).to.be.eq('GetOperationStatusResponse');
+      }),
+      execute(TCLIService_types.TOperationState.PENDING_STATE).catch((error) => {
+        expect(error.message).to.be.eq('The operation is in a pending state');
+        expect(error.response.type).to.be.eq('GetOperationStatusResponse');
+      }),
+      execute(TCLIService_types.TOperationState.TIMEDOUT_STATE).catch((error) => {
+        expect(error.message).to.be.eq('The operation is in a timedout state');
+        expect(error.response.type).to.be.eq('GetOperationStatusResponse');
+      }),
+      execute(TCLIService_types.TOperationState.UKNOWN_STATE).catch((error) => {
+        expect(error.message).to.be.eq('The operation is in an unrecognized state');
+        expect(error.response.type).to.be.eq('GetOperationStatusResponse');
+      }),
+    ]);
+  });
+
+  it('should wait until callback is finished', () => {
+    const op = operation(TCLIService_types.TOperationState.INITIALIZED_STATE);
+    let i = 0;
+
+    return waitUntilReady(op, false, () => {
+      op.state = TCLIService_types.TOperationState.FINISHED_STATE;
+
+      return Promise.resolve()
+        .then(
+          () =>
+            new Promise((resolve) => {
+              setTimeout(() => {
+                expect(i).to.be.equal(0);
+                i++;
+                resolve();
+              }, 10);
+            }),
+        )
+        .then(
+          () =>
+            new Promise((resolve) => {
+              setTimeout(() => {
+                expect(i).to.be.equal(1);
+                i++;
+                resolve();
+              }, 30);
+            }),
+        );
+    }).then(() => {
+      expect(i).to.be.eq(2);
+    });
   });
 });

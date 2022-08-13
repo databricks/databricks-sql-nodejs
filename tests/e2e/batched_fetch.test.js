@@ -36,7 +36,7 @@ describe('Data fetching', () => {
   it('fetch chunks should return a max row set of chunkSize', async () => {
     const session = await openSession();
     const operation = await session.executeStatement(query, { runAsync: true });
-    let chunkedOp = await operation.fetchChunk(10).catch((error) => logger(error));
+    let chunkedOp = await operation.fetchChunk({ maxRows: 10 }).catch((error) => logger(error));
     expect(chunkedOp.length).to.be.equal(10);
   });
 
