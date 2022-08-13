@@ -8,20 +8,14 @@ import {
   TPrimitiveTypeEntry,
 } from '../../thrift/TCLIService_types';
 import IOperationResult from './IOperationResult';
-import IOperation from '../contracts/IOperation';
 
 export default class JsonResult implements IOperationResult {
-  private schema: TTableSchema | null;
-  private data: Array<TRowSet> | null;
+  private readonly schema: TTableSchema | null;
+  private readonly data: Array<TRowSet> | null;
 
-  constructor() {
-    this.schema = null;
-    this.data = null;
-  }
-
-  setOperation(operation: IOperation): void {
-    this.schema = operation.getSchema();
-    this.data = operation.getData();
+  constructor(schema: TTableSchema | null, data: Array<TRowSet>) {
+    this.schema = schema;
+    this.data = data;
   }
 
   getValue(): Array<object> {

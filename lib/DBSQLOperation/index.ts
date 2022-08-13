@@ -5,17 +5,18 @@ import {
   TStatusCode,
   TFetchOrientation,
   TFetchResultsResp,
-  TColumn,
   TTableSchema,
   TRowSet,
   TOperationHandle,
 } from '../../thrift/TCLIService_types';
-import { ColumnCode, Int64 } from '../hive/Types';
+import { Int64 } from '../hive/Types';
 import Status from '../dto/Status';
 import StatusFactory from '../factory/StatusFactory';
 import { definedOrError } from '../utils';
 import OperationStateError from '../errors/OperationStateError';
-import GetResult from '../utils/GetResult';
+
+import checkIfOperationHasMoreRows from './checkIfOperationHasMoreRows';
+import getResult from './getResult';
 
 export default class DBSQLOperation implements IOperation {
   private driver: HiveDriver;
@@ -104,7 +105,7 @@ export default class DBSQLOperation implements IOperation {
     await this.waitUntilReady();
 
     return await this.fetch(chunkSize).then(() => {
-      let data = new GetResult(this).execute().getValue();
+      let data = getResult(this.getSchema(), this.getData());
       this.flush();
       return Promise.resolve(data);
     });
@@ -231,39 +232,13 @@ export default class DBSQLOperation implements IOperation {
   private processFetchResponse(response: TFetchResultsResp): Status {
     const status = this.statusFactory.create(response.status);
 
-    this._hasMoreRows = this.checkIfOperationHasMoreRows(response);
+    this._hasMoreRows = checkIfOperationHasMoreRows(response);
 
     if (response.results) {
       this.data.push(response.results);
     }
 
     return status;
-  }
-
-  private checkIfOperationHasMoreRows(response: TFetchResultsResp): boolean {
-    if (response.hasMoreRows) {
-      return true;
-    }
-
-    const columns = response.results?.columns || [];
-
-    if (!columns.length) {
-      return false;
-    }
-
-    const column: TColumn = columns[0];
-
-    const columnValue =
-      column[ColumnCode.binaryVal] ||
-      column[ColumnCode.boolVal] ||
-      column[ColumnCode.byteVal] ||
-      column[ColumnCode.doubleVal] ||
-      column[ColumnCode.i16Val] ||
-      column[ColumnCode.i32Val] ||
-      column[ColumnCode.i64Val] ||
-      column[ColumnCode.stringVal];
-
-    return (columnValue?.values?.length || 0) > 0;
   }
 
   private async isReady(): Promise<boolean> {

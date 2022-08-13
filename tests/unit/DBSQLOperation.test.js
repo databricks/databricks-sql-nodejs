@@ -1,5 +1,7 @@
 const { expect } = require('chai');
 const DBSQLOperation = require('../../dist/DBSQLOperation').default;
+const getResult = require('../../dist/DBSQLOperation/getResult').default;
+const checkIfOperationHasMoreRows = require('../../dist/DBSQLOperation/checkIfOperationHasMoreRows').default;
 const { TCLIService_types } = require('../../').thrift;
 
 const getMock = (parent, prototype) => {
@@ -220,9 +222,7 @@ describe('DBSQLOperation.close', () => {
 
 describe('DBSQLOperation.checkIfOperationHasMoreRows', () => {
   it('should return True if hasMoreRows is set True', () => {
-    const operation = new DBSQLOperation(driverMock, operationHandle, TCLIService_types);
-
-    const result = operation.checkIfOperationHasMoreRows({
+    const result = checkIfOperationHasMoreRows({
       hasMoreRows: true,
     });
 
@@ -230,18 +230,14 @@ describe('DBSQLOperation.checkIfOperationHasMoreRows', () => {
   });
 
   it('should return False if the response has no columns', () => {
-    const operation = new DBSQLOperation(driverMock, operationHandle, TCLIService_types);
-
-    const result = operation.checkIfOperationHasMoreRows({});
+    const result = checkIfOperationHasMoreRows({});
 
     expect(result).to.be.false;
   });
 
   it('should return True if at least one of the columns is not empty', () => {
-    const operation = new DBSQLOperation(driverMock, operationHandle, TCLIService_types);
-
     const result = (columnType) =>
-      operation.checkIfOperationHasMoreRows({
+      checkIfOperationHasMoreRows({
         results: { columns: [{ [columnType]: { values: ['a'] } }] },
       });
 
@@ -257,9 +253,7 @@ describe('DBSQLOperation.checkIfOperationHasMoreRows', () => {
   });
 
   it('should return False if all columns are empty', () => {
-    const operation = new DBSQLOperation(driverMock, operationHandle, TCLIService_types);
-
-    const result = operation.checkIfOperationHasMoreRows({
+    const result = checkIfOperationHasMoreRows({
       results: { columns: [{ boolVal: { values: [] } }] },
     });
 
@@ -282,16 +276,12 @@ describe('DBSQLOperation.processFetchResponse', () => {
   });
 
   it('should set hasMoreRows and push data', () => {
-    const mockOperation = getMock(DBSQLOperation, {
-      checkIfOperationHasMoreRows() {
-        return true;
-      },
-    });
-    const operation = new mockOperation(driverMock, operationHandle, TCLIService_types);
+    const operation = new DBSQLOperation(driverMock, operationHandle, TCLIService_types);
     const result = operation.processFetchResponse({
       status: {
         statusCode: TCLIService_types.TStatusCode.SUCCESS_STATUS,
       },
+      hasMoreRows: true,
       results: 'data',
     });
 
@@ -308,5 +298,16 @@ describe('DBSQLOperation.flush', () => {
     operation.flush();
 
     expect(operation.data).empty;
+  });
+});
+
+describe('DBSQLOperation.getResult', () => {
+  it('should return null result', () => {
+    const t = getResult(null, []);
+    expect(t).to.equal(null);
+  });
+  it('should return json result', () => {
+    const t = getResult({ columns: [] }, []);
+    expect(t).to.deep.equal([]);
   });
 });

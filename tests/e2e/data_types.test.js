@@ -30,13 +30,9 @@ const openSession = async () => {
 
 const execute = async (session, statement) => {
   const operation = await session.executeStatement(statement, { runAsync: true });
-
-  await utils.waitUntilReady(operation, true, (stateResponse) => {
-    logger(stateResponse.taskStatus);
-  });
-  await utils.fetchAll(operation);
+  const result = await operation.fetchAll();
   await operation.close();
-  return utils.getResult(operation).getValue();
+  return result;
 };
 
 function removeTrailingMetadata(columns) {

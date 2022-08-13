@@ -1,6 +1,5 @@
 const { expect } = require('chai');
 const HiveUtils = require('../../../dist/utils/HiveUtils').default;
-const NullResult = require('../../../dist/result/NullResult').default;
 
 describe('HiveUtils', () => {
   it('waitUntilReady', () => {
@@ -21,14 +20,6 @@ describe('HiveUtils', () => {
         expect(executed).to.be.true;
         expect(op).to.be.eq(operation);
       });
-  });
-
-  it('getResult', () => {
-    const utils = new HiveUtils();
-    const result = utils.getResult({
-      getSchema: () => null,
-    });
-    expect(result).instanceOf(NullResult);
   });
 
   it('fetchAll', () => {
