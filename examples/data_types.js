@@ -4,7 +4,9 @@ const client = new DBSQLClient();
 
 const utils = DBSQLClient.utils;
 
-const [host, path, token] = process.argv.slice(2);
+const host = '****.databricks.com';
+const path = '/sql/1.0/endpoints/****';
+const token = 'dapi********************************';
 
 client.connect({ host, path, token }).then(async (client) => {
   try {
@@ -175,16 +177,19 @@ const testComplexTypes = async (session) => {
 const execute = async (session, statement) => {
   const operation = await session.executeStatement(statement, { runAsync: true });
 
-  await utils.waitUntilReady(operation, true, (stateResponse) => {
-    return;
-    if (stateResponse.taskStatus) {
-      console.log(stateResponse.taskStatus);
-    } else {
-      console.log(utils.formatProgress(stateResponse.progressUpdateResponse));
+  const result = await operation.fetchAll({
+    progress: true,
+    callback: (stateResponse) => {
+      return;
+      if (stateResponse.taskStatus) {
+        console.log(stateResponse.taskStatus);
+      } else {
+        console.log(utils.formatProgress(stateResponse.progressUpdateResponse));
+      }
     }
-  });
-  await utils.fetchAll(operation);
+  })
+
   await operation.close();
 
-  return utils.getResult(operation).getValue();
+  return result;
 };

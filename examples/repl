@@ -20,14 +20,10 @@ async function initClient({ host, endpointId, token }) {
 }
 
 async function runQuery(session, query) {
-    const utils = DBSQLClient.utils;
-
     const queryOperation = await session.executeStatement(query, { runAsync: true });
-    await utils.waitUntilReady(queryOperation, false, () => {});
-    await utils.fetchAll(queryOperation);
+    const result = await queryOperation.fetchAll();
     await queryOperation.close();
-
-    return utils.getResult(queryOperation).getValue();
+    return result;
 }
 
 const format = {

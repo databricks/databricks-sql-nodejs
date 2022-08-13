@@ -4,7 +4,9 @@ const client = new DBSQLClient();
 
 const utils = DBSQLClient.utils;
 
-const [host, path, token] = process.argv.slice(2);
+const host = '****.databricks.com';
+const path = '/sql/1.0/endpoints/****';
+const token = 'dapi********************************';
 
 client
   .connect({ host, path, token })
@@ -44,12 +46,14 @@ client
   });
 
 async function handleOperation(operation) {
-  await utils.waitUntilReady(operation, true, (stateResponse) => {
-    console.log(stateResponse.taskStatus);
-  });
-  await utils.fetchAll(operation);
+  const result = await operation.fetchAll({
+    progress: true,
+    callback: (stateResponse) => {
+      console.log(stateResponse.taskStatus);
+    },
+  })
   await operation.close();
-  return utils.getResult(operation).getValue();
+  return result;
 }
 
 const createTables = async (session) => {

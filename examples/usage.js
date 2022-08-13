@@ -2,7 +2,9 @@ const { DBSQLClient, thrift } = require('../');
 
 const client = new DBSQLClient();
 
-const [host, path, token] = process.argv.slice(2);
+const host = '****.databricks.com';
+const path = '/sql/1.0/endpoints/****';
+const token = 'dapi********************************';
 
 client
   .connect({ host, path, token })
