@@ -51,7 +51,7 @@ async function handleOperation(operation) {
     callback: (stateResponse) => {
       console.log(stateResponse.taskStatus);
     },
-  })
+  });
   await operation.close();
   return result;
 }

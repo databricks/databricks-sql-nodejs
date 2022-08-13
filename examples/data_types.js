@@ -186,8 +186,8 @@ const execute = async (session, statement) => {
       } else {
         console.log(utils.formatProgress(stateResponse.progressUpdateResponse));
       }
-    }
-  })
+    },
+  });
 
   await operation.close();
 

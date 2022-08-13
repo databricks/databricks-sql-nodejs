@@ -33,7 +33,6 @@ npm i @databricks/sql
 const { DBSQLClient } = require('@databricks/sql');
 
 const client = new DBSQLClient();
-const utils = DBSQLClient.utils;
 
 client
   .connect({
@@ -45,11 +44,9 @@ client
     const session = await client.openSession();
 
     const queryOperation = await session.executeStatement('SELECT "Hello, World!"', { runAsync: true });
-    await utils.waitUntilReady(queryOperation, false, () => {});
-    await utils.fetchAll(queryOperation);
+    const result = await queryOperation.fetchAll();
     await queryOperation.close();
 
-    const result = utils.getResult(queryOperation).getValue();
     console.table(result);
 
     await session.close();
