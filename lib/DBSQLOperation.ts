@@ -14,6 +14,8 @@ import { ColumnCode, Int64 } from './hive/Types';
 import Status from './dto/Status';
 import StatusFactory from './factory/StatusFactory';
 import { definedOrError } from './utils';
+import OperationStateError from './errors/OperationStateError';
+import GetResult from './utils/GetResult';
 
 export default class DBSQLOperation implements IOperation {
   private driver: HiveDriver;
@@ -22,7 +24,6 @@ export default class DBSQLOperation implements IOperation {
   private data: Array<TRowSet>;
   private statusFactory: StatusFactory;
 
-  private maxRows: Int64 = new Int64(100000);
   private fetchType: number = 0;
 
   private _hasMoreRows: boolean = false;
@@ -40,11 +41,22 @@ export default class DBSQLOperation implements IOperation {
     this.data = [];
   }
 
+  private async waitUntilReady(): Promise<void> {
+    if (this.finished()) {
+      return;
+    }
+    if (await this.isReady()) {
+      return;
+    } else {
+      return this.waitUntilReady();
+    }
+  }
+
   /**
    * Fetches result and schema from operation
    * @throws {StatusError}
    */
-  fetch(): Promise<Status> {
+  fetch(chunkSize = 100000): Promise<Status> {
     if (!this.hasResultSet) {
       return Promise.resolve(
         this.statusFactory.create({
@@ -65,13 +77,37 @@ export default class DBSQLOperation implements IOperation {
       return this.initializeSchema()
         .then((schema) => {
           this.schema = schema;
-
-          return this.firstFetch();
+          return this.firstFetch(chunkSize);
         })
         .then((response) => this.processFetchResponse(response));
     } else {
-      return this.nextFetch().then((response) => this.processFetchResponse(response));
+      return this.nextFetch(chunkSize).then((response) => this.processFetchResponse(response));
     }
+  }
+
+  async fetchAll(): Promise<Array<object>> {
+    let data: Array<object> = [];
+    do {
+      let chunk = await this.fetchChunk();
+      if (chunk) {
+        data.push(...chunk);
+      }
+    } while (this.hasMoreRows());
+    return data;
+  }
+
+  async fetchChunk(chunkSize = 100000): Promise<Array<object>> {
+    if (!this.hasResultSet) {
+      return Promise.resolve([]);
+    }
+
+    await this.waitUntilReady();
+
+    return await this.fetch(chunkSize).then(() => {
+      let data = new GetResult(this).execute().getValue();
+      this.flush();
+      return Promise.resolve(data);
+    });
   }
 
   /**
@@ -134,10 +170,6 @@ export default class DBSQLOperation implements IOperation {
     return this._hasMoreRows;
   }
 
-  setMaxRows(maxRows: number): void {
-    this.maxRows = new Int64(maxRows);
-  }
-
   setFetchType(fetchType: number): void {
     this.fetchType = fetchType;
   }
@@ -174,20 +206,20 @@ export default class DBSQLOperation implements IOperation {
       });
   }
 
-  private firstFetch() {
+  private firstFetch(chunkSize: number) {
     return this.driver.fetchResults({
       operationHandle: this.operationHandle,
       orientation: TFetchOrientation.FETCH_FIRST,
-      maxRows: this.maxRows,
+      maxRows: new Int64(chunkSize),
       fetchType: this.fetchType,
     });
   }
 
-  private nextFetch() {
+  private nextFetch(chunkSize: number) {
     return this.driver.fetchResults({
       operationHandle: this.operationHandle,
       orientation: TFetchOrientation.FETCH_NEXT,
-      maxRows: this.maxRows,
+      maxRows: new Int64(chunkSize),
       fetchType: this.fetchType,
     });
   }
@@ -232,5 +264,30 @@ export default class DBSQLOperation implements IOperation {
       column[ColumnCode.stringVal];
 
     return (columnValue?.values?.length || 0) > 0;
+  }
+
+  private async isReady(): Promise<boolean> {
+    let response = await this.status();
+    switch (response.operationState) {
+      case TOperationState.INITIALIZED_STATE:
+        return false;
+      case TOperationState.RUNNING_STATE:
+        return false;
+      case TOperationState.FINISHED_STATE:
+        return true;
+      case TOperationState.CANCELED_STATE:
+        throw new OperationStateError('The operation was canceled by a client', response);
+      case TOperationState.CLOSED_STATE:
+        throw new OperationStateError('The operation was closed by a client', response);
+      case TOperationState.ERROR_STATE:
+        throw new OperationStateError('The operation failed due to an error', response);
+      case TOperationState.PENDING_STATE:
+        throw new OperationStateError('The operation is in a pending state', response);
+      case TOperationState.TIMEDOUT_STATE:
+        throw new OperationStateError('The operation is in a timedout state', response);
+      case TOperationState.UKNOWN_STATE:
+      default:
+        throw new OperationStateError('The operation is in an unrecognized state', response);
+    }
   }
 }

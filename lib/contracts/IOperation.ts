@@ -5,7 +5,7 @@ export default interface IOperation {
   /**
    * Fetch schema and a portion of data
    */
-  fetch(): Promise<Status>;
+  fetch(chunkSize?: number): Promise<Status>;
 
   /**
    * Request status of operation
@@ -33,11 +33,6 @@ export default interface IOperation {
    * Check if operation hasMoreRows
    */
   hasMoreRows(): boolean;
-
-  /**
-   * Set the max fetch size
-   */
-  setMaxRows(maxRows: number): void;
 
   /**
    * Return retrieved schema
