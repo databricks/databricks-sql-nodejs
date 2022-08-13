@@ -13,44 +13,28 @@ import { Int64 } from '../hive/Types';
 import Status from '../dto/Status';
 import StatusFactory from '../factory/StatusFactory';
 import { definedOrError } from '../utils';
-import OperationStateError from '../errors/OperationStateError';
 
+import waitUntilReady from './waitUntilReady';
 import checkIfOperationHasMoreRows from './checkIfOperationHasMoreRows';
 import getResult from './getResult';
 
 export default class DBSQLOperation implements IOperation {
   private driver: HiveDriver;
   private operationHandle: TOperationHandle;
-  private schema: TTableSchema | null;
-  private data: Array<TRowSet>;
-  private statusFactory: StatusFactory;
+  private schema: TTableSchema | null = null;
+  private data: Array<TRowSet> = [];
+  private statusFactory = new StatusFactory();
 
   private fetchType: number = 0;
 
   private _hasMoreRows: boolean = false;
-  private state: number;
+  private state: number = TOperationState.INITIALIZED_STATE;
   private hasResultSet: boolean = false;
 
   constructor(driver: HiveDriver, operationHandle: TOperationHandle) {
     this.driver = driver;
     this.operationHandle = operationHandle;
     this.hasResultSet = operationHandle.hasResultSet;
-    this.statusFactory = new StatusFactory();
-    this.state = TOperationState.INITIALIZED_STATE;
-
-    this.schema = null;
-    this.data = [];
-  }
-
-  private async waitUntilReady(): Promise<void> {
-    if (this.finished()) {
-      return;
-    }
-    if (await this.isReady()) {
-      return;
-    } else {
-      return this.waitUntilReady();
-    }
   }
 
   /**
@@ -102,7 +86,7 @@ export default class DBSQLOperation implements IOperation {
       return Promise.resolve([]);
     }
 
-    await this.waitUntilReady();
+    await waitUntilReady(this);
 
     return await this.fetch(chunkSize).then(() => {
       let data = getResult(this.getSchema(), this.getData());
@@ -239,30 +223,5 @@ export default class DBSQLOperation implements IOperation {
     }
 
     return status;
-  }
-
-  private async isReady(): Promise<boolean> {
-    let response = await this.status();
-    switch (response.operationState) {
-      case TOperationState.INITIALIZED_STATE:
-        return false;
-      case TOperationState.RUNNING_STATE:
-        return false;
-      case TOperationState.FINISHED_STATE:
-        return true;
-      case TOperationState.CANCELED_STATE:
-        throw new OperationStateError('The operation was canceled by a client', response);
-      case TOperationState.CLOSED_STATE:
-        throw new OperationStateError('The operation was closed by a client', response);
-      case TOperationState.ERROR_STATE:
-        throw new OperationStateError('The operation failed due to an error', response);
-      case TOperationState.PENDING_STATE:
-        throw new OperationStateError('The operation is in a pending state', response);
-      case TOperationState.TIMEDOUT_STATE:
-        throw new OperationStateError('The operation is in a timedout state', response);
-      case TOperationState.UKNOWN_STATE:
-      default:
-        throw new OperationStateError('The operation is in an unrecognized state', response);
-    }
   }
 }
