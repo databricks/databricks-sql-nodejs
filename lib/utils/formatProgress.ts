@@ -1,6 +1,6 @@
 import { TProgressUpdateResp } from '../../thrift/TCLIService_types';
 
-export default class ProgressUpdateTransformer {
+export class ProgressUpdateTransformer {
   private progressUpdate: TProgressUpdateResp;
   private rowWidth: number = 10;
 
@@ -21,4 +21,8 @@ export default class ProgressUpdateTransformer {
 
     return [header, ...rows, footer].join('\n');
   }
+}
+
+export default function formatProgress(progressUpdate: TProgressUpdateResp): string {
+  return String(new ProgressUpdateTransformer(progressUpdate));
 }
