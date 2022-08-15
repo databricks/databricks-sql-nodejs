@@ -19,7 +19,9 @@
     "watch": "tsc -w",
     "type-check": "tsc --noEmit",
     "prettier:fix": "prettier . --write",
-    "prettier:check": "prettier . --check"
+    "prettier:check": "prettier . --check",
+    "lint": "npx eslint lib/** --ext .js,.jsx,.ts,.tsx",
+    "lint:fix": "npx eslint lib/** --ext .js,.jsx,.ts,.tsx --fix"
   },
   "repository": {
     "type": "git",
