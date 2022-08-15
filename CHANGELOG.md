@@ -15,7 +15,7 @@
 ### Upgrading
 
 `DBSQLClient.utils` was permanently removed. Code which used `utils.waitUntilReady`, `utils.fetchAll`
-and `utils.getResult` to get data could now be replaced with the single `DBSQLOperation.fetchAll` method.
+and `utils.getResult` to get data should now be replaced with the single `DBSQLOperation.fetchAll` method.
 Progress reporting, previously supported by `utils.waitUntilReady`, is now configurable via
 `DBSQLOperation.fetchChunk`/`DBSQLOperation.fetchAll` options. `DBSQLOperation.setMaxRows` also became
 an option of methods mentioned above.

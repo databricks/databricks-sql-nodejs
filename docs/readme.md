@@ -5,8 +5,8 @@
 1. [Foreword](#foreword)
 2. [Example](#example) \
    2.1. [Error handling](#error-handling)
-3. [DBSQLSession](#hivesession)
-4. [DBSQLOperation](#hiveoperation)
+3. [DBSQLSession](#dbsqlsession)
+4. [DBSQLOperation](#dbsqloperation)
 5. [Status](#status)
 6. [Finalize](#finalize)
 
@@ -111,7 +111,7 @@ In most cases, DBSQLSession methods return [DBSQLOperation](/lib/DBSQLOperation.
 
 After you fetch the result, the operation will have [TableSchema](/lib/hive/Types/index.ts#L143) and data.
 
-Operation is executed asynchronously, but `fetchChunk`/`fetchAll` will wait until it has finished state. You can
+Operation is executed asynchronously, but `fetchChunk`/`fetchAll` will wait until it has finished. You can
 get current status of operation any time using a dedicated method:
 
 ```javascript
