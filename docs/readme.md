@@ -5,9 +5,8 @@
 1. [Foreword](#foreword)
 2. [Example](#example) \
    2.1. [Error handling](#error-handling)
-3. [HiveSession](#hivesession)
-4. [HiveOperation](#hiveoperation) \
-   4.1. [HiveUtils](#hiveutils)
+3. [DBSQLSession](#dbsqlsession)
+4. [DBSQLOperation](#dbsqloperation)
 5. [Status](#status)
 6. [Finalize](#finalize)
 
@@ -23,7 +22,6 @@ If you find any mistakes, misleading or some confusion feel free to create an is
 const { DBSQLClient } = require('@databricks/sql');
 
 const client = new DBSQLClient();
-const utils = DBSQLClient.utils;
 
 client
   .connect({
@@ -37,19 +35,16 @@ client
     const createTableOperation = await session.executeStatement(
       'CREATE TABLE IF NOT EXISTS pokes (foo INT, bar STRING)',
     );
-    await utils.waitUntilReady(createTableOperation, false, () => {});
+    await createTableOperation.fetchAll();
     await createTableOperation.close();
 
     const loadDataOperation = await session.executeStatement('INSERT INTO pokes VALUES(123, "Hello, world!"');
-    await utils.waitUntilReady(loadDataOperation, false, () => {});
+    await loadDataOperation.fetchAll();
     await loadDataOperation.close();
 
     const selectDataOperation = await session.executeStatement('SELECT * FROM pokes', { runAsync: true });
-    await utils.waitUntilReady(selectDataOperation, false, () => {});
-    await utils.fetchAll(selectDataOperation);
+    const result = await selectDataOperation.fetchAll(selectDataOperation);
     await selectDataOperation.close();
-
-    const result = utils.getResult(selectDataOperation).getValue();
 
     console.log(JSON.stringify(result, null, '\t'));
 
@@ -71,9 +66,9 @@ client.on('error', (error) => {
 });
 ```
 
-## HiveSession
+## DBSQLSession
 
-After you connect to the server you should open session to start working with Hive server.
+After you connect to the server you should open session to start working with server.
 
 ```javascript
 ...
@@ -84,9 +79,9 @@ To open session you must provide [OpenSessionRequest](/lib/hive/Commands/OpenSes
 
 Into "configuration" you may set any of the configurations that required for the session of your Hive instance.
 
-After the session is opened you will have the [HiveSession](/lib/HiveSession.ts) instance.
+After the session is opened you will have the [DBSQLSession](/lib/DBSQLSession.ts) instance.
 
-Class [HiveSession](/lib/HiveSession.ts) is a facade for API that works with [SessionHandle](/lib/hive/Types/index.ts#L77).
+Class [DBSQLSession](/lib/DBSQLSession.ts) is a facade for API that works with [SessionHandle](/lib/hive/Types/index.ts#L77).
 
 The method you will use the most is `executeStatement`
 
@@ -100,7 +95,7 @@ const operation = await session.executeStatement(
 
 - "statement" is DDL/DML statement (CREATE TABLE, INSERT, UPDATE, SELECT, LOAD, etc.)
 
-- [options](/lib/contracts/IHiveSession.ts#L14)
+- [options](/lib/contracts/IDBSQLSession.ts#L14)
 
   - runAsync allows executing operation asynchronously.
 
@@ -108,17 +103,16 @@ const operation = await session.executeStatement(
 
   - timeout is the maximum time to execute an operation. It has Buffer type because timestamp in Hive has capacity 64. So for such value, you should use [node-int64](https://www.npmjs.com/package/node-int64) npm module.
 
-To know other methods see [IHiveSession](/lib/contracts/IHiveSession.ts) and [examples/session.js](/examples/session.js).
+To know other methods see [IDBSQLSession](/lib/contracts/IDBSQLSession.ts) and [examples/session.js](/examples/session.js).
 
-## HiveOperation
+## DBSQLOperation
 
-In most cases, HiveSession methods return [HiveOperation](/lib/HiveOperation.ts), which helps you to retrieve requested data.
+In most cases, DBSQLSession methods return [DBSQLOperation](/lib/DBSQLOperation.ts), which helps you to retrieve requested data.
 
-After you fetch the result, the operation will have [TableSchema](/lib/hive/Types/index.ts#L143) and data (Array<[RowSet](/lib/hive/Types/index.ts#L218)>).
+After you fetch the result, the operation will have [TableSchema](/lib/hive/Types/index.ts#L143) and data.
 
-### HiveUtils
-
-Operation is executed asynchronously, so before retrieving the result, you have to wait until it has finished state.
+Operation is executed asynchronously, but `fetchChunk`/`fetchAll` will wait until it has finished. You can
+get current status of operation any time using a dedicated method:
 
 ```javascript
 ...
@@ -126,55 +120,19 @@ const response = await operation.status();
 const isReady = response.operationState === TCLIService_types.TOperationState.FINISHED_STATE;
 ```
 
-Also, the result is fetched by portions, the size of a portion you can set by method [setMaxRows()](/lib/HiveOperation.ts#L115).
+Also, the result is fetched by portions, the size of a portion you can pass as option to `fetchChunk`/`fetchAll`.
 
 ```javascript
 ...
-operation.setMaxRows(500);
-const status = await operation.fetch();
+const results = await operation.fetchChunk({ maxRows: 500 });
 ```
 
-After you fetch all data and you have schema and set of data, you can transfrom data in readable format.
+Schema becomes available after you start fetching data.
 
 ```javascript
 ...
+await operation.fetchChunk();
 const schema = operation.getSchema();
-const data = operation.getData();
-```
-
-To simplify this process, you may use [HiveUtils](/lib/utils/HiveUtils.ts).
-
-```typescript
-/**
- * Executes until operation has status finished or has one of the invalid states.
- *
- * @param operation operation to perform
- * @param progress flag for operation status command. If it sets true, response will include progressUpdateResponse with progress information
- * @param callback if callback specified it will be called each time the operation status response received and it will be passed as first parameter
- */
-waitUntilReady(
-    operation: IOperation,
-    progress?: boolean,
-    callback?: Function
-): Promise<IOperation>
-
-/**
- * Fetches data until operation hasMoreRows.
- *
- * @param operation
- */
-fetchAll(operation: IOperation): Promise<IOperation>
-
-/**
- * Transforms operation result
- *
- * @param operation operation to perform
- * @param resultHandler you may specify your own handler. If not specified the result is transformed to JSON
- */
-getResult(
-    operation: IOperation,
-    resultHandler?: IOperationResult
-): IOperationResult
 ```
 
 _NOTICE_
@@ -187,19 +145,13 @@ For more details see [IOperation](/lib/contracts/IOperation.ts).
 ### Example
 
 ```javascript
-const { DBSQLClient } = require('@databricks/sql');
-const utils = DBSQLClient.utils;
 ...
-await utils.waitUntilReady(
-    operation,
-    true,
-    (stateResponse) => {
-        console.log(stateResponse.taskStatus);
-    }
-);
-await utils.fetchAll(operation);
-
-const result = utils.getResult(operation).getValue();
+const result = await operation.fetchAll({
+  progress: true,
+  callback: (stateResponse) => {
+    console.log(stateResponse.taskStatus);
+  },
+});
 ```
 
 ## Status

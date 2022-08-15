@@ -1,55 +1,40 @@
-import IOperation from './contracts/IOperation';
-import HiveDriver from './hive/HiveDriver';
+import IOperation, { IFetchOptions, defaultFetchOptions } from '../contracts/IOperation';
+import HiveDriver from '../hive/HiveDriver';
 import {
   TOperationState,
   TStatusCode,
   TFetchOrientation,
   TFetchResultsResp,
-  TColumn,
   TTableSchema,
   TRowSet,
   TOperationHandle,
-} from '../thrift/TCLIService_types';
-import { ColumnCode, Int64 } from './hive/Types';
-import Status from './dto/Status';
-import StatusFactory from './factory/StatusFactory';
-import { definedOrError } from './utils';
-import OperationStateError from './errors/OperationStateError';
-import GetResult from './utils/GetResult';
+} from '../../thrift/TCLIService_types';
+import { Int64 } from '../hive/Types';
+import Status from '../dto/Status';
+import StatusFactory from '../factory/StatusFactory';
+import { definedOrError } from '../utils';
+
+import waitUntilReady from './waitUntilReady';
+import checkIfOperationHasMoreRows from './checkIfOperationHasMoreRows';
+import getResult from './getResult';
 
 export default class DBSQLOperation implements IOperation {
   private driver: HiveDriver;
   private operationHandle: TOperationHandle;
-  private schema: TTableSchema | null;
-  private data: Array<TRowSet>;
-  private statusFactory: StatusFactory;
+  private schema: TTableSchema | null = null;
+  private data: Array<TRowSet> = [];
+  private statusFactory = new StatusFactory();
 
   private fetchType: number = 0;
 
   private _hasMoreRows: boolean = false;
-  private state: number;
+  private state: number = TOperationState.INITIALIZED_STATE;
   private hasResultSet: boolean = false;
 
   constructor(driver: HiveDriver, operationHandle: TOperationHandle) {
     this.driver = driver;
     this.operationHandle = operationHandle;
     this.hasResultSet = operationHandle.hasResultSet;
-    this.statusFactory = new StatusFactory();
-    this.state = TOperationState.INITIALIZED_STATE;
-
-    this.schema = null;
-    this.data = [];
-  }
-
-  private async waitUntilReady(): Promise<void> {
-    if (this.finished()) {
-      return;
-    }
-    if (await this.isReady()) {
-      return;
-    } else {
-      return this.waitUntilReady();
-    }
   }
 
   /**
@@ -85,10 +70,10 @@ export default class DBSQLOperation implements IOperation {
     }
   }
 
-  async fetchAll(): Promise<Array<object>> {
+  async fetchAll(options?: IFetchOptions): Promise<Array<object>> {
     let data: Array<object> = [];
     do {
-      let chunk = await this.fetchChunk();
+      let chunk = await this.fetchChunk(options);
       if (chunk) {
         data.push(...chunk);
       }
@@ -96,15 +81,15 @@ export default class DBSQLOperation implements IOperation {
     return data;
   }
 
-  async fetchChunk(chunkSize = 100000): Promise<Array<object>> {
+  async fetchChunk(options: IFetchOptions = defaultFetchOptions): Promise<Array<object>> {
     if (!this.hasResultSet) {
       return Promise.resolve([]);
     }
 
-    await this.waitUntilReady();
+    await waitUntilReady(this, options.progress, options.callback);
 
-    return await this.fetch(chunkSize).then(() => {
-      let data = new GetResult(this).execute().getValue();
+    return await this.fetch(options.maxRows).then(() => {
+      let data = getResult(this.getSchema(), this.getData());
       this.flush();
       return Promise.resolve(data);
     });
@@ -231,63 +216,12 @@ export default class DBSQLOperation implements IOperation {
   private processFetchResponse(response: TFetchResultsResp): Status {
     const status = this.statusFactory.create(response.status);
 
-    this._hasMoreRows = this.checkIfOperationHasMoreRows(response);
+    this._hasMoreRows = checkIfOperationHasMoreRows(response);
 
     if (response.results) {
       this.data.push(response.results);
     }
 
     return status;
-  }
-
-  private checkIfOperationHasMoreRows(response: TFetchResultsResp): boolean {
-    if (response.hasMoreRows) {
-      return true;
-    }
-
-    const columns = response.results?.columns || [];
-
-    if (!columns.length) {
-      return false;
-    }
-
-    const column: TColumn = columns[0];
-
-    const columnValue =
-      column[ColumnCode.binaryVal] ||
-      column[ColumnCode.boolVal] ||
-      column[ColumnCode.byteVal] ||
-      column[ColumnCode.doubleVal] ||
-      column[ColumnCode.i16Val] ||
-      column[ColumnCode.i32Val] ||
-      column[ColumnCode.i64Val] ||
-      column[ColumnCode.stringVal];
-
-    return (columnValue?.values?.length || 0) > 0;
-  }
-
-  private async isReady(): Promise<boolean> {
-    let response = await this.status();
-    switch (response.operationState) {
-      case TOperationState.INITIALIZED_STATE:
-        return false;
-      case TOperationState.RUNNING_STATE:
-        return false;
-      case TOperationState.FINISHED_STATE:
-        return true;
-      case TOperationState.CANCELED_STATE:
-        throw new OperationStateError('The operation was canceled by a client', response);
-      case TOperationState.CLOSED_STATE:
-        throw new OperationStateError('The operation was closed by a client', response);
-      case TOperationState.ERROR_STATE:
-        throw new OperationStateError('The operation failed due to an error', response);
-      case TOperationState.PENDING_STATE:
-        throw new OperationStateError('The operation is in a pending state', response);
-      case TOperationState.TIMEDOUT_STATE:
-        throw new OperationStateError('The operation is in a timedout state', response);
-      case TOperationState.UKNOWN_STATE:
-      default:
-        throw new OperationStateError('The operation is in an unrecognized state', response);
-    }
   }
 }

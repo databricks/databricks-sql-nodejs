@@ -7,14 +7,10 @@ const path = '/sql/1.0/endpoints/****';
 const token = 'dapi********************************';
 
 async function getQueryResult(operation) {
-  const utils = DBSQLClient.utils;
-
-  await utils.waitUntilReady(operation, false, () => {});
   console.log('Fetching data...');
-  await utils.fetchAll(operation);
+  const results = await operation.fetchAll();
   await operation.close();
-
-  return utils.getResult(operation).getValue();
+  return results;
 }
 
 async function cancelQuery(operation) {
@@ -41,9 +37,9 @@ client
     console.log('Running query...');
     const queryOperation = await session.executeStatement(
       `
-        SELECT id 
+        SELECT *
         FROM RANGE(100000000)
-        ORDER BY RANDOM() + 2 asc
+        ORDER BY RANDOM() ASC
       `,
       { runAsync: true },
     );

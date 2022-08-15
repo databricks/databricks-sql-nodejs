@@ -101,11 +101,7 @@ describe('JsonResult', () => {
       },
     ];
 
-    const result = new JsonResult();
-    result.setOperation({
-      getSchema: () => schema,
-      getData: () => data,
-    });
+    const result = new JsonResult(schema, data);
 
     expect(result.getValue()).to.be.deep.eq([
       {
@@ -175,11 +171,7 @@ describe('JsonResult', () => {
       },
     ];
 
-    const result = new JsonResult();
-    result.setOperation({
-      getSchema: () => schema,
-      getData: () => data,
-    });
+    const result = new JsonResult(schema, data);
 
     expect(result.getValue()).to.be.deep.eq([
       {
@@ -218,17 +210,13 @@ describe('JsonResult', () => {
       },
     ];
 
-    const result = new JsonResult();
-    result.setOperation({
-      getSchema: () => schema,
-      getData: () => data,
-    });
+    const result = new JsonResult(schema, data);
 
     expect(result.getValue()).to.be.deep.eq([{ id: '0' }, { id: '1' }, { id: '2' }, { id: '3' }]);
   });
 
   it('should detect nulls', () => {
-    const result = new JsonResult();
+    const result = new JsonResult(null, []);
     const buf = Buffer.from([0x55, 0xaa, 0xc3]);
 
     [
@@ -340,11 +328,7 @@ describe('JsonResult', () => {
       },
     ];
 
-    const result = new JsonResult();
-    result.setOperation({
-      getSchema: () => schema,
-      getData: () => data,
-    });
+    const result = new JsonResult(schema, data);
 
     expect(result.getValue()).to.be.deep.eq([
       {

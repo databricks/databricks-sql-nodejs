@@ -1,6 +1,6 @@
 const { expect } = require('chai');
 
-const { buildUserAgentString } = require('../../dist/utils');
+const { buildUserAgentString, formatProgress, ProgressUpdateTransformer } = require('../../dist/utils');
 
 describe('buildUserAgentString', () => {
   // It should follow https://www.rfc-editor.org/rfc/rfc7231#section-5.5.3 and
@@ -40,5 +40,38 @@ describe('buildUserAgentString', () => {
   it('matches pattern without clientId', () => {
     const ua = buildUserAgentString();
     checkUserAgentString(ua);
+  });
+});
+
+describe('formatProgress', () => {
+  it('formats progress', () => {
+    const result = formatProgress({
+      headerNames: [],
+      rows: [],
+    });
+    expect(result).to.be.eq('\n');
+  });
+});
+
+describe('ProgressUpdateTransformer', () => {
+  it('should have equal columns', () => {
+    const t = new ProgressUpdateTransformer();
+
+    expect(t.formatRow(['Column 1', 'Column 2'])).to.be.eq('Column 1  |Column 2  ');
+  });
+
+  it('should format response as table', () => {
+    const t = new ProgressUpdateTransformer({
+      headerNames: ['Column 1', 'Column 2'],
+      rows: [
+        ['value 1.1', 'value 1.2'],
+        ['value 2.1', 'value 2.2'],
+      ],
+      footerSummary: 'footer',
+    });
+
+    expect(String(t)).to.be.eq(
+      'Column 1  |Column 2  \n' + 'value 1.1 |value 1.2 \n' + 'value 2.1 |value 2.2 \n' + 'footer',
+    );
   });
 });
