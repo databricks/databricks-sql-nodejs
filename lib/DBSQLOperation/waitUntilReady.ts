@@ -7,7 +7,7 @@ async function isReady(
   progress?: boolean,
   callback?: OperationStatusCallback,
 ): Promise<boolean> {
-  let response = await operation.status(Boolean(progress));
+  const response = await operation.status(Boolean(progress));
 
   if (callback) {
     await Promise.resolve(callback(response));
@@ -45,7 +45,7 @@ export default async function waitUntilReady(
     return;
   }
   if (await isReady(operation, progress, callback)) {
-    return;
+
   } else {
     return waitUntilReady(operation, progress, callback);
   }

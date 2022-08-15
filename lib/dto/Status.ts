@@ -6,7 +6,9 @@ type StatusData = {
 
 export default class Status {
   private isSuccess: boolean;
+
   private isExecuting: boolean;
+
   private infoMessages: Array<string>;
 
   constructor(data: StatusData) {

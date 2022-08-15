@@ -15,16 +15,15 @@ export default class InfoValue {
 
     if (infoValue.stringValue) {
       return infoValue.stringValue;
-    } else if (infoValue.smallIntValue) {
+    } if (infoValue.smallIntValue) {
       return infoValue.smallIntValue;
-    } else if (infoValue.integerBitmask) {
+    } if (infoValue.integerBitmask) {
       return infoValue.integerBitmask;
-    } else if (infoValue.integerFlag) {
+    } if (infoValue.integerFlag) {
       return infoValue.integerFlag;
-    } else if (infoValue.lenValue) {
+    } if (infoValue.lenValue) {
       return infoValue.lenValue;
-    } else {
-      return null;
     }
+    return null;
   }
 }

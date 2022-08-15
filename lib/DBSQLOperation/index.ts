@@ -20,15 +20,21 @@ import getResult from './getResult';
 
 export default class DBSQLOperation implements IOperation {
   private driver: HiveDriver;
+
   private operationHandle: TOperationHandle;
+
   private schema: TTableSchema | null = null;
+
   private data: Array<TRowSet> = [];
+
   private statusFactory = new StatusFactory();
 
   private fetchType: number = 0;
 
   private _hasMoreRows: boolean = false;
+
   private state: number = TOperationState.INITIALIZED_STATE;
+
   private hasResultSet: boolean = false;
 
   constructor(driver: HiveDriver, operationHandle: TOperationHandle) {
@@ -65,15 +71,14 @@ export default class DBSQLOperation implements IOperation {
           return this.firstFetch(chunkSize);
         })
         .then((response) => this.processFetchResponse(response));
-    } else {
-      return this.nextFetch(chunkSize).then((response) => this.processFetchResponse(response));
     }
+    return this.nextFetch(chunkSize).then((response) => this.processFetchResponse(response));
   }
 
   async fetchAll(options?: IFetchOptions): Promise<Array<object>> {
-    let data: Array<object> = [];
+    const data: Array<object> = [];
     do {
-      let chunk = await this.fetchChunk(options);
+      const chunk = await this.fetchChunk(options);
       if (chunk) {
         data.push(...chunk);
       }
@@ -88,8 +93,8 @@ export default class DBSQLOperation implements IOperation {
 
     await waitUntilReady(this, options.progress, options.callback);
 
-    return await this.fetch(options.maxRows).then(() => {
-      let data = getResult(this.getSchema(), this.getData());
+    return this.fetch(options.maxRows).then(() => {
+      const data = getResult(this.getSchema(), this.getData());
       this.flush();
       return Promise.resolve(data);
     });
@@ -128,9 +133,7 @@ export default class DBSQLOperation implements IOperation {
       .cancelOperation({
         operationHandle: this.operationHandle,
       })
-      .then((response) => {
-        return this.statusFactory.create(response.status);
-      });
+      .then((response) => this.statusFactory.create(response.status));
   }
 
   /**
@@ -142,9 +145,7 @@ export default class DBSQLOperation implements IOperation {
       .closeOperation({
         operationHandle: this.operationHandle,
       })
-      .then((response) => {
-        return this.statusFactory.create(response.status);
-      });
+      .then((response) => this.statusFactory.create(response.status));
   }
 
   finished(): boolean {

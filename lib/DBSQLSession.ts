@@ -18,7 +18,9 @@ import { definedOrError } from './utils';
 
 export default class DBSQLSession implements IDBSQLSession {
   private driver: HiveDriver;
+
   private sessionHandle: TSessionHandle;
+
   private statusFactory: StatusFactory;
 
   constructor(driver: HiveDriver, sessionHandle: TSessionHandle) {
@@ -234,9 +236,7 @@ export default class DBSQLSession implements IDBSQLSession {
       .closeSession({
         sessionHandle: this.sessionHandle,
       })
-      .then((response) => {
-        return this.statusFactory.create(response.status);
-      });
+      .then((response) => this.statusFactory.create(response.status));
   }
 
   private createOperation(handle: TOperationHandle): IOperation {

@@ -11,6 +11,7 @@ import IOperationResult from './IOperationResult';
 
 export default class JsonResult implements IOperationResult {
   private readonly schema: TTableSchema | null;
+
   private readonly data: Array<TRowSet> | null;
 
   constructor(schema: TTableSchema | null, data: Array<TRowSet>) {
@@ -42,19 +43,17 @@ export default class JsonResult implements IOperationResult {
   }
 
   private getRows(columns: Array<TColumn>, descriptors: Array<TColumnDesc>): Array<any> {
-    return descriptors.reduce((rows, descriptor) => {
-      return this.getSchemaValues(descriptor, columns[descriptor.position - 1]).reduce((result, value, i) => {
-        if (!result[i]) {
-          result[i] = {};
-        }
+    return descriptors.reduce((rows, descriptor) => this.getSchemaValues(descriptor, columns[descriptor.position - 1]).reduce((result, value, i) => {
+      if (!result[i]) {
+        result[i] = {};
+      }
 
-        const name = this.getColumnName(descriptor);
+      const name = this.getColumnName(descriptor);
 
-        result[i][name] = value;
+      result[i][name] = value;
 
-        return result;
-      }, rows);
-    }, []);
+      return result;
+    }, rows), []);
   }
 
   private getSchemaValues(descriptor: TColumnDesc, column: TColumn): Array<any> {
@@ -68,9 +67,8 @@ export default class JsonResult implements IOperationResult {
     return columnValue.values.map((value: any, i: number) => {
       if (columnValue.nulls && this.isNull(columnValue.nulls, i)) {
         return null;
-      } else {
-        return this.convertData(typeDescriptor, value);
       }
+      return this.convertData(typeDescriptor, value);
     });
   }
 
@@ -120,7 +118,7 @@ export default class JsonResult implements IOperationResult {
 
   private isNull(nulls: Buffer, i: number): boolean {
     const byte = nulls[Math.floor(i / 8)];
-    const ofs = Math.pow(2, i % 8);
+    const ofs = 2 ** (i % 8);
 
     return (byte & ofs) !== 0;
   }
@@ -139,14 +137,14 @@ export default class JsonResult implements IOperationResult {
 
   private getColumnValue(column: TColumn) {
     return (
-      column[ColumnCode.binaryVal] ||
-      column[ColumnCode.boolVal] ||
-      column[ColumnCode.byteVal] ||
-      column[ColumnCode.doubleVal] ||
-      column[ColumnCode.i16Val] ||
-      column[ColumnCode.i32Val] ||
-      column[ColumnCode.i64Val] ||
-      column[ColumnCode.stringVal]
+      column[ColumnCode.binaryVal]
+      || column[ColumnCode.boolVal]
+      || column[ColumnCode.byteVal]
+      || column[ColumnCode.doubleVal]
+      || column[ColumnCode.i16Val]
+      || column[ColumnCode.i32Val]
+      || column[ColumnCode.i64Val]
+      || column[ColumnCode.stringVal]
     );
   }
 }
