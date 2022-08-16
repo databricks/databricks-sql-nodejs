@@ -45,6 +45,7 @@ export default async function waitUntilReady(
     return;
   }
   if (await isReady(operation, progress, callback)) {
+    // operation is ready.
   } else {
     return waitUntilReady(operation, progress, callback);
   }

@@ -27,7 +27,7 @@ jobs:
       - name: Check code style
         run: |
           npm ci
-          npm run prettier:check
+          npm run lint
 
   test:
     runs-on: ubuntu-latest

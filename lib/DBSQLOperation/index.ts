@@ -78,7 +78,7 @@ export default class DBSQLOperation implements IOperation {
   async fetchAll(options?: IFetchOptions): Promise<Array<object>> {
     const data: Array<object> = [];
     do {
-      const chunk = await this.fetchChunk(options);
+      const chunk = await this.fetchChunk(options); // eslint-disable-line no-await-in-loop
       if (chunk) {
         data.push(...chunk);
       }

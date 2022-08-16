@@ -2,5 +2,18 @@
   "extends": ["airbnb-base", "airbnb-typescript/base", "prettier"],
   "parserOptions": {
     "project": "./tsconfig.json"
-  }
+  },
+  "overrides": [
+    {
+      "files": ["*.js", "*.ts"],
+      "rules": {
+        "class-methods-use-this": "off",
+        "no-underscore-dangle": "off",
+        "consistent-return": "off",
+        "no-param-reassign": "off",
+        "no-bitwise": "off",
+        "@typescript-eslint/no-throw-literal": "off"
+      }
+    }
+  ]
 }

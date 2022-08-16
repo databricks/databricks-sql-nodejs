@@ -1,6 +1,7 @@
 import TCLIService from '../../../thrift/TCLIService';
 import HiveDriverError from '../../errors/HiveDriverError';
 
+/* eslint-disable no-promise-executor-return */
 export default abstract class BaseCommand {
   protected client: TCLIService.Client;
 
