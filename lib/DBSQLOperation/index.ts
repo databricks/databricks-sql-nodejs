@@ -1,34 +1,21 @@
 import IOperation, { IFetchOptions, defaultFetchOptions } from '../contracts/IOperation';
 import HiveDriver from '../hive/HiveDriver';
-import {
-  TOperationState,
-  TStatusCode,
-  TFetchOrientation,
-  TFetchResultsResp,
-  TTableSchema,
-  TRowSet,
-  TOperationHandle,
-} from '../../thrift/TCLIService_types';
-import { Int64, FetchType } from '../hive/Types';
+import { TOperationState, TOperationHandle } from '../../thrift/TCLIService_types';
 import Status from '../dto/Status';
 import StatusFactory from '../factory/StatusFactory';
-import { definedOrError } from '../utils';
 
 import waitUntilReady from './waitUntilReady';
-import checkIfOperationHasMoreRows from './checkIfOperationHasMoreRows';
 import getResult from './getResult';
 import SchemaFetchingHelper from './SchemaFetchingHelper';
+import DataFetchingHelper from './DataFetchingHelper';
 
 export default class DBSQLOperation implements IOperation {
   private driver: HiveDriver;
   private operationHandle: TOperationHandle;
-  private data: Array<TRowSet> = [];
   private statusFactory = new StatusFactory();
   private schema: SchemaFetchingHelper;
+  private data: DataFetchingHelper;
 
-  private fetchStarted = false;
-
-  private _hasMoreRows: boolean = false;
   private state: number = TOperationState.INITIALIZED_STATE;
   private hasResultSet: boolean = false;
 
@@ -37,34 +24,7 @@ export default class DBSQLOperation implements IOperation {
     this.operationHandle = operationHandle;
     this.hasResultSet = operationHandle.hasResultSet;
     this.schema = new SchemaFetchingHelper(this.driver, this.operationHandle);
-  }
-
-  /**
-   * Fetches result and schema from operation
-   * @throws {StatusError}
-   */
-  fetch(chunkSize = 100000): Promise<Status> {
-    if (!this.hasResultSet) {
-      return Promise.resolve(
-        this.statusFactory.create({
-          statusCode: TStatusCode.SUCCESS_STATUS,
-        }),
-      );
-    }
-
-    if (!this.finished()) {
-      return Promise.resolve(
-        this.statusFactory.create({
-          statusCode: TStatusCode.STILL_EXECUTING_STATUS,
-        }),
-      );
-    }
-
-    if (!this.fetchStarted) {
-      return this.firstFetch(chunkSize).then((response) => this.processFetchResponse(response));
-    } else {
-      return this.nextFetch(chunkSize).then((response) => this.processFetchResponse(response));
-    }
+    this.data = new DataFetchingHelper(this.driver, this.operationHandle);
   }
 
   async fetchAll(options?: IFetchOptions): Promise<Array<object>> {
@@ -85,10 +45,12 @@ export default class DBSQLOperation implements IOperation {
 
     await waitUntilReady(this, options.progress, options.callback);
 
-    return await Promise.all([this.schema.fetch(), this.fetch(options.maxRows)]).then(([schema]) => {
-      let data = getResult(schema, this.getData());
-      this.flush();
-      return Promise.resolve(data);
+    return await Promise.all([
+      this.schema.fetch(),
+      this.data.fetch(options.maxRows || defaultFetchOptions.maxRows),
+    ]).then(([schema, data]) => {
+      const result = getResult(schema, data ? [data] : []);
+      return Promise.resolve(result);
     });
   }
 
@@ -149,58 +111,10 @@ export default class DBSQLOperation implements IOperation {
   }
 
   hasMoreRows(): boolean {
-    return this._hasMoreRows;
+    return this.data.hasMoreRows;
   }
 
   getSchema() {
     return this.schema.fetch();
-  }
-
-  getData() {
-    return this.data;
-  }
-
-  /**
-   * Resets `this.data` buffer.
-   * Needs to be called when working with massive data.
-   */
-  flush(): void {
-    this.data = [];
-  }
-
-  private firstFetch(chunkSize: number) {
-    return this.driver.fetchResults({
-      operationHandle: this.operationHandle,
-      orientation: TFetchOrientation.FETCH_FIRST,
-      maxRows: new Int64(chunkSize),
-      fetchType: FetchType.Data,
-    });
-  }
-
-  private nextFetch(chunkSize: number) {
-    return this.driver.fetchResults({
-      operationHandle: this.operationHandle,
-      orientation: TFetchOrientation.FETCH_NEXT,
-      maxRows: new Int64(chunkSize),
-      fetchType: FetchType.Data,
-    });
-  }
-
-  /**
-   * @param response
-   * @throws {StatusError}
-   */
-  private processFetchResponse(response: TFetchResultsResp): Status {
-    this.fetchStarted = true;
-
-    const status = this.statusFactory.create(response.status);
-
-    this._hasMoreRows = checkIfOperationHasMoreRows(response);
-
-    if (response.results) {
-      this.data.push(response.results);
-    }
-
-    return status;
   }
 }

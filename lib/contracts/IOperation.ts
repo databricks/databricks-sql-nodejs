@@ -9,7 +9,7 @@ export interface IFetchOptions {
   callback?: OperationStatusCallback;
 }
 
-export const defaultFetchOptions: IFetchOptions = {
+export const defaultFetchOptions = {
   maxRows: 100000,
 };
 
@@ -23,11 +23,6 @@ export default interface IOperation {
    * Fetch schema and all the data
    */
   fetchAll(options?: IFetchOptions): Promise<Array<object>>;
-
-  /**
-   * Fetch schema and a portion of data
-   */
-  fetch(chunkSize?: number): Promise<Status>;
 
   /**
    * Request status of operation
@@ -60,9 +55,4 @@ export default interface IOperation {
    * Return retrieved schema
    */
   getSchema(): Promise<TTableSchema>;
-
-  /**
-   * Return retrieved data
-   */
-  getData(): Array<TRowSet>;
 }
