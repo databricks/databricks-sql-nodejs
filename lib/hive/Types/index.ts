@@ -32,3 +32,8 @@ export type ColumnType =
   | TDoubleColumn
   | TStringColumn
   | TBinaryColumn;
+
+export enum FetchType {
+  Data = 0,
+  Logs = 1,
+}

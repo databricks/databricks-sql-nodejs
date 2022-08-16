@@ -9,7 +9,7 @@ import {
   TRowSet,
   TOperationHandle,
 } from '../../thrift/TCLIService_types';
-import { Int64 } from '../hive/Types';
+import { Int64, FetchType } from '../hive/Types';
 import Status from '../dto/Status';
 import StatusFactory from '../factory/StatusFactory';
 import { definedOrError } from '../utils';
@@ -17,15 +17,16 @@ import { definedOrError } from '../utils';
 import waitUntilReady from './waitUntilReady';
 import checkIfOperationHasMoreRows from './checkIfOperationHasMoreRows';
 import getResult from './getResult';
+import SchemaFetchingHelper from './SchemaFetchingHelper';
 
 export default class DBSQLOperation implements IOperation {
   private driver: HiveDriver;
   private operationHandle: TOperationHandle;
-  private schema: TTableSchema | null = null;
   private data: Array<TRowSet> = [];
   private statusFactory = new StatusFactory();
+  private schema: SchemaFetchingHelper;
 
-  private fetchType: number = 0;
+  private fetchStarted = false;
 
   private _hasMoreRows: boolean = false;
   private state: number = TOperationState.INITIALIZED_STATE;
@@ -35,6 +36,7 @@ export default class DBSQLOperation implements IOperation {
     this.driver = driver;
     this.operationHandle = operationHandle;
     this.hasResultSet = operationHandle.hasResultSet;
+    this.schema = new SchemaFetchingHelper(this.driver, this.operationHandle);
   }
 
   /**
@@ -58,13 +60,8 @@ export default class DBSQLOperation implements IOperation {
       );
     }
 
-    if (this.schema === null) {
-      return this.initializeSchema()
-        .then((schema) => {
-          this.schema = schema;
-          return this.firstFetch(chunkSize);
-        })
-        .then((response) => this.processFetchResponse(response));
+    if (!this.fetchStarted) {
+      return this.firstFetch(chunkSize).then((response) => this.processFetchResponse(response));
     } else {
       return this.nextFetch(chunkSize).then((response) => this.processFetchResponse(response));
     }
@@ -88,8 +85,8 @@ export default class DBSQLOperation implements IOperation {
 
     await waitUntilReady(this, options.progress, options.callback);
 
-    return await this.fetch(options.maxRows).then(() => {
-      let data = getResult(this.getSchema(), this.getData());
+    return await Promise.all([this.schema.fetch(), this.fetch(options.maxRows)]).then(([schema]) => {
+      let data = getResult(schema, this.getData());
       this.flush();
       return Promise.resolve(data);
     });
@@ -155,12 +152,8 @@ export default class DBSQLOperation implements IOperation {
     return this._hasMoreRows;
   }
 
-  setFetchType(fetchType: number): void {
-    this.fetchType = fetchType;
-  }
-
   getSchema() {
-    return this.schema;
+    return this.schema.fetch();
   }
 
   getData() {
@@ -175,28 +168,12 @@ export default class DBSQLOperation implements IOperation {
     this.data = [];
   }
 
-  /**
-   * Retrieves schema
-   * @throws {StatusError}
-   */
-  private initializeSchema(): Promise<TTableSchema> {
-    return this.driver
-      .getResultSetMetadata({
-        operationHandle: this.operationHandle,
-      })
-      .then((schema) => {
-        this.statusFactory.create(schema.status);
-
-        return definedOrError(schema.schema);
-      });
-  }
-
   private firstFetch(chunkSize: number) {
     return this.driver.fetchResults({
       operationHandle: this.operationHandle,
       orientation: TFetchOrientation.FETCH_FIRST,
       maxRows: new Int64(chunkSize),
-      fetchType: this.fetchType,
+      fetchType: FetchType.Data,
     });
   }
 
@@ -205,7 +182,7 @@ export default class DBSQLOperation implements IOperation {
       operationHandle: this.operationHandle,
       orientation: TFetchOrientation.FETCH_NEXT,
       maxRows: new Int64(chunkSize),
-      fetchType: this.fetchType,
+      fetchType: FetchType.Data,
     });
   }
 
@@ -214,6 +191,8 @@ export default class DBSQLOperation implements IOperation {
    * @throws {StatusError}
    */
   private processFetchResponse(response: TFetchResultsResp): Status {
+    this.fetchStarted = true;
+
     const status = this.statusFactory.create(response.status);
 
     this._hasMoreRows = checkIfOperationHasMoreRows(response);

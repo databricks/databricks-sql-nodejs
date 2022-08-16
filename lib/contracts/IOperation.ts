@@ -59,7 +59,7 @@ export default interface IOperation {
   /**
    * Return retrieved schema
    */
-  getSchema(): TTableSchema | null;
+  getSchema(): Promise<TTableSchema>;
 
   /**
    * Return retrieved data
