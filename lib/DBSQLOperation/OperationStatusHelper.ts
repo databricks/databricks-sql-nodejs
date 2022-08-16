@@ -19,11 +19,6 @@ export default class OperationStatusHelper {
     this.hasResultSet = operationHandle.hasResultSet;
   }
 
-  /**
-   * Requests operation status
-   * @param progress
-   * @throws {StatusError}
-   */
   status(progress: boolean = false) {
     return this.driver
       .getOperationStatus({

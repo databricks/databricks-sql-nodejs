@@ -2,20 +2,20 @@ import IOperation, { IFetchOptions, defaultFetchOptions } from '../contracts/IOp
 import HiveDriver from '../hive/HiveDriver';
 import { TGetOperationStatusResp, TOperationHandle, TTableSchema } from '../../thrift/TCLIService_types';
 import Status from '../dto/Status';
-import StatusFactory from '../factory/StatusFactory';
 
 import getResult from './getResult';
 import OperationStatusHelper from './OperationStatusHelper';
 import SchemaHelper from './SchemaHelper';
 import FetchResultsHelper from './FetchResultsHelper';
+import CompleteOperationHelper from './CompleteOperationHelper';
 
 export default class DBSQLOperation implements IOperation {
   private driver: HiveDriver;
   private operationHandle: TOperationHandle;
-  private statusFactory = new StatusFactory();
   private _status: OperationStatusHelper;
   private _schema: SchemaHelper;
   private _data: FetchResultsHelper;
+  private _completeOperation: CompleteOperationHelper;
 
   constructor(driver: HiveDriver, operationHandle: TOperationHandle) {
     this.driver = driver;
@@ -23,6 +23,7 @@ export default class DBSQLOperation implements IOperation {
     this._status = new OperationStatusHelper(this.driver, this.operationHandle);
     this._schema = new SchemaHelper(this.driver, this.operationHandle);
     this._data = new FetchResultsHelper(this.driver, this.operationHandle);
+    this._completeOperation = new CompleteOperationHelper(this.driver, this.operationHandle);
   }
 
   async fetchAll(options?: IFetchOptions): Promise<Array<object>> {
@@ -66,13 +67,7 @@ export default class DBSQLOperation implements IOperation {
    * @throws {StatusError}
    */
   cancel(): Promise<Status> {
-    return this.driver
-      .cancelOperation({
-        operationHandle: this.operationHandle,
-      })
-      .then((response) => {
-        return this.statusFactory.create(response.status);
-      });
+    return this._completeOperation.cancel();
   }
 
   /**
@@ -80,13 +75,7 @@ export default class DBSQLOperation implements IOperation {
    * @throws {StatusError}
    */
   close(): Promise<Status> {
-    return this.driver
-      .closeOperation({
-        operationHandle: this.operationHandle,
-      })
-      .then((response) => {
-        return this.statusFactory.create(response.status);
-      });
+    return this._completeOperation.close();
   }
 
   async finished(): Promise<boolean> {
