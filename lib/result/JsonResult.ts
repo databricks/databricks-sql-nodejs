@@ -43,17 +43,21 @@ export default class JsonResult implements IOperationResult {
   }
 
   private getRows(columns: Array<TColumn>, descriptors: Array<TColumnDesc>): Array<any> {
-    return descriptors.reduce((rows, descriptor) => this.getSchemaValues(descriptor, columns[descriptor.position - 1]).reduce((result, value, i) => {
-      if (!result[i]) {
-        result[i] = {};
-      }
+    return descriptors.reduce(
+      (rows, descriptor) =>
+        this.getSchemaValues(descriptor, columns[descriptor.position - 1]).reduce((result, value, i) => {
+          if (!result[i]) {
+            result[i] = {};
+          }
 
-      const name = this.getColumnName(descriptor);
+          const name = this.getColumnName(descriptor);
 
-      result[i][name] = value;
+          result[i][name] = value;
 
-      return result;
-    }, rows), []);
+          return result;
+        }, rows),
+      [],
+    );
   }
 
   private getSchemaValues(descriptor: TColumnDesc, column: TColumn): Array<any> {
@@ -137,14 +141,14 @@ export default class JsonResult implements IOperationResult {
 
   private getColumnValue(column: TColumn) {
     return (
-      column[ColumnCode.binaryVal]
-      || column[ColumnCode.boolVal]
-      || column[ColumnCode.byteVal]
-      || column[ColumnCode.doubleVal]
-      || column[ColumnCode.i16Val]
-      || column[ColumnCode.i32Val]
-      || column[ColumnCode.i64Val]
-      || column[ColumnCode.stringVal]
+      column[ColumnCode.binaryVal] ||
+      column[ColumnCode.boolVal] ||
+      column[ColumnCode.byteVal] ||
+      column[ColumnCode.doubleVal] ||
+      column[ColumnCode.i16Val] ||
+      column[ColumnCode.i32Val] ||
+      column[ColumnCode.i64Val] ||
+      column[ColumnCode.stringVal]
     );
   }
 }

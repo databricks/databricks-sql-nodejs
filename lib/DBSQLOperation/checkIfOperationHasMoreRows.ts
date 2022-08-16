@@ -14,14 +14,15 @@ export default function checkIfOperationHasMoreRows(response: TFetchResultsResp)
 
   const column: TColumn = columns[0];
 
-  const columnValue = column[ColumnCode.binaryVal]
-    || column[ColumnCode.boolVal]
-    || column[ColumnCode.byteVal]
-    || column[ColumnCode.doubleVal]
-    || column[ColumnCode.i16Val]
-    || column[ColumnCode.i32Val]
-    || column[ColumnCode.i64Val]
-    || column[ColumnCode.stringVal];
+  const columnValue =
+    column[ColumnCode.binaryVal] ||
+    column[ColumnCode.boolVal] ||
+    column[ColumnCode.byteVal] ||
+    column[ColumnCode.doubleVal] ||
+    column[ColumnCode.i16Val] ||
+    column[ColumnCode.i32Val] ||
+    column[ColumnCode.i64Val] ||
+    column[ColumnCode.stringVal];
 
   return (columnValue?.values?.length || 0) > 0;
 }

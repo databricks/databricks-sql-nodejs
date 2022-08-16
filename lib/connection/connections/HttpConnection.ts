@@ -57,9 +57,7 @@ export default class HttpConnection implements IConnectionProvider, IThriftConne
   }
 
   private getNodeOptions(options: Options): object {
-    const {
-      ca, cert, key, https,
-    } = options;
+    const { ca, cert, key, https } = options;
     const nodeOptions: NodeOptions = {};
 
     if (ca) {

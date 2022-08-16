@@ -15,13 +15,17 @@ export default class InfoValue {
 
     if (infoValue.stringValue) {
       return infoValue.stringValue;
-    } if (infoValue.smallIntValue) {
+    }
+    if (infoValue.smallIntValue) {
       return infoValue.smallIntValue;
-    } if (infoValue.integerBitmask) {
+    }
+    if (infoValue.integerBitmask) {
       return infoValue.integerBitmask;
-    } if (infoValue.integerFlag) {
+    }
+    if (infoValue.integerFlag) {
       return infoValue.integerFlag;
-    } if (infoValue.lenValue) {
+    }
+    if (infoValue.lenValue) {
       return infoValue.lenValue;
     }
     return null;

@@ -41,9 +41,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
   }
 
   private getConnectionOptions(options: IDBSQLConnectionOptions): IConnectionOptions {
-    const {
-      host, port, token, clientId, ...otherOptions
-    } = options;
+    const { host, port, token, clientId, ...otherOptions } = options;
     return {
       host,
       port: port || 443,
