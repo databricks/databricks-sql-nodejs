@@ -1,30 +1,28 @@
 import IOperation, { IFetchOptions, defaultFetchOptions } from '../contracts/IOperation';
 import HiveDriver from '../hive/HiveDriver';
-import { TOperationState, TOperationHandle } from '../../thrift/TCLIService_types';
+import { TGetOperationStatusResp, TOperationHandle, TTableSchema } from '../../thrift/TCLIService_types';
 import Status from '../dto/Status';
 import StatusFactory from '../factory/StatusFactory';
 
-import waitUntilReady from './waitUntilReady';
 import getResult from './getResult';
-import SchemaFetchingHelper from './SchemaFetchingHelper';
-import DataFetchingHelper from './DataFetchingHelper';
+import OperationStatusHelper from './OperationStatusHelper';
+import SchemaHelper from './SchemaHelper';
+import FetchResultsHelper from './FetchResultsHelper';
 
 export default class DBSQLOperation implements IOperation {
   private driver: HiveDriver;
   private operationHandle: TOperationHandle;
   private statusFactory = new StatusFactory();
-  private schema: SchemaFetchingHelper;
-  private data: DataFetchingHelper;
-
-  private state: number = TOperationState.INITIALIZED_STATE;
-  private hasResultSet: boolean = false;
+  private _status: OperationStatusHelper;
+  private _schema: SchemaHelper;
+  private _data: FetchResultsHelper;
 
   constructor(driver: HiveDriver, operationHandle: TOperationHandle) {
     this.driver = driver;
     this.operationHandle = operationHandle;
-    this.hasResultSet = operationHandle.hasResultSet;
-    this.schema = new SchemaFetchingHelper(this.driver, this.operationHandle);
-    this.data = new DataFetchingHelper(this.driver, this.operationHandle);
+    this._status = new OperationStatusHelper(this.driver, this.operationHandle);
+    this._schema = new SchemaHelper(this.driver, this.operationHandle);
+    this._data = new FetchResultsHelper(this.driver, this.operationHandle);
   }
 
   async fetchAll(options?: IFetchOptions): Promise<Array<object>> {
@@ -39,15 +37,15 @@ export default class DBSQLOperation implements IOperation {
   }
 
   async fetchChunk(options: IFetchOptions = defaultFetchOptions): Promise<Array<object>> {
-    if (!this.hasResultSet) {
+    if (!this._status.hasResultSet) {
       return Promise.resolve([]);
     }
 
-    await waitUntilReady(this, options.progress, options.callback);
+    await this._status.waitUntilReady(options.progress, options.callback);
 
     return await Promise.all([
-      this.schema.fetch(),
-      this.data.fetch(options.maxRows || defaultFetchOptions.maxRows),
+      this._schema.fetch(),
+      this._data.fetch(options.maxRows || defaultFetchOptions.maxRows),
     ]).then(([schema, data]) => {
       const result = getResult(schema, data ? [data] : []);
       return Promise.resolve(result);
@@ -59,23 +57,8 @@ export default class DBSQLOperation implements IOperation {
    * @param progress
    * @throws {StatusError}
    */
-  status(progress: boolean = false) {
-    return this.driver
-      .getOperationStatus({
-        operationHandle: this.operationHandle,
-        getProgressUpdate: progress,
-      })
-      .then((response) => {
-        this.statusFactory.create(response.status);
-
-        this.state = response.operationState ?? this.state;
-
-        if (typeof response.hasResultSet === 'boolean') {
-          this.hasResultSet = response.hasResultSet;
-        }
-
-        return response;
-      });
+  async status(progress: boolean = false): Promise<TGetOperationStatusResp> {
+    return this._status.status(progress);
   }
 
   /**
@@ -106,15 +89,19 @@ export default class DBSQLOperation implements IOperation {
       });
   }
 
-  finished(): boolean {
-    return this.state === TOperationState.FINISHED_STATE;
+  async finished(): Promise<boolean> {
+    await this._status.waitUntilReady();
+    return true;
   }
 
   hasMoreRows(): boolean {
-    return this.data.hasMoreRows;
+    return this._data.hasMoreRows;
   }
 
-  getSchema() {
-    return this.schema.fetch();
+  async getSchema(): Promise<TTableSchema | null> {
+    if (this._status.hasResultSet) {
+      return this._schema.fetch();
+    }
+    return null;
   }
 }

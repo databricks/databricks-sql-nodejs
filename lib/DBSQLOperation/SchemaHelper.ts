@@ -3,11 +3,11 @@ import HiveDriver from '../hive/HiveDriver';
 import StatusFactory from '../factory/StatusFactory';
 import { definedOrError } from '../utils';
 
-export default class SchemaFetchingHelper {
+export default class SchemaHelper {
   private driver: HiveDriver;
   private operationHandle: TOperationHandle;
   private statusFactory = new StatusFactory();
-  private metadata: Promise<TGetResultSetMetadataResp> | null = null;
+  private metadata: TGetResultSetMetadataResp | null = null;
 
   constructor(driver: HiveDriver, operationHandle: TOperationHandle) {
     this.driver = driver;
@@ -16,14 +16,13 @@ export default class SchemaFetchingHelper {
 
   async fetch() {
     if (!this.metadata) {
-      this.metadata = this.driver.getResultSetMetadata({
+      const metadata = await this.driver.getResultSetMetadata({
         operationHandle: this.operationHandle,
       });
+      this.statusFactory.create(metadata.status);
+      this.metadata = metadata;
     }
 
-    return this.metadata.then((metadata) => {
-      this.statusFactory.create(metadata.status);
-      return definedOrError(metadata.schema);
-    });
+    return definedOrError(this.metadata.schema);
   }
 }

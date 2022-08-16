@@ -44,7 +44,7 @@ export default interface IOperation {
   /**
    * Check if operation is finished
    */
-  finished(): boolean;
+  finished(): Promise<boolean>;
 
   /**
    * Check if operation hasMoreRows
@@ -54,5 +54,5 @@ export default interface IOperation {
   /**
    * Return retrieved schema
    */
-  getSchema(): Promise<TTableSchema>;
+  getSchema(): Promise<TTableSchema | null>;
 }

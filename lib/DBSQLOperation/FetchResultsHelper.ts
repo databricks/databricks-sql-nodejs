@@ -1,16 +1,42 @@
 import {
+  TColumn,
   TFetchOrientation,
   TFetchResultsResp,
   TOperationHandle,
   TRowSet,
   TStatus,
 } from '../../thrift/TCLIService_types';
-import { FetchType, Int64 } from '../hive/Types';
+import { ColumnCode, FetchType, Int64 } from '../hive/Types';
 import HiveDriver from '../hive/HiveDriver';
 import StatusFactory from '../factory/StatusFactory';
-import checkIfOperationHasMoreRows from './checkIfOperationHasMoreRows';
 
-export default class DataFetchingHelper {
+function checkIfOperationHasMoreRows(response: TFetchResultsResp): boolean {
+  if (response.hasMoreRows) {
+    return true;
+  }
+
+  const columns = response.results?.columns || [];
+
+  if (!columns.length) {
+    return false;
+  }
+
+  const column: TColumn = columns[0];
+
+  const columnValue =
+    column[ColumnCode.binaryVal] ||
+    column[ColumnCode.boolVal] ||
+    column[ColumnCode.byteVal] ||
+    column[ColumnCode.doubleVal] ||
+    column[ColumnCode.i16Val] ||
+    column[ColumnCode.i32Val] ||
+    column[ColumnCode.i64Val] ||
+    column[ColumnCode.stringVal];
+
+  return (columnValue?.values?.length || 0) > 0;
+}
+
+export default class FetchResultsHelper {
   private driver: HiveDriver;
   private operationHandle: TOperationHandle;
   private fetchOrientation: TFetchOrientation = TFetchOrientation.FETCH_FIRST;
