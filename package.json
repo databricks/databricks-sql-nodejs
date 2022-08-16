@@ -18,8 +18,8 @@
     "build": "tsc",
     "watch": "tsc -w",
     "type-check": "tsc --noEmit",
-    "lint": "prettier . --check; npx eslint lib/** --ext .js,.ts",
-    "lint:fix": "prettier . --check; npx eslint lib/** --ext .js,.ts --fix"
+    "lint": "prettier . --check; eslint lib/** --ext .js,.ts",
+    "lint:fix": "prettier . --write; eslint lib/** --ext .js,.ts --fix"
   },
   "repository": {
     "type": "git",
