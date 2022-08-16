@@ -5,6 +5,7 @@ We happily welcome contributions to this package. We use [GitHub Issues](https:/
 Contributions are licensed on a license-in/license-out basis.
 
 ## Communication
+
 Before starting work on a major feature, please reach out to us via GitHub, Slack, email, etc. We will make sure no one else is already working on it and ask you to open a GitHub issue.
 A "major feature" is defined as any change that is > 100 LOC altered (not including tests), or changes any user-facing behavior.
 We will use the GitHub issue to discuss the feature and come to agreement.
@@ -15,6 +16,7 @@ Specifically, if the goal is to add a new extension, please read the extension p
 Small patches and bug fixes don't need prior communication.
 
 ## Sign your work
+
 The sign-off is a simple line at the end of the explanation for the patch. Your signature certifies that you wrote the patch or otherwise have the right to pass it on as an open-source patch. The rules are pretty simple: if you can certify the below (from developercertificate.org):
 
 ```
