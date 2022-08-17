@@ -17,6 +17,9 @@ import StatusFactory from './factory/StatusFactory';
 import HiveDriverError from './errors/HiveDriverError';
 import { buildUserAgentString, definedOrError } from './utils';
 import PlainHttpAuthentication from './connection/auth/PlainHttpAuthentication';
+import XhrConnection from './connection/connections/XhrConnection';
+
+function isNodejs() { return typeof "process" !== "undefined" && process && process.versions && process.versions.node; }
 
 export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
   private client: TCLIService.Client | null;
@@ -33,11 +36,18 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
 
   constructor() {
     super();
-    this.connectionProvider = new HttpConnection();
-    this.authProvider = new NoSaslAuthentication();
+    if(isNodejs()) {
+      console.log("Bad");
+      this.connectionProvider = new HttpConnection();
+    }
+    else {
+      this.connectionProvider = new XhrConnection();
+      console.log("Good");
+    }
     this.statusFactory = new StatusFactory();
     this.client = null;
     this.connection = null;
+    this.authProvider = new NoSaslAuthentication();
   }
 
   private getConnectionOptions(options: IDBSQLConnectionOptions): IConnectionOptions {
