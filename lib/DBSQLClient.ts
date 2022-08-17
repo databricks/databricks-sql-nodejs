@@ -61,12 +61,12 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
   }
 
   async connect(options: IDBSQLConnectionOptions): Promise<IDBSQLClient> {
-    let clientId = isNodejs() ? buildUserAgentString(options.clientId) : 'anonymous';
+    let clientId = isNodejs() ? buildUserAgentString(options.clientId) : `NodejsDatabricksSqlConnector/0.1.8-beta.1 (${options.clientId})`;
     this.authProvider = new PlainHttpAuthentication({
       username: 'token',
       password: options.token,
       headers: {
-        'User-Agent': buildUserAgentString(options.clientId),
+        'User-Agent': buildUserAgentString(clientId),
       },
     });
 
