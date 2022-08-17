@@ -37,12 +37,10 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
   constructor() {
     super();
     if(isNodejs()) {
-      console.log("Bad");
       this.connectionProvider = new HttpConnection();
     }
     else {
       this.connectionProvider = new XhrConnection();
-      console.log("Good");
     }
     this.statusFactory = new StatusFactory();
     this.client = null;
@@ -63,6 +61,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
   }
 
   async connect(options: IDBSQLConnectionOptions): Promise<IDBSQLClient> {
+    let clientId = isNodejs() ? buildUserAgentString(options.clientId) : 'anonymous';
     this.authProvider = new PlainHttpAuthentication({
       username: 'token',
       password: options.token,
