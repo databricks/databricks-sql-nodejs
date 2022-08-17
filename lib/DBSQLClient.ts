@@ -72,8 +72,12 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
 
     this.connection = await this.connectionProvider.connect(this.getConnectionOptions(options), this.authProvider);
 
-    this.client = this.thrift.createClient(TCLIService, this.connection.getConnection());
-
+    if(isNodejs()) {
+      this.client = this.thrift.createClient(TCLIService, this.connection.getConnection());
+    }
+    else {
+      this.client = this.thrift.createXHRClient(TCLIService, this.connection.getConnection());
+    }
     this.connection.getConnection().on('error', (error: Error) => {
       this.emit('error', error);
     });
