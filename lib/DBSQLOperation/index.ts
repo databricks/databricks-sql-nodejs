@@ -1,6 +1,11 @@
 import IOperation, { IFetchOptions, defaultFetchOptions } from '../contracts/IOperation';
 import HiveDriver from '../hive/HiveDriver';
-import { TGetOperationStatusResp, TOperationHandle, TTableSchema } from '../../thrift/TCLIService_types';
+import {
+  TGetOperationStatusResp,
+  TOperationHandle,
+  TTableSchema,
+  TSparkDirectResults,
+} from '../../thrift/TCLIService_types';
 import Status from '../dto/Status';
 
 import getResult from './getResult';
@@ -17,13 +22,17 @@ export default class DBSQLOperation implements IOperation {
   private _data: FetchResultsHelper;
   private _completeOperation: CompleteOperationHelper;
 
-  constructor(driver: HiveDriver, operationHandle: TOperationHandle) {
+  constructor(driver: HiveDriver, operationHandle: TOperationHandle, directResults?: TSparkDirectResults) {
     this.driver = driver;
     this.operationHandle = operationHandle;
-    this._status = new OperationStatusHelper(this.driver, this.operationHandle);
-    this._schema = new SchemaHelper(this.driver, this.operationHandle);
-    this._data = new FetchResultsHelper(this.driver, this.operationHandle);
-    this._completeOperation = new CompleteOperationHelper(this.driver, this.operationHandle);
+    this._status = new OperationStatusHelper(this.driver, this.operationHandle, directResults?.operationStatus);
+    this._schema = new SchemaHelper(this.driver, this.operationHandle, directResults?.resultSetMetadata);
+    this._data = new FetchResultsHelper(this.driver, this.operationHandle, [directResults?.resultSet]);
+    this._completeOperation = new CompleteOperationHelper(
+      this.driver,
+      this.operationHandle,
+      directResults?.closeOperation,
+    );
   }
 
   async fetchAll(options?: IFetchOptions): Promise<Array<object>> {
@@ -84,6 +93,9 @@ export default class DBSQLOperation implements IOperation {
   }
 
   hasMoreRows(): boolean {
+    if (this._completeOperation.closed || this._completeOperation.cancelled) {
+      return false;
+    }
     return this._data.hasMoreRows;
   }
 

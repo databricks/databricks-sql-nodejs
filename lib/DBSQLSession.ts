@@ -1,5 +1,12 @@
-import { TSessionHandle, TStatus, TOperationHandle } from '../thrift/TCLIService_types';
+import {
+  TSessionHandle,
+  TStatus,
+  TOperationHandle,
+  TSparkDirectResults,
+  TExecuteStatementReq,
+} from '../thrift/TCLIService_types';
 import HiveDriver from './hive/HiveDriver';
+import { Int64 } from './hive/Types';
 import IDBSQLSession, {
   ExecuteStatementOptions,
   SchemasRequest,
@@ -15,6 +22,12 @@ import Status from './dto/Status';
 import StatusFactory from './factory/StatusFactory';
 import InfoValue from './dto/InfoValue';
 import { definedOrError } from './utils';
+
+interface OperationResponseShape {
+  status: TStatus;
+  operationHandle?: TOperationHandle;
+  directResults?: TSparkDirectResults;
+}
 
 export default class DBSQLSession implements IDBSQLSession {
   private driver: HiveDriver;
@@ -41,22 +54,24 @@ export default class DBSQLSession implements IDBSQLSession {
   }
 
   executeStatement(statement: string, options: ExecuteStatementOptions = {}): Promise<IOperation> {
-    options = {
+    const { prefetchRows, ...restOptions } = options;
+
+    const request: TExecuteStatementReq = {
       runAsync: false,
-      ...options,
+      ...restOptions,
+      sessionHandle: this.sessionHandle,
+      statement,
     };
 
-    return this.driver
-      .executeStatement({
-        sessionHandle: this.sessionHandle,
-        statement,
-        ...options,
-      })
-      .then((response) => {
-        this.assertStatus(response.status);
+    if (prefetchRows) {
+      request.getDirectResults = {
+        maxRows: new Int64(prefetchRows),
+      };
+    }
 
-        return this.createOperation(definedOrError(response.operationHandle));
-      });
+    return this.driver.executeStatement(request).then((response) => {
+      return this.createOperation(response);
+    });
   }
 
   getTypeInfo(): Promise<IOperation> {
@@ -65,9 +80,7 @@ export default class DBSQLSession implements IDBSQLSession {
         sessionHandle: this.sessionHandle,
       })
       .then((response) => {
-        this.assertStatus(response.status);
-
-        return this.createOperation(definedOrError(response.operationHandle));
+        return this.createOperation(response);
       });
   }
 
@@ -77,9 +90,7 @@ export default class DBSQLSession implements IDBSQLSession {
         sessionHandle: this.sessionHandle,
       })
       .then((response) => {
-        this.assertStatus(response.status);
-
-        return this.createOperation(definedOrError(response.operationHandle));
+        return this.createOperation(response);
       });
   }
 
@@ -91,9 +102,7 @@ export default class DBSQLSession implements IDBSQLSession {
         schemaName: request.schemaName,
       })
       .then((response) => {
-        this.assertStatus(response.status);
-
-        return this.createOperation(definedOrError(response.operationHandle));
+        return this.createOperation(response);
       });
   }
 
@@ -107,9 +116,7 @@ export default class DBSQLSession implements IDBSQLSession {
         tableTypes: request.tableTypes,
       })
       .then((response) => {
-        this.assertStatus(response.status);
-
-        return this.createOperation(definedOrError(response.operationHandle));
+        return this.createOperation(response);
       });
   }
 
@@ -119,9 +126,7 @@ export default class DBSQLSession implements IDBSQLSession {
         sessionHandle: this.sessionHandle,
       })
       .then((response) => {
-        this.assertStatus(response.status);
-
-        return this.createOperation(definedOrError(response.operationHandle));
+        return this.createOperation(response);
       });
   }
 
@@ -135,9 +140,7 @@ export default class DBSQLSession implements IDBSQLSession {
         columnName: request.columnName,
       })
       .then((response) => {
-        this.assertStatus(response.status);
-
-        return this.createOperation(definedOrError(response.operationHandle));
+        return this.createOperation(response);
       });
   }
 
@@ -150,9 +153,7 @@ export default class DBSQLSession implements IDBSQLSession {
         catalogName: request.catalogName,
       })
       .then((response) => {
-        this.assertStatus(response.status);
-
-        return this.createOperation(definedOrError(response.operationHandle));
+        return this.createOperation(response);
       });
   }
 
@@ -165,9 +166,7 @@ export default class DBSQLSession implements IDBSQLSession {
         tableName: request.tableName,
       })
       .then((response) => {
-        this.assertStatus(response.status);
-
-        return this.createOperation(definedOrError(response.operationHandle));
+        return this.createOperation(response);
       });
   }
 
@@ -183,9 +182,7 @@ export default class DBSQLSession implements IDBSQLSession {
         foreignTableName: request.foreignTableName,
       })
       .then((response) => {
-        this.assertStatus(response.status);
-
-        return this.createOperation(definedOrError(response.operationHandle));
+        return this.createOperation(response);
       });
   }
 
@@ -239,8 +236,10 @@ export default class DBSQLSession implements IDBSQLSession {
       });
   }
 
-  private createOperation(handle: TOperationHandle): IOperation {
-    return new DBSQLOperation(this.driver, handle);
+  private createOperation(response: OperationResponseShape): IOperation {
+    this.assertStatus(response.status);
+    const handle = definedOrError(response.operationHandle);
+    return new DBSQLOperation(this.driver, handle, response.directResults);
   }
 
   private assertStatus(responseStatus: TStatus): void {

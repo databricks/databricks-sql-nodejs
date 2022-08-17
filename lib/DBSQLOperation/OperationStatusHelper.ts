@@ -1,8 +1,7 @@
-import { TOperationHandle, TGetResultSetMetadataResp, TOperationState } from '../../thrift/TCLIService_types';
+import { TOperationHandle, TOperationState, TGetOperationStatusResp } from '../../thrift/TCLIService_types';
 import HiveDriver from '../hive/HiveDriver';
 import StatusFactory from '../factory/StatusFactory';
-import { definedOrError } from '../utils';
-import IOperation, { OperationStatusCallback } from '../contracts/IOperation';
+import { OperationStatusCallback } from '../contracts/IOperation';
 import OperationStateError from '../errors/OperationStateError';
 
 export default class OperationStatusHelper {
@@ -13,10 +12,26 @@ export default class OperationStatusHelper {
   private state: number = TOperationState.INITIALIZED_STATE;
   hasResultSet: boolean = false;
 
-  constructor(driver: HiveDriver, operationHandle: TOperationHandle) {
+  constructor(driver: HiveDriver, operationHandle: TOperationHandle, operationStatus?: TGetOperationStatusResp) {
     this.driver = driver;
     this.operationHandle = operationHandle;
     this.hasResultSet = operationHandle.hasResultSet;
+
+    if (operationStatus) {
+      this.processOperationStatusResponse(operationStatus);
+    }
+  }
+
+  private processOperationStatusResponse(response: TGetOperationStatusResp) {
+    this.statusFactory.create(response.status);
+
+    this.state = response.operationState ?? this.state;
+
+    if (typeof response.hasResultSet === 'boolean') {
+      this.hasResultSet = response.hasResultSet;
+    }
+
+    return response;
   }
 
   status(progress: boolean = false) {
@@ -25,17 +40,7 @@ export default class OperationStatusHelper {
         operationHandle: this.operationHandle,
         getProgressUpdate: progress,
       })
-      .then((response) => {
-        this.statusFactory.create(response.status);
-
-        this.state = response.operationState ?? this.state;
-
-        if (typeof response.hasResultSet === 'boolean') {
-          this.hasResultSet = response.hasResultSet;
-        }
-
-        return response;
-      });
+      .then((response) => this.processOperationStatusResponse(response));
   }
 
   private async isReady(progress?: boolean, callback?: OperationStatusCallback): Promise<boolean> {

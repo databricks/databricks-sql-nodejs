@@ -1,4 +1,4 @@
-import { TOperationHandle, TStatusCode } from '../../thrift/TCLIService_types';
+import { TOperationHandle, TStatusCode, TCloseOperationResp } from '../../thrift/TCLIService_types';
 import HiveDriver from '../hive/HiveDriver';
 import StatusFactory from '../factory/StatusFactory';
 import Status from '../dto/Status';
@@ -11,9 +11,14 @@ export default class CompleteOperationHelper {
   closed: boolean = false;
   cancelled: boolean = false;
 
-  constructor(driver: HiveDriver, operationHandle: TOperationHandle) {
+  constructor(driver: HiveDriver, operationHandle: TOperationHandle, closeOperation?: TCloseOperationResp) {
     this.driver = driver;
     this.operationHandle = operationHandle;
+
+    if (closeOperation) {
+      this.statusFactory.create(closeOperation.status);
+      this.closed = true;
+    }
   }
 
   async cancel(): Promise<Status> {

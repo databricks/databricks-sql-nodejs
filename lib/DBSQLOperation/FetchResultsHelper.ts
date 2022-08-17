@@ -1,6 +1,7 @@
 import {
   TColumn,
   TFetchOrientation,
+  TFetchResultsReq,
   TFetchResultsResp,
   TOperationHandle,
   TRowSet,
@@ -41,12 +42,22 @@ export default class FetchResultsHelper {
   private operationHandle: TOperationHandle;
   private fetchOrientation: TFetchOrientation = TFetchOrientation.FETCH_FIRST;
   private statusFactory = new StatusFactory();
+  private prefetchedResults: TFetchResultsResp[] = [];
 
   hasMoreRows: boolean = false;
 
-  constructor(driver: HiveDriver, operationHandle: TOperationHandle) {
+  constructor(
+    driver: HiveDriver,
+    operationHandle: TOperationHandle,
+    prefetchedResults: Array<TFetchResultsResp | undefined> = [],
+  ) {
     this.driver = driver;
     this.operationHandle = operationHandle;
+    prefetchedResults.forEach((item) => {
+      if (item) {
+        this.prefetchedResults.push(item);
+      }
+    });
   }
 
   private assertStatus(responseStatus: TStatus): void {
@@ -61,6 +72,10 @@ export default class FetchResultsHelper {
   }
 
   async fetch(maxRows: number) {
+    const response = this.prefetchedResults.shift();
+    if (response) {
+      return this.processFetchResponse(response);
+    }
     return this.driver
       .fetchResults({
         operationHandle: this.operationHandle,

@@ -9,9 +9,10 @@ export default class SchemaHelper {
   private statusFactory = new StatusFactory();
   private metadata: TGetResultSetMetadataResp | null = null;
 
-  constructor(driver: HiveDriver, operationHandle: TOperationHandle) {
+  constructor(driver: HiveDriver, operationHandle: TOperationHandle, metadata?: TGetResultSetMetadataResp) {
     this.driver = driver;
     this.operationHandle = operationHandle;
+    this.metadata = metadata || null;
   }
 
   async fetch() {
