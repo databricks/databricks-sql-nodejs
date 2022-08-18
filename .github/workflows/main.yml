@@ -27,6 +27,7 @@ jobs:
       - name: Check code style
         run: |
           npm ci
+          npm run prettier
           npm run lint
 
   test:

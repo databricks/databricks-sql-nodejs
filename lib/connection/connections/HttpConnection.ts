@@ -57,7 +57,7 @@ export default class HttpConnection implements IConnectionProvider, IThriftConne
   }
 
   private getNodeOptions(options: Options): object {
-    const { ca, cert, key, httpsOnly } = options;
+    const { ca, cert, key, https: useHttps } = options;
     const nodeOptions: NodeOptions = {};
 
     if (ca) {
@@ -70,7 +70,7 @@ export default class HttpConnection implements IConnectionProvider, IThriftConne
       nodeOptions.key = key;
     }
 
-    if (httpsOnly) {
+    if (useHttps) {
       nodeOptions.rejectUnauthorized = false;
     }
 
