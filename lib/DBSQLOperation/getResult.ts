@@ -6,9 +6,8 @@ import JsonResult from '../result/JsonResult';
 function getHandler(schema: TTableSchema | null, data: Array<TRowSet>): IOperationResult {
   if (schema === null) {
     return new NullResult();
-  } else {
-    return new JsonResult(schema, data);
   }
+  return new JsonResult(schema, data);
 }
 
 export default function getResult(schema: TTableSchema | null, data: Array<TRowSet>) {

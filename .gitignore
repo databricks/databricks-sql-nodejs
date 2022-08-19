@@ -5,5 +5,6 @@ node_modules
 .nyc_output
 coverage_e2e
 coverage_unit
-
+*.code-workspace
 dist
+*.DS_Store

@@ -8,7 +8,9 @@ type HttpAuthOptions = AuthOptions & {
 
 export default class PlainHttpAuthentication implements IAuthentication {
   private username: string;
+
   private password: string;
+
   private headers: object;
 
   constructor(options: HttpAuthOptions) {
@@ -27,6 +29,6 @@ export default class PlainHttpAuthentication implements IAuthentication {
   }
 
   private getToken(username: string, password: string): string {
-    return 'Basic ' + Buffer.from(`${username}:${password}`).toString('base64');
+    return `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}`;
   }
 }

@@ -100,8 +100,10 @@ npm run e2e
 Code style:
 
 ```bash
-npm run prettier:check
+npm run prettier
 npm run prettier:fix
+npm run lint
+npm run lint:fix
 ```
 
 ## Pull Request Process
@@ -109,7 +111,7 @@ npm run prettier:fix
 1. Update the [CHANGELOG](CHANGELOG.md) with details of your changes, if applicable.
 2. Add any appropriate tests.
 3. Make your code or other changes.
-4. Follow code style: `npm run prettier:fix`
+4. Follow code style: `npm run prettier:fix; npm run lint:fix`
 5. Review guidelines such as
    [How to write the perfect pull request][github-perfect-pr], thanks!
 

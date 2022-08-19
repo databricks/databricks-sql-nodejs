@@ -1,12 +1,12 @@
 import thrift from 'thrift';
 import https from 'https';
 
+import { IncomingMessage } from 'http';
 import IThriftConnection from '../contracts/IThriftConnection';
 import IConnectionProvider from '../contracts/IConnectionProvider';
 import IConnectionOptions, { Options } from '../contracts/IConnectionOptions';
 import IAuthentication from '../contracts/IAuthentication';
 import HttpTransport from '../transports/HttpTransport';
-import { IncomingMessage } from 'http';
 
 type NodeOptions = {
   ca?: Buffer | string;
@@ -17,6 +17,7 @@ type NodeOptions = {
 
 export default class HttpConnection implements IConnectionProvider, IThriftConnection {
   private thrift = thrift;
+
   private connection: any;
 
   connect(options: IConnectionOptions, authProvider: IAuthentication): Promise<IThriftConnection> {
@@ -51,13 +52,12 @@ export default class HttpConnection implements IConnectionProvider, IThriftConne
   isConnected(): boolean {
     if (this.connection) {
       return true;
-    } else {
-      return false;
     }
+    return false;
   }
 
   private getNodeOptions(options: Options): object {
-    const { ca, cert, key, https } = options;
+    const { ca, cert, key, https: useHttps } = options;
     const nodeOptions: NodeOptions = {};
 
     if (ca) {
@@ -70,7 +70,7 @@ export default class HttpConnection implements IConnectionProvider, IThriftConne
       nodeOptions.key = key;
     }
 
-    if (https) {
+    if (useHttps) {
       nodeOptions.rejectUnauthorized = false;
     }
 
@@ -78,13 +78,13 @@ export default class HttpConnection implements IConnectionProvider, IThriftConne
   }
 
   private addCookieHandler() {
-    const responseCallback = this.connection.responseCallback;
+    const { responseCallback } = this.connection;
 
     this.connection.responseCallback = (response: IncomingMessage) => {
       if (Array.isArray(response.headers['set-cookie'])) {
-        let cookie = [this.connection.nodeOptions.headers['cookie']];
+        const cookie = [this.connection.nodeOptions.headers.cookie];
 
-        this.connection.nodeOptions.headers['cookie'] = cookie
+        this.connection.nodeOptions.headers.cookie = cookie
           .concat(response.headers['set-cookie'])
           .filter(Boolean)
           .join(';');
