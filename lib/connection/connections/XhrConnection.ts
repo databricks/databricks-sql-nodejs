@@ -14,10 +14,7 @@ export default class XhrConnection implements IConnectionProvider, IThriftConnec
     connect(options: IConnectionOptions, authProvider: IAuthentication): Promise<IThriftConnection> {
         const xhrTransport = new XhrTransport({
             transport: thrift.TBufferedTransport,
-            protocol: thrift.TJSONProtocol,
-            headers: {
-              'Content-Type': 'application/vnd.apache.thrift.json',
-             },
+            protocol: thrift.TBinaryProtocol,
             ...options.options,
         });
         return authProvider.authenticate(xhrTransport).then(() => {
