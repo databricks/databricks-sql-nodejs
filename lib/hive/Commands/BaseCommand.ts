@@ -11,9 +11,8 @@ export default abstract class BaseCommand {
   executeCommand<Response>(request: object, command: Function | void): Promise<Response> {
     return new Promise((resolve, reject) => {
       if (typeof command !== 'function') {
-        return reject(
-          new HiveDriverError('Hive driver: the operation does not exist, try to choose another Thrift file.'),
-        );
+        reject(new HiveDriverError('Hive driver: the operation does not exist, try to choose another Thrift file.'));
+        return;
       }
 
       try {

@@ -23,9 +23,14 @@ export default class HttpTransport implements ITransport {
   }
 
   connect() {}
+
   addListener() {}
+
   removeListener() {}
+
   write() {}
+
   end() {}
+
   emit() {}
 }

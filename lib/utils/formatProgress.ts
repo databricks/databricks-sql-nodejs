@@ -2,6 +2,7 @@ import { TProgressUpdateResp } from '../../thrift/TCLIService_types';
 
 export class ProgressUpdateTransformer {
   private progressUpdate: TProgressUpdateResp;
+
   private rowWidth: number = 10;
 
   constructor(progressUpdate: TProgressUpdateResp) {
@@ -15,9 +16,7 @@ export class ProgressUpdateTransformer {
   toString() {
     const header = this.formatRow(this.progressUpdate.headerNames);
     const footer = this.progressUpdate.footerSummary;
-    const rows = this.progressUpdate.rows.map((row: Array<string>) => {
-      return this.formatRow(row);
-    });
+    const rows = this.progressUpdate.rows.map((row: Array<string>) => this.formatRow(row));
 
     return [header, ...rows, footer].join('\n');
   }

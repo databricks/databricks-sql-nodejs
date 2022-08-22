@@ -2,8 +2,11 @@ import { TStatus } from '../../thrift/TCLIService_types';
 
 export default class StatusError implements Error {
   public name: string;
+
   public message: string;
+
   public code: number;
+
   public stack?: string;
 
   constructor(status: TStatus) {

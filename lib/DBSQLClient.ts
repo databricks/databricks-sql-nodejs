@@ -1,5 +1,6 @@
 import thrift from 'thrift';
 
+import { EventEmitter } from 'events';
 import TCLIService from '../thrift/TCLIService';
 import TCLIService_types, { TOpenSessionReq } from '../thrift/TCLIService_types';
 import IDBSQLClient, { IDBSQLConnectionOptions } from './contracts/IDBSQLClient';
@@ -12,7 +13,6 @@ import IAuthentication from './connection/contracts/IAuthentication';
 import NoSaslAuthentication from './connection/auth/NoSaslAuthentication';
 import HttpConnection from './connection/connections/HttpConnection';
 import IConnectionOptions from './connection/contracts/IConnectionOptions';
-import { EventEmitter } from 'events';
 import StatusFactory from './factory/StatusFactory';
 import HiveDriverError from './errors/HiveDriverError';
 import { buildUserAgentString, definedOrError } from './utils';
@@ -20,10 +20,15 @@ import PlainHttpAuthentication from './connection/auth/PlainHttpAuthentication';
 
 export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
   private client: TCLIService.Client | null;
+
   private connection: IThriftConnection | null;
+
   private statusFactory: StatusFactory;
+
   private connectionProvider: IConnectionProvider;
+
   private authProvider: IAuthentication;
+
   private thrift = thrift;
 
   constructor() {
