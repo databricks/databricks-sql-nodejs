@@ -74,10 +74,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
     else {
       opts = {
         username: 'token',
-        password: options.token,
-        headers: {
-          'Content-Type': 'application/vnd.apache.thrift.binary'
-        }
+        password: options.token
       }
     }
     this.authProvider = new PlainHttpAuthentication(opts);

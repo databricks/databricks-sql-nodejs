@@ -15,6 +15,9 @@ export default class XhrConnection implements IConnectionProvider, IThriftConnec
         const xhrTransport = new XhrTransport({
             transport: thrift.TBufferedTransport,
             protocol: thrift.TBinaryProtocol,
+            headers: {
+              'Content-Type': 'application/vnd.apache.thrift.binary'
+            },
             ...options.options,
         });
         return authProvider.authenticate(xhrTransport).then(() => {
