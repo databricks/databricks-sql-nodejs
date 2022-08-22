@@ -61,14 +61,23 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
   }
 
   async connect(options: IDBSQLConnectionOptions): Promise<IDBSQLClient> {
-    let opts = {
-      username: 'token',
-      password: options.token,
-      headers: {}
-    }
+    let opts;
     if(isNodejs()){
-      opts.headers = {
-        'User-Agent': buildUserAgentString(options.clientId)
+      opts = {
+        username: 'token',
+        password: options.token,
+        headers: {
+          'User-Agent': buildUserAgentString(options.clientId)
+        }
+      }
+    }
+    else {
+      opts = {
+        username: 'token',
+        password: options.token,
+        headers: {
+          'Content-Type': 'application/vnd.apache.thrift.binary'
+        }
       }
     }
     this.authProvider = new PlainHttpAuthentication(opts);
