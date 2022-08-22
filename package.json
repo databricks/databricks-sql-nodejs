@@ -69,6 +69,6 @@
   "dependencies": {
     "commander": "^9.3.0",
     "node-int64": "^0.4.0",
-    "thrift": "^0.16.0"
+    "thrift": "github:nithinkdb/thrift#xhr-binary"
   }
 }
