@@ -5,8 +5,11 @@ import { definedOrError } from '../utils';
 
 export default class SchemaHelper {
   private driver: HiveDriver;
+
   private operationHandle: TOperationHandle;
+
   private statusFactory = new StatusFactory();
+
   private metadata: TGetResultSetMetadataResp | null = null;
 
   constructor(driver: HiveDriver, operationHandle: TOperationHandle, metadata?: TGetResultSetMetadataResp) {

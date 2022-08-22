@@ -1,7 +1,6 @@
 import {
   TColumn,
   TFetchOrientation,
-  TFetchResultsReq,
   TFetchResultsResp,
   TOperationHandle,
   TRowSet,
@@ -39,9 +38,13 @@ function checkIfOperationHasMoreRows(response: TFetchResultsResp): boolean {
 
 export default class FetchResultsHelper {
   private driver: HiveDriver;
+
   private operationHandle: TOperationHandle;
+
   private fetchOrientation: TFetchOrientation = TFetchOrientation.FETCH_FIRST;
+
   private statusFactory = new StatusFactory();
+
   private prefetchedResults: TFetchResultsResp[] = [];
 
   hasMoreRows: boolean = false;
@@ -72,9 +75,9 @@ export default class FetchResultsHelper {
   }
 
   async fetch(maxRows: number) {
-    const response = this.prefetchedResults.shift();
-    if (response) {
-      return this.processFetchResponse(response);
+    const prefetchedResponse = this.prefetchedResults.shift();
+    if (prefetchedResponse) {
+      return this.processFetchResponse(prefetchedResponse);
     }
     return this.driver
       .fetchResults({

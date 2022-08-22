@@ -71,9 +71,7 @@ export default class DBSQLSession implements IDBSQLSession {
       };
     }
 
-    return this.driver.executeStatement(request).then((response) => {
-      return this.createOperation(response);
-    });
+    return this.driver.executeStatement(request).then((response) => this.createOperation(response));
   }
 
   getTypeInfo(): Promise<IOperation> {
@@ -81,9 +79,7 @@ export default class DBSQLSession implements IDBSQLSession {
       .getTypeInfo({
         sessionHandle: this.sessionHandle,
       })
-      .then((response) => {
-        return this.createOperation(response);
-      });
+      .then((response) => this.createOperation(response));
   }
 
   getCatalogs(): Promise<IOperation> {
@@ -91,9 +87,7 @@ export default class DBSQLSession implements IDBSQLSession {
       .getCatalogs({
         sessionHandle: this.sessionHandle,
       })
-      .then((response) => {
-        return this.createOperation(response);
-      });
+      .then((response) => this.createOperation(response));
   }
 
   getSchemas(request: SchemasRequest): Promise<IOperation> {
@@ -103,9 +97,7 @@ export default class DBSQLSession implements IDBSQLSession {
         catalogName: request.catalogName,
         schemaName: request.schemaName,
       })
-      .then((response) => {
-        return this.createOperation(response);
-      });
+      .then((response) => this.createOperation(response));
   }
 
   getTables(request: TablesRequest): Promise<IOperation> {
@@ -117,9 +109,7 @@ export default class DBSQLSession implements IDBSQLSession {
         tableName: request.tableName,
         tableTypes: request.tableTypes,
       })
-      .then((response) => {
-        return this.createOperation(response);
-      });
+      .then((response) => this.createOperation(response));
   }
 
   getTableTypes(): Promise<IOperation> {
@@ -127,9 +117,7 @@ export default class DBSQLSession implements IDBSQLSession {
       .getTableTypes({
         sessionHandle: this.sessionHandle,
       })
-      .then((response) => {
-        return this.createOperation(response);
-      });
+      .then((response) => this.createOperation(response));
   }
 
   getColumns(request: ColumnRequest): Promise<IOperation> {
@@ -141,9 +129,7 @@ export default class DBSQLSession implements IDBSQLSession {
         tableName: request.tableName,
         columnName: request.columnName,
       })
-      .then((response) => {
-        return this.createOperation(response);
-      });
+      .then((response) => this.createOperation(response));
   }
 
   getFunctions(request: FunctionNameRequest): Promise<IOperation> {
@@ -154,9 +140,7 @@ export default class DBSQLSession implements IDBSQLSession {
         schemaName: request.schemaName,
         catalogName: request.catalogName,
       })
-      .then((response) => {
-        return this.createOperation(response);
-      });
+      .then((response) => this.createOperation(response));
   }
 
   getPrimaryKeys(request: PrimaryKeysRequest): Promise<IOperation> {
@@ -167,9 +151,7 @@ export default class DBSQLSession implements IDBSQLSession {
         schemaName: request.schemaName,
         tableName: request.tableName,
       })
-      .then((response) => {
-        return this.createOperation(response);
-      });
+      .then((response) => this.createOperation(response));
   }
 
   getCrossReference(request: CrossReferenceRequest): Promise<IOperation> {
@@ -183,9 +165,7 @@ export default class DBSQLSession implements IDBSQLSession {
         foreignSchemaName: request.foreignSchemaName,
         foreignTableName: request.foreignTableName,
       })
-      .then((response) => {
-        return this.createOperation(response);
-      });
+      .then((response) => this.createOperation(response));
   }
 
   getDelegationToken(owner: string, renewer: string): Promise<string> {

@@ -6,10 +6,13 @@ import OperationStateError from '../errors/OperationStateError';
 
 export default class OperationStatusHelper {
   private driver: HiveDriver;
+
   private operationHandle: TOperationHandle;
+
   private statusFactory = new StatusFactory();
 
   private state: number = TOperationState.INITIALIZED_STATE;
+
   hasResultSet: boolean = false;
 
   constructor(driver: HiveDriver, operationHandle: TOperationHandle, operationStatus?: TGetOperationStatusResp) {
@@ -44,7 +47,7 @@ export default class OperationStatusHelper {
   }
 
   private async isReady(progress?: boolean, callback?: OperationStatusCallback): Promise<boolean> {
-    let response = await this.status(Boolean(progress));
+    const response = await this.status(Boolean(progress));
 
     if (callback) {
       await Promise.resolve(callback(response));
@@ -77,9 +80,8 @@ export default class OperationStatusHelper {
     if (this.state === TOperationState.FINISHED_STATE) {
       return;
     }
-    if (await this.isReady(progress, callback)) {
-      return;
-    } else {
+    const isReady = await this.isReady(progress, callback);
+    if (!isReady) {
       return this.waitUntilReady(progress, callback);
     }
   }

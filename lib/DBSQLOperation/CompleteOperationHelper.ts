@@ -5,10 +5,13 @@ import Status from '../dto/Status';
 
 export default class CompleteOperationHelper {
   private driver: HiveDriver;
+
   private operationHandle: TOperationHandle;
+
   private statusFactory = new StatusFactory();
 
   closed: boolean = false;
+
   cancelled: boolean = false;
 
   constructor(driver: HiveDriver, operationHandle: TOperationHandle, closeOperation?: TCloseOperationResp) {

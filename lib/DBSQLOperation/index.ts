@@ -16,10 +16,15 @@ import CompleteOperationHelper from './CompleteOperationHelper';
 
 export default class DBSQLOperation implements IOperation {
   private driver: HiveDriver;
+
   private operationHandle: TOperationHandle;
+
   private _status: OperationStatusHelper;
+
   private _schema: SchemaHelper;
+
   private _data: FetchResultsHelper;
+
   private _completeOperation: CompleteOperationHelper;
 
   constructor(driver: HiveDriver, operationHandle: TOperationHandle, directResults?: TSparkDirectResults) {
@@ -36,9 +41,10 @@ export default class DBSQLOperation implements IOperation {
   }
 
   async fetchAll(options?: IFetchOptions): Promise<Array<object>> {
-    let data: Array<object> = [];
+    const data: Array<object> = [];
     do {
-      let chunk = await this.fetchChunk(options);
+      // eslint-disable-next-line no-await-in-loop
+      const chunk = await this.fetchChunk(options);
       if (chunk) {
         data.push(...chunk);
       }
@@ -53,13 +59,12 @@ export default class DBSQLOperation implements IOperation {
 
     await this._status.waitUntilReady(options.progress, options.callback);
 
-    return await Promise.all([
-      this._schema.fetch(),
-      this._data.fetch(options.maxRows || defaultFetchOptions.maxRows),
-    ]).then(([schema, data]) => {
-      const result = getResult(schema, data ? [data] : []);
-      return Promise.resolve(result);
-    });
+    return Promise.all([this._schema.fetch(), this._data.fetch(options.maxRows || defaultFetchOptions.maxRows)]).then(
+      ([schema, data]) => {
+        const result = getResult(schema, data ? [data] : []);
+        return Promise.resolve(result);
+      },
+    );
   }
 
   /**

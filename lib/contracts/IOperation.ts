@@ -1,4 +1,4 @@
-import { TGetOperationStatusResp, TTableSchema, TRowSet } from '../../thrift/TCLIService_types';
+import { TGetOperationStatusResp, TTableSchema } from '../../thrift/TCLIService_types';
 import Status from '../dto/Status';
 
 export type OperationStatusCallback = (progress: TGetOperationStatusResp) => unknown;
