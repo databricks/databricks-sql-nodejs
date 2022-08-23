@@ -19,7 +19,9 @@ import { buildUserAgentString, definedOrError } from './utils';
 import PlainHttpAuthentication from './connection/auth/PlainHttpAuthentication';
 import XhrConnection from './connection/connections/XhrConnection';
 
-function isNodejs() { return typeof "process" !== "undefined" && process && process.versions && process.versions.node; }
+function isNodejs() {
+  return typeof 'process' !== 'undefined' && process && process.versions && process.versions.node;
+}
 
 export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
   private client: TCLIService.Client | null;
@@ -36,10 +38,9 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
 
   constructor() {
     super();
-    if(isNodejs()) {
+    if (isNodejs()) {
       this.connectionProvider = new HttpConnection();
-    }
-    else {
+    } else {
       this.connectionProvider = new XhrConnection();
     }
     this.statusFactory = new StatusFactory();
@@ -62,29 +63,27 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
 
   async connect(options: IDBSQLConnectionOptions): Promise<IDBSQLClient> {
     let opts;
-    if(isNodejs()){
+    if (isNodejs()) {
       opts = {
         username: 'token',
         password: options.token,
         headers: {
-          'User-Agent': buildUserAgentString(options.clientId)
-        }
-      }
-    }
-    else {
+          'User-Agent': buildUserAgentString(options.clientId),
+        },
+      };
+    } else {
       opts = {
         username: 'token',
-        password: options.token
-      }
+        password: options.token,
+      };
     }
     this.authProvider = new PlainHttpAuthentication(opts);
 
     this.connection = await this.connectionProvider.connect(this.getConnectionOptions(options), this.authProvider);
 
-    if(isNodejs()) {
+    if (isNodejs()) {
       this.client = this.thrift.createClient(TCLIService, this.connection.getConnection());
-    }
-    else {
+    } else {
       this.client = this.thrift.createXHRClient(TCLIService, this.connection.getConnection());
     }
     this.connection.getConnection().on('error', (error: Error) => {
