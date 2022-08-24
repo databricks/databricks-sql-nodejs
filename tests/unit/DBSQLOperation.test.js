@@ -127,12 +127,28 @@ describe('DBSQLOperation', () => {
       expect(operation._status.state).to.equal(TOperationState.INITIALIZED_STATE);
       expect(operation._status.hasResultSet).to.be.false;
 
-      const status = await operation.status(false);
+      const status = await operation.status();
 
       expect(driver.getOperationStatus.called).to.be.true;
       expect(status.operationState).to.equal(TOperationState.FINISHED_STATE);
       expect(operation._status.state).to.equal(TOperationState.FINISHED_STATE);
       expect(operation._status.hasResultSet).to.be.true;
+    });
+
+    it('should request progress', async () => {
+      const handle = new OperationHandleMock();
+      handle.hasResultSet = false;
+
+      const driver = new DriverMock();
+      sinon.spy(driver, 'getOperationStatus');
+      driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
+
+      const operation = new DBSQLOperation(driver, handle);
+      await operation.status(true);
+
+      expect(driver.getOperationStatus.called).to.be.true;
+      const request = driver.getOperationStatus.getCall(0).args[0];
+      expect(request.getProgressUpdate).to.be.true;
     });
 
     it('should fetch status even if directResult available', async () => {
@@ -546,6 +562,31 @@ describe('DBSQLOperation', () => {
       expect(driver.getOperationStatus.called).to.be.true;
       expect(results).to.be.null;
       expect(operation._status.state).to.equal(TOperationState.FINISHED_STATE);
+    });
+
+    it('should request progress', async () => {
+      const handle = new OperationHandleMock();
+      const driver = new DriverMock();
+      driver.getOperationStatusResp.operationState = TOperationState.INITIALIZED_STATE;
+      sinon
+        .stub(driver, 'getOperationStatus')
+        .callThrough()
+        .onSecondCall()
+        .callsFake((...args) => {
+          driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
+          return driver.getOperationStatus.wrappedMethod.apply(driver, args);
+        });
+
+      driver.getResultSetMetadataResp.schema = null;
+      driver.fetchResultsResp.hasMoreRows = false;
+      driver.fetchResultsResp.results.columns = [];
+
+      const operation = new DBSQLOperation(driver, handle);
+      await operation.fetchChunk({ progress: true });
+
+      expect(driver.getOperationStatus.called).to.be.true;
+      const request = driver.getOperationStatus.getCall(0).args[0];
+      expect(request.getProgressUpdate).to.be.true;
     });
 
     it('should invoke progress callback', async () => {

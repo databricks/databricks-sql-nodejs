@@ -29,7 +29,7 @@ export default interface IOperation {
    *
    * @param progress
    */
-  status(progress: boolean): Promise<TGetOperationStatusResp>;
+  status(progress?: boolean): Promise<TGetOperationStatusResp>;
 
   /**
    * Cancel operation
