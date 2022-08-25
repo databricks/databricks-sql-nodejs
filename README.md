@@ -61,29 +61,16 @@ client
 
 ### Unit tests
 
+You can run all unit tests, or specify a specific test to run:
+
 ```bash
-npm run test
-```
-
-You can specify a specific test to run by changing `package.json`:
-
-```json
-"scripts": {
-    "test": "nyc --reporter=lcov mocha 'tests/unit/result/JsonResult.test.js'",
-}
-```
-
-Or to run all unit tests:
-
-```json
-"scripts": {
-    "test": "nyc --reporter=lcov mocha 'tests/unit/**/*.test.js'",
-}
+npm test
+npm test <path/to/file.test.js>
 ```
 
 ### e2e tests
 
-Before running end-to-end tests, copy the [sample configuration file](tests/e2e/utils/config.js) into the repository root and set the Databricks SQL connection info:
+Before running end-to-end tests, create a file named `tests/e2e/utils/config.local.js` and set the Databricks SQL connection info:
 
 ```javascript
 {
@@ -98,6 +85,7 @@ Then run
 
 ```bash
 npm run e2e
+npm run e2e <path/to/file.test.js>
 ```
 
 ## Contributing
