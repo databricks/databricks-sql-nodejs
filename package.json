@@ -13,8 +13,8 @@
   },
   "scripts": {
     "prepare": "npm run build",
-    "e2e": "nyc --reporter=lcov --report-dir=coverage_e2e mocha 'tests/e2e/**/*.test.js' --timeout=300000",
-    "test": "nyc --reporter=lcov --report-dir=coverage_unit mocha 'tests/unit/**/*.test.js'",
+    "e2e": "nyc --reporter=lcov --report-dir=coverage_e2e mocha --config tests/e2e/.mocharc.js",
+    "test": "nyc --reporter=lcov --report-dir=coverage_unit mocha  --config tests/unit/.mocharc.js",
     "build": "tsc",
     "watch": "tsc -w",
     "type-check": "tsc --noEmit",
