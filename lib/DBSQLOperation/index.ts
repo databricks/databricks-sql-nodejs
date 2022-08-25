@@ -45,9 +45,7 @@ export default class DBSQLOperation implements IOperation {
     do {
       // eslint-disable-next-line no-await-in-loop
       const chunk = await this.fetchChunk(options);
-      if (chunk) {
-        data.push(...chunk);
-      }
+      data.push(...chunk);
     } while (this.hasMoreRows());
     return data;
   }

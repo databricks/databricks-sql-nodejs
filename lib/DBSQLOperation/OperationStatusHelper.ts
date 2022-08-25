@@ -13,6 +13,10 @@ export default class OperationStatusHelper {
 
   private state: number = TOperationState.INITIALIZED_STATE;
 
+  // Once operation is finished or fails - cache status response, because subsequent calls
+  // to `getOperationStatus()` may fail with irrelevant errors, e.g. HTTP 404
+  private operationStatus?: TGetOperationStatusResp;
+
   hasResultSet: boolean = false;
 
   constructor(driver: HiveDriver, operationHandle: TOperationHandle, operationStatus?: TGetOperationStatusResp) {
@@ -25,6 +29,16 @@ export default class OperationStatusHelper {
     }
   }
 
+  private isInProgress(response: TGetOperationStatusResp) {
+    switch (response.operationState) {
+      case TOperationState.INITIALIZED_STATE:
+      case TOperationState.RUNNING_STATE:
+        return true;
+      default:
+        return false;
+    }
+  }
+
   private processOperationStatusResponse(response: TGetOperationStatusResp) {
     this.statusFactory.create(response.status);
 
@@ -34,10 +48,17 @@ export default class OperationStatusHelper {
       this.hasResultSet = response.hasResultSet;
     }
 
+    if (!this.isInProgress(response)) {
+      this.operationStatus = response;
+    }
+
     return response;
   }
 
   status(progress: boolean = false) {
+    if (this.operationStatus) {
+      return Promise.resolve(this.operationStatus);
+    }
     return this.driver
       .getOperationStatus({
         operationHandle: this.operationHandle,
@@ -69,7 +90,7 @@ export default class OperationStatusHelper {
       case TOperationState.PENDING_STATE:
         throw new OperationStateError('The operation is in a pending state', response);
       case TOperationState.TIMEDOUT_STATE:
-        throw new OperationStateError('The operation is in a timedout state', response);
+        throw new OperationStateError('The operation is in a timed out state', response);
       case TOperationState.UKNOWN_STATE:
       default:
         throw new OperationStateError('The operation is in an unrecognized state', response);

@@ -151,7 +151,45 @@ describe('DBSQLOperation', () => {
       expect(request.getProgressUpdate).to.be.true;
     });
 
-    it('should fetch status even if directResult available', async () => {
+    it('should not fetch status once operation is finished', async () => {
+      const handle = new OperationHandleMock();
+      handle.hasResultSet = false;
+
+      const driver = new DriverMock();
+      sinon.spy(driver, 'getOperationStatus');
+      driver.getOperationStatusResp.hasResultSet = true;
+
+      const operation = new DBSQLOperation(driver, handle);
+
+      expect(operation._status.state).to.equal(TOperationState.INITIALIZED_STATE);
+      expect(operation._status.hasResultSet).to.be.false;
+
+      // First call - should fetch data and cache
+      driver.getOperationStatusResp = {
+        ...driver.getOperationStatusResp,
+        operationState: TOperationState.FINISHED_STATE,
+      };
+      const status1 = await operation.status();
+
+      expect(driver.getOperationStatus.callCount).to.equal(1);
+      expect(status1.operationState).to.equal(TOperationState.FINISHED_STATE);
+      expect(operation._status.state).to.equal(TOperationState.FINISHED_STATE);
+      expect(operation._status.hasResultSet).to.be.true;
+
+      // Second call - should return cached data
+      driver.getOperationStatusResp = {
+        ...driver.getOperationStatusResp,
+        operationState: TOperationState.RUNNING_STATE,
+      };
+      const status2 = await operation.status();
+
+      expect(driver.getOperationStatus.callCount).to.equal(1);
+      expect(status2.operationState).to.equal(TOperationState.FINISHED_STATE);
+      expect(operation._status.state).to.equal(TOperationState.FINISHED_STATE);
+      expect(operation._status.hasResultSet).to.be.true;
+    });
+
+    it('should fetch status if directResults status is not finished', async () => {
       const handle = new OperationHandleMock();
       handle.hasResultSet = false;
 
@@ -177,6 +215,34 @@ describe('DBSQLOperation', () => {
       expect(status.operationState).to.equal(TOperationState.FINISHED_STATE);
       expect(operation._status.state).to.equal(TOperationState.FINISHED_STATE);
       expect(operation._status.hasResultSet).to.be.true;
+    });
+
+    it('should not fetch status if directResults status is finished', async () => {
+      const handle = new OperationHandleMock();
+      handle.hasResultSet = false;
+
+      const driver = new DriverMock();
+      sinon.spy(driver, 'getOperationStatus');
+      driver.getOperationStatusResp.operationState = TOperationState.RUNNING_STATE;
+      driver.getOperationStatusResp.hasResultSet = true;
+
+      const operation = new DBSQLOperation(driver, handle, {
+        operationStatus: {
+          status: { statusCode: TStatusCode.SUCCESS_STATUS },
+          operationState: TOperationState.FINISHED_STATE,
+          hasResultSet: false,
+        },
+      });
+
+      expect(operation._status.state).to.equal(TOperationState.FINISHED_STATE); // from directResults
+      expect(operation._status.hasResultSet).to.be.false;
+
+      const status = await operation.status(false);
+
+      expect(driver.getOperationStatus.called).to.be.false;
+      expect(status.operationState).to.equal(TOperationState.FINISHED_STATE);
+      expect(operation._status.state).to.equal(TOperationState.FINISHED_STATE);
+      expect(operation._status.hasResultSet).to.be.false;
     });
 
     it('should throw an error in case of a status error', async () => {
