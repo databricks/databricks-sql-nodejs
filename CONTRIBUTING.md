@@ -93,7 +93,7 @@ npm run build
 Run the tests
 
 ```bash
-npm run test
+npm test
 npm run e2e
 ```
 
@@ -104,6 +104,7 @@ npm run prettier
 npm run prettier:fix
 npm run lint
 npm run lint:fix
+npm run type-check
 ```
 
 ## Pull Request Process
