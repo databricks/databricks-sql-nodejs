@@ -70,7 +70,7 @@ npm test <path/to/file.test.js>
 
 ### e2e tests
 
-Before running end-to-end tests, create a  file named `tests/e2e/utils/config.local.js` and set the Databricks SQL connection info:
+Before running end-to-end tests, create a file named `tests/e2e/utils/config.local.js` and set the Databricks SQL connection info:
 
 ```javascript
 {
