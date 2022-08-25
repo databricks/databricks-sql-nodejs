@@ -12,7 +12,9 @@
         "consistent-return": "off",
         "no-param-reassign": "off",
         "no-bitwise": "off",
-        "@typescript-eslint/no-throw-literal": "off"
+        "@typescript-eslint/no-throw-literal": "off",
+        "@typescript-eslint/no-use-before-define": "off",
+        "no-restricted-syntax": "off"
       }
     }
   ]

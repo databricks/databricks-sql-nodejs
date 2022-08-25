@@ -1,6 +1,6 @@
 const { expect } = require('chai');
 
-const { buildUserAgentString, formatProgress, ProgressUpdateTransformer } = require('../../dist/utils');
+const { buildUserAgentString, formatProgress, ProgressUpdateTransformer, formatQuery } = require('../../dist/utils');
 
 describe('buildUserAgentString', () => {
   // It should follow https://www.rfc-editor.org/rfc/rfc7231#section-5.5.3 and
@@ -73,5 +73,15 @@ describe('ProgressUpdateTransformer', () => {
     expect(String(t)).to.be.eq(
       'Column 1  |Column 2  \n' + 'value 1.1 |value 1.2 \n' + 'value 2.1 |value 2.2 \n' + 'footer',
     );
+  });
+});
+
+describe('formatQuery', () => {
+  it('formats query', () => {
+    let options = {
+      table: ";' DROP TABLE USERS",
+    };
+    const result = formatQuery('select * from {table}', options);
+    expect(result).to.be.eq("select * from ';'' DROP TABLE USERS'");
   });
 });

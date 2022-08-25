@@ -68,6 +68,7 @@
   },
   "dependencies": {
     "commander": "^9.3.0",
+    "format-unicorn": "^1.1.1",
     "node-int64": "^0.4.0",
     "thrift": "^0.16.0"
   }

@@ -15,6 +15,7 @@ import Status from './dto/Status';
 import StatusFactory from './factory/StatusFactory';
 import InfoValue from './dto/InfoValue';
 import { definedOrError } from './utils';
+import formatQuery from './utils/formatQuery';
 
 export default class DBSQLSession implements IDBSQLSession {
   private driver: HiveDriver;
@@ -47,6 +48,10 @@ export default class DBSQLSession implements IDBSQLSession {
       runAsync: false,
       ...options,
     };
+
+    if (options.queryParams) {
+      statement = formatQuery(statement, options.queryParams);
+    }
 
     return this.driver
       .executeStatement({
