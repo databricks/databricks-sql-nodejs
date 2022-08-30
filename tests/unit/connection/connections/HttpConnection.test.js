@@ -1,3 +1,4 @@
+const http = require('http');
 const { expect } = require('chai');
 const HttpConnection = require('../../../../').connections.HttpConnection;
 
@@ -159,6 +160,31 @@ describe('HttpConnection.connect', () => {
         resultConnection.responseCallback({ headers: {} });
         expect(resultConnection.executed).to.be.true;
         expect(Object.keys(connection.thrift.options.nodeOptions)).to.be.deep.eq(['agent']);
+      });
+  });
+
+  it('should use a http agent if https is not enabled', () => {
+    const connection = new HttpConnection();
+    const authenticator = authProviderMock();
+    const resultConnection = {
+      responseCallback() {},
+    };
+    connection.thrift = thriftMock(resultConnection);
+
+    return connection
+      .connect(
+        {
+          host: 'localhost',
+          port: 10001,
+          options: {
+            https: false,
+            path: '/hive',
+          },
+        },
+        authenticator,
+      )
+      .then(() => {
+        expect(connection.thrift.options.nodeOptions.agent).to.be.instanceOf(http.Agent);
       });
   });
 });
