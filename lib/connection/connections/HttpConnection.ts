@@ -1,7 +1,7 @@
 import thrift from 'thrift';
 import https from 'https';
 
-import { IncomingMessage } from 'http';
+import http, { IncomingMessage } from 'http';
 import IThriftConnection from '../contracts/IThriftConnection';
 import IConnectionProvider from '../contracts/IConnectionProvider';
 import IConnectionOptions, { Options } from '../contracts/IConnectionOptions';
@@ -21,12 +21,13 @@ export default class HttpConnection implements IConnectionProvider, IThriftConne
   private connection: any;
 
   connect(options: IConnectionOptions, authProvider: IAuthentication): Promise<IThriftConnection> {
+    const Agent = options.options?.https ? https.Agent : http.Agent;
     const httpTransport = new HttpTransport({
       transport: thrift.TBufferedTransport,
       protocol: thrift.TBinaryProtocol,
       ...options.options,
       nodeOptions: {
-        agent: new https.Agent({
+        agent: new Agent({
           keepAlive: true,
           maxSockets: 5,
           keepAliveMsecs: 10000,
