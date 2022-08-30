@@ -21,7 +21,7 @@ export default class HttpConnection implements IConnectionProvider, IThriftConne
   private connection: any;
 
   connect(options: IConnectionOptions, authProvider: IAuthentication): Promise<IThriftConnection> {
-    const Agent = options.options?.https === false ? http.Agent : https.Agent;
+    const Agent = options.options?.https ? https.Agent : http.Agent;
     const httpTransport = new HttpTransport({
       transport: thrift.TBufferedTransport,
       protocol: thrift.TBinaryProtocol,
