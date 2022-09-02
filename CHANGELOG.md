@@ -2,8 +2,7 @@
 
 ## 0.1.x (Unreleased)
 
-- Added support for DirectResults - feature that reduces amount of requests to server for fetching
-  data and speed up data fetching
+- Added support for DirectResults, which speeds up data fetches by reducing the number of server roundtrips when possible.
 - `DBSQLOperation` interface simplified: `HiveUtils` were removed and replaced with new methods
   `DBSQLOperation.fetchChunk`/`DBSQLOperation.fetchAll`. New API implements all necessary waiting
   and data conversion routines internally
