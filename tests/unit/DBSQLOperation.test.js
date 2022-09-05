@@ -814,9 +814,9 @@ describe('DBSQLOperation', () => {
       driver.fetchResultsResp.hasMoreRows = true;
       const operation = new DBSQLOperation(driver, handle);
 
-      expect(operation.hasMoreRows()).to.be.false;
+      expect(await operation.hasMoreRows()).to.be.false;
       await operation.fetchChunk();
-      expect(operation.hasMoreRows()).to.be.true;
+      expect(await operation.hasMoreRows()).to.be.true;
     });
 
     it('should return False if operation was closed', async () => {
@@ -829,11 +829,11 @@ describe('DBSQLOperation', () => {
       driver.fetchResultsResp.hasMoreRows = true;
       const operation = new DBSQLOperation(driver, handle);
 
-      expect(operation.hasMoreRows()).to.be.false;
+      expect(await operation.hasMoreRows()).to.be.false;
       await operation.fetchChunk();
-      expect(operation.hasMoreRows()).to.be.true;
+      expect(await operation.hasMoreRows()).to.be.true;
       await operation.close();
-      expect(operation.hasMoreRows()).to.be.false;
+      expect(await operation.hasMoreRows()).to.be.false;
     });
 
     it('should return False if operation was cancelled', async () => {
@@ -846,11 +846,11 @@ describe('DBSQLOperation', () => {
       driver.fetchResultsResp.hasMoreRows = true;
       const operation = new DBSQLOperation(driver, handle);
 
-      expect(operation.hasMoreRows()).to.be.false;
+      expect(await operation.hasMoreRows()).to.be.false;
       await operation.fetchChunk();
-      expect(operation.hasMoreRows()).to.be.true;
+      expect(await operation.hasMoreRows()).to.be.true;
       await operation.cancel();
-      expect(operation.hasMoreRows()).to.be.false;
+      expect(await operation.hasMoreRows()).to.be.false;
     });
 
     it('should return True if hasMoreRows flag was set in response', async () => {
@@ -863,9 +863,9 @@ describe('DBSQLOperation', () => {
       driver.fetchResultsResp.hasMoreRows = true;
       const operation = new DBSQLOperation(driver, handle);
 
-      expect(operation.hasMoreRows()).to.be.false;
+      expect(await operation.hasMoreRows()).to.be.false;
       await operation.fetchChunk();
-      expect(operation.hasMoreRows()).to.be.true;
+      expect(await operation.hasMoreRows()).to.be.true;
     });
 
     it('should return True if hasMoreRows flag is False but there is actual data', async () => {
@@ -878,9 +878,9 @@ describe('DBSQLOperation', () => {
       driver.fetchResultsResp.hasMoreRows = false;
       const operation = new DBSQLOperation(driver, handle);
 
-      expect(operation.hasMoreRows()).to.be.false;
+      expect(await operation.hasMoreRows()).to.be.false;
       await operation.fetchChunk();
-      expect(operation.hasMoreRows()).to.be.true;
+      expect(await operation.hasMoreRows()).to.be.true;
     });
 
     it('should return True if hasMoreRows flag is unset but there is actual data', async () => {
@@ -893,9 +893,9 @@ describe('DBSQLOperation', () => {
       driver.fetchResultsResp.hasMoreRows = undefined;
       const operation = new DBSQLOperation(driver, handle);
 
-      expect(operation.hasMoreRows()).to.be.false;
+      expect(await operation.hasMoreRows()).to.be.false;
       await operation.fetchChunk();
-      expect(operation.hasMoreRows()).to.be.true;
+      expect(await operation.hasMoreRows()).to.be.true;
     });
 
     it('should return False if hasMoreRows flag is False and there is no data', async () => {
@@ -909,9 +909,9 @@ describe('DBSQLOperation', () => {
       driver.fetchResultsResp.results = undefined;
       const operation = new DBSQLOperation(driver, handle);
 
-      expect(operation.hasMoreRows()).to.be.false;
+      expect(await operation.hasMoreRows()).to.be.false;
       await operation.fetchChunk();
-      expect(operation.hasMoreRows()).to.be.false;
+      expect(await operation.hasMoreRows()).to.be.false;
     });
   });
 

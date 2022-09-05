@@ -46,7 +46,7 @@ export default class DBSQLOperation implements IOperation {
       // eslint-disable-next-line no-await-in-loop
       const chunk = await this.fetchChunk(options);
       data.push(...chunk);
-    } while (this.hasMoreRows());
+    } while (await this.hasMoreRows()); // eslint-disable-line no-await-in-loop
     return data;
   }
 
@@ -94,7 +94,7 @@ export default class DBSQLOperation implements IOperation {
     await this._status.waitUntilReady();
   }
 
-  hasMoreRows(): boolean {
+  async hasMoreRows(): Promise<boolean> {
     if (this._completeOperation.closed || this._completeOperation.cancelled) {
       return false;
     }

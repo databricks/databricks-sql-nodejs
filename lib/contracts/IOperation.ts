@@ -49,7 +49,7 @@ export default interface IOperation {
   /**
    * Check if operation hasMoreRows
    */
-  hasMoreRows(): boolean;
+  hasMoreRows(): Promise<boolean>;
 
   /**
    * Return retrieved schema
