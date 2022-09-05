@@ -42,9 +42,9 @@ export default interface IOperation {
   close(): Promise<Status>;
 
   /**
-   * Check if operation is finished
+   * Waits until operation is finished
    */
-  finished(): Promise<boolean>;
+  finished(): Promise<void>;
 
   /**
    * Check if operation hasMoreRows

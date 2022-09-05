@@ -56,7 +56,7 @@ export default class DBSQLSession implements IDBSQLSession {
   }
 
   executeStatement(statement: string, options: ExecuteStatementOptions = {}): Promise<IOperation> {
-    const { prefetchRows, ...restOptions } = options;
+    const { maxRows, ...restOptions } = options;
 
     const request: TExecuteStatementReq = {
       runAsync: false,
@@ -65,9 +65,9 @@ export default class DBSQLSession implements IDBSQLSession {
       statement,
     };
 
-    if (prefetchRows) {
+    if (maxRows) {
       request.getDirectResults = {
-        maxRows: new Int64(prefetchRows),
+        maxRows: new Int64(maxRows),
       };
     }
 

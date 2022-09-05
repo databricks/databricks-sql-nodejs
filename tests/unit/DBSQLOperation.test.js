@@ -423,10 +423,9 @@ describe('DBSQLOperation', () => {
 
       expect(operation._status.state).to.equal(TOperationState.INITIALIZED_STATE);
 
-      const isFinished = await operation.finished();
+      await operation.finished();
 
       expect(driver.getOperationStatus.callCount).to.be.equal(attemptsUntilFinished);
-      expect(isFinished).to.be.true;
       expect(operation._status.state).to.equal(TOperationState.FINISHED_STATE);
     });
 
@@ -445,9 +444,8 @@ describe('DBSQLOperation', () => {
         },
       });
 
-      const isFinished = await operation.finished();
+      await operation.finished();
 
-      expect(isFinished).to.be.true;
       // Once operation is finished - no need to fetch status again
       expect(driver.getOperationStatus.called).to.be.false;
     });

@@ -90,9 +90,8 @@ export default class DBSQLOperation implements IOperation {
     return this._completeOperation.close();
   }
 
-  async finished(): Promise<boolean> {
+  async finished(): Promise<void> {
     await this._status.waitUntilReady();
-    return true;
   }
 
   hasMoreRows(): boolean {

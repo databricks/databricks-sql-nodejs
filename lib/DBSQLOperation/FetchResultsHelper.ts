@@ -17,7 +17,7 @@ function checkIfOperationHasMoreRows(response: TFetchResultsResp): boolean {
 
   const columns = response.results?.columns || [];
 
-  if (!columns.length) {
+  if (columns.length === 0) {
     return false;
   }
 

@@ -38,7 +38,7 @@ describe('DBSQLSession', () => {
       expect(result).instanceOf(DBSQLOperation);
     });
     it('should use direct results', async () => {
-      const result = await testMethod('executeStatement', ['SELECT * FROM table', { prefetchRows: 10 }]);
+      const result = await testMethod('executeStatement', ['SELECT * FROM table', { maxRows: 10 }]);
       expect(result).instanceOf(DBSQLOperation);
     });
   });
