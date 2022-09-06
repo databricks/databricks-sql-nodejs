@@ -1,5 +1,12 @@
-import { TSessionHandle, TStatus, TOperationHandle } from '../thrift/TCLIService_types';
+import {
+  TSessionHandle,
+  TStatus,
+  TOperationHandle,
+  TSparkDirectResults,
+  TExecuteStatementReq,
+} from '../thrift/TCLIService_types';
 import HiveDriver from './hive/HiveDriver';
+import { Int64 } from './hive/Types';
 import IDBSQLSession, {
   ExecuteStatementOptions,
   SchemasRequest,
@@ -15,6 +22,12 @@ import Status from './dto/Status';
 import StatusFactory from './factory/StatusFactory';
 import InfoValue from './dto/InfoValue';
 import { definedOrError } from './utils';
+
+interface OperationResponseShape {
+  status: TStatus;
+  operationHandle?: TOperationHandle;
+  directResults?: TSparkDirectResults;
+}
 
 export default class DBSQLSession implements IDBSQLSession {
   private driver: HiveDriver;
@@ -43,22 +56,22 @@ export default class DBSQLSession implements IDBSQLSession {
   }
 
   executeStatement(statement: string, options: ExecuteStatementOptions = {}): Promise<IOperation> {
-    options = {
+    const { maxRows, ...restOptions } = options;
+
+    const request: TExecuteStatementReq = {
       runAsync: false,
-      ...options,
+      ...restOptions,
+      sessionHandle: this.sessionHandle,
+      statement,
     };
 
-    return this.driver
-      .executeStatement({
-        sessionHandle: this.sessionHandle,
-        statement,
-        ...options,
-      })
-      .then((response) => {
-        this.assertStatus(response.status);
+    if (maxRows) {
+      request.getDirectResults = {
+        maxRows: new Int64(maxRows),
+      };
+    }
 
-        return this.createOperation(definedOrError(response.operationHandle));
-      });
+    return this.driver.executeStatement(request).then((response) => this.createOperation(response));
   }
 
   getTypeInfo(): Promise<IOperation> {
@@ -66,11 +79,7 @@ export default class DBSQLSession implements IDBSQLSession {
       .getTypeInfo({
         sessionHandle: this.sessionHandle,
       })
-      .then((response) => {
-        this.assertStatus(response.status);
-
-        return this.createOperation(definedOrError(response.operationHandle));
-      });
+      .then((response) => this.createOperation(response));
   }
 
   getCatalogs(): Promise<IOperation> {
@@ -78,11 +87,7 @@ export default class DBSQLSession implements IDBSQLSession {
       .getCatalogs({
         sessionHandle: this.sessionHandle,
       })
-      .then((response) => {
-        this.assertStatus(response.status);
-
-        return this.createOperation(definedOrError(response.operationHandle));
-      });
+      .then((response) => this.createOperation(response));
   }
 
   getSchemas(request: SchemasRequest): Promise<IOperation> {
@@ -92,11 +97,7 @@ export default class DBSQLSession implements IDBSQLSession {
         catalogName: request.catalogName,
         schemaName: request.schemaName,
       })
-      .then((response) => {
-        this.assertStatus(response.status);
-
-        return this.createOperation(definedOrError(response.operationHandle));
-      });
+      .then((response) => this.createOperation(response));
   }
 
   getTables(request: TablesRequest): Promise<IOperation> {
@@ -108,11 +109,7 @@ export default class DBSQLSession implements IDBSQLSession {
         tableName: request.tableName,
         tableTypes: request.tableTypes,
       })
-      .then((response) => {
-        this.assertStatus(response.status);
-
-        return this.createOperation(definedOrError(response.operationHandle));
-      });
+      .then((response) => this.createOperation(response));
   }
 
   getTableTypes(): Promise<IOperation> {
@@ -120,11 +117,7 @@ export default class DBSQLSession implements IDBSQLSession {
       .getTableTypes({
         sessionHandle: this.sessionHandle,
       })
-      .then((response) => {
-        this.assertStatus(response.status);
-
-        return this.createOperation(definedOrError(response.operationHandle));
-      });
+      .then((response) => this.createOperation(response));
   }
 
   getColumns(request: ColumnRequest): Promise<IOperation> {
@@ -136,11 +129,7 @@ export default class DBSQLSession implements IDBSQLSession {
         tableName: request.tableName,
         columnName: request.columnName,
       })
-      .then((response) => {
-        this.assertStatus(response.status);
-
-        return this.createOperation(definedOrError(response.operationHandle));
-      });
+      .then((response) => this.createOperation(response));
   }
 
   getFunctions(request: FunctionNameRequest): Promise<IOperation> {
@@ -151,11 +140,7 @@ export default class DBSQLSession implements IDBSQLSession {
         schemaName: request.schemaName,
         catalogName: request.catalogName,
       })
-      .then((response) => {
-        this.assertStatus(response.status);
-
-        return this.createOperation(definedOrError(response.operationHandle));
-      });
+      .then((response) => this.createOperation(response));
   }
 
   getPrimaryKeys(request: PrimaryKeysRequest): Promise<IOperation> {
@@ -166,11 +151,7 @@ export default class DBSQLSession implements IDBSQLSession {
         schemaName: request.schemaName,
         tableName: request.tableName,
       })
-      .then((response) => {
-        this.assertStatus(response.status);
-
-        return this.createOperation(definedOrError(response.operationHandle));
-      });
+      .then((response) => this.createOperation(response));
   }
 
   getCrossReference(request: CrossReferenceRequest): Promise<IOperation> {
@@ -184,11 +165,7 @@ export default class DBSQLSession implements IDBSQLSession {
         foreignSchemaName: request.foreignSchemaName,
         foreignTableName: request.foreignTableName,
       })
-      .then((response) => {
-        this.assertStatus(response.status);
-
-        return this.createOperation(definedOrError(response.operationHandle));
-      });
+      .then((response) => this.createOperation(response));
   }
 
   getDelegationToken(owner: string, renewer: string): Promise<string> {
@@ -239,8 +216,10 @@ export default class DBSQLSession implements IDBSQLSession {
       .then((response) => this.statusFactory.create(response.status));
   }
 
-  private createOperation(handle: TOperationHandle): IOperation {
-    return new DBSQLOperation(this.driver, handle);
+  private createOperation(response: OperationResponseShape): IOperation {
+    this.assertStatus(response.status);
+    const handle = definedOrError(response.operationHandle);
+    return new DBSQLOperation(this.driver, handle, response.directResults);
   }
 
   private assertStatus(responseStatus: TStatus): void {

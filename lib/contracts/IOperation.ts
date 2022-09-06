@@ -1,4 +1,4 @@
-import { TGetOperationStatusResp, TTableSchema, TRowSet } from '../../thrift/TCLIService_types';
+import { TGetOperationStatusResp, TTableSchema } from '../../thrift/TCLIService_types';
 import Status from '../dto/Status';
 
 export type OperationStatusCallback = (progress: TGetOperationStatusResp) => unknown;
@@ -9,7 +9,7 @@ export interface IFetchOptions {
   callback?: OperationStatusCallback;
 }
 
-export const defaultFetchOptions: IFetchOptions = {
+export const defaultFetchOptions = {
   maxRows: 100000,
 };
 
@@ -25,16 +25,11 @@ export default interface IOperation {
   fetchAll(options?: IFetchOptions): Promise<Array<object>>;
 
   /**
-   * Fetch schema and a portion of data
-   */
-  fetch(chunkSize?: number): Promise<Status>;
-
-  /**
    * Request status of operation
    *
    * @param progress
    */
-  status(progress: boolean): Promise<TGetOperationStatusResp>;
+  status(progress?: boolean): Promise<TGetOperationStatusResp>;
 
   /**
    * Cancel operation
@@ -47,22 +42,17 @@ export default interface IOperation {
   close(): Promise<Status>;
 
   /**
-   * Check if operation is finished
+   * Waits until operation is finished
    */
-  finished(): boolean;
+  finished(): Promise<void>;
 
   /**
    * Check if operation hasMoreRows
    */
-  hasMoreRows(): boolean;
+  hasMoreRows(): Promise<boolean>;
 
   /**
    * Return retrieved schema
    */
-  getSchema(): TTableSchema | null;
-
-  /**
-   * Return retrieved data
-   */
-  getData(): Array<TRowSet>;
+  getSchema(): Promise<TTableSchema | null>;
 }

@@ -16,6 +16,7 @@ export type ExecuteStatementOptions = {
   runAsync?: boolean;
   confOverlay?: Record<string, string>;
   queryTimeout?: Int64;
+  maxRows?: number;
 };
 
 export type SchemasRequest = {

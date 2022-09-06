@@ -1,103 +1,68 @@
 import IOperation, { IFetchOptions, defaultFetchOptions } from '../contracts/IOperation';
 import HiveDriver from '../hive/HiveDriver';
 import {
-  TOperationState,
-  TStatusCode,
-  TFetchOrientation,
-  TFetchResultsResp,
-  TTableSchema,
-  TRowSet,
+  TGetOperationStatusResp,
   TOperationHandle,
+  TTableSchema,
+  TSparkDirectResults,
 } from '../../thrift/TCLIService_types';
-import { Int64 } from '../hive/Types';
 import Status from '../dto/Status';
-import StatusFactory from '../factory/StatusFactory';
-import { definedOrError } from '../utils';
 
-import waitUntilReady from './waitUntilReady';
-import checkIfOperationHasMoreRows from './checkIfOperationHasMoreRows';
 import getResult from './getResult';
+import OperationStatusHelper from './OperationStatusHelper';
+import SchemaHelper from './SchemaHelper';
+import FetchResultsHelper from './FetchResultsHelper';
+import CompleteOperationHelper from './CompleteOperationHelper';
 
 export default class DBSQLOperation implements IOperation {
   private driver: HiveDriver;
 
   private operationHandle: TOperationHandle;
 
-  private schema: TTableSchema | null = null;
+  private _status: OperationStatusHelper;
 
-  private data: Array<TRowSet> = [];
+  private _schema: SchemaHelper;
 
-  private statusFactory = new StatusFactory();
+  private _data: FetchResultsHelper;
 
-  private fetchType: number = 0;
+  private _completeOperation: CompleteOperationHelper;
 
-  private _hasMoreRows: boolean = false;
-
-  private state: number = TOperationState.INITIALIZED_STATE;
-
-  private hasResultSet: boolean = false;
-
-  constructor(driver: HiveDriver, operationHandle: TOperationHandle) {
+  constructor(driver: HiveDriver, operationHandle: TOperationHandle, directResults?: TSparkDirectResults) {
     this.driver = driver;
     this.operationHandle = operationHandle;
-    this.hasResultSet = operationHandle.hasResultSet;
-  }
-
-  /**
-   * Fetches result and schema from operation
-   * @throws {StatusError}
-   */
-  fetch(chunkSize = 100000): Promise<Status> {
-    if (!this.hasResultSet) {
-      return Promise.resolve(
-        this.statusFactory.create({
-          statusCode: TStatusCode.SUCCESS_STATUS,
-        }),
-      );
-    }
-
-    if (!this.finished()) {
-      return Promise.resolve(
-        this.statusFactory.create({
-          statusCode: TStatusCode.STILL_EXECUTING_STATUS,
-        }),
-      );
-    }
-
-    if (this.schema === null) {
-      return this.initializeSchema()
-        .then((schema) => {
-          this.schema = schema;
-          return this.firstFetch(chunkSize);
-        })
-        .then((response) => this.processFetchResponse(response));
-    }
-    return this.nextFetch(chunkSize).then((response) => this.processFetchResponse(response));
+    this._status = new OperationStatusHelper(this.driver, this.operationHandle, directResults?.operationStatus);
+    this._schema = new SchemaHelper(this.driver, this.operationHandle, directResults?.resultSetMetadata);
+    this._data = new FetchResultsHelper(this.driver, this.operationHandle, [directResults?.resultSet]);
+    this._completeOperation = new CompleteOperationHelper(
+      this.driver,
+      this.operationHandle,
+      directResults?.closeOperation,
+    );
   }
 
   async fetchAll(options?: IFetchOptions): Promise<Array<object>> {
     const data: Array<object> = [];
     do {
-      const chunk = await this.fetchChunk(options); // eslint-disable-line no-await-in-loop
-      if (chunk) {
-        data.push(...chunk);
-      }
-    } while (this.hasMoreRows());
+      // eslint-disable-next-line no-await-in-loop
+      const chunk = await this.fetchChunk(options);
+      data.push(...chunk);
+    } while (await this.hasMoreRows()); // eslint-disable-line no-await-in-loop
     return data;
   }
 
   async fetchChunk(options: IFetchOptions = defaultFetchOptions): Promise<Array<object>> {
-    if (!this.hasResultSet) {
+    if (!this._status.hasResultSet) {
       return Promise.resolve([]);
     }
 
-    await waitUntilReady(this, options.progress, options.callback);
+    await this._status.waitUntilReady(options.progress, options.callback);
 
-    return this.fetch(options.maxRows).then(() => {
-      const data = getResult(this.getSchema(), this.getData());
-      this.flush();
-      return Promise.resolve(data);
-    });
+    return Promise.all([this._schema.fetch(), this._data.fetch(options.maxRows || defaultFetchOptions.maxRows)]).then(
+      ([schema, data]) => {
+        const result = getResult(schema, data ? [data] : []);
+        return Promise.resolve(result);
+      },
+    );
   }
 
   /**
@@ -105,23 +70,8 @@ export default class DBSQLOperation implements IOperation {
    * @param progress
    * @throws {StatusError}
    */
-  status(progress: boolean = false) {
-    return this.driver
-      .getOperationStatus({
-        operationHandle: this.operationHandle,
-        getProgressUpdate: progress,
-      })
-      .then((response) => {
-        this.statusFactory.create(response.status);
-
-        this.state = response.operationState ?? this.state;
-
-        if (typeof response.hasResultSet === 'boolean') {
-          this.hasResultSet = response.hasResultSet;
-        }
-
-        return response;
-      });
+  async status(progress: boolean = false): Promise<TGetOperationStatusResp> {
+    return this._status.status(progress);
   }
 
   /**
@@ -129,11 +79,7 @@ export default class DBSQLOperation implements IOperation {
    * @throws {StatusError}
    */
   cancel(): Promise<Status> {
-    return this.driver
-      .cancelOperation({
-        operationHandle: this.operationHandle,
-      })
-      .then((response) => this.statusFactory.create(response.status));
+    return this._completeOperation.cancel();
   }
 
   /**
@@ -141,88 +87,24 @@ export default class DBSQLOperation implements IOperation {
    * @throws {StatusError}
    */
   close(): Promise<Status> {
-    return this.driver
-      .closeOperation({
-        operationHandle: this.operationHandle,
-      })
-      .then((response) => this.statusFactory.create(response.status));
+    return this._completeOperation.close();
   }
 
-  finished(): boolean {
-    return this.state === TOperationState.FINISHED_STATE;
+  async finished(): Promise<void> {
+    await this._status.waitUntilReady();
   }
 
-  hasMoreRows(): boolean {
-    return this._hasMoreRows;
-  }
-
-  setFetchType(fetchType: number): void {
-    this.fetchType = fetchType;
-  }
-
-  getSchema() {
-    return this.schema;
-  }
-
-  getData() {
-    return this.data;
-  }
-
-  /**
-   * Resets `this.data` buffer.
-   * Needs to be called when working with massive data.
-   */
-  flush(): void {
-    this.data = [];
-  }
-
-  /**
-   * Retrieves schema
-   * @throws {StatusError}
-   */
-  private initializeSchema(): Promise<TTableSchema> {
-    return this.driver
-      .getResultSetMetadata({
-        operationHandle: this.operationHandle,
-      })
-      .then((schema) => {
-        this.statusFactory.create(schema.status);
-
-        return definedOrError(schema.schema);
-      });
-  }
-
-  private firstFetch(chunkSize: number) {
-    return this.driver.fetchResults({
-      operationHandle: this.operationHandle,
-      orientation: TFetchOrientation.FETCH_FIRST,
-      maxRows: new Int64(chunkSize),
-      fetchType: this.fetchType,
-    });
-  }
-
-  private nextFetch(chunkSize: number) {
-    return this.driver.fetchResults({
-      operationHandle: this.operationHandle,
-      orientation: TFetchOrientation.FETCH_NEXT,
-      maxRows: new Int64(chunkSize),
-      fetchType: this.fetchType,
-    });
-  }
-
-  /**
-   * @param response
-   * @throws {StatusError}
-   */
-  private processFetchResponse(response: TFetchResultsResp): Status {
-    const status = this.statusFactory.create(response.status);
-
-    this._hasMoreRows = checkIfOperationHasMoreRows(response);
-
-    if (response.results) {
-      this.data.push(response.results);
+  async hasMoreRows(): Promise<boolean> {
+    if (this._completeOperation.closed || this._completeOperation.cancelled) {
+      return false;
     }
+    return this._data.hasMoreRows;
+  }
 
-    return status;
+  async getSchema(): Promise<TTableSchema | null> {
+    if (this._status.hasResultSet) {
+      return this._schema.fetch();
+    }
+    return null;
   }
 }

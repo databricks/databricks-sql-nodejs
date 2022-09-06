@@ -27,18 +27,22 @@ describe('DBSQLSession', () => {
       expect(result).instanceOf(InfoValue);
     });
   });
-  it('executeStatement', () => {
-    return testMethod('executeStatement', ['SELECT * FROM table', { runAsync: true }])
-      .then((result) => {
-        expect(result).instanceOf(DBSQLOperation);
-      })
-      .then(() => {
-        return testMethod('executeStatement', ['SELECT * FROM table']);
-      })
-      .then((result) => {
-        expect(result).instanceOf(DBSQLOperation);
-      });
+
+  describe('executeStatement', () => {
+    it('should execute statement', async () => {
+      const result = await testMethod('executeStatement', ['SELECT * FROM table']);
+      expect(result).instanceOf(DBSQLOperation);
+    });
+    it('should execute statement asynchronously', async () => {
+      const result = await testMethod('executeStatement', ['SELECT * FROM table', { runAsync: true }]);
+      expect(result).instanceOf(DBSQLOperation);
+    });
+    it('should use direct results', async () => {
+      const result = await testMethod('executeStatement', ['SELECT * FROM table', { maxRows: 10 }]);
+      expect(result).instanceOf(DBSQLOperation);
+    });
   });
+
   it('getTypeInfo', () => {
     return testMethod('getTypeInfo', []).then((result) => {
       expect(result).instanceOf(DBSQLOperation);
