@@ -4,6 +4,14 @@ import StatusFactory from '../factory/StatusFactory';
 import { OperationStatusCallback } from '../contracts/IOperation';
 import OperationStateError from '../errors/OperationStateError';
 
+async function delay(ms?: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(() => {
+      resolve();
+    }, ms);
+  });
+}
+
 export default class OperationStatusHelper {
   private driver: HiveDriver;
 
@@ -104,6 +112,7 @@ export default class OperationStatusHelper {
     }
     const isReady = await this.isReady(progress, callback);
     if (!isReady) {
+      await delay(100); // add some delay between status requests
       return this.waitUntilReady(progress, callback);
     }
   }
