@@ -404,30 +404,34 @@ describe('DBSQLOperation', () => {
   });
 
   describe('finished', () => {
-    it('should wait for finished state', async () => {
-      const attemptsUntilFinished = 3;
+    [TOperationState.INITIALIZED_STATE, TOperationState.RUNNING_STATE, TOperationState.PENDING_STATE].forEach(
+      (operationState) => {
+        it(`should wait for finished state starting from TOperationState.${TOperationState[operationState]}`, async () => {
+          const attemptsUntilFinished = 3;
 
-      const handle = new OperationHandleMock();
-      const driver = new DriverMock();
-      driver.getOperationStatusResp.operationState = TOperationState.RUNNING_STATE;
-      sinon
-        .stub(driver, 'getOperationStatus')
-        .callThrough()
-        .onCall(attemptsUntilFinished - 1) // count is zero-based
-        .callsFake((...args) => {
-          driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
-          return driver.getOperationStatus.wrappedMethod.apply(driver, args);
+          const handle = new OperationHandleMock();
+          const driver = new DriverMock();
+          driver.getOperationStatusResp.operationState = operationState;
+          sinon
+            .stub(driver, 'getOperationStatus')
+            .callThrough()
+            .onCall(attemptsUntilFinished - 1) // count is zero-based
+            .callsFake((...args) => {
+              driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
+              return driver.getOperationStatus.wrappedMethod.apply(driver, args);
+            });
+
+          const operation = new DBSQLOperation(driver, handle);
+
+          expect(operation._status.state).to.equal(TOperationState.INITIALIZED_STATE);
+
+          await operation.finished();
+
+          expect(driver.getOperationStatus.callCount).to.be.equal(attemptsUntilFinished);
+          expect(operation._status.state).to.equal(TOperationState.FINISHED_STATE);
         });
-
-      const operation = new DBSQLOperation(driver, handle);
-
-      expect(operation._status.state).to.equal(TOperationState.INITIALIZED_STATE);
-
-      await operation.finished();
-
-      expect(driver.getOperationStatus.callCount).to.be.equal(attemptsUntilFinished);
-      expect(operation._status.state).to.equal(TOperationState.FINISHED_STATE);
-    });
+      },
+    );
 
     it('should pick up finished state from directResults', async () => {
       const handle = new OperationHandleMock();
@@ -473,7 +477,6 @@ describe('DBSQLOperation', () => {
       TOperationState.CLOSED_STATE,
       TOperationState.ERROR_STATE,
       TOperationState.UKNOWN_STATE,
-      TOperationState.PENDING_STATE,
       TOperationState.TIMEDOUT_STATE,
     ].forEach((operationState) => {
       it(`should throw an error in case of a TOperationState.${TOperationState[operationState]}`, async () => {

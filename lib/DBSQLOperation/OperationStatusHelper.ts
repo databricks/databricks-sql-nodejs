@@ -4,6 +4,14 @@ import StatusFactory from '../factory/StatusFactory';
 import { OperationStatusCallback } from '../contracts/IOperation';
 import OperationStateError from '../errors/OperationStateError';
 
+async function delay(ms?: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(() => {
+      resolve();
+    }, ms);
+  });
+}
+
 export default class OperationStatusHelper {
   private driver: HiveDriver;
 
@@ -32,6 +40,7 @@ export default class OperationStatusHelper {
   private isInProgress(response: TGetOperationStatusResp) {
     switch (response.operationState) {
       case TOperationState.INITIALIZED_STATE:
+      case TOperationState.PENDING_STATE:
       case TOperationState.RUNNING_STATE:
         return true;
       default:
@@ -77,6 +86,8 @@ export default class OperationStatusHelper {
     switch (response.operationState) {
       case TOperationState.INITIALIZED_STATE:
         return false;
+      case TOperationState.PENDING_STATE:
+        return false;
       case TOperationState.RUNNING_STATE:
         return false;
       case TOperationState.FINISHED_STATE:
@@ -87,8 +98,6 @@ export default class OperationStatusHelper {
         throw new OperationStateError('The operation was closed by a client', response);
       case TOperationState.ERROR_STATE:
         throw new OperationStateError('The operation failed due to an error', response);
-      case TOperationState.PENDING_STATE:
-        throw new OperationStateError('The operation is in a pending state', response);
       case TOperationState.TIMEDOUT_STATE:
         throw new OperationStateError('The operation is in a timed out state', response);
       case TOperationState.UKNOWN_STATE:
@@ -103,6 +112,7 @@ export default class OperationStatusHelper {
     }
     const isReady = await this.isReady(progress, callback);
     if (!isReady) {
+      await delay(100); // add some delay between status requests
       return this.waitUntilReady(progress, callback);
     }
   }
