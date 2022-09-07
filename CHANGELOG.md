@@ -2,7 +2,10 @@
 
 ## 0.1.x (Unreleased)
 
-- Added support for DirectResults, which speeds up data fetches by reducing the number of server roundtrips when possible.
+## 0.1.8-beta.2 (2022-09-08)
+
+- Operations will wait for cluster to start instead of failing
+- Added support for DirectResults, which speeds up data fetches by reducing the number of server roundtrips when possible
 - `DBSQLOperation` interface simplified: `HiveUtils` were removed and replaced with new methods
   `DBSQLOperation.fetchChunk`/`DBSQLOperation.fetchAll`. New API implements all necessary waiting
   and data conversion routines internally

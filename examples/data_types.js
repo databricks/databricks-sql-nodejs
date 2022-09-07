@@ -1,8 +1,6 @@
-const { DBSQLClient } = require('../');
+const { DBSQLClient, utils } = require('../');
 
 const client = new DBSQLClient();
-
-const utils = DBSQLClient.utils;
 
 const host = '****.databricks.com';
 const path = '/sql/1.0/endpoints/****';
