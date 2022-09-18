@@ -18,6 +18,19 @@ import HiveDriverError from './errors/HiveDriverError';
 import { buildUserAgentString, definedOrError } from './utils';
 import PlainHttpAuthentication from './connection/auth/PlainHttpAuthentication';
 
+function getInitialNamespaceOptions(catalogName?: string, schemaName?: string) {
+  if (!catalogName && !schemaName) {
+    return {};
+  }
+
+  return {
+    initialNamespace: {
+      catalogName,
+      schemaName,
+    },
+  };
+}
+
 export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
   private client: TCLIService.Client | null;
 
@@ -102,6 +115,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
         client_protocol: TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V6,
         configuration: request.configuration,
         connectionProperties: request.connectionProperties,
+        ...getInitialNamespaceOptions(request.initialCatalog, request.initialSchema),
       })
       .then((response) => {
         this.statusFactory.create(response.status);
