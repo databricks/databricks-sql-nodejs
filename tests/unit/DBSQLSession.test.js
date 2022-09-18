@@ -22,8 +22,9 @@ const testMethod = (methodName, parameters, delegationToken) => {
 };
 
 describe('DBSQLSession', () => {
-  it('getInfo', () => {
-    return testMethod('getInfo', [1]).then((result) => {
+  describe('getInfo', () => {
+    it('should run operation', async () => {
+      const result = await testMethod('getInfo', [1]);
       expect(result).instanceOf(InfoValue);
     });
   });
@@ -43,126 +44,146 @@ describe('DBSQLSession', () => {
     });
   });
 
-  it('getTypeInfo', () => {
-    return testMethod('getTypeInfo', []).then((result) => {
+  describe('getTypeInfo', () => {
+    it('should run operation', async () => {
+      const result = await testMethod('getTypeInfo', []);
       expect(result).instanceOf(DBSQLOperation);
     });
   });
-  it('getCatalogs', () => {
-    return testMethod('getCatalogs', []).then((result) => {
+
+  describe('getCatalogs', () => {
+    it('should run operation', async () => {
+      const result = await testMethod('getCatalogs', []);
       expect(result).instanceOf(DBSQLOperation);
     });
   });
-  it('getSchemas', () => {
-    return testMethod('getSchemas', [
-      {
-        catalogName: 'catalog',
-        schemaName: 'schema',
-      },
-    ]).then((result) => {
+
+  describe('getSchemas', () => {
+    it('should run operation', async () => {
+      const result = await testMethod('getSchemas', [
+        {
+          catalogName: 'catalog',
+          schemaName: 'schema',
+        },
+      ]);
       expect(result).instanceOf(DBSQLOperation);
     });
   });
-  it('getTables', () => {
-    return testMethod('getTables', [
-      {
-        catalogName: 'catalog',
-        schemaName: 'default',
-        tableName: 't1',
-        tableTypes: ['external'],
-      },
-    ]).then((result) => {
+
+  describe('getTables', () => {
+    it('should run operation', async () => {
+      const result = await testMethod('getTables', [
+        {
+          catalogName: 'catalog',
+          schemaName: 'default',
+          tableName: 't1',
+          tableTypes: ['external'],
+        },
+      ]);
       expect(result).instanceOf(DBSQLOperation);
     });
   });
-  it('getTableTypes', () => {
-    return testMethod('getTableTypes', []).then((result) => {
+
+  describe('getTableTypes', () => {
+    it('should run operation', async () => {
+      const result = await testMethod('getTableTypes', []);
       expect(result).instanceOf(DBSQLOperation);
     });
   });
-  it('getColumns', () => {
-    return testMethod('getColumns', [
-      {
-        catalogName: 'catalog',
-        schemaName: 'schema',
-        tableName: 'table',
-        columnName: 'column',
-      },
-    ]).then((result) => {
+
+  describe('getColumns', () => {
+    it('should run operation', async () => {
+      const result = await testMethod('getColumns', [
+        {
+          catalogName: 'catalog',
+          schemaName: 'schema',
+          tableName: 'table',
+          columnName: 'column',
+        },
+      ]);
       expect(result).instanceOf(DBSQLOperation);
     });
   });
-  it('getFunctions', () => {
-    return testMethod('getFunctions', [
-      {
-        catalogName: 'catalog',
-        schemaName: 'schema',
-        functionName: 'avg',
-      },
-    ]).then((result) => {
+
+  describe('getFunctions', () => {
+    it('should run operation', async () => {
+      const result = await testMethod('getFunctions', [
+        {
+          catalogName: 'catalog',
+          schemaName: 'schema',
+          functionName: 'avg',
+        },
+      ]);
       expect(result).instanceOf(DBSQLOperation);
     });
   });
-  it('getPrimaryKeys', () => {
-    return testMethod('getPrimaryKeys', [
-      {
-        catalogName: 'catalog',
-        schemaName: 'schema',
-        tableName: 't1',
-      },
-    ]).then((result) => {
+
+  describe('getPrimaryKeys', () => {
+    it('should run operation', async () => {
+      const result = await testMethod('getPrimaryKeys', [
+        {
+          catalogName: 'catalog',
+          schemaName: 'schema',
+          tableName: 't1',
+        },
+      ]);
       expect(result).instanceOf(DBSQLOperation);
     });
   });
-  it('getCrossReference', () => {
-    return testMethod('getCrossReference', [
-      {
-        parentCatalogName: 'parentCatalogName',
-        parentSchemaName: 'parentSchemaName',
-        parentTableName: 'parentTableName',
-        foreignCatalogName: 'foreignCatalogName',
-        foreignSchemaName: 'foreignSchemaName',
-        foreignTableName: 'foreignTableName',
-      },
-    ]).then((result) => {
+
+  describe('getCrossReference', () => {
+    it('should run operation', async () => {
+      const result = await testMethod('getCrossReference', [
+        {
+          parentCatalogName: 'parentCatalogName',
+          parentSchemaName: 'parentSchemaName',
+          parentTableName: 'parentTableName',
+          foreignCatalogName: 'foreignCatalogName',
+          foreignSchemaName: 'foreignSchemaName',
+          foreignTableName: 'foreignTableName',
+        },
+      ]);
       expect(result).instanceOf(DBSQLOperation);
     });
   });
-  it('getDelegationToken', () => {
-    return testMethod('getDelegationToken', ['owner', 'renewer'], 'token')
-      .then((result) => {
-        expect(result).to.be.eq('token');
-      })
-      .then(() => {
-        return testMethod('getDelegationToken', ['owner', 'renewer']);
-      })
-      .then((result) => {
-        expect(result).to.be.eq('');
-      });
-  });
-  it('renewDelegationToken', () => {
-    return testMethod('renewDelegationToken', ['token']).then((result) => {
-      expect(result).instanceOf(Status);
+
+  describe('getDelegationToken', () => {
+    it('should run operation', async () => {
+      const result1 = await testMethod('getDelegationToken', ['owner', 'renewer'], 'token');
+      expect(result1).to.be.eq('token');
+
+      const result2 = await testMethod('getDelegationToken', ['owner', 'renewer']);
+      expect(result2).to.be.eq('');
     });
   });
-  it('cancelDelegationToken', () => {
-    return testMethod('cancelDelegationToken', ['token']).then((result) => {
+
+  describe('renewDelegationToken', () => {
+    it('should run operation', async () => {
+      const result = await testMethod('renewDelegationToken', ['token']);
       expect(result).instanceOf(Status);
     });
   });
 
-  it('close', () => {
-    const driver = {
-      closeSession: () =>
-        Promise.resolve({
-          status: {
-            statusCode: 0,
-          },
-        }),
-    };
-    const session = new DBSQLSession(driver, { sessionId: 'id' });
+  describe('cancelDelegationToken', () => {
+    it('should run operation', async () => {
+      const result = await testMethod('cancelDelegationToken', ['token']);
+      expect(result).instanceOf(Status);
+    });
+  });
 
-    return session.close().then((result) => {
+  describe('close', () => {
+    it('should run operation', async () => {
+      const driver = {
+        closeSession: () =>
+          Promise.resolve({
+            status: {
+              statusCode: 0,
+            },
+          }),
+      };
+      const session = new DBSQLSession(driver, { sessionId: 'id' });
+
+      const result = await session.close();
       expect(result).instanceOf(Status);
     });
   });
