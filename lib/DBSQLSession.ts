@@ -1,19 +1,16 @@
-import {
-  TSessionHandle,
-  TStatus,
-  TOperationHandle,
-  TSparkDirectResults,
-  TExecuteStatementReq,
-} from '../thrift/TCLIService_types';
+import { TSessionHandle, TStatus, TOperationHandle, TSparkDirectResults } from '../thrift/TCLIService_types';
 import HiveDriver from './hive/HiveDriver';
 import { Int64 } from './hive/Types';
 import IDBSQLSession, {
   ExecuteStatementOptions,
+  TypeInfoRequest,
+  CatalogsRequest,
   SchemasRequest,
   TablesRequest,
-  ColumnRequest,
+  TableTypesRequest,
+  ColumnsRequest,
+  FunctionsRequest,
   PrimaryKeysRequest,
-  FunctionNameRequest,
   CrossReferenceRequest,
 } from './contracts/IDBSQLSession';
 import IOperation from './contracts/IOperation';
@@ -27,6 +24,18 @@ interface OperationResponseShape {
   status: TStatus;
   operationHandle?: TOperationHandle;
   directResults?: TSparkDirectResults;
+}
+
+function getDirectResultsOptions(maxRows?: number) {
+  if (!maxRows) {
+    return {};
+  }
+
+  return {
+    getDirectResults: {
+      maxRows: new Int64(maxRows),
+    },
+  };
 }
 
 export default class DBSQLSession implements IDBSQLSession {
@@ -56,51 +65,48 @@ export default class DBSQLSession implements IDBSQLSession {
   }
 
   executeStatement(statement: string, options: ExecuteStatementOptions = {}): Promise<IOperation> {
-    const { maxRows, ...restOptions } = options;
-
-    const request: TExecuteStatementReq = {
-      runAsync: false,
-      ...restOptions,
-      sessionHandle: this.sessionHandle,
-      statement,
-    };
-
-    if (maxRows) {
-      request.getDirectResults = {
-        maxRows: new Int64(maxRows),
-      };
-    }
-
-    return this.driver.executeStatement(request).then((response) => this.createOperation(response));
+    return this.driver
+      .executeStatement({
+        sessionHandle: this.sessionHandle,
+        statement,
+        runAsync: options.runAsync || false,
+        confOverlay: options.confOverlay,
+        queryTimeout: options.queryTimeout,
+        ...getDirectResultsOptions(options.maxRows),
+      })
+      .then((response) => this.createOperation(response));
   }
 
-  getTypeInfo(): Promise<IOperation> {
+  getTypeInfo(request: TypeInfoRequest = {}): Promise<IOperation> {
     return this.driver
       .getTypeInfo({
         sessionHandle: this.sessionHandle,
+        ...getDirectResultsOptions(request.maxRows),
       })
       .then((response) => this.createOperation(response));
   }
 
-  getCatalogs(): Promise<IOperation> {
+  getCatalogs(request: CatalogsRequest = {}): Promise<IOperation> {
     return this.driver
       .getCatalogs({
         sessionHandle: this.sessionHandle,
+        ...getDirectResultsOptions(request.maxRows),
       })
       .then((response) => this.createOperation(response));
   }
 
-  getSchemas(request: SchemasRequest): Promise<IOperation> {
+  getSchemas(request: SchemasRequest = {}): Promise<IOperation> {
     return this.driver
       .getSchemas({
         sessionHandle: this.sessionHandle,
         catalogName: request.catalogName,
         schemaName: request.schemaName,
+        ...getDirectResultsOptions(request.maxRows),
       })
       .then((response) => this.createOperation(response));
   }
 
-  getTables(request: TablesRequest): Promise<IOperation> {
+  getTables(request: TablesRequest = {}): Promise<IOperation> {
     return this.driver
       .getTables({
         sessionHandle: this.sessionHandle,
@@ -108,19 +114,21 @@ export default class DBSQLSession implements IDBSQLSession {
         schemaName: request.schemaName,
         tableName: request.tableName,
         tableTypes: request.tableTypes,
+        ...getDirectResultsOptions(request.maxRows),
       })
       .then((response) => this.createOperation(response));
   }
 
-  getTableTypes(): Promise<IOperation> {
+  getTableTypes(request: TableTypesRequest = {}): Promise<IOperation> {
     return this.driver
       .getTableTypes({
         sessionHandle: this.sessionHandle,
+        ...getDirectResultsOptions(request.maxRows),
       })
       .then((response) => this.createOperation(response));
   }
 
-  getColumns(request: ColumnRequest): Promise<IOperation> {
+  getColumns(request: ColumnsRequest = {}): Promise<IOperation> {
     return this.driver
       .getColumns({
         sessionHandle: this.sessionHandle,
@@ -128,17 +136,19 @@ export default class DBSQLSession implements IDBSQLSession {
         schemaName: request.schemaName,
         tableName: request.tableName,
         columnName: request.columnName,
+        ...getDirectResultsOptions(request.maxRows),
       })
       .then((response) => this.createOperation(response));
   }
 
-  getFunctions(request: FunctionNameRequest): Promise<IOperation> {
+  getFunctions(request: FunctionsRequest): Promise<IOperation> {
     return this.driver
       .getFunctions({
         sessionHandle: this.sessionHandle,
-        functionName: request.functionName,
-        schemaName: request.schemaName,
         catalogName: request.catalogName,
+        schemaName: request.schemaName,
+        functionName: request.functionName,
+        ...getDirectResultsOptions(request.maxRows),
       })
       .then((response) => this.createOperation(response));
   }
@@ -150,6 +160,7 @@ export default class DBSQLSession implements IDBSQLSession {
         catalogName: request.catalogName,
         schemaName: request.schemaName,
         tableName: request.tableName,
+        ...getDirectResultsOptions(request.maxRows),
       })
       .then((response) => this.createOperation(response));
   }
@@ -164,6 +175,7 @@ export default class DBSQLSession implements IDBSQLSession {
         foreignCatalogName: request.foreignCatalogName,
         foreignSchemaName: request.foreignSchemaName,
         foreignTableName: request.foreignTableName,
+        ...getDirectResultsOptions(request.maxRows),
       })
       .then((response) => this.createOperation(response));
   }
