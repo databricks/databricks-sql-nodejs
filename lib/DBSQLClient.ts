@@ -2,8 +2,8 @@ import thrift from 'thrift';
 
 import { EventEmitter } from 'events';
 import TCLIService from '../thrift/TCLIService';
-import TCLIService_types, { TOpenSessionReq } from '../thrift/TCLIService_types';
-import IDBSQLClient, { IDBSQLConnectionOptions } from './contracts/IDBSQLClient';
+import { TProtocolVersion } from '../thrift/TCLIService_types';
+import IDBSQLClient, { ConnectionOptions, OpenSessionRequest } from './contracts/IDBSQLClient';
 import HiveDriver from './hive/HiveDriver';
 import DBSQLSession from './DBSQLSession';
 import IDBSQLSession from './contracts/IDBSQLSession';
@@ -40,7 +40,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
     this.connection = null;
   }
 
-  private getConnectionOptions(options: IDBSQLConnectionOptions): IConnectionOptions {
+  private getConnectionOptions(options: ConnectionOptions): IConnectionOptions {
     const { host, port, token, clientId, ...otherOptions } = options;
     return {
       host,
@@ -52,7 +52,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
     };
   }
 
-  async connect(options: IDBSQLConnectionOptions): Promise<IDBSQLClient> {
+  async connect(options: ConnectionOptions): Promise<IDBSQLClient> {
     this.authProvider = new PlainHttpAuthentication({
       username: 'token',
       password: options.token,
@@ -90,26 +90,26 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
    * @param request
    * @throws {StatusError}
    */
-  openSession(request?: TOpenSessionReq): Promise<IDBSQLSession> {
+  openSession(request: OpenSessionRequest = {}): Promise<IDBSQLSession> {
     if (!this.connection?.isConnected()) {
       return Promise.reject(new HiveDriverError('DBSQLClient: connection is lost'));
     }
 
     const driver = new HiveDriver(this.getClient());
 
-    if (!request) {
-      request = {
-        client_protocol: TCLIService_types.TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V6,
-      };
-    }
+    return driver
+      .openSession({
+        client_protocol: TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V6,
+        configuration: request.configuration,
+        connectionProperties: request.connectionProperties,
+      })
+      .then((response) => {
+        this.statusFactory.create(response.status);
 
-    return driver.openSession(request).then((response) => {
-      this.statusFactory.create(response.status);
+        const session = new DBSQLSession(driver, definedOrError(response.sessionHandle));
 
-      const session = new DBSQLSession(driver, definedOrError(response.sessionHandle));
-
-      return session;
-    });
+        return session;
+      });
   }
 
   getClient() {
