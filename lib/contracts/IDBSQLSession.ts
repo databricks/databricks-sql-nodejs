@@ -3,15 +3,6 @@ import Status from '../dto/Status';
 import InfoValue from '../dto/InfoValue';
 import { Int64 } from '../hive/Types';
 
-export type CrossReferenceRequest = {
-  parentCatalogName: string;
-  parentSchemaName: string;
-  parentTableName: string;
-  foreignCatalogName: string;
-  foreignSchemaName: string;
-  foreignTableName: string;
-};
-
 export type ExecuteStatementOptions = {
   runAsync?: boolean;
   confOverlay?: Record<string, string>;
@@ -19,9 +10,18 @@ export type ExecuteStatementOptions = {
   maxRows?: number;
 };
 
+export type TypeInfoRequest = {
+  maxRows?: number;
+};
+
+export type CatalogsRequest = {
+  maxRows?: number;
+};
+
 export type SchemasRequest = {
-  schemaName?: string;
   catalogName?: string;
+  schemaName?: string;
+  maxRows?: number;
 };
 
 export type TablesRequest = {
@@ -29,25 +29,43 @@ export type TablesRequest = {
   schemaName?: string;
   tableName?: string;
   tableTypes?: Array<string>;
+  maxRows?: number;
 };
 
-export type ColumnRequest = {
+export type TableTypesRequest = {
+  maxRows?: number;
+};
+
+export type ColumnsRequest = {
   catalogName?: string;
   schemaName?: string;
   tableName?: string;
   columnName?: string;
+  maxRows?: number;
 };
 
-export type FunctionNameRequest = {
-  functionName: string;
+export type FunctionsRequest = {
   catalogName?: string;
   schemaName?: string;
+  functionName: string;
+  maxRows?: number;
 };
 
 export type PrimaryKeysRequest = {
+  catalogName?: string;
   schemaName: string;
   tableName: string;
-  catalogName?: string;
+  maxRows?: number;
+};
+
+export type CrossReferenceRequest = {
+  parentCatalogName: string;
+  parentSchemaName: string;
+  parentTableName: string;
+  foreignCatalogName: string;
+  foreignSchemaName: string;
+  foreignTableName: string;
+  maxRows?: number;
 };
 
 export default interface IDBSQLSession {
@@ -67,47 +85,53 @@ export default interface IDBSQLSession {
   executeStatement(statement: string, options?: ExecuteStatementOptions): Promise<IOperation>;
 
   /**
-   * Informataion about supported data types
+   * Information about supported data types
+   *
+   * @param request
    */
-  getTypeInfo(): Promise<IOperation>;
+  getTypeInfo(request?: TypeInfoRequest): Promise<IOperation>;
 
   /**
    * Get list of catalogs
+   *
+   * @param request
    */
-  getCatalogs(): Promise<IOperation>;
+  getCatalogs(request?: CatalogsRequest): Promise<IOperation>;
 
   /**
    * Get list of databases
    *
    * @param request
    */
-  getSchemas(request: SchemasRequest): Promise<IOperation>;
+  getSchemas(request?: SchemasRequest): Promise<IOperation>;
 
   /**
    * Get list of tables
    *
    * @param request
    */
-  getTables(request: TablesRequest): Promise<IOperation>;
+  getTables(request?: TablesRequest): Promise<IOperation>;
 
   /**
    * Get list of supported table types
+   *
+   * @param request
    */
-  getTableTypes(): Promise<IOperation>;
+  getTableTypes(request?: TableTypesRequest): Promise<IOperation>;
 
   /**
    * Get full information about columns of the table
    *
    * @param request
    */
-  getColumns(request: ColumnRequest): Promise<IOperation>;
+  getColumns(request?: ColumnsRequest): Promise<IOperation>;
 
   /**
    * Get information about function
    *
    * @param request
    */
-  getFunctions(request: FunctionNameRequest): Promise<IOperation>;
+  getFunctions(request: FunctionsRequest): Promise<IOperation>;
 
   /**
    * Get primary keys of table
