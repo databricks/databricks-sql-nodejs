@@ -2,6 +2,13 @@
 
 ## 0.1.x (Unreleased)
 
+- `DBSQLClient.openSession` now takes a limited set of options (`OpenSessionRequest` instead of Thrift's `TOpenSessionReq`)
+- `DBSQLClient.openSession` now uses the latest protocol version by default
+- Direct results feature is now available for all IOperation methods which support it. To enable direct results feature,
+  `maxRows` option should be used
+- `FunctionNameRequest` type renamed to `FunctionsRequest`
+- `IDBSQLConnectionOptions` type renamed to `ConnectionOptions`
+
 ## 0.1.8-beta.2 (2022-09-08)
 
 - Operations will wait for cluster to start instead of failing
