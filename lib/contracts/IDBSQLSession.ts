@@ -4,23 +4,26 @@ import InfoValue from '../dto/InfoValue';
 import { Int64 } from '../hive/Types';
 
 export type ExecuteStatementOptions = {
-  runAsync?: boolean;
   confOverlay?: Record<string, string>;
   queryTimeout?: Int64;
+  runAsync?: boolean;
   maxRows?: number;
 };
 
 export type TypeInfoRequest = {
+  runAsync?: boolean;
   maxRows?: number;
 };
 
 export type CatalogsRequest = {
+  runAsync?: boolean;
   maxRows?: number;
 };
 
 export type SchemasRequest = {
   catalogName?: string;
   schemaName?: string;
+  runAsync?: boolean;
   maxRows?: number;
 };
 
@@ -29,10 +32,12 @@ export type TablesRequest = {
   schemaName?: string;
   tableName?: string;
   tableTypes?: Array<string>;
+  runAsync?: boolean;
   maxRows?: number;
 };
 
 export type TableTypesRequest = {
+  runAsync?: boolean;
   maxRows?: number;
 };
 
@@ -41,6 +46,7 @@ export type ColumnsRequest = {
   schemaName?: string;
   tableName?: string;
   columnName?: string;
+  runAsync?: boolean;
   maxRows?: number;
 };
 
@@ -48,6 +54,7 @@ export type FunctionsRequest = {
   catalogName?: string;
   schemaName?: string;
   functionName: string;
+  runAsync?: boolean;
   maxRows?: number;
 };
 
@@ -55,6 +62,7 @@ export type PrimaryKeysRequest = {
   catalogName?: string;
   schemaName: string;
   tableName: string;
+  runAsync?: boolean;
   maxRows?: number;
 };
 
@@ -65,6 +73,7 @@ export type CrossReferenceRequest = {
   foreignCatalogName: string;
   foreignSchemaName: string;
   foreignTableName: string;
+  runAsync?: boolean;
   maxRows?: number;
 };
 
