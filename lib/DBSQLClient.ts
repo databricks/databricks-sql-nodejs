@@ -2,9 +2,10 @@ import thrift from 'thrift';
 
 import { EventEmitter } from 'events';
 import TCLIService from '../thrift/TCLIService';
-import TCLIService_types, { TOpenSessionReq } from '../thrift/TCLIService_types';
-import IDBSQLClient, { IDBSQLConnectionOptions } from './contracts/IDBSQLClient';
+import { TProtocolVersion } from '../thrift/TCLIService_types';
+import IDBSQLClient, { ConnectionOptions, OpenSessionRequest } from './contracts/IDBSQLClient';
 import HiveDriver from './hive/HiveDriver';
+import { Int64 } from './hive/Types';
 import DBSQLSession from './DBSQLSession';
 import IDBSQLSession from './contracts/IDBSQLSession';
 import IThriftConnection from './connection/contracts/IThriftConnection';
@@ -17,6 +18,19 @@ import StatusFactory from './factory/StatusFactory';
 import HiveDriverError from './errors/HiveDriverError';
 import { buildUserAgentString, definedOrError } from './utils';
 import PlainHttpAuthentication from './connection/auth/PlainHttpAuthentication';
+
+function getInitialNamespaceOptions(catalogName?: string, schemaName?: string) {
+  if (!catalogName && !schemaName) {
+    return {};
+  }
+
+  return {
+    initialNamespace: {
+      catalogName,
+      schemaName,
+    },
+  };
+}
 
 export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
   private client: TCLIService.Client | null;
@@ -40,7 +54,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
     this.connection = null;
   }
 
-  private getConnectionOptions(options: IDBSQLConnectionOptions): IConnectionOptions {
+  private getConnectionOptions(options: ConnectionOptions): IConnectionOptions {
     const { host, port, token, clientId, ...otherOptions } = options;
     return {
       host,
@@ -52,7 +66,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
     };
   }
 
-  async connect(options: IDBSQLConnectionOptions): Promise<IDBSQLClient> {
+  async connect(options: ConnectionOptions): Promise<IDBSQLClient> {
     this.authProvider = new PlainHttpAuthentication({
       username: 'token',
       password: options.token,
@@ -90,26 +104,22 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
    * @param request
    * @throws {StatusError}
    */
-  openSession(request?: TOpenSessionReq): Promise<IDBSQLSession> {
+  openSession(request: OpenSessionRequest = {}): Promise<IDBSQLSession> {
     if (!this.connection?.isConnected()) {
       return Promise.reject(new HiveDriverError('DBSQLClient: connection is lost'));
     }
 
     const driver = new HiveDriver(this.getClient());
 
-    if (!request) {
-      request = {
-        client_protocol: TCLIService_types.TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V6,
-      };
-    }
-
-    return driver.openSession(request).then((response) => {
-      this.statusFactory.create(response.status);
-
-      const session = new DBSQLSession(driver, definedOrError(response.sessionHandle));
-
-      return session;
-    });
+    return driver
+      .openSession({
+        client_protocol_i64: new Int64(TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V6),
+        ...getInitialNamespaceOptions(request.initialCatalog, request.initialSchema),
+      })
+      .then((response) => {
+        this.statusFactory.create(response.status);
+        return new DBSQLSession(driver, definedOrError(response.sessionHandle));
+      });
   }
 
   getClient() {

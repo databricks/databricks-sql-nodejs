@@ -1,7 +1,7 @@
 const { expect } = require('chai');
 const config = require('./utils/config');
 const logger = require('./utils/logger')(config.logger);
-const { DBSQLClient, thrift } = require('../..');
+const { DBSQLClient } = require('../..');
 
 const openSession = async () => {
   const client = new DBSQLClient();
@@ -12,18 +12,10 @@ const openSession = async () => {
     token: config.token,
   });
 
-  const openSessionRequest = {};
-
-  if (config.database.length === 2) {
-    openSessionRequest.initialNamespace = {
-      catalogName: config.database[0],
-      schemaName: config.database[1],
-    };
-  }
-
-  const session = await connection.openSession(openSessionRequest);
-
-  return session;
+  return connection.openSession({
+    initialCatalog: config.database[0],
+    initialSchema: config.database[1],
+  });
 };
 
 describe('Data fetching', () => {
