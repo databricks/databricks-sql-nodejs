@@ -45,11 +45,10 @@ export default class DBSQLOperation implements IOperation {
     do {
       // eslint-disable-next-line no-await-in-loop
       const chunk = await this.fetchChunk(options);
-      for(let item of chunk) {
-        data.push(item);
-      }
+      data.push(chunk);
     } while (await this.hasMoreRows()); // eslint-disable-line no-await-in-loop
-    return data;
+
+    return data.flat();
   }
 
   async fetchChunk(options: IFetchOptions = defaultFetchOptions): Promise<Array<object>> {
