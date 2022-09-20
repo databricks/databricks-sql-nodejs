@@ -13,6 +13,7 @@ import OperationStatusHelper from './OperationStatusHelper';
 import SchemaHelper from './SchemaHelper';
 import FetchResultsHelper from './FetchResultsHelper';
 import CompleteOperationHelper from './CompleteOperationHelper';
+import { it } from 'node:test';
 
 export default class DBSQLOperation implements IOperation {
   private driver: HiveDriver;
@@ -45,7 +46,9 @@ export default class DBSQLOperation implements IOperation {
     do {
       // eslint-disable-next-line no-await-in-loop
       const chunk = await this.fetchChunk(options);
-      data.push(...chunk);
+      for(let item of chunk) {
+        data.push(item);
+      }
     } while (await this.hasMoreRows()); // eslint-disable-line no-await-in-loop
     return data;
   }
