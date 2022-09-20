@@ -1,4 +1,5 @@
 const { expect } = require('chai');
+const sinon = require('sinon');
 const DBSQLClient = require('../../dist/DBSQLClient').default;
 const DBSQLSession = require('../../dist/DBSQLSession').default;
 const {
@@ -30,14 +31,16 @@ describe('DBSQLClient.connect', () => {
     token: 'dapi********************************',
   };
 
-  it('should set nosasl authenticator by default', () => {
+  it('should set nosasl authenticator by default', async () => {
     const client = new DBSQLClient();
     const connectionProvider = ConnectionProviderMock();
 
     client.connectionProvider = connectionProvider;
-    return client.connect(options).catch((error) => {
+    try {
+      await client.connect(options);
+    } catch {
       expect(connectionProvider.auth).instanceOf(PlainHttpAuthentication);
-    });
+    }
   });
 
   it('should handle network errors', (cb) => {
@@ -62,24 +65,19 @@ describe('DBSQLClient.connect', () => {
     });
   });
 
-  it('should use http connection by default', (cb) => {
+  it('should use http connection by default', async () => {
     const client = new DBSQLClient();
     client.thrift = {
       createClient() {},
     };
 
-    client
-      .connect(options)
-      .then(() => {
-        expect(client.connectionProvider).instanceOf(HttpConnection);
-        cb();
-      })
-      .catch(cb);
+    await client.connect(options);
+    expect(client.connectionProvider).instanceOf(HttpConnection);
   });
 });
 
 describe('DBSQLClient.openSession', () => {
-  it('should successfully open session', () => {
+  it('should successfully open session', async () => {
     const client = new DBSQLClient();
     client.client = {
       OpenSession(req, cb) {
@@ -91,12 +89,53 @@ describe('DBSQLClient.openSession', () => {
         return true;
       },
     };
-    return client.openSession().then((session) => {
-      expect(session).instanceOf(DBSQLSession);
-    });
+
+    const session = await client.openSession();
+    expect(session).instanceOf(DBSQLSession);
   });
 
-  it('should throw an exception when the connection is lost', (done) => {
+  it('should use initial namespace options', async () => {
+    const client = new DBSQLClient();
+    client.client = {
+      OpenSession(req, cb) {
+        cb(null, { status: {}, sessionHandle: {} });
+      },
+    };
+    client.connection = {
+      isConnected() {
+        return true;
+      },
+    };
+
+    case1: {
+      const session = await client.openSession({ initialCatalog: 'catalog' });
+      expect(session).instanceOf(DBSQLSession);
+    }
+
+    case2: {
+      const session = await client.openSession({ initialSchema: 'schema' });
+      expect(session).instanceOf(DBSQLSession);
+    }
+
+    case3: {
+      const session = await client.openSession({ initialCatalog: 'catalog', initialSchema: 'schema' });
+      expect(session).instanceOf(DBSQLSession);
+    }
+  });
+
+  it('should throw an exception when not connected', async () => {
+    const client = new DBSQLClient();
+    client.connection = null;
+
+    try {
+      await client.openSession();
+      expect.fail('It should throw an error');
+    } catch (error) {
+      expect(error.message).to.be.eq('DBSQLClient: connection is lost');
+    }
+  });
+
+  it('should throw an exception when the connection is lost', async () => {
     const client = new DBSQLClient();
     client.connection = {
       isConnected() {
@@ -104,10 +143,12 @@ describe('DBSQLClient.openSession', () => {
       },
     };
 
-    client.openSession().catch((error) => {
+    try {
+      await client.openSession();
+      expect.fail('It should throw an error');
+    } catch (error) {
       expect(error.message).to.be.eq('DBSQLClient: connection is lost');
-      done();
-    });
+    }
   });
 });
 
@@ -119,47 +160,34 @@ describe('DBSQLClient.getClient', () => {
 });
 
 describe('DBSQLClient.close', () => {
-  it('should close the connection if it was initiated', (cb) => {
+  it('should close the connection if it was initiated', async () => {
     const client = new DBSQLClient();
-    let closed = false;
+    const closeConnectionStub = sinon.stub();
     client.connection = {
       getConnection: () => ({
-        end: () => {
-          closed = true;
-        },
+        end: closeConnectionStub,
       }),
     };
-    client
-      .close()
-      .then(() => {
-        expect(closed).to.be.true;
-        cb();
-      })
-      .catch(cb);
+
+    await client.close();
+    expect(closeConnectionStub.called).to.be.true;
+    // No additional asserts needed - it should just reach this point
   });
 
-  it('should do nothing if the connection does not exist', (cb) => {
+  it('should do nothing if the connection does not exist', async () => {
     const client = new DBSQLClient();
-    client
-      .close()
-      .then(() => {
-        expect(true).to.be.true;
-        cb();
-      })
-      .catch(cb);
+
+    await client.close();
+    // No additional asserts needed - it should just reach this point
   });
 
-  it('should do nothing if the connection exists but cannot be finished', (cb) => {
+  it('should do nothing if the connection exists but cannot be finished', async () => {
     const client = new DBSQLClient();
     client.connection = {
       getConnection: () => ({}),
     };
-    client
-      .close()
-      .then(() => {
-        expect(true).to.be.true;
-        cb();
-      })
-      .catch(cb);
+
+    await client.close();
+    // No additional asserts needed - it should just reach this point
   });
 });
