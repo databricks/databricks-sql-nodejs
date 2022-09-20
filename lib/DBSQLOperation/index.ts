@@ -41,7 +41,7 @@ export default class DBSQLOperation implements IOperation {
   }
 
   async fetchAll(options?: IFetchOptions): Promise<Array<object>> {
-    const data: Array<object> = [];
+    const data: Array<Array<object>> = [];
     do {
       // eslint-disable-next-line no-await-in-loop
       const chunk = await this.fetchChunk(options);
