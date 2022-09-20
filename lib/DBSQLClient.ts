@@ -114,8 +114,6 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
     return driver
       .openSession({
         client_protocol_i64: new Int64(TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V6),
-        configuration: request.configuration,
-        connectionProperties: request.connectionProperties,
         ...getInitialNamespaceOptions(request.initialCatalog, request.initialSchema),
       })
       .then((response) => {

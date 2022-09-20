@@ -11,8 +11,6 @@ export interface ConnectionOptions {
 export interface OpenSessionRequest {
   initialCatalog?: string;
   initialSchema?: string;
-  configuration?: Record<string, string>;
-  connectionProperties?: Record<string, string>;
 }
 
 export default interface IDBSQLClient {
