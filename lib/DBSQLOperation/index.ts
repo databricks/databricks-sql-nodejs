@@ -13,7 +13,6 @@ import OperationStatusHelper from './OperationStatusHelper';
 import SchemaHelper from './SchemaHelper';
 import FetchResultsHelper from './FetchResultsHelper';
 import CompleteOperationHelper from './CompleteOperationHelper';
-import { it } from 'node:test';
 
 export default class DBSQLOperation implements IOperation {
   private driver: HiveDriver;
