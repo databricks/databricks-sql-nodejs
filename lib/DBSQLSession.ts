@@ -69,9 +69,9 @@ export default class DBSQLSession implements IDBSQLSession {
       .executeStatement({
         sessionHandle: this.sessionHandle,
         statement,
-        runAsync: options.runAsync || false,
         confOverlay: options.confOverlay,
         queryTimeout: options.queryTimeout,
+        runAsync: options.runAsync || false,
         ...getDirectResultsOptions(options.maxRows),
       })
       .then((response) => this.createOperation(response));
@@ -81,6 +81,7 @@ export default class DBSQLSession implements IDBSQLSession {
     return this.driver
       .getTypeInfo({
         sessionHandle: this.sessionHandle,
+        runAsync: request.runAsync || false,
         ...getDirectResultsOptions(request.maxRows),
       })
       .then((response) => this.createOperation(response));
@@ -90,6 +91,7 @@ export default class DBSQLSession implements IDBSQLSession {
     return this.driver
       .getCatalogs({
         sessionHandle: this.sessionHandle,
+        runAsync: request.runAsync || false,
         ...getDirectResultsOptions(request.maxRows),
       })
       .then((response) => this.createOperation(response));
@@ -101,6 +103,7 @@ export default class DBSQLSession implements IDBSQLSession {
         sessionHandle: this.sessionHandle,
         catalogName: request.catalogName,
         schemaName: request.schemaName,
+        runAsync: request.runAsync || false,
         ...getDirectResultsOptions(request.maxRows),
       })
       .then((response) => this.createOperation(response));
@@ -114,6 +117,7 @@ export default class DBSQLSession implements IDBSQLSession {
         schemaName: request.schemaName,
         tableName: request.tableName,
         tableTypes: request.tableTypes,
+        runAsync: request.runAsync || false,
         ...getDirectResultsOptions(request.maxRows),
       })
       .then((response) => this.createOperation(response));
@@ -123,6 +127,7 @@ export default class DBSQLSession implements IDBSQLSession {
     return this.driver
       .getTableTypes({
         sessionHandle: this.sessionHandle,
+        runAsync: request.runAsync || false,
         ...getDirectResultsOptions(request.maxRows),
       })
       .then((response) => this.createOperation(response));
@@ -136,6 +141,7 @@ export default class DBSQLSession implements IDBSQLSession {
         schemaName: request.schemaName,
         tableName: request.tableName,
         columnName: request.columnName,
+        runAsync: request.runAsync || false,
         ...getDirectResultsOptions(request.maxRows),
       })
       .then((response) => this.createOperation(response));
@@ -148,6 +154,7 @@ export default class DBSQLSession implements IDBSQLSession {
         catalogName: request.catalogName,
         schemaName: request.schemaName,
         functionName: request.functionName,
+        runAsync: request.runAsync || false,
         ...getDirectResultsOptions(request.maxRows),
       })
       .then((response) => this.createOperation(response));
@@ -160,6 +167,7 @@ export default class DBSQLSession implements IDBSQLSession {
         catalogName: request.catalogName,
         schemaName: request.schemaName,
         tableName: request.tableName,
+        runAsync: request.runAsync || false,
         ...getDirectResultsOptions(request.maxRows),
       })
       .then((response) => this.createOperation(response));
@@ -175,6 +183,7 @@ export default class DBSQLSession implements IDBSQLSession {
         foreignCatalogName: request.foreignCatalogName,
         foreignSchemaName: request.foreignSchemaName,
         foreignTableName: request.foreignTableName,
+        runAsync: request.runAsync || false,
         ...getDirectResultsOptions(request.maxRows),
       })
       .then((response) => this.createOperation(response));
