@@ -69,7 +69,6 @@ export default class DBSQLSession implements IDBSQLSession {
       .executeStatement({
         sessionHandle: this.sessionHandle,
         statement,
-        confOverlay: options.confOverlay,
         queryTimeout: options.queryTimeout,
         runAsync: options.runAsync || false,
         ...getDirectResultsOptions(options.maxRows),

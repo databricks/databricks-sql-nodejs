@@ -4,7 +4,6 @@ import InfoValue from '../dto/InfoValue';
 import { Int64 } from '../hive/Types';
 
 export type ExecuteStatementOptions = {
-  confOverlay?: Record<string, string>;
   queryTimeout?: Int64;
   runAsync?: boolean;
   maxRows?: number;
