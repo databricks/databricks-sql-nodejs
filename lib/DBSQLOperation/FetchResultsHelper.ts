@@ -52,7 +52,7 @@ export default class FetchResultsHelper {
   constructor(
     driver: HiveDriver,
     operationHandle: TOperationHandle,
-    prefetchedResults: Array<TFetchResultsResp | undefined> = [],
+    prefetchedResults: Array<TFetchResultsResp | undefined>,
   ) {
     this.driver = driver;
     this.operationHandle = operationHandle;

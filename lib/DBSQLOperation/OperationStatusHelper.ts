@@ -64,7 +64,7 @@ export default class OperationStatusHelper {
     return response;
   }
 
-  status(progress: boolean = false) {
+  status(progress: boolean) {
     if (this.operationStatus) {
       return Promise.resolve(this.operationStatus);
     }
