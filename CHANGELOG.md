@@ -8,6 +8,10 @@
   `maxRows` option should be used
 - `FunctionNameRequest` type renamed to `FunctionsRequest`
 - `IDBSQLConnectionOptions` type renamed to `ConnectionOptions`
+- `IFetchOptions` renamed to `FetchOptions`
+- `DBSQLOperation.getSchema` will wait for operation completion, like `DBSQLOperation.fetchChunk`/`DBSQLOperation.fetchAll`.
+  It also supports the same progress reporting options
+- `runAsync` option is now available for all operations that support it
 
 ## 0.1.8-beta.2 (2022-09-08)
 

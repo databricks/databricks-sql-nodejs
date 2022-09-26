@@ -3,8 +3,13 @@ import Status from '../dto/Status';
 
 export type OperationStatusCallback = (progress: TGetOperationStatusResp) => unknown;
 
-export interface IFetchOptions {
+export interface FetchOptions {
   maxRows?: number;
+  progress?: boolean;
+  callback?: OperationStatusCallback;
+}
+
+export interface GetSchemaOptions {
   progress?: boolean;
   callback?: OperationStatusCallback;
 }
@@ -15,14 +20,14 @@ export const defaultFetchOptions = {
 
 export default interface IOperation {
   /**
-   * Fetch schema and a portion of data
+   * Fetch a portion of data
    */
-  fetchChunk(options?: IFetchOptions): Promise<Array<object>>;
+  fetchChunk(options?: FetchOptions): Promise<Array<object>>;
 
   /**
-   * Fetch schema and all the data
+   * Fetch all the data
    */
-  fetchAll(options?: IFetchOptions): Promise<Array<object>>;
+  fetchAll(options?: FetchOptions): Promise<Array<object>>;
 
   /**
    * Request status of operation
@@ -52,7 +57,7 @@ export default interface IOperation {
   hasMoreRows(): Promise<boolean>;
 
   /**
-   * Return retrieved schema
+   * Fetch schema
    */
-  getSchema(): Promise<TTableSchema | null>;
+  getSchema(options?: GetSchemaOptions): Promise<TTableSchema | null>;
 }

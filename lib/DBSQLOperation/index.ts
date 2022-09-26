@@ -1,4 +1,4 @@
-import IOperation, { IFetchOptions, defaultFetchOptions } from '../contracts/IOperation';
+import IOperation, { FetchOptions, GetSchemaOptions, defaultFetchOptions } from '../contracts/IOperation';
 import HiveDriver from '../hive/HiveDriver';
 import {
   TGetOperationStatusResp,
@@ -40,7 +40,7 @@ export default class DBSQLOperation implements IOperation {
     );
   }
 
-  async fetchAll(options?: IFetchOptions): Promise<Array<object>> {
+  async fetchAll(options?: FetchOptions): Promise<Array<object>> {
     const data: Array<Array<object>> = [];
     do {
       // eslint-disable-next-line no-await-in-loop
@@ -51,9 +51,9 @@ export default class DBSQLOperation implements IOperation {
     return data.flat();
   }
 
-  async fetchChunk(options: IFetchOptions = defaultFetchOptions): Promise<Array<object>> {
+  async fetchChunk(options: FetchOptions = defaultFetchOptions): Promise<Array<object>> {
     if (!this._status.hasResultSet) {
-      return Promise.resolve([]);
+      return [];
     }
 
     await this._status.waitUntilReady(options.progress, options.callback);
@@ -102,10 +102,13 @@ export default class DBSQLOperation implements IOperation {
     return this._data.hasMoreRows;
   }
 
-  async getSchema(): Promise<TTableSchema | null> {
-    if (this._status.hasResultSet) {
-      return this._schema.fetch();
+  async getSchema(options?: GetSchemaOptions): Promise<TTableSchema | null> {
+    if (!this._status.hasResultSet) {
+      return null;
     }
-    return null;
+
+    await this._status.waitUntilReady(options?.progress, options?.callback);
+
+    return this._schema.fetch();
   }
 }
