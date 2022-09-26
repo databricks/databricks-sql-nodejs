@@ -21,17 +21,22 @@ export default class HttpConnection implements IConnectionProvider, IThriftConne
   private connection: any;
 
   connect(options: IConnectionOptions, authProvider: IAuthentication): Promise<IThriftConnection> {
-    const Agent = options.options?.https ? https.Agent : http.Agent;
+    const agentOptions: http.AgentOptions = {
+      keepAlive: true,
+      maxSockets: 5,
+      keepAliveMsecs: 10000,
+    };
+
+    const agent = options.options?.https
+      ? new https.Agent({ ...agentOptions, minVersion: 'TLSv1.2' })
+      : new http.Agent(agentOptions);
+
     const httpTransport = new HttpTransport({
       transport: thrift.TBufferedTransport,
       protocol: thrift.TBinaryProtocol,
       ...options.options,
       nodeOptions: {
-        agent: new Agent({
-          keepAlive: true,
-          maxSockets: 5,
-          keepAliveMsecs: 10000,
-        }),
+        agent,
         ...this.getNodeOptions(options.options || {}),
         ...(options.options?.nodeOptions || {}),
       },
