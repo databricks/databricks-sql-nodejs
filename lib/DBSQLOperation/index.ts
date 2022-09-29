@@ -1,4 +1,4 @@
-import IOperation, { FetchOptions, GetSchemaOptions, FinishedOptions, defaultMaxRows } from '../contracts/IOperation';
+import IOperation, { FetchOptions, GetSchemaOptions, FinishedOptions } from '../contracts/IOperation';
 import HiveDriver from '../hive/HiveDriver';
 import {
   TGetOperationStatusResp,
@@ -13,6 +13,8 @@ import OperationStatusHelper from './OperationStatusHelper';
 import SchemaHelper from './SchemaHelper';
 import FetchResultsHelper from './FetchResultsHelper';
 import CompleteOperationHelper from './CompleteOperationHelper';
+
+const defaultMaxRows = 100000;
 
 export default class DBSQLOperation implements IOperation {
   private driver: HiveDriver;

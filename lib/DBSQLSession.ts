@@ -20,14 +20,16 @@ import StatusFactory from './factory/StatusFactory';
 import InfoValue from './dto/InfoValue';
 import { definedOrError } from './utils';
 
+const defaultMaxRows = 100000;
+
 interface OperationResponseShape {
   status: TStatus;
   operationHandle?: TOperationHandle;
   directResults?: TSparkDirectResults;
 }
 
-function getDirectResultsOptions(maxRows?: number) {
-  if (!maxRows) {
+function getDirectResultsOptions(maxRows: number | null = defaultMaxRows) {
+  if (maxRows === null) {
     return {};
   }
 

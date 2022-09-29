@@ -20,8 +20,6 @@ export interface GetSchemaOptions extends WaitUntilReadyOptions {
   // no other options
 }
 
-export const defaultMaxRows = 100000;
-
 export default interface IOperation {
   /**
    * Fetch a portion of data
