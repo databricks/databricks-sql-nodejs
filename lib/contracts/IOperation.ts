@@ -3,26 +3,35 @@ import Status from '../dto/Status';
 
 export type OperationStatusCallback = (progress: TGetOperationStatusResp) => unknown;
 
-export interface IFetchOptions {
-  maxRows?: number;
+export interface WaitUntilReadyOptions {
   progress?: boolean;
   callback?: OperationStatusCallback;
 }
 
-export const defaultFetchOptions = {
-  maxRows: 100000,
-};
+export interface FinishedOptions extends WaitUntilReadyOptions {
+  // no other options
+}
+
+export interface FetchOptions extends WaitUntilReadyOptions {
+  maxRows?: number;
+}
+
+export interface GetSchemaOptions extends WaitUntilReadyOptions {
+  // no other options
+}
+
+export const defaultMaxRows = 100000;
 
 export default interface IOperation {
   /**
-   * Fetch schema and a portion of data
+   * Fetch a portion of data
    */
-  fetchChunk(options?: IFetchOptions): Promise<Array<object>>;
+  fetchChunk(options?: FetchOptions): Promise<Array<object>>;
 
   /**
-   * Fetch schema and all the data
+   * Fetch all the data
    */
-  fetchAll(options?: IFetchOptions): Promise<Array<object>>;
+  fetchAll(options?: FetchOptions): Promise<Array<object>>;
 
   /**
    * Request status of operation
@@ -44,7 +53,7 @@ export default interface IOperation {
   /**
    * Waits until operation is finished
    */
-  finished(): Promise<void>;
+  finished(options?: FinishedOptions): Promise<void>;
 
   /**
    * Check if operation hasMoreRows
@@ -52,7 +61,7 @@ export default interface IOperation {
   hasMoreRows(): Promise<boolean>;
 
   /**
-   * Return retrieved schema
+   * Fetch schema
    */
-  getSchema(): Promise<TTableSchema | null>;
+  getSchema(options?: GetSchemaOptions): Promise<TTableSchema | null>;
 }

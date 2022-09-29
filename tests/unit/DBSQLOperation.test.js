@@ -433,6 +433,52 @@ describe('DBSQLOperation', () => {
       },
     );
 
+    it('should request progress', async () => {
+      const handle = new OperationHandleMock();
+      const driver = new DriverMock();
+      driver.getOperationStatusResp.operationState = TOperationState.INITIALIZED_STATE;
+      sinon
+        .stub(driver, 'getOperationStatus')
+        .callThrough()
+        .onSecondCall()
+        .callsFake((...args) => {
+          driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
+          return driver.getOperationStatus.wrappedMethod.apply(driver, args);
+        });
+
+      const operation = new DBSQLOperation(driver, handle);
+      await operation.finished({ progress: true });
+
+      expect(driver.getOperationStatus.called).to.be.true;
+      const request = driver.getOperationStatus.getCall(0).args[0];
+      expect(request.getProgressUpdate).to.be.true;
+    });
+
+    it('should invoke progress callback', async () => {
+      const attemptsUntilFinished = 3;
+
+      const handle = new OperationHandleMock();
+      const driver = new DriverMock();
+      driver.getOperationStatusResp.operationState = TOperationState.INITIALIZED_STATE;
+      sinon
+        .stub(driver, 'getOperationStatus')
+        .callThrough()
+        .onCall(attemptsUntilFinished - 1) // count is zero-based
+        .callsFake((...args) => {
+          driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
+          return driver.getOperationStatus.wrappedMethod.apply(driver, args);
+        });
+
+      const operation = new DBSQLOperation(driver, handle);
+
+      const callback = sinon.stub();
+
+      await operation.finished({ callback });
+
+      expect(driver.getOperationStatus.called).to.be.true;
+      expect(callback.callCount).to.be.equal(attemptsUntilFinished);
+    });
+
     it('should pick up finished state from directResults', async () => {
       const handle = new OperationHandleMock();
       const driver = new DriverMock();
@@ -500,11 +546,13 @@ describe('DBSQLOperation', () => {
   });
 
   describe('getSchema', () => {
-    it('should not fetch schema and return null if operation has no data', async () => {
+    it('should return immediately if operation has no results', async () => {
       const handle = new OperationHandleMock();
       handle.hasResultSet = false;
 
       const driver = new DriverMock();
+      driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
+      driver.getOperationStatusResp.hasResultSet = false;
       sinon.spy(driver, 'getResultSetMetadata');
       const operation = new DBSQLOperation(driver, handle);
 
@@ -514,11 +562,87 @@ describe('DBSQLOperation', () => {
       expect(driver.getResultSetMetadata.called).to.be.false;
     });
 
+    it('should wait for operation to complete', async () => {
+      const handle = new OperationHandleMock();
+      const driver = new DriverMock();
+      driver.getOperationStatusResp.operationState = TOperationState.INITIALIZED_STATE;
+      sinon
+        .stub(driver, 'getOperationStatus')
+        .callThrough()
+        .onSecondCall()
+        .callsFake((...args) => {
+          driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
+          return driver.getOperationStatus.wrappedMethod.apply(driver, args);
+        });
+
+      driver.getResultSetMetadataResp.schema = null;
+
+      const operation = new DBSQLOperation(driver, handle);
+
+      const schema = await operation.getSchema();
+
+      expect(driver.getOperationStatus.called).to.be.true;
+      expect(schema).to.be.null;
+      expect(operation._status.state).to.equal(TOperationState.FINISHED_STATE);
+    });
+
+    it('should request progress', async () => {
+      const handle = new OperationHandleMock();
+      const driver = new DriverMock();
+      driver.getOperationStatusResp.operationState = TOperationState.INITIALIZED_STATE;
+      sinon
+        .stub(driver, 'getOperationStatus')
+        .callThrough()
+        .onSecondCall()
+        .callsFake((...args) => {
+          driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
+          return driver.getOperationStatus.wrappedMethod.apply(driver, args);
+        });
+
+      driver.getResultSetMetadataResp.schema = null;
+
+      const operation = new DBSQLOperation(driver, handle);
+      await operation.getSchema({ progress: true });
+
+      expect(driver.getOperationStatus.called).to.be.true;
+      const request = driver.getOperationStatus.getCall(0).args[0];
+      expect(request.getProgressUpdate).to.be.true;
+    });
+
+    it('should invoke progress callback', async () => {
+      const attemptsUntilFinished = 3;
+
+      const handle = new OperationHandleMock();
+      const driver = new DriverMock();
+      driver.getOperationStatusResp.operationState = TOperationState.INITIALIZED_STATE;
+      sinon
+        .stub(driver, 'getOperationStatus')
+        .callThrough()
+        .onCall(attemptsUntilFinished - 1) // count is zero-based
+        .callsFake((...args) => {
+          driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
+          return driver.getOperationStatus.wrappedMethod.apply(driver, args);
+        });
+
+      driver.getResultSetMetadataResp.schema = null;
+
+      const operation = new DBSQLOperation(driver, handle);
+
+      const callback = sinon.stub();
+
+      await operation.getSchema({ callback });
+
+      expect(driver.getOperationStatus.called).to.be.true;
+      expect(callback.callCount).to.be.equal(attemptsUntilFinished);
+    });
+
     it('should fetch schema if operation has data', async () => {
       const handle = new OperationHandleMock();
       handle.hasResultSet = true;
 
       const driver = new DriverMock();
+      driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
+      driver.getOperationStatusResp.hasResultSet = true;
       sinon.spy(driver, 'getResultSetMetadata');
       const operation = new DBSQLOperation(driver, handle);
 
@@ -533,6 +657,8 @@ describe('DBSQLOperation', () => {
       handle.hasResultSet = true;
 
       const driver = new DriverMock();
+      driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
+      driver.getOperationStatusResp.hasResultSet = true;
       sinon.spy(driver, 'getResultSetMetadata');
       const operation = new DBSQLOperation(driver, handle);
 
@@ -550,6 +676,8 @@ describe('DBSQLOperation', () => {
       handle.hasResultSet = true;
 
       const driver = new DriverMock();
+      driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
+      driver.getOperationStatusResp.hasResultSet = true;
       sinon.spy(driver, 'getResultSetMetadata');
 
       const directResults = {
@@ -573,6 +701,8 @@ describe('DBSQLOperation', () => {
       handle.hasResultSet = true;
 
       const driver = new DriverMock();
+      driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
+      driver.getOperationStatusResp.hasResultSet = true;
       driver.getResultSetMetadataResp.status.statusCode = TStatusCode.ERROR_STATUS;
       const operation = new DBSQLOperation(driver, handle);
 

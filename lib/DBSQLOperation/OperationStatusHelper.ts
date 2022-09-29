@@ -1,7 +1,7 @@
 import { TOperationHandle, TOperationState, TGetOperationStatusResp } from '../../thrift/TCLIService_types';
 import HiveDriver from '../hive/HiveDriver';
 import StatusFactory from '../factory/StatusFactory';
-import { OperationStatusCallback } from '../contracts/IOperation';
+import { WaitUntilReadyOptions } from '../contracts/IOperation';
 import OperationStateError from '../errors/OperationStateError';
 
 async function delay(ms?: number): Promise<void> {
@@ -64,7 +64,7 @@ export default class OperationStatusHelper {
     return response;
   }
 
-  status(progress: boolean = false) {
+  status(progress: boolean) {
     if (this.operationStatus) {
       return Promise.resolve(this.operationStatus);
     }
@@ -76,11 +76,11 @@ export default class OperationStatusHelper {
       .then((response) => this.processOperationStatusResponse(response));
   }
 
-  private async isReady(progress?: boolean, callback?: OperationStatusCallback): Promise<boolean> {
-    const response = await this.status(Boolean(progress));
+  private async isReady(options?: WaitUntilReadyOptions): Promise<boolean> {
+    const response = await this.status(Boolean(options?.progress));
 
-    if (callback) {
-      await Promise.resolve(callback(response));
+    if (options?.callback) {
+      await Promise.resolve(options.callback(response));
     }
 
     switch (response.operationState) {
@@ -106,14 +106,14 @@ export default class OperationStatusHelper {
     }
   }
 
-  async waitUntilReady(progress?: boolean, callback?: OperationStatusCallback): Promise<void> {
+  async waitUntilReady(options?: WaitUntilReadyOptions): Promise<void> {
     if (this.state === TOperationState.FINISHED_STATE) {
       return;
     }
-    const isReady = await this.isReady(progress, callback);
+    const isReady = await this.isReady(options);
     if (!isReady) {
       await delay(100); // add some delay between status requests
-      return this.waitUntilReady(progress, callback);
+      return this.waitUntilReady(options);
     }
   }
 }
