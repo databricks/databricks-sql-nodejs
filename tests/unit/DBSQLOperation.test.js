@@ -433,6 +433,52 @@ describe('DBSQLOperation', () => {
       },
     );
 
+    it('should request progress', async () => {
+      const handle = new OperationHandleMock();
+      const driver = new DriverMock();
+      driver.getOperationStatusResp.operationState = TOperationState.INITIALIZED_STATE;
+      sinon
+        .stub(driver, 'getOperationStatus')
+        .callThrough()
+        .onSecondCall()
+        .callsFake((...args) => {
+          driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
+          return driver.getOperationStatus.wrappedMethod.apply(driver, args);
+        });
+
+      const operation = new DBSQLOperation(driver, handle);
+      await operation.finished({ progress: true });
+
+      expect(driver.getOperationStatus.called).to.be.true;
+      const request = driver.getOperationStatus.getCall(0).args[0];
+      expect(request.getProgressUpdate).to.be.true;
+    });
+
+    it('should invoke progress callback', async () => {
+      const attemptsUntilFinished = 3;
+
+      const handle = new OperationHandleMock();
+      const driver = new DriverMock();
+      driver.getOperationStatusResp.operationState = TOperationState.INITIALIZED_STATE;
+      sinon
+        .stub(driver, 'getOperationStatus')
+        .callThrough()
+        .onCall(attemptsUntilFinished - 1) // count is zero-based
+        .callsFake((...args) => {
+          driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
+          return driver.getOperationStatus.wrappedMethod.apply(driver, args);
+        });
+
+      const operation = new DBSQLOperation(driver, handle);
+
+      const callback = sinon.stub();
+
+      await operation.finished({ callback });
+
+      expect(driver.getOperationStatus.called).to.be.true;
+      expect(callback.callCount).to.be.equal(attemptsUntilFinished);
+    });
+
     it('should pick up finished state from directResults', async () => {
       const handle = new OperationHandleMock();
       const driver = new DriverMock();

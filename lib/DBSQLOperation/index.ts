@@ -1,4 +1,4 @@
-import IOperation, { FetchOptions, GetSchemaOptions, defaultFetchOptions } from '../contracts/IOperation';
+import IOperation, { FetchOptions, GetSchemaOptions, FinishedOptions, defaultMaxRows } from '../contracts/IOperation';
 import HiveDriver from '../hive/HiveDriver';
 import {
   TGetOperationStatusResp,
@@ -51,14 +51,14 @@ export default class DBSQLOperation implements IOperation {
     return data.flat();
   }
 
-  async fetchChunk(options: FetchOptions = defaultFetchOptions): Promise<Array<object>> {
+  async fetchChunk(options?: FetchOptions): Promise<Array<object>> {
     if (!this._status.hasResultSet) {
       return [];
     }
 
-    await this._status.waitUntilReady(options.progress, options.callback);
+    await this._status.waitUntilReady(options);
 
-    return Promise.all([this._schema.fetch(), this._data.fetch(options.maxRows || defaultFetchOptions.maxRows)]).then(
+    return Promise.all([this._schema.fetch(), this._data.fetch(options?.maxRows || defaultMaxRows)]).then(
       ([schema, data]) => {
         const result = getResult(schema, data ? [data] : []);
         return Promise.resolve(result);
@@ -91,8 +91,8 @@ export default class DBSQLOperation implements IOperation {
     return this._completeOperation.close();
   }
 
-  async finished(): Promise<void> {
-    await this._status.waitUntilReady();
+  async finished(options?: FinishedOptions): Promise<void> {
+    await this._status.waitUntilReady(options);
   }
 
   async hasMoreRows(): Promise<boolean> {
@@ -107,7 +107,7 @@ export default class DBSQLOperation implements IOperation {
       return null;
     }
 
-    await this._status.waitUntilReady(options?.progress, options?.callback);
+    await this._status.waitUntilReady(options);
 
     return this._schema.fetch();
   }
