@@ -49,14 +49,15 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
 
   private thrift = thrift;
 
-  constructor() {
+  constructor(logger?: IDBSQLLogger) {
     super();
     this.connectionProvider = new HttpConnection();
     this.authProvider = new NoSaslAuthentication();
     this.statusFactory = new StatusFactory();
-    this.logger = new DBSQLLogger();
+    this.logger = logger || new DBSQLLogger();
     this.client = null;
     this.connection = null;
+    this.logger.log('info', 'Created DBSQLClient');
   }
 
   private getConnectionOptions(options: ConnectionOptions): IConnectionOptions {

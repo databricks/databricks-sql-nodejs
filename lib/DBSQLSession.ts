@@ -19,6 +19,7 @@ import Status from './dto/Status';
 import StatusFactory from './factory/StatusFactory';
 import InfoValue from './dto/InfoValue';
 import { definedOrError } from './utils';
+import IDBSQLLogger from './contracts/IDBSQLLogger';
 
 interface OperationResponseShape {
   status: TStatus;
@@ -45,13 +46,14 @@ export default class DBSQLSession implements IDBSQLSession {
 
   private statusFactory: StatusFactory;
 
-  private logger: any;
+  private logger: IDBSQLLogger;
 
   constructor(driver: HiveDriver, sessionHandle: TSessionHandle, logger: any) {
     this.driver = driver;
     this.sessionHandle = sessionHandle;
     this.statusFactory = new StatusFactory();
     this.logger = logger;
+    this.logger.log('info', `Session created with id: ${this.sessionHandle.sessionId.guid}`);
   }
 
   /**
@@ -325,7 +327,10 @@ export default class DBSQLSession implements IDBSQLSession {
       .closeSession({
         sessionHandle: this.sessionHandle,
       })
-      .then((response) => this.statusFactory.create(response.status));
+      .then((response) => {
+        this.logger.log('info', `Session closed with id: ${this.sessionHandle.sessionId.guid}`);
+        return this.statusFactory.create(response.status);
+      });
   }
 
   private createOperation(response: OperationResponseShape): IOperation {

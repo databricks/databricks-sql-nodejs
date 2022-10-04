@@ -1,30 +1,31 @@
-import IDBSQLLogger from "./contracts/IDBSQLLogger";
-const winston = require('winston');
+import winston, { Logger } from 'winston';
+import IDBSQLLogger from './contracts/IDBSQLLogger';
 
 export default class DBSQLLogger implements IDBSQLLogger {
-    logger: any;
-    transports: any;
-    constructor(filepath?: string) {
-        this.transports = {
-            console: new winston.transports.Console()
-        };
-        this.logger = winston.createLogger({
-            transports: [
-              this.transports.console
-            ]
-        });
-        if(filepath) {
-            this.transports.file = new winston.transports.File({ filename: filepath })
-            this.logger.add(this.transports.file)
-        }
-    }
-    async log(level: string, message: string) {
-        this.logger.log({level: level, message: message})
-    }
+  logger: Logger;
 
-    setLoggingLevel(level: string) {
-        for(let key in this.transports) {
-            this.transports[key].level = level;
-        }
+  transports: any;
+
+  constructor(filepath?: string) {
+    this.transports = {
+      console: new winston.transports.Console({ handleExceptions: true }),
+    };
+    this.logger = winston.createLogger({
+      transports: [this.transports.console],
+    });
+    if (filepath) {
+      this.transports.file = new winston.transports.File({ filename: filepath, handleExceptions: true });
+      this.logger.add(this.transports.file);
     }
+  }
+
+  async log(level: string, message: string) {
+    this.logger.log({ level, message });
+  }
+
+  setLoggingLevel(level: string) {
+    for (const key of Object.keys(this.transports)) {
+      this.transports[key].level = level;
+    }
+  }
 }

@@ -13,13 +13,14 @@ import OperationStatusHelper from './OperationStatusHelper';
 import SchemaHelper from './SchemaHelper';
 import FetchResultsHelper from './FetchResultsHelper';
 import CompleteOperationHelper from './CompleteOperationHelper';
+import IDBSQLLogger from '../contracts/IDBSQLLogger';
 
 export default class DBSQLOperation implements IOperation {
   private driver: HiveDriver;
 
   private operationHandle: TOperationHandle;
 
-  private logger: any;
+  private logger: IDBSQLLogger;
 
   private _status: OperationStatusHelper;
 
@@ -41,7 +42,7 @@ export default class DBSQLOperation implements IOperation {
       this.operationHandle,
       directResults?.closeOperation,
     );
-    this.logger.log('info', `Operation created: ${operationHandle.operationId.guid}`)
+    this.logger.log('info', `Operation created with id: ${operationHandle.operationId.guid}`);
   }
 
   /**
@@ -60,7 +61,7 @@ export default class DBSQLOperation implements IOperation {
       const chunk = await this.fetchChunk(options);
       data.push(chunk);
     } while (await this.hasMoreRows()); // eslint-disable-line no-await-in-loop
-    this.logger.log('info', `Fetched all data from operation`);
+    this.logger.log('info', `Fetched all data from operation with id: ${this.operationHandle.operationId.guid}`);
 
     return data.flat();
   }
@@ -84,7 +85,12 @@ export default class DBSQLOperation implements IOperation {
     return Promise.all([this._schema.fetch(), this._data.fetch(options?.maxRows || defaultMaxRows)]).then(
       ([schema, data]) => {
         const result = getResult(schema, data ? [data] : []);
-        this.logger.log('info', `Fetched chunk from operation`);
+        this.logger.log(
+          'verbose',
+          `Fetched chunk of size: ${options?.maxRows || defaultMaxRows} from operation with id: ${
+            this.operationHandle.operationId.guid
+          }`,
+        );
         return Promise.resolve(result);
       },
     );
@@ -96,6 +102,7 @@ export default class DBSQLOperation implements IOperation {
    * @throws {StatusError}
    */
   async status(progress: boolean = false): Promise<TGetOperationStatusResp> {
+    this.logger.log('verbose', `Fetching status for operation with id: ${this.operationHandle.operationId.guid}`);
     return this._status.status(progress);
   }
 
@@ -104,6 +111,7 @@ export default class DBSQLOperation implements IOperation {
    * @throws {StatusError}
    */
   cancel(): Promise<Status> {
+    this.logger.log('info', `Operation with id: ${this.operationHandle.operationId.guid} canceled.`);
     return this._completeOperation.cancel();
   }
 
@@ -112,6 +120,7 @@ export default class DBSQLOperation implements IOperation {
    * @throws {StatusError}
    */
   close(): Promise<Status> {
+    this.logger.log('info', `Closing operation with id: ${this.operationHandle.operationId.guid}`);
     return this._completeOperation.close();
   }
 
@@ -132,6 +141,7 @@ export default class DBSQLOperation implements IOperation {
     }
 
     await this._status.waitUntilReady(options);
+    this.logger.log('verbose', `Fetching schema for operation with id: ${this.operationHandle.operationId.guid}`);
 
     return this._schema.fetch();
   }
