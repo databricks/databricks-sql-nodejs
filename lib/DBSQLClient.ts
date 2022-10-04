@@ -18,6 +18,8 @@ import StatusFactory from './factory/StatusFactory';
 import HiveDriverError from './errors/HiveDriverError';
 import { buildUserAgentString, definedOrError } from './utils';
 import PlainHttpAuthentication from './connection/auth/PlainHttpAuthentication';
+import IDBSQLLogger from './contracts/IDBSQLLogger';
+import DBSQLLogger from './DBSQLLogger';
 
 function getInitialNamespaceOptions(catalogName?: string, schemaName?: string) {
   if (!catalogName && !schemaName) {
@@ -43,6 +45,8 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
 
   private authProvider: IAuthentication;
 
+  private logger: IDBSQLLogger;
+
   private thrift = thrift;
 
   constructor() {
@@ -50,6 +54,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
     this.connectionProvider = new HttpConnection();
     this.authProvider = new NoSaslAuthentication();
     this.statusFactory = new StatusFactory();
+    this.logger = new DBSQLLogger();
     this.client = null;
     this.connection = null;
   }
@@ -88,18 +93,22 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
     this.client = this.thrift.createClient(TCLIService, this.connection.getConnection());
 
     this.connection.getConnection().on('error', (error: Error) => {
+      this.logger.log('error', error.toString());
       this.emit('error', error);
     });
 
     this.connection.getConnection().on('reconnecting', (params: { delay: number; attempt: number }) => {
+      this.logger.log('info', 'Reconnecting...');
       this.emit('reconnecting', params);
     });
 
     this.connection.getConnection().on('close', () => {
+      this.logger.log('info', 'Closing connection.');
       this.emit('close');
     });
 
     this.connection.getConnection().on('timeout', () => {
+      this.logger.log('info', 'Connection timed out.');
       this.emit('timeout');
     });
 
@@ -129,7 +138,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
       })
       .then((response) => {
         this.statusFactory.create(response.status);
-        return new DBSQLSession(driver, definedOrError(response.sessionHandle));
+        return new DBSQLSession(driver, definedOrError(response.sessionHandle), this.logger);
       });
   }
 

@@ -45,10 +45,13 @@ export default class DBSQLSession implements IDBSQLSession {
 
   private statusFactory: StatusFactory;
 
-  constructor(driver: HiveDriver, sessionHandle: TSessionHandle) {
+  private logger: any;
+
+  constructor(driver: HiveDriver, sessionHandle: TSessionHandle, logger: any) {
     this.driver = driver;
     this.sessionHandle = sessionHandle;
     this.statusFactory = new StatusFactory();
+    this.logger = logger;
   }
 
   /**
@@ -328,7 +331,7 @@ export default class DBSQLSession implements IDBSQLSession {
   private createOperation(response: OperationResponseShape): IOperation {
     this.assertStatus(response.status);
     const handle = definedOrError(response.operationHandle);
-    return new DBSQLOperation(this.driver, handle, response.directResults);
+    return new DBSQLOperation(this.driver, handle, this.logger, response.directResults);
   }
 
   private assertStatus(responseStatus: TStatus): void {

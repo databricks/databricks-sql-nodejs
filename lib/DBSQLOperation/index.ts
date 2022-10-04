@@ -19,6 +19,8 @@ export default class DBSQLOperation implements IOperation {
 
   private operationHandle: TOperationHandle;
 
+  private logger: any;
+
   private _status: OperationStatusHelper;
 
   private _schema: SchemaHelper;
@@ -27,9 +29,10 @@ export default class DBSQLOperation implements IOperation {
 
   private _completeOperation: CompleteOperationHelper;
 
-  constructor(driver: HiveDriver, operationHandle: TOperationHandle, directResults?: TSparkDirectResults) {
+  constructor(driver: HiveDriver, operationHandle: TOperationHandle, logger: any, directResults?: TSparkDirectResults) {
     this.driver = driver;
     this.operationHandle = operationHandle;
+    this.logger = logger;
     this._status = new OperationStatusHelper(this.driver, this.operationHandle, directResults?.operationStatus);
     this._schema = new SchemaHelper(this.driver, this.operationHandle, directResults?.resultSetMetadata);
     this._data = new FetchResultsHelper(this.driver, this.operationHandle, [directResults?.resultSet]);
@@ -38,6 +41,7 @@ export default class DBSQLOperation implements IOperation {
       this.operationHandle,
       directResults?.closeOperation,
     );
+    this.logger.log('info', `Operation created: ${operationHandle.operationId.guid}`)
   }
 
   /**
@@ -56,6 +60,7 @@ export default class DBSQLOperation implements IOperation {
       const chunk = await this.fetchChunk(options);
       data.push(chunk);
     } while (await this.hasMoreRows()); // eslint-disable-line no-await-in-loop
+    this.logger.log('info', `Fetched all data from operation`);
 
     return data.flat();
   }
@@ -79,6 +84,7 @@ export default class DBSQLOperation implements IOperation {
     return Promise.all([this._schema.fetch(), this._data.fetch(options?.maxRows || defaultMaxRows)]).then(
       ([schema, data]) => {
         const result = getResult(schema, data ? [data] : []);
+        this.logger.log('info', `Fetched chunk from operation`);
         return Promise.resolve(result);
       },
     );
