@@ -5,8 +5,12 @@ import os from 'os';
 const productName = 'NodejsDatabricksSqlConnector';
 
 function getPackageVersion(): string {
-  const json = JSON.parse(fs.readFileSync(path.join(__dirname, '../../package.json')).toString());
-  return json.version;
+  try {
+    const json = JSON.parse(fs.readFileSync(path.join(__dirname, '../../package.json')).toString());
+    return json.version;
+  } catch (ex) {
+    return '1.0.0';
+  }
 }
 
 function getNodeVersion(): string {
