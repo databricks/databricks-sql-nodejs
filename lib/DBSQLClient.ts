@@ -99,17 +99,17 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
     });
 
     this.connection.getConnection().on('reconnecting', (params: { delay: number; attempt: number }) => {
-      this.logger.log('info', 'Reconnecting...');
+      this.logger.log('debug', `Reconnecting, params: ${params.toString()}`);
       this.emit('reconnecting', params);
     });
 
     this.connection.getConnection().on('close', () => {
-      this.logger.log('info', 'Closing connection.');
+      this.logger.log('debug', 'Closing connection.');
       this.emit('close');
     });
 
     this.connection.getConnection().on('timeout', () => {
-      this.logger.log('info', 'Connection timed out.');
+      this.logger.log('debug', 'Connection timed out.');
       this.emit('timeout');
     });
 

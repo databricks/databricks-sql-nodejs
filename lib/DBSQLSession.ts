@@ -20,6 +20,7 @@ import StatusFactory from './factory/StatusFactory';
 import InfoValue from './dto/InfoValue';
 import { definedOrError } from './utils';
 import IDBSQLLogger from './contracts/IDBSQLLogger';
+import {stringify} from 'uuid'
 
 interface OperationResponseShape {
   status: TStatus;
@@ -53,7 +54,7 @@ export default class DBSQLSession implements IDBSQLSession {
     this.sessionHandle = sessionHandle;
     this.statusFactory = new StatusFactory();
     this.logger = logger;
-    this.logger.log('info', `Session created with id: ${this.sessionHandle.sessionId.guid}`);
+    this.logger.log('debug', `Session created with id: ${stringify(this.sessionHandle.sessionId.guid)}`);
   }
 
   /**
@@ -328,7 +329,7 @@ export default class DBSQLSession implements IDBSQLSession {
         sessionHandle: this.sessionHandle,
       })
       .then((response) => {
-        this.logger.log('info', `Session closed with id: ${this.sessionHandle.sessionId.guid}`);
+        this.logger.log('debug', `Session closed with id: ${stringify(this.sessionHandle.sessionId.guid)}`);
         return this.statusFactory.create(response.status);
       });
   }
