@@ -1,3 +1,4 @@
+import { stringify } from 'uuid';
 import IOperation, { FetchOptions, GetSchemaOptions, FinishedOptions, defaultMaxRows } from '../contracts/IOperation';
 import HiveDriver from '../hive/HiveDriver';
 import {
@@ -13,9 +14,7 @@ import OperationStatusHelper from './OperationStatusHelper';
 import SchemaHelper from './SchemaHelper';
 import FetchResultsHelper from './FetchResultsHelper';
 import CompleteOperationHelper from './CompleteOperationHelper';
-import IDBSQLLogger from '../contracts/IDBSQLLogger';
-import { stringify } from 'uuid';
-
+import IDBSQLLogger, { LOGLEVELS } from '../contracts/IDBSQLLogger';
 
 export default class DBSQLOperation implements IOperation {
   private driver: HiveDriver;
@@ -32,7 +31,12 @@ export default class DBSQLOperation implements IOperation {
 
   private _completeOperation: CompleteOperationHelper;
 
-  constructor(driver: HiveDriver, operationHandle: TOperationHandle, logger: any, directResults?: TSparkDirectResults) {
+  constructor(
+    driver: HiveDriver,
+    operationHandle: TOperationHandle,
+    logger: IDBSQLLogger,
+    directResults?: TSparkDirectResults,
+  ) {
     this.driver = driver;
     this.operationHandle = operationHandle;
     this.logger = logger;
@@ -44,7 +48,7 @@ export default class DBSQLOperation implements IOperation {
       this.operationHandle,
       directResults?.closeOperation,
     );
-    this.logger.log('debug', `Operation created with id: ${stringify(operationHandle.operationId.guid)}`);
+    this.logger.log(LOGLEVELS.debug, `Operation created with id: ${stringify(operationHandle.operationId.guid)}`);
   }
 
   /**
@@ -63,7 +67,10 @@ export default class DBSQLOperation implements IOperation {
       const chunk = await this.fetchChunk(options);
       data.push(chunk);
     } while (await this.hasMoreRows()); // eslint-disable-line no-await-in-loop
-    this.logger.log('debug', `Fetched all data from operation with id: ${stringify(this.operationHandle.operationId.guid)}`);
+    this.logger.log(
+      LOGLEVELS.debug,
+      `Fetched all data from operation with id: ${stringify(this.operationHandle.operationId.guid)}`,
+    );
 
     return data.flat();
   }
@@ -88,7 +95,7 @@ export default class DBSQLOperation implements IOperation {
       ([schema, data]) => {
         const result = getResult(schema, data ? [data] : []);
         this.logger.log(
-          'debug',
+          LOGLEVELS.debug,
           `Fetched chunk of size: ${options?.maxRows || defaultMaxRows} from operation with id: ${
             this.operationHandle.operationId.guid
           }`,
@@ -104,7 +111,7 @@ export default class DBSQLOperation implements IOperation {
    * @throws {StatusError}
    */
   async status(progress: boolean = false): Promise<TGetOperationStatusResp> {
-    this.logger.log('debug', `Fetching status for operation with id: ${this.operationHandle.operationId.guid}`);
+    this.logger.log(LOGLEVELS.debug, `Fetching status for operation with id: ${this.operationHandle.operationId.guid}`);
     return this._status.status(progress);
   }
 
@@ -113,7 +120,10 @@ export default class DBSQLOperation implements IOperation {
    * @throws {StatusError}
    */
   cancel(): Promise<Status> {
-    this.logger.log('debug', `Operation with id: ${stringify(this.operationHandle.operationId.guid)} canceled.`);
+    this.logger.log(
+      LOGLEVELS.debug,
+      `Operation with id: ${stringify(this.operationHandle.operationId.guid)} canceled.`,
+    );
     return this._completeOperation.cancel();
   }
 
@@ -122,7 +132,7 @@ export default class DBSQLOperation implements IOperation {
    * @throws {StatusError}
    */
   close(): Promise<Status> {
-    this.logger.log('debug', `Closing operation with id: ${stringify(this.operationHandle.operationId.guid)}`);
+    this.logger.log(LOGLEVELS.debug, `Closing operation with id: ${stringify(this.operationHandle.operationId.guid)}`);
     return this._completeOperation.close();
   }
 
@@ -143,7 +153,10 @@ export default class DBSQLOperation implements IOperation {
     }
 
     await this._status.waitUntilReady(options);
-    this.logger.log('debug', `Fetching schema for operation with id: ${stringify(this.operationHandle.operationId.guid)}`);
+    this.logger.log(
+      LOGLEVELS.debug,
+      `Fetching schema for operation with id: ${stringify(this.operationHandle.operationId.guid)}`,
+    );
 
     return this._schema.fetch();
   }

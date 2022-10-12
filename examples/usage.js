@@ -10,6 +10,7 @@ client
   .connect({ host, path, token })
   .then(async (client) => {
     const session = await client.openSession();
+    client.logger.setLevel();
     const response = await session.getInfo(thrift.TCLIService_types.TGetInfoType.CLI_DBMS_VER);
 
     console.log(response.getValue());

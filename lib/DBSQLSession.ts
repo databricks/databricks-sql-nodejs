@@ -1,3 +1,4 @@
+import { stringify } from 'uuid';
 import { TSessionHandle, TStatus, TOperationHandle, TSparkDirectResults } from '../thrift/TCLIService_types';
 import HiveDriver from './hive/HiveDriver';
 import { Int64 } from './hive/Types';
@@ -19,8 +20,7 @@ import Status from './dto/Status';
 import StatusFactory from './factory/StatusFactory';
 import InfoValue from './dto/InfoValue';
 import { definedOrError } from './utils';
-import IDBSQLLogger from './contracts/IDBSQLLogger';
-import {stringify} from 'uuid'
+import IDBSQLLogger, { LOGLEVELS } from './contracts/IDBSQLLogger';
 
 interface OperationResponseShape {
   status: TStatus;
@@ -54,7 +54,7 @@ export default class DBSQLSession implements IDBSQLSession {
     this.sessionHandle = sessionHandle;
     this.statusFactory = new StatusFactory();
     this.logger = logger;
-    this.logger.log('debug', `Session created with id: ${stringify(this.sessionHandle.sessionId.guid)}`);
+    this.logger.log(LOGLEVELS.debug, `Session created with id: ${stringify(this.sessionHandle.sessionId.guid)}`);
   }
 
   /**
@@ -329,7 +329,7 @@ export default class DBSQLSession implements IDBSQLSession {
         sessionHandle: this.sessionHandle,
       })
       .then((response) => {
-        this.logger.log('debug', `Session closed with id: ${stringify(this.sessionHandle.sessionId.guid)}`);
+        this.logger.log(LOGLEVELS.debug, `Session closed with id: ${stringify(this.sessionHandle.sessionId.guid)}`);
         return this.statusFactory.create(response.status);
       });
   }

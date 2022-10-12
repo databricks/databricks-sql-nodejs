@@ -18,7 +18,7 @@ import StatusFactory from './factory/StatusFactory';
 import HiveDriverError from './errors/HiveDriverError';
 import { buildUserAgentString, definedOrError } from './utils';
 import PlainHttpAuthentication from './connection/auth/PlainHttpAuthentication';
-import IDBSQLLogger from './contracts/IDBSQLLogger';
+import IDBSQLLogger, { LOGLEVELS } from './contracts/IDBSQLLogger';
 import DBSQLLogger from './DBSQLLogger';
 
 function getInitialNamespaceOptions(catalogName?: string, schemaName?: string) {
@@ -57,7 +57,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
     this.logger = logger || new DBSQLLogger();
     this.client = null;
     this.connection = null;
-    this.logger.log('info', 'Created DBSQLClient');
+    this.logger.log(LOGLEVELS.info, 'Created DBSQLClient');
   }
 
   private getConnectionOptions(options: ConnectionOptions): IConnectionOptions {
@@ -94,22 +94,22 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
     this.client = this.thrift.createClient(TCLIService, this.connection.getConnection());
 
     this.connection.getConnection().on('error', (error: Error) => {
-      this.logger.log('error', error.toString());
+      this.logger.log('error', JSON.stringify(error));
       this.emit('error', error);
     });
 
     this.connection.getConnection().on('reconnecting', (params: { delay: number; attempt: number }) => {
-      this.logger.log('debug', `Reconnecting, params: ${params.toString()}`);
+      this.logger.log(LOGLEVELS.debug, `Reconnecting, params: ${JSON.stringify(params)}`);
       this.emit('reconnecting', params);
     });
 
     this.connection.getConnection().on('close', () => {
-      this.logger.log('debug', 'Closing connection.');
+      this.logger.log(LOGLEVELS.debug, 'Closing connection.');
       this.emit('close');
     });
 
     this.connection.getConnection().on('timeout', () => {
-      this.logger.log('debug', 'Connection timed out.');
+      this.logger.log(LOGLEVELS.debug, 'Connection timed out.');
       this.emit('timeout');
     });
 
