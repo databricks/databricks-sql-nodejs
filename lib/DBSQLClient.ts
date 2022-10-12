@@ -66,6 +66,14 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
     };
   }
 
+  /**
+   * Connects DBSQLClient to endpoint
+   * @public
+   * @param options - host, path, and token are required
+   * @returns Session object that can be used to execute statements
+   * @example
+   * const session = client.connect({host, path, token});
+   */
   async connect(options: ConnectionOptions): Promise<IDBSQLClient> {
     this.authProvider = new PlainHttpAuthentication({
       username: 'token',
@@ -99,10 +107,12 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
   }
 
   /**
-   * Starts new session
-   *
-   * @param request
+   * @public
+   * @param request - Can be instantiated with initialSchema, empty by default
+   * @returns Session object that can be used to execute statements
    * @throws {StatusError}
+   * @example
+   * const session = await client.openSession();
    */
   openSession(request: OpenSessionRequest = {}): Promise<IDBSQLSession> {
     if (!this.connection?.isConnected()) {

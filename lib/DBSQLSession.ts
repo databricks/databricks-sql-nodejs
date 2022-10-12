@@ -51,6 +51,14 @@ export default class DBSQLSession implements IDBSQLSession {
     this.statusFactory = new StatusFactory();
   }
 
+  /**
+   * Fetches info
+   * @public
+   * @param infoType - One of the values TCLIService_types.TGetInfoType
+   * @returns Value corresponding to info type requested
+   * @example
+   * const response = await session.getInfo(thrift.TCLIService_types.TGetInfoType.CLI_DBMS_VER);
+   */
   getInfo(infoType: number): Promise<InfoValue> {
     return this.driver
       .getInfo({
@@ -64,6 +72,15 @@ export default class DBSQLSession implements IDBSQLSession {
       });
   }
 
+  /**
+   * Executes statement
+   * @public
+   * @param statement - SQL statement to be executed
+   * @param options - maxRows field is used to specify Direct Results
+   * @returns DBSQLOperation
+   * @example
+   * const operation = await session.executeStatement(query, { runAsync: true });
+   */
   executeStatement(statement: string, options: ExecuteStatementOptions = {}): Promise<IOperation> {
     return this.driver
       .executeStatement({
@@ -76,6 +93,12 @@ export default class DBSQLSession implements IDBSQLSession {
       .then((response) => this.createOperation(response));
   }
 
+  /**
+   * Information about supported data types
+   * @public
+   * @param request
+   * @returns DBSQLOperation
+   */
   getTypeInfo(request: TypeInfoRequest = {}): Promise<IOperation> {
     return this.driver
       .getTypeInfo({
@@ -86,6 +109,12 @@ export default class DBSQLSession implements IDBSQLSession {
       .then((response) => this.createOperation(response));
   }
 
+  /**
+   * Get list of catalogs
+   * @public
+   * @param request
+   * @returns DBSQLOperation
+   */
   getCatalogs(request: CatalogsRequest = {}): Promise<IOperation> {
     return this.driver
       .getCatalogs({
@@ -96,6 +125,12 @@ export default class DBSQLSession implements IDBSQLSession {
       .then((response) => this.createOperation(response));
   }
 
+  /**
+   * Get list of schemas
+   * @public
+   * @param request
+   * @returns DBSQLOperation
+   */
   getSchemas(request: SchemasRequest = {}): Promise<IOperation> {
     return this.driver
       .getSchemas({
@@ -108,6 +143,12 @@ export default class DBSQLSession implements IDBSQLSession {
       .then((response) => this.createOperation(response));
   }
 
+  /**
+   * Get list of tables
+   * @public
+   * @param request
+   * @returns DBSQLOperation
+   */
   getTables(request: TablesRequest = {}): Promise<IOperation> {
     return this.driver
       .getTables({
@@ -122,6 +163,12 @@ export default class DBSQLSession implements IDBSQLSession {
       .then((response) => this.createOperation(response));
   }
 
+  /**
+   * Get list of supported table types
+   * @public
+   * @param request
+   * @returns DBSQLOperation
+   */
   getTableTypes(request: TableTypesRequest = {}): Promise<IOperation> {
     return this.driver
       .getTableTypes({
@@ -132,6 +179,12 @@ export default class DBSQLSession implements IDBSQLSession {
       .then((response) => this.createOperation(response));
   }
 
+  /**
+   * Get full information about columns of the table
+   * @public
+   * @param request
+   * @returns DBSQLOperation
+   */
   getColumns(request: ColumnsRequest = {}): Promise<IOperation> {
     return this.driver
       .getColumns({
@@ -146,6 +199,12 @@ export default class DBSQLSession implements IDBSQLSession {
       .then((response) => this.createOperation(response));
   }
 
+  /**
+   * Get information about function
+   * @public
+   * @param request
+   * @returns DBSQLOperation
+   */
   getFunctions(request: FunctionsRequest): Promise<IOperation> {
     return this.driver
       .getFunctions({
@@ -172,6 +231,12 @@ export default class DBSQLSession implements IDBSQLSession {
       .then((response) => this.createOperation(response));
   }
 
+  /**
+   * Request information about foreign keys between two tables
+   * @public
+   * @param request
+   * @returns DBSQLOperation
+   */
   getCrossReference(request: CrossReferenceRequest): Promise<IOperation> {
     return this.driver
       .getCrossReference({
@@ -188,6 +253,13 @@ export default class DBSQLSession implements IDBSQLSession {
       .then((response) => this.createOperation(response));
   }
 
+  /**
+   * Get delegation token. For kerberos auth only
+   * @public
+   * @param owner
+   * @param renewer
+   * @returns Delegation token
+   */
   getDelegationToken(owner: string, renewer: string): Promise<string> {
     return this.driver
       .getDelegationToken({
@@ -202,6 +274,12 @@ export default class DBSQLSession implements IDBSQLSession {
       });
   }
 
+  /**
+   * Renew delegation token/ For kerberos auth only
+   * @public
+   * @param token
+   * @returns Operation status
+   */
   renewDelegationToken(token: string): Promise<Status> {
     return this.driver
       .renewDelegationToken({
@@ -215,6 +293,12 @@ export default class DBSQLSession implements IDBSQLSession {
       });
   }
 
+  /**
+   * Cancel delegation token. For kerberos auth only
+   * @public
+   * @param token
+   * @returns Operation status
+   */
   cancelDelegationToken(token: string): Promise<Status> {
     return this.driver
       .cancelDelegationToken({
@@ -228,6 +312,11 @@ export default class DBSQLSession implements IDBSQLSession {
       });
   }
 
+  /**
+   * Closes the session
+   * @public
+   * @returns Operation status
+   */
   close(): Promise<Status> {
     return this.driver
       .closeSession({

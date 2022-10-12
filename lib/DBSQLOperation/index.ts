@@ -40,6 +40,15 @@ export default class DBSQLOperation implements IOperation {
     );
   }
 
+  /**
+   * Fetches all data
+   * @public
+   * @param options - maxRows property can be set to limit chunk size
+   * @returns Array of data with length equal to option.maxRows
+   * @throws {StatusError}
+   * @example
+   * const result = await queryOperation.fetchAll();
+   */
   async fetchAll(options?: FetchOptions): Promise<Array<object>> {
     const data: Array<Array<object>> = [];
     do {
@@ -51,6 +60,15 @@ export default class DBSQLOperation implements IOperation {
     return data.flat();
   }
 
+  /**
+   * Fetches chunk of data
+   * @public
+   * @param options - maxRows property sets chunk size 
+   * @returns Array of data with length equal to option.maxRows
+   * @throws {StatusError}
+   * @example
+   * const result = await queryOperation.fetchChunk({maxRows: 1000});
+   */
   async fetchChunk(options?: FetchOptions): Promise<Array<object>> {
     if (!this._status.hasResultSet) {
       return [];
