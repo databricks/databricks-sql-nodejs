@@ -63,7 +63,7 @@ export default class DBSQLOperation implements IOperation {
   /**
    * Fetches chunk of data
    * @public
-   * @param options - maxRows property sets chunk size 
+   * @param options - maxRows property sets chunk size
    * @returns Array of data with length equal to option.maxRows
    * @throws {StatusError}
    * @example
