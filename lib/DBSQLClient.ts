@@ -107,6 +107,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
   }
 
   /**
+   * Starts new session
    * @public
    * @param request - Can be instantiated with initialSchema, empty by default
    * @returns Session object that can be used to execute statements
