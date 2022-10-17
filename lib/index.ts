@@ -27,4 +27,4 @@ export const utils = {
   formatProgress,
 };
 
-export { DBSQLClient, DBSQLSession, DBSQLLogger, LOGLEVEL as LOGLEVELS };
+export { DBSQLClient, DBSQLSession, DBSQLLogger, LOGLEVEL };

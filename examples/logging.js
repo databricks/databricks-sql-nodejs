@@ -1,6 +1,6 @@
-const { DBSQLClient, DBSQLLogger, LOGLEVELS } = require('../');
+const { DBSQLClient, DBSQLLogger, LOGLEVEL } = require('../');
 
-const logger = new DBSQLLogger(LOGLEVELS.info);
+const logger = new DBSQLLogger(LOGLEVEL.info);
 
 const client = new DBSQLClient(logger);
 
