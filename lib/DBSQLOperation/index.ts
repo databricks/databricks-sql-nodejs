@@ -36,7 +36,7 @@ export default class DBSQLOperation implements IOperation {
     driver: HiveDriver,
     operationHandle: TOperationHandle,
     directResults?: TSparkDirectResults,
-    logger?: IDBSQLLogger
+    logger?: IDBSQLLogger,
   ) {
     this.driver = driver;
     this.operationHandle = operationHandle;
@@ -49,7 +49,10 @@ export default class DBSQLOperation implements IOperation {
       this.operationHandle,
       directResults?.closeOperation,
     );
-    this.logger.log(LOGLEVEL.debug, `Operation created with id: ${stringify(this.operationHandle?.operationId?.guid || parse(NIL))}`);
+    this.logger.log(
+      LOGLEVEL.debug,
+      `Operation created with id: ${stringify(this.operationHandle?.operationId?.guid || parse(NIL))}`,
+    );
   }
 
   /**
@@ -97,9 +100,9 @@ export default class DBSQLOperation implements IOperation {
         const result = getResult(schema, data ? [data] : []);
         this.logger?.log(
           LOGLEVEL.debug,
-          `Fetched chunk of size: ${options?.maxRows || defaultMaxRows} from operation with id: ${
-            stringify(this.operationHandle?.operationId?.guid || parse(NIL))
-          }`,
+          `Fetched chunk of size: ${options?.maxRows || defaultMaxRows} from operation with id: ${stringify(
+            this.operationHandle?.operationId?.guid || parse(NIL),
+          )}`,
         );
         return Promise.resolve(result);
       },
@@ -112,7 +115,10 @@ export default class DBSQLOperation implements IOperation {
    * @throws {StatusError}
    */
   async status(progress: boolean = false): Promise<TGetOperationStatusResp> {
-    this.logger?.log(LOGLEVEL.debug, `Fetching status for operation with id: ${stringify(this.operationHandle?.operationId?.guid || parse(NIL))}`);
+    this.logger?.log(
+      LOGLEVEL.debug,
+      `Fetching status for operation with id: ${stringify(this.operationHandle?.operationId?.guid || parse(NIL))}`,
+    );
     return this._status.status(progress);
   }
 
@@ -133,7 +139,10 @@ export default class DBSQLOperation implements IOperation {
    * @throws {StatusError}
    */
   close(): Promise<Status> {
-    this.logger?.log(LOGLEVEL.debug, `Closing operation with id: ${stringify(this.operationHandle?.operationId?.guid || parse(NIL))}`);
+    this.logger?.log(
+      LOGLEVEL.debug,
+      `Closing operation with id: ${stringify(this.operationHandle?.operationId?.guid || parse(NIL))}`,
+    );
     return this._completeOperation.close();
   }
 

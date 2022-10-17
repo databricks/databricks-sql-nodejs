@@ -55,7 +55,10 @@ export default class DBSQLSession implements IDBSQLSession {
     this.sessionHandle = sessionHandle;
     this.statusFactory = new StatusFactory();
     this.logger = logger || new DBSQLLogger();
-    this.logger.log(LOGLEVEL.debug, `Session created with id: ${stringify(this.sessionHandle?.sessionId?.guid || parse(NIL))}`);
+    this.logger.log(
+      LOGLEVEL.debug,
+      `Session created with id: ${stringify(this.sessionHandle?.sessionId?.guid || parse(NIL))}`,
+    );
   }
 
   /**
@@ -330,7 +333,10 @@ export default class DBSQLSession implements IDBSQLSession {
         sessionHandle: this.sessionHandle,
       })
       .then((response) => {
-        this.logger.log(LOGLEVEL.debug, `Session closed with id: ${stringify(this.sessionHandle?.sessionId?.guid || parse(NIL))}`);
+        this.logger.log(
+          LOGLEVEL.debug,
+          `Session closed with id: ${stringify(this.sessionHandle?.sessionId?.guid || parse(NIL))}`,
+        );
         return this.statusFactory.create(response.status);
       });
   }
