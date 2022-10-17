@@ -1,12 +1,12 @@
 import winston, { Logger } from 'winston';
-import IDBSQLLogger, { LOGLEVELS } from './contracts/IDBSQLLogger';
+import IDBSQLLogger, { LOGLEVEL } from './contracts/IDBSQLLogger';
 
 export default class DBSQLLogger implements IDBSQLLogger {
   logger: Logger;
 
   transports: any;
 
-  constructor(filepath?: string, level = LOGLEVELS.info) {
+  constructor(filepath?: string, level = LOGLEVEL.info) {
     this.transports = {
       console: new winston.transports.Console({ handleExceptions: true, level }),
     };
@@ -19,11 +19,11 @@ export default class DBSQLLogger implements IDBSQLLogger {
     }
   }
 
-  async log(level: LOGLEVELS, message: string) {
+  async log(level: LOGLEVEL, message: string) {
     this.logger.log({ level, message });
   }
 
-  setLevel(level: LOGLEVELS) {
+  setLevel(level: LOGLEVEL) {
     for (const key of Object.keys(this.transports)) {
       this.transports[key].level = level;
     }

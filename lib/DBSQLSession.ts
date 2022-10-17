@@ -1,4 +1,4 @@
-import { stringify } from 'uuid';
+import { stringify, NIL, parse } from 'uuid';
 import { TSessionHandle, TStatus, TOperationHandle, TSparkDirectResults } from '../thrift/TCLIService_types';
 import HiveDriver from './hive/HiveDriver';
 import { Int64 } from './hive/Types';
@@ -20,7 +20,8 @@ import Status from './dto/Status';
 import StatusFactory from './factory/StatusFactory';
 import InfoValue from './dto/InfoValue';
 import { definedOrError } from './utils';
-import IDBSQLLogger, { LOGLEVELS } from './contracts/IDBSQLLogger';
+import IDBSQLLogger, { LOGLEVEL } from './contracts/IDBSQLLogger';
+import DBSQLLogger from './DBSQLLogger';
 
 interface OperationResponseShape {
   status: TStatus;
@@ -49,12 +50,12 @@ export default class DBSQLSession implements IDBSQLSession {
 
   private logger: IDBSQLLogger;
 
-  constructor(driver: HiveDriver, sessionHandle: TSessionHandle, logger: any) {
+  constructor(driver: HiveDriver, sessionHandle: TSessionHandle, logger?: IDBSQLLogger) {
     this.driver = driver;
     this.sessionHandle = sessionHandle;
     this.statusFactory = new StatusFactory();
-    this.logger = logger;
-    this.logger.log(LOGLEVELS.debug, `Session created with id: ${stringify(this.sessionHandle.sessionId.guid)}`);
+    this.logger = logger || new DBSQLLogger();
+    this.logger.log(LOGLEVEL.debug, `Session created with id: ${stringify(this.sessionHandle?.sessionId?.guid || parse(NIL))}`);
   }
 
   /**
@@ -329,7 +330,7 @@ export default class DBSQLSession implements IDBSQLSession {
         sessionHandle: this.sessionHandle,
       })
       .then((response) => {
-        this.logger.log(LOGLEVELS.debug, `Session closed with id: ${stringify(this.sessionHandle.sessionId.guid)}`);
+        this.logger.log(LOGLEVEL.debug, `Session closed with id: ${stringify(this.sessionHandle?.sessionId?.guid || parse(NIL))}`);
         return this.statusFactory.create(response.status);
       });
   }
@@ -337,7 +338,7 @@ export default class DBSQLSession implements IDBSQLSession {
   private createOperation(response: OperationResponseShape): IOperation {
     this.assertStatus(response.status);
     const handle = definedOrError(response.operationHandle);
-    return new DBSQLOperation(this.driver, handle, this.logger, response.directResults);
+    return new DBSQLOperation(this.driver, handle, response.directResults, this.logger);
   }
 
   private assertStatus(responseStatus: TStatus): void {

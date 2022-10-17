@@ -7,7 +7,7 @@ import NoSaslAuthentication from './connection/auth/NoSaslAuthentication';
 import PlainHttpAuthentication from './connection/auth/PlainHttpAuthentication';
 import HttpConnection from './connection/connections/HttpConnection';
 import { formatProgress } from './utils';
-import { LOGLEVELS } from './contracts/IDBSQLLogger';
+import { LOGLEVEL } from './contracts/IDBSQLLogger';
 
 export const auth = {
   NoSaslAuthentication,
@@ -27,4 +27,4 @@ export const utils = {
   formatProgress,
 };
 
-export { DBSQLClient, DBSQLSession, DBSQLLogger, LOGLEVELS };
+export { DBSQLClient, DBSQLSession, DBSQLLogger, LOGLEVEL as LOGLEVELS };

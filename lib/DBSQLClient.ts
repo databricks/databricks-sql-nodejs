@@ -18,7 +18,7 @@ import StatusFactory from './factory/StatusFactory';
 import HiveDriverError from './errors/HiveDriverError';
 import { buildUserAgentString, definedOrError } from './utils';
 import PlainHttpAuthentication from './connection/auth/PlainHttpAuthentication';
-import IDBSQLLogger, { LOGLEVELS } from './contracts/IDBSQLLogger';
+import IDBSQLLogger, { LOGLEVEL } from './contracts/IDBSQLLogger';
 import DBSQLLogger from './DBSQLLogger';
 
 function getInitialNamespaceOptions(catalogName?: string, schemaName?: string) {
@@ -57,7 +57,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
     this.logger = logger || new DBSQLLogger();
     this.client = null;
     this.connection = null;
-    this.logger.log(LOGLEVELS.info, 'Created DBSQLClient');
+    this.logger.log(LOGLEVEL.info, 'Created DBSQLClient');
   }
 
   private getConnectionOptions(options: ConnectionOptions): IConnectionOptions {
@@ -99,17 +99,17 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
     });
 
     this.connection.getConnection().on('reconnecting', (params: { delay: number; attempt: number }) => {
-      this.logger.log(LOGLEVELS.debug, `Reconnecting, params: ${JSON.stringify(params)}`);
+      this.logger.log(LOGLEVEL.debug, `Reconnecting, params: ${JSON.stringify(params)}`);
       this.emit('reconnecting', params);
     });
 
     this.connection.getConnection().on('close', () => {
-      this.logger.log(LOGLEVELS.debug, 'Closing connection.');
+      this.logger.log(LOGLEVEL.debug, 'Closing connection.');
       this.emit('close');
     });
 
     this.connection.getConnection().on('timeout', () => {
-      this.logger.log(LOGLEVELS.debug, 'Connection timed out.');
+      this.logger.log(LOGLEVEL.debug, 'Connection timed out.');
       this.emit('timeout');
     });
 
