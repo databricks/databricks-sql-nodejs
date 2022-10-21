@@ -3,7 +3,7 @@ import thrift from 'thrift';
 import { EventEmitter } from 'events';
 import TCLIService from '../thrift/TCLIService';
 import { TProtocolVersion } from '../thrift/TCLIService_types';
-import IDBSQLClient, { ConnectionOptions, OpenSessionRequest } from './contracts/IDBSQLClient';
+import IDBSQLClient, { ConnectionOptions, OpenSessionRequest, ClientOptions } from './contracts/IDBSQLClient';
 import HiveDriver from './hive/HiveDriver';
 import { Int64 } from './hive/Types';
 import DBSQLSession from './DBSQLSession';
@@ -18,7 +18,7 @@ import StatusFactory from './factory/StatusFactory';
 import HiveDriverError from './errors/HiveDriverError';
 import { buildUserAgentString, definedOrError } from './utils';
 import PlainHttpAuthentication from './connection/auth/PlainHttpAuthentication';
-import IDBSQLLogger, { LOGLEVEL } from './contracts/IDBSQLLogger';
+import IDBSQLLogger, { LogLevel } from './contracts/IDBSQLLogger';
 import DBSQLLogger from './DBSQLLogger';
 
 function getInitialNamespaceOptions(catalogName?: string, schemaName?: string) {
@@ -49,15 +49,15 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
 
   private thrift = thrift;
 
-  constructor(logger?: IDBSQLLogger) {
+  constructor(options: ClientOptions) {
     super();
     this.connectionProvider = new HttpConnection();
     this.authProvider = new NoSaslAuthentication();
     this.statusFactory = new StatusFactory();
-    this.logger = logger || new DBSQLLogger();
+    this.logger = options?.logger || new DBSQLLogger();
     this.client = null;
     this.connection = null;
-    this.logger.log(LOGLEVEL.info, 'Created DBSQLClient');
+    this.logger.log(LogLevel.info, 'Created DBSQLClient');
   }
 
   private getConnectionOptions(options: ConnectionOptions): IConnectionOptions {
@@ -94,22 +94,22 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
     this.client = this.thrift.createClient(TCLIService, this.connection.getConnection());
 
     this.connection.getConnection().on('error', (error: Error) => {
-      this.logger.log('error', JSON.stringify(error));
+      this.logger.log(LogLevel.error, JSON.stringify(error));
       this.emit('error', error);
     });
 
     this.connection.getConnection().on('reconnecting', (params: { delay: number; attempt: number }) => {
-      this.logger.log(LOGLEVEL.debug, `Reconnecting, params: ${JSON.stringify(params)}`);
+      this.logger.log(LogLevel.debug, `Reconnecting, params: ${JSON.stringify(params)}`);
       this.emit('reconnecting', params);
     });
 
     this.connection.getConnection().on('close', () => {
-      this.logger.log(LOGLEVEL.debug, 'Closing connection.');
+      this.logger.log(LogLevel.debug, 'Closing connection.');
       this.emit('close');
     });
 
     this.connection.getConnection().on('timeout', () => {
-      this.logger.log(LOGLEVEL.debug, 'Connection timed out.');
+      this.logger.log(LogLevel.debug, 'Connection timed out.');
       this.emit('timeout');
     });
 

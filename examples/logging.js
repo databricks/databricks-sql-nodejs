@@ -1,6 +1,8 @@
-const { DBSQLClient, DBSQLLogger, LOGLEVEL } = require('../');
+const { DBSQLClient, DBSQLLogger, LogLevel } = require('../');
 
-const logger = new DBSQLLogger(LOGLEVEL.info);
+// This logger will emit logs to console only.
+//
+const logger = new DBSQLLogger('log.txt', LogLevel.info);
 
 const client = new DBSQLClient(logger);
 

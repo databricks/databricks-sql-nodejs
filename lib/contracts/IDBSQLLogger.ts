@@ -1,8 +1,8 @@
 export default interface IDBSQLLogger {
-  log(message: string, level: string): void;
+  log(level: LogLevel, message: string): void;
 }
 
-export enum LOGLEVEL {
+export enum LogLevel {
   error = 'error',
   warn = 'warn',
   info = 'info',
