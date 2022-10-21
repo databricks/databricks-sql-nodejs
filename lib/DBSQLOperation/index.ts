@@ -97,9 +97,7 @@ export default class DBSQLOperation implements IOperation {
         const result = getResult(schema, data ? [data] : []);
         this.logger?.log(
           LogLevel.debug,
-          `Fetched chunk of size: ${options?.maxRows || defaultMaxRows} from operation with id: ${stringify(
-            this.operationHandle?.operationId?.guid || parse(NIL),
-          )}`,
+          `Fetched chunk of size: ${options?.maxRows || defaultMaxRows} from operation with id: ${this.getId()}`,
         );
         return Promise.resolve(result);
       },
