@@ -3,7 +3,7 @@ import thrift from 'thrift';
 import { EventEmitter } from 'events';
 import TCLIService from '../thrift/TCLIService';
 import { TProtocolVersion } from '../thrift/TCLIService_types';
-import IDBSQLClient, { ConnectionOptions, OpenSessionRequest } from './contracts/IDBSQLClient';
+import IDBSQLClient, { ConnectionOptions, OpenSessionRequest, ClientOptions } from './contracts/IDBSQLClient';
 import HiveDriver from './hive/HiveDriver';
 import { Int64 } from './hive/Types';
 import DBSQLSession from './DBSQLSession';
@@ -18,6 +18,8 @@ import StatusFactory from './factory/StatusFactory';
 import HiveDriverError from './errors/HiveDriverError';
 import { buildUserAgentString, definedOrError } from './utils';
 import PlainHttpAuthentication from './connection/auth/PlainHttpAuthentication';
+import IDBSQLLogger, { LogLevel } from './contracts/IDBSQLLogger';
+import DBSQLLogger from './DBSQLLogger';
 
 function getInitialNamespaceOptions(catalogName?: string, schemaName?: string) {
   if (!catalogName && !schemaName) {
@@ -43,15 +45,19 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
 
   private authProvider: IAuthentication;
 
+  private logger: IDBSQLLogger;
+
   private thrift = thrift;
 
-  constructor() {
+  constructor(options: ClientOptions) {
     super();
     this.connectionProvider = new HttpConnection();
     this.authProvider = new NoSaslAuthentication();
     this.statusFactory = new StatusFactory();
+    this.logger = options?.logger || new DBSQLLogger();
     this.client = null;
     this.connection = null;
+    this.logger.log(LogLevel.info, 'Created DBSQLClient');
   }
 
   private getConnectionOptions(options: ConnectionOptions): IConnectionOptions {
@@ -88,18 +94,22 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
     this.client = this.thrift.createClient(TCLIService, this.connection.getConnection());
 
     this.connection.getConnection().on('error', (error: Error) => {
+      this.logger.log(LogLevel.error, JSON.stringify(error));
       this.emit('error', error);
     });
 
     this.connection.getConnection().on('reconnecting', (params: { delay: number; attempt: number }) => {
+      this.logger.log(LogLevel.debug, `Reconnecting, params: ${JSON.stringify(params)}`);
       this.emit('reconnecting', params);
     });
 
     this.connection.getConnection().on('close', () => {
+      this.logger.log(LogLevel.debug, 'Closing connection.');
       this.emit('close');
     });
 
     this.connection.getConnection().on('timeout', () => {
+      this.logger.log(LogLevel.debug, 'Connection timed out.');
       this.emit('timeout');
     });
 
@@ -129,7 +139,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
       })
       .then((response) => {
         this.statusFactory.create(response.status);
-        return new DBSQLSession(driver, definedOrError(response.sessionHandle));
+        return new DBSQLSession(driver, definedOrError(response.sessionHandle), this.logger);
       });
   }
 

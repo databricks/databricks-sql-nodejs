@@ -1,10 +1,15 @@
 const { expect, AssertionError } = require('chai');
 const sinon = require('sinon');
+const { DBSQLLogger, LogLevel } = require('../../dist');
 const { TStatusCode, TOperationState, TTypeId } = require('../../thrift/TCLIService_types');
 const DBSQLOperation = require('../../dist/DBSQLOperation').default;
 const StatusError = require('../../dist/errors/StatusError').default;
 const OperationStateError = require('../../dist/errors/OperationStateError').default;
 const getResult = require('../../dist/DBSQLOperation/getResult').default;
+
+// Create logger that won't emit
+//
+const logger = new DBSQLLogger(LogLevel.error);
 
 class OperationHandleMock {
   constructor(hasResultSet = true) {
@@ -91,7 +96,7 @@ describe('DBSQLOperation', () => {
       handle.hasResultSet = true;
 
       const driver = new DriverMock();
-      const operation = new DBSQLOperation(driver, handle);
+      const operation = new DBSQLOperation(driver, handle, logger);
 
       expect(operation._status.state).to.equal(TOperationState.INITIALIZED_STATE);
       expect(operation._status.hasResultSet).to.be.true;
@@ -101,7 +106,7 @@ describe('DBSQLOperation', () => {
       const handle = new OperationHandleMock();
       const driver = new DriverMock();
 
-      const operation = new DBSQLOperation(driver, handle, {
+      const operation = new DBSQLOperation(driver, handle, logger, {
         operationStatus: {
           status: { statusCode: TStatusCode.SUCCESS_STATUS },
           operationState: TOperationState.FINISHED_STATE,
@@ -122,7 +127,7 @@ describe('DBSQLOperation', () => {
       driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
       driver.getOperationStatusResp.hasResultSet = true;
 
-      const operation = new DBSQLOperation(driver, handle);
+      const operation = new DBSQLOperation(driver, handle, logger);
 
       expect(operation._status.state).to.equal(TOperationState.INITIALIZED_STATE);
       expect(operation._status.hasResultSet).to.be.false;
@@ -143,7 +148,7 @@ describe('DBSQLOperation', () => {
       sinon.spy(driver, 'getOperationStatus');
       driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
 
-      const operation = new DBSQLOperation(driver, handle);
+      const operation = new DBSQLOperation(driver, handle, logger);
       await operation.status(true);
 
       expect(driver.getOperationStatus.called).to.be.true;
@@ -159,7 +164,7 @@ describe('DBSQLOperation', () => {
       sinon.spy(driver, 'getOperationStatus');
       driver.getOperationStatusResp.hasResultSet = true;
 
-      const operation = new DBSQLOperation(driver, handle);
+      const operation = new DBSQLOperation(driver, handle, logger);
 
       expect(operation._status.state).to.equal(TOperationState.INITIALIZED_STATE);
       expect(operation._status.hasResultSet).to.be.false;
@@ -198,7 +203,7 @@ describe('DBSQLOperation', () => {
       driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
       driver.getOperationStatusResp.hasResultSet = true;
 
-      const operation = new DBSQLOperation(driver, handle, {
+      const operation = new DBSQLOperation(driver, handle, logger, {
         operationStatus: {
           status: { statusCode: TStatusCode.SUCCESS_STATUS },
           operationState: TOperationState.RUNNING_STATE,
@@ -226,7 +231,7 @@ describe('DBSQLOperation', () => {
       driver.getOperationStatusResp.operationState = TOperationState.RUNNING_STATE;
       driver.getOperationStatusResp.hasResultSet = true;
 
-      const operation = new DBSQLOperation(driver, handle, {
+      const operation = new DBSQLOperation(driver, handle, logger, {
         operationStatus: {
           status: { statusCode: TStatusCode.SUCCESS_STATUS },
           operationState: TOperationState.FINISHED_STATE,
@@ -249,7 +254,7 @@ describe('DBSQLOperation', () => {
       const handle = new OperationHandleMock();
       const driver = new DriverMock();
       driver.getOperationStatusResp.status.statusCode = TStatusCode.ERROR_STATUS;
-      const operation = new DBSQLOperation(driver, handle);
+      const operation = new DBSQLOperation(driver, handle, logger);
 
       try {
         await operation.status(false);
@@ -268,7 +273,7 @@ describe('DBSQLOperation', () => {
       const handle = new OperationHandleMock();
       const driver = new DriverMock();
       sinon.spy(driver, 'cancelOperation');
-      const operation = new DBSQLOperation(driver, handle);
+      const operation = new DBSQLOperation(driver, handle, logger);
 
       expect(operation._completeOperation.cancelled).to.be.false;
       expect(operation._completeOperation.closed).to.be.false;
@@ -284,7 +289,7 @@ describe('DBSQLOperation', () => {
       const handle = new OperationHandleMock();
       const driver = new DriverMock();
       sinon.spy(driver, 'cancelOperation');
-      const operation = new DBSQLOperation(driver, handle);
+      const operation = new DBSQLOperation(driver, handle, logger);
 
       expect(operation._completeOperation.cancelled).to.be.false;
       expect(operation._completeOperation.closed).to.be.false;
@@ -304,7 +309,7 @@ describe('DBSQLOperation', () => {
       const handle = new OperationHandleMock();
       const driver = new DriverMock();
       driver.cancelOperationResp.status.statusCode = TStatusCode.ERROR_STATUS;
-      const operation = new DBSQLOperation(driver, handle);
+      const operation = new DBSQLOperation(driver, handle, logger);
 
       expect(operation._completeOperation.cancelled).to.be.false;
       expect(operation._completeOperation.closed).to.be.false;
@@ -328,7 +333,7 @@ describe('DBSQLOperation', () => {
       const handle = new OperationHandleMock();
       const driver = new DriverMock();
       sinon.spy(driver, 'closeOperation');
-      const operation = new DBSQLOperation(driver, handle);
+      const operation = new DBSQLOperation(driver, handle, logger);
 
       expect(operation._completeOperation.cancelled).to.be.false;
       expect(operation._completeOperation.closed).to.be.false;
@@ -344,7 +349,7 @@ describe('DBSQLOperation', () => {
       const handle = new OperationHandleMock();
       const driver = new DriverMock();
       sinon.spy(driver, 'closeOperation');
-      const operation = new DBSQLOperation(driver, handle);
+      const operation = new DBSQLOperation(driver, handle, logger);
 
       expect(operation._completeOperation.cancelled).to.be.false;
       expect(operation._completeOperation.closed).to.be.false;
@@ -364,7 +369,7 @@ describe('DBSQLOperation', () => {
       const handle = new OperationHandleMock();
       const driver = new DriverMock();
       sinon.spy(driver, 'closeOperation');
-      const operation = new DBSQLOperation(driver, handle, {
+      const operation = new DBSQLOperation(driver, handle, logger, {
         closeOperation: {
           status: { statusCode: TStatusCode.SUCCESS_STATUS },
         },
@@ -384,7 +389,7 @@ describe('DBSQLOperation', () => {
       const handle = new OperationHandleMock();
       const driver = new DriverMock();
       driver.closeOperationResp.status.statusCode = TStatusCode.ERROR_STATUS;
-      const operation = new DBSQLOperation(driver, handle);
+      const operation = new DBSQLOperation(driver, handle, logger);
 
       expect(operation._completeOperation.cancelled).to.be.false;
       expect(operation._completeOperation.closed).to.be.false;
@@ -421,7 +426,7 @@ describe('DBSQLOperation', () => {
               return driver.getOperationStatus.wrappedMethod.apply(driver, args);
             });
 
-          const operation = new DBSQLOperation(driver, handle);
+          const operation = new DBSQLOperation(driver, handle, logger);
 
           expect(operation._status.state).to.equal(TOperationState.INITIALIZED_STATE);
 
@@ -446,7 +451,7 @@ describe('DBSQLOperation', () => {
           return driver.getOperationStatus.wrappedMethod.apply(driver, args);
         });
 
-      const operation = new DBSQLOperation(driver, handle);
+      const operation = new DBSQLOperation(driver, handle, logger);
       await operation.finished({ progress: true });
 
       expect(driver.getOperationStatus.called).to.be.true;
@@ -469,7 +474,7 @@ describe('DBSQLOperation', () => {
           return driver.getOperationStatus.wrappedMethod.apply(driver, args);
         });
 
-      const operation = new DBSQLOperation(driver, handle);
+      const operation = new DBSQLOperation(driver, handle, logger);
 
       const callback = sinon.stub();
 
@@ -486,7 +491,7 @@ describe('DBSQLOperation', () => {
       driver.getOperationStatusResp.status.statusCode = TStatusCode.SUCCESS_STATUS;
       driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
 
-      const operation = new DBSQLOperation(driver, handle, {
+      const operation = new DBSQLOperation(driver, handle, logger, {
         operationStatus: {
           status: { statusCode: TStatusCode.SUCCESS_STATUS },
           operationState: TOperationState.FINISHED_STATE,
@@ -505,7 +510,7 @@ describe('DBSQLOperation', () => {
       const driver = new DriverMock();
       driver.getOperationStatusResp.status.statusCode = TStatusCode.ERROR_STATUS;
       driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
-      const operation = new DBSQLOperation(driver, handle);
+      const operation = new DBSQLOperation(driver, handle, logger);
 
       try {
         await operation.finished();
@@ -530,7 +535,7 @@ describe('DBSQLOperation', () => {
         const driver = new DriverMock();
         driver.getOperationStatusResp.status.statusCode = TStatusCode.SUCCESS_STATUS;
         driver.getOperationStatusResp.operationState = operationState;
-        const operation = new DBSQLOperation(driver, handle);
+        const operation = new DBSQLOperation(driver, handle, logger);
 
         try {
           await operation.finished();
@@ -554,7 +559,7 @@ describe('DBSQLOperation', () => {
       driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
       driver.getOperationStatusResp.hasResultSet = false;
       sinon.spy(driver, 'getResultSetMetadata');
-      const operation = new DBSQLOperation(driver, handle);
+      const operation = new DBSQLOperation(driver, handle, logger);
 
       const schema = await operation.getSchema();
 
@@ -577,7 +582,7 @@ describe('DBSQLOperation', () => {
 
       driver.getResultSetMetadataResp.schema = null;
 
-      const operation = new DBSQLOperation(driver, handle);
+      const operation = new DBSQLOperation(driver, handle, logger);
 
       const schema = await operation.getSchema();
 
@@ -601,7 +606,7 @@ describe('DBSQLOperation', () => {
 
       driver.getResultSetMetadataResp.schema = null;
 
-      const operation = new DBSQLOperation(driver, handle);
+      const operation = new DBSQLOperation(driver, handle, logger);
       await operation.getSchema({ progress: true });
 
       expect(driver.getOperationStatus.called).to.be.true;
@@ -626,7 +631,7 @@ describe('DBSQLOperation', () => {
 
       driver.getResultSetMetadataResp.schema = null;
 
-      const operation = new DBSQLOperation(driver, handle);
+      const operation = new DBSQLOperation(driver, handle, logger);
 
       const callback = sinon.stub();
 
@@ -644,7 +649,7 @@ describe('DBSQLOperation', () => {
       driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
       driver.getOperationStatusResp.hasResultSet = true;
       sinon.spy(driver, 'getResultSetMetadata');
-      const operation = new DBSQLOperation(driver, handle);
+      const operation = new DBSQLOperation(driver, handle, logger);
 
       const schema = await operation.getSchema();
 
@@ -660,7 +665,7 @@ describe('DBSQLOperation', () => {
       driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
       driver.getOperationStatusResp.hasResultSet = true;
       sinon.spy(driver, 'getResultSetMetadata');
-      const operation = new DBSQLOperation(driver, handle);
+      const operation = new DBSQLOperation(driver, handle, logger);
 
       const schema1 = await operation.getSchema();
       expect(schema1).to.deep.equal(driver.getResultSetMetadataResp.schema);
@@ -688,7 +693,7 @@ describe('DBSQLOperation', () => {
           },
         },
       };
-      const operation = new DBSQLOperation(driver, handle, directResults);
+      const operation = new DBSQLOperation(driver, handle, logger, directResults);
 
       const schema = await operation.getSchema();
 
@@ -704,7 +709,7 @@ describe('DBSQLOperation', () => {
       driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
       driver.getOperationStatusResp.hasResultSet = true;
       driver.getResultSetMetadataResp.status.statusCode = TStatusCode.ERROR_STATUS;
-      const operation = new DBSQLOperation(driver, handle);
+      const operation = new DBSQLOperation(driver, handle, logger);
 
       try {
         await operation.getSchema();
@@ -726,7 +731,7 @@ describe('DBSQLOperation', () => {
       const driver = new DriverMock();
       sinon.spy(driver, 'getResultSetMetadata');
       sinon.spy(driver, 'fetchResults');
-      const operation = new DBSQLOperation(driver, handle);
+      const operation = new DBSQLOperation(driver, handle, logger);
 
       const results = await operation.fetchChunk();
 
@@ -752,7 +757,7 @@ describe('DBSQLOperation', () => {
       driver.fetchResultsResp.hasMoreRows = false;
       driver.fetchResultsResp.results.columns = [];
 
-      const operation = new DBSQLOperation(driver, handle);
+      const operation = new DBSQLOperation(driver, handle, logger);
 
       const results = await operation.fetchChunk();
 
@@ -778,7 +783,7 @@ describe('DBSQLOperation', () => {
       driver.fetchResultsResp.hasMoreRows = false;
       driver.fetchResultsResp.results.columns = [];
 
-      const operation = new DBSQLOperation(driver, handle);
+      const operation = new DBSQLOperation(driver, handle, logger);
       await operation.fetchChunk({ progress: true });
 
       expect(driver.getOperationStatus.called).to.be.true;
@@ -805,7 +810,7 @@ describe('DBSQLOperation', () => {
       driver.fetchResultsResp.hasMoreRows = false;
       driver.fetchResultsResp.results.columns = [];
 
-      const operation = new DBSQLOperation(driver, handle);
+      const operation = new DBSQLOperation(driver, handle, logger);
 
       const callback = sinon.stub();
 
@@ -824,7 +829,7 @@ describe('DBSQLOperation', () => {
       sinon.spy(driver, 'getResultSetMetadata');
       sinon.spy(driver, 'fetchResults');
 
-      const operation = new DBSQLOperation(driver, handle);
+      const operation = new DBSQLOperation(driver, handle, logger);
 
       const results = await operation.fetchChunk();
 
@@ -842,7 +847,7 @@ describe('DBSQLOperation', () => {
       sinon.spy(driver, 'getResultSetMetadata');
       sinon.spy(driver, 'fetchResults');
 
-      const operation = new DBSQLOperation(driver, handle, {
+      const operation = new DBSQLOperation(driver, handle, logger, {
         resultSet: {
           status: { statusCode: TStatusCode.SUCCESS_STATUS },
           hasMoreRows: false,
@@ -875,7 +880,7 @@ describe('DBSQLOperation', () => {
       sinon.spy(driver, 'getResultSetMetadata');
       sinon.spy(driver, 'fetchResults');
 
-      const operation = new DBSQLOperation(driver, handle, {
+      const operation = new DBSQLOperation(driver, handle, logger, {
         resultSet: {
           status: { statusCode: TStatusCode.SUCCESS_STATUS },
           hasMoreRows: true,
@@ -909,7 +914,7 @@ describe('DBSQLOperation', () => {
     it('should fetch data while available and return it all', async () => {
       const handle = new OperationHandleMock();
       const driver = new DriverMock();
-      const operation = new DBSQLOperation(driver, handle);
+      const operation = new DBSQLOperation(driver, handle, logger);
 
       const originalData = [1, 2, 3, 4, 5, 6, 7, 8, 9, 0];
 
@@ -945,7 +950,7 @@ describe('DBSQLOperation', () => {
       driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
       driver.getOperationStatusResp.hasResultSet = true;
       driver.fetchResultsResp.hasMoreRows = true;
-      const operation = new DBSQLOperation(driver, handle);
+      const operation = new DBSQLOperation(driver, handle, logger);
 
       expect(await operation.hasMoreRows()).to.be.false;
       await operation.fetchChunk();
@@ -960,7 +965,7 @@ describe('DBSQLOperation', () => {
       driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
       driver.getOperationStatusResp.hasResultSet = true;
       driver.fetchResultsResp.hasMoreRows = true;
-      const operation = new DBSQLOperation(driver, handle);
+      const operation = new DBSQLOperation(driver, handle, logger);
 
       expect(await operation.hasMoreRows()).to.be.false;
       await operation.fetchChunk();
@@ -977,7 +982,7 @@ describe('DBSQLOperation', () => {
       driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
       driver.getOperationStatusResp.hasResultSet = true;
       driver.fetchResultsResp.hasMoreRows = true;
-      const operation = new DBSQLOperation(driver, handle);
+      const operation = new DBSQLOperation(driver, handle, logger);
 
       expect(await operation.hasMoreRows()).to.be.false;
       await operation.fetchChunk();
@@ -994,7 +999,7 @@ describe('DBSQLOperation', () => {
       driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
       driver.getOperationStatusResp.hasResultSet = true;
       driver.fetchResultsResp.hasMoreRows = true;
-      const operation = new DBSQLOperation(driver, handle);
+      const operation = new DBSQLOperation(driver, handle, logger);
 
       expect(await operation.hasMoreRows()).to.be.false;
       await operation.fetchChunk();
@@ -1009,7 +1014,7 @@ describe('DBSQLOperation', () => {
       driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
       driver.getOperationStatusResp.hasResultSet = true;
       driver.fetchResultsResp.hasMoreRows = false;
-      const operation = new DBSQLOperation(driver, handle);
+      const operation = new DBSQLOperation(driver, handle, logger);
 
       expect(await operation.hasMoreRows()).to.be.false;
       await operation.fetchChunk();
@@ -1024,7 +1029,7 @@ describe('DBSQLOperation', () => {
       driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
       driver.getOperationStatusResp.hasResultSet = true;
       driver.fetchResultsResp.hasMoreRows = undefined;
-      const operation = new DBSQLOperation(driver, handle);
+      const operation = new DBSQLOperation(driver, handle, logger);
 
       expect(await operation.hasMoreRows()).to.be.false;
       await operation.fetchChunk();
@@ -1040,7 +1045,7 @@ describe('DBSQLOperation', () => {
       driver.getOperationStatusResp.hasResultSet = true;
       driver.fetchResultsResp.hasMoreRows = false;
       driver.fetchResultsResp.results = undefined;
-      const operation = new DBSQLOperation(driver, handle);
+      const operation = new DBSQLOperation(driver, handle, logger);
 
       expect(await operation.hasMoreRows()).to.be.false;
       await operation.fetchChunk();

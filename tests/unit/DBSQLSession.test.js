@@ -1,8 +1,13 @@
 const { expect } = require('chai');
+const { DBSQLLogger, LogLevel } = require('../../dist');
 const DBSQLSession = require('../../dist/DBSQLSession').default;
 const InfoValue = require('../../dist/dto/InfoValue').default;
 const Status = require('../../dist/dto/Status').default;
 const DBSQLOperation = require('../../dist/DBSQLOperation').default;
+
+// Create logger that won't emit
+//
+const logger = new DBSQLLogger(LogLevel.error);
 
 function createDriverMock(customMethodHandler) {
   customMethodHandler = customMethodHandler || ((methodName, value) => value);
@@ -28,7 +33,7 @@ function createDriverMock(customMethodHandler) {
 
 function createSession(customMethodHandler) {
   const driver = createDriverMock(customMethodHandler);
-  return new DBSQLSession(driver, { sessionId: 'id' });
+  return new DBSQLSession(driver, { sessionId: 'id' }, logger);
 }
 
 describe('DBSQLSession', () => {

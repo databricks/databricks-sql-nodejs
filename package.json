@@ -49,6 +49,7 @@
     "@types/node": "^18.0.0",
     "@types/node-int64": "^0.4.29",
     "@types/thrift": "^0.10.11",
+    "@types/uuid": "^8.3.4",
     "@typescript-eslint/eslint-plugin": "^5.33.1",
     "@typescript-eslint/parser": "^5.33.1",
     "chai": "^4.3.6",
@@ -69,6 +70,8 @@
   "dependencies": {
     "commander": "^9.3.0",
     "node-int64": "^0.4.0",
-    "thrift": "^0.16.0"
+    "thrift": "^0.16.0",
+    "uuid": "^9.0.0",
+    "winston": "^3.8.2"
   }
 }

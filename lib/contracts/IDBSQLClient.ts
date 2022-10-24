@@ -1,4 +1,9 @@
+import IDBSQLLogger from './IDBSQLLogger';
 import IDBSQLSession from './IDBSQLSession';
+
+export interface ClientOptions {
+  logger?: IDBSQLLogger;
+}
 
 export interface ConnectionOptions {
   host: string;
