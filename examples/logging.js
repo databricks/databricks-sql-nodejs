@@ -5,7 +5,7 @@ const { DBSQLClient, DBSQLLogger, LogLevel } = require('../');
 //
 const logger = new DBSQLLogger('log.txt', LogLevel.info);
 
-const client = new DBSQLClient({logger: logger});
+const client = new DBSQLClient({ logger: logger });
 
 client
   .connect({
