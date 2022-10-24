@@ -79,72 +79,72 @@ describe('Data types', () => {
         {
           col_name: 'bool',
           data_type: 'boolean',
-          comment: '',
+          comment: null,
         },
         {
           col_name: 'tiny_int',
           data_type: 'tinyint',
-          comment: '',
+          comment: null,
         },
         {
           col_name: 'small_int',
           data_type: 'smallint',
-          comment: '',
+          comment: null,
         },
         {
           col_name: 'int_type',
           data_type: 'int',
-          comment: '',
+          comment: null,
         },
         {
           col_name: 'big_int',
           data_type: 'bigint',
-          comment: '',
+          comment: null,
         },
         {
           col_name: 'flt',
           data_type: 'float',
-          comment: '',
+          comment: null,
         },
         {
           col_name: 'dbl',
           data_type: 'double',
-          comment: '',
+          comment: null,
         },
         {
           col_name: 'dec',
           data_type: 'decimal(3,2)',
-          comment: '',
+          comment: null,
         },
         {
           col_name: 'str',
           data_type: 'string',
-          comment: '',
+          comment: null,
         },
         {
           col_name: 'ts',
           data_type: 'timestamp',
-          comment: '',
+          comment: null,
         },
         {
           col_name: 'bin',
           data_type: 'binary',
-          comment: '',
+          comment: null,
         },
         {
           col_name: 'chr',
           data_type: 'char(10)',
-          comment: '',
+          comment: null,
         },
         {
           col_name: 'vchr',
           data_type: 'varchar(10)',
-          comment: '',
+          comment: null,
         },
         {
           col_name: 'dat',
           data_type: 'date',
-          comment: '',
+          comment: null,
         },
       ]);
 
@@ -210,12 +210,12 @@ describe('Data types', () => {
         {
           col_name: 'day_interval',
           data_type: 'interval day',
-          comment: '',
+          comment: null,
         },
         {
           col_name: 'month_interval',
           data_type: 'interval month',
-          comment: '',
+          comment: null,
         },
       ]);
 
@@ -264,22 +264,22 @@ describe('Data types', () => {
         {
           col_name: 'id',
           data_type: 'int',
-          comment: '',
+          comment: null,
         },
         {
           col_name: 'arr_type',
           data_type: 'array<string>',
-          comment: '',
+          comment: null,
         },
         {
           col_name: 'map_type',
           data_type: 'map<string,int>',
-          comment: '',
+          comment: null,
         },
         {
           col_name: 'struct_type',
           data_type: 'struct<city:string,state:string>',
-          comment: '',
+          comment: null,
         },
       ]);
 
