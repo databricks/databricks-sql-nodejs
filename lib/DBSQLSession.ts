@@ -1,3 +1,4 @@
+import { stringify, NIL, parse } from 'uuid';
 import { TSessionHandle, TStatus, TOperationHandle, TSparkDirectResults } from '../thrift/TCLIService_types';
 import HiveDriver from './hive/HiveDriver';
 import { Int64 } from './hive/Types';
@@ -19,6 +20,7 @@ import Status from './dto/Status';
 import StatusFactory from './factory/StatusFactory';
 import InfoValue from './dto/InfoValue';
 import { definedOrError } from './utils';
+import IDBSQLLogger, { LogLevel } from './contracts/IDBSQLLogger';
 
 const defaultMaxRows = 100000;
 
@@ -47,12 +49,28 @@ export default class DBSQLSession implements IDBSQLSession {
 
   private statusFactory: StatusFactory;
 
-  constructor(driver: HiveDriver, sessionHandle: TSessionHandle) {
+  private logger: IDBSQLLogger;
+
+  constructor(driver: HiveDriver, sessionHandle: TSessionHandle, logger: IDBSQLLogger) {
     this.driver = driver;
     this.sessionHandle = sessionHandle;
     this.statusFactory = new StatusFactory();
+    this.logger = logger;
+    this.logger.log(LogLevel.debug, `Session created with id: ${this.getId()}`);
   }
 
+  getId() {
+    return stringify(this.sessionHandle?.sessionId?.guid || parse(NIL));
+  }
+
+  /**
+   * Fetches info
+   * @public
+   * @param infoType - One of the values TCLIService_types.TGetInfoType
+   * @returns Value corresponding to info type requested
+   * @example
+   * const response = await session.getInfo(thrift.TCLIService_types.TGetInfoType.CLI_DBMS_VER);
+   */
   getInfo(infoType: number): Promise<InfoValue> {
     return this.driver
       .getInfo({
@@ -66,6 +84,15 @@ export default class DBSQLSession implements IDBSQLSession {
       });
   }
 
+  /**
+   * Executes statement
+   * @public
+   * @param statement - SQL statement to be executed
+   * @param options - maxRows field is used to specify Direct Results
+   * @returns DBSQLOperation
+   * @example
+   * const operation = await session.executeStatement(query, { runAsync: true });
+   */
   executeStatement(statement: string, options: ExecuteStatementOptions = {}): Promise<IOperation> {
     return this.driver
       .executeStatement({
@@ -78,6 +105,12 @@ export default class DBSQLSession implements IDBSQLSession {
       .then((response) => this.createOperation(response));
   }
 
+  /**
+   * Information about supported data types
+   * @public
+   * @param request
+   * @returns DBSQLOperation
+   */
   getTypeInfo(request: TypeInfoRequest = {}): Promise<IOperation> {
     return this.driver
       .getTypeInfo({
@@ -88,6 +121,12 @@ export default class DBSQLSession implements IDBSQLSession {
       .then((response) => this.createOperation(response));
   }
 
+  /**
+   * Get list of catalogs
+   * @public
+   * @param request
+   * @returns DBSQLOperation
+   */
   getCatalogs(request: CatalogsRequest = {}): Promise<IOperation> {
     return this.driver
       .getCatalogs({
@@ -98,6 +137,12 @@ export default class DBSQLSession implements IDBSQLSession {
       .then((response) => this.createOperation(response));
   }
 
+  /**
+   * Get list of schemas
+   * @public
+   * @param request
+   * @returns DBSQLOperation
+   */
   getSchemas(request: SchemasRequest = {}): Promise<IOperation> {
     return this.driver
       .getSchemas({
@@ -110,6 +155,12 @@ export default class DBSQLSession implements IDBSQLSession {
       .then((response) => this.createOperation(response));
   }
 
+  /**
+   * Get list of tables
+   * @public
+   * @param request
+   * @returns DBSQLOperation
+   */
   getTables(request: TablesRequest = {}): Promise<IOperation> {
     return this.driver
       .getTables({
@@ -124,6 +175,12 @@ export default class DBSQLSession implements IDBSQLSession {
       .then((response) => this.createOperation(response));
   }
 
+  /**
+   * Get list of supported table types
+   * @public
+   * @param request
+   * @returns DBSQLOperation
+   */
   getTableTypes(request: TableTypesRequest = {}): Promise<IOperation> {
     return this.driver
       .getTableTypes({
@@ -134,6 +191,12 @@ export default class DBSQLSession implements IDBSQLSession {
       .then((response) => this.createOperation(response));
   }
 
+  /**
+   * Get full information about columns of the table
+   * @public
+   * @param request
+   * @returns DBSQLOperation
+   */
   getColumns(request: ColumnsRequest = {}): Promise<IOperation> {
     return this.driver
       .getColumns({
@@ -148,6 +211,12 @@ export default class DBSQLSession implements IDBSQLSession {
       .then((response) => this.createOperation(response));
   }
 
+  /**
+   * Get information about function
+   * @public
+   * @param request
+   * @returns DBSQLOperation
+   */
   getFunctions(request: FunctionsRequest): Promise<IOperation> {
     return this.driver
       .getFunctions({
@@ -174,6 +243,12 @@ export default class DBSQLSession implements IDBSQLSession {
       .then((response) => this.createOperation(response));
   }
 
+  /**
+   * Request information about foreign keys between two tables
+   * @public
+   * @param request
+   * @returns DBSQLOperation
+   */
   getCrossReference(request: CrossReferenceRequest): Promise<IOperation> {
     return this.driver
       .getCrossReference({
@@ -190,6 +265,13 @@ export default class DBSQLSession implements IDBSQLSession {
       .then((response) => this.createOperation(response));
   }
 
+  /**
+   * Get delegation token. For kerberos auth only
+   * @public
+   * @param owner
+   * @param renewer
+   * @returns Delegation token
+   */
   getDelegationToken(owner: string, renewer: string): Promise<string> {
     return this.driver
       .getDelegationToken({
@@ -204,6 +286,12 @@ export default class DBSQLSession implements IDBSQLSession {
       });
   }
 
+  /**
+   * Renew delegation token/ For kerberos auth only
+   * @public
+   * @param token
+   * @returns Operation status
+   */
   renewDelegationToken(token: string): Promise<Status> {
     return this.driver
       .renewDelegationToken({
@@ -217,6 +305,12 @@ export default class DBSQLSession implements IDBSQLSession {
       });
   }
 
+  /**
+   * Cancel delegation token. For kerberos auth only
+   * @public
+   * @param token
+   * @returns Operation status
+   */
   cancelDelegationToken(token: string): Promise<Status> {
     return this.driver
       .cancelDelegationToken({
@@ -230,18 +324,26 @@ export default class DBSQLSession implements IDBSQLSession {
       });
   }
 
+  /**
+   * Closes the session
+   * @public
+   * @returns Operation status
+   */
   close(): Promise<Status> {
     return this.driver
       .closeSession({
         sessionHandle: this.sessionHandle,
       })
-      .then((response) => this.statusFactory.create(response.status));
+      .then((response) => {
+        this.logger.log(LogLevel.debug, `Session closed with id: ${this.getId()}`);
+        return this.statusFactory.create(response.status);
+      });
   }
 
   private createOperation(response: OperationResponseShape): IOperation {
     this.assertStatus(response.status);
     const handle = definedOrError(response.operationHandle);
-    return new DBSQLOperation(this.driver, handle, response.directResults);
+    return new DBSQLOperation(this.driver, handle, this.logger, response.directResults);
   }
 
   private assertStatus(responseStatus: TStatus): void {

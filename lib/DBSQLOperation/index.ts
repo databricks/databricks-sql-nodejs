@@ -1,3 +1,4 @@
+import { stringify, NIL, parse } from 'uuid';
 import IOperation, { FetchOptions, GetSchemaOptions, FinishedOptions } from '../contracts/IOperation';
 import HiveDriver from '../hive/HiveDriver';
 import {
@@ -13,6 +14,7 @@ import OperationStatusHelper from './OperationStatusHelper';
 import SchemaHelper from './SchemaHelper';
 import FetchResultsHelper from './FetchResultsHelper';
 import CompleteOperationHelper from './CompleteOperationHelper';
+import IDBSQLLogger, { LogLevel } from '../contracts/IDBSQLLogger';
 
 const defaultMaxRows = 100000;
 
@@ -20,6 +22,8 @@ export default class DBSQLOperation implements IOperation {
   private driver: HiveDriver;
 
   private operationHandle: TOperationHandle;
+
+  private logger: IDBSQLLogger;
 
   private _status: OperationStatusHelper;
 
@@ -29,9 +33,15 @@ export default class DBSQLOperation implements IOperation {
 
   private _completeOperation: CompleteOperationHelper;
 
-  constructor(driver: HiveDriver, operationHandle: TOperationHandle, directResults?: TSparkDirectResults) {
+  constructor(
+    driver: HiveDriver,
+    operationHandle: TOperationHandle,
+    logger: IDBSQLLogger,
+    directResults?: TSparkDirectResults,
+  ) {
     this.driver = driver;
     this.operationHandle = operationHandle;
+    this.logger = logger;
     this._status = new OperationStatusHelper(this.driver, this.operationHandle, directResults?.operationStatus);
     this._schema = new SchemaHelper(this.driver, this.operationHandle, directResults?.resultSetMetadata);
     this._data = new FetchResultsHelper(this.driver, this.operationHandle, [directResults?.resultSet]);
@@ -40,8 +50,22 @@ export default class DBSQLOperation implements IOperation {
       this.operationHandle,
       directResults?.closeOperation,
     );
+    this.logger.log(LogLevel.debug, `Operation created with id: ${this.getId()}`);
   }
 
+  getId() {
+    return stringify(this.operationHandle?.operationId?.guid || parse(NIL));
+  }
+
+  /**
+   * Fetches all data
+   * @public
+   * @param options - maxRows property can be set to limit chunk size
+   * @returns Array of data with length equal to option.maxRows
+   * @throws {StatusError}
+   * @example
+   * const result = await queryOperation.fetchAll();
+   */
   async fetchAll(options?: FetchOptions): Promise<Array<object>> {
     const data: Array<Array<object>> = [];
     do {
@@ -49,10 +73,20 @@ export default class DBSQLOperation implements IOperation {
       const chunk = await this.fetchChunk(options);
       data.push(chunk);
     } while (await this.hasMoreRows()); // eslint-disable-line no-await-in-loop
+    this.logger?.log(LogLevel.debug, `Fetched all data from operation with id: ${this.getId()}`);
 
     return data.flat();
   }
 
+  /**
+   * Fetches chunk of data
+   * @public
+   * @param options - maxRows property sets chunk size
+   * @returns Array of data with length equal to option.maxRows
+   * @throws {StatusError}
+   * @example
+   * const result = await queryOperation.fetchChunk({maxRows: 1000});
+   */
   async fetchChunk(options?: FetchOptions): Promise<Array<object>> {
     if (!this._status.hasResultSet) {
       return [];
@@ -63,6 +97,10 @@ export default class DBSQLOperation implements IOperation {
     return Promise.all([this._schema.fetch(), this._data.fetch(options?.maxRows || defaultMaxRows)]).then(
       ([schema, data]) => {
         const result = getResult(schema, data ? [data] : []);
+        this.logger?.log(
+          LogLevel.debug,
+          `Fetched chunk of size: ${options?.maxRows || defaultMaxRows} from operation with id: ${this.getId()}`,
+        );
         return Promise.resolve(result);
       },
     );
@@ -74,6 +112,7 @@ export default class DBSQLOperation implements IOperation {
    * @throws {StatusError}
    */
   async status(progress: boolean = false): Promise<TGetOperationStatusResp> {
+    this.logger?.log(LogLevel.debug, `Fetching status for operation with id: ${this.getId()}`);
     return this._status.status(progress);
   }
 
@@ -82,6 +121,7 @@ export default class DBSQLOperation implements IOperation {
    * @throws {StatusError}
    */
   cancel(): Promise<Status> {
+    this.logger?.log(LogLevel.debug, `Operation with id: ${this.getId()} canceled.`);
     return this._completeOperation.cancel();
   }
 
@@ -90,6 +130,7 @@ export default class DBSQLOperation implements IOperation {
    * @throws {StatusError}
    */
   close(): Promise<Status> {
+    this.logger?.log(LogLevel.debug, `Closing operation with id: ${this.getId()}`);
     return this._completeOperation.close();
   }
 
@@ -110,6 +151,7 @@ export default class DBSQLOperation implements IOperation {
     }
 
     await this._status.waitUntilReady(options);
+    this.logger?.log(LogLevel.debug, `Fetching schema for operation with id: ${this.getId()}`);
 
     return this._schema.fetch();
   }
