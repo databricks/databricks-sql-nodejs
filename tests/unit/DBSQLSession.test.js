@@ -63,6 +63,12 @@ describe('DBSQLSession', () => {
       const result = await session.executeStatement('SELECT * FROM table', { maxRows: 10 });
       expect(result).instanceOf(DBSQLOperation);
     });
+
+    it('should disable direct results', async () => {
+      const session = createSession();
+      const result = await session.executeStatement('SELECT * FROM table', { maxRows: null });
+      expect(result).instanceOf(DBSQLOperation);
+    });
   });
 
   describe('getTypeInfo', () => {
@@ -77,6 +83,12 @@ describe('DBSQLSession', () => {
       const result = await session.getTypeInfo({ maxRows: 10 });
       expect(result).instanceOf(DBSQLOperation);
     });
+
+    it('should disable direct results', async () => {
+      const session = createSession();
+      const result = await session.getTypeInfo({ maxRows: null });
+      expect(result).instanceOf(DBSQLOperation);
+    });
   });
 
   describe('getCatalogs', () => {
@@ -89,6 +101,12 @@ describe('DBSQLSession', () => {
     it('should use direct results', async () => {
       const session = createSession();
       const result = await session.getCatalogs({ maxRows: 10 });
+      expect(result).instanceOf(DBSQLOperation);
+    });
+
+    it('should disable direct results', async () => {
+      const session = createSession();
+      const result = await session.getCatalogs({ maxRows: null });
       expect(result).instanceOf(DBSQLOperation);
     });
   });
@@ -111,9 +129,13 @@ describe('DBSQLSession', () => {
 
     it('should use direct results', async () => {
       const session = createSession();
-      const result = await session.getSchemas({
-        maxRows: 10,
-      });
+      const result = await session.getSchemas({ maxRows: 10 });
+      expect(result).instanceOf(DBSQLOperation);
+    });
+
+    it('should disable direct results', async () => {
+      const session = createSession();
+      const result = await session.getSchemas({ maxRows: null });
       expect(result).instanceOf(DBSQLOperation);
     });
   });
@@ -138,9 +160,13 @@ describe('DBSQLSession', () => {
 
     it('should use direct results', async () => {
       const session = createSession();
-      const result = await session.getTables({
-        maxRows: 10,
-      });
+      const result = await session.getTables({ maxRows: 10 });
+      expect(result).instanceOf(DBSQLOperation);
+    });
+
+    it('should disable direct results', async () => {
+      const session = createSession();
+      const result = await session.getTables({ maxRows: null });
       expect(result).instanceOf(DBSQLOperation);
     });
   });
@@ -155,6 +181,12 @@ describe('DBSQLSession', () => {
     it('should use direct results', async () => {
       const session = createSession();
       const result = await session.getTableTypes({ maxRows: 10 });
+      expect(result).instanceOf(DBSQLOperation);
+    });
+
+    it('should disable direct results', async () => {
+      const session = createSession();
+      const result = await session.getTableTypes({ maxRows: null });
       expect(result).instanceOf(DBSQLOperation);
     });
   });
@@ -179,9 +211,13 @@ describe('DBSQLSession', () => {
 
     it('should use direct results', async () => {
       const session = createSession();
-      const result = await session.getColumns({
-        maxRows: 10,
-      });
+      const result = await session.getColumns({ maxRows: 10 });
+      expect(result).instanceOf(DBSQLOperation);
+    });
+
+    it('should disable direct results', async () => {
+      const session = createSession();
+      const result = await session.getColumns({ maxRows: null });
       expect(result).instanceOf(DBSQLOperation);
     });
   });
@@ -207,6 +243,17 @@ describe('DBSQLSession', () => {
       });
       expect(result).instanceOf(DBSQLOperation);
     });
+
+    it('should disable direct results', async () => {
+      const session = createSession();
+      const result = await session.getFunctions({
+        catalogName: 'catalog',
+        schemaName: 'schema',
+        functionName: 'avg',
+        maxRows: null,
+      });
+      expect(result).instanceOf(DBSQLOperation);
+    });
   });
 
   describe('getPrimaryKeys', () => {
@@ -227,6 +274,17 @@ describe('DBSQLSession', () => {
         schemaName: 'schema',
         tableName: 't1',
         maxRows: 10,
+      });
+      expect(result).instanceOf(DBSQLOperation);
+    });
+
+    it('should disable direct results', async () => {
+      const session = createSession();
+      const result = await session.getPrimaryKeys({
+        catalogName: 'catalog',
+        schemaName: 'schema',
+        tableName: 't1',
+        maxRows: null,
       });
       expect(result).instanceOf(DBSQLOperation);
     });
@@ -256,6 +314,20 @@ describe('DBSQLSession', () => {
         foreignSchemaName: 'foreignSchemaName',
         foreignTableName: 'foreignTableName',
         maxRows: 10,
+      });
+      expect(result).instanceOf(DBSQLOperation);
+    });
+
+    it('should disable direct results', async () => {
+      const session = createSession();
+      const result = await session.getCrossReference({
+        parentCatalogName: 'parentCatalogName',
+        parentSchemaName: 'parentSchemaName',
+        parentTableName: 'parentTableName',
+        foreignCatalogName: 'foreignCatalogName',
+        foreignSchemaName: 'foreignSchemaName',
+        foreignTableName: 'foreignTableName',
+        maxRows: null,
       });
       expect(result).instanceOf(DBSQLOperation);
     });
