@@ -333,40 +333,6 @@ describe('DBSQLSession', () => {
     });
   });
 
-  describe('getDelegationToken', () => {
-    it('should return token if available', async () => {
-      const session = createSession((unused, resp) => ({
-        ...resp,
-        delegationToken: 'token',
-      }));
-
-      const result = await session.getDelegationToken('owner', 'renewer');
-      expect(result).to.be.eq('token');
-    });
-
-    it('should return empty string if token is not available', async () => {
-      const session = createSession();
-      const result = await session.getDelegationToken('owner', 'renewer');
-      expect(result).to.be.eq('');
-    });
-  });
-
-  describe('renewDelegationToken', () => {
-    it('should run operation', async () => {
-      const session = createSession();
-      const result = await session.renewDelegationToken('token');
-      expect(result).instanceOf(Status);
-    });
-  });
-
-  describe('cancelDelegationToken', () => {
-    it('should run operation', async () => {
-      const session = createSession();
-      const result = await session.cancelDelegationToken('token');
-      expect(result).instanceOf(Status);
-    });
-  });
-
   describe('close', () => {
     it('should run operation', async () => {
       const session = createSession(() => ({

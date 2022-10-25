@@ -155,26 +155,6 @@ export default interface IDBSQLSession {
   getCrossReference(request: CrossReferenceRequest): Promise<IOperation>;
 
   /**
-   * Get delegation token. For kerberos auth only
-   *
-   * @param owner
-   * @param renewer
-   */
-  getDelegationToken(owner: string, renewer: string): Promise<string>;
-
-  /**
-   * Renew delegation token/ For kerberos auth only
-   * @param token
-   */
-  renewDelegationToken(token: string): Promise<Status>;
-
-  /**
-   * Cancel delegation token. For kerberos auth only
-   * @param token
-   */
-  cancelDelegationToken(token: string): Promise<Status>;
-
-  /**
    * closes the session
    */
   close(): Promise<Status>;
