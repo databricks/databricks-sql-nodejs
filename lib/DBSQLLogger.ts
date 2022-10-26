@@ -1,12 +1,15 @@
 import winston, { Logger } from 'winston';
-import IDBSQLLogger, { LogLevel } from './contracts/IDBSQLLogger';
+import IDBSQLLogger, { LoggerOptions, LogLevel } from './contracts/IDBSQLLogger';
 
 export default class DBSQLLogger implements IDBSQLLogger {
   logger: Logger;
 
-  transports: any;
+  transports: {
+    console: winston.transports.ConsoleTransportInstance;
+    file?: winston.transports.FileTransportInstance;
+  };
 
-  constructor(filepath?: string, level = LogLevel.info) {
+  constructor({ level = LogLevel.info, filepath }: LoggerOptions = {}) {
     this.transports = {
       console: new winston.transports.Console({ handleExceptions: true, level }),
     };
@@ -24,8 +27,9 @@ export default class DBSQLLogger implements IDBSQLLogger {
   }
 
   setLevel(level: LogLevel) {
-    for (const key of Object.keys(this.transports)) {
-      this.transports[key].level = level;
+    this.transports.console.level = level;
+    if (this.transports.file) {
+      this.transports.file.level = level;
     }
   }
 }

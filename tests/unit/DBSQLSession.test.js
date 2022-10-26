@@ -7,7 +7,7 @@ const DBSQLOperation = require('../../dist/DBSQLOperation').default;
 
 // Create logger that won't emit
 //
-const logger = new DBSQLLogger(LogLevel.error);
+const logger = new DBSQLLogger({ level: LogLevel.error });
 
 function createDriverMock(customMethodHandler) {
   customMethodHandler = customMethodHandler || ((methodName, value) => value);

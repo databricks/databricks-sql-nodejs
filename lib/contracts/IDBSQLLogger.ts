@@ -1,3 +1,8 @@
+export interface LoggerOptions {
+  filepath?: string;
+  level?: LogLevel;
+}
+
 export default interface IDBSQLLogger {
   log(level: LogLevel, message: string): void;
 }
