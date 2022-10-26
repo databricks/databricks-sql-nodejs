@@ -13,6 +13,8 @@
   It also supports the same progress reporting options
 - `runAsync` option is now available for all operations that support it
 - Added logging functionality for logging on client side and added new optional logger param for DBSQLClient constructor
+- Turned on Direct results feature by default
+- Removed legacy Kerberos auth APIs
 
 ## 0.1.8-beta.2 (2022-09-08)
 
