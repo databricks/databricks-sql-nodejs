@@ -1,6 +1,6 @@
 # Release History
 
-## 0.1.x (Unreleased)
+## 1.0.0 (Unreleased)
 
 - `DBSQLClient.openSession` now takes a limited set of options (`OpenSessionRequest` instead of Thrift's `TOpenSessionReq`)
 - `DBSQLClient.openSession` now uses the latest protocol version by default
