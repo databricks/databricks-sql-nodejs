@@ -1,4 +1,4 @@
-# Databricks SQL Driver for NodeJS (Beta)
+# Databricks SQL Driver for NodeJS
 
 ![http://www.apache.org/licenses/LICENSE-2.0.txt](http://img.shields.io/:license-Apache%202-brightgreen.svg)
 [![npm](https://img.shields.io/npm/v/@databricks/sql?color=blue&style=flat)](https://www.npmjs.com/package/@databricks/sql)
@@ -8,8 +8,6 @@
 ## Description
 
 The Databricks SQL Driver for NodeJS is a Javascript driver for applications that connect to Databricks clusters and SQL warehouses. This project is a fork of [Hive Driver](https://github.com/lenchv/hive-driver) which connects via Thrift API.
-
-**NOTE: This Driver is Beta.**
 
 ## Documentation
 
