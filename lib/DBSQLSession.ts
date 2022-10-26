@@ -22,14 +22,16 @@ import InfoValue from './dto/InfoValue';
 import { definedOrError } from './utils';
 import IDBSQLLogger, { LogLevel } from './contracts/IDBSQLLogger';
 
+const defaultMaxRows = 100000;
+
 interface OperationResponseShape {
   status: TStatus;
   operationHandle?: TOperationHandle;
   directResults?: TSparkDirectResults;
 }
 
-function getDirectResultsOptions(maxRows?: number) {
-  if (!maxRows) {
+function getDirectResultsOptions(maxRows: number | null = defaultMaxRows) {
+  if (maxRows === null) {
     return {};
   }
 
@@ -261,65 +263,6 @@ export default class DBSQLSession implements IDBSQLSession {
         ...getDirectResultsOptions(request.maxRows),
       })
       .then((response) => this.createOperation(response));
-  }
-
-  /**
-   * Get delegation token. For kerberos auth only
-   * @public
-   * @param owner
-   * @param renewer
-   * @returns Delegation token
-   */
-  getDelegationToken(owner: string, renewer: string): Promise<string> {
-    return this.driver
-      .getDelegationToken({
-        sessionHandle: this.sessionHandle,
-        owner,
-        renewer,
-      })
-      .then((response) => {
-        this.assertStatus(response.status);
-
-        return response.delegationToken || '';
-      });
-  }
-
-  /**
-   * Renew delegation token/ For kerberos auth only
-   * @public
-   * @param token
-   * @returns Operation status
-   */
-  renewDelegationToken(token: string): Promise<Status> {
-    return this.driver
-      .renewDelegationToken({
-        sessionHandle: this.sessionHandle,
-        delegationToken: token,
-      })
-      .then((response) => {
-        this.assertStatus(response.status);
-
-        return this.statusFactory.create(response.status);
-      });
-  }
-
-  /**
-   * Cancel delegation token. For kerberos auth only
-   * @public
-   * @param token
-   * @returns Operation status
-   */
-  cancelDelegationToken(token: string): Promise<Status> {
-    return this.driver
-      .cancelDelegationToken({
-        sessionHandle: this.sessionHandle,
-        delegationToken: token,
-      })
-      .then((response) => {
-        this.assertStatus(response.status);
-
-        return this.statusFactory.create(response.status);
-      });
   }
 
   /**

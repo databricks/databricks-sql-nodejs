@@ -6,6 +6,8 @@
 - `DBSQLClient.openSession` now uses the latest protocol version by default
 - Direct results feature is now available for all IOperation methods which support it. To enable direct results feature,
   `maxRows` option should be used
+- Direct results became enabled by default. If `maxRows` is omitted - it will default to `100000`. To disable direct
+  results, set `maxRows` to `null`
 - `FunctionNameRequest` type renamed to `FunctionsRequest`
 - `IDBSQLConnectionOptions` type renamed to `ConnectionOptions`
 - `IFetchOptions` renamed to `FetchOptions`

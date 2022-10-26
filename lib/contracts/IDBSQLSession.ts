@@ -6,24 +6,24 @@ import { Int64 } from '../hive/Types';
 export type ExecuteStatementOptions = {
   queryTimeout?: Int64;
   runAsync?: boolean;
-  maxRows?: number;
+  maxRows?: number | null;
 };
 
 export type TypeInfoRequest = {
   runAsync?: boolean;
-  maxRows?: number;
+  maxRows?: number | null;
 };
 
 export type CatalogsRequest = {
   runAsync?: boolean;
-  maxRows?: number;
+  maxRows?: number | null;
 };
 
 export type SchemasRequest = {
   catalogName?: string;
   schemaName?: string;
   runAsync?: boolean;
-  maxRows?: number;
+  maxRows?: number | null;
 };
 
 export type TablesRequest = {
@@ -32,12 +32,12 @@ export type TablesRequest = {
   tableName?: string;
   tableTypes?: Array<string>;
   runAsync?: boolean;
-  maxRows?: number;
+  maxRows?: number | null;
 };
 
 export type TableTypesRequest = {
   runAsync?: boolean;
-  maxRows?: number;
+  maxRows?: number | null;
 };
 
 export type ColumnsRequest = {
@@ -46,7 +46,7 @@ export type ColumnsRequest = {
   tableName?: string;
   columnName?: string;
   runAsync?: boolean;
-  maxRows?: number;
+  maxRows?: number | null;
 };
 
 export type FunctionsRequest = {
@@ -54,7 +54,7 @@ export type FunctionsRequest = {
   schemaName?: string;
   functionName: string;
   runAsync?: boolean;
-  maxRows?: number;
+  maxRows?: number | null;
 };
 
 export type PrimaryKeysRequest = {
@@ -62,7 +62,7 @@ export type PrimaryKeysRequest = {
   schemaName: string;
   tableName: string;
   runAsync?: boolean;
-  maxRows?: number;
+  maxRows?: number | null;
 };
 
 export type CrossReferenceRequest = {
@@ -73,7 +73,7 @@ export type CrossReferenceRequest = {
   foreignSchemaName: string;
   foreignTableName: string;
   runAsync?: boolean;
-  maxRows?: number;
+  maxRows?: number | null;
 };
 
 export default interface IDBSQLSession {
@@ -153,26 +153,6 @@ export default interface IDBSQLSession {
    * @param request
    */
   getCrossReference(request: CrossReferenceRequest): Promise<IOperation>;
-
-  /**
-   * Get delegation token. For kerberos auth only
-   *
-   * @param owner
-   * @param renewer
-   */
-  getDelegationToken(owner: string, renewer: string): Promise<string>;
-
-  /**
-   * Renew delegation token/ For kerberos auth only
-   * @param token
-   */
-  renewDelegationToken(token: string): Promise<Status>;
-
-  /**
-   * Cancel delegation token. For kerberos auth only
-   * @param token
-   */
-  cancelDelegationToken(token: string): Promise<Status>;
 
   /**
    * closes the session
