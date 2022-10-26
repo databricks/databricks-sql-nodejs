@@ -18,13 +18,13 @@ describe('buildUserAgentString', () => {
     // Prefix: 'NodejsDatabricksSqlConnector/'
     // Version: three period-separated digits and optional suffix
     const re =
-      /^(?<productName>NodejsDatabricksSqlConnector)\/(?<productVersion>\d+\.\d+\.\d+(-[^(]+)?)\((?<comment>[^)]+)\)$/i;
+      /^(?<productName>NodejsDatabricksSqlConnector)\/(?<productVersion>\d+\.\d+\.\d+(-[^(]+)?)\s*\((?<comment>[^)]+)\)$/i;
     const match = re.exec(ua);
     expect(match).to.not.be.eq(null);
 
     const { comment } = match.groups;
 
-    expect(comment.split(';').length).to.be.gte(2); // at least Node ans OS version should be there
+    expect(comment.split(';').length).to.be.gte(2); // at least Node and OS version should be there
 
     if (clientId) {
       expect(comment.trim()).to.satisfy((s) => s.startsWith(`${clientId};`));
