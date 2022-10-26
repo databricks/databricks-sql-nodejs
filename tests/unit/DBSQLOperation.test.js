@@ -9,7 +9,7 @@ const getResult = require('../../dist/DBSQLOperation/getResult').default;
 
 // Create logger that won't emit
 //
-const logger = new DBSQLLogger(LogLevel.error);
+const logger = new DBSQLLogger({ level: LogLevel.error });
 
 class OperationHandleMock {
   constructor(hasResultSet = true) {
