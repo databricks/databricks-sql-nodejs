@@ -94,8 +94,15 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
     this.client = this.thrift.createClient(TCLIService, this.connection.getConnection());
 
     this.connection.getConnection().on('error', (error: Error) => {
-      this.logger.log(LogLevel.error, JSON.stringify(error));
-      this.emit('error', error);
+      // Error.stack already contains error type and message, so log stack if available,
+      // otherwise fall back to just error type + message
+      this.logger.log(LogLevel.error, error.stack || `${error.name}: ${error.message}`);
+      try {
+        this.emit('error', error);
+      } catch (e) {
+        // EventEmitter will throw unhandled error when emitting 'error' event.
+        // Since we already logged it few lines above, just suppress this behaviour
+      }
     });
 
     this.connection.getConnection().on('reconnecting', (params: { delay: number; attempt: number }) => {
