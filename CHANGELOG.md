@@ -1,6 +1,11 @@
 # Release History
 
-## 1.0.0 (Unreleased)
+## 1.x (Unreleased)
+
+- Fix(databricks/databricks-sql-nodejs#84): now library will not attempt to parse column names and
+  will use ones provided by server
+
+## 1.0.0
 
 - `DBSQLClient.openSession` now takes a limited set of options (`OpenSessionRequest` instead of Thrift's `TOpenSessionReq`)
 - `DBSQLClient.openSession` now uses the latest protocol version by default
