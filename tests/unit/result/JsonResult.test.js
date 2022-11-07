@@ -105,40 +105,40 @@ describe('JsonResult', () => {
 
     expect(result.getValue()).to.be.deep.eq([
       {
-        str: 'a',
-        int64: 282578800148737,
-        bin: Buffer.from([1]),
-        bool: true,
-        char: 'c',
-        dbl: 1.2,
-        flt: 2.2,
-        int: 1,
-        small_int: 3,
-        tiny_int: 5,
-        varch: 'e',
-        dec: 2.1,
-        ts: '2020-01-17 00:17:13.0',
-        date: '2020-01-17',
-        day_interval: '1 00:00:00.000000000',
-        month_interval: '0-1',
+        'table.str': 'a',
+        'table.int64': 282578800148737,
+        'table.bin': Buffer.from([1]),
+        'table.bool': true,
+        'table.char': 'c',
+        'table.dbl': 1.2,
+        'table.flt': 2.2,
+        'table.int': 1,
+        'table.small_int': 3,
+        'table.tiny_int': 5,
+        'table.varch': 'e',
+        'table.dec': 2.1,
+        'table.ts': '2020-01-17 00:17:13.0',
+        'table.date': '2020-01-17',
+        'table.day_interval': '1 00:00:00.000000000',
+        'table.month_interval': '0-1',
       },
       {
-        str: 'b',
-        int64: 565157600297474,
-        bin: Buffer.from([2]),
-        bool: false,
-        char: 'd',
-        dbl: 1.3,
-        flt: 2.3,
-        int: 2,
-        small_int: 4,
-        tiny_int: 6,
-        varch: 'f',
-        dec: 2.2,
-        ts: '2020-01-17 00:17:13.0',
-        date: '2020-01-17',
-        day_interval: '1 00:00:00.000000000',
-        month_interval: '0-1',
+        'table.str': 'b',
+        'table.int64': 565157600297474,
+        'table.bin': Buffer.from([2]),
+        'table.bool': false,
+        'table.char': 'd',
+        'table.dbl': 1.3,
+        'table.flt': 2.3,
+        'table.int': 2,
+        'table.small_int': 4,
+        'table.tiny_int': 6,
+        'table.varch': 'f',
+        'table.dec': 2.2,
+        'table.ts': '2020-01-17 00:17:13.0',
+        'table.date': '2020-01-17',
+        'table.day_interval': '1 00:00:00.000000000',
+        'table.month_interval': '0-1',
       },
     ]);
   });
@@ -175,16 +175,16 @@ describe('JsonResult', () => {
 
     expect(result.getValue()).to.be.deep.eq([
       {
-        array: ['a', 'b'],
-        map: { key: 12 },
-        struct: { name: 'Jon', surname: 'Doe' },
-        union: '{0:12}',
+        'table.array': ['a', 'b'],
+        'table.map': { key: 12 },
+        'table.struct': { name: 'Jon', surname: 'Doe' },
+        'table.union': '{0:12}',
       },
       {
-        array: ['c', 'd'],
-        map: { key: 13 },
-        struct: { name: 'Jane', surname: 'Doe' },
-        union: '{1:"foo"}',
+        'table.array': ['c', 'd'],
+        'table.map': { key: 13 },
+        'table.struct': { name: 'Jane', surname: 'Doe' },
+        'table.union': '{1:"foo"}',
       },
     ]);
   });
@@ -212,7 +212,12 @@ describe('JsonResult', () => {
 
     const result = new JsonResult(schema, data);
 
-    expect(result.getValue()).to.be.deep.eq([{ id: '0' }, { id: '1' }, { id: '2' }, { id: '3' }]);
+    expect(result.getValue()).to.be.deep.eq([
+      { 'table.id': '0' },
+      { 'table.id': '1' },
+      { 'table.id': '2' },
+      { 'table.id': '3' },
+    ]);
   });
 
   it('should detect nulls', () => {
@@ -332,22 +337,22 @@ describe('JsonResult', () => {
 
     expect(result.getValue()).to.be.deep.eq([
       {
-        str: null,
-        int64: null,
-        bin: null,
-        bool: null,
-        char: null,
-        dbl: null,
-        flt: null,
-        int: null,
-        small_int: null,
-        tiny_int: null,
-        varch: null,
-        dec: null,
-        ts: null,
-        date: null,
-        day_interval: null,
-        month_interval: null,
+        'table.str': null,
+        'table.int64': null,
+        'table.bin': null,
+        'table.bool': null,
+        'table.char': null,
+        'table.dbl': null,
+        'table.flt': null,
+        'table.int': null,
+        'table.small_int': null,
+        'table.tiny_int': null,
+        'table.varch': null,
+        'table.dec': null,
+        'table.ts': null,
+        'table.date': null,
+        'table.day_interval': null,
+        'table.month_interval': null,
       },
     ]);
   });

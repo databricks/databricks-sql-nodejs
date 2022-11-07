@@ -50,9 +50,9 @@ export default class JsonResult implements IOperationResult {
             result[i] = {};
           }
 
-          const name = this.getColumnName(descriptor);
+          const { columnName } = descriptor;
 
-          result[i][name] = value;
+          result[i][columnName] = value;
 
           return result;
         }, rows),
@@ -74,12 +74,6 @@ export default class JsonResult implements IOperationResult {
       }
       return this.convertData(typeDescriptor, value);
     });
-  }
-
-  private getColumnName(column: TColumnDesc): string {
-    const name = column.columnName || '';
-
-    return name.split('.').pop() || '';
   }
 
   private convertData(typeDescriptor: TPrimitiveTypeEntry | undefined, value: ColumnType): any {
