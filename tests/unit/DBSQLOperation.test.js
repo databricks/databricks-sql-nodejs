@@ -1,11 +1,11 @@
 const { expect, AssertionError } = require('chai');
 const sinon = require('sinon');
 const { DBSQLLogger, LogLevel } = require('../../dist');
-const { TStatusCode, TOperationState, TTypeId } = require('../../thrift/TCLIService_types');
+const { TStatusCode, TOperationState, TTypeId, TSparkRowSetType } = require('../../thrift/TCLIService_types');
 const DBSQLOperation = require('../../dist/DBSQLOperation').default;
 const StatusError = require('../../dist/errors/StatusError').default;
 const OperationStateError = require('../../dist/errors/OperationStateError').default;
-const getResult = require('../../dist/DBSQLOperation/getResult').default;
+const HiveDriverError = require('../../dist/errors/HiveDriverError').default;
 
 // Create logger that won't emit
 //
@@ -27,6 +27,7 @@ class DriverMock {
 
   getResultSetMetadataResp = {
     status: { statusCode: TStatusCode.SUCCESS_STATUS },
+    resultFormat: TSparkRowSetType.COLUMN_BASED_SET,
     schema: {
       columns: [
         {
@@ -580,14 +581,14 @@ describe('DBSQLOperation', () => {
           return driver.getOperationStatus.wrappedMethod.apply(driver, args);
         });
 
-      driver.getResultSetMetadataResp.schema = null;
+      driver.getResultSetMetadataResp.schema = { columns: [] };
 
       const operation = new DBSQLOperation(driver, handle, logger);
 
       const schema = await operation.getSchema();
 
       expect(driver.getOperationStatus.called).to.be.true;
-      expect(schema).to.be.null;
+      expect(schema).to.deep.equal(driver.getResultSetMetadataResp.schema);
       expect(operation._status.state).to.equal(TOperationState.FINISHED_STATE);
     });
 
@@ -603,8 +604,6 @@ describe('DBSQLOperation', () => {
           driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
           return driver.getOperationStatus.wrappedMethod.apply(driver, args);
         });
-
-      driver.getResultSetMetadataResp.schema = null;
 
       const operation = new DBSQLOperation(driver, handle, logger);
       await operation.getSchema({ progress: true });
@@ -628,8 +627,6 @@ describe('DBSQLOperation', () => {
           driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
           return driver.getOperationStatus.wrappedMethod.apply(driver, args);
         });
-
-      driver.getResultSetMetadataResp.schema = null;
 
       const operation = new DBSQLOperation(driver, handle, logger);
 
@@ -753,7 +750,7 @@ describe('DBSQLOperation', () => {
           return driver.getOperationStatus.wrappedMethod.apply(driver, args);
         });
 
-      driver.getResultSetMetadataResp.schema = null;
+      driver.getResultSetMetadataResp.schema = { columns: [] };
       driver.fetchResultsResp.hasMoreRows = false;
       driver.fetchResultsResp.results.columns = [];
 
@@ -762,7 +759,7 @@ describe('DBSQLOperation', () => {
       const results = await operation.fetchChunk();
 
       expect(driver.getOperationStatus.called).to.be.true;
-      expect(results).to.be.null;
+      expect(results).to.deep.equal([]);
       expect(operation._status.state).to.equal(TOperationState.FINISHED_STATE);
     });
 
@@ -779,7 +776,7 @@ describe('DBSQLOperation', () => {
           return driver.getOperationStatus.wrappedMethod.apply(driver, args);
         });
 
-      driver.getResultSetMetadataResp.schema = null;
+      driver.getResultSetMetadataResp.schema = { columns: [] };
       driver.fetchResultsResp.hasMoreRows = false;
       driver.fetchResultsResp.results.columns = [];
 
@@ -806,7 +803,7 @@ describe('DBSQLOperation', () => {
           return driver.getOperationStatus.wrappedMethod.apply(driver, args);
         });
 
-      driver.getResultSetMetadataResp.schema = null;
+      driver.getResultSetMetadataResp.schema = { columns: [] };
       driver.fetchResultsResp.hasMoreRows = false;
       driver.fetchResultsResp.results.columns = [];
 
@@ -907,6 +904,29 @@ describe('DBSQLOperation', () => {
       expect(results2).to.deep.equal([{ test: 1 }, { test: 2 }, { test: 3 }]);
       expect(driver.getResultSetMetadata.callCount).to.be.eq(1);
       expect(driver.fetchResults.callCount).to.be.eq(1);
+    });
+
+    it('should fail on unsupported result format', async () => {
+      const handle = new OperationHandleMock();
+      handle.hasResultSet = true;
+
+      const driver = new DriverMock();
+      driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
+
+      driver.getResultSetMetadataResp.resultFormat = TSparkRowSetType.ROW_BASED_SET;
+      driver.getResultSetMetadataResp.schema = { columns: [] };
+
+      const operation = new DBSQLOperation(driver, handle, logger);
+
+      try {
+        await operation.fetchChunk();
+        expect.fail('It should throw a HiveDriverError');
+      } catch (e) {
+        if (e instanceof AssertionError) {
+          throw e;
+        }
+        expect(e).to.be.instanceOf(HiveDriverError);
+      }
     });
   });
 
@@ -1050,18 +1070,6 @@ describe('DBSQLOperation', () => {
       expect(await operation.hasMoreRows()).to.be.false;
       await operation.fetchChunk();
       expect(await operation.hasMoreRows()).to.be.false;
-    });
-  });
-
-  describe('getResult', () => {
-    it('should return null result', () => {
-      const t = getResult(null, []);
-      expect(t).to.equal(null);
-    });
-
-    it('should return json result', () => {
-      const t = getResult({ columns: [] }, []);
-      expect(t).to.deep.equal([]);
     });
   });
 });

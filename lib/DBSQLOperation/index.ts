@@ -9,7 +9,6 @@ import {
 } from '../../thrift/TCLIService_types';
 import Status from '../dto/Status';
 
-import getResult from './getResult';
 import OperationStatusHelper from './OperationStatusHelper';
 import SchemaHelper from './SchemaHelper';
 import FetchResultsHelper from './FetchResultsHelper';
@@ -94,9 +93,9 @@ export default class DBSQLOperation implements IOperation {
 
     await this._status.waitUntilReady(options);
 
-    return Promise.all([this._schema.fetch(), this._data.fetch(options?.maxRows || defaultMaxRows)]).then(
-      ([schema, data]) => {
-        const result = getResult(schema, data ? [data] : []);
+    return Promise.all([this._schema.getResultHandler(), this._data.fetch(options?.maxRows || defaultMaxRows)]).then(
+      ([resultHandler, data]) => {
+        const result = resultHandler.getValue(data ? [data] : []);
         this.logger?.log(
           LogLevel.debug,
           `Fetched chunk of size: ${options?.maxRows || defaultMaxRows} from operation with id: ${this.getId()}`,
