@@ -31,6 +31,42 @@ describe('DBSQLClient.connect', () => {
     token: 'dapi********************************',
   };
 
+  it('should prepend "/" to path if it is missing', async () => {
+    const client = new DBSQLClient();
+    client.thrift = {
+      createClient() {},
+    };
+    const connectionProvider = ConnectionProviderMock();
+
+    const path = 'example/path';
+
+    client.connectionProvider = connectionProvider;
+    await client.connect({
+      ...options,
+      path,
+    });
+
+    expect(connectionProvider.options.options.path).to.equal(`/${path}`);
+  });
+
+  it('should not prepend "/" to path if it is already available', async () => {
+    const client = new DBSQLClient();
+    client.thrift = {
+      createClient() {},
+    };
+    const connectionProvider = ConnectionProviderMock();
+
+    const path = '/example/path';
+
+    client.connectionProvider = connectionProvider;
+    await client.connect({
+      ...options,
+      path,
+    });
+
+    expect(connectionProvider.options.options.path).to.equal(path);
+  });
+
   it('should set nosasl authenticator by default', async () => {
     const client = new DBSQLClient();
     const connectionProvider = ConnectionProviderMock();
