@@ -21,6 +21,13 @@ import PlainHttpAuthentication from './connection/auth/PlainHttpAuthentication';
 import IDBSQLLogger, { LogLevel } from './contracts/IDBSQLLogger';
 import DBSQLLogger from './DBSQLLogger';
 
+function prependSlash(str: string): string {
+  if (str.length > 0 && str.charAt(0) !== '/') {
+    return `/${str}`;
+  }
+  return str;
+}
+
 function getInitialNamespaceOptions(catalogName?: string, schemaName?: string) {
   if (!catalogName && !schemaName) {
     return {};
@@ -61,11 +68,12 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
   }
 
   private getConnectionOptions(options: ConnectionOptions): IConnectionOptions {
-    const { host, port, token, clientId, ...otherOptions } = options;
+    const { host, port, path, token, clientId, ...otherOptions } = options;
     return {
       host,
       port: port || 443,
       options: {
+        path: prependSlash(path),
         https: true,
         ...otherOptions,
       },
