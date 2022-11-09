@@ -101,9 +101,9 @@ describe('JsonResult', () => {
       },
     ];
 
-    const result = new JsonResult(schema, data);
+    const result = new JsonResult(schema);
 
-    expect(result.getValue()).to.be.deep.eq([
+    expect(result.getValue(data)).to.be.deep.eq([
       {
         'table.str': 'a',
         'table.int64': 282578800148737,
@@ -171,9 +171,9 @@ describe('JsonResult', () => {
       },
     ];
 
-    const result = new JsonResult(schema, data);
+    const result = new JsonResult(schema);
 
-    expect(result.getValue()).to.be.deep.eq([
+    expect(result.getValue(data)).to.be.deep.eq([
       {
         'table.array': ['a', 'b'],
         'table.map': { key: 12 },
@@ -210,9 +210,9 @@ describe('JsonResult', () => {
       },
     ];
 
-    const result = new JsonResult(schema, data);
+    const result = new JsonResult(schema);
 
-    expect(result.getValue()).to.be.deep.eq([
+    expect(result.getValue(data)).to.be.deep.eq([
       { 'table.id': '0' },
       { 'table.id': '1' },
       { 'table.id': '2' },
@@ -221,7 +221,7 @@ describe('JsonResult', () => {
   });
 
   it('should detect nulls', () => {
-    const result = new JsonResult(null, []);
+    const result = new JsonResult(null);
     const buf = Buffer.from([0x55, 0xaa, 0xc3]);
 
     [
@@ -333,9 +333,9 @@ describe('JsonResult', () => {
       },
     ];
 
-    const result = new JsonResult(schema, data);
+    const result = new JsonResult(schema);
 
-    expect(result.getValue()).to.be.deep.eq([
+    expect(result.getValue(data)).to.be.deep.eq([
       {
         'table.str': null,
         'table.int64': null,
@@ -355,5 +355,32 @@ describe('JsonResult', () => {
         'table.month_interval': null,
       },
     ]);
+  });
+
+  it('should return empty array if no data to process', () => {
+    const schema = {
+      columns: [getColumnSchema('table.id', TCLIService_types.TTypeId.STRING_TYPE, 1)],
+    };
+
+    const result = new JsonResult(schema);
+
+    expect(result.getValue()).to.be.deep.eq([]);
+    expect(result.getValue([])).to.be.deep.eq([]);
+  });
+
+  it('should return empty array if no schema available', () => {
+    const data = [
+      {
+        columns: [
+          {
+            stringVal: { values: ['0', '1'] },
+          },
+        ],
+      },
+    ];
+
+    const result = new JsonResult();
+
+    expect(result.getValue(data)).to.be.deep.eq([]);
   });
 });

@@ -10,23 +10,20 @@ import {
 import IOperationResult from './IOperationResult';
 
 export default class JsonResult implements IOperationResult {
-  private readonly schema: TTableSchema | null;
+  private readonly schema?: TTableSchema;
 
-  private readonly data: Array<TRowSet> | null;
-
-  constructor(schema: TTableSchema | null, data: Array<TRowSet>) {
+  constructor(schema?: TTableSchema) {
     this.schema = schema;
-    this.data = data;
   }
 
-  getValue(): Array<object> {
-    if (!this.data) {
+  getValue(data?: Array<TRowSet>): Array<object> {
+    if (!data) {
       return [];
     }
 
     const descriptors = this.getSchemaColumns();
 
-    return this.data.reduce((result: Array<any>, rowSet: TRowSet) => {
+    return data.reduce((result: Array<any>, rowSet: TRowSet) => {
       const columns = rowSet.columns || [];
       const rows = this.getRows(columns, descriptors);
 

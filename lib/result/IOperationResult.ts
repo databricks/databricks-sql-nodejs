@@ -1,3 +1,5 @@
+import { TRowSet } from '../../thrift/TCLIService_types';
+
 export default interface IOperationResult {
-  getValue(): any;
+  getValue(data?: Array<TRowSet>): any;
 }
