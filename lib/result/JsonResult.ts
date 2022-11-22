@@ -17,7 +17,7 @@ export default class JsonResult implements IOperationResult {
   }
 
   getValue(data?: Array<TRowSet>): Array<object> {
-    if (!data) {
+    if (!this.schema || !data) {
       return [];
     }
 

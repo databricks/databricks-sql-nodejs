@@ -101,6 +101,7 @@ export default class DBSQLSession implements IDBSQLSession {
         queryTimeout: options.queryTimeout,
         runAsync: options.runAsync || false,
         ...getDirectResultsOptions(options.maxRows),
+        canReadArrowResult: true,
       })
       .then((response) => this.createOperation(response));
   }
