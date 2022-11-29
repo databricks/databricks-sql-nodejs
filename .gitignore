@@ -8,3 +8,4 @@ coverage_unit
 *.code-workspace
 dist
 *.DS_Store
+lib/version.ts
