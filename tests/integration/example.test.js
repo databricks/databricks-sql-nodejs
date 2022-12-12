@@ -6,31 +6,28 @@ const client = new DBSQLClient();
 describe('Example', () => {
   it('runs the example code', async () => {
     client
-      .connect(
-        {
-          host: 'localhost',
-          port: 8087,
-          path: '/session',
-          https: false,
-        },
-      )
+      .connect({
+        host: 'localhost',
+        port: 8087,
+        path: '/session',
+        https: false,
+      })
       .then(async (client) => {
         const session = await client.openSession();
 
         const queryOperation = await session.executeStatement('select * from default.diamonds limit 250', {
-          runAsync: true
+          runAsync: true,
         });
-        const result = await queryOperation.fetchAll({maxRows: 100});
+        const result = await queryOperation.fetchAll({ maxRows: 100 });
         await queryOperation.close();
 
-
-        expect(result.length).to.be.equal(250)
+        expect(result.length).to.be.equal(250);
 
         await session.close();
         await client.close();
       })
       .catch((error) => {
-        expect(error).to.be.undefined
-      })
+        expect(error).to.be.undefined;
+      });
   });
 });
