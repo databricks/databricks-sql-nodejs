@@ -32,6 +32,17 @@ jobs:
 
   test:
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: read
+    services:
+      test-server:
+        credentials:
+          username: ${{ github.repository }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+        image: ghcr.io/databricks/databricks/databricks-thrift-test-server:0.1.0
+        ports:
+          - 8087:8087
     steps:
       - uses: actions/checkout@v2
       - name: Cache node modules
@@ -60,6 +71,10 @@ jobs:
         run: |
           npm ci
           npm run e2e
+      - name: Run integration tests
+        run: |
+          npm ci
+          npm run integration
       - name: Coverage
         uses: codecov/codecov-action@v3
         with:

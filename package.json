@@ -14,6 +14,7 @@
   "scripts": {
     "prepare": "npm run build",
     "e2e": "nyc --reporter=lcov --report-dir=coverage_e2e mocha --config tests/e2e/.mocharc.js",
+    "integration": "nyc --reporter=lcov --report-dir=coverage_e2e mocha --config tests/integration/.mocharc.js",
     "test": "nyc --reporter=lcov --report-dir=coverage_unit mocha  --config tests/unit/.mocharc.js",
     "update-version": "node bin/update-version.js && prettier --write ./lib/version.ts",
     "build": "npm run update-version && tsc",
