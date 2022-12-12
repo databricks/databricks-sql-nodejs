@@ -5,7 +5,6 @@ import TCLIService from '../thrift/TCLIService';
 import { TProtocolVersion } from '../thrift/TCLIService_types';
 import IDBSQLClient, { ConnectionOptions, OpenSessionRequest, ClientOptions } from './contracts/IDBSQLClient';
 import HiveDriver from './hive/HiveDriver';
-import { Int64 } from './hive/Types';
 import DBSQLSession from './DBSQLSession';
 import IDBSQLSession from './contracts/IDBSQLSession';
 import IThriftConnection from './connection/contracts/IThriftConnection';
