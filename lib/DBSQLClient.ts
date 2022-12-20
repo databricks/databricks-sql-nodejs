@@ -105,28 +105,28 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
       // Error.stack already contains error type and message, so log stack if available,
       // otherwise fall back to just error type + message
       this.logger.log(LogLevel.error, error.stack || `${error.name}: ${error.message}`);
-      try {
-        this.emit('error', error);
-      } catch (e) {
-        // EventEmitter will throw unhandled error when emitting 'error' event.
-        // Since we already logged it few lines above, just suppress this behaviour
-      }
+      // try {
+      //   this.emit('error', error);
+      // } catch (e) {
+      //   // EventEmitter will throw unhandled error when emitting 'error' event.
+      //   // Since we already logged it few lines above, just suppress this behaviour
+      // }
     });
 
-    this.connection.getConnection().on('reconnecting', (params: { delay: number; attempt: number }) => {
-      this.logger.log(LogLevel.debug, `Reconnecting, params: ${JSON.stringify(params)}`);
-      this.emit('reconnecting', params);
-    });
+    // this.connection.getConnection().on('reconnecting', (params: { delay: number; attempt: number }) => {
+    //   this.logger.log(LogLevel.debug, `Reconnecting, params: ${JSON.stringify(params)}`);
+    //   this.emit('reconnecting', params);
+    // });
 
-    this.connection.getConnection().on('close', () => {
-      this.logger.log(LogLevel.debug, 'Closing connection.');
-      this.emit('close');
-    });
+    // this.connection.getConnection().on('close', () => {
+    //   this.logger.log(LogLevel.debug, 'Closing connection.');
+    //   this.emit('close');
+    // });
 
-    this.connection.getConnection().on('timeout', () => {
-      this.logger.log(LogLevel.debug, 'Connection timed out.');
-      this.emit('timeout');
-    });
+    // this.connection.getConnection().on('timeout', () => {
+    //   this.logger.log(LogLevel.debug, 'Connection timed out.');
+    //   this.emit('timeout');
+    // });
 
     return this;
   }
