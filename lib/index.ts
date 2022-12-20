@@ -1,3 +1,4 @@
+import { Thrift } from 'thrift';
 import TCLIService from '../thrift/TCLIService';
 import TCLIService_types from '../thrift/TCLIService_types';
 import DBSQLClient from './DBSQLClient';
@@ -13,6 +14,11 @@ export const auth = {
   NoSaslAuthentication,
   PlainHttpAuthentication,
 };
+
+const { TException, TApplicationException, TApplicationExceptionType, TProtocolException, TProtocolExceptionType } =
+  Thrift;
+
+export { TException, TApplicationException, TApplicationExceptionType, TProtocolException, TProtocolExceptionType };
 
 export const connections = {
   HttpConnection,

@@ -1,5 +1,5 @@
 diff --git a/node_modules/thrift/lib/nodejs/lib/thrift/http_connection.js b/node_modules/thrift/lib/nodejs/lib/thrift/http_connection.js
-index 17e0d0c..53ce174 100644
+index 17e0d0c..d1ead4a 100644
 --- a/node_modules/thrift/lib/nodejs/lib/thrift/http_connection.js
 +++ b/node_modules/thrift/lib/nodejs/lib/thrift/http_connection.js
 @@ -106,7 +106,7 @@ var HttpConnection = exports.HttpConnection = function(options) {
@@ -66,7 +66,7 @@ index 17e0d0c..53ce174 100644
      });
    };
  };
-@@ -212,18 +213,31 @@ util.inherits(HttpConnection, EventEmitter);
+@@ -212,18 +213,33 @@ util.inherits(HttpConnection, EventEmitter);
   * @event {error} the "error" event is raised upon request failure passing the
   *     Node.js error object to the listener.
   */
@@ -77,27 +77,29 @@ index 17e0d0c..53ce174 100644
    opts.headers["Content-length"] = data.length;
    if (!opts.headers["Content-Type"])
      opts.headers["Content-Type"] = "application/x-thrift";
--  var req = (self.https) ?
--      https.request(opts, self.responseCallback) :
--      http.request(opts, self.responseCallback);
--  req.on('error', function(err) {
 +
 +  // The purpose of this handler is to pass an error to corresponding operation's callback if
-+  // error is associated with any. The error event still will be emitted for compatibility purposes
++  // error is associated with any. If error cannot be associated with any operation, it will be
++  // emitted as 'error' event
 +  function handleError(err) {
 +    var client = self.client;
-+    var callback = client._reqs[seqid] || function() { };
++    var callback = client._reqs[seqid] || function() {
++      self.emit("error", err);
++    };
 +    delete client._reqs[seqid];
 +    callback(err);
-     self.emit("error", err);
--  });
 +  }
 +
 +  function responseCallback(response) {
 +    return self.responseCallback(response, handleError);
 +  }
 +
-+  var req = (self.https) ?
+   var req = (self.https) ?
+-      https.request(opts, self.responseCallback) :
+-      http.request(opts, self.responseCallback);
+-  req.on('error', function(err) {
+-    self.emit("error", err);
+-  });
 +      https.request(opts, responseCallback) :
 +      http.request(opts, responseCallback);
 +  req.on('error', handleError);
