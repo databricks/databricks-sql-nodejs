@@ -93,7 +93,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
       username: 'token',
       password: options.token,
       headers: {
-        'User-Agent': buildUserAgentString(options.clientId),
+        'User-Agent': options.customUserAgent ? options.customUserAgent : buildUserAgentString(options.clientId),
       },
     });
 
