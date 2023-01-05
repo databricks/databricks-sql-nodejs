@@ -12,6 +12,6 @@ export default abstract class BaseCommand {
   }
 
   executeCommand<Response>(request: object, command: Function | void): Promise<Response> {
-    return errorHandler<Response>(this.client, request, command, 0, Date.now());
+    return errorHandler<Response>(this.client, request, command, {numRetries: 0, startTime: Date.now()});
   }
 }

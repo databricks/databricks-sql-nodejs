@@ -113,20 +113,20 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
       // }
     });
 
-    // this.connection.getConnection().on('reconnecting', (params: { delay: number; attempt: number }) => {
-    //   this.logger.log(LogLevel.debug, `Reconnecting, params: ${JSON.stringify(params)}`);
-    //   this.emit('reconnecting', params);
-    // });
+    this.connection.getConnection().on('reconnecting', (params: { delay: number; attempt: number }) => {
+      this.logger.log(LogLevel.debug, `Reconnecting, params: ${JSON.stringify(params)}`);
+      this.emit('reconnecting', params);
+    });
 
-    // this.connection.getConnection().on('close', () => {
-    //   this.logger.log(LogLevel.debug, 'Closing connection.');
-    //   this.emit('close');
-    // });
+    this.connection.getConnection().on('close', () => {
+      this.logger.log(LogLevel.debug, 'Closing connection.');
+      this.emit('close');
+    });
 
-    // this.connection.getConnection().on('timeout', () => {
-    //   this.logger.log(LogLevel.debug, 'Connection timed out.');
-    //   this.emit('timeout');
-    // });
+    this.connection.getConnection().on('timeout', () => {
+      this.logger.log(LogLevel.debug, 'Connection timed out.');
+      this.emit('timeout');
+    });
 
     return this;
   }

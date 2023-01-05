@@ -2,7 +2,7 @@ import TCLIService from "../../thrift/TCLIService"
 import HiveDriverError from "../errors/HiveDriverError";
 import { Thrift } from "thrift";
 
-export default function errorHandler<Response>(client: TCLIService.Client, request: object, command: Function | void, retries: number, startTime: number): Promise<Response>{
+export default function errorHandler<Response>(client: TCLIService.Client, request: object, command: Function | void, info: CommandRequestInfo): Promise<Response>{
     return new Promise((resolve, reject) => {
         if (typeof command !== 'function') {
             reject(new HiveDriverError('Hive driver: the operation does not exist, try to choose another Thrift file.'));
@@ -19,12 +19,13 @@ export default function errorHandler<Response>(client: TCLIService.Client, reque
                     switch(err.statusCode) {
                         case 429:
                         case 503:
-                            if(Date.now() - startTime > 15000) {
+                            if(Date.now() - info.startTime > 15000) {
                                 reject(err);
                                 return;
                             }
                             else {
-                                return errorHandler(client,request,command,retries+1,startTime);
+                                info.numRetries += 1;
+                                return errorHandler(client, request, command, info);
                             }
                         case 404:
                             reject(new HiveDriverError('Hive driver: 404 when connecting to resource. Check the host provided.'));
@@ -47,10 +48,14 @@ export default function errorHandler<Response>(client: TCLIService.Client, reque
             }
             });
         } catch {
-            console.log("Hit this");
             reject(new HiveDriverError("Hive driver: Error when invoking command."));
             return;
         }
     });
 
+}
+
+interface CommandRequestInfo {
+    numRetries: number,
+    startTime: number
 }
