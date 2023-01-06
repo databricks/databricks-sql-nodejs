@@ -21,6 +21,7 @@ export default function errorHandler<Response>(
         }
         if (err instanceof Thrift.TApplicationException) {
           if ('statusCode' in err) {
+            // eslint-disable-next-line @typescript-eslint/dot-notation
             switch (err['statusCode']) {
               case 429:
               case 503:
