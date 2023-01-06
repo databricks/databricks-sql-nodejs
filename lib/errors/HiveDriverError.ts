@@ -1,2 +1,1 @@
-export default class HiveDriverError extends Error {
-}
+export default class HiveDriverError extends Error {}
