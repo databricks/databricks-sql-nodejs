@@ -21,7 +21,7 @@ export default function errorHandler<Response>(
         }
         if (err instanceof Thrift.TApplicationException) {
           if ('statusCode' in err) {
-            switch (err.statusCode) {
+            switch (err['statusCode']) {
               case 429:
               case 503:
                 if (Date.now() - info.startTime > 15000) {
