@@ -9,9 +9,9 @@ const client = new DBSQLClient({ logger: logger });
 
 client
   .connect({
-    host: 'eng-academy.staging.cloud.databricks.com',
-    path: '/sql/1.0/endpoints/410886e8ec4b0796',
-    token: 'dapi5aef9f11ea0f3003440555526226ef7f',
+    host: '****.cloud.databricks.com',
+    path: '/sql/1.0/endpoints/*************',
+    token: 'dapi**************************',
   })
   .then(async (client) => {
     const session = await client.openSession();
