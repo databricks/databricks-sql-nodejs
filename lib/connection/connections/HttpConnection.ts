@@ -86,7 +86,7 @@ export default class HttpConnection implements IConnectionProvider, IThriftConne
   private addCookieHandler() {
     const { responseCallback } = this.connection;
 
-    this.connection.responseCallback = (response: IncomingMessage) => {
+    this.connection.responseCallback = (response: IncomingMessage, ...rest: Array<unknown>) => {
       if (Array.isArray(response.headers['set-cookie'])) {
         const cookie = [this.connection.nodeOptions.headers.cookie];
 
@@ -96,7 +96,7 @@ export default class HttpConnection implements IConnectionProvider, IThriftConne
           .join(';');
       }
 
-      responseCallback.call(this.connection, response);
+      responseCallback.call(this.connection, response, ...rest);
     };
   }
 }
