@@ -21,7 +21,7 @@ export default class ArrowResult implements IOperationResult {
     }
 
     const table = tableFromIPC([this.schema, ...batches]);
-    return table.toArray();
+    return table.toArray().map((item) => item.toJSON());
   }
 
   private getBatches(data: Array<TRowSet>): Array<Buffer> {

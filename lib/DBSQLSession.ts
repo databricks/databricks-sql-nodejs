@@ -1,5 +1,11 @@
 import { stringify, NIL, parse } from 'uuid';
-import { TSessionHandle, TStatus, TOperationHandle, TSparkDirectResults } from '../thrift/TCLIService_types';
+import {
+  TSessionHandle,
+  TStatus,
+  TOperationHandle,
+  TSparkDirectResults,
+  TSparkArrowTypes,
+} from '../thrift/TCLIService_types';
 import HiveDriver from './hive/HiveDriver';
 import { Int64 } from './hive/Types';
 import IDBSQLSession, {
@@ -38,6 +44,41 @@ function getDirectResultsOptions(maxRows: number | null = defaultMaxRows) {
   return {
     getDirectResults: {
       maxRows: new Int64(maxRows),
+    },
+  };
+}
+
+type GetArrowOptionsResult =
+  | { canReadArrowResult: false }
+  | {
+      canReadArrowResult: true;
+      useArrowNativeTypes: TSparkArrowTypes;
+    };
+
+function getArrowOptions(
+  enableArrow: boolean | undefined,
+  arrowOptions: ExecuteStatementOptions['arrowOptions'],
+): GetArrowOptionsResult {
+  if (enableArrow === false) {
+    return {
+      canReadArrowResult: false,
+    };
+  }
+
+  const useArrowNativeTypes: TSparkArrowTypes = {
+    timestampAsArrow: arrowOptions?.useNativeTimestamps,
+    decimalAsArrow: arrowOptions?.useNativeDecimals,
+    complexTypesAsArrow: arrowOptions?.useNativeComplexTypes,
+  };
+
+  return {
+    canReadArrowResult: true,
+    useArrowNativeTypes: {
+      timestampAsArrow: true,
+      decimalAsArrow: true,
+      complexTypesAsArrow: true,
+      intervalTypesAsArrow: false, // TODO: See comment for ExecuteStatementOptions.arrowOptions
+      ...useArrowNativeTypes,
     },
   };
 }
@@ -101,7 +142,7 @@ export default class DBSQLSession implements IDBSQLSession {
         queryTimeout: options.queryTimeout,
         runAsync: options.runAsync || false,
         ...getDirectResultsOptions(options.maxRows),
-        canReadArrowResult: true,
+        ...getArrowOptions(options.enableArrow, options.arrowOptions),
       })
       .then((response) => this.createOperation(response));
   }
