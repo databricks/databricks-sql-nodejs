@@ -19,7 +19,7 @@ const openSession = async () => {
 };
 
 const execute = async (session, statement) => {
-  const operation = await session.executeStatement(statement, { runAsync: true });
+  const operation = await session.executeStatement(statement, { runAsync: true, enableArrow: false });
   const result = await operation.fetchAll();
   await operation.close();
   return result;
