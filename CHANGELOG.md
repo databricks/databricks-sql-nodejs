@@ -6,7 +6,7 @@
 
 - Fix: now library will not attempt to parse column names and will use ones provided by server
   (databricks/databricks-sql-nodejs#84)
-- Better error handling: more errors could now be handled in appropriate `.catch()` handlers instead of being
+- Better error handling: more errors can now be handled in specific `.catch()` handlers instead of being
   emitted as a generic `error` event (databricks/databricks-sql-nodejs#99)
 - Fixed error logging bug (attempt to serialize circular structures) (databricks/databricks-sql-nodejs#89)
 - Fixed some minor bugs and regressions
