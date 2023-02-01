@@ -8,16 +8,7 @@ export type ExecuteStatementOptions = {
   runAsync?: boolean;
   maxRows?: number | null;
   // defaults to `true`
-  enableArrow?: boolean;
-  // All fields default to `true`
-  // Ignored when `enableArrow` is `false`
-  arrowOptions?: {
-    useNativeTimestamps?: boolean;
-    useNativeDecimals?: boolean;
-    useNativeComplexTypes?: boolean;
-    // TODO: currently unsupported by `apache-arrow` (see https://github.com/streamlit/streamlit/issues/4489)
-    // useNativeIntervalTypes?: boolean;
-  };
+  useArrowNativeTypes?: boolean;
 };
 
 export type TypeInfoRequest = {

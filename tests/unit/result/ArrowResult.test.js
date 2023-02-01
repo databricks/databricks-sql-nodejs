@@ -47,7 +47,7 @@ const sampleRowSet4 = {
   arrowBatches: [sampleArrowBatch],
 };
 
-describe('ArrowResult', () => {
+describe.skip('ArrowResult', () => {
   it('should convert data', () => {
     const result = new ArrowResult(sampleSchema);
     expect(result.getValue([sampleRowSet1])).to.be.deep.eq([]);

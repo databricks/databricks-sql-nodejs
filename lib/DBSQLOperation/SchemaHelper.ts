@@ -47,7 +47,7 @@ export default class SchemaHelper {
       case TSparkRowSetType.COLUMN_BASED_SET:
         return new JsonResult(metadata.schema);
       case TSparkRowSetType.ARROW_BASED_SET:
-        return new ArrowResult(metadata.arrowSchema);
+        return new ArrowResult(metadata.schema, metadata.arrowSchema);
       default:
         throw new HiveDriverError(`Unsupported result format: ${TSparkRowSetType[resultFormat]}`);
     }

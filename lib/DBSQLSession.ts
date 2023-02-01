@@ -48,37 +48,22 @@ function getDirectResultsOptions(maxRows: number | null = defaultMaxRows) {
   };
 }
 
-type GetArrowOptionsResult =
-  | { canReadArrowResult: false }
-  | {
-      canReadArrowResult: true;
-      useArrowNativeTypes: TSparkArrowTypes;
-    };
-
-function getArrowOptions(
-  enableArrow: boolean | undefined,
-  arrowOptions: ExecuteStatementOptions['arrowOptions'],
-): GetArrowOptionsResult {
-  if (enableArrow === false) {
-    return {
-      canReadArrowResult: false,
-    };
+function getArrowOptions(useArrowNativeTypes: boolean | undefined): {
+  canReadArrowResult: true | false;
+  useArrowNativeTypes?: TSparkArrowTypes;
+} {
+  if (useArrowNativeTypes === undefined) {
+    useArrowNativeTypes = true;
   }
-
-  const useArrowNativeTypes: TSparkArrowTypes = {
-    timestampAsArrow: arrowOptions?.useNativeTimestamps,
-    decimalAsArrow: arrowOptions?.useNativeDecimals,
-    complexTypesAsArrow: arrowOptions?.useNativeComplexTypes,
-  };
 
   return {
     canReadArrowResult: true,
     useArrowNativeTypes: {
-      timestampAsArrow: true,
-      decimalAsArrow: true,
-      complexTypesAsArrow: true,
-      intervalTypesAsArrow: false, // TODO: See comment for ExecuteStatementOptions.arrowOptions
-      ...useArrowNativeTypes,
+      timestampAsArrow: useArrowNativeTypes,
+      decimalAsArrow: useArrowNativeTypes,
+      complexTypesAsArrow: useArrowNativeTypes,
+      // TODO: currently unsupported by `apache-arrow` (see https://github.com/streamlit/streamlit/issues/4489)
+      intervalTypesAsArrow: false,
     },
   };
 }
@@ -142,7 +127,7 @@ export default class DBSQLSession implements IDBSQLSession {
         queryTimeout: options.queryTimeout,
         runAsync: options.runAsync || false,
         ...getDirectResultsOptions(options.maxRows),
-        ...getArrowOptions(options.enableArrow, options.arrowOptions),
+        ...getArrowOptions(options.useArrowNativeTypes),
       })
       .then((response) => this.createOperation(response));
   }
