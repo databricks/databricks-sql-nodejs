@@ -92,12 +92,16 @@ export default class ArrowResult implements IOperationResult {
       return result;
     }
 
-    // Convert lists to JS array and process items recursively values
+    // Convert lists to JS array and process items recursively
     if (value instanceof Vector) {
       const result = value.toJSON();
       // Array type contains the only child which defines a type of each array's element
       const field = fieldsMap.element;
       return result.map((item) => this.convertArrowTypes(item, field?.type, field?.type.children || []));
+    }
+
+    if (DataType.isTimestamp(valueType)) {
+      return new Date(value);
     }
 
     // Convert big number values to BigInt
@@ -110,8 +114,13 @@ export default class ArrowResult implements IOperationResult {
       return result;
     }
 
+    // Convert binary data to Buffer
+    if (value instanceof Uint8Array) {
+      return Buffer.from(value);
+    }
+
     // Return other values as is
-    return value;
+    return typeof value === 'bigint' ? Number(value) : value;
   }
 
   private convertThriftTypes(record: Record<string, any>): any {

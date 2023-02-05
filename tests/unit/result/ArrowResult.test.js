@@ -1,7 +1,26 @@
 const { expect } = require('chai');
 const ArrowResult = require('../../../dist/result/ArrowResult').default;
 
-const sampleSchema = new Buffer([
+const sampleThriftSchema = {
+  columns: [
+    {
+      columnName: '1',
+      typeDesc: {
+        types: [
+          {
+            primitiveEntry: {
+              type: 3,
+              typeQualifiers: null,
+            },
+          },
+        ],
+      },
+      position: 1,
+    },
+  ],
+};
+
+const sampleArrowSchema = Buffer.from([
   255, 255, 255, 255, 208, 0, 0, 0, 16, 0, 0, 0, 0, 0, 10, 0, 14, 0, 6, 0, 13, 0, 8, 0, 10, 0, 0, 0, 0, 0, 4, 0, 16, 0,
   0, 0, 0, 1, 10, 0, 12, 0, 0, 0, 8, 0, 4, 0, 10, 0, 0, 0, 8, 0, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 24, 0, 0, 0,
   0, 0, 18, 0, 24, 0, 20, 0, 0, 0, 19, 0, 12, 0, 0, 0, 8, 0, 4, 0, 18, 0, 0, 0, 20, 0, 0, 0, 80, 0, 0, 0, 88, 0, 0, 0,
@@ -17,7 +36,7 @@ const sampleEmptyArrowBatch = {
 };
 
 const sampleArrowBatch = {
-  batch: new Buffer([
+  batch: Buffer.from([
     255, 255, 255, 255, 136, 0, 0, 0, 20, 0, 0, 0, 0, 0, 0, 0, 12, 0, 22, 0, 14, 0, 21, 0, 16, 0, 4, 0, 12, 0, 0, 0, 16,
     0, 0, 0, 0, 0, 0, 0, 0, 0, 4, 0, 16, 0, 0, 0, 0, 3, 10, 0, 24, 0, 12, 0, 8, 0, 4, 0, 10, 0, 0, 0, 20, 0, 0, 0, 56,
     0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 8, 0, 0, 0,
@@ -47,9 +66,9 @@ const sampleRowSet4 = {
   arrowBatches: [sampleArrowBatch],
 };
 
-describe.skip('ArrowResult', () => {
+describe('ArrowResult', () => {
   it('should convert data', () => {
-    const result = new ArrowResult(sampleSchema);
+    const result = new ArrowResult(sampleThriftSchema, sampleArrowSchema);
     expect(result.getValue([sampleRowSet1])).to.be.deep.eq([]);
     expect(result.getValue([sampleRowSet2])).to.be.deep.eq([]);
     expect(result.getValue([sampleRowSet3])).to.be.deep.eq([]);
@@ -57,8 +76,7 @@ describe.skip('ArrowResult', () => {
   });
 
   it('should return empty array if no data to process', () => {
-    const result = new ArrowResult(sampleSchema);
-
+    const result = new ArrowResult(sampleThriftSchema, sampleArrowSchema);
     expect(result.getValue()).to.be.deep.eq([]);
     expect(result.getValue([])).to.be.deep.eq([]);
   });

@@ -2,6 +2,7 @@ const { expect } = require('chai');
 const config = require('./utils/config');
 const logger = require('./utils/logger')(config.logger);
 const { DBSQLClient } = require('../..');
+const globalConfig = require('../../dist/globalConfig').default;
 
 const openSession = async () => {
   const client = new DBSQLClient();
@@ -19,11 +20,15 @@ const openSession = async () => {
 };
 
 const execute = async (session, statement) => {
-  const operation = await session.executeStatement(statement, { runAsync: true, enableArrow: false });
+  const operation = await session.executeStatement(statement, { runAsync: true });
   const result = await operation.fetchAll();
   await operation.close();
   return result;
 };
+
+function convertDate(strValue) {
+  return new Date(Date.parse(`${strValue} UTC`));
+}
 
 function removeTrailingMetadata(columns) {
   const result = [];
@@ -38,6 +43,14 @@ function removeTrailingMetadata(columns) {
 }
 
 describe('Data types', () => {
+  beforeEach(() => {
+    globalConfig.arrowEnabled = false;
+  });
+
+  afterEach(() => {
+    globalConfig.arrowEnabled = true;
+  });
+
   it('primitive data types should presented correctly', async () => {
     const table = `dbsql_nodejs_sdk_e2e_primitive_types_${config.tableSuffix}`;
 
@@ -173,11 +186,11 @@ describe('Data types', () => {
           dbl: 2.2,
           dec: 3.2,
           str: 'data',
-          ts: '2014-01-17 00:17:13',
+          ts: convertDate('2014-01-17 00:17:13'),
           bin: Buffer.from('data'),
           chr: 'a',
           vchr: 'b',
-          dat: '2014-01-17',
+          dat: convertDate('2014-01-17'),
         },
       ]);
 

@@ -27,6 +27,7 @@ import StatusFactory from './factory/StatusFactory';
 import InfoValue from './dto/InfoValue';
 import { definedOrError } from './utils';
 import IDBSQLLogger, { LogLevel } from './contracts/IDBSQLLogger';
+import globalConfig from './globalConfig';
 
 const defaultMaxRows = 100000;
 
@@ -49,9 +50,15 @@ function getDirectResultsOptions(maxRows: number | null = defaultMaxRows) {
 }
 
 function getArrowOptions(useArrowNativeTypes: boolean | undefined): {
-  canReadArrowResult: true | false;
+  canReadArrowResult: boolean;
   useArrowNativeTypes?: TSparkArrowTypes;
 } {
+  if (!globalConfig.arrowEnabled) {
+    return {
+      canReadArrowResult: false,
+    };
+  }
+
   if (useArrowNativeTypes === undefined) {
     useArrowNativeTypes = true;
   }

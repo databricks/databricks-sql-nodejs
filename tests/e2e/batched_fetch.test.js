@@ -2,6 +2,7 @@ const { expect } = require('chai');
 const config = require('./utils/config');
 const logger = require('./utils/logger')(config.logger);
 const { DBSQLClient } = require('../..');
+const globalConfig = require('../../dist/globalConfig').default;
 
 const openSession = async () => {
   const client = new DBSQLClient();
@@ -19,6 +20,14 @@ const openSession = async () => {
 };
 
 describe('Data fetching', () => {
+  beforeEach(() => {
+    globalConfig.arrowEnabled = false;
+  });
+
+  afterEach(() => {
+    globalConfig.arrowEnabled = true;
+  });
+
   const query = `
     SELECT *
     FROM range(0, 1000) AS t1
@@ -27,14 +36,14 @@ describe('Data fetching', () => {
 
   it('fetch chunks should return a max row set of chunkSize', async () => {
     const session = await openSession();
-    const operation = await session.executeStatement(query, { runAsync: true, maxRows: null, enableArrow: false });
+    const operation = await session.executeStatement(query, { runAsync: true, maxRows: null });
     let chunkedOp = await operation.fetchChunk({ maxRows: 10 }).catch((error) => logger(error));
     expect(chunkedOp.length).to.be.equal(10);
   });
 
   it('fetch all should fetch all records', async () => {
     const session = await openSession();
-    const operation = await session.executeStatement(query, { runAsync: true, maxRows: null, enableArrow: false });
+    const operation = await session.executeStatement(query, { runAsync: true, maxRows: null });
     let all = await operation.fetchAll();
     expect(all.length).to.be.equal(1000);
   });

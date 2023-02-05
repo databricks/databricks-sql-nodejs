@@ -1,0 +1,78 @@
+module.exports = [
+  {
+    bool: true,
+    tiny_int: 127,
+    small_int: 32000,
+    int_type: 4000000,
+    big_int: 372036854775807,
+    flt: 1.4142,
+    dbl: 2.71828182,
+    dec: 3.14,
+    str: 'string value',
+    chr: 'char value',
+    vchr: 'varchar value',
+    ts: new Date(Date.parse('2014-01-17 00:17:13 UTC')),
+    dat: new Date('2014-01-17'),
+    day_interval: '1 00:00:00.000000000',
+    month_interval: '0-1',
+    bin: Buffer.from([98, 105, 110, 97, 114, 121, 32, 118, 97, 108, 117, 101]),
+    struct1: {
+      bool: false,
+      int_type: 4000000,
+      big_int: 372036854775807,
+      dbl: 2.71828182,
+      dec: 1.4142,
+      str: 'string value',
+      arr1: [1.41, 2.71, 3.14],
+      arr2: [{ sqrt2: 1.414 }, { e: 2.718 }, { pi: 3.142 }],
+      arr3: [
+        { s: 'e', d: 2.71 },
+        { s: 'pi', d: 3.14 },
+      ],
+      map1: {
+        e: 2.71,
+        pi: 3.14,
+        sqrt2: 1.41,
+      },
+      map2: {
+        arr1: [1.414],
+        arr2: [2.718, 3.141],
+      },
+      map3: {
+        struct1: { d: 3.14, n: 314159265359 },
+        struct2: { d: 2.71, n: 271828182846 },
+      },
+      struct1: {
+        s: 'string value',
+        d: 3.14,
+        n: 314159265359,
+        a: [2.718, 3.141],
+      },
+    },
+    arr1: [1.41, 2.71, 3.14],
+    arr2: [{ sqrt2: 1.4142 }, { e: 2.7182 }, { pi: 3.1415 }],
+    arr3: [
+      { s: 'sqrt2', d: 1.41 },
+      { s: 'e', d: 2.71 },
+      { s: 'pi', d: 3.14 },
+    ],
+    arr4: [[1.414], [2.718, 3.141]],
+    map1: {
+      e: 2.71,
+      pi: 3.14,
+      sqrt2: 1.41,
+    },
+    map2: {
+      arr1: [1.414],
+      arr2: [2.718, 3.141],
+    },
+    map3: {
+      struct1: { d: 3.14, n: 314159265359 },
+      struct2: { d: 2.71, n: 271828182846 },
+    },
+    map4: {
+      e: [271828182846],
+      pi: [314159265359],
+    },
+  },
+];

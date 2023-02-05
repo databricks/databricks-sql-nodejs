@@ -1,3 +1,4 @@
+import Int64 from 'node-int64';
 import { TTableSchema, TColumnDesc, TPrimitiveTypeEntry, TTypeId } from '../../thrift/TCLIService_types';
 
 export function getSchemaColumns(schema?: TTableSchema): Array<TColumnDesc> {
@@ -26,10 +27,16 @@ function convertJSON(value: any, defaultValue: any): any {
 
 function convertBigInt(value: any): any {
   if (typeof value === 'bigint') {
-    return value;
+    return Number(value);
   }
-  // TODO: `Int64.toNumber()` returns a regular JS number value; should we return BigInt instead?
-  return value.toNumber();
+  if (value instanceof Int64) {
+    return value.toNumber();
+  }
+  return value;
+}
+
+function convertDate(value: any): Date {
+  return value instanceof Date ? value : new Date(Date.parse(`${value} UTC`));
 }
 
 export function convertThriftValue(typeDescriptor: TPrimitiveTypeEntry | undefined, value: any): any {
@@ -38,8 +45,10 @@ export function convertThriftValue(typeDescriptor: TPrimitiveTypeEntry | undefin
   }
 
   switch (typeDescriptor.type) {
-    case TTypeId.TIMESTAMP_TYPE:
     case TTypeId.DATE_TYPE:
+      return convertDate(value);
+    case TTypeId.TIMESTAMP_TYPE:
+      return convertDate(value);
     case TTypeId.UNION_TYPE:
     case TTypeId.USER_DEFINED_TYPE:
       return String(value);

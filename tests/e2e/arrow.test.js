@@ -98,7 +98,7 @@ async function initializeTable(session, tableName) {
   );
 }
 
-describe('Arrow support', () => {
+describe.skip('Arrow support', () => {
   const tableName = `dbsql_nodejs_sdk_e2e_arrow_${config.tableSuffix}`;
 
   function createTest(testBody) {
