@@ -1,9 +1,12 @@
 const { expect } = require('chai');
-const arrow = require('apache-arrow');
 const config = require('./utils/config');
 const logger = require('./utils/logger')(config.logger);
 const { DBSQLClient } = require('../..');
 const ArrowResult = require('../../dist/result/ArrowResult').default;
+const globalConfig = require('../../dist/globalConfig').default;
+
+const fixtures = require('../fixtures/compatibility');
+const { fixArrowResult } = fixtures;
 
 async function openSession() {
   const client = new DBSQLClient();
@@ -33,72 +36,15 @@ async function deleteTable(session, tableName) {
 
 async function initializeTable(session, tableName) {
   await deleteTable(session, tableName);
-  await execute(
-    session,
-    `
-    CREATE TABLE IF NOT EXISTS ${tableName} (
-      bool boolean,
-      tiny_int tinyint,
-      small_int smallint,
-      int_type int,
-      flt float,
-      dbl double,
-      dec decimal(3,2),
-      str string,
-      ts timestamp,
-      bin binary,
-      chr char(10),
-      vchr varchar(10),
-      dat date,
-      arr_type array<date>,
-      map_type map<string, date>,
-      struct_type struct<a:string,b:date>
-    )
-  `,
-  );
-  await execute(
-    session,
-    `
-    INSERT INTO ${tableName} (
-      bool,
-      tiny_int,
-      small_int,
-      int_type,
-      flt,
-      dbl,
-      dec,
-      str,
-      ts,
-      bin,
-      chr,
-      vchr,
-      dat,
-      arr_type,
-      map_type,
-      struct_type
-    ) VALUES (
-      true,
-      127,
-      32000,
-      4000000,
-      1.2,
-      2.2,
-      3.2,
-      'data',
-      '2014-01-17 00:17:13',
-      'data',
-      'a',
-      'b',
-      '2014-01-17',
-      array('2014-01-17', '2023-01-22'),
-      map('key', '1991-01-01'),
-      named_struct('a','Test','b','2023-01-22')
-    )
-  `,
-  );
+
+  const createTable = fixtures.createTableSql.replaceAll('${table_name}', tableName);
+  await execute(session, createTable);
+
+  const insertData = fixtures.insertDataSql.replaceAll('${table_name}', tableName);
+  await execute(session, insertData);
 }
 
-describe.skip('Arrow support', () => {
+describe('Arrow support', () => {
   const tableName = `dbsql_nodejs_sdk_e2e_arrow_${config.tableSuffix}`;
 
   function createTest(testBody) {
@@ -120,11 +66,11 @@ describe.skip('Arrow support', () => {
   it(
     'should not use arrow if disabled',
     createTest(async (session) => {
-      const operation = await session.executeStatement(`SELECT * FROM ${tableName}`, {
-        enableArrow: false,
-      });
+      globalConfig.arrowEnabled = false;
+
+      const operation = await session.executeStatement(`SELECT * FROM ${tableName}`);
       const result = await operation.fetchAll();
-      expect(result.length).to.eq(1);
+      expect(result).to.deep.equal(fixtures.expected);
 
       const resultHandler = await operation._schema.getResultHandler();
       expect(resultHandler).to.be.not.instanceof(ArrowResult);
@@ -134,38 +80,15 @@ describe.skip('Arrow support', () => {
   );
 
   it(
-    'should use arrow without native types',
+    'should use arrow with native types disabled',
     createTest(async (session) => {
+      globalConfig.arrowEnabled = true;
+
       const operation = await session.executeStatement(`SELECT * FROM ${tableName}`, {
-        enableArrow: true,
-        arrowOptions: {
-          useNativeTimestamps: false,
-          useNativeDecimals: false,
-          useNativeComplexTypes: false,
-          useNativeIntervalTypes: false,
-        },
+        useArrowNativeTypes: false,
       });
       const result = await operation.fetchAll();
-      expect(result).to.deep.equal([
-        {
-          bool: true,
-          tiny_int: 127,
-          small_int: 32000,
-          int_type: 4000000,
-          flt: 1.2000000476837158,
-          dbl: 2.2,
-          dec: '3.20',
-          str: 'data',
-          ts: '2014-01-17 00:17:13',
-          bin: new Uint8Array([100, 97, 116, 97]),
-          chr: 'a',
-          vchr: 'b',
-          dat: new Date('2014-01-17T00:00:00.000Z'),
-          arr_type: '[2014-01-17,2023-01-22]',
-          map_type: '{"key":1991-01-01}',
-          struct_type: '{"a":"Test","b":2023-01-22}',
-        },
-      ]);
+      expect(fixArrowResult(result)).to.deep.equal(fixtures.expected);
 
       const resultHandler = await operation._schema.getResultHandler();
       expect(resultHandler).to.be.instanceof(ArrowResult);
@@ -175,136 +98,45 @@ describe.skip('Arrow support', () => {
   );
 
   it(
-    'should use arrow with native timestamps',
+    'should use arrow with native types enabled',
     createTest(async (session) => {
+      globalConfig.arrowEnabled = true;
+
       const operation = await session.executeStatement(`SELECT * FROM ${tableName}`, {
-        enableArrow: true,
-        arrowOptions: {
-          useNativeTimestamps: true,
-          useNativeDecimals: false,
-          useNativeComplexTypes: false,
-          useNativeIntervalTypes: false,
-        },
+        useArrowNativeTypes: true,
       });
       const result = await operation.fetchAll();
-      expect(result).to.deep.equal([
-        {
-          bool: true,
-          tiny_int: 127,
-          small_int: 32000,
-          int_type: 4000000,
-          flt: 1.2000000476837158,
-          dbl: 2.2,
-          dec: '3.20',
-          str: 'data',
-          ts: 1389917833000, // This field is affected
-          bin: new Uint8Array([100, 97, 116, 97]),
-          chr: 'a',
-          vchr: 'b',
-          dat: new Date('2014-01-17T00:00:00.000Z'),
-          arr_type: '[2014-01-17,2023-01-22]',
-          map_type: '{"key":1991-01-01}',
-          struct_type: '{"a":"Test","b":2023-01-22}',
-        },
-      ]);
+      expect(fixArrowResult(result)).to.deep.equal(fixtures.expected);
 
       const resultHandler = await operation._schema.getResultHandler();
       expect(resultHandler).to.be.instanceof(ArrowResult);
 
       await operation.close();
-      // TODO: Check result
     }),
   );
 
-  it(
-    'should use arrow with native decimals',
-    createTest(async (session) => {
-      const operation = await session.executeStatement(`SELECT * FROM ${tableName}`, {
-        enableArrow: true,
-        arrowOptions: {
-          useNativeTimestamps: false,
-          useNativeDecimals: true,
-          useNativeComplexTypes: false,
-          useNativeIntervalTypes: false,
-        },
-      });
-      const result = await operation.fetchAll();
-      expect(result).to.deep.equal([
-        {
-          bool: true,
-          tiny_int: 127,
-          small_int: 32000,
-          int_type: 4000000,
-          flt: 1.2000000476837158,
-          dbl: 2.2,
-          dec: new arrow.util.BN(new Uint32Array([320, 0, 0, 0])), // This field is affected
-          str: 'data',
-          ts: '2014-01-17 00:17:13',
-          bin: new Uint8Array([100, 97, 116, 97]),
-          chr: 'a',
-          vchr: 'b',
-          dat: new Date('2014-01-17T00:00:00.000Z'),
-          arr_type: '[2014-01-17,2023-01-22]',
-          map_type: '{"key":1991-01-01}',
-          struct_type: '{"a":"Test","b":2023-01-22}',
-        },
-      ]);
+  it('should handle multiple batches in response', async () => {
+    globalConfig.arrowEnabled = true;
 
-      const resultHandler = await operation._schema.getResultHandler();
-      expect(resultHandler).to.be.instanceof(ArrowResult);
+    const rowsCount = 10000;
 
-      await operation.close();
-      // TODO: Check result
-    }),
-  );
+    const session = await openSession();
+    const operation = await session.executeStatement(`
+      SELECT *
+      FROM range(0, ${rowsCount}) AS t1
+      LEFT JOIN (SELECT 1) AS t2
+    `);
 
-  it(
-    'should use arrow with native complex types',
-    createTest(async (session) => {
-      const operation = await session.executeStatement(`SELECT * FROM ${tableName}`, {
-        enableArrow: true,
-        arrowOptions: {
-          useNativeTimestamps: false,
-          useNativeDecimals: false,
-          useNativeComplexTypes: true,
-          useNativeIntervalTypes: false,
-        },
-      });
-      const result = await operation.fetchAll();
+    // We use some internals here to check that server returned response with multiple batches
+    const resultHandler = await operation._schema.getResultHandler();
+    expect(resultHandler).to.be.instanceof(ArrowResult);
 
-      expect(
-        result.map((item) => ({
-          ...item,
-          arr_type: item.arr_type.toJSON(),
-          map_type: item.map_type.toJSON(),
-          struct_type: item.struct_type.toJSON(),
-        })),
-      ).to.deep.equal([
-        {
-          bool: true,
-          tiny_int: 127,
-          small_int: 32000,
-          int_type: 4000000,
-          flt: 1.2000000476837158,
-          dbl: 2.2,
-          dec: '3.20',
-          str: 'data',
-          ts: '2014-01-17 00:17:13',
-          bin: new Uint8Array([100, 97, 116, 97]),
-          chr: 'a',
-          vchr: 'b',
-          dat: new Date('2014-01-17T00:00:00.000Z'),
-          arr_type: [new Date('2014-01-17'), new Date('2023-01-22')],
-          map_type: { key: new Date('1991-01-01') },
-          struct_type: { a: 'Test', b: new Date('2023-01-22') },
-        },
-      ]);
+    const rawData = await operation._data.fetch(rowsCount);
+    // We don't know exact count of batches returned, it depends on server's configuration,
+    // but with much enough rows there should be more than one result batch
+    expect(rawData.arrowBatches?.length).to.be.gt(1);
 
-      const resultHandler = await operation._schema.getResultHandler();
-      expect(resultHandler).to.be.instanceof(ArrowResult);
-
-      await operation.close();
-      // TODO: Check result
-    }),
-  );
+    const result = resultHandler.getValue([rawData]);
+    expect(result.length).to.be.eq(rowsCount);
+  });
 });

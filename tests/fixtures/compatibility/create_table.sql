@@ -1,4 +1,4 @@
-CREATE TABLE all_types (
+CREATE TABLE ${table_name} (
   bool boolean,
 
   tiny_int tinyint,

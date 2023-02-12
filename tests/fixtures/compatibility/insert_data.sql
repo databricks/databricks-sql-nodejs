@@ -1,4 +1,4 @@
-INSERT INTO all_types (
+INSERT INTO ${table_name} (
   bool,
 
   tiny_int,
