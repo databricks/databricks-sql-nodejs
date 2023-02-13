@@ -2,6 +2,10 @@
 
 ## 1.x (Unreleased)
 
+## 1.1.1
+
+- Fix: patch needed for improved error handling wasn't applied when installing 1.1.0
+
 ## 1.1.0
 
 - Fix: now library will not attempt to parse column names and will use ones provided by server
