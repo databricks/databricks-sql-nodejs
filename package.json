@@ -1,6 +1,6 @@
 {
   "name": "@databricks/sql",
-  "version": "1.1.0",
+  "version": "1.1.1",
   "description": "Driver for connection to Databricks SQL via Thrift API.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -77,5 +77,8 @@
     "thrift": "^0.16.0",
     "uuid": "^9.0.0",
     "winston": "^3.8.2"
-  }
+  },
+  "bundledDependencies": [
+    "thrift"
+  ]
 }
