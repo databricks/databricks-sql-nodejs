@@ -6,6 +6,9 @@ const ArrowResult = require('../../dist/result/ArrowResult').default;
 const globalConfig = require('../../dist/globalConfig').default;
 
 const fixtures = require('../fixtures/compatibility');
+const { expected: expectedColumn } = require('../fixtures/compatibility/column');
+const { expected: expectedArrow } = require('../fixtures/compatibility/arrow');
+const { expected: expectedArrowNativeTypes } = require('../fixtures/compatibility/arrow_native_types');
 const { fixArrowResult } = fixtures;
 
 async function openSession() {
@@ -70,7 +73,7 @@ describe('Arrow support', () => {
 
       const operation = await session.executeStatement(`SELECT * FROM ${tableName}`);
       const result = await operation.fetchAll();
-      expect(result).to.deep.equal(fixtures.expected);
+      expect(result).to.deep.equal(expectedColumn);
 
       const resultHandler = await operation._schema.getResultHandler();
       expect(resultHandler).to.be.not.instanceof(ArrowResult);
@@ -88,7 +91,7 @@ describe('Arrow support', () => {
         useArrowNativeTypes: false,
       });
       const result = await operation.fetchAll();
-      expect(fixArrowResult(result)).to.deep.equal(fixtures.expected);
+      expect(fixArrowResult(result)).to.deep.equal(expectedArrow);
 
       const resultHandler = await operation._schema.getResultHandler();
       expect(resultHandler).to.be.instanceof(ArrowResult);
@@ -106,7 +109,7 @@ describe('Arrow support', () => {
         useArrowNativeTypes: true,
       });
       const result = await operation.fetchAll();
-      expect(fixArrowResult(result)).to.deep.equal(fixtures.expected);
+      expect(fixArrowResult(result)).to.deep.equal(expectedArrowNativeTypes);
 
       const resultHandler = await operation._schema.getResultHandler();
       expect(resultHandler).to.be.instanceof(ArrowResult);

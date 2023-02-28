@@ -26,10 +26,6 @@ const execute = async (session, statement) => {
   return result;
 };
 
-function convertDate(strValue) {
-  return new Date(Date.parse(`${strValue} UTC`));
-}
-
 function removeTrailingMetadata(columns) {
   const result = [];
   for (let i = 0; i < columns.length; i++) {
@@ -186,11 +182,11 @@ describe('Data types', () => {
           dbl: 2.2,
           dec: 3.2,
           str: 'data',
-          ts: convertDate('2014-01-17 00:17:13'),
+          ts: '2014-01-17 00:17:13',
           bin: Buffer.from('data'),
           chr: 'a',
           vchr: 'b',
-          dat: convertDate('2014-01-17'),
+          dat: '2014-01-17',
         },
       ]);
 

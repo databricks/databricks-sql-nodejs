@@ -35,10 +35,6 @@ function convertBigInt(value: any): any {
   return value;
 }
 
-function convertDate(value: any): Date {
-  return value instanceof Date ? value : new Date(Date.parse(`${value} UTC`));
-}
-
 export function convertThriftValue(typeDescriptor: TPrimitiveTypeEntry | undefined, value: any): any {
   if (!typeDescriptor) {
     return value;
@@ -46,9 +42,8 @@ export function convertThriftValue(typeDescriptor: TPrimitiveTypeEntry | undefin
 
   switch (typeDescriptor.type) {
     case TTypeId.DATE_TYPE:
-      return convertDate(value);
     case TTypeId.TIMESTAMP_TYPE:
-      return convertDate(value);
+      return value;
     case TTypeId.UNION_TYPE:
     case TTypeId.USER_DEFINED_TYPE:
       return String(value);

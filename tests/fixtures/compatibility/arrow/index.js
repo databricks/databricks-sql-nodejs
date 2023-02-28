@@ -25,4 +25,7 @@ exports.rowSets = [
   },
 ];
 
-exports.expected = expected;
+exports.expected = expected.map((row) => ({
+  ...row,
+  dat: new Date(Date.parse(`${row.dat} UTC`)),
+}));

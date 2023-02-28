@@ -3,7 +3,6 @@ const path = require('path');
 
 const createTableSql = fs.readFileSync(path.join(__dirname, 'create_table.sql')).toString();
 const insertDataSql = fs.readFileSync(path.join(__dirname, 'insert_data.sql')).toString();
-const expected = require('./expected');
 
 function fixArrowResult(rows) {
   return rows.map((row) => ({
@@ -19,6 +18,5 @@ function fixArrowResult(rows) {
 
 exports.createTableSql = createTableSql;
 exports.insertDataSql = insertDataSql;
-exports.expected = expected;
 
 exports.fixArrowResult = fixArrowResult;

@@ -19,10 +19,6 @@ const getColumnSchema = (name, type, position) => {
   };
 };
 
-function convertDate(strValue) {
-  return new Date(Date.parse(`${strValue} UTC`));
-}
-
 describe('JsonResult', () => {
   it('should convert schema with primitive types to json', () => {
     const schema = {
@@ -121,8 +117,8 @@ describe('JsonResult', () => {
         'table.tiny_int': 5,
         'table.varch': 'e',
         'table.dec': 2.1,
-        'table.ts': convertDate('2020-01-17 00:17:13.0'),
-        'table.date': convertDate('2020-01-17'),
+        'table.ts': '2020-01-17 00:17:13.0',
+        'table.date': '2020-01-17',
         'table.day_interval': '1 00:00:00.000000000',
         'table.month_interval': '0-1',
       },
@@ -139,8 +135,8 @@ describe('JsonResult', () => {
         'table.tiny_int': 6,
         'table.varch': 'f',
         'table.dec': 2.2,
-        'table.ts': convertDate('2020-01-17 00:17:13.0'),
-        'table.date': convertDate('2020-01-17'),
+        'table.ts': '2020-01-17 00:17:13.0',
+        'table.date': '2020-01-17',
         'table.day_interval': '1 00:00:00.000000000',
         'table.month_interval': '0-1',
       },
