@@ -16,6 +16,8 @@ module.exports = {
   path: process.env.E2E_PATH,
   // Access token: dapi********************************
   token: process.env.E2E_ACCESS_TOKEN,
+  // Use AAD token: false
+  useAADToken: process.env.E2E_USEAADTOKEN || false,
   // Catalog and database to use for testing; specify both or leave array empty to use defaults
   database: catalog || database ? [catalog, database] : [],
   // Suffix used for tables that will be created during tests

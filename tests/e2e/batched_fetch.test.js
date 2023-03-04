@@ -10,6 +10,7 @@ const openSession = async () => {
     host: config.host,
     path: config.path,
     token: config.token,
+    useAADToken: config.useAADToken,
   });
 
   return connection.openSession({
@@ -28,14 +29,14 @@ describe('Data fetching', () => {
   it('fetch chunks should return a max row set of chunkSize', async () => {
     const session = await openSession();
     const operation = await session.executeStatement(query, { runAsync: true, maxRows: null });
-    let chunkedOp = await operation.fetchChunk({ maxRows: 10 }).catch((error) => logger(error));
+    const chunkedOp = await operation.fetchChunk({ maxRows: 10 }).catch((error) => logger(error));
     expect(chunkedOp.length).to.be.equal(10);
   });
 
   it('fetch all should fetch all records', async () => {
     const session = await openSession();
     const operation = await session.executeStatement(query, { runAsync: true, maxRows: null });
-    let all = await operation.fetchAll();
+    const all = await operation.fetchAll();
     expect(all.length).to.be.equal(1000);
   });
 });

@@ -10,6 +10,7 @@ const openSession = async () => {
     host: config.host,
     path: config.path,
     token: config.token,
+    useAADToken: config.useAADToken,
   });
 
   return connection.openSession({
