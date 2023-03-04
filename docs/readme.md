@@ -2,19 +2,24 @@
 
 ## Table of Contents
 
-1. [Foreword](#foreword)
-2. [Example](#example) \
-   2.1. [Error handling](#error-handling)
-3. [DBSQLSession](#dbsqlsession)
-4. [DBSQLOperation](#dbsqloperation)
-5. [Status](#status)
-6. [Finalize](#finalize)
+- [Getting started](#getting-started)
+  - [Table of Contents](#table-of-contents)
+  - [Foreword](#foreword)
+  - [Example](#example)
+    - [Error handling](#error-handling)
+  - [DBSQLSession](#dbsqlsession)
+  - [DBSQLOperation](#dbsqloperation)
+    - [Example](#example-1)
+  - [Status](#status)
+  - [Finalize](#finalize)
 
 ## Foreword
 
 The library is written using TypeScript, so the best way to get to know how it works is to look through the code [lib/](/lib/), [tests/e2e](/tests/e2e/) and [examples](/examples).
 
 If you find any mistakes, misleading or some confusion feel free to create an issue or send a pull request.
+
+By default, the token is assumed to be a PAT token. If you are using AAD tokens, pass `useAADToken: true` in the connection options. To generate an AAD token, use the command line `az account get-access-token --resource 2ff814a6-3304-4ab8-85cb-cd0e6f879c1d` or use the MSAL authentication library.
 
 ## Example
 
@@ -28,6 +33,7 @@ client
     host: '...',
     path: '/sql/1.0/endpoints/****************',
     token: 'dapi********************************',
+    // useAADToken: true, // If token is an AAD token
   })
   .then(async (client) => {
     const session = await client.openSession();

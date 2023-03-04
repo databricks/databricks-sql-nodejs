@@ -4,6 +4,7 @@ import { AuthOptions } from '../types/AuthOptions';
 
 type HttpAuthOptions = AuthOptions & {
   headers?: object;
+  useAADToken?: boolean;
 };
 
 export default class PlainHttpAuthentication implements IAuthentication {
@@ -11,12 +12,15 @@ export default class PlainHttpAuthentication implements IAuthentication {
 
   private password: string;
 
+  private useAADToken: boolean;
+
   private headers: object;
 
   constructor(options: HttpAuthOptions) {
     this.username = options?.username || 'anonymous';
     this.password = options?.password !== undefined ? options?.password : 'anonymous';
     this.headers = options?.headers || {};
+    this.useAADToken = options?.useAADToken !== undefined ? options?.useAADToken : false;
   }
 
   authenticate(transport: ITransport): Promise<ITransport> {
@@ -29,6 +33,10 @@ export default class PlainHttpAuthentication implements IAuthentication {
   }
 
   private getToken(username: string, password: string): string {
-    return `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}`;
+    if (this.useAADToken) {
+      return `Bearer ${password}`;
+    } else {
+      return `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}`;
+    }
   }
 }
