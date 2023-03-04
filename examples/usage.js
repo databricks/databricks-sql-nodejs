@@ -5,9 +5,12 @@ const client = new DBSQLClient();
 const host = '****.databricks.com';
 const path = '/sql/1.0/endpoints/****';
 const token = 'dapi********************************';
-
+const useAADToken = false;
+// For AAD tokens
+// const token = 'ey***********';
+// const useAADToken=true;
 client
-  .connect({ host, path, token })
+  .connect({ host, path, token, useAADToken })
   .then(async (client) => {
     const session = await client.openSession();
     const response = await session.getInfo(thrift.TCLIService_types.TGetInfoType.CLI_DBMS_VER);

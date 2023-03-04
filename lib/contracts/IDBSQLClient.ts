@@ -11,6 +11,7 @@ export interface ConnectionOptions {
   path: string;
   token: string;
   clientId?: string;
+  useAADToken?: boolean;
 }
 
 export interface OpenSessionRequest {

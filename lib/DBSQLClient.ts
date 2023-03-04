@@ -92,6 +92,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
     this.authProvider = new PlainHttpAuthentication({
       username: 'token',
       password: options.token,
+      useAADToken: options.useAADToken,
       headers: {
         'User-Agent': buildUserAgentString(options.clientId),
       },
