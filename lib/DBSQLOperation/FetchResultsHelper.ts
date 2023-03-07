@@ -10,6 +10,8 @@ import { ColumnCode, FetchType, Int64 } from '../hive/Types';
 import HiveDriver from '../hive/HiveDriver';
 import StatusFactory from '../factory/StatusFactory';
 
+import RestDriver from '../rest/RestDriver';
+
 function checkIfOperationHasMoreRows(response: TFetchResultsResp): boolean {
   if (response.hasMoreRows) {
     return true;
@@ -37,7 +39,7 @@ function checkIfOperationHasMoreRows(response: TFetchResultsResp): boolean {
 }
 
 export default class FetchResultsHelper {
-  private driver: HiveDriver;
+  private driver: RestDriver;
 
   private operationHandle: TOperationHandle;
 
@@ -50,7 +52,7 @@ export default class FetchResultsHelper {
   hasMoreRows: boolean = false;
 
   constructor(
-    driver: HiveDriver,
+    driver: RestDriver,
     operationHandle: TOperationHandle,
     prefetchedResults: Array<TFetchResultsResp | undefined>,
   ) {

@@ -15,10 +15,12 @@ import FetchResultsHelper from './FetchResultsHelper';
 import CompleteOperationHelper from './CompleteOperationHelper';
 import IDBSQLLogger, { LogLevel } from '../contracts/IDBSQLLogger';
 
+import RestDriver from '../rest/RestDriver';
+
 const defaultMaxRows = 100000;
 
 export default class DBSQLOperation implements IOperation {
-  private driver: HiveDriver;
+  private driver: RestDriver;
 
   private operationHandle: TOperationHandle;
 
@@ -33,7 +35,7 @@ export default class DBSQLOperation implements IOperation {
   private _completeOperation: CompleteOperationHelper;
 
   constructor(
-    driver: HiveDriver,
+    driver: RestDriver,
     operationHandle: TOperationHandle,
     logger: IDBSQLLogger,
     directResults?: TSparkDirectResults,

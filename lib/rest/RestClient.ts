@@ -12,6 +12,7 @@ import {
 
 export interface RestClientOptions {
   host: string;
+  warehouseId: string;
   headers?: Record<string, string>;
 }
 
@@ -40,6 +41,10 @@ export default class RestClient {
 
   constructor(options: RestClientOptions) {
     this.options = options;
+  }
+
+  public getWarehouseId() {
+    return this.options.warehouseId;
   }
 
   public executeStatement(request: ExecuteStatementRequest) {

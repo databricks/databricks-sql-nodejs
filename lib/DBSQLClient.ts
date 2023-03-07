@@ -21,6 +21,9 @@ import PlainHttpAuthentication from './connection/auth/PlainHttpAuthentication';
 import IDBSQLLogger, { LogLevel } from './contracts/IDBSQLLogger';
 import DBSQLLogger from './DBSQLLogger';
 
+import RestClient from './rest/RestClient';
+import RestDriver from './rest/RestDriver';
+
 function prependSlash(str: string): string {
   if (str.length > 0 && str.charAt(0) !== '/') {
     return `/${str}`;
@@ -42,7 +45,8 @@ function getInitialNamespaceOptions(catalogName?: string, schemaName?: string) {
 }
 
 export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
-  private client: TCLIService.Client | null;
+  private client: RestClient | null;
+  private driver: RestDriver | null;
 
   private connection: IThriftConnection | null;
 
@@ -63,6 +67,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
     this.statusFactory = new StatusFactory();
     this.logger = options?.logger || new DBSQLLogger();
     this.client = null;
+    this.driver = null;
     this.connection = null;
     this.logger.log(LogLevel.info, 'Created DBSQLClient');
   }
@@ -99,7 +104,19 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
 
     this.connection = await this.connectionProvider.connect(this.getConnectionOptions(options), this.authProvider);
 
-    this.client = this.thrift.createClient(TCLIService, this.connection.getConnection());
+    // this.client = this.thrift.createClient(TCLIService, this.connection.getConnection());
+    this.client = new RestClient({
+      host: options.host,
+      warehouseId:
+        options.path
+          .split('/')
+          .filter((s) => s !== '')
+          .pop() || '', // take last path fragment
+      headers: {
+        Authorization: `Basic ${Buffer.from(`token:${options.token}`).toString('base64')}`,
+      },
+    });
+    this.driver = new RestDriver(this.client);
 
     this.connection.getConnection().on('error', (error: Error) => {
       // Error.stack already contains error type and message, so log stack if available,
@@ -141,11 +158,11 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
    * const session = await client.openSession();
    */
   openSession(request: OpenSessionRequest = {}): Promise<IDBSQLSession> {
-    if (!this.connection?.isConnected()) {
+    if (!this.connection?.isConnected() || !this.driver) {
       return Promise.reject(new HiveDriverError('DBSQLClient: connection is lost'));
     }
 
-    const driver = new HiveDriver(this.getClient());
+    const driver = this.driver;
 
     return driver
       .openSession({

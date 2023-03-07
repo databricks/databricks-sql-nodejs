@@ -6,8 +6,10 @@ import JsonResult from '../result/JsonResult';
 import HiveDriverError from '../errors/HiveDriverError';
 import { definedOrError } from '../utils';
 
+import RestDriver from '../rest/RestDriver';
+
 export default class SchemaHelper {
-  private driver: HiveDriver;
+  private driver: RestDriver;
 
   private operationHandle: TOperationHandle;
 
@@ -15,7 +17,7 @@ export default class SchemaHelper {
 
   private metadata?: TGetResultSetMetadataResp;
 
-  constructor(driver: HiveDriver, operationHandle: TOperationHandle, metadata?: TGetResultSetMetadataResp) {
+  constructor(driver: RestDriver, operationHandle: TOperationHandle, metadata?: TGetResultSetMetadataResp) {
     this.driver = driver;
     this.operationHandle = operationHandle;
     this.metadata = metadata;

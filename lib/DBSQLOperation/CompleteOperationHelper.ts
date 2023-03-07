@@ -3,8 +3,10 @@ import HiveDriver from '../hive/HiveDriver';
 import StatusFactory from '../factory/StatusFactory';
 import Status from '../dto/Status';
 
+import RestDriver from '../rest/RestDriver';
+
 export default class CompleteOperationHelper {
-  private driver: HiveDriver;
+  private driver: RestDriver;
 
   private operationHandle: TOperationHandle;
 
@@ -14,7 +16,7 @@ export default class CompleteOperationHelper {
 
   cancelled: boolean = false;
 
-  constructor(driver: HiveDriver, operationHandle: TOperationHandle, closeOperation?: TCloseOperationResp) {
+  constructor(driver: RestDriver, operationHandle: TOperationHandle, closeOperation?: TCloseOperationResp) {
     this.driver = driver;
     this.operationHandle = operationHandle;
 

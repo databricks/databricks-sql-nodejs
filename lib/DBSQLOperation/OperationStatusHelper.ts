@@ -4,6 +4,8 @@ import StatusFactory from '../factory/StatusFactory';
 import { WaitUntilReadyOptions } from '../contracts/IOperation';
 import OperationStateError from '../errors/OperationStateError';
 
+import RestDriver from '../rest/RestDriver';
+
 async function delay(ms?: number): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(() => {
@@ -13,7 +15,7 @@ async function delay(ms?: number): Promise<void> {
 }
 
 export default class OperationStatusHelper {
-  private driver: HiveDriver;
+  private driver: RestDriver;
 
   private operationHandle: TOperationHandle;
 
@@ -27,7 +29,7 @@ export default class OperationStatusHelper {
 
   hasResultSet: boolean = false;
 
-  constructor(driver: HiveDriver, operationHandle: TOperationHandle, operationStatus?: TGetOperationStatusResp) {
+  constructor(driver: RestDriver, operationHandle: TOperationHandle, operationStatus?: TGetOperationStatusResp) {
     this.driver = driver;
     this.operationHandle = operationHandle;
     this.hasResultSet = operationHandle.hasResultSet;

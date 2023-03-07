@@ -21,6 +21,7 @@ import StatusFactory from './factory/StatusFactory';
 import InfoValue from './dto/InfoValue';
 import { definedOrError } from './utils';
 import IDBSQLLogger, { LogLevel } from './contracts/IDBSQLLogger';
+import RestDriver from './rest/RestDriver';
 
 const defaultMaxRows = 100000;
 
@@ -43,7 +44,7 @@ function getDirectResultsOptions(maxRows: number | null = defaultMaxRows) {
 }
 
 export default class DBSQLSession implements IDBSQLSession {
-  private driver: HiveDriver;
+  private driver: RestDriver;
 
   private sessionHandle: TSessionHandle;
 
@@ -51,7 +52,7 @@ export default class DBSQLSession implements IDBSQLSession {
 
   private logger: IDBSQLLogger;
 
-  constructor(driver: HiveDriver, sessionHandle: TSessionHandle, logger: IDBSQLLogger) {
+  constructor(driver: RestDriver, sessionHandle: TSessionHandle, logger: IDBSQLLogger) {
     this.driver = driver;
     this.sessionHandle = sessionHandle;
     this.statusFactory = new StatusFactory();

@@ -14,19 +14,19 @@ export enum TimeoutAction {
 }
 
 export interface ExecuteStatementRequest {
-  catalog: string;
+  catalog?: string;
   disposition: Disposition;
   format: Format;
   on_wait_timeout: TimeoutAction;
-  schema: string;
+  schema?: string;
   statement: string;
   wait_timeout: string;
   warehouse_id: string;
 }
 
 export interface ExecuteStatementResponse {
-  manifest: ResultManifest;
-  result: ResultData;
+  manifest?: ResultManifest;
+  result?: ResultData;
   statement_id: string;
   status: StatementStatus;
 }
