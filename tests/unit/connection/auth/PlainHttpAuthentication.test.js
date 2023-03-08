@@ -1,5 +1,4 @@
 const { expect } = require('chai');
-const { useAADToken } = require('../../../e2e/utils/config.local');
 const PlainHttpAuthentication = require('../../../../dist/connection/auth/PlainHttpAuthentication').default;
 
 describe('PlainHttpAuthentication', () => {
