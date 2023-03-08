@@ -35,8 +35,7 @@ export default class PlainHttpAuthentication implements IAuthentication {
   private getToken(username: string, password: string): string {
     if (this.useAADToken) {
       return `Bearer ${password}`;
-    } else {
-      return `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}`;
     }
+    return `Basic ${Buffer.from(`${username}:${password}`).toString('base64')}`;
   }
 }
