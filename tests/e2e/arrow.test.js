@@ -86,10 +86,9 @@ describe('Arrow support', () => {
     'should use arrow with native types disabled',
     createTest(async (session) => {
       globalConfig.arrowEnabled = true;
+      globalConfig.useArrowNativeTypes = false;
 
-      const operation = await session.executeStatement(`SELECT * FROM ${tableName}`, {
-        useArrowNativeTypes: false,
-      });
+      const operation = await session.executeStatement(`SELECT * FROM ${tableName}`);
       const result = await operation.fetchAll();
       expect(fixArrowResult(result)).to.deep.equal(expectedArrow);
 
@@ -104,10 +103,9 @@ describe('Arrow support', () => {
     'should use arrow with native types enabled',
     createTest(async (session) => {
       globalConfig.arrowEnabled = true;
+      globalConfig.useArrowNativeTypes = true;
 
-      const operation = await session.executeStatement(`SELECT * FROM ${tableName}`, {
-        useArrowNativeTypes: true,
-      });
+      const operation = await session.executeStatement(`SELECT * FROM ${tableName}`);
       const result = await operation.fetchAll();
       expect(fixArrowResult(result)).to.deep.equal(expectedArrowNativeTypes);
 
