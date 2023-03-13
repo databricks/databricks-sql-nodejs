@@ -1,6 +1,6 @@
 interface GlobalConfig {
-  arrowEnabled?: boolean,
-  useArrowNativeTypes?: boolean,
+  arrowEnabled?: boolean;
+  useArrowNativeTypes?: boolean;
 }
 
 export default {
