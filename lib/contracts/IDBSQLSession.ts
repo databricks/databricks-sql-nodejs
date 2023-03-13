@@ -7,8 +7,6 @@ export type ExecuteStatementOptions = {
   queryTimeout?: Int64;
   runAsync?: boolean;
   maxRows?: number | null;
-  // defaults to `true`
-  useArrowNativeTypes?: boolean;
 };
 
 export type TypeInfoRequest = {

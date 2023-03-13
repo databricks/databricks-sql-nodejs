@@ -49,18 +49,16 @@ function getDirectResultsOptions(maxRows: number | null = defaultMaxRows) {
   };
 }
 
-function getArrowOptions(useArrowNativeTypes: boolean | undefined): {
+function getArrowOptions(): {
   canReadArrowResult: boolean;
   useArrowNativeTypes?: TSparkArrowTypes;
 } {
-  if (!globalConfig.arrowEnabled) {
+  const { arrowEnabled = true, useArrowNativeTypes = true } = globalConfig;
+
+  if (!arrowEnabled) {
     return {
       canReadArrowResult: false,
     };
-  }
-
-  if (useArrowNativeTypes === undefined) {
-    useArrowNativeTypes = true;
   }
 
   return {
@@ -134,7 +132,7 @@ export default class DBSQLSession implements IDBSQLSession {
         queryTimeout: options.queryTimeout,
         runAsync: options.runAsync || false,
         ...getDirectResultsOptions(options.maxRows),
-        ...getArrowOptions(options.useArrowNativeTypes),
+        ...getArrowOptions(),
       })
       .then((response) => this.createOperation(response));
   }
