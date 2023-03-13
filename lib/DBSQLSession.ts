@@ -1,5 +1,11 @@
 import { stringify, NIL, parse } from 'uuid';
-import { TSessionHandle, TStatus, TOperationHandle, TSparkDirectResults } from '../thrift/TCLIService_types';
+import {
+  TSessionHandle,
+  TStatus,
+  TOperationHandle,
+  TSparkDirectResults,
+  TSparkArrowTypes,
+} from '../thrift/TCLIService_types';
 import HiveDriver from './hive/HiveDriver';
 import { Int64 } from './hive/Types';
 import IDBSQLSession, {
@@ -21,6 +27,7 @@ import StatusFactory from './factory/StatusFactory';
 import InfoValue from './dto/InfoValue';
 import { definedOrError } from './utils';
 import IDBSQLLogger, { LogLevel } from './contracts/IDBSQLLogger';
+import globalConfig from './globalConfig';
 
 const defaultMaxRows = 100000;
 
@@ -38,6 +45,30 @@ function getDirectResultsOptions(maxRows: number | null = defaultMaxRows) {
   return {
     getDirectResults: {
       maxRows: new Int64(maxRows),
+    },
+  };
+}
+
+function getArrowOptions(): {
+  canReadArrowResult: boolean;
+  useArrowNativeTypes?: TSparkArrowTypes;
+} {
+  const { arrowEnabled = true, useArrowNativeTypes = true } = globalConfig;
+
+  if (!arrowEnabled) {
+    return {
+      canReadArrowResult: false,
+    };
+  }
+
+  return {
+    canReadArrowResult: true,
+    useArrowNativeTypes: {
+      timestampAsArrow: useArrowNativeTypes,
+      decimalAsArrow: useArrowNativeTypes,
+      complexTypesAsArrow: useArrowNativeTypes,
+      // TODO: currently unsupported by `apache-arrow` (see https://github.com/streamlit/streamlit/issues/4489)
+      intervalTypesAsArrow: false,
     },
   };
 }
@@ -101,6 +132,7 @@ export default class DBSQLSession implements IDBSQLSession {
         queryTimeout: options.queryTimeout,
         runAsync: options.runAsync || false,
         ...getDirectResultsOptions(options.maxRows),
+        ...getArrowOptions(),
       })
       .then((response) => this.createOperation(response));
   }
