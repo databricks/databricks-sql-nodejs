@@ -173,8 +173,6 @@ export default class RestDriver {
   private processResultData(result?: ResultData) {
     if (!result) return;
 
-    console.log(result);
-
     result.external_links?.forEach((link) => {
       if (link.external_link) {
         this.resultLinks.push(link.external_link);
@@ -183,6 +181,16 @@ export default class RestDriver {
         this.nextChunkLinks.push(link.next_chunk_internal_link);
       }
     });
+  }
+
+  private isPendingOrRunning() {
+    const state = this.currentStatement?.status?.state;
+    return state === StatementState.Pending || state === StatementState.Running;
+  }
+
+  private hasResultSet() {
+    if (this.isPendingOrRunning()) return true;
+    return this.resultLinks.length > 0 || this.nextChunkLinks.length > 0;
   }
 
   async openSession(request: TOpenSessionReq): Promise<TOpenSessionResp> {
@@ -213,7 +221,7 @@ export default class RestDriver {
       disposition: Disposition.ExternalLinks,
       format: Format.ArrowStream,
       on_wait_timeout: TimeoutAction.Continue,
-      wait_timeout: '30s',
+      wait_timeout: '5s',
       warehouse_id: this.client.getWarehouseId(),
       statement: request.statement,
     });
@@ -236,7 +244,7 @@ export default class RestDriver {
           secret: Buffer.alloc(0),
         }),
         operationType: TOperationType.EXECUTE_STATEMENT,
-        hasResultSet: this.resultLinks.length > 0 || this.nextChunkLinks.length > 0,
+        hasResultSet: this.hasResultSet(),
       }),
     });
   }
@@ -280,8 +288,6 @@ export default class RestDriver {
       });
     }
 
-    console.log(this.resultLinks.length, this.nextChunkLinks.length);
-
     if (this.resultLinks.length === 0) {
       const nextChunkLink = this.nextChunkLinks.pop();
       if (nextChunkLink) {
@@ -295,7 +301,7 @@ export default class RestDriver {
       const arrowData = await this.client.fetchExternalLink(resultLink);
       return new TFetchResultsResp({
         status: new TStatus({ statusCode: TStatusCode.SUCCESS_STATUS }),
-        hasMoreRows: this.resultLinks.length > 0 || this.nextChunkLinks.length > 0,
+        hasMoreRows: this.hasResultSet(),
         results: {
           startRowOffset: new Int64(0),
           rows: [],
@@ -355,15 +361,14 @@ export default class RestDriver {
   }
 
   async getOperationStatus(request: TGetOperationStatusReq): Promise<TGetOperationStatusResp> {
-    if (this.currentStatement && !this.currentStatement.manifest) {
+    if (this.currentStatement && this.isPendingOrRunning()) {
       const response = await this.client.getStatement({ statement_id: this.currentStatement.statement_id });
       this.currentStatement.status = response.status;
       this.currentStatement.manifest = response.manifest;
       this.currentStatement.result = response.result;
 
-      console.log(JSON.stringify(response, null, 2));
-
       this.processStatementStatus(this.currentStatement.status);
+      this.processResultData(this.currentStatement?.result);
     }
 
     if (!this.currentStatement) {
@@ -377,7 +382,7 @@ export default class RestDriver {
       operationState: restOperationStateToThriftOperationState(this.currentStatement.status.state),
       errorCode: 0,
       errorMessage: `${this.currentStatement.status.error?.error_code}: ${this.currentStatement.status.error?.message}`,
-      hasResultSet: Boolean(this.currentStatement.result),
+      hasResultSet: this.hasResultSet(),
     });
   }
 

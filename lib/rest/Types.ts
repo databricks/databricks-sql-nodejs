@@ -153,8 +153,8 @@ export interface GetStatementRequest {
 }
 
 export interface GetStatementResponse {
-  manifest: ResultManifest;
-  result: ResultData;
+  manifest?: ResultManifest;
+  result?: ResultData;
   statement_id: string;
   status: StatementStatus;
 }

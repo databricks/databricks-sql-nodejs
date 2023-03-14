@@ -80,11 +80,7 @@ export default class RestClient {
   }
 
   public getStatementResultChunk(internalLink: string): Promise<ResultData> {
-    return this.doRequest<void, ResultData>(
-      HTTPMethod.GET,
-      internalLink,
-      undefined,
-    );
+    return this.doRequest<void, ResultData>(HTTPMethod.GET, internalLink, undefined);
   }
 
   public async fetchExternalLink(url: string): Promise<Buffer> {
