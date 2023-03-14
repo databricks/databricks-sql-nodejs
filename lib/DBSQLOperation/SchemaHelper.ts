@@ -1,8 +1,9 @@
-import { TOperationHandle, TGetResultSetMetadataResp, TSparkRowSetType } from '../../thrift/TCLIService_types';
+import { TGetResultSetMetadataResp, TOperationHandle, TSparkRowSetType } from '../../thrift/TCLIService_types';
 import HiveDriver from '../hive/HiveDriver';
 import StatusFactory from '../factory/StatusFactory';
 import IOperationResult from '../result/IOperationResult';
 import JsonResult from '../result/JsonResult';
+import ArrowResult from '../result/ArrowResult';
 import HiveDriverError from '../errors/HiveDriverError';
 import { definedOrError } from '../utils';
 
@@ -42,12 +43,13 @@ export default class SchemaHelper {
 
   async getResultHandler(): Promise<IOperationResult> {
     const metadata = await this.fetchMetadata();
-    const schema = definedOrError(metadata.schema);
     const resultFormat = definedOrError(metadata.resultFormat);
 
     switch (resultFormat) {
       case TSparkRowSetType.COLUMN_BASED_SET:
-        return new JsonResult(schema);
+        return new JsonResult(metadata.schema);
+      case TSparkRowSetType.ARROW_BASED_SET:
+        return new ArrowResult(metadata.schema, metadata.arrowSchema);
       default:
         throw new HiveDriverError(`Unsupported result format: ${TSparkRowSetType[resultFormat]}`);
     }
