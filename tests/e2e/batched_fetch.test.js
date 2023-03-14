@@ -2,6 +2,7 @@ const { expect } = require('chai');
 const config = require('./utils/config');
 const logger = require('./utils/logger')(config.logger);
 const { DBSQLClient } = require('../..');
+const globalConfig = require('../../dist/globalConfig').default;
 
 const openSession = async () => {
   const client = new DBSQLClient();
@@ -20,6 +21,14 @@ const openSession = async () => {
 };
 
 describe('Data fetching', () => {
+  beforeEach(() => {
+    globalConfig.arrowEnabled = false;
+  });
+
+  afterEach(() => {
+    globalConfig.arrowEnabled = true;
+  });
+
   const query = `
     SELECT *
     FROM range(0, 1000) AS t1

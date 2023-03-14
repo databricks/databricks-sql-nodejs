@@ -1,42 +1,26 @@
-import { ColumnCode, ColumnType } from '../hive/Types';
-import {
-  TTypeId,
-  TRowSet,
-  TTableSchema,
-  TColumn,
-  TColumnDesc,
-  TPrimitiveTypeEntry,
-} from '../../thrift/TCLIService_types';
+import { ColumnCode } from '../hive/Types';
+import { TRowSet, TTableSchema, TColumn, TColumnDesc } from '../../thrift/TCLIService_types';
 import IOperationResult from './IOperationResult';
+import { getSchemaColumns, convertThriftValue } from './utils';
 
 export default class JsonResult implements IOperationResult {
-  private readonly schema?: TTableSchema;
+  private readonly schema: Array<TColumnDesc>;
 
   constructor(schema?: TTableSchema) {
-    this.schema = schema;
+    this.schema = getSchemaColumns(schema);
   }
 
   getValue(data?: Array<TRowSet>): Array<object> {
-    if (!data) {
+    if (this.schema.length === 0 || !data) {
       return [];
     }
-
-    const descriptors = this.getSchemaColumns();
 
     return data.reduce((result: Array<any>, rowSet: TRowSet) => {
       const columns = rowSet.columns || [];
-      const rows = this.getRows(columns, descriptors);
+      const rows = this.getRows(columns, this.schema);
 
       return result.concat(rows);
     }, []);
-  }
-
-  private getSchemaColumns(): Array<TColumnDesc> {
-    if (!this.schema) {
-      return [];
-    }
-
-    return [...this.schema.columns].sort((c1, c2) => c1.position - c2.position);
   }
 
   private getRows(columns: Array<TColumn>, descriptors: Array<TColumnDesc>): Array<any> {
@@ -69,46 +53,8 @@ export default class JsonResult implements IOperationResult {
       if (columnValue.nulls && this.isNull(columnValue.nulls, i)) {
         return null;
       }
-      return this.convertData(typeDescriptor, value);
+      return convertThriftValue(typeDescriptor, value);
     });
-  }
-
-  private convertData(typeDescriptor: TPrimitiveTypeEntry | undefined, value: ColumnType): any {
-    if (!typeDescriptor) {
-      return value;
-    }
-
-    switch (typeDescriptor.type) {
-      case TTypeId.TIMESTAMP_TYPE:
-      case TTypeId.DATE_TYPE:
-      case TTypeId.UNION_TYPE:
-      case TTypeId.USER_DEFINED_TYPE:
-        return String(value);
-      case TTypeId.DECIMAL_TYPE:
-        return Number(value);
-      case TTypeId.STRUCT_TYPE:
-      case TTypeId.MAP_TYPE:
-        return this.toJSON(value, {});
-      case TTypeId.ARRAY_TYPE:
-        return this.toJSON(value, []);
-      case TTypeId.BIGINT_TYPE:
-        return this.convertBigInt(value);
-      case TTypeId.NULL_TYPE:
-      case TTypeId.BINARY_TYPE:
-      case TTypeId.INTERVAL_YEAR_MONTH_TYPE:
-      case TTypeId.INTERVAL_DAY_TIME_TYPE:
-      case TTypeId.FLOAT_TYPE:
-      case TTypeId.DOUBLE_TYPE:
-      case TTypeId.INT_TYPE:
-      case TTypeId.SMALLINT_TYPE:
-      case TTypeId.TINYINT_TYPE:
-      case TTypeId.BOOLEAN_TYPE:
-      case TTypeId.STRING_TYPE:
-      case TTypeId.CHAR_TYPE:
-      case TTypeId.VARCHAR_TYPE:
-      default:
-        return value;
-    }
   }
 
   private isNull(nulls: Buffer, i: number): boolean {
@@ -116,18 +62,6 @@ export default class JsonResult implements IOperationResult {
     const ofs = 2 ** (i % 8);
 
     return (byte & ofs) !== 0;
-  }
-
-  private toJSON(value: any, defaultValue: any): any {
-    try {
-      return JSON.parse(value);
-    } catch (e) {
-      return defaultValue;
-    }
-  }
-
-  private convertBigInt(value: any): any {
-    return value.toNumber();
   }
 
   private getColumnValue(column: TColumn) {

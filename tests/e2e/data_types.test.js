@@ -2,6 +2,7 @@ const { expect } = require('chai');
 const config = require('./utils/config');
 const logger = require('./utils/logger')(config.logger);
 const { DBSQLClient } = require('../..');
+const globalConfig = require('../../dist/globalConfig').default;
 
 const openSession = async () => {
   const client = new DBSQLClient();
@@ -39,6 +40,14 @@ function removeTrailingMetadata(columns) {
 }
 
 describe('Data types', () => {
+  beforeEach(() => {
+    globalConfig.arrowEnabled = false;
+  });
+
+  afterEach(() => {
+    globalConfig.arrowEnabled = true;
+  });
+
   it('primitive data types should presented correctly', async () => {
     const table = `dbsql_nodejs_sdk_e2e_primitive_types_${config.tableSuffix}`;
 

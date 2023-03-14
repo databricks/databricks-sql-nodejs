@@ -6,6 +6,8 @@ const DBSQLOperation = require('../../dist/DBSQLOperation').default;
 const StatusError = require('../../dist/errors/StatusError').default;
 const OperationStateError = require('../../dist/errors/OperationStateError').default;
 const HiveDriverError = require('../../dist/errors/HiveDriverError').default;
+const JsonResult = require('../../dist/result/JsonResult').default;
+const ArrowResult = require('../../dist/result/ArrowResult').default;
 
 // Create logger that won't emit
 //
@@ -716,6 +718,36 @@ describe('DBSQLOperation', () => {
           throw e;
         }
         expect(e).to.be.instanceOf(StatusError);
+      }
+    });
+
+    it('should use appropriate result handler', async () => {
+      const handle = new OperationHandleMock();
+      handle.hasResultSet = true;
+
+      const driver = new DriverMock();
+      driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
+      driver.getOperationStatusResp.hasResultSet = true;
+      sinon.spy(driver, 'getResultSetMetadata');
+
+      jsonHandler: {
+        driver.getResultSetMetadataResp.resultFormat = TSparkRowSetType.COLUMN_BASED_SET;
+        driver.getResultSetMetadata.resetHistory();
+
+        const operation = new DBSQLOperation(driver, handle, logger);
+        const resultHandler = await operation._schema.getResultHandler();
+        expect(driver.getResultSetMetadata.called).to.be.true;
+        expect(resultHandler).to.be.instanceOf(JsonResult);
+      }
+
+      arrowHandler: {
+        driver.getResultSetMetadataResp.resultFormat = TSparkRowSetType.ARROW_BASED_SET;
+        driver.getResultSetMetadata.resetHistory();
+
+        const operation = new DBSQLOperation(driver, handle, logger);
+        const resultHandler = await operation._schema.getResultHandler();
+        expect(driver.getResultSetMetadata.called).to.be.true;
+        expect(resultHandler).to.be.instanceOf(ArrowResult);
       }
     });
   });
