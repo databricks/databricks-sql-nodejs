@@ -71,9 +71,9 @@ export interface ResultData {
   byte_count: number; // int64
   chunk_index: number;
   data_array: string[][];
-  external_links: ExternalLink[];
-  next_chunk_index: number;
-  next_chunk_internal_link: string;
+  external_links?: ExternalLink[];
+  next_chunk_index?: number;
+  next_chunk_internal_link?: string;
   row_count: number; // int64
   row_offset: number; // int64
 }

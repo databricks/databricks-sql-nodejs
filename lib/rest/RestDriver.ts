@@ -141,27 +141,6 @@ function restTypeNameToThriftTypeId(typeName: ColumnInfoTypeName): TTypeId {
   }
 }
 
-function restJsonResultToThriftColumnar(schema: ResultSchema, result: ResultData): TRowSet {
-  const columns: TColumn[] = schema.columns.map(() => ({
-    stringVal: { values: [], nulls: Buffer.alloc(0) },
-  }));
-
-  if (result.data_array) {
-    result.data_array.forEach((row) => {
-      for (let i = 0; i < row.length; i++) {
-        columns[i].stringVal?.values.push(row[i]);
-      }
-    });
-  }
-
-  return {
-    startRowOffset: new Int64(0),
-    rows: [],
-    columns,
-    columnCount: columns.length,
-  };
-}
-
 export default class RestDriver {
   private client: RestClient;
 
@@ -170,7 +149,9 @@ export default class RestDriver {
 
   // In this PoC we don't support concurrent queries, so just store currently processed query id to simplify things
   private currentStatement?: ExecuteStatementResponse = undefined;
-  private currentResultChunk?: ResultData = undefined;
+
+  private resultLinks: Array<string> = [];
+  private nextChunkLinks: Array<string> = [];
 
   constructor(client: RestClient) {
     this.client = client;
@@ -187,6 +168,21 @@ export default class RestDriver {
       default:
         return;
     }
+  }
+
+  private processResultData(result?: ResultData) {
+    if (!result) return;
+
+    console.log(result);
+
+    result.external_links?.forEach((link) => {
+      if (link.external_link) {
+        this.resultLinks.push(link.external_link);
+      }
+      if (link.next_chunk_internal_link) {
+        this.nextChunkLinks.push(link.next_chunk_internal_link);
+      }
+    });
   }
 
   async openSession(request: TOpenSessionReq): Promise<TOpenSessionResp> {
@@ -214,10 +210,10 @@ export default class RestDriver {
     this.currentStatement = await this.client.executeStatement({
       catalog: this.session?.initialNamespace?.catalogName,
       schema: this.session?.initialNamespace?.schemaName,
-      disposition: Disposition.Inline,
-      format: Format.JsonArray,
+      disposition: Disposition.ExternalLinks,
+      format: Format.ArrowStream,
       on_wait_timeout: TimeoutAction.Continue,
-      wait_timeout: '5s',
+      wait_timeout: '30s',
       warehouse_id: this.client.getWarehouseId(),
       statement: request.statement,
     });
@@ -230,6 +226,8 @@ export default class RestDriver {
       });
     }
 
+    this.processResultData(this.currentStatement?.result);
+
     return new TExecuteStatementResp({
       status: new TStatus({ statusCode: TStatusCode.SUCCESS_STATUS }),
       operationHandle: new TOperationHandle({
@@ -238,7 +236,7 @@ export default class RestDriver {
           secret: Buffer.alloc(0),
         }),
         operationType: TOperationType.EXECUTE_STATEMENT,
-        hasResultSet: this.currentStatement?.result?.chunk_index !== undefined,
+        hasResultSet: this.resultLinks.length > 0 || this.nextChunkLinks.length > 0,
       }),
     });
   }
@@ -269,8 +267,9 @@ export default class RestDriver {
 
     return new TGetResultSetMetadataResp({
       status: new TStatus({ statusCode: TStatusCode.SUCCESS_STATUS }),
-      resultFormat: TSparkRowSetType.COLUMN_BASED_SET,
+      resultFormat: TSparkRowSetType.ARROW_BASED_SET,
       schema: { columns },
+      arrowSchema: Buffer.alloc(0),
     });
   }
 
@@ -281,30 +280,37 @@ export default class RestDriver {
       });
     }
 
-    if (!this.currentResultChunk) {
-      this.currentResultChunk = this.currentStatement.result;
-    } else {
-      this.currentResultChunk = await this.client.getStatementResultChunkN({
-        statement_id: this.currentStatement.statement_id,
-        chunk_index: this.currentResultChunk.next_chunk_index,
-      });
+    console.log(this.resultLinks.length, this.nextChunkLinks.length);
+
+    if (this.resultLinks.length === 0) {
+      const nextChunkLink = this.nextChunkLinks.pop();
+      if (nextChunkLink) {
+        const result = await this.client.getStatementResultChunk(nextChunkLink);
+        this.processResultData(result);
+      }
     }
 
-    if (!this.currentResultChunk) {
+    const resultLink = this.resultLinks.pop();
+    if (resultLink) {
+      const arrowData = await this.client.fetchExternalLink(resultLink);
       return new TFetchResultsResp({
-        status: new TStatus({ statusCode: TStatusCode.ERROR_STATUS, errorMessage: 'No more data' }),
+        status: new TStatus({ statusCode: TStatusCode.SUCCESS_STATUS }),
+        hasMoreRows: this.resultLinks.length > 0 || this.nextChunkLinks.length > 0,
+        results: {
+          startRowOffset: new Int64(0),
+          rows: [],
+          arrowBatches: [
+            {
+              batch: arrowData,
+              rowCount: new Int64(0),
+            },
+          ],
+        },
       });
     }
-
-    const schema = this.currentStatement.manifest?.schema || {
-      column_count: 0,
-      columns: [],
-    };
 
     return new TFetchResultsResp({
-      status: new TStatus({ statusCode: TStatusCode.SUCCESS_STATUS }),
-      hasMoreRows: this.currentResultChunk?.next_chunk_index !== undefined,
-      results: restJsonResultToThriftColumnar(schema, this.currentResultChunk),
+      status: new TStatus({ statusCode: TStatusCode.ERROR_STATUS, errorMessage: 'No more data' }),
     });
   }
 

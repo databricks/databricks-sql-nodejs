@@ -22,7 +22,7 @@ enum HTTPMethod {
 }
 
 export default class RestClient {
-  private options: RestClientOptions;
+  private readonly options: RestClientOptions;
 
   private async doRequest<P, R>(method: string, path: string, payload: P): Promise<R> {
     const { host, headers } = this.options;
@@ -77,5 +77,23 @@ export default class RestClient {
       `/api/2.0/sql/statements/${request.statement_id}/result/chunks/${request.chunk_index}`,
       request,
     );
+  }
+
+  public getStatementResultChunk(internalLink: string): Promise<ResultData> {
+    return this.doRequest<void, ResultData>(
+      HTTPMethod.GET,
+      internalLink,
+      undefined,
+    );
+  }
+
+  public async fetchExternalLink(url: string): Promise<Buffer> {
+    const { host, headers } = this.options;
+    const response = await fetch(url, {
+      method: HTTPMethod.GET,
+      headers: {},
+    });
+    const result = await response.arrayBuffer();
+    return Buffer.from(result);
   }
 }
