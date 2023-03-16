@@ -69,6 +69,61 @@ describe('DBSQLSession', () => {
       const result = await session.executeStatement('SELECT * FROM table', { maxRows: null });
       expect(result).instanceOf(DBSQLOperation);
     });
+
+    describe('Arrow support', () => {
+      it('should not use Arrow if disabled in options', async () => {
+        const session = createSession();
+        const result = await session.executeStatement('SELECT * FROM table', { enableArrow: false });
+        expect(result).instanceOf(DBSQLOperation);
+      });
+
+      it('should apply defaults for Arrow options', async () => {
+        const session = createSession();
+
+        case1: {
+          const result = await session.executeStatement('SELECT * FROM table', { enableArrow: true });
+          expect(result).instanceOf(DBSQLOperation);
+        }
+
+        case2: {
+          const result = await session.executeStatement('SELECT * FROM table', {
+            enableArrow: true,
+            arrowOptions: {},
+          });
+          expect(result).instanceOf(DBSQLOperation);
+        }
+
+        case3: {
+          const result = await session.executeStatement('SELECT * FROM table', {
+            enableArrow: true,
+            arrowOptions: {
+              useNativeTimestamps: false,
+            },
+          });
+          expect(result).instanceOf(DBSQLOperation);
+        }
+
+        case4: {
+          const result = await session.executeStatement('SELECT * FROM table', {
+            enableArrow: true,
+            arrowOptions: {
+              useNativeDecimals: false,
+            },
+          });
+          expect(result).instanceOf(DBSQLOperation);
+        }
+
+        case5: {
+          const result = await session.executeStatement('SELECT * FROM table', {
+            enableArrow: true,
+            arrowOptions: {
+              useNativeComplexTypes: false,
+            },
+          });
+          expect(result).instanceOf(DBSQLOperation);
+        }
+      });
+    });
   });
 
   describe('getTypeInfo', () => {
