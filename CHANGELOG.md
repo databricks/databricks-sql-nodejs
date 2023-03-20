@@ -4,7 +4,7 @@
 
 ## 1.2.0
 
-- Added Apache arrow support (databricks/databricks-sql-nodejs#94)
+- Added Apache Arrow support (databricks/databricks-sql-nodejs#94)
 - Auth provider is now configurable (databricks/databricks-sql-nodejs#120)
 
 ## 1.1.1
