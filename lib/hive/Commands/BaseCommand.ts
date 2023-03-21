@@ -1,5 +1,5 @@
 import TCLIService from '../../../thrift/TCLIService';
-import HiveDriverError from '../../errors/HiveDriverError';
+import errorHandler from '../Utils/errorHandler';
 
 export default abstract class BaseCommand {
   protected client: TCLIService.Client;
@@ -9,23 +9,6 @@ export default abstract class BaseCommand {
   }
 
   executeCommand<Response>(request: object, command: Function | void): Promise<Response> {
-    return new Promise((resolve, reject) => {
-      if (typeof command !== 'function') {
-        reject(new HiveDriverError('Hive driver: the operation does not exist, try to choose another Thrift file.'));
-        return;
-      }
-
-      try {
-        command.call(this.client, request, (err: Error, response: Response) => {
-          if (err) {
-            reject(err);
-          } else {
-            resolve(response);
-          }
-        });
-      } catch (error) {
-        reject(error);
-      }
-    });
+    return errorHandler<Response>(this.client, request, command, { numRetries: 0, startTime: Date.now() });
   }
 }
