@@ -2,9 +2,25 @@ import { Thrift } from 'thrift';
 import TCLIService from '../../../thrift/TCLIService';
 import HiveDriverError from '../../errors/HiveDriverError';
 
-interface CommandRequestInfo {
-  numRetries: number;
-  startTime: number;
+interface CommandExecutionInfo {
+  startTime: number; // in milliseconds
+  attempt: number;
+}
+
+const retryMaxAttempts = 30;
+const retriesTimeout = 900 * 1000; // in milliseconds
+const retryDelayMin = 1 * 1000; // in milliseconds
+const retryDelayMax = 60 * 1000; // in milliseconds
+
+function getRetryDelay(attempt: number): number {
+  const scale = 1.5 ** (attempt - 1); // attempt >= 0, scale >= 1
+  return Math.min(retryDelayMin * scale, retryDelayMax);
+}
+
+function delay(milliseconds: number): Promise<void> {
+  return new Promise<void>((resolve) => {
+    setTimeout(() => resolve(), milliseconds);
+  });
 }
 
 export default abstract class BaseCommand {
@@ -15,13 +31,13 @@ export default abstract class BaseCommand {
   }
 
   executeCommand<Response>(request: object, command: Function | void): Promise<Response> {
-    return this.invokeWithErrorHandling<Response>(request, command, { numRetries: 0, startTime: Date.now() });
+    return this.invokeWithErrorHandling<Response>(request, command, { startTime: Date.now(), attempt: 0 });
   }
 
   private async invokeWithErrorHandling<Response>(
     request: object,
     command: Function | void,
-    info: CommandRequestInfo,
+    info: CommandExecutionInfo,
   ): Promise<Response> {
     try {
       return await this.invokeCommand<Response>(request, command);
@@ -29,28 +45,43 @@ export default abstract class BaseCommand {
       if (error instanceof Thrift.TApplicationException) {
         if ('statusCode' in error) {
           switch (error.statusCode) {
-            case 429:
-            case 503:
-              if (Date.now() - info.startTime > 15000) {
+            // On this status codes it's safe to retry the request. However,
+            // both error codes mean that server is overwhelmed or even down.
+            // Therefore, we need to add some delay between attempts so
+            // server can recover and more likely handle next request
+            case 429: // Too Many Requests
+            case 503: // Service Unavailable
+              info.attempt += 1;
+
+              // Delay interval depends on current attempt - the more attempts we do
+              // the longer the interval will be
+              // TODO: Respect `Retry-After` header
+              const retryDelay = getRetryDelay(info.attempt);
+
+              const attemptsExceeded = info.attempt >= retryMaxAttempts;
+              const timeoutExceeded = Date.now() - info.startTime + retryDelay >= retriesTimeout;
+
+              if (attemptsExceeded || timeoutExceeded) {
                 return Promise.reject(error);
               }
 
-              info.numRetries += 1;
+              await delay(retryDelay);
               return this.invokeWithErrorHandling(request, command, info);
-            case 404:
+
+            case 404: // Not Found
               return Promise.reject(
-                new HiveDriverError('Hive driver: 404 when connecting to resource. Check the host provided.'),
+                new HiveDriverError('Hive driver: 404 when connecting to resource. Check the host and path provided.'),
               );
-            case 403:
+
+            // These two status codes usually mean that wrong credentials were passed
+            case 401: // Unauthorized
+            case 403: // Forbidden
               return Promise.reject(
                 new HiveDriverError(
-                  'Hive driver: 403 when connecting to resource. Check the token used to authenticate.',
+                  `Hive driver: ${error.statusCode} when connecting to resource. Check the token used to authenticate.`,
                 ),
               );
-            case 401:
-              return Promise.reject(
-                new HiveDriverError('Hive driver: 401 when connecting to resource. Check the path provided.'),
-              );
+
             // no default
           }
         }
