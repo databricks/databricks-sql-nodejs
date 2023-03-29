@@ -79,9 +79,9 @@ interface DBSQLSessionConstructorOptions {
 }
 
 export default class DBSQLSession implements IDBSQLSession {
-  private driver: HiveDriver;
+  private readonly driver: HiveDriver;
 
-  private sessionHandle: TSessionHandle;
+  private readonly sessionHandle: TSessionHandle;
 
   private statusFactory: StatusFactory;
 
@@ -89,7 +89,9 @@ export default class DBSQLSession implements IDBSQLSession {
 
   private isOpen = true;
 
-  private onClose: (session: IDBSQLSession) => void;
+  private readonly onClose: (session: IDBSQLSession) => void;
+
+  private operations = new Set<IOperation>();
 
   constructor(driver: HiveDriver, sessionHandle: TSessionHandle, { logger, onClose }: DBSQLSessionConstructorOptions) {
     this.driver = driver;
@@ -317,7 +319,12 @@ export default class DBSQLSession implements IDBSQLSession {
       return this.statusFactory.success();
     }
 
-    // TODO: Close all owned operations
+    // Close owned operations one by one, removing successfully closed ones from the list
+    const operations = [...this.operations];
+    for (const operation of operations) {
+      await operation.close();
+      this.operations.delete(operation);
+    }
 
     const response = await this.driver.closeSession({
       sessionHandle: this.sessionHandle,
@@ -336,7 +343,21 @@ export default class DBSQLSession implements IDBSQLSession {
   private createOperation(response: OperationResponseShape): IOperation {
     this.assertStatus(response.status);
     const handle = definedOrError(response.operationHandle);
-    return new DBSQLOperation(this.driver, handle, this.logger, response.directResults);
+    const operation = new DBSQLOperation(
+      this.driver,
+      handle,
+      {
+        logger: this.logger,
+        onClose: (operation) => {
+          this.operations.delete(operation);
+        },
+      },
+      response.directResults,
+    );
+
+    this.operations.add(operation);
+
+    return operation;
   }
 
   private assertStatus(responseStatus: TStatus): void {

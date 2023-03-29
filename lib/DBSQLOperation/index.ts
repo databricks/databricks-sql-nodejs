@@ -14,15 +14,25 @@ import SchemaHelper from './SchemaHelper';
 import FetchResultsHelper from './FetchResultsHelper';
 import CompleteOperationHelper from './CompleteOperationHelper';
 import IDBSQLLogger, { LogLevel } from '../contracts/IDBSQLLogger';
+import StatusFactory from '../factory/StatusFactory';
 
 const defaultMaxRows = 100000;
 
-export default class DBSQLOperation implements IOperation {
-  private driver: HiveDriver;
+interface DBSQLOperationConstructorOptions {
+  logger: IDBSQLLogger;
+  onClose: (operation: IOperation) => void;
+}
 
-  private operationHandle: TOperationHandle;
+export default class DBSQLOperation implements IOperation {
+  private readonly driver: HiveDriver;
+
+  private readonly operationHandle: TOperationHandle;
+
+  private statusFactory = new StatusFactory();
 
   private logger: IDBSQLLogger;
+
+  private onClose: (operation: IOperation) => void;
 
   private _status: OperationStatusHelper;
 
@@ -35,12 +45,13 @@ export default class DBSQLOperation implements IOperation {
   constructor(
     driver: HiveDriver,
     operationHandle: TOperationHandle,
-    logger: IDBSQLLogger,
+    { logger, onClose }: DBSQLOperationConstructorOptions,
     directResults?: TSparkDirectResults,
   ) {
     this.driver = driver;
     this.operationHandle = operationHandle;
     this.logger = logger;
+    this.onClose = onClose;
     this._status = new OperationStatusHelper(this.driver, this.operationHandle, directResults?.operationStatus);
     this._schema = new SchemaHelper(this.driver, this.operationHandle, directResults?.resultSetMetadata);
     this._data = new FetchResultsHelper(this.driver, this.operationHandle, [directResults?.resultSet]);
@@ -128,9 +139,16 @@ export default class DBSQLOperation implements IOperation {
    * Closes operation
    * @throws {StatusError}
    */
-  close(): Promise<Status> {
+  public async close(): Promise<Status> {
+    if (this._completeOperation.closed || this._completeOperation.cancelled) {
+      return this.statusFactory.success();
+    }
+
     this.logger?.log(LogLevel.debug, `Closing operation with id: ${this.getId()}`);
-    return this._completeOperation.close();
+    const result = await this._completeOperation.close();
+
+    this.onClose(this);
+    return result;
   }
 
   async finished(options?: FinishedOptions): Promise<void> {
