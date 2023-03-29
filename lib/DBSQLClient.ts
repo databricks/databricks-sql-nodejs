@@ -56,6 +56,8 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
 
   private thrift = thrift;
 
+  private sessions = new Set<IDBSQLSession>();
+
   constructor(options?: ClientOptions) {
     super();
     this.connectionProvider = new HttpConnection();
@@ -157,7 +159,14 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
       })
       .then((response) => {
         this.statusFactory.create(response.status);
-        return new DBSQLSession(driver, definedOrError(response.sessionHandle), this.logger);
+        const session = new DBSQLSession(driver, definedOrError(response.sessionHandle), {
+          logger: this.logger,
+          onClose: (session) => {
+            this.sessions.delete(session);
+          },
+        });
+        this.sessions.add(session);
+        return session;
       });
   }
 
@@ -169,9 +178,16 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
     return this.client;
   }
 
-  close(): Promise<void> {
+  public async close(): Promise<void> {
     if (!this.connection) {
-      return Promise.resolve();
+      return;
+    }
+
+    // Close owned sessions one by one, removing successfully closed ones from the list
+    const sessions = [...this.sessions];
+    for (const session of sessions) {
+      await session.close();
+      this.sessions.delete(session);
     }
 
     const thriftConnection = this.connection.getConnection();
@@ -179,7 +195,6 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
     if (typeof thriftConnection.end === 'function') {
       this.connection.getConnection().end();
     }
-
-    return Promise.resolve();
+    this.connection = null;
   }
 }

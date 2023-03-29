@@ -19,6 +19,12 @@ export default class StatusFactory {
     });
   }
 
+  success(): Status {
+    return this.create({
+      statusCode: TStatusCode.SUCCESS_STATUS,
+    });
+  }
+
   private isSuccess(status: TStatus): boolean {
     return (
       status.statusCode === TStatusCode.SUCCESS_STATUS || status.statusCode === TStatusCode.SUCCESS_WITH_INFO_STATUS

@@ -73,6 +73,11 @@ function getArrowOptions(): {
   };
 }
 
+interface DBSQLSessionConstructorOptions {
+  logger: IDBSQLLogger;
+  onClose: (session: IDBSQLSession) => void;
+}
+
 export default class DBSQLSession implements IDBSQLSession {
   private driver: HiveDriver;
 
@@ -80,14 +85,19 @@ export default class DBSQLSession implements IDBSQLSession {
 
   private statusFactory: StatusFactory;
 
-  private logger: IDBSQLLogger;
+  private readonly logger: IDBSQLLogger;
 
-  constructor(driver: HiveDriver, sessionHandle: TSessionHandle, logger: IDBSQLLogger) {
+  private isOpen = true;
+
+  private onClose: (session: IDBSQLSession) => void;
+
+  constructor(driver: HiveDriver, sessionHandle: TSessionHandle, { logger, onClose }: DBSQLSessionConstructorOptions) {
     this.driver = driver;
     this.sessionHandle = sessionHandle;
     this.statusFactory = new StatusFactory();
     this.logger = logger;
     this.logger.log(LogLevel.debug, `Session created with id: ${this.getId()}`);
+    this.onClose = onClose;
   }
 
   getId() {
@@ -302,15 +312,25 @@ export default class DBSQLSession implements IDBSQLSession {
    * @public
    * @returns Operation status
    */
-  close(): Promise<Status> {
-    return this.driver
-      .closeSession({
-        sessionHandle: this.sessionHandle,
-      })
-      .then((response) => {
-        this.logger.log(LogLevel.debug, `Session closed with id: ${this.getId()}`);
-        return this.statusFactory.create(response.status);
-      });
+  public async close(): Promise<Status> {
+    if (!this.isOpen) {
+      return this.statusFactory.success();
+    }
+
+    // TODO: Close all owned operations
+
+    const response = await this.driver.closeSession({
+      sessionHandle: this.sessionHandle,
+    });
+    // check status for being successful
+    const status = this.statusFactory.create(response.status);
+
+    // notify owner connection
+    this.onClose(this);
+    this.isOpen = false;
+
+    this.logger.log(LogLevel.debug, `Session closed with id: ${this.getId()}`);
+    return status;
   }
 
   private createOperation(response: OperationResponseShape): IOperation {
