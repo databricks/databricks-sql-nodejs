@@ -129,7 +129,7 @@ describe('BaseCommand', () => {
         }
       });
 
-      it('should fail on max retry attempts exceeded', async () => {
+      it('should fail on retry timeout exceeded', async () => {
         globalConfig.retriesTimeout = 200; // ms
         globalConfig.retryDelayMin = 5; // ms
         globalConfig.retryDelayMax = 20; // ms
