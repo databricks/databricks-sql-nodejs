@@ -1,20 +1,16 @@
 import { Thrift } from 'thrift';
 import TCLIService from '../../../thrift/TCLIService';
 import HiveDriverError from '../../errors/HiveDriverError';
+import globalConfig from '../../globalConfig';
 
 interface CommandExecutionInfo {
   startTime: number; // in milliseconds
   attempt: number;
 }
 
-const retryMaxAttempts = 30;
-const retriesTimeout = 900 * 1000; // in milliseconds
-const retryDelayMin = 1 * 1000; // in milliseconds
-const retryDelayMax = 60 * 1000; // in milliseconds
-
 function getRetryDelay(attempt: number): number {
-  const scale = 1.5 ** (attempt - 1); // attempt >= 0, scale >= 1
-  return Math.min(retryDelayMin * scale, retryDelayMax);
+  const scale = Math.max(1, 1.5 ** (attempt - 1)); // ensure scale >= 1
+  return Math.min(globalConfig.retryDelayMin * scale, globalConfig.retryDelayMax);
 }
 
 function delay(milliseconds: number): Promise<void> {
@@ -30,7 +26,7 @@ export default abstract class BaseCommand {
     this.client = client;
   }
 
-  executeCommand<Response>(request: object, command: Function | void): Promise<Response> {
+  protected executeCommand<Response>(request: object, command: Function | void): Promise<Response> {
     return this.invokeWithErrorHandling<Response>(request, command, { startTime: Date.now(), attempt: 0 });
   }
 
@@ -58,19 +54,26 @@ export default abstract class BaseCommand {
               // TODO: Respect `Retry-After` header
               const retryDelay = getRetryDelay(info.attempt);
 
-              const attemptsExceeded = info.attempt >= retryMaxAttempts;
-              const timeoutExceeded = Date.now() - info.startTime + retryDelay >= retriesTimeout;
+              const attemptsExceeded = info.attempt >= globalConfig.retryMaxAttempts;
+              if (attemptsExceeded) {
+                throw new HiveDriverError(
+                  `Hive driver: ${error.statusCode} when connecting to resource. Max retry count exceeded.`,
+                );
+              }
 
-              if (attemptsExceeded || timeoutExceeded) {
-                return Promise.reject(error);
+              const timeoutExceeded = Date.now() - info.startTime + retryDelay >= globalConfig.retriesTimeout;
+              if (timeoutExceeded) {
+                throw new HiveDriverError(
+                  `Hive driver: ${error.statusCode} when connecting to resource. Retry timeout exceeded.`,
+                );
               }
 
               await delay(retryDelay);
               return this.invokeWithErrorHandling(request, command, info);
 
             case 404: // Not Found
-              return Promise.reject(
-                new HiveDriverError('Hive driver: 404 when connecting to resource. Check the host and path provided.'),
+              throw new HiveDriverError(
+                'Hive driver: 404 when connecting to resource. Check the host and path provided.',
               );
 
             // These two status codes usually mean that wrong credentials were passed
