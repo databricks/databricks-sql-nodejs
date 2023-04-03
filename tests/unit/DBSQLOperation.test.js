@@ -379,13 +379,14 @@ describe('DBSQLOperation', () => {
       });
 
       expect(operation._completeOperation.cancelled).to.be.false;
-      expect(operation._completeOperation.closed).to.be.true;
+      expect(operation._completeOperation.closed).to.be.false;
 
       await operation.close();
 
       expect(driver.closeOperation.called).to.be.false;
       expect(operation._completeOperation.cancelled).to.be.false;
       expect(operation._completeOperation.closed).to.be.true;
+      expect(driver.closeOperation.callCount).to.be.equal(0);
     });
 
     it('should throw an error in case of a status error and keep state', async () => {
