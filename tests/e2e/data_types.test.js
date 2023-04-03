@@ -189,14 +189,12 @@ describe('Data types', () => {
           dat: '2014-01-17',
         },
       ]);
-
-      await session.close();
     } catch (error) {
       logger(error);
-      await session.close();
       throw error;
     } finally {
       await execute(session, `DROP TABLE IF EXISTS ${table}`);
+      await session.close();
     }
   });
 
@@ -235,14 +233,12 @@ describe('Data types', () => {
           month_interval: '0-1',
         },
       ]);
-
-      await session.close();
     } catch (error) {
       logger(error);
-      await session.close();
       throw error;
     } finally {
       await execute(session, `DROP TABLE IF EXISTS ${table}`);
+      await session.close();
     }
   });
 
@@ -362,15 +358,13 @@ describe('Data types', () => {
           },
         },
       ]);
-
-      await session.close();
     } catch (error) {
       logger(error);
-      await session.close();
       throw error;
     } finally {
       await execute(session, `DROP TABLE IF EXISTS ${table}`);
       await execute(session, `DROP TABLE IF EXISTS ${helperTable}`);
+      await session.close();
     }
   });
 });
