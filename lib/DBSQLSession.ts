@@ -26,6 +26,7 @@ import Status from './dto/Status';
 import StatusFactory from './factory/StatusFactory';
 import InfoValue from './dto/InfoValue';
 import { definedOrError } from './utils';
+import CloseableCollection from './utils/CloseableCollection';
 import IDBSQLLogger, { LogLevel } from './contracts/IDBSQLLogger';
 import globalConfig from './globalConfig';
 
@@ -75,7 +76,6 @@ function getArrowOptions(): {
 
 interface DBSQLSessionConstructorOptions {
   logger: IDBSQLLogger;
-  onClose: (session: IDBSQLSession) => void;
 }
 
 export default class DBSQLSession implements IDBSQLSession {
@@ -89,17 +89,16 @@ export default class DBSQLSession implements IDBSQLSession {
 
   private isOpen = true;
 
-  private readonly onClose: (session: IDBSQLSession) => void;
+  public onClose?: () => void;
 
-  private operations = new Set<IOperation>();
+  private operations = new CloseableCollection<DBSQLOperation>();
 
-  constructor(driver: HiveDriver, sessionHandle: TSessionHandle, { logger, onClose }: DBSQLSessionConstructorOptions) {
+  constructor(driver: HiveDriver, sessionHandle: TSessionHandle, { logger }: DBSQLSessionConstructorOptions) {
     this.driver = driver;
     this.sessionHandle = sessionHandle;
     this.statusFactory = new StatusFactory();
     this.logger = logger;
     this.logger.log(LogLevel.debug, `Session created with id: ${this.getId()}`);
-    this.onClose = onClose;
   }
 
   getId() {
@@ -320,11 +319,7 @@ export default class DBSQLSession implements IDBSQLSession {
     }
 
     // Close owned operations one by one, removing successfully closed ones from the list
-    const operations = [...this.operations];
-    for (const operation of operations) {
-      await operation.close();
-      this.operations.delete(operation);
-    }
+    await this.operations.closeAll();
 
     const response = await this.driver.closeSession({
       sessionHandle: this.sessionHandle,
@@ -333,7 +328,7 @@ export default class DBSQLSession implements IDBSQLSession {
     const status = this.statusFactory.create(response.status);
 
     // notify owner connection
-    this.onClose(this);
+    this.onClose?.();
     this.isOpen = false;
 
     this.logger.log(LogLevel.debug, `Session closed with id: ${this.getId()}`);
@@ -348,9 +343,6 @@ export default class DBSQLSession implements IDBSQLSession {
       handle,
       {
         logger: this.logger,
-        onClose: (operation) => {
-          this.operations.delete(operation);
-        },
       },
       response.directResults,
     );

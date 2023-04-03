@@ -20,6 +20,7 @@ import { buildUserAgentString, definedOrError } from './utils';
 import PlainHttpAuthentication from './connection/auth/PlainHttpAuthentication';
 import IDBSQLLogger, { LogLevel } from './contracts/IDBSQLLogger';
 import DBSQLLogger from './DBSQLLogger';
+import CloseableCollection from './utils/CloseableCollection';
 
 function prependSlash(str: string): string {
   if (str.length > 0 && str.charAt(0) !== '/') {
@@ -56,7 +57,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
 
   private thrift = thrift;
 
-  private sessions = new Set<IDBSQLSession>();
+  private sessions = new CloseableCollection<DBSQLSession>();
 
   constructor(options?: ClientOptions) {
     super();
@@ -161,9 +162,6 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
         this.statusFactory.create(response.status);
         const session = new DBSQLSession(driver, definedOrError(response.sessionHandle), {
           logger: this.logger,
-          onClose: (session) => {
-            this.sessions.delete(session);
-          },
         });
         this.sessions.add(session);
         return session;
@@ -183,12 +181,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
       return;
     }
 
-    // Close owned sessions one by one, removing successfully closed ones from the list
-    const sessions = [...this.sessions];
-    for (const session of sessions) {
-      await session.close();
-      this.sessions.delete(session);
-    }
+    await this.sessions.closeAll();
 
     const thriftConnection = this.connection.getConnection();
 
