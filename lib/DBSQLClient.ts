@@ -46,7 +46,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
 
   private connection: IThriftConnection | null;
 
-  private statusFactory: StatusFactory;
+  private readonly statusFactory: StatusFactory;
 
   private connectionProvider: IConnectionProvider;
 
@@ -54,7 +54,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
 
   private readonly logger: IDBSQLLogger;
 
-  private thrift = thrift;
+  private readonly thrift = thrift;
 
   constructor(options?: ClientOptions) {
     super();
