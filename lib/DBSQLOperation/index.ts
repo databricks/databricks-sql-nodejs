@@ -1,5 +1,10 @@
 import { stringify, NIL, parse } from 'uuid';
-import IOperation, { FetchOptions, GetSchemaOptions, FinishedOptions } from '../contracts/IOperation';
+import IOperation, {
+  FetchOptions,
+  FinishedOptions,
+  GetSchemaOptions,
+  WaitUntilReadyOptions,
+} from '../contracts/IOperation';
 import HiveDriver from '../hive/HiveDriver';
 import {
   TGetOperationStatusResp,
@@ -15,6 +20,7 @@ import FetchResultsHelper from './FetchResultsHelper';
 import CompleteOperationHelper from './CompleteOperationHelper';
 import IDBSQLLogger, { LogLevel } from '../contracts/IDBSQLLogger';
 import StatusFactory from '../factory/StatusFactory';
+import OperationStateError, { OperationStateErrorCode } from '../errors/OperationStateError';
 
 const defaultMaxRows = 100000;
 
@@ -74,7 +80,7 @@ export default class DBSQLOperation implements IOperation {
    * @example
    * const result = await queryOperation.fetchAll();
    */
-  async fetchAll(options?: FetchOptions): Promise<Array<object>> {
+  public async fetchAll(options?: FetchOptions): Promise<Array<object>> {
     const data: Array<Array<object>> = [];
     do {
       // eslint-disable-next-line no-await-in-loop
@@ -95,23 +101,28 @@ export default class DBSQLOperation implements IOperation {
    * @example
    * const result = await queryOperation.fetchChunk({maxRows: 1000});
    */
-  async fetchChunk(options?: FetchOptions): Promise<Array<object>> {
+  public async fetchChunk(options?: FetchOptions): Promise<Array<object>> {
+    await this.failIfClosed();
+
     if (!this._status.hasResultSet) {
       return [];
     }
 
-    await this._status.waitUntilReady(options);
+    await this.waitUntilReady(options);
 
-    return Promise.all([this._schema.getResultHandler(), this._data.fetch(options?.maxRows || defaultMaxRows)]).then(
-      ([resultHandler, data]) => {
+    return Promise.all([this._schema.getResultHandler(), this._data.fetch(options?.maxRows || defaultMaxRows)])
+      .then(async (results) => {
+        await this.failIfClosed();
+        return results;
+      })
+      .then(async ([resultHandler, data]) => {
         const result = resultHandler.getValue(data ? [data] : []);
         this.logger?.log(
           LogLevel.debug,
           `Fetched chunk of size: ${options?.maxRows || defaultMaxRows} from operation with id: ${this.getId()}`,
         );
-        return Promise.resolve(result);
-      },
-    );
+        return result;
+      });
   }
 
   /**
@@ -119,7 +130,8 @@ export default class DBSQLOperation implements IOperation {
    * @param progress
    * @throws {StatusError}
    */
-  async status(progress: boolean = false): Promise<TGetOperationStatusResp> {
+  public async status(progress: boolean = false): Promise<TGetOperationStatusResp> {
+    await this.failIfClosed();
     this.logger?.log(LogLevel.debug, `Fetching status for operation with id: ${this.getId()}`);
     return this._status.status(progress);
   }
@@ -128,9 +140,17 @@ export default class DBSQLOperation implements IOperation {
    * Cancels operation
    * @throws {StatusError}
    */
-  cancel(): Promise<Status> {
-    this.logger?.log(LogLevel.debug, `Operation with id: ${this.getId()} canceled.`);
-    return this._completeOperation.cancel();
+  public async cancel(): Promise<Status> {
+    if (this._completeOperation.closed || this._completeOperation.cancelled) {
+      return this.statusFactory.success();
+    }
+
+    this.logger?.log(LogLevel.debug, `Cancelling operation with id: ${this.getId()}`);
+    const result = this._completeOperation.cancel();
+
+    // Cancelled operation becomes unusable, similarly to being closed
+    this.onClose?.();
+    return result;
   }
 
   /**
@@ -149,25 +169,53 @@ export default class DBSQLOperation implements IOperation {
     return result;
   }
 
-  async finished(options?: FinishedOptions): Promise<void> {
-    await this._status.waitUntilReady(options);
+  public async finished(options?: FinishedOptions): Promise<void> {
+    await this.failIfClosed();
+    await this.waitUntilReady(options);
   }
 
-  async hasMoreRows(): Promise<boolean> {
+  public async hasMoreRows(): Promise<boolean> {
     if (this._completeOperation.closed || this._completeOperation.cancelled) {
       return false;
     }
     return this._data.hasMoreRows;
   }
 
-  async getSchema(options?: GetSchemaOptions): Promise<TTableSchema | null> {
+  public async getSchema(options?: GetSchemaOptions): Promise<TTableSchema | null> {
+    await this.failIfClosed();
+
     if (!this._status.hasResultSet) {
       return null;
     }
 
-    await this._status.waitUntilReady(options);
-    this.logger?.log(LogLevel.debug, `Fetching schema for operation with id: ${this.getId()}`);
+    await this.waitUntilReady(options);
 
+    this.logger?.log(LogLevel.debug, `Fetching schema for operation with id: ${this.getId()}`);
     return this._schema.fetch();
+  }
+
+  private async failIfClosed(): Promise<void> {
+    if (this._completeOperation.closed) {
+      throw new OperationStateError(OperationStateErrorCode.Closed);
+    }
+    if (this._completeOperation.cancelled) {
+      throw new OperationStateError(OperationStateErrorCode.Canceled);
+    }
+  }
+
+  private async waitUntilReady(options?: WaitUntilReadyOptions) {
+    try {
+      await this._status.waitUntilReady(options);
+    } catch (error) {
+      if (error instanceof OperationStateError) {
+        if (error.errorCode === OperationStateErrorCode.Canceled) {
+          this._completeOperation.cancelled = true;
+        }
+        if (error.errorCode === OperationStateErrorCode.Closed) {
+          this._completeOperation.closed = true;
+        }
+      }
+      throw error;
+    }
   }
 }
