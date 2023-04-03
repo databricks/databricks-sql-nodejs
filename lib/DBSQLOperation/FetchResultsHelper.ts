@@ -77,12 +77,10 @@ export default class FetchResultsHelper {
 
     if (this.prefetchedResults.length > 0) {
       this.hasMoreRows = true;
+    } else if (this.returnOnlyPrefetchedResults) {
+      this.hasMoreRows = false;
     } else {
-      if (this.returnOnlyPrefetchedResults) {
-        this.hasMoreRows = false;
-      } else {
-        this.hasMoreRows = checkIfOperationHasMoreRows(response);
-      }
+      this.hasMoreRows = checkIfOperationHasMoreRows(response);
     }
 
     return response.results;
