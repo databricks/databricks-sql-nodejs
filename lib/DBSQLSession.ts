@@ -28,6 +28,7 @@ import InfoValue from './dto/InfoValue';
 import { definedOrError } from './utils';
 import CloseableCollection from './utils/CloseableCollection';
 import IDBSQLLogger, { LogLevel } from './contracts/IDBSQLLogger';
+import HiveDriverError from './errors/HiveDriverError';
 import globalConfig from './globalConfig';
 
 const defaultMaxRows = 100000;
@@ -114,10 +115,13 @@ export default class DBSQLSession implements IDBSQLSession {
    * const response = await session.getInfo(thrift.TCLIService_types.TGetInfoType.CLI_DBMS_VER);
    */
   public async getInfo(infoType: number): Promise<InfoValue> {
-    const response = await this.driver.getInfo({
-      sessionHandle: this.sessionHandle,
-      infoType,
-    });
+    await this.failIfClosed();
+    const response = await this.handleResponse(
+      this.driver.getInfo({
+        sessionHandle: this.sessionHandle,
+        infoType,
+      }),
+    );
 
     this.assertStatus(response.status);
     return new InfoValue(response.infoValue);
@@ -133,14 +137,17 @@ export default class DBSQLSession implements IDBSQLSession {
    * const operation = await session.executeStatement(query, { runAsync: true });
    */
   public async executeStatement(statement: string, options: ExecuteStatementOptions = {}): Promise<IOperation> {
-    const response = await this.driver.executeStatement({
-      sessionHandle: this.sessionHandle,
-      statement,
-      queryTimeout: options.queryTimeout,
-      runAsync: options.runAsync || false,
-      ...getDirectResultsOptions(options.maxRows),
-      ...getArrowOptions(),
-    });
+    await this.failIfClosed();
+    const response = await this.handleResponse(
+      this.driver.executeStatement({
+        sessionHandle: this.sessionHandle,
+        statement,
+        queryTimeout: options.queryTimeout,
+        runAsync: options.runAsync || false,
+        ...getDirectResultsOptions(options.maxRows),
+        ...getArrowOptions(),
+      }),
+    );
 
     return this.createOperation(response);
   }
@@ -152,11 +159,14 @@ export default class DBSQLSession implements IDBSQLSession {
    * @returns DBSQLOperation
    */
   public async getTypeInfo(request: TypeInfoRequest = {}): Promise<IOperation> {
-    const response = await this.driver.getTypeInfo({
-      sessionHandle: this.sessionHandle,
-      runAsync: request.runAsync || false,
-      ...getDirectResultsOptions(request.maxRows),
-    });
+    await this.failIfClosed();
+    const response = await this.handleResponse(
+      this.driver.getTypeInfo({
+        sessionHandle: this.sessionHandle,
+        runAsync: request.runAsync || false,
+        ...getDirectResultsOptions(request.maxRows),
+      }),
+    );
 
     return this.createOperation(response);
   }
@@ -168,11 +178,14 @@ export default class DBSQLSession implements IDBSQLSession {
    * @returns DBSQLOperation
    */
   public async getCatalogs(request: CatalogsRequest = {}): Promise<IOperation> {
-    const response = await this.driver.getCatalogs({
-      sessionHandle: this.sessionHandle,
-      runAsync: request.runAsync || false,
-      ...getDirectResultsOptions(request.maxRows),
-    });
+    await this.failIfClosed();
+    const response = await this.handleResponse(
+      this.driver.getCatalogs({
+        sessionHandle: this.sessionHandle,
+        runAsync: request.runAsync || false,
+        ...getDirectResultsOptions(request.maxRows),
+      }),
+    );
 
     return this.createOperation(response);
   }
@@ -184,13 +197,16 @@ export default class DBSQLSession implements IDBSQLSession {
    * @returns DBSQLOperation
    */
   public async getSchemas(request: SchemasRequest = {}): Promise<IOperation> {
-    const response = await this.driver.getSchemas({
-      sessionHandle: this.sessionHandle,
-      catalogName: request.catalogName,
-      schemaName: request.schemaName,
-      runAsync: request.runAsync || false,
-      ...getDirectResultsOptions(request.maxRows),
-    });
+    await this.failIfClosed();
+    const response = await this.handleResponse(
+      this.driver.getSchemas({
+        sessionHandle: this.sessionHandle,
+        catalogName: request.catalogName,
+        schemaName: request.schemaName,
+        runAsync: request.runAsync || false,
+        ...getDirectResultsOptions(request.maxRows),
+      }),
+    );
 
     return this.createOperation(response);
   }
@@ -202,15 +218,18 @@ export default class DBSQLSession implements IDBSQLSession {
    * @returns DBSQLOperation
    */
   public async getTables(request: TablesRequest = {}): Promise<IOperation> {
-    const response = await this.driver.getTables({
-      sessionHandle: this.sessionHandle,
-      catalogName: request.catalogName,
-      schemaName: request.schemaName,
-      tableName: request.tableName,
-      tableTypes: request.tableTypes,
-      runAsync: request.runAsync || false,
-      ...getDirectResultsOptions(request.maxRows),
-    });
+    await this.failIfClosed();
+    const response = await this.handleResponse(
+      this.driver.getTables({
+        sessionHandle: this.sessionHandle,
+        catalogName: request.catalogName,
+        schemaName: request.schemaName,
+        tableName: request.tableName,
+        tableTypes: request.tableTypes,
+        runAsync: request.runAsync || false,
+        ...getDirectResultsOptions(request.maxRows),
+      }),
+    );
 
     return this.createOperation(response);
   }
@@ -222,11 +241,14 @@ export default class DBSQLSession implements IDBSQLSession {
    * @returns DBSQLOperation
    */
   public async getTableTypes(request: TableTypesRequest = {}): Promise<IOperation> {
-    const response = await this.driver.getTableTypes({
-      sessionHandle: this.sessionHandle,
-      runAsync: request.runAsync || false,
-      ...getDirectResultsOptions(request.maxRows),
-    });
+    await this.failIfClosed();
+    const response = await this.handleResponse(
+      this.driver.getTableTypes({
+        sessionHandle: this.sessionHandle,
+        runAsync: request.runAsync || false,
+        ...getDirectResultsOptions(request.maxRows),
+      }),
+    );
 
     return this.createOperation(response);
   }
@@ -238,15 +260,18 @@ export default class DBSQLSession implements IDBSQLSession {
    * @returns DBSQLOperation
    */
   public async getColumns(request: ColumnsRequest = {}): Promise<IOperation> {
-    const response = await this.driver.getColumns({
-      sessionHandle: this.sessionHandle,
-      catalogName: request.catalogName,
-      schemaName: request.schemaName,
-      tableName: request.tableName,
-      columnName: request.columnName,
-      runAsync: request.runAsync || false,
-      ...getDirectResultsOptions(request.maxRows),
-    });
+    await this.failIfClosed();
+    const response = await this.handleResponse(
+      this.driver.getColumns({
+        sessionHandle: this.sessionHandle,
+        catalogName: request.catalogName,
+        schemaName: request.schemaName,
+        tableName: request.tableName,
+        columnName: request.columnName,
+        runAsync: request.runAsync || false,
+        ...getDirectResultsOptions(request.maxRows),
+      }),
+    );
 
     return this.createOperation(response);
   }
@@ -258,27 +283,33 @@ export default class DBSQLSession implements IDBSQLSession {
    * @returns DBSQLOperation
    */
   public async getFunctions(request: FunctionsRequest): Promise<IOperation> {
-    const response = await this.driver.getFunctions({
-      sessionHandle: this.sessionHandle,
-      catalogName: request.catalogName,
-      schemaName: request.schemaName,
-      functionName: request.functionName,
-      runAsync: request.runAsync || false,
-      ...getDirectResultsOptions(request.maxRows),
-    });
+    await this.failIfClosed();
+    const response = await this.handleResponse(
+      this.driver.getFunctions({
+        sessionHandle: this.sessionHandle,
+        catalogName: request.catalogName,
+        schemaName: request.schemaName,
+        functionName: request.functionName,
+        runAsync: request.runAsync || false,
+        ...getDirectResultsOptions(request.maxRows),
+      }),
+    );
 
     return this.createOperation(response);
   }
 
   public async getPrimaryKeys(request: PrimaryKeysRequest): Promise<IOperation> {
-    const response = await this.driver.getPrimaryKeys({
-      sessionHandle: this.sessionHandle,
-      catalogName: request.catalogName,
-      schemaName: request.schemaName,
-      tableName: request.tableName,
-      runAsync: request.runAsync || false,
-      ...getDirectResultsOptions(request.maxRows),
-    });
+    await this.failIfClosed();
+    const response = await this.handleResponse(
+      this.driver.getPrimaryKeys({
+        sessionHandle: this.sessionHandle,
+        catalogName: request.catalogName,
+        schemaName: request.schemaName,
+        tableName: request.tableName,
+        runAsync: request.runAsync || false,
+        ...getDirectResultsOptions(request.maxRows),
+      }),
+    );
 
     return this.createOperation(response);
   }
@@ -290,17 +321,20 @@ export default class DBSQLSession implements IDBSQLSession {
    * @returns DBSQLOperation
    */
   public async getCrossReference(request: CrossReferenceRequest): Promise<IOperation> {
-    const response = await this.driver.getCrossReference({
-      sessionHandle: this.sessionHandle,
-      parentCatalogName: request.parentCatalogName,
-      parentSchemaName: request.parentSchemaName,
-      parentTableName: request.parentTableName,
-      foreignCatalogName: request.foreignCatalogName,
-      foreignSchemaName: request.foreignSchemaName,
-      foreignTableName: request.foreignTableName,
-      runAsync: request.runAsync || false,
-      ...getDirectResultsOptions(request.maxRows),
-    });
+    await this.failIfClosed();
+    const response = await this.handleResponse(
+      this.driver.getCrossReference({
+        sessionHandle: this.sessionHandle,
+        parentCatalogName: request.parentCatalogName,
+        parentSchemaName: request.parentSchemaName,
+        parentTableName: request.parentTableName,
+        foreignCatalogName: request.foreignCatalogName,
+        foreignSchemaName: request.foreignSchemaName,
+        foreignTableName: request.foreignTableName,
+        runAsync: request.runAsync || false,
+        ...getDirectResultsOptions(request.maxRows),
+      }),
+    );
 
     return this.createOperation(response);
   }
@@ -351,5 +385,20 @@ export default class DBSQLSession implements IDBSQLSession {
 
   private assertStatus(responseStatus: TStatus): void {
     this.statusFactory.create(responseStatus);
+  }
+
+  private async failIfClosed(): Promise<void> {
+    if (!this.isOpen) {
+      throw new HiveDriverError('The session was closed or has expired');
+    }
+  }
+
+  private async handleResponse<T>(requestPromise: Promise<T>): Promise<T> {
+    // Currently, after being closed sessions remains usable - server will not
+    // error out when trying to run operations on closed session. So it's
+    // basically useless to process any errors here
+    const result = await requestPromise;
+    await this.failIfClosed();
+    return result;
   }
 }
