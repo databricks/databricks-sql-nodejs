@@ -56,9 +56,17 @@ export default class DBSQLOperation implements IOperation {
     this.driver = driver;
     this.operationHandle = operationHandle;
     this.logger = logger;
+
+    const useOnlyPrefetchedResults = directResults?.closeOperation !== undefined;
+
     this._status = new OperationStatusHelper(this.driver, this.operationHandle, directResults?.operationStatus);
     this._schema = new SchemaHelper(this.driver, this.operationHandle, directResults?.resultSetMetadata);
-    this._data = new FetchResultsHelper(this.driver, this.operationHandle, [directResults?.resultSet]);
+    this._data = new FetchResultsHelper(
+      this.driver,
+      this.operationHandle,
+      [directResults?.resultSet],
+      useOnlyPrefetchedResults,
+    );
     this._completeOperation = new CompleteOperationHelper(
       this.driver,
       this.operationHandle,

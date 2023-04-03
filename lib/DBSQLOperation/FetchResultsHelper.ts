@@ -47,12 +47,15 @@ export default class FetchResultsHelper {
 
   private prefetchedResults: TFetchResultsResp[] = [];
 
+  private returnOnlyPrefetchedResults: boolean;
+
   hasMoreRows: boolean = false;
 
   constructor(
     driver: HiveDriver,
     operationHandle: TOperationHandle,
     prefetchedResults: Array<TFetchResultsResp | undefined>,
+    returnOnlyPrefetchedResults: boolean,
   ) {
     this.driver = driver;
     this.operationHandle = operationHandle;
@@ -61,6 +64,7 @@ export default class FetchResultsHelper {
         this.prefetchedResults.push(item);
       }
     });
+    this.returnOnlyPrefetchedResults = returnOnlyPrefetchedResults;
   }
 
   private assertStatus(responseStatus: TStatus): void {
@@ -70,7 +74,17 @@ export default class FetchResultsHelper {
   private processFetchResponse(response: TFetchResultsResp): TRowSet | undefined {
     this.assertStatus(response.status);
     this.fetchOrientation = TFetchOrientation.FETCH_NEXT;
-    this.hasMoreRows = checkIfOperationHasMoreRows(response);
+
+    if (this.prefetchedResults.length > 0) {
+      this.hasMoreRows = true;
+    } else {
+      if (this.returnOnlyPrefetchedResults) {
+        this.hasMoreRows = false;
+      } else {
+        this.hasMoreRows = checkIfOperationHasMoreRows(response);
+      }
+    }
+
     return response.results;
   }
 
@@ -79,6 +93,7 @@ export default class FetchResultsHelper {
     if (prefetchedResponse) {
       return this.processFetchResponse(prefetchedResponse);
     }
+
     return this.driver
       .fetchResults({
         operationHandle: this.operationHandle,
