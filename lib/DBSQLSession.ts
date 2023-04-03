@@ -23,7 +23,6 @@ import IDBSQLSession, {
 import IOperation from './contracts/IOperation';
 import DBSQLOperation from './DBSQLOperation';
 import Status from './dto/Status';
-import StatusFactory from './factory/StatusFactory';
 import InfoValue from './dto/InfoValue';
 import { definedOrError } from './utils';
 import IDBSQLLogger, { LogLevel } from './contracts/IDBSQLLogger';
@@ -78,14 +77,11 @@ export default class DBSQLSession implements IDBSQLSession {
 
   private sessionHandle: TSessionHandle;
 
-  private statusFactory: StatusFactory;
-
   private logger: IDBSQLLogger;
 
   constructor(driver: HiveDriver, sessionHandle: TSessionHandle, logger: IDBSQLLogger) {
     this.driver = driver;
     this.sessionHandle = sessionHandle;
-    this.statusFactory = new StatusFactory();
     this.logger = logger;
     this.logger.log(LogLevel.debug, `Session created with id: ${this.getId()}`);
   }
@@ -109,8 +105,7 @@ export default class DBSQLSession implements IDBSQLSession {
         infoType,
       })
       .then((response) => {
-        this.assertStatus(response.status);
-
+        Status.assert(response.status);
         return new InfoValue(response.infoValue);
       });
   }
@@ -309,17 +304,14 @@ export default class DBSQLSession implements IDBSQLSession {
       })
       .then((response) => {
         this.logger.log(LogLevel.debug, `Session closed with id: ${this.getId()}`);
-        return this.statusFactory.create(response.status);
+        Status.assert(response.status);
+        return new Status(response.status);
       });
   }
 
   private createOperation(response: OperationResponseShape): IOperation {
-    this.assertStatus(response.status);
+    Status.assert(response.status);
     const handle = definedOrError(response.operationHandle);
     return new DBSQLOperation(this.driver, handle, this.logger, response.directResults);
-  }
-
-  private assertStatus(responseStatus: TStatus): void {
-    this.statusFactory.create(responseStatus);
   }
 }

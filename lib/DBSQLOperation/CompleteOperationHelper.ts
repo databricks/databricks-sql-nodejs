@@ -1,14 +1,11 @@
-import { TOperationHandle, TStatusCode, TCloseOperationResp } from '../../thrift/TCLIService_types';
+import { TOperationHandle, TCloseOperationResp } from '../../thrift/TCLIService_types';
 import HiveDriver from '../hive/HiveDriver';
-import StatusFactory from '../factory/StatusFactory';
 import Status from '../dto/Status';
 
 export default class CompleteOperationHelper {
   private driver: HiveDriver;
 
   private operationHandle: TOperationHandle;
-
-  private statusFactory = new StatusFactory();
 
   closed: boolean = false;
 
@@ -19,38 +16,34 @@ export default class CompleteOperationHelper {
     this.operationHandle = operationHandle;
 
     if (closeOperation) {
-      this.statusFactory.create(closeOperation.status);
+      Status.assert(closeOperation.status);
       this.closed = true;
     }
   }
 
   async cancel(): Promise<Status> {
     if (this.cancelled) {
-      return this.statusFactory.create({
-        statusCode: TStatusCode.SUCCESS_STATUS,
-      });
+      return Status.success();
     }
 
     const response = await this.driver.cancelOperation({
       operationHandle: this.operationHandle,
     });
-    const status = this.statusFactory.create(response.status);
+    Status.assert(response.status);
     this.cancelled = true;
-    return status;
+    return new Status(response.status);
   }
 
   async close(): Promise<Status> {
     if (this.closed) {
-      return this.statusFactory.create({
-        statusCode: TStatusCode.SUCCESS_STATUS,
-      });
+      return Status.success();
     }
 
     const response = await this.driver.closeOperation({
       operationHandle: this.operationHandle,
     });
-    const status = this.statusFactory.create(response.status);
+    Status.assert(response.status);
     this.closed = true;
-    return status;
+    return new Status(response.status);
   }
 }

@@ -1,6 +1,6 @@
 import { TOperationHandle, TOperationState, TGetOperationStatusResp } from '../../thrift/TCLIService_types';
 import HiveDriver from '../hive/HiveDriver';
-import StatusFactory from '../factory/StatusFactory';
+import Status from '../dto/Status';
 import { WaitUntilReadyOptions } from '../contracts/IOperation';
 import OperationStateError from '../errors/OperationStateError';
 
@@ -16,8 +16,6 @@ export default class OperationStatusHelper {
   private driver: HiveDriver;
 
   private operationHandle: TOperationHandle;
-
-  private statusFactory = new StatusFactory();
 
   private state: number = TOperationState.INITIALIZED_STATE;
 
@@ -49,7 +47,7 @@ export default class OperationStatusHelper {
   }
 
   private processOperationStatusResponse(response: TGetOperationStatusResp) {
-    this.statusFactory.create(response.status);
+    Status.assert(response.status);
 
     this.state = response.operationState ?? this.state;
 
