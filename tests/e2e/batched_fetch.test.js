@@ -47,4 +47,26 @@ describe('Data fetching', () => {
     let all = await operation.fetchAll();
     expect(all.length).to.be.equal(1000);
   });
+
+  it('should fetch all records if they fit within directResults response', async () => {
+    const session = await openSession();
+    try {
+      const operation = await session.executeStatement(query, { runAsync: true, maxRows: 1000 });
+      let all = await operation.fetchAll();
+      expect(all.length).to.be.equal(1000);
+    } finally {
+      await session.close();
+    }
+  });
+
+  it('should fetch all records if only part of them fit within directResults response', async () => {
+    const session = await openSession();
+    try {
+      const operation = await session.executeStatement(query, { runAsync: true, maxRows: 200 });
+      let all = await operation.fetchAll();
+      expect(all.length).to.be.equal(1000);
+    } finally {
+      await session.close();
+    }
+  });
 });

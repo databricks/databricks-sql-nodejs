@@ -10,6 +10,8 @@ export default class CompleteOperationHelper {
 
   private statusFactory = new StatusFactory();
 
+  private closeOperation?: TCloseOperationResp;
+
   closed: boolean = false;
 
   cancelled: boolean = false;
@@ -17,11 +19,7 @@ export default class CompleteOperationHelper {
   constructor(driver: HiveDriver, operationHandle: TOperationHandle, closeOperation?: TCloseOperationResp) {
     this.driver = driver;
     this.operationHandle = operationHandle;
-
-    if (closeOperation) {
-      this.statusFactory.create(closeOperation.status);
-      this.closed = true;
-    }
+    this.closeOperation = closeOperation;
   }
 
   async cancel(): Promise<Status> {
@@ -40,6 +38,11 @@ export default class CompleteOperationHelper {
   }
 
   async close(): Promise<Status> {
+    if (!this.closed && this.closeOperation) {
+      this.statusFactory.create(this.closeOperation.status);
+      this.closed = true;
+    }
+
     if (this.closed) {
       return this.statusFactory.create({
         statusCode: TStatusCode.SUCCESS_STATUS,
