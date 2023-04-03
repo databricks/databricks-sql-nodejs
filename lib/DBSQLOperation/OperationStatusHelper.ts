@@ -1,8 +1,8 @@
-import { TOperationHandle, TOperationState, TGetOperationStatusResp } from '../../thrift/TCLIService_types';
+import { TGetOperationStatusResp, TOperationHandle, TOperationState } from '../../thrift/TCLIService_types';
 import HiveDriver from '../hive/HiveDriver';
 import StatusFactory from '../factory/StatusFactory';
 import { WaitUntilReadyOptions } from '../contracts/IOperation';
-import OperationStateError from '../errors/OperationStateError';
+import OperationStateError, { OperationStateErrorCode } from '../errors/OperationStateError';
 
 async function delay(ms?: number): Promise<void> {
   return new Promise((resolve) => {
@@ -93,16 +93,16 @@ export default class OperationStatusHelper {
       case TOperationState.FINISHED_STATE:
         return true;
       case TOperationState.CANCELED_STATE:
-        throw new OperationStateError('The operation was canceled by a client', response);
+        throw new OperationStateError(OperationStateErrorCode.Canceled, response);
       case TOperationState.CLOSED_STATE:
-        throw new OperationStateError('The operation was closed by a client', response);
+        throw new OperationStateError(OperationStateErrorCode.Closed, response);
       case TOperationState.ERROR_STATE:
-        throw new OperationStateError('The operation failed due to an error', response);
+        throw new OperationStateError(OperationStateErrorCode.Error, response);
       case TOperationState.TIMEDOUT_STATE:
-        throw new OperationStateError('The operation is in a timed out state', response);
+        throw new OperationStateError(OperationStateErrorCode.Timeout, response);
       case TOperationState.UKNOWN_STATE:
       default:
-        throw new OperationStateError('The operation is in an unrecognized state', response);
+        throw new OperationStateError(OperationStateErrorCode.Unknown, response);
     }
   }
 
