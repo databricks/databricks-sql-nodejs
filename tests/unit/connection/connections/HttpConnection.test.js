@@ -1,6 +1,6 @@
 const http = require('http');
 const { expect } = require('chai');
-const HttpConnection = require('../../../../').connections.HttpConnection;
+const HttpConnection = require('../../../../dist/connection/connections/HttpConnection').default;
 
 const thriftMock = (connection) => ({
   createHttpConnection(host, port, options) {
@@ -27,6 +27,8 @@ describe('HttpConnection.connect', () => {
     };
     connection.thrift = thriftMock(resultConnection);
 
+    expect(connection.isConnected()).to.be.false;
+
     return connection
       .connect(
         {
@@ -45,6 +47,7 @@ describe('HttpConnection.connect', () => {
         expect(connection.thrift.port).to.be.eq(10001);
         expect(connection.thrift.options.path).to.be.eq('/hive');
         expect(connection.getConnection()).to.be.eq(resultConnection);
+        expect(connection.isConnected()).to.be.true;
       });
   });
 
