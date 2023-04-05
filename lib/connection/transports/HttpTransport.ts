@@ -21,16 +21,4 @@ export default class HttpTransport implements ITransport {
   getOptions(): object {
     return this.httpOptions;
   }
-
-  connect() {}
-
-  addListener() {}
-
-  removeListener() {}
-
-  write() {}
-
-  end() {}
-
-  emit() {}
 }
