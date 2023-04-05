@@ -41,7 +41,7 @@ export default class JsonResult implements IOperationResult {
     );
   }
 
-  private getSchemaValues(descriptor: TColumnDesc, column: TColumn): Array<any> {
+  private getSchemaValues(descriptor: TColumnDesc, column?: TColumn): Array<any> {
     const typeDescriptor = descriptor.typeDesc.types[0]?.primitiveEntry;
     const columnValue = this.getColumnValue(column);
 
@@ -64,7 +64,10 @@ export default class JsonResult implements IOperationResult {
     return (byte & ofs) !== 0;
   }
 
-  private getColumnValue(column: TColumn) {
+  private getColumnValue(column?: TColumn) {
+    if (!column) {
+      return undefined;
+    }
     return (
       column[ColumnCode.binaryVal] ||
       column[ColumnCode.boolVal] ||
