@@ -33,19 +33,19 @@ export default class DBSQLOperation implements IOperation {
 
   private readonly operationHandle: TOperationHandle;
 
-  private statusFactory = new StatusFactory();
+  private readonly statusFactory = new StatusFactory();
 
-  private logger: IDBSQLLogger;
+  private readonly logger: IDBSQLLogger;
 
   public onClose?: () => void;
 
-  private _status: OperationStatusHelper;
+  private readonly _status: OperationStatusHelper;
 
-  private _schema: SchemaHelper;
+  private readonly _schema: SchemaHelper;
 
-  private _data: FetchResultsHelper;
+  private readonly _data: FetchResultsHelper;
 
-  private _completeOperation: CompleteOperationHelper;
+  private readonly _completeOperation: CompleteOperationHelper;
 
   constructor(
     driver: HiveDriver,
@@ -75,7 +75,7 @@ export default class DBSQLOperation implements IOperation {
     this.logger.log(LogLevel.debug, `Operation created with id: ${this.getId()}`);
   }
 
-  getId() {
+  public getId() {
     return stringify(this.operationHandle?.operationId?.guid || parse(NIL));
   }
 
@@ -118,19 +118,19 @@ export default class DBSQLOperation implements IOperation {
 
     await this.waitUntilReady(options);
 
-    return Promise.all([this._schema.getResultHandler(), this._data.fetch(options?.maxRows || defaultMaxRows)])
-      .then(async (results) => {
-        await this.failIfClosed();
-        return results;
-      })
-      .then(async ([resultHandler, data]) => {
-        const result = resultHandler.getValue(data ? [data] : []);
-        this.logger?.log(
-          LogLevel.debug,
-          `Fetched chunk of size: ${options?.maxRows || defaultMaxRows} from operation with id: ${this.getId()}`,
-        );
-        return result;
-      });
+    const [resultHandler, data] = await Promise.all([
+      this._schema.getResultHandler(),
+      this._data.fetch(options?.maxRows || defaultMaxRows),
+    ]);
+
+    await this.failIfClosed();
+
+    const result = resultHandler.getValue(data ? [data] : []);
+    this.logger?.log(
+      LogLevel.debug,
+      `Fetched chunk of size: ${options?.maxRows || defaultMaxRows} from operation with id: ${this.getId()}`,
+    );
+    return result;
   }
 
   /**

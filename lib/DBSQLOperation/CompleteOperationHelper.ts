@@ -4,17 +4,17 @@ import StatusFactory from '../factory/StatusFactory';
 import Status from '../dto/Status';
 
 export default class CompleteOperationHelper {
-  private driver: HiveDriver;
+  private readonly driver: HiveDriver;
 
-  private operationHandle: TOperationHandle;
+  private readonly operationHandle: TOperationHandle;
 
-  private statusFactory = new StatusFactory();
+  private readonly statusFactory = new StatusFactory();
 
   private closeOperation?: TCloseOperationResp;
 
-  closed: boolean = false;
+  public closed: boolean = false;
 
-  cancelled: boolean = false;
+  public cancelled: boolean = false;
 
   constructor(driver: HiveDriver, operationHandle: TOperationHandle, closeOperation?: TCloseOperationResp) {
     this.driver = driver;
@@ -22,7 +22,7 @@ export default class CompleteOperationHelper {
     this.closeOperation = closeOperation;
   }
 
-  async cancel(): Promise<Status> {
+  public async cancel(): Promise<Status> {
     if (this.cancelled) {
       return this.statusFactory.create({
         statusCode: TStatusCode.SUCCESS_STATUS,
@@ -37,7 +37,7 @@ export default class CompleteOperationHelper {
     return status;
   }
 
-  async close(): Promise<Status> {
+  public async close(): Promise<Status> {
     if (!this.closed && this.closeOperation) {
       this.statusFactory.create(this.closeOperation.status);
       this.closed = true;

@@ -8,11 +8,11 @@ import HiveDriverError from '../errors/HiveDriverError';
 import { definedOrError } from '../utils';
 
 export default class SchemaHelper {
-  private driver: HiveDriver;
+  private readonly driver: HiveDriver;
 
-  private operationHandle: TOperationHandle;
+  private readonly operationHandle: TOperationHandle;
 
-  private statusFactory = new StatusFactory();
+  private readonly statusFactory = new StatusFactory();
 
   private metadata?: TGetResultSetMetadataResp;
 
@@ -34,12 +34,12 @@ export default class SchemaHelper {
     return this.metadata;
   }
 
-  async fetch() {
+  public async fetch() {
     const metadata = await this.fetchMetadata();
     return definedOrError(metadata.schema);
   }
 
-  async getResultHandler(): Promise<IOperationResult> {
+  public async getResultHandler(): Promise<IOperationResult> {
     const metadata = await this.fetchMetadata();
     const resultFormat = definedOrError(metadata.resultFormat);
 

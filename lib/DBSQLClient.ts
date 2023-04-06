@@ -47,15 +47,15 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
 
   private connection: IThriftConnection | null;
 
-  private statusFactory: StatusFactory;
+  private readonly statusFactory: StatusFactory;
 
   private connectionProvider: IConnectionProvider;
 
   private authProvider: IAuthentication;
 
-  private logger: IDBSQLLogger;
+  private readonly logger: IDBSQLLogger;
 
-  private thrift = thrift;
+  private readonly thrift = thrift;
 
   private sessions = new CloseableCollection<DBSQLSession>();
 
@@ -92,7 +92,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
    * @example
    * const session = client.connect({host, path, token});
    */
-  async connect(options: ConnectionOptions, authProvider?: IAuthentication): Promise<IDBSQLClient> {
+  public async connect(options: ConnectionOptions, authProvider?: IAuthentication): Promise<IDBSQLClient> {
     this.authProvider =
       authProvider ||
       new PlainHttpAuthentication({
@@ -146,29 +146,27 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
    * @example
    * const session = await client.openSession();
    */
-  openSession(request: OpenSessionRequest = {}): Promise<IDBSQLSession> {
+  public async openSession(request: OpenSessionRequest = {}): Promise<IDBSQLSession> {
     if (!this.connection?.isConnected()) {
-      return Promise.reject(new HiveDriverError('DBSQLClient: connection is lost'));
+      throw new HiveDriverError('DBSQLClient: connection is lost');
     }
 
     const driver = new HiveDriver(this.getClient());
 
-    return driver
-      .openSession({
-        client_protocol_i64: new Int64(TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V6),
-        ...getInitialNamespaceOptions(request.initialCatalog, request.initialSchema),
-      })
-      .then((response) => {
-        this.statusFactory.create(response.status);
-        const session = new DBSQLSession(driver, definedOrError(response.sessionHandle), {
-          logger: this.logger,
-        });
-        this.sessions.add(session);
-        return session;
-      });
+    const response = await driver.openSession({
+      client_protocol_i64: new Int64(TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V6),
+      ...getInitialNamespaceOptions(request.initialCatalog, request.initialSchema),
+    });
+
+    this.statusFactory.create(response.status);
+    const session = new DBSQLSession(driver, definedOrError(response.sessionHandle), {
+      logger: this.logger,
+    });
+    this.sessions.add(session);
+    return session;
   }
 
-  getClient() {
+  public getClient() {
     if (!this.client) {
       throw new HiveDriverError('DBSQLClient: client is not initialized');
     }

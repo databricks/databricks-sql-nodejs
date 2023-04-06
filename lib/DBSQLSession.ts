@@ -84,7 +84,7 @@ export default class DBSQLSession implements IDBSQLSession {
 
   private readonly sessionHandle: TSessionHandle;
 
-  private statusFactory: StatusFactory;
+  private readonly statusFactory: StatusFactory;
 
   private readonly logger: IDBSQLLogger;
 
@@ -102,7 +102,7 @@ export default class DBSQLSession implements IDBSQLSession {
     this.logger.log(LogLevel.debug, `Session created with id: ${this.getId()}`);
   }
 
-  getId() {
+  public getId() {
     return stringify(this.sessionHandle?.sessionId?.guid || parse(NIL));
   }
 
