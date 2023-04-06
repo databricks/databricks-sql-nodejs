@@ -37,19 +37,19 @@ function checkIfOperationHasMoreRows(response: TFetchResultsResp): boolean {
 }
 
 export default class FetchResultsHelper {
-  private driver: HiveDriver;
+  private readonly driver: HiveDriver;
 
-  private operationHandle: TOperationHandle;
+  private readonly operationHandle: TOperationHandle;
 
   private fetchOrientation: TFetchOrientation = TFetchOrientation.FETCH_FIRST;
 
-  private statusFactory = new StatusFactory();
+  private readonly statusFactory = new StatusFactory();
 
   private prefetchedResults: TFetchResultsResp[] = [];
 
   private readonly returnOnlyPrefetchedResults: boolean;
 
-  hasMoreRows: boolean = false;
+  public hasMoreRows: boolean = false;
 
   constructor(
     driver: HiveDriver,
@@ -86,18 +86,19 @@ export default class FetchResultsHelper {
     return response.results;
   }
 
-  async fetch(maxRows: number) {
+  public async fetch(maxRows: number) {
     const prefetchedResponse = this.prefetchedResults.shift();
     if (prefetchedResponse) {
       return this.processFetchResponse(prefetchedResponse);
     }
-    return this.driver
-      .fetchResults({
-        operationHandle: this.operationHandle,
-        orientation: this.fetchOrientation,
-        maxRows: new Int64(maxRows),
-        fetchType: FetchType.Data,
-      })
-      .then((response) => this.processFetchResponse(response));
+
+    const response = await this.driver.fetchResults({
+      operationHandle: this.operationHandle,
+      orientation: this.fetchOrientation,
+      maxRows: new Int64(maxRows),
+      fetchType: FetchType.Data,
+    });
+
+    return this.processFetchResponse(response);
   }
 }
