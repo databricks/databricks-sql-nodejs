@@ -18,19 +18,19 @@ import IDBSQLLogger, { LogLevel } from '../contracts/IDBSQLLogger';
 const defaultMaxRows = 100000;
 
 export default class DBSQLOperation implements IOperation {
-  private driver: HiveDriver;
+  private readonly driver: HiveDriver;
 
-  private operationHandle: TOperationHandle;
+  private readonly operationHandle: TOperationHandle;
 
-  private logger: IDBSQLLogger;
+  private readonly logger: IDBSQLLogger;
 
-  private _status: OperationStatusHelper;
+  private readonly _status: OperationStatusHelper;
 
-  private _schema: SchemaHelper;
+  private readonly _schema: SchemaHelper;
 
-  private _data: FetchResultsHelper;
+  private readonly _data: FetchResultsHelper;
 
-  private _completeOperation: CompleteOperationHelper;
+  private readonly _completeOperation: CompleteOperationHelper;
 
   constructor(
     driver: HiveDriver,
@@ -52,7 +52,7 @@ export default class DBSQLOperation implements IOperation {
     this.logger.log(LogLevel.debug, `Operation created with id: ${this.getId()}`);
   }
 
-  getId() {
+  public getId() {
     return stringify(this.operationHandle?.operationId?.guid || parse(NIL));
   }
 
@@ -65,7 +65,7 @@ export default class DBSQLOperation implements IOperation {
    * @example
    * const result = await queryOperation.fetchAll();
    */
-  async fetchAll(options?: FetchOptions): Promise<Array<object>> {
+  public async fetchAll(options?: FetchOptions): Promise<Array<object>> {
     const data: Array<Array<object>> = [];
     do {
       // eslint-disable-next-line no-await-in-loop
@@ -86,23 +86,24 @@ export default class DBSQLOperation implements IOperation {
    * @example
    * const result = await queryOperation.fetchChunk({maxRows: 1000});
    */
-  async fetchChunk(options?: FetchOptions): Promise<Array<object>> {
+  public async fetchChunk(options?: FetchOptions): Promise<Array<object>> {
     if (!this._status.hasResultSet) {
       return [];
     }
 
     await this._status.waitUntilReady(options);
 
-    return Promise.all([this._schema.getResultHandler(), this._data.fetch(options?.maxRows || defaultMaxRows)]).then(
-      ([resultHandler, data]) => {
-        const result = resultHandler.getValue(data ? [data] : []);
-        this.logger?.log(
-          LogLevel.debug,
-          `Fetched chunk of size: ${options?.maxRows || defaultMaxRows} from operation with id: ${this.getId()}`,
-        );
-        return Promise.resolve(result);
-      },
+    const [resultHandler, data] = await Promise.all([
+      this._schema.getResultHandler(),
+      this._data.fetch(options?.maxRows || defaultMaxRows),
+    ]);
+
+    const result = resultHandler.getValue(data ? [data] : []);
+    this.logger?.log(
+      LogLevel.debug,
+      `Fetched chunk of size: ${options?.maxRows || defaultMaxRows} from operation with id: ${this.getId()}`,
     );
+    return result;
   }
 
   /**
@@ -110,7 +111,7 @@ export default class DBSQLOperation implements IOperation {
    * @param progress
    * @throws {StatusError}
    */
-  async status(progress: boolean = false): Promise<TGetOperationStatusResp> {
+  public async status(progress: boolean = false): Promise<TGetOperationStatusResp> {
     this.logger?.log(LogLevel.debug, `Fetching status for operation with id: ${this.getId()}`);
     return this._status.status(progress);
   }
@@ -119,8 +120,8 @@ export default class DBSQLOperation implements IOperation {
    * Cancels operation
    * @throws {StatusError}
    */
-  cancel(): Promise<Status> {
-    this.logger?.log(LogLevel.debug, `Operation with id: ${this.getId()} canceled.`);
+  public async cancel(): Promise<Status> {
+    this.logger?.log(LogLevel.debug, `Cancelling operation with id: ${this.getId()}`);
     return this._completeOperation.cancel();
   }
 
@@ -128,30 +129,30 @@ export default class DBSQLOperation implements IOperation {
    * Closes operation
    * @throws {StatusError}
    */
-  close(): Promise<Status> {
+  public async close(): Promise<Status> {
     this.logger?.log(LogLevel.debug, `Closing operation with id: ${this.getId()}`);
     return this._completeOperation.close();
   }
 
-  async finished(options?: FinishedOptions): Promise<void> {
+  public async finished(options?: FinishedOptions): Promise<void> {
     await this._status.waitUntilReady(options);
   }
 
-  async hasMoreRows(): Promise<boolean> {
+  public async hasMoreRows(): Promise<boolean> {
     if (this._completeOperation.closed || this._completeOperation.cancelled) {
       return false;
     }
     return this._data.hasMoreRows;
   }
 
-  async getSchema(options?: GetSchemaOptions): Promise<TTableSchema | null> {
+  public async getSchema(options?: GetSchemaOptions): Promise<TTableSchema | null> {
     if (!this._status.hasResultSet) {
       return null;
     }
 
     await this._status.waitUntilReady(options);
-    this.logger?.log(LogLevel.debug, `Fetching schema for operation with id: ${this.getId()}`);
 
+    this.logger?.log(LogLevel.debug, `Fetching schema for operation with id: ${this.getId()}`);
     return this._schema.fetch();
   }
 }
