@@ -4,11 +4,10 @@ import {
   TFetchResultsResp,
   TOperationHandle,
   TRowSet,
-  TStatus,
 } from '../../thrift/TCLIService_types';
 import { ColumnCode, FetchType, Int64 } from '../hive/Types';
 import HiveDriver from '../hive/HiveDriver';
-import StatusFactory from '../factory/StatusFactory';
+import Status from '../dto/Status';
 
 function checkIfOperationHasMoreRows(response: TFetchResultsResp): boolean {
   if (response.hasMoreRows) {
@@ -43,8 +42,6 @@ export default class FetchResultsHelper {
 
   private fetchOrientation: TFetchOrientation = TFetchOrientation.FETCH_FIRST;
 
-  private readonly statusFactory = new StatusFactory();
-
   private prefetchedResults: TFetchResultsResp[] = [];
 
   public hasMoreRows: boolean = false;
@@ -63,12 +60,8 @@ export default class FetchResultsHelper {
     });
   }
 
-  private assertStatus(responseStatus: TStatus): void {
-    this.statusFactory.create(responseStatus);
-  }
-
   private processFetchResponse(response: TFetchResultsResp): TRowSet | undefined {
-    this.assertStatus(response.status);
+    Status.assert(response.status);
     this.fetchOrientation = TFetchOrientation.FETCH_NEXT;
     this.hasMoreRows = checkIfOperationHasMoreRows(response);
     return response.results;

@@ -1,31 +1,43 @@
-type StatusData = {
-  success: boolean;
-  executing: boolean;
-  infoMessages: Array<string>;
-};
+import { TStatus, TStatusCode } from '../../thrift/TCLIService_types';
+import StatusError from '../errors/StatusError';
 
 export default class Status {
-  private isSuccess: boolean;
+  private readonly status: TStatus;
 
-  private isExecuting: boolean;
-
-  private infoMessages: Array<string>;
-
-  constructor(data: StatusData) {
-    this.isSuccess = data.success;
-    this.isExecuting = data.executing;
-    this.infoMessages = data.infoMessages;
+  constructor(status: TStatus) {
+    this.status = status;
   }
 
-  success(): boolean {
-    return this.isSuccess;
+  public get isSuccess(): boolean {
+    const { statusCode } = this.status;
+    return statusCode === TStatusCode.SUCCESS_STATUS || statusCode === TStatusCode.SUCCESS_WITH_INFO_STATUS;
   }
 
-  executing(): boolean {
-    return this.isExecuting;
+  public get isExecuting(): boolean {
+    const { statusCode } = this.status;
+    return statusCode === TStatusCode.STILL_EXECUTING_STATUS;
   }
 
-  getInfo(): Array<string> {
-    return this.infoMessages;
+  public get isError(): boolean {
+    const { statusCode } = this.status;
+    return statusCode === TStatusCode.ERROR_STATUS || statusCode === TStatusCode.INVALID_HANDLE_STATUS;
+  }
+
+  public get info(): Array<string> {
+    return this.status.infoMessages || [];
+  }
+
+  public static assert(status: TStatus) {
+    const statusWrapper = new Status(status);
+    if (statusWrapper.isError) {
+      throw new StatusError(status);
+    }
+  }
+
+  public static success(info: Array<string> = []): Status {
+    return new Status({
+      statusCode: info.length > 0 ? TStatusCode.SUCCESS_WITH_INFO_STATUS : TStatusCode.SUCCESS_STATUS,
+      infoMessages: info,
+    });
   }
 }
