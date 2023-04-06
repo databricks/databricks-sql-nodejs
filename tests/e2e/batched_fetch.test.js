@@ -36,15 +36,23 @@ describe('Data fetching', () => {
 
   it('fetch chunks should return a max row set of chunkSize', async () => {
     const session = await openSession();
-    const operation = await session.executeStatement(query, { runAsync: true, maxRows: null });
-    let chunkedOp = await operation.fetchChunk({ maxRows: 10 }).catch((error) => logger(error));
-    expect(chunkedOp.length).to.be.equal(10);
+    try {
+      const operation = await session.executeStatement(query, { runAsync: true, maxRows: null });
+      let chunkedOp = await operation.fetchChunk({ maxRows: 10 }).catch((error) => logger(error));
+      expect(chunkedOp.length).to.be.equal(10);
+    } finally {
+      await session.close();
+    }
   });
 
   it('fetch all should fetch all records', async () => {
     const session = await openSession();
-    const operation = await session.executeStatement(query, { runAsync: true, maxRows: null });
-    let all = await operation.fetchAll();
-    expect(all.length).to.be.equal(1000);
+    try {
+      const operation = await session.executeStatement(query, { runAsync: true, maxRows: null });
+      let all = await operation.fetchAll();
+      expect(all.length).to.be.equal(1000);
+    } finally {
+      await session.close();
+    }
   });
 });
