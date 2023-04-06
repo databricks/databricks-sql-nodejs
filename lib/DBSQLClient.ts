@@ -50,9 +50,9 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
 
   private authProvider: IAuthentication;
 
-  private logger: IDBSQLLogger;
+  private readonly logger: IDBSQLLogger;
 
-  private thrift = thrift;
+  private readonly thrift = thrift;
 
   constructor(options?: ClientOptions) {
     super();
@@ -86,7 +86,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
    * @example
    * const session = client.connect({host, path, token});
    */
-  async connect(options: ConnectionOptions, authProvider?: IAuthentication): Promise<IDBSQLClient> {
+  public async connect(options: ConnectionOptions, authProvider?: IAuthentication): Promise<IDBSQLClient> {
     this.authProvider =
       authProvider ||
       new PlainHttpAuthentication({
@@ -140,25 +140,23 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
    * @example
    * const session = await client.openSession();
    */
-  openSession(request: OpenSessionRequest = {}): Promise<IDBSQLSession> {
+  public async openSession(request: OpenSessionRequest = {}): Promise<IDBSQLSession> {
     if (!this.connection?.isConnected()) {
-      return Promise.reject(new HiveDriverError('DBSQLClient: connection is lost'));
+      throw new HiveDriverError('DBSQLClient: connection is lost');
     }
 
     const driver = new HiveDriver(this.getClient());
 
-    return driver
-      .openSession({
-        client_protocol_i64: new Int64(TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V6),
-        ...getInitialNamespaceOptions(request.initialCatalog, request.initialSchema),
-      })
-      .then((response) => {
-        Status.assert(response.status);
-        return new DBSQLSession(driver, definedOrError(response.sessionHandle), this.logger);
-      });
+    const response = await driver.openSession({
+      client_protocol_i64: new Int64(TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V6),
+      ...getInitialNamespaceOptions(request.initialCatalog, request.initialSchema),
+    });
+
+    Status.assert(response.status);
+    return new DBSQLSession(driver, definedOrError(response.sessionHandle), this.logger);
   }
 
-  getClient() {
+  public getClient() {
     if (!this.client) {
       throw new HiveDriverError('DBSQLClient: client is not initialized');
     }
@@ -166,17 +164,15 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
     return this.client;
   }
 
-  close(): Promise<void> {
-    if (!this.connection) {
-      return Promise.resolve();
+  public async close(): Promise<void> {
+    if (this.connection) {
+      const thriftConnection = this.connection.getConnection();
+
+      if (typeof thriftConnection.end === 'function') {
+        this.connection.getConnection().end();
+      }
+
+      this.connection = null;
     }
-
-    const thriftConnection = this.connection.getConnection();
-
-    if (typeof thriftConnection.end === 'function') {
-      this.connection.getConnection().end();
-    }
-
-    return Promise.resolve();
   }
 }

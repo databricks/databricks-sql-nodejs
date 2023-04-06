@@ -13,9 +13,9 @@ async function delay(ms?: number): Promise<void> {
 }
 
 export default class OperationStatusHelper {
-  private driver: HiveDriver;
+  private readonly driver: HiveDriver;
 
-  private operationHandle: TOperationHandle;
+  private readonly operationHandle: TOperationHandle;
 
   private state: number = TOperationState.INITIALIZED_STATE;
 
@@ -23,7 +23,7 @@ export default class OperationStatusHelper {
   // to `getOperationStatus()` may fail with irrelevant errors, e.g. HTTP 404
   private operationStatus?: TGetOperationStatusResp;
 
-  hasResultSet: boolean = false;
+  public hasResultSet: boolean = false;
 
   constructor(driver: HiveDriver, operationHandle: TOperationHandle, operationStatus?: TGetOperationStatusResp) {
     this.driver = driver;
@@ -62,16 +62,17 @@ export default class OperationStatusHelper {
     return response;
   }
 
-  status(progress: boolean) {
+  public async status(progress: boolean): Promise<TGetOperationStatusResp> {
     if (this.operationStatus) {
-      return Promise.resolve(this.operationStatus);
+      return this.operationStatus;
     }
-    return this.driver
-      .getOperationStatus({
-        operationHandle: this.operationHandle,
-        getProgressUpdate: progress,
-      })
-      .then((response) => this.processOperationStatusResponse(response));
+
+    const response = await this.driver.getOperationStatus({
+      operationHandle: this.operationHandle,
+      getProgressUpdate: progress,
+    });
+
+    return this.processOperationStatusResponse(response);
   }
 
   private async isReady(options?: WaitUntilReadyOptions): Promise<boolean> {
@@ -104,7 +105,7 @@ export default class OperationStatusHelper {
     }
   }
 
-  async waitUntilReady(options?: WaitUntilReadyOptions): Promise<void> {
+  public async waitUntilReady(options?: WaitUntilReadyOptions): Promise<void> {
     if (this.state === TOperationState.FINISHED_STATE) {
       return;
     }

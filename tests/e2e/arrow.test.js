@@ -58,10 +58,10 @@ describe('Arrow support', () => {
         await testBody(session);
       } catch (error) {
         logger(error);
-        await session.close();
         throw error;
       } finally {
         await deleteTable(session, tableName);
+        await session.close();
       }
     };
   }

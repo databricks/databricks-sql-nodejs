@@ -3,13 +3,13 @@ import HiveDriver from '../hive/HiveDriver';
 import Status from '../dto/Status';
 
 export default class CompleteOperationHelper {
-  private driver: HiveDriver;
+  private readonly driver: HiveDriver;
 
-  private operationHandle: TOperationHandle;
+  private readonly operationHandle: TOperationHandle;
 
-  closed: boolean = false;
+  public closed: boolean = false;
 
-  cancelled: boolean = false;
+  public cancelled: boolean = false;
 
   constructor(driver: HiveDriver, operationHandle: TOperationHandle, closeOperation?: TCloseOperationResp) {
     this.driver = driver;
@@ -21,7 +21,7 @@ export default class CompleteOperationHelper {
     }
   }
 
-  async cancel(): Promise<Status> {
+  public async cancel(): Promise<Status> {
     if (this.cancelled) {
       return Status.success();
     }
@@ -34,7 +34,7 @@ export default class CompleteOperationHelper {
     return new Status(response.status);
   }
 
-  async close(): Promise<Status> {
+  public async close(): Promise<Status> {
     if (this.closed) {
       return Status.success();
     }
