@@ -35,7 +35,7 @@ const client = new DBSQLClient();
 client
   .connect({
     host: '********.databricks.com',
-    path: '/sql/1.0/endpoints/****************',
+    path: '/sql/2.0/warehouses/****************',
     token: 'dapi********************************',
   })
   .then(async (client) => {
@@ -73,7 +73,7 @@ Before running end-to-end tests, create a file named `tests/e2e/utils/config.loc
 ```javascript
 {
     host: '***.databricks.com',
-    path: '/sql/1.0/endpoints/***',
+    path: '/sql/2.0/warehouses/***',
     token: 'dapi***',
     database: ['catalog', 'database'],
 }

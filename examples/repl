@@ -13,7 +13,7 @@ async function initClient({ host, endpointId, token }) {
     const client = new DBSQLClient();
     return client.connect({
         host,
-        path: `/sql/1.0/endpoints/${endpointId}`,
+        path: `/sql/2.0/warehouses/${endpointId}`,
         token,
         clientId: 'REPL',
     });
