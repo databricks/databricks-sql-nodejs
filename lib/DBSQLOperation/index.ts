@@ -13,13 +13,11 @@ import {
   TSparkDirectResults,
 } from '../../thrift/TCLIService_types';
 import Status from '../dto/Status';
-
 import OperationStatusHelper from './OperationStatusHelper';
 import SchemaHelper from './SchemaHelper';
 import FetchResultsHelper from './FetchResultsHelper';
 import CompleteOperationHelper from './CompleteOperationHelper';
 import IDBSQLLogger, { LogLevel } from '../contracts/IDBSQLLogger';
-import StatusFactory from '../factory/StatusFactory';
 import OperationStateError, { OperationStateErrorCode } from '../errors/OperationStateError';
 
 const defaultMaxRows = 100000;
@@ -32,8 +30,6 @@ export default class DBSQLOperation implements IOperation {
   private readonly driver: HiveDriver;
 
   private readonly operationHandle: TOperationHandle;
-
-  private readonly statusFactory = new StatusFactory();
 
   private readonly logger: IDBSQLLogger;
 
@@ -150,7 +146,7 @@ export default class DBSQLOperation implements IOperation {
    */
   public async cancel(): Promise<Status> {
     if (this._completeOperation.closed || this._completeOperation.cancelled) {
-      return this.statusFactory.success();
+      return Status.success();
     }
 
     this.logger?.log(LogLevel.debug, `Cancelling operation with id: ${this.getId()}`);
@@ -167,7 +163,7 @@ export default class DBSQLOperation implements IOperation {
    */
   public async close(): Promise<Status> {
     if (this._completeOperation.closed || this._completeOperation.cancelled) {
-      return this.statusFactory.success();
+      return Status.success();
     }
 
     this.logger?.log(LogLevel.debug, `Closing operation with id: ${this.getId()}`);
