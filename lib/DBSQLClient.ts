@@ -14,7 +14,7 @@ import IAuthentication from './connection/contracts/IAuthentication';
 import NoSaslAuthentication from './connection/auth/NoSaslAuthentication';
 import HttpConnection from './connection/connections/HttpConnection';
 import IConnectionOptions from './connection/contracts/IConnectionOptions';
-import StatusFactory from './factory/StatusFactory';
+import Status from './dto/Status';
 import HiveDriverError from './errors/HiveDriverError';
 import { buildUserAgentString, definedOrError } from './utils';
 import PlainHttpAuthentication from './connection/auth/PlainHttpAuthentication';
@@ -47,8 +47,6 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
 
   private connection: IThriftConnection | null;
 
-  private readonly statusFactory: StatusFactory;
-
   private connectionProvider: IConnectionProvider;
 
   private authProvider: IAuthentication;
@@ -63,7 +61,6 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
     super();
     this.connectionProvider = new HttpConnection();
     this.authProvider = new NoSaslAuthentication();
-    this.statusFactory = new StatusFactory();
     this.logger = options?.logger || new DBSQLLogger();
     this.client = null;
     this.connection = null;
@@ -158,7 +155,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
       ...getInitialNamespaceOptions(request.initialCatalog, request.initialSchema),
     });
 
-    this.statusFactory.create(response.status);
+    Status.assert(response.status);
     const session = new DBSQLSession(driver, definedOrError(response.sessionHandle), {
       logger: this.logger,
     });

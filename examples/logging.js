@@ -10,7 +10,7 @@ const client = new DBSQLClient({ logger: logger });
 client
   .connect({
     host: '****.cloud.databricks.com',
-    path: '/sql/1.0/endpoints/*************',
+    path: '/sql/2.0/warehouses/*************',
     token: 'dapi**************************',
   })
   .then(async (client) => {

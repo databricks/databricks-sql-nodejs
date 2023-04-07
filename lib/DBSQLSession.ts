@@ -23,7 +23,6 @@ import IDBSQLSession, {
 import IOperation from './contracts/IOperation';
 import DBSQLOperation from './DBSQLOperation';
 import Status from './dto/Status';
-import StatusFactory from './factory/StatusFactory';
 import InfoValue from './dto/InfoValue';
 import { definedOrError } from './utils';
 import CloseableCollection from './utils/CloseableCollection';
@@ -84,8 +83,6 @@ export default class DBSQLSession implements IDBSQLSession {
 
   private readonly sessionHandle: TSessionHandle;
 
-  private readonly statusFactory: StatusFactory;
-
   private readonly logger: IDBSQLLogger;
 
   private isOpen = true;
@@ -97,7 +94,6 @@ export default class DBSQLSession implements IDBSQLSession {
   constructor(driver: HiveDriver, sessionHandle: TSessionHandle, { logger }: DBSQLSessionConstructorOptions) {
     this.driver = driver;
     this.sessionHandle = sessionHandle;
-    this.statusFactory = new StatusFactory();
     this.logger = logger;
     this.logger.log(LogLevel.debug, `Session created with id: ${this.getId()}`);
   }
@@ -123,7 +119,7 @@ export default class DBSQLSession implements IDBSQLSession {
       }),
     );
 
-    this.assertStatus(response.status);
+    Status.assert(response.status);
     return new InfoValue(response.infoValue);
   }
 
@@ -346,7 +342,7 @@ export default class DBSQLSession implements IDBSQLSession {
    */
   public async close(): Promise<Status> {
     if (!this.isOpen) {
-      return this.statusFactory.success();
+      return Status.success();
     }
 
     // Close owned operations one by one, removing successfully closed ones from the list
@@ -356,18 +352,18 @@ export default class DBSQLSession implements IDBSQLSession {
       sessionHandle: this.sessionHandle,
     });
     // check status for being successful
-    const status = this.statusFactory.create(response.status);
+    Status.assert(response.status);
 
     // notify owner connection
     this.onClose?.();
     this.isOpen = false;
 
     this.logger.log(LogLevel.debug, `Session closed with id: ${this.getId()}`);
-    return status;
+    return new Status(response.status);
   }
 
   private createOperation(response: OperationResponseShape): IOperation {
-    this.assertStatus(response.status);
+    Status.assert(response.status);
     const handle = definedOrError(response.operationHandle);
     const operation = new DBSQLOperation(
       this.driver,
@@ -381,10 +377,6 @@ export default class DBSQLSession implements IDBSQLSession {
     this.operations.add(operation);
 
     return operation;
-  }
-
-  private assertStatus(responseStatus: TStatus): void {
-    this.statusFactory.create(responseStatus);
   }
 
   private async failIfClosed(): Promise<void> {
