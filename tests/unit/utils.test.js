@@ -1,6 +1,6 @@
 const { expect } = require('chai');
 
-const { buildUserAgentString, formatProgress, ProgressUpdateTransformer } = require('../../dist/utils');
+const { buildUserAgentString, definedOrError, formatProgress, ProgressUpdateTransformer } = require('../../dist/utils');
 
 describe('buildUserAgentString', () => {
   // It should follow https://www.rfc-editor.org/rfc/rfc7231#section-5.5.3 and
@@ -73,5 +73,21 @@ describe('ProgressUpdateTransformer', () => {
     expect(String(t)).to.be.eq(
       'Column 1  |Column 2  \n' + 'value 1.1 |value 1.2 \n' + 'value 2.1 |value 2.2 \n' + 'footer',
     );
+  });
+});
+
+describe('definedOrError', () => {
+  it('should return value if it is defined', () => {
+    const values = [null, 0, 3.14, false, true, '', 'Hello, World!', [], {}];
+    for (const value of values) {
+      const result = definedOrError(value);
+      expect(result).to.be.equal(value);
+    }
+  });
+
+  it('should throw error if value is undefined', () => {
+    expect(() => {
+      definedOrError(undefined);
+    }).to.throw();
   });
 });
