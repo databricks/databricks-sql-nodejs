@@ -12,7 +12,7 @@ module.exports = {
   logger: 'CONSOLE',
   // Host, like ****.cloud.databricks.com
   host: process.env.E2E_HOST,
-  // API path: /sql/1.0/endpoints/****************
+  // API path: /sql/2.0/warehouses/****************
   path: process.env.E2E_PATH,
   // Access token: dapi********************************
   token: process.env.E2E_ACCESS_TOKEN,

@@ -3,7 +3,7 @@ const { DBSQLClient, utils } = require('../');
 const client = new DBSQLClient();
 
 const host = '****.databricks.com';
-const path = '/sql/1.0/endpoints/****';
+const path = '/sql/2.0/warehouses/****';
 const token = 'dapi********************************';
 
 client.connect({ host, path, token }).then(async (client) => {

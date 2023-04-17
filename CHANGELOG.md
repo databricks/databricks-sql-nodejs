@@ -2,6 +2,11 @@
 
 ## 1.x (Unreleased)
 
+## 1.2.0
+
+- Added Apache Arrow support (databricks/databricks-sql-nodejs#94)
+- Auth provider is now configurable (databricks/databricks-sql-nodejs#120)
+
 ## 1.1.1
 
 - Fix: patch needed for improved error handling wasn't applied when installing 1.1.0

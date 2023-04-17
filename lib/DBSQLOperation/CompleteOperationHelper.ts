@@ -1,56 +1,52 @@
-import { TOperationHandle, TStatusCode, TCloseOperationResp } from '../../thrift/TCLIService_types';
+import { TOperationHandle, TCloseOperationResp } from '../../thrift/TCLIService_types';
 import HiveDriver from '../hive/HiveDriver';
-import StatusFactory from '../factory/StatusFactory';
 import Status from '../dto/Status';
 
 export default class CompleteOperationHelper {
-  private driver: HiveDriver;
+  private readonly driver: HiveDriver;
 
-  private operationHandle: TOperationHandle;
+  private readonly operationHandle: TOperationHandle;
 
-  private statusFactory = new StatusFactory();
+  private closeOperation?: TCloseOperationResp;
 
-  closed: boolean = false;
+  public closed: boolean = false;
 
-  cancelled: boolean = false;
+  public cancelled: boolean = false;
 
   constructor(driver: HiveDriver, operationHandle: TOperationHandle, closeOperation?: TCloseOperationResp) {
     this.driver = driver;
     this.operationHandle = operationHandle;
-
-    if (closeOperation) {
-      this.statusFactory.create(closeOperation.status);
-      this.closed = true;
-    }
+    this.closeOperation = closeOperation;
   }
 
-  async cancel(): Promise<Status> {
+  public async cancel(): Promise<Status> {
     if (this.cancelled) {
-      return this.statusFactory.create({
-        statusCode: TStatusCode.SUCCESS_STATUS,
-      });
+      return Status.success();
     }
 
     const response = await this.driver.cancelOperation({
       operationHandle: this.operationHandle,
     });
-    const status = this.statusFactory.create(response.status);
+    Status.assert(response.status);
     this.cancelled = true;
-    return status;
+    return new Status(response.status);
   }
 
-  async close(): Promise<Status> {
+  public async close(): Promise<Status> {
+    if (!this.closed && this.closeOperation) {
+      Status.assert(this.closeOperation.status);
+      this.closed = true;
+    }
+
     if (this.closed) {
-      return this.statusFactory.create({
-        statusCode: TStatusCode.SUCCESS_STATUS,
-      });
+      return Status.success();
     }
 
     const response = await this.driver.closeOperation({
       operationHandle: this.operationHandle,
     });
-    const status = this.statusFactory.create(response.status);
+    Status.assert(response.status);
     this.closed = true;
-    return status;
+    return new Status(response.status);
   }
 }

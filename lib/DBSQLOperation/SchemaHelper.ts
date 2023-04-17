@@ -1,6 +1,6 @@
 import { TGetResultSetMetadataResp, TOperationHandle, TSparkRowSetType } from '../../thrift/TCLIService_types';
 import HiveDriver from '../hive/HiveDriver';
-import StatusFactory from '../factory/StatusFactory';
+import Status from '../dto/Status';
 import IOperationResult from '../result/IOperationResult';
 import JsonResult from '../result/JsonResult';
 import ArrowResult from '../result/ArrowResult';
@@ -8,11 +8,9 @@ import HiveDriverError from '../errors/HiveDriverError';
 import { definedOrError } from '../utils';
 
 export default class SchemaHelper {
-  private driver: HiveDriver;
+  private readonly driver: HiveDriver;
 
-  private operationHandle: TOperationHandle;
-
-  private statusFactory = new StatusFactory();
+  private readonly operationHandle: TOperationHandle;
 
   private metadata?: TGetResultSetMetadataResp;
 
@@ -27,19 +25,19 @@ export default class SchemaHelper {
       const metadata = await this.driver.getResultSetMetadata({
         operationHandle: this.operationHandle,
       });
-      this.statusFactory.create(metadata.status);
+      Status.assert(metadata.status);
       this.metadata = metadata;
     }
 
     return this.metadata;
   }
 
-  async fetch() {
+  public async fetch() {
     const metadata = await this.fetchMetadata();
     return definedOrError(metadata.schema);
   }
 
-  async getResultHandler(): Promise<IOperationResult> {
+  public async getResultHandler(): Promise<IOperationResult> {
     const metadata = await this.fetchMetadata();
     const resultFormat = definedOrError(metadata.resultFormat);
 

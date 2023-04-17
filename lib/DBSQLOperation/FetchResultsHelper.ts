@@ -4,11 +4,10 @@ import {
   TFetchResultsResp,
   TOperationHandle,
   TRowSet,
-  TStatus,
 } from '../../thrift/TCLIService_types';
 import { ColumnCode, FetchType, Int64 } from '../hive/Types';
 import HiveDriver from '../hive/HiveDriver';
-import StatusFactory from '../factory/StatusFactory';
+import Status from '../dto/Status';
 
 function checkIfOperationHasMoreRows(response: TFetchResultsResp): boolean {
   if (response.hasMoreRows) {
@@ -37,22 +36,23 @@ function checkIfOperationHasMoreRows(response: TFetchResultsResp): boolean {
 }
 
 export default class FetchResultsHelper {
-  private driver: HiveDriver;
+  private readonly driver: HiveDriver;
 
-  private operationHandle: TOperationHandle;
+  private readonly operationHandle: TOperationHandle;
 
   private fetchOrientation: TFetchOrientation = TFetchOrientation.FETCH_FIRST;
 
-  private statusFactory = new StatusFactory();
-
   private prefetchedResults: TFetchResultsResp[] = [];
 
-  hasMoreRows: boolean = false;
+  private readonly returnOnlyPrefetchedResults: boolean;
+
+  public hasMoreRows: boolean = false;
 
   constructor(
     driver: HiveDriver,
     operationHandle: TOperationHandle,
     prefetchedResults: Array<TFetchResultsResp | undefined>,
+    returnOnlyPrefetchedResults: boolean,
   ) {
     this.driver = driver;
     this.operationHandle = operationHandle;
@@ -61,31 +61,37 @@ export default class FetchResultsHelper {
         this.prefetchedResults.push(item);
       }
     });
-  }
-
-  private assertStatus(responseStatus: TStatus): void {
-    this.statusFactory.create(responseStatus);
+    this.returnOnlyPrefetchedResults = returnOnlyPrefetchedResults;
   }
 
   private processFetchResponse(response: TFetchResultsResp): TRowSet | undefined {
-    this.assertStatus(response.status);
+    Status.assert(response.status);
     this.fetchOrientation = TFetchOrientation.FETCH_NEXT;
-    this.hasMoreRows = checkIfOperationHasMoreRows(response);
+
+    if (this.prefetchedResults.length > 0) {
+      this.hasMoreRows = true;
+    } else if (this.returnOnlyPrefetchedResults) {
+      this.hasMoreRows = false;
+    } else {
+      this.hasMoreRows = checkIfOperationHasMoreRows(response);
+    }
+
     return response.results;
   }
 
-  async fetch(maxRows: number) {
+  public async fetch(maxRows: number) {
     const prefetchedResponse = this.prefetchedResults.shift();
     if (prefetchedResponse) {
       return this.processFetchResponse(prefetchedResponse);
     }
-    return this.driver
-      .fetchResults({
-        operationHandle: this.operationHandle,
-        orientation: this.fetchOrientation,
-        maxRows: new Int64(maxRows),
-        fetchType: FetchType.Data,
-      })
-      .then((response) => this.processFetchResponse(response));
+
+    const response = await this.driver.fetchResults({
+      operationHandle: this.operationHandle,
+      orientation: this.fetchOrientation,
+      maxRows: new Int64(maxRows),
+      fetchType: FetchType.Data,
+    });
+
+    return this.processFetchResponse(response);
   }
 }

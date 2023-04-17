@@ -3,9 +3,17 @@ const JsonResult = require('../../../dist/result/JsonResult').default;
 const { TCLIService_types } = require('../../../').thrift;
 const Int64 = require('node-int64');
 
-const getColumnSchema = (name, type, position) => {
+const getColumnSchema = (columnName, type, position) => {
+  if (type === undefined) {
+    return {
+      columnName,
+      typeDesc: { types: [] },
+      position,
+    };
+  }
+
   return {
-    columnName: name,
+    columnName,
     typeDesc: {
       types: [
         {
@@ -201,6 +209,7 @@ describe('JsonResult', () => {
           },
         ],
       },
+      {}, // it should also handle empty sets
       {
         columns: [
           {
@@ -382,5 +391,51 @@ describe('JsonResult', () => {
     const result = new JsonResult();
 
     expect(result.getValue(data)).to.be.deep.eq([]);
+  });
+
+  it('should return raw data if types are not specified', () => {
+    const schema = {
+      columns: [
+        getColumnSchema('table.array', undefined, 1),
+        getColumnSchema('table.map', undefined, 2),
+        getColumnSchema('table.struct', undefined, 3),
+        getColumnSchema('table.union', undefined, 4),
+      ],
+    };
+    const data = [
+      {
+        columns: [
+          {
+            stringVal: { values: ['["a", "b"]', '["c", "d"]'] },
+          },
+          {
+            stringVal: { values: ['{ "key": 12 }', '{ "key": 13 }'] },
+          },
+          {
+            stringVal: { values: ['{ "name": "Jon", "surname": "Doe" }', '{ "name": "Jane", "surname": "Doe" }'] },
+          },
+          {
+            stringVal: { values: ['{0:12}', '{1:"foo"}'] },
+          },
+        ],
+      },
+    ];
+
+    const result = new JsonResult(schema);
+
+    expect(result.getValue(data)).to.be.deep.eq([
+      {
+        'table.array': '["a", "b"]',
+        'table.map': '{ "key": 12 }',
+        'table.struct': '{ "name": "Jon", "surname": "Doe" }',
+        'table.union': '{0:12}',
+      },
+      {
+        'table.array': '["c", "d"]',
+        'table.map': '{ "key": 13 }',
+        'table.struct': '{ "name": "Jane", "surname": "Doe" }',
+        'table.union': '{1:"foo"}',
+      },
+    ]);
   });
 });
