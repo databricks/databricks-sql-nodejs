@@ -2,6 +2,13 @@
 
 ## 1.x (Unreleased)
 
+## 1.2.1
+
+- Added Azure AD support (databricks/databricks-sql-nodejs#126)
+- Improved direct results handling (databricks/databricks-sql-nodejs#134)
+- Updated API endpoint references in docs and samples (databricks/databricks-sql-nodejs#137)
+- Code refactoring to improve maintainability
+
 ## 1.2.0
 
 - Added Apache Arrow support (databricks/databricks-sql-nodejs#94)
