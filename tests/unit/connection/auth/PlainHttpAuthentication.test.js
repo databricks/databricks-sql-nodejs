@@ -34,7 +34,7 @@ describe('PlainHttpAuthentication', () => {
     const transportMock = {
       setOptions(name, value) {
         expect(name).to.be.eq('headers');
-        expect(value.Authorization).to.be.eq('Basic YW5vbnltb3VzOmFub255bW91cw==');
+        expect(value.Authorization).to.be.eq('Bearer anonymous');
       },
     };
     return auth.authenticate(transportMock).then((transport) => {
