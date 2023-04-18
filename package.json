@@ -13,7 +13,9 @@
   },
   "scripts": {
     "postinstall": "patch-package",
-    "prepare": "npm run build",
+    "clean": "rm -rf dist",
+    "prepare": "npm run clean && npm run build && npm run internal:bundle-thrift",
+    "internal:bundle-thrift": "mkdir dist/node_modules && cp -R node_modules/thrift dist/node_modules/thrift",
     "e2e": "nyc --reporter=lcov --report-dir=coverage_e2e mocha --config tests/e2e/.mocharc.js",
     "test": "nyc --reporter=lcov --report-dir=coverage_unit mocha  --config tests/unit/.mocharc.js",
     "update-version": "node bin/update-version.js && prettier --write ./lib/version.ts",
@@ -77,8 +79,5 @@
     "thrift": "^0.16.0",
     "uuid": "^9.0.0",
     "winston": "^3.8.2"
-  },
-  "bundledDependencies": [
-    "thrift"
-  ]
+  }
 }
