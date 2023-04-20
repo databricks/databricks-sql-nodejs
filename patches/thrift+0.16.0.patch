@@ -1,5 +1,5 @@
 diff --git a/node_modules/thrift/lib/nodejs/lib/thrift/http_connection.js b/node_modules/thrift/lib/nodejs/lib/thrift/http_connection.js
-index 17e0d0c..d1ead4a 100644
+index 17e0d0c..9e90096 100644
 --- a/node_modules/thrift/lib/nodejs/lib/thrift/http_connection.js
 +++ b/node_modules/thrift/lib/nodejs/lib/thrift/http_connection.js
 @@ -106,7 +106,7 @@ var HttpConnection = exports.HttpConnection = function(options) {
@@ -34,7 +34,7 @@ index 17e0d0c..d1ead4a 100644
        }
      }
    }
-@@ -165,17 +166,15 @@ var HttpConnection = exports.HttpConnection = function(options) {
+@@ -165,17 +166,17 @@ var HttpConnection = exports.HttpConnection = function(options) {
  
    //Response handler
    //////////////////////////////////////////////////
@@ -46,6 +46,8 @@ index 17e0d0c..d1ead4a 100644
      if (response.statusCode !== 200) {
 -      this.emit("error", new THTTPException(response));
 +      handleError(new THTTPException(response));
++      response.destroy();
++      return;
      }
  
 -    response.on('error', function (e) {
@@ -55,7 +57,7 @@ index 17e0d0c..d1ead4a 100644
  
      // When running directly under node, chunk will be a buffer,
      // however, when running in a Browser (e.g. Browserify), chunk
-@@ -199,7 +198,9 @@ var HttpConnection = exports.HttpConnection = function(options) {
+@@ -199,7 +200,9 @@ var HttpConnection = exports.HttpConnection = function(options) {
        }
        //Get the receiver function for the transport and
        //  call it with the buffer
@@ -66,7 +68,7 @@ index 17e0d0c..d1ead4a 100644
      });
    };
  };
-@@ -212,18 +213,33 @@ util.inherits(HttpConnection, EventEmitter);
+@@ -212,18 +215,33 @@ util.inherits(HttpConnection, EventEmitter);
   * @event {error} the "error" event is raised upon request failure passing the
   *     Node.js error object to the listener.
   */
