@@ -72,31 +72,6 @@ describe('BaseCommand', () => {
     }
   });
 
-  [401, 403, 404].forEach((statusCode) => {
-    describe(`HTTP ${statusCode} error`, () => {
-      it(`should throw custom error`, async () => {
-        const command = new CustomCommand(
-          new ThriftClientMock(() => {
-            const error = new Thrift.TApplicationException();
-            error.statusCode = statusCode;
-            throw error;
-          }),
-        );
-
-        try {
-          await command.execute();
-          expect.fail('It should throw an error');
-        } catch (error) {
-          if (error instanceof AssertionError) {
-            throw error;
-          }
-          expect(error).to.be.instanceof(HiveDriverError);
-          expect(error.message).to.contain(`${statusCode} when connecting to resource`);
-        }
-      });
-    });
-  });
-
   [429, 503].forEach((statusCode) => {
     describe(`HTTP ${statusCode} error`, () => {
       it('should fail on max retry attempts exceeded', async () => {

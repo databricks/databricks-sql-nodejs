@@ -41,7 +41,7 @@ export default abstract class BaseCommand {
       if (error instanceof Thrift.TApplicationException) {
         if ('statusCode' in error) {
           switch (error.statusCode) {
-            // On this status codes it's safe to retry the request. However,
+            // On these status codes it's safe to retry the request. However,
             // both error codes mean that server is overwhelmed or even down.
             // Therefore, we need to add some delay between attempts so
             // server can recover and more likely handle next request
@@ -51,7 +51,7 @@ export default abstract class BaseCommand {
 
               // Delay interval depends on current attempt - the more attempts we do
               // the longer the interval will be
-              // TODO: Respect `Retry-After` header
+              // TODO: Respect `Retry-After` header (PECO-729)
               const retryDelay = getRetryDelay(info.attempt);
 
               const attemptsExceeded = info.attempt >= globalConfig.retryMaxAttempts;
@@ -71,19 +71,7 @@ export default abstract class BaseCommand {
               await delay(retryDelay);
               return this.invokeWithErrorHandling(request, command, info);
 
-            case 404: // Not Found
-              throw new HiveDriverError(
-                'Hive driver: 404 when connecting to resource. Check the host and path provided.',
-              );
-
-            // These two status codes usually mean that wrong credentials were passed
-            case 401: // Unauthorized
-            case 403: // Forbidden
-              return Promise.reject(
-                new HiveDriverError(
-                  `Hive driver: ${error.statusCode} when connecting to resource. Check the token used to authenticate.`,
-                ),
-              );
+            // TODO: Here we should handle other error types (see PECO-730)
 
             // no default
           }
