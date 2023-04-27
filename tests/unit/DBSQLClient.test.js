@@ -226,4 +226,47 @@ describe('DBSQLClient.close', () => {
     await client.close();
     // No additional asserts needed - it should just reach this point
   });
+
+  it('should close sessions that belong to it', async () => {
+    const client = new DBSQLClient();
+    client.client = {
+      OpenSession(req, cb) {
+        cb(null, {
+          status: {},
+          sessionHandle: {
+            sessionId: {
+              guid: Buffer.alloc(16),
+              secret: Buffer.alloc(0),
+            },
+          },
+        });
+      },
+      CloseSession(req, cb) {
+        cb(null, { status: {} });
+      },
+    };
+    client.connection = {
+      isConnected() {
+        return true;
+      },
+      getConnection: () => ({}),
+    };
+
+    const session = await client.openSession();
+    expect(session.onClose).to.be.not.undefined;
+    expect(session.isOpen).to.be.true;
+    expect(client.sessions.items.size).to.eq(1);
+
+    sinon.spy(client.client, 'CloseSession');
+    sinon.spy(client.sessions, 'closeAll');
+    sinon.spy(session, 'close');
+
+    await client.close();
+    expect(client.sessions.closeAll.called).to.be.true;
+    expect(session.close.called).to.be.true;
+    expect(session.onClose).to.be.undefined;
+    expect(session.isOpen).to.be.false;
+    expect(client.sessions.items.size).to.eq(0);
+    expect(client.client.CloseSession.called).to.be.true;
+  });
 });

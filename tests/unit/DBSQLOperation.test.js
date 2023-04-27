@@ -20,6 +20,17 @@ class OperationHandleMock {
   }
 }
 
+async function expectFailure(fn) {
+  try {
+    await fn();
+    expect.fail('It should throw an error');
+  } catch (error) {
+    if (error instanceof AssertionError) {
+      throw error;
+    }
+  }
+}
+
 class DriverMock {
   getOperationStatusResp = {
     status: { statusCode: TStatusCode.SUCCESS_STATUS },
@@ -308,6 +319,27 @@ describe('DBSQLOperation', () => {
       expect(operation._completeOperation.closed).to.be.false;
     });
 
+    it('should return immediately if already closed', async () => {
+      const handle = new OperationHandleMock();
+      const driver = new DriverMock();
+      sinon.spy(driver, 'cancelOperation');
+      sinon.spy(driver, 'closeOperation');
+      const operation = new DBSQLOperation(driver, handle, logger);
+
+      expect(operation._completeOperation.cancelled).to.be.false;
+      expect(operation._completeOperation.closed).to.be.false;
+
+      await operation.close();
+      expect(driver.closeOperation.callCount).to.be.equal(1);
+      expect(operation._completeOperation.cancelled).to.be.false;
+      expect(operation._completeOperation.closed).to.be.true;
+
+      await operation.cancel();
+      expect(driver.cancelOperation.callCount).to.be.equal(0);
+      expect(operation._completeOperation.cancelled).to.be.false;
+      expect(operation._completeOperation.closed).to.be.true;
+    });
+
     it('should throw an error in case of a status error and keep state', async () => {
       const handle = new OperationHandleMock();
       const driver = new DriverMock();
@@ -328,6 +360,21 @@ describe('DBSQLOperation', () => {
         expect(operation._completeOperation.cancelled).to.be.false;
         expect(operation._completeOperation.closed).to.be.false;
       }
+    });
+
+    it('should reject all methods once cancelled', async () => {
+      const handle = new OperationHandleMock();
+      const driver = new DriverMock();
+      const operation = new DBSQLOperation(driver, handle, logger);
+
+      await operation.cancel();
+      expect(operation._completeOperation.cancelled).to.be.true;
+
+      await expectFailure(() => operation.fetchAll());
+      await expectFailure(() => operation.fetchChunk());
+      await expectFailure(() => operation.status());
+      await expectFailure(() => operation.finished());
+      await expectFailure(() => operation.getSchema());
     });
   });
 
@@ -366,6 +413,27 @@ describe('DBSQLOperation', () => {
       expect(driver.closeOperation.callCount).to.be.equal(1);
       expect(operation._completeOperation.cancelled).to.be.false;
       expect(operation._completeOperation.closed).to.be.true;
+    });
+
+    it('should return immediately if already cancelled', async () => {
+      const handle = new OperationHandleMock();
+      const driver = new DriverMock();
+      sinon.spy(driver, 'closeOperation');
+      sinon.spy(driver, 'cancelOperation');
+      const operation = new DBSQLOperation(driver, handle, logger);
+
+      expect(operation._completeOperation.cancelled).to.be.false;
+      expect(operation._completeOperation.closed).to.be.false;
+
+      await operation.cancel();
+      expect(driver.cancelOperation.callCount).to.be.equal(1);
+      expect(operation._completeOperation.cancelled).to.be.true;
+      expect(operation._completeOperation.closed).to.be.false;
+
+      await operation.close();
+      expect(driver.closeOperation.callCount).to.be.equal(0);
+      expect(operation._completeOperation.cancelled).to.be.true;
+      expect(operation._completeOperation.closed).to.be.false;
     });
 
     it('should initialize from directResults', async () => {
@@ -409,6 +477,21 @@ describe('DBSQLOperation', () => {
         expect(operation._completeOperation.cancelled).to.be.false;
         expect(operation._completeOperation.closed).to.be.false;
       }
+    });
+
+    it('should reject all methods once closed', async () => {
+      const handle = new OperationHandleMock();
+      const driver = new DriverMock();
+      const operation = new DBSQLOperation(driver, handle, logger);
+
+      await operation.close();
+      expect(operation._completeOperation.closed).to.be.true;
+
+      await expectFailure(() => operation.fetchAll());
+      await expectFailure(() => operation.fetchChunk());
+      await expectFailure(() => operation.status());
+      await expectFailure(() => operation.finished());
+      await expectFailure(() => operation.getSchema());
     });
   });
 
