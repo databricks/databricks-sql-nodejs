@@ -28,6 +28,7 @@ declare enum TProtocolVersion {
   SPARK_CLI_SERVICE_PROTOCOL_V4 = 42244,
   SPARK_CLI_SERVICE_PROTOCOL_V5 = 42245,
   SPARK_CLI_SERVICE_PROTOCOL_V6 = 42246,
+  SPARK_CLI_SERVICE_PROTOCOL_V7 = 42247,
 }
 
 declare enum TTypeId {
@@ -62,10 +63,26 @@ declare enum TSparkRowSetType {
   URL_BASED_SET = 3,
 }
 
+declare enum TDBSqlCompressionCodec {
+  NONE = 0,
+  LZ4_FRAME = 1,
+  LZ4_BLOCK = 2,
+}
+
+declare enum TDBSqlArrowLayout {
+  ARROW_BATCH = 0,
+  ARROW_STREAMING = 1,
+}
+
 declare enum TOperationIdempotencyType {
   UNKNOWN = 0,
   NON_IDEMPOTENT = 1,
   IDEMPOTENT = 2,
+}
+
+declare enum TOperationTimeoutLevel {
+  CLUSTER = 0,
+  SESSION = 1,
 }
 
 declare enum TStatusCode {
@@ -150,11 +167,32 @@ declare enum TGetInfoType {
   CLI_MAX_IDENTIFIER_LEN = 10005,
 }
 
+declare enum TResultPersistenceMode {
+  ONLY_LARGE_RESULTS = 0,
+  ALL_QUERY_RESULTS = 1,
+  ALL_RESULTS = 2,
+}
+
 declare enum TCacheLookupResult {
   CACHE_INELIGIBLE = 0,
   LOCAL_CACHE_HIT = 1,
   REMOTE_CACHE_HIT = 2,
   CACHE_MISS = 3,
+}
+
+declare enum TCloudFetchDisabledReason {
+  ARROW_SUPPORT = 0,
+  CLOUD_FETCH_SUPPORT = 1,
+  PROTOCOL_VERSION = 2,
+  REGION_SUPPORT = 3,
+  BLOCKLISTED_OPERATION = 4,
+  SMALL_RESULT_SIZE = 5,
+  CUSTOMER_STORAGE_SUPPORT = 6,
+  UNKNOWN = 7,
+}
+
+declare enum TDBSqlManifestFileFormat {
+  THRIFT_GET_RESULT_SET_METADATA_RESP = 0,
 }
 
 declare enum TFetchOrientation {
@@ -164,6 +202,13 @@ declare enum TFetchOrientation {
   FETCH_ABSOLUTE = 3,
   FETCH_FIRST = 4,
   FETCH_LAST = 5,
+}
+
+declare enum TDBSqlFetchDisposition {
+  DISPOSITION_UNSPECIFIED = 0,
+  DISPOSITION_INLINE = 1,
+  DISPOSITION_EXTERNAL_LINKS = 2,
+  DISPOSITION_INTERNAL_DBFS = 3,
 }
 
 declare enum TJobExecutionStatus {
@@ -384,6 +429,33 @@ declare class TColumn {
     constructor(args?: { boolVal?: TBoolColumn; byteVal?: TByteColumn; i16Val?: TI16Column; i32Val?: TI32Column; i64Val?: TI64Column; doubleVal?: TDoubleColumn; stringVal?: TStringColumn; binaryVal?: TBinaryColumn; });
 }
 
+declare class TDBSqlJsonArrayFormat {
+  public compressionCodec?: TDBSqlCompressionCodec;
+
+    constructor(args?: { compressionCodec?: TDBSqlCompressionCodec; });
+}
+
+declare class TDBSqlCsvFormat {
+  public compressionCodec?: TDBSqlCompressionCodec;
+
+    constructor(args?: { compressionCodec?: TDBSqlCompressionCodec; });
+}
+
+declare class TDBSqlArrowFormat {
+  public arrowLayout?: TDBSqlArrowLayout;
+  public compressionCodec?: TDBSqlCompressionCodec;
+
+    constructor(args?: { arrowLayout?: TDBSqlArrowLayout; compressionCodec?: TDBSqlCompressionCodec; });
+}
+
+declare class TDBSqlResultFormat {
+  public arrowFormat?: TDBSqlArrowFormat;
+  public csvFormat?: TDBSqlCsvFormat;
+  public jsonArrayFormat?: TDBSqlJsonArrayFormat;
+
+    constructor(args?: { arrowFormat?: TDBSqlArrowFormat; csvFormat?: TDBSqlCsvFormat; jsonArrayFormat?: TDBSqlJsonArrayFormat; });
+}
+
 declare class TSparkArrowBatch {
   public batch: Buffer;
   public rowCount: Int64;
@@ -401,6 +473,18 @@ declare class TSparkArrowResultLink {
     constructor(args?: { fileLink: string; expiryTime: Int64; startRowOffset: Int64; rowCount: Int64; bytesNum: Int64; });
 }
 
+declare class TDBSqlCloudResultFile {
+  public filePath?: string;
+  public startRowOffset?: Int64;
+  public rowCount?: Int64;
+  public uncompressedBytes?: Int64;
+  public compressedBytes?: Int64;
+  public fileLink?: string;
+  public linkExpiryTime?: Int64;
+
+    constructor(args?: { filePath?: string; startRowOffset?: Int64; rowCount?: Int64; uncompressedBytes?: Int64; compressedBytes?: Int64; fileLink?: string; linkExpiryTime?: Int64; });
+}
+
 declare class TRowSet {
   public startRowOffset: Int64;
   public rows: TRow[];
@@ -409,8 +493,9 @@ declare class TRowSet {
   public columnCount?: number;
   public arrowBatches?: TSparkArrowBatch[];
   public resultLinks?: TSparkArrowResultLink[];
+  public cloudFetchResults?: TDBSqlCloudResultFile[];
 
-    constructor(args?: { startRowOffset: Int64; rows: TRow[]; columns?: TColumn[]; binaryColumns?: Buffer; columnCount?: number; arrowBatches?: TSparkArrowBatch[]; resultLinks?: TSparkArrowResultLink[]; });
+    constructor(args?: { startRowOffset: Int64; rows: TRow[]; columns?: TColumn[]; binaryColumns?: Buffer; columnCount?: number; arrowBatches?: TSparkArrowBatch[]; resultLinks?: TSparkArrowResultLink[]; cloudFetchResults?: TDBSqlCloudResultFile[]; });
 }
 
 declare class TDBSqlTempView {
@@ -428,14 +513,39 @@ declare class TDBSqlSessionCapabilities {
     constructor(args?: { supportsMultipleCatalogs?: boolean; });
 }
 
+declare class TExpressionInfo {
+  public className?: string;
+  public usage?: string;
+  public name?: string;
+  public extended?: string;
+  public db?: string;
+  public arguments?: string;
+  public examples?: string;
+  public note?: string;
+  public group?: string;
+  public since?: string;
+  public deprecated?: string;
+  public source?: string;
+
+    constructor(args?: { className?: string; usage?: string; name?: string; extended?: string; db?: string; arguments?: string; examples?: string; note?: string; group?: string; since?: string; deprecated?: string; source?: string; });
+}
+
+declare class TDBSqlConfValue {
+  public value?: string;
+
+    constructor(args?: { value?: string; });
+}
+
 declare class TDBSqlSessionConf {
   public confs?: { [k: string]: string; };
   public tempViews?: TDBSqlTempView[];
   public currentDatabase?: string;
   public currentCatalog?: string;
   public sessionCapabilities?: TDBSqlSessionCapabilities;
+  public expressionsInfos?: TExpressionInfo[];
+  public internalConfs?: { [k: string]: TDBSqlConfValue; };
 
-    constructor(args?: { confs?: { [k: string]: string; }; tempViews?: TDBSqlTempView[]; currentDatabase?: string; currentCatalog?: string; sessionCapabilities?: TDBSqlSessionCapabilities; });
+    constructor(args?: { confs?: { [k: string]: string; }; tempViews?: TDBSqlTempView[]; currentDatabase?: string; currentCatalog?: string; sessionCapabilities?: TDBSqlSessionCapabilities; expressionsInfos?: TExpressionInfo[]; internalConfs?: { [k: string]: TDBSqlConfValue; }; });
 }
 
 declare class TStatus {
@@ -444,8 +554,10 @@ declare class TStatus {
   public sqlState?: string;
   public errorCode?: number;
   public errorMessage?: string;
+  public displayMessage?: string;
+  public responseValidation?: Buffer;
 
-    constructor(args?: { statusCode: TStatusCode; infoMessages?: string[]; sqlState?: string; errorCode?: number; errorMessage?: string; });
+    constructor(args?: { statusCode: TStatusCode; infoMessages?: string[]; sqlState?: string; errorCode?: number; errorMessage?: string; displayMessage?: string; responseValidation?: Buffer; });
 }
 
 declare class TNamespace {
@@ -458,8 +570,9 @@ declare class TNamespace {
 declare class THandleIdentifier {
   public guid: Buffer;
   public secret: Buffer;
+  public executionVersion?: number;
 
-    constructor(args?: { guid: Buffer; secret: Buffer; });
+    constructor(args?: { guid: Buffer; secret: Buffer; executionVersion?: number; });
 }
 
 declare class TSessionHandle {
@@ -564,8 +677,9 @@ declare class TSparkArrowTypes {
   public decimalAsArrow?: boolean;
   public complexTypesAsArrow?: boolean;
   public intervalTypesAsArrow?: boolean;
+  public nullTypeAsArrow?: boolean;
 
-    constructor(args?: { timestampAsArrow?: boolean; decimalAsArrow?: boolean; complexTypesAsArrow?: boolean; intervalTypesAsArrow?: boolean; });
+    constructor(args?: { timestampAsArrow?: boolean; decimalAsArrow?: boolean; complexTypesAsArrow?: boolean; intervalTypesAsArrow?: boolean; nullTypeAsArrow?: boolean; });
 }
 
 declare class TExecuteStatementReq {
@@ -580,13 +694,49 @@ declare class TExecuteStatementReq {
   public canDecompressLZ4Result?: boolean;
   public maxBytesPerFile?: Int64;
   public useArrowNativeTypes?: TSparkArrowTypes;
+  public resultRowLimit?: Int64;
+  public parameters?: TSparkParameter[];
   public operationId?: THandleIdentifier;
   public sessionConf?: TDBSqlSessionConf;
   public rejectHighCostQueries?: boolean;
   public estimatedCost?: number;
   public executionVersion?: number;
+  public requestValidation?: Buffer;
+  public resultPersistenceMode?: TResultPersistenceMode;
+  public trimArrowBatchesToLimit?: boolean;
+  public fetchDisposition?: TDBSqlFetchDisposition;
+  public enforceResultPersistenceMode?: boolean;
+  public statementList?: TDBSqlStatement[];
+  public persistResultManifest?: boolean;
+  public resultRetentionSeconds?: Int64;
+  public resultByteLimit?: Int64;
+  public resultDataFormat?: TDBSqlResultFormat;
+  public originatingClientIdentity?: string;
 
-    constructor(args?: { sessionHandle: TSessionHandle; statement: string; confOverlay?: { [k: string]: string; }; runAsync?: boolean; getDirectResults?: TSparkGetDirectResults; queryTimeout?: Int64; canReadArrowResult?: boolean; canDownloadResult?: boolean; canDecompressLZ4Result?: boolean; maxBytesPerFile?: Int64; useArrowNativeTypes?: TSparkArrowTypes; operationId?: THandleIdentifier; sessionConf?: TDBSqlSessionConf; rejectHighCostQueries?: boolean; estimatedCost?: number; executionVersion?: number; });
+    constructor(args?: { sessionHandle: TSessionHandle; statement: string; confOverlay?: { [k: string]: string; }; runAsync?: boolean; getDirectResults?: TSparkGetDirectResults; queryTimeout?: Int64; canReadArrowResult?: boolean; canDownloadResult?: boolean; canDecompressLZ4Result?: boolean; maxBytesPerFile?: Int64; useArrowNativeTypes?: TSparkArrowTypes; resultRowLimit?: Int64; parameters?: TSparkParameter[]; operationId?: THandleIdentifier; sessionConf?: TDBSqlSessionConf; rejectHighCostQueries?: boolean; estimatedCost?: number; executionVersion?: number; requestValidation?: Buffer; resultPersistenceMode?: TResultPersistenceMode; trimArrowBatchesToLimit?: boolean; fetchDisposition?: TDBSqlFetchDisposition; enforceResultPersistenceMode?: boolean; statementList?: TDBSqlStatement[]; persistResultManifest?: boolean; resultRetentionSeconds?: Int64; resultByteLimit?: Int64; resultDataFormat?: TDBSqlResultFormat; originatingClientIdentity?: string; });
+}
+
+declare class TDBSqlStatement {
+  public statement?: string;
+
+    constructor(args?: { statement?: string; });
+}
+
+declare class TSparkParameterValue {
+  public stringValue?: string;
+  public doubleValue?: number;
+  public booleanValue?: boolean;
+
+    constructor(args?: { stringValue?: string; doubleValue?: number; booleanValue?: boolean; });
+}
+
+declare class TSparkParameter {
+  public ordinal?: number;
+  public name?: string;
+  public type?: string;
+  public value?: TSparkParameterValue;
+
+    constructor(args?: { ordinal?: number; name?: string; type?: string; value?: TSparkParameterValue; });
 }
 
 declare class TExecuteStatementResp {
@@ -599,8 +749,11 @@ declare class TExecuteStatementResp {
   public sessionConf?: TDBSqlSessionConf;
   public currentClusterLoad?: number;
   public idempotencyType?: TOperationIdempotencyType;
+  public remoteResultCacheEnabled?: boolean;
+  public isServerless?: boolean;
+  public operationHandles?: TOperationHandle[];
 
-    constructor(args?: { status: TStatus; operationHandle?: TOperationHandle; directResults?: TSparkDirectResults; executionRejected?: boolean; maxClusterCapacity?: number; queryCost?: number; sessionConf?: TDBSqlSessionConf; currentClusterLoad?: number; idempotencyType?: TOperationIdempotencyType; });
+    constructor(args?: { status: TStatus; operationHandle?: TOperationHandle; directResults?: TSparkDirectResults; executionRejected?: boolean; maxClusterCapacity?: number; queryCost?: number; sessionConf?: TDBSqlSessionConf; currentClusterLoad?: number; idempotencyType?: TOperationIdempotencyType; remoteResultCacheEnabled?: boolean; isServerless?: boolean; operationHandles?: TOperationHandle[]; });
 }
 
 declare class TGetTypeInfoReq {
@@ -808,15 +961,20 @@ declare class TGetOperationStatusResp {
   public numModifiedRows?: Int64;
   public displayMessage?: string;
   public diagnosticInfo?: string;
+  public responseValidation?: Buffer;
+  public idempotencyType?: TOperationIdempotencyType;
+  public statementTimeout?: Int64;
+  public statementTimeoutLevel?: TOperationTimeoutLevel;
 
-    constructor(args?: { status: TStatus; operationState?: TOperationState; sqlState?: string; errorCode?: number; errorMessage?: string; taskStatus?: string; operationStarted?: Int64; operationCompleted?: Int64; hasResultSet?: boolean; progressUpdateResponse?: TProgressUpdateResp; numModifiedRows?: Int64; displayMessage?: string; diagnosticInfo?: string; });
+    constructor(args?: { status: TStatus; operationState?: TOperationState; sqlState?: string; errorCode?: number; errorMessage?: string; taskStatus?: string; operationStarted?: Int64; operationCompleted?: Int64; hasResultSet?: boolean; progressUpdateResponse?: TProgressUpdateResp; numModifiedRows?: Int64; displayMessage?: string; diagnosticInfo?: string; responseValidation?: Buffer; idempotencyType?: TOperationIdempotencyType; statementTimeout?: Int64; statementTimeoutLevel?: TOperationTimeoutLevel; });
 }
 
 declare class TCancelOperationReq {
   public operationHandle: TOperationHandle;
   public executionVersion?: number;
+  public replacedByNextAttempt?: boolean;
 
-    constructor(args?: { operationHandle: TOperationHandle; executionVersion?: number; });
+    constructor(args?: { operationHandle: TOperationHandle; executionVersion?: number; replacedByNextAttempt?: boolean; });
 }
 
 declare class TCancelOperationResp {
@@ -839,8 +997,9 @@ declare class TCloseOperationResp {
 
 declare class TGetResultSetMetadataReq {
   public operationHandle: TOperationHandle;
+  public includeCloudResultFiles?: boolean;
 
-    constructor(args?: { operationHandle: TOperationHandle; });
+    constructor(args?: { operationHandle: TOperationHandle; includeCloudResultFiles?: boolean; });
 }
 
 declare class TGetResultSetMetadataResp {
@@ -852,8 +1011,20 @@ declare class TGetResultSetMetadataResp {
   public cacheLookupResult?: TCacheLookupResult;
   public uncompressedBytes?: Int64;
   public compressedBytes?: Int64;
+  public isStagingOperation?: boolean;
+  public reasonForNoCloudFetch?: TCloudFetchDisabledReason;
+  public resultFiles?: TDBSqlCloudResultFile[];
+  public manifestFile?: string;
+  public manifestFileFormat?: TDBSqlManifestFileFormat;
+  public cacheLookupLatency?: Int64;
+  public remoteCacheMissReason?: string;
+  public fetchDisposition?: TDBSqlFetchDisposition;
+  public remoteResultCacheEnabled?: boolean;
+  public isServerless?: boolean;
+  public resultDataFormat?: TDBSqlResultFormat;
+  public truncatedByThriftLimit?: boolean;
 
-    constructor(args?: { status: TStatus; schema?: TTableSchema; resultFormat?: TSparkRowSetType; lz4Compressed?: boolean; arrowSchema?: Buffer; cacheLookupResult?: TCacheLookupResult; uncompressedBytes?: Int64; compressedBytes?: Int64; });
+    constructor(args?: { status: TStatus; schema?: TTableSchema; resultFormat?: TSparkRowSetType; lz4Compressed?: boolean; arrowSchema?: Buffer; cacheLookupResult?: TCacheLookupResult; uncompressedBytes?: Int64; compressedBytes?: Int64; isStagingOperation?: boolean; reasonForNoCloudFetch?: TCloudFetchDisabledReason; resultFiles?: TDBSqlCloudResultFile[]; manifestFile?: string; manifestFileFormat?: TDBSqlManifestFileFormat; cacheLookupLatency?: Int64; remoteCacheMissReason?: string; fetchDisposition?: TDBSqlFetchDisposition; remoteResultCacheEnabled?: boolean; isServerless?: boolean; resultDataFormat?: TDBSqlResultFormat; truncatedByThriftLimit?: boolean; });
 }
 
 declare class TFetchResultsReq {
@@ -873,8 +1044,9 @@ declare class TFetchResultsResp {
   public hasMoreRows?: boolean;
   public results?: TRowSet;
   public resultSetMetadata?: TGetResultSetMetadataResp;
+  public responseValidation?: Buffer;
 
-    constructor(args?: { status: TStatus; hasMoreRows?: boolean; results?: TRowSet; resultSetMetadata?: TGetResultSetMetadataResp; });
+    constructor(args?: { status: TStatus; hasMoreRows?: boolean; results?: TRowSet; resultSetMetadata?: TGetResultSetMetadataResp; responseValidation?: Buffer; });
 }
 
 declare class TGetDelegationTokenReq {
