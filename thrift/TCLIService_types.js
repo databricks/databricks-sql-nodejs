@@ -48,7 +48,9 @@ ttypes.TProtocolVersion = {
   '42245' : 'SPARK_CLI_SERVICE_PROTOCOL_V5',
   'SPARK_CLI_SERVICE_PROTOCOL_V5' : 42245,
   '42246' : 'SPARK_CLI_SERVICE_PROTOCOL_V6',
-  'SPARK_CLI_SERVICE_PROTOCOL_V6' : 42246
+  'SPARK_CLI_SERVICE_PROTOCOL_V6' : 42246,
+  '42247' : 'SPARK_CLI_SERVICE_PROTOCOL_V7',
+  'SPARK_CLI_SERVICE_PROTOCOL_V7' : 42247
 };
 ttypes.TTypeId = {
   '0' : 'BOOLEAN_TYPE',
@@ -106,6 +108,20 @@ ttypes.TSparkRowSetType = {
   '3' : 'URL_BASED_SET',
   'URL_BASED_SET' : 3
 };
+ttypes.TDBSqlCompressionCodec = {
+  '0' : 'NONE',
+  'NONE' : 0,
+  '1' : 'LZ4_FRAME',
+  'LZ4_FRAME' : 1,
+  '2' : 'LZ4_BLOCK',
+  'LZ4_BLOCK' : 2
+};
+ttypes.TDBSqlArrowLayout = {
+  '0' : 'ARROW_BATCH',
+  'ARROW_BATCH' : 0,
+  '1' : 'ARROW_STREAMING',
+  'ARROW_STREAMING' : 1
+};
 ttypes.TOperationIdempotencyType = {
   '0' : 'UNKNOWN',
   'UNKNOWN' : 0,
@@ -113,6 +129,12 @@ ttypes.TOperationIdempotencyType = {
   'NON_IDEMPOTENT' : 1,
   '2' : 'IDEMPOTENT',
   'IDEMPOTENT' : 2
+};
+ttypes.TOperationTimeoutLevel = {
+  '0' : 'CLUSTER',
+  'CLUSTER' : 0,
+  '1' : 'SESSION',
+  'SESSION' : 1
 };
 ttypes.TStatusCode = {
   '0' : 'SUCCESS_STATUS',
@@ -262,6 +284,14 @@ ttypes.TGetInfoType = {
   '10005' : 'CLI_MAX_IDENTIFIER_LEN',
   'CLI_MAX_IDENTIFIER_LEN' : 10005
 };
+ttypes.TResultPersistenceMode = {
+  '0' : 'ONLY_LARGE_RESULTS',
+  'ONLY_LARGE_RESULTS' : 0,
+  '1' : 'ALL_QUERY_RESULTS',
+  'ALL_QUERY_RESULTS' : 1,
+  '2' : 'ALL_RESULTS',
+  'ALL_RESULTS' : 2
+};
 ttypes.TCacheLookupResult = {
   '0' : 'CACHE_INELIGIBLE',
   'CACHE_INELIGIBLE' : 0,
@@ -271,6 +301,28 @@ ttypes.TCacheLookupResult = {
   'REMOTE_CACHE_HIT' : 2,
   '3' : 'CACHE_MISS',
   'CACHE_MISS' : 3
+};
+ttypes.TCloudFetchDisabledReason = {
+  '0' : 'ARROW_SUPPORT',
+  'ARROW_SUPPORT' : 0,
+  '1' : 'CLOUD_FETCH_SUPPORT',
+  'CLOUD_FETCH_SUPPORT' : 1,
+  '2' : 'PROTOCOL_VERSION',
+  'PROTOCOL_VERSION' : 2,
+  '3' : 'REGION_SUPPORT',
+  'REGION_SUPPORT' : 3,
+  '4' : 'BLOCKLISTED_OPERATION',
+  'BLOCKLISTED_OPERATION' : 4,
+  '5' : 'SMALL_RESULT_SIZE',
+  'SMALL_RESULT_SIZE' : 5,
+  '6' : 'CUSTOMER_STORAGE_SUPPORT',
+  'CUSTOMER_STORAGE_SUPPORT' : 6,
+  '7' : 'UNKNOWN',
+  'UNKNOWN' : 7
+};
+ttypes.TDBSqlManifestFileFormat = {
+  '0' : 'THRIFT_GET_RESULT_SET_METADATA_RESP',
+  'THRIFT_GET_RESULT_SET_METADATA_RESP' : 0
 };
 ttypes.TFetchOrientation = {
   '0' : 'FETCH_NEXT',
@@ -285,6 +337,16 @@ ttypes.TFetchOrientation = {
   'FETCH_FIRST' : 4,
   '5' : 'FETCH_LAST',
   'FETCH_LAST' : 5
+};
+ttypes.TDBSqlFetchDisposition = {
+  '0' : 'DISPOSITION_UNSPECIFIED',
+  'DISPOSITION_UNSPECIFIED' : 0,
+  '1' : 'DISPOSITION_INLINE',
+  'DISPOSITION_INLINE' : 1,
+  '2' : 'DISPOSITION_EXTERNAL_LINKS',
+  'DISPOSITION_EXTERNAL_LINKS' : 2,
+  '3' : 'DISPOSITION_INTERNAL_DBFS',
+  'DISPOSITION_INTERNAL_DBFS' : 3
 };
 ttypes.TJobExecutionStatus = {
   '0' : 'IN_PROGRESS',
@@ -2567,6 +2629,251 @@ TColumn.prototype.write = function(output) {
   return;
 };
 
+var TDBSqlJsonArrayFormat = module.exports.TDBSqlJsonArrayFormat = function(args) {
+  this.compressionCodec = null;
+  if (args) {
+    if (args.compressionCodec !== undefined && args.compressionCodec !== null) {
+      this.compressionCodec = args.compressionCodec;
+    }
+  }
+};
+TDBSqlJsonArrayFormat.prototype = {};
+TDBSqlJsonArrayFormat.prototype.read = function(input) {
+  input.readStructBegin();
+  while (true) {
+    var ret = input.readFieldBegin();
+    var ftype = ret.ftype;
+    var fid = ret.fid;
+    if (ftype == Thrift.Type.STOP) {
+      break;
+    }
+    switch (fid) {
+      case 1:
+      if (ftype == Thrift.Type.I32) {
+        this.compressionCodec = input.readI32();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 0:
+        input.skip(ftype);
+        break;
+      default:
+        input.skip(ftype);
+    }
+    input.readFieldEnd();
+  }
+  input.readStructEnd();
+  return;
+};
+
+TDBSqlJsonArrayFormat.prototype.write = function(output) {
+  output.writeStructBegin('TDBSqlJsonArrayFormat');
+  if (this.compressionCodec !== null && this.compressionCodec !== undefined) {
+    output.writeFieldBegin('compressionCodec', Thrift.Type.I32, 1);
+    output.writeI32(this.compressionCodec);
+    output.writeFieldEnd();
+  }
+  output.writeFieldStop();
+  output.writeStructEnd();
+  return;
+};
+
+var TDBSqlCsvFormat = module.exports.TDBSqlCsvFormat = function(args) {
+  this.compressionCodec = null;
+  if (args) {
+    if (args.compressionCodec !== undefined && args.compressionCodec !== null) {
+      this.compressionCodec = args.compressionCodec;
+    }
+  }
+};
+TDBSqlCsvFormat.prototype = {};
+TDBSqlCsvFormat.prototype.read = function(input) {
+  input.readStructBegin();
+  while (true) {
+    var ret = input.readFieldBegin();
+    var ftype = ret.ftype;
+    var fid = ret.fid;
+    if (ftype == Thrift.Type.STOP) {
+      break;
+    }
+    switch (fid) {
+      case 1:
+      if (ftype == Thrift.Type.I32) {
+        this.compressionCodec = input.readI32();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 0:
+        input.skip(ftype);
+        break;
+      default:
+        input.skip(ftype);
+    }
+    input.readFieldEnd();
+  }
+  input.readStructEnd();
+  return;
+};
+
+TDBSqlCsvFormat.prototype.write = function(output) {
+  output.writeStructBegin('TDBSqlCsvFormat');
+  if (this.compressionCodec !== null && this.compressionCodec !== undefined) {
+    output.writeFieldBegin('compressionCodec', Thrift.Type.I32, 1);
+    output.writeI32(this.compressionCodec);
+    output.writeFieldEnd();
+  }
+  output.writeFieldStop();
+  output.writeStructEnd();
+  return;
+};
+
+var TDBSqlArrowFormat = module.exports.TDBSqlArrowFormat = function(args) {
+  this.arrowLayout = null;
+  this.compressionCodec = null;
+  if (args) {
+    if (args.arrowLayout !== undefined && args.arrowLayout !== null) {
+      this.arrowLayout = args.arrowLayout;
+    }
+    if (args.compressionCodec !== undefined && args.compressionCodec !== null) {
+      this.compressionCodec = args.compressionCodec;
+    }
+  }
+};
+TDBSqlArrowFormat.prototype = {};
+TDBSqlArrowFormat.prototype.read = function(input) {
+  input.readStructBegin();
+  while (true) {
+    var ret = input.readFieldBegin();
+    var ftype = ret.ftype;
+    var fid = ret.fid;
+    if (ftype == Thrift.Type.STOP) {
+      break;
+    }
+    switch (fid) {
+      case 1:
+      if (ftype == Thrift.Type.I32) {
+        this.arrowLayout = input.readI32();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 2:
+      if (ftype == Thrift.Type.I32) {
+        this.compressionCodec = input.readI32();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      default:
+        input.skip(ftype);
+    }
+    input.readFieldEnd();
+  }
+  input.readStructEnd();
+  return;
+};
+
+TDBSqlArrowFormat.prototype.write = function(output) {
+  output.writeStructBegin('TDBSqlArrowFormat');
+  if (this.arrowLayout !== null && this.arrowLayout !== undefined) {
+    output.writeFieldBegin('arrowLayout', Thrift.Type.I32, 1);
+    output.writeI32(this.arrowLayout);
+    output.writeFieldEnd();
+  }
+  if (this.compressionCodec !== null && this.compressionCodec !== undefined) {
+    output.writeFieldBegin('compressionCodec', Thrift.Type.I32, 2);
+    output.writeI32(this.compressionCodec);
+    output.writeFieldEnd();
+  }
+  output.writeFieldStop();
+  output.writeStructEnd();
+  return;
+};
+
+var TDBSqlResultFormat = module.exports.TDBSqlResultFormat = function(args) {
+  this.arrowFormat = null;
+  this.csvFormat = null;
+  this.jsonArrayFormat = null;
+  if (args) {
+    if (args.arrowFormat !== undefined && args.arrowFormat !== null) {
+      this.arrowFormat = new ttypes.TDBSqlArrowFormat(args.arrowFormat);
+    }
+    if (args.csvFormat !== undefined && args.csvFormat !== null) {
+      this.csvFormat = new ttypes.TDBSqlCsvFormat(args.csvFormat);
+    }
+    if (args.jsonArrayFormat !== undefined && args.jsonArrayFormat !== null) {
+      this.jsonArrayFormat = new ttypes.TDBSqlJsonArrayFormat(args.jsonArrayFormat);
+    }
+  }
+};
+TDBSqlResultFormat.prototype = {};
+TDBSqlResultFormat.prototype.read = function(input) {
+  input.readStructBegin();
+  while (true) {
+    var ret = input.readFieldBegin();
+    var ftype = ret.ftype;
+    var fid = ret.fid;
+    if (ftype == Thrift.Type.STOP) {
+      break;
+    }
+    switch (fid) {
+      case 1:
+      if (ftype == Thrift.Type.STRUCT) {
+        this.arrowFormat = new ttypes.TDBSqlArrowFormat();
+        this.arrowFormat.read(input);
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 2:
+      if (ftype == Thrift.Type.STRUCT) {
+        this.csvFormat = new ttypes.TDBSqlCsvFormat();
+        this.csvFormat.read(input);
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 3:
+      if (ftype == Thrift.Type.STRUCT) {
+        this.jsonArrayFormat = new ttypes.TDBSqlJsonArrayFormat();
+        this.jsonArrayFormat.read(input);
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      default:
+        input.skip(ftype);
+    }
+    input.readFieldEnd();
+  }
+  input.readStructEnd();
+  return;
+};
+
+TDBSqlResultFormat.prototype.write = function(output) {
+  output.writeStructBegin('TDBSqlResultFormat');
+  if (this.arrowFormat !== null && this.arrowFormat !== undefined) {
+    output.writeFieldBegin('arrowFormat', Thrift.Type.STRUCT, 1);
+    this.arrowFormat.write(output);
+    output.writeFieldEnd();
+  }
+  if (this.csvFormat !== null && this.csvFormat !== undefined) {
+    output.writeFieldBegin('csvFormat', Thrift.Type.STRUCT, 2);
+    this.csvFormat.write(output);
+    output.writeFieldEnd();
+  }
+  if (this.jsonArrayFormat !== null && this.jsonArrayFormat !== undefined) {
+    output.writeFieldBegin('jsonArrayFormat', Thrift.Type.STRUCT, 3);
+    this.jsonArrayFormat.write(output);
+    output.writeFieldEnd();
+  }
+  output.writeFieldStop();
+  output.writeStructEnd();
+  return;
+};
+
 var TSparkArrowBatch = module.exports.TSparkArrowBatch = function(args) {
   this.batch = null;
   this.rowCount = null;
@@ -2755,6 +3062,149 @@ TSparkArrowResultLink.prototype.write = function(output) {
   return;
 };
 
+var TDBSqlCloudResultFile = module.exports.TDBSqlCloudResultFile = function(args) {
+  this.filePath = null;
+  this.startRowOffset = null;
+  this.rowCount = null;
+  this.uncompressedBytes = null;
+  this.compressedBytes = null;
+  this.fileLink = null;
+  this.linkExpiryTime = null;
+  if (args) {
+    if (args.filePath !== undefined && args.filePath !== null) {
+      this.filePath = args.filePath;
+    }
+    if (args.startRowOffset !== undefined && args.startRowOffset !== null) {
+      this.startRowOffset = args.startRowOffset;
+    }
+    if (args.rowCount !== undefined && args.rowCount !== null) {
+      this.rowCount = args.rowCount;
+    }
+    if (args.uncompressedBytes !== undefined && args.uncompressedBytes !== null) {
+      this.uncompressedBytes = args.uncompressedBytes;
+    }
+    if (args.compressedBytes !== undefined && args.compressedBytes !== null) {
+      this.compressedBytes = args.compressedBytes;
+    }
+    if (args.fileLink !== undefined && args.fileLink !== null) {
+      this.fileLink = args.fileLink;
+    }
+    if (args.linkExpiryTime !== undefined && args.linkExpiryTime !== null) {
+      this.linkExpiryTime = args.linkExpiryTime;
+    }
+  }
+};
+TDBSqlCloudResultFile.prototype = {};
+TDBSqlCloudResultFile.prototype.read = function(input) {
+  input.readStructBegin();
+  while (true) {
+    var ret = input.readFieldBegin();
+    var ftype = ret.ftype;
+    var fid = ret.fid;
+    if (ftype == Thrift.Type.STOP) {
+      break;
+    }
+    switch (fid) {
+      case 1:
+      if (ftype == Thrift.Type.STRING) {
+        this.filePath = input.readString();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 2:
+      if (ftype == Thrift.Type.I64) {
+        this.startRowOffset = input.readI64();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 3:
+      if (ftype == Thrift.Type.I64) {
+        this.rowCount = input.readI64();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 4:
+      if (ftype == Thrift.Type.I64) {
+        this.uncompressedBytes = input.readI64();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 5:
+      if (ftype == Thrift.Type.I64) {
+        this.compressedBytes = input.readI64();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 6:
+      if (ftype == Thrift.Type.STRING) {
+        this.fileLink = input.readString();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 7:
+      if (ftype == Thrift.Type.I64) {
+        this.linkExpiryTime = input.readI64();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      default:
+        input.skip(ftype);
+    }
+    input.readFieldEnd();
+  }
+  input.readStructEnd();
+  return;
+};
+
+TDBSqlCloudResultFile.prototype.write = function(output) {
+  output.writeStructBegin('TDBSqlCloudResultFile');
+  if (this.filePath !== null && this.filePath !== undefined) {
+    output.writeFieldBegin('filePath', Thrift.Type.STRING, 1);
+    output.writeString(this.filePath);
+    output.writeFieldEnd();
+  }
+  if (this.startRowOffset !== null && this.startRowOffset !== undefined) {
+    output.writeFieldBegin('startRowOffset', Thrift.Type.I64, 2);
+    output.writeI64(this.startRowOffset);
+    output.writeFieldEnd();
+  }
+  if (this.rowCount !== null && this.rowCount !== undefined) {
+    output.writeFieldBegin('rowCount', Thrift.Type.I64, 3);
+    output.writeI64(this.rowCount);
+    output.writeFieldEnd();
+  }
+  if (this.uncompressedBytes !== null && this.uncompressedBytes !== undefined) {
+    output.writeFieldBegin('uncompressedBytes', Thrift.Type.I64, 4);
+    output.writeI64(this.uncompressedBytes);
+    output.writeFieldEnd();
+  }
+  if (this.compressedBytes !== null && this.compressedBytes !== undefined) {
+    output.writeFieldBegin('compressedBytes', Thrift.Type.I64, 5);
+    output.writeI64(this.compressedBytes);
+    output.writeFieldEnd();
+  }
+  if (this.fileLink !== null && this.fileLink !== undefined) {
+    output.writeFieldBegin('fileLink', Thrift.Type.STRING, 6);
+    output.writeString(this.fileLink);
+    output.writeFieldEnd();
+  }
+  if (this.linkExpiryTime !== null && this.linkExpiryTime !== undefined) {
+    output.writeFieldBegin('linkExpiryTime', Thrift.Type.I64, 7);
+    output.writeI64(this.linkExpiryTime);
+    output.writeFieldEnd();
+  }
+  output.writeFieldStop();
+  output.writeStructEnd();
+  return;
+};
+
 var TRowSet = module.exports.TRowSet = function(args) {
   this.startRowOffset = null;
   this.rows = null;
@@ -2763,6 +3213,7 @@ var TRowSet = module.exports.TRowSet = function(args) {
   this.columnCount = null;
   this.arrowBatches = null;
   this.resultLinks = null;
+  this.cloudFetchResults = null;
   if (args) {
     if (args.startRowOffset !== undefined && args.startRowOffset !== null) {
       this.startRowOffset = args.startRowOffset;
@@ -2788,6 +3239,9 @@ var TRowSet = module.exports.TRowSet = function(args) {
     }
     if (args.resultLinks !== undefined && args.resultLinks !== null) {
       this.resultLinks = Thrift.copyList(args.resultLinks, [ttypes.TSparkArrowResultLink]);
+    }
+    if (args.cloudFetchResults !== undefined && args.cloudFetchResults !== null) {
+      this.cloudFetchResults = Thrift.copyList(args.cloudFetchResults, [ttypes.TDBSqlCloudResultFile]);
     }
   }
 };
@@ -2887,6 +3341,22 @@ TRowSet.prototype.read = function(input) {
         input.skip(ftype);
       }
       break;
+      case 3329:
+      if (ftype == Thrift.Type.LIST) {
+        this.cloudFetchResults = [];
+        var _rtmp393 = input.readListBegin();
+        var _size92 = _rtmp393.size || 0;
+        for (var _i94 = 0; _i94 < _size92; ++_i94) {
+          var elem95 = null;
+          elem95 = new ttypes.TDBSqlCloudResultFile();
+          elem95.read(input);
+          this.cloudFetchResults.push(elem95);
+        }
+        input.readListEnd();
+      } else {
+        input.skip(ftype);
+      }
+      break;
       default:
         input.skip(ftype);
     }
@@ -2906,10 +3376,10 @@ TRowSet.prototype.write = function(output) {
   if (this.rows !== null && this.rows !== undefined) {
     output.writeFieldBegin('rows', Thrift.Type.LIST, 2);
     output.writeListBegin(Thrift.Type.STRUCT, this.rows.length);
-    for (var iter92 in this.rows) {
-      if (this.rows.hasOwnProperty(iter92)) {
-        iter92 = this.rows[iter92];
-        iter92.write(output);
+    for (var iter96 in this.rows) {
+      if (this.rows.hasOwnProperty(iter96)) {
+        iter96 = this.rows[iter96];
+        iter96.write(output);
       }
     }
     output.writeListEnd();
@@ -2918,10 +3388,10 @@ TRowSet.prototype.write = function(output) {
   if (this.columns !== null && this.columns !== undefined) {
     output.writeFieldBegin('columns', Thrift.Type.LIST, 3);
     output.writeListBegin(Thrift.Type.STRUCT, this.columns.length);
-    for (var iter93 in this.columns) {
-      if (this.columns.hasOwnProperty(iter93)) {
-        iter93 = this.columns[iter93];
-        iter93.write(output);
+    for (var iter97 in this.columns) {
+      if (this.columns.hasOwnProperty(iter97)) {
+        iter97 = this.columns[iter97];
+        iter97.write(output);
       }
     }
     output.writeListEnd();
@@ -2940,10 +3410,10 @@ TRowSet.prototype.write = function(output) {
   if (this.arrowBatches !== null && this.arrowBatches !== undefined) {
     output.writeFieldBegin('arrowBatches', Thrift.Type.LIST, 1281);
     output.writeListBegin(Thrift.Type.STRUCT, this.arrowBatches.length);
-    for (var iter94 in this.arrowBatches) {
-      if (this.arrowBatches.hasOwnProperty(iter94)) {
-        iter94 = this.arrowBatches[iter94];
-        iter94.write(output);
+    for (var iter98 in this.arrowBatches) {
+      if (this.arrowBatches.hasOwnProperty(iter98)) {
+        iter98 = this.arrowBatches[iter98];
+        iter98.write(output);
       }
     }
     output.writeListEnd();
@@ -2952,10 +3422,22 @@ TRowSet.prototype.write = function(output) {
   if (this.resultLinks !== null && this.resultLinks !== undefined) {
     output.writeFieldBegin('resultLinks', Thrift.Type.LIST, 1282);
     output.writeListBegin(Thrift.Type.STRUCT, this.resultLinks.length);
-    for (var iter95 in this.resultLinks) {
-      if (this.resultLinks.hasOwnProperty(iter95)) {
-        iter95 = this.resultLinks[iter95];
-        iter95.write(output);
+    for (var iter99 in this.resultLinks) {
+      if (this.resultLinks.hasOwnProperty(iter99)) {
+        iter99 = this.resultLinks[iter99];
+        iter99.write(output);
+      }
+    }
+    output.writeListEnd();
+    output.writeFieldEnd();
+  }
+  if (this.cloudFetchResults !== null && this.cloudFetchResults !== undefined) {
+    output.writeFieldBegin('cloudFetchResults', Thrift.Type.LIST, 3329);
+    output.writeListBegin(Thrift.Type.STRUCT, this.cloudFetchResults.length);
+    for (var iter100 in this.cloudFetchResults) {
+      if (this.cloudFetchResults.hasOwnProperty(iter100)) {
+        iter100 = this.cloudFetchResults[iter100];
+        iter100.write(output);
       }
     }
     output.writeListEnd();
@@ -3014,14 +3496,14 @@ TDBSqlTempView.prototype.read = function(input) {
       case 3:
       if (ftype == Thrift.Type.MAP) {
         this.properties = {};
-        var _rtmp397 = input.readMapBegin();
-        var _size96 = _rtmp397.size || 0;
-        for (var _i98 = 0; _i98 < _size96; ++_i98) {
-          var key99 = null;
-          var val100 = null;
-          key99 = input.readString();
-          val100 = input.readString();
-          this.properties[key99] = val100;
+        var _rtmp3102 = input.readMapBegin();
+        var _size101 = _rtmp3102.size || 0;
+        for (var _i103 = 0; _i103 < _size101; ++_i103) {
+          var key104 = null;
+          var val105 = null;
+          key104 = input.readString();
+          val105 = input.readString();
+          this.properties[key104] = val105;
         }
         input.readMapEnd();
       } else {
@@ -3059,11 +3541,11 @@ TDBSqlTempView.prototype.write = function(output) {
   if (this.properties !== null && this.properties !== undefined) {
     output.writeFieldBegin('properties', Thrift.Type.MAP, 3);
     output.writeMapBegin(Thrift.Type.STRING, Thrift.Type.STRING, Thrift.objectLength(this.properties));
-    for (var kiter101 in this.properties) {
-      if (this.properties.hasOwnProperty(kiter101)) {
-        var viter102 = this.properties[kiter101];
-        output.writeString(kiter101);
-        output.writeString(viter102);
+    for (var kiter106 in this.properties) {
+      if (this.properties.hasOwnProperty(kiter106)) {
+        var viter107 = this.properties[kiter106];
+        output.writeString(kiter106);
+        output.writeString(viter107);
       }
     }
     output.writeMapEnd();
@@ -3129,12 +3611,287 @@ TDBSqlSessionCapabilities.prototype.write = function(output) {
   return;
 };
 
+var TExpressionInfo = module.exports.TExpressionInfo = function(args) {
+  this.className = null;
+  this.usage = null;
+  this.name = null;
+  this.extended = null;
+  this.db = null;
+  this.arguments = null;
+  this.examples = null;
+  this.note = null;
+  this.group = null;
+  this.since = null;
+  this.deprecated = null;
+  this.source = null;
+  if (args) {
+    if (args.className !== undefined && args.className !== null) {
+      this.className = args.className;
+    }
+    if (args.usage !== undefined && args.usage !== null) {
+      this.usage = args.usage;
+    }
+    if (args.name !== undefined && args.name !== null) {
+      this.name = args.name;
+    }
+    if (args.extended !== undefined && args.extended !== null) {
+      this.extended = args.extended;
+    }
+    if (args.db !== undefined && args.db !== null) {
+      this.db = args.db;
+    }
+    if (args.arguments !== undefined && args.arguments !== null) {
+      this.arguments = args.arguments;
+    }
+    if (args.examples !== undefined && args.examples !== null) {
+      this.examples = args.examples;
+    }
+    if (args.note !== undefined && args.note !== null) {
+      this.note = args.note;
+    }
+    if (args.group !== undefined && args.group !== null) {
+      this.group = args.group;
+    }
+    if (args.since !== undefined && args.since !== null) {
+      this.since = args.since;
+    }
+    if (args.deprecated !== undefined && args.deprecated !== null) {
+      this.deprecated = args.deprecated;
+    }
+    if (args.source !== undefined && args.source !== null) {
+      this.source = args.source;
+    }
+  }
+};
+TExpressionInfo.prototype = {};
+TExpressionInfo.prototype.read = function(input) {
+  input.readStructBegin();
+  while (true) {
+    var ret = input.readFieldBegin();
+    var ftype = ret.ftype;
+    var fid = ret.fid;
+    if (ftype == Thrift.Type.STOP) {
+      break;
+    }
+    switch (fid) {
+      case 1:
+      if (ftype == Thrift.Type.STRING) {
+        this.className = input.readString();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 2:
+      if (ftype == Thrift.Type.STRING) {
+        this.usage = input.readString();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 3:
+      if (ftype == Thrift.Type.STRING) {
+        this.name = input.readString();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 4:
+      if (ftype == Thrift.Type.STRING) {
+        this.extended = input.readString();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 5:
+      if (ftype == Thrift.Type.STRING) {
+        this.db = input.readString();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 6:
+      if (ftype == Thrift.Type.STRING) {
+        this.arguments = input.readString();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 7:
+      if (ftype == Thrift.Type.STRING) {
+        this.examples = input.readString();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 8:
+      if (ftype == Thrift.Type.STRING) {
+        this.note = input.readString();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 9:
+      if (ftype == Thrift.Type.STRING) {
+        this.group = input.readString();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 10:
+      if (ftype == Thrift.Type.STRING) {
+        this.since = input.readString();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 11:
+      if (ftype == Thrift.Type.STRING) {
+        this.deprecated = input.readString();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 12:
+      if (ftype == Thrift.Type.STRING) {
+        this.source = input.readString();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      default:
+        input.skip(ftype);
+    }
+    input.readFieldEnd();
+  }
+  input.readStructEnd();
+  return;
+};
+
+TExpressionInfo.prototype.write = function(output) {
+  output.writeStructBegin('TExpressionInfo');
+  if (this.className !== null && this.className !== undefined) {
+    output.writeFieldBegin('className', Thrift.Type.STRING, 1);
+    output.writeString(this.className);
+    output.writeFieldEnd();
+  }
+  if (this.usage !== null && this.usage !== undefined) {
+    output.writeFieldBegin('usage', Thrift.Type.STRING, 2);
+    output.writeString(this.usage);
+    output.writeFieldEnd();
+  }
+  if (this.name !== null && this.name !== undefined) {
+    output.writeFieldBegin('name', Thrift.Type.STRING, 3);
+    output.writeString(this.name);
+    output.writeFieldEnd();
+  }
+  if (this.extended !== null && this.extended !== undefined) {
+    output.writeFieldBegin('extended', Thrift.Type.STRING, 4);
+    output.writeString(this.extended);
+    output.writeFieldEnd();
+  }
+  if (this.db !== null && this.db !== undefined) {
+    output.writeFieldBegin('db', Thrift.Type.STRING, 5);
+    output.writeString(this.db);
+    output.writeFieldEnd();
+  }
+  if (this.arguments !== null && this.arguments !== undefined) {
+    output.writeFieldBegin('arguments', Thrift.Type.STRING, 6);
+    output.writeString(this.arguments);
+    output.writeFieldEnd();
+  }
+  if (this.examples !== null && this.examples !== undefined) {
+    output.writeFieldBegin('examples', Thrift.Type.STRING, 7);
+    output.writeString(this.examples);
+    output.writeFieldEnd();
+  }
+  if (this.note !== null && this.note !== undefined) {
+    output.writeFieldBegin('note', Thrift.Type.STRING, 8);
+    output.writeString(this.note);
+    output.writeFieldEnd();
+  }
+  if (this.group !== null && this.group !== undefined) {
+    output.writeFieldBegin('group', Thrift.Type.STRING, 9);
+    output.writeString(this.group);
+    output.writeFieldEnd();
+  }
+  if (this.since !== null && this.since !== undefined) {
+    output.writeFieldBegin('since', Thrift.Type.STRING, 10);
+    output.writeString(this.since);
+    output.writeFieldEnd();
+  }
+  if (this.deprecated !== null && this.deprecated !== undefined) {
+    output.writeFieldBegin('deprecated', Thrift.Type.STRING, 11);
+    output.writeString(this.deprecated);
+    output.writeFieldEnd();
+  }
+  if (this.source !== null && this.source !== undefined) {
+    output.writeFieldBegin('source', Thrift.Type.STRING, 12);
+    output.writeString(this.source);
+    output.writeFieldEnd();
+  }
+  output.writeFieldStop();
+  output.writeStructEnd();
+  return;
+};
+
+var TDBSqlConfValue = module.exports.TDBSqlConfValue = function(args) {
+  this.value = null;
+  if (args) {
+    if (args.value !== undefined && args.value !== null) {
+      this.value = args.value;
+    }
+  }
+};
+TDBSqlConfValue.prototype = {};
+TDBSqlConfValue.prototype.read = function(input) {
+  input.readStructBegin();
+  while (true) {
+    var ret = input.readFieldBegin();
+    var ftype = ret.ftype;
+    var fid = ret.fid;
+    if (ftype == Thrift.Type.STOP) {
+      break;
+    }
+    switch (fid) {
+      case 1:
+      if (ftype == Thrift.Type.STRING) {
+        this.value = input.readString();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 0:
+        input.skip(ftype);
+        break;
+      default:
+        input.skip(ftype);
+    }
+    input.readFieldEnd();
+  }
+  input.readStructEnd();
+  return;
+};
+
+TDBSqlConfValue.prototype.write = function(output) {
+  output.writeStructBegin('TDBSqlConfValue');
+  if (this.value !== null && this.value !== undefined) {
+    output.writeFieldBegin('value', Thrift.Type.STRING, 1);
+    output.writeString(this.value);
+    output.writeFieldEnd();
+  }
+  output.writeFieldStop();
+  output.writeStructEnd();
+  return;
+};
+
 var TDBSqlSessionConf = module.exports.TDBSqlSessionConf = function(args) {
   this.confs = null;
   this.tempViews = null;
   this.currentDatabase = null;
   this.currentCatalog = null;
   this.sessionCapabilities = null;
+  this.expressionsInfos = null;
+  this.internalConfs = null;
   if (args) {
     if (args.confs !== undefined && args.confs !== null) {
       this.confs = Thrift.copyMap(args.confs, [null]);
@@ -3150,6 +3907,12 @@ var TDBSqlSessionConf = module.exports.TDBSqlSessionConf = function(args) {
     }
     if (args.sessionCapabilities !== undefined && args.sessionCapabilities !== null) {
       this.sessionCapabilities = new ttypes.TDBSqlSessionCapabilities(args.sessionCapabilities);
+    }
+    if (args.expressionsInfos !== undefined && args.expressionsInfos !== null) {
+      this.expressionsInfos = Thrift.copyList(args.expressionsInfos, [ttypes.TExpressionInfo]);
+    }
+    if (args.internalConfs !== undefined && args.internalConfs !== null) {
+      this.internalConfs = Thrift.copyMap(args.internalConfs, [ttypes.TDBSqlConfValue]);
     }
   }
 };
@@ -3167,14 +3930,14 @@ TDBSqlSessionConf.prototype.read = function(input) {
       case 1:
       if (ftype == Thrift.Type.MAP) {
         this.confs = {};
-        var _rtmp3104 = input.readMapBegin();
-        var _size103 = _rtmp3104.size || 0;
-        for (var _i105 = 0; _i105 < _size103; ++_i105) {
-          var key106 = null;
-          var val107 = null;
-          key106 = input.readString();
-          val107 = input.readString();
-          this.confs[key106] = val107;
+        var _rtmp3109 = input.readMapBegin();
+        var _size108 = _rtmp3109.size || 0;
+        for (var _i110 = 0; _i110 < _size108; ++_i110) {
+          var key111 = null;
+          var val112 = null;
+          key111 = input.readString();
+          val112 = input.readString();
+          this.confs[key111] = val112;
         }
         input.readMapEnd();
       } else {
@@ -3184,13 +3947,13 @@ TDBSqlSessionConf.prototype.read = function(input) {
       case 2:
       if (ftype == Thrift.Type.LIST) {
         this.tempViews = [];
-        var _rtmp3109 = input.readListBegin();
-        var _size108 = _rtmp3109.size || 0;
-        for (var _i110 = 0; _i110 < _size108; ++_i110) {
-          var elem111 = null;
-          elem111 = new ttypes.TDBSqlTempView();
-          elem111.read(input);
-          this.tempViews.push(elem111);
+        var _rtmp3114 = input.readListBegin();
+        var _size113 = _rtmp3114.size || 0;
+        for (var _i115 = 0; _i115 < _size113; ++_i115) {
+          var elem116 = null;
+          elem116 = new ttypes.TDBSqlTempView();
+          elem116.read(input);
+          this.tempViews.push(elem116);
         }
         input.readListEnd();
       } else {
@@ -3219,6 +3982,40 @@ TDBSqlSessionConf.prototype.read = function(input) {
         input.skip(ftype);
       }
       break;
+      case 6:
+      if (ftype == Thrift.Type.LIST) {
+        this.expressionsInfos = [];
+        var _rtmp3118 = input.readListBegin();
+        var _size117 = _rtmp3118.size || 0;
+        for (var _i119 = 0; _i119 < _size117; ++_i119) {
+          var elem120 = null;
+          elem120 = new ttypes.TExpressionInfo();
+          elem120.read(input);
+          this.expressionsInfos.push(elem120);
+        }
+        input.readListEnd();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 7:
+      if (ftype == Thrift.Type.MAP) {
+        this.internalConfs = {};
+        var _rtmp3122 = input.readMapBegin();
+        var _size121 = _rtmp3122.size || 0;
+        for (var _i123 = 0; _i123 < _size121; ++_i123) {
+          var key124 = null;
+          var val125 = null;
+          key124 = input.readString();
+          val125 = new ttypes.TDBSqlConfValue();
+          val125.read(input);
+          this.internalConfs[key124] = val125;
+        }
+        input.readMapEnd();
+      } else {
+        input.skip(ftype);
+      }
+      break;
       default:
         input.skip(ftype);
     }
@@ -3233,11 +4030,11 @@ TDBSqlSessionConf.prototype.write = function(output) {
   if (this.confs !== null && this.confs !== undefined) {
     output.writeFieldBegin('confs', Thrift.Type.MAP, 1);
     output.writeMapBegin(Thrift.Type.STRING, Thrift.Type.STRING, Thrift.objectLength(this.confs));
-    for (var kiter112 in this.confs) {
-      if (this.confs.hasOwnProperty(kiter112)) {
-        var viter113 = this.confs[kiter112];
-        output.writeString(kiter112);
-        output.writeString(viter113);
+    for (var kiter126 in this.confs) {
+      if (this.confs.hasOwnProperty(kiter126)) {
+        var viter127 = this.confs[kiter126];
+        output.writeString(kiter126);
+        output.writeString(viter127);
       }
     }
     output.writeMapEnd();
@@ -3246,10 +4043,10 @@ TDBSqlSessionConf.prototype.write = function(output) {
   if (this.tempViews !== null && this.tempViews !== undefined) {
     output.writeFieldBegin('tempViews', Thrift.Type.LIST, 2);
     output.writeListBegin(Thrift.Type.STRUCT, this.tempViews.length);
-    for (var iter114 in this.tempViews) {
-      if (this.tempViews.hasOwnProperty(iter114)) {
-        iter114 = this.tempViews[iter114];
-        iter114.write(output);
+    for (var iter128 in this.tempViews) {
+      if (this.tempViews.hasOwnProperty(iter128)) {
+        iter128 = this.tempViews[iter128];
+        iter128.write(output);
       }
     }
     output.writeListEnd();
@@ -3270,6 +4067,31 @@ TDBSqlSessionConf.prototype.write = function(output) {
     this.sessionCapabilities.write(output);
     output.writeFieldEnd();
   }
+  if (this.expressionsInfos !== null && this.expressionsInfos !== undefined) {
+    output.writeFieldBegin('expressionsInfos', Thrift.Type.LIST, 6);
+    output.writeListBegin(Thrift.Type.STRUCT, this.expressionsInfos.length);
+    for (var iter129 in this.expressionsInfos) {
+      if (this.expressionsInfos.hasOwnProperty(iter129)) {
+        iter129 = this.expressionsInfos[iter129];
+        iter129.write(output);
+      }
+    }
+    output.writeListEnd();
+    output.writeFieldEnd();
+  }
+  if (this.internalConfs !== null && this.internalConfs !== undefined) {
+    output.writeFieldBegin('internalConfs', Thrift.Type.MAP, 7);
+    output.writeMapBegin(Thrift.Type.STRING, Thrift.Type.STRUCT, Thrift.objectLength(this.internalConfs));
+    for (var kiter130 in this.internalConfs) {
+      if (this.internalConfs.hasOwnProperty(kiter130)) {
+        var viter131 = this.internalConfs[kiter130];
+        output.writeString(kiter130);
+        viter131.write(output);
+      }
+    }
+    output.writeMapEnd();
+    output.writeFieldEnd();
+  }
   output.writeFieldStop();
   output.writeStructEnd();
   return;
@@ -3281,6 +4103,8 @@ var TStatus = module.exports.TStatus = function(args) {
   this.sqlState = null;
   this.errorCode = null;
   this.errorMessage = null;
+  this.displayMessage = null;
+  this.responseValidation = null;
   if (args) {
     if (args.statusCode !== undefined && args.statusCode !== null) {
       this.statusCode = args.statusCode;
@@ -3298,6 +4122,12 @@ var TStatus = module.exports.TStatus = function(args) {
     }
     if (args.errorMessage !== undefined && args.errorMessage !== null) {
       this.errorMessage = args.errorMessage;
+    }
+    if (args.displayMessage !== undefined && args.displayMessage !== null) {
+      this.displayMessage = args.displayMessage;
+    }
+    if (args.responseValidation !== undefined && args.responseValidation !== null) {
+      this.responseValidation = args.responseValidation;
     }
   }
 };
@@ -3322,12 +4152,12 @@ TStatus.prototype.read = function(input) {
       case 2:
       if (ftype == Thrift.Type.LIST) {
         this.infoMessages = [];
-        var _rtmp3116 = input.readListBegin();
-        var _size115 = _rtmp3116.size || 0;
-        for (var _i117 = 0; _i117 < _size115; ++_i117) {
-          var elem118 = null;
-          elem118 = input.readString();
-          this.infoMessages.push(elem118);
+        var _rtmp3133 = input.readListBegin();
+        var _size132 = _rtmp3133.size || 0;
+        for (var _i134 = 0; _i134 < _size132; ++_i134) {
+          var elem135 = null;
+          elem135 = input.readString();
+          this.infoMessages.push(elem135);
         }
         input.readListEnd();
       } else {
@@ -3355,6 +4185,20 @@ TStatus.prototype.read = function(input) {
         input.skip(ftype);
       }
       break;
+      case 6:
+      if (ftype == Thrift.Type.STRING) {
+        this.displayMessage = input.readString();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 3329:
+      if (ftype == Thrift.Type.STRING) {
+        this.responseValidation = input.readBinary();
+      } else {
+        input.skip(ftype);
+      }
+      break;
       default:
         input.skip(ftype);
     }
@@ -3374,10 +4218,10 @@ TStatus.prototype.write = function(output) {
   if (this.infoMessages !== null && this.infoMessages !== undefined) {
     output.writeFieldBegin('infoMessages', Thrift.Type.LIST, 2);
     output.writeListBegin(Thrift.Type.STRING, this.infoMessages.length);
-    for (var iter119 in this.infoMessages) {
-      if (this.infoMessages.hasOwnProperty(iter119)) {
-        iter119 = this.infoMessages[iter119];
-        output.writeString(iter119);
+    for (var iter136 in this.infoMessages) {
+      if (this.infoMessages.hasOwnProperty(iter136)) {
+        iter136 = this.infoMessages[iter136];
+        output.writeString(iter136);
       }
     }
     output.writeListEnd();
@@ -3396,6 +4240,16 @@ TStatus.prototype.write = function(output) {
   if (this.errorMessage !== null && this.errorMessage !== undefined) {
     output.writeFieldBegin('errorMessage', Thrift.Type.STRING, 5);
     output.writeString(this.errorMessage);
+    output.writeFieldEnd();
+  }
+  if (this.displayMessage !== null && this.displayMessage !== undefined) {
+    output.writeFieldBegin('displayMessage', Thrift.Type.STRING, 6);
+    output.writeString(this.displayMessage);
+    output.writeFieldEnd();
+  }
+  if (this.responseValidation !== null && this.responseValidation !== undefined) {
+    output.writeFieldBegin('responseValidation', Thrift.Type.STRING, 3329);
+    output.writeBinary(this.responseValidation);
     output.writeFieldEnd();
   }
   output.writeFieldStop();
@@ -3469,6 +4323,7 @@ TNamespace.prototype.write = function(output) {
 var THandleIdentifier = module.exports.THandleIdentifier = function(args) {
   this.guid = null;
   this.secret = null;
+  this.executionVersion = null;
   if (args) {
     if (args.guid !== undefined && args.guid !== null) {
       this.guid = args.guid;
@@ -3479,6 +4334,9 @@ var THandleIdentifier = module.exports.THandleIdentifier = function(args) {
       this.secret = args.secret;
     } else {
       throw new Thrift.TProtocolException(Thrift.TProtocolExceptionType.UNKNOWN, 'Required field secret is unset!');
+    }
+    if (args.executionVersion !== undefined && args.executionVersion !== null) {
+      this.executionVersion = args.executionVersion;
     }
   }
 };
@@ -3507,6 +4365,13 @@ THandleIdentifier.prototype.read = function(input) {
         input.skip(ftype);
       }
       break;
+      case 3329:
+      if (ftype == Thrift.Type.I16) {
+        this.executionVersion = input.readI16();
+      } else {
+        input.skip(ftype);
+      }
+      break;
       default:
         input.skip(ftype);
     }
@@ -3526,6 +4391,11 @@ THandleIdentifier.prototype.write = function(output) {
   if (this.secret !== null && this.secret !== undefined) {
     output.writeFieldBegin('secret', Thrift.Type.STRING, 2);
     output.writeBinary(this.secret);
+    output.writeFieldEnd();
+  }
+  if (this.executionVersion !== null && this.executionVersion !== undefined) {
+    output.writeFieldBegin('executionVersion', Thrift.Type.I16, 3329);
+    output.writeI16(this.executionVersion);
     output.writeFieldEnd();
   }
   output.writeFieldStop();
@@ -3780,14 +4650,14 @@ TOpenSessionReq.prototype.read = function(input) {
       case 4:
       if (ftype == Thrift.Type.MAP) {
         this.configuration = {};
-        var _rtmp3121 = input.readMapBegin();
-        var _size120 = _rtmp3121.size || 0;
-        for (var _i122 = 0; _i122 < _size120; ++_i122) {
-          var key123 = null;
-          var val124 = null;
-          key123 = input.readString();
-          val124 = input.readString();
-          this.configuration[key123] = val124;
+        var _rtmp3138 = input.readMapBegin();
+        var _size137 = _rtmp3138.size || 0;
+        for (var _i139 = 0; _i139 < _size137; ++_i139) {
+          var key140 = null;
+          var val141 = null;
+          key140 = input.readString();
+          val141 = input.readString();
+          this.configuration[key140] = val141;
         }
         input.readMapEnd();
       } else {
@@ -3797,12 +4667,12 @@ TOpenSessionReq.prototype.read = function(input) {
       case 1281:
       if (ftype == Thrift.Type.LIST) {
         this.getInfos = [];
-        var _rtmp3126 = input.readListBegin();
-        var _size125 = _rtmp3126.size || 0;
-        for (var _i127 = 0; _i127 < _size125; ++_i127) {
-          var elem128 = null;
-          elem128 = input.readI32();
-          this.getInfos.push(elem128);
+        var _rtmp3143 = input.readListBegin();
+        var _size142 = _rtmp3143.size || 0;
+        for (var _i144 = 0; _i144 < _size142; ++_i144) {
+          var elem145 = null;
+          elem145 = input.readI32();
+          this.getInfos.push(elem145);
         }
         input.readListEnd();
       } else {
@@ -3819,14 +4689,14 @@ TOpenSessionReq.prototype.read = function(input) {
       case 1283:
       if (ftype == Thrift.Type.MAP) {
         this.connectionProperties = {};
-        var _rtmp3130 = input.readMapBegin();
-        var _size129 = _rtmp3130.size || 0;
-        for (var _i131 = 0; _i131 < _size129; ++_i131) {
-          var key132 = null;
-          var val133 = null;
-          key132 = input.readString();
-          val133 = input.readString();
-          this.connectionProperties[key132] = val133;
+        var _rtmp3147 = input.readMapBegin();
+        var _size146 = _rtmp3147.size || 0;
+        for (var _i148 = 0; _i148 < _size146; ++_i148) {
+          var key149 = null;
+          var val150 = null;
+          key149 = input.readString();
+          val150 = input.readString();
+          this.connectionProperties[key149] = val150;
         }
         input.readMapEnd();
       } else {
@@ -3885,11 +4755,11 @@ TOpenSessionReq.prototype.write = function(output) {
   if (this.configuration !== null && this.configuration !== undefined) {
     output.writeFieldBegin('configuration', Thrift.Type.MAP, 4);
     output.writeMapBegin(Thrift.Type.STRING, Thrift.Type.STRING, Thrift.objectLength(this.configuration));
-    for (var kiter134 in this.configuration) {
-      if (this.configuration.hasOwnProperty(kiter134)) {
-        var viter135 = this.configuration[kiter134];
-        output.writeString(kiter134);
-        output.writeString(viter135);
+    for (var kiter151 in this.configuration) {
+      if (this.configuration.hasOwnProperty(kiter151)) {
+        var viter152 = this.configuration[kiter151];
+        output.writeString(kiter151);
+        output.writeString(viter152);
       }
     }
     output.writeMapEnd();
@@ -3898,10 +4768,10 @@ TOpenSessionReq.prototype.write = function(output) {
   if (this.getInfos !== null && this.getInfos !== undefined) {
     output.writeFieldBegin('getInfos', Thrift.Type.LIST, 1281);
     output.writeListBegin(Thrift.Type.I32, this.getInfos.length);
-    for (var iter136 in this.getInfos) {
-      if (this.getInfos.hasOwnProperty(iter136)) {
-        iter136 = this.getInfos[iter136];
-        output.writeI32(iter136);
+    for (var iter153 in this.getInfos) {
+      if (this.getInfos.hasOwnProperty(iter153)) {
+        iter153 = this.getInfos[iter153];
+        output.writeI32(iter153);
       }
     }
     output.writeListEnd();
@@ -3915,11 +4785,11 @@ TOpenSessionReq.prototype.write = function(output) {
   if (this.connectionProperties !== null && this.connectionProperties !== undefined) {
     output.writeFieldBegin('connectionProperties', Thrift.Type.MAP, 1283);
     output.writeMapBegin(Thrift.Type.STRING, Thrift.Type.STRING, Thrift.objectLength(this.connectionProperties));
-    for (var kiter137 in this.connectionProperties) {
-      if (this.connectionProperties.hasOwnProperty(kiter137)) {
-        var viter138 = this.connectionProperties[kiter137];
-        output.writeString(kiter137);
-        output.writeString(viter138);
+    for (var kiter154 in this.connectionProperties) {
+      if (this.connectionProperties.hasOwnProperty(kiter154)) {
+        var viter155 = this.connectionProperties[kiter154];
+        output.writeString(kiter154);
+        output.writeString(viter155);
       }
     }
     output.writeMapEnd();
@@ -4018,14 +4888,14 @@ TOpenSessionResp.prototype.read = function(input) {
       case 4:
       if (ftype == Thrift.Type.MAP) {
         this.configuration = {};
-        var _rtmp3140 = input.readMapBegin();
-        var _size139 = _rtmp3140.size || 0;
-        for (var _i141 = 0; _i141 < _size139; ++_i141) {
-          var key142 = null;
-          var val143 = null;
-          key142 = input.readString();
-          val143 = input.readString();
-          this.configuration[key142] = val143;
+        var _rtmp3157 = input.readMapBegin();
+        var _size156 = _rtmp3157.size || 0;
+        for (var _i158 = 0; _i158 < _size156; ++_i158) {
+          var key159 = null;
+          var val160 = null;
+          key159 = input.readString();
+          val160 = input.readString();
+          this.configuration[key159] = val160;
         }
         input.readMapEnd();
       } else {
@@ -4050,13 +4920,13 @@ TOpenSessionResp.prototype.read = function(input) {
       case 1281:
       if (ftype == Thrift.Type.LIST) {
         this.getInfos = [];
-        var _rtmp3145 = input.readListBegin();
-        var _size144 = _rtmp3145.size || 0;
-        for (var _i146 = 0; _i146 < _size144; ++_i146) {
-          var elem147 = null;
-          elem147 = new ttypes.TGetInfoValue();
-          elem147.read(input);
-          this.getInfos.push(elem147);
+        var _rtmp3162 = input.readListBegin();
+        var _size161 = _rtmp3162.size || 0;
+        for (var _i163 = 0; _i163 < _size161; ++_i163) {
+          var elem164 = null;
+          elem164 = new ttypes.TGetInfoValue();
+          elem164.read(input);
+          this.getInfos.push(elem164);
         }
         input.readListEnd();
       } else {
@@ -4092,11 +4962,11 @@ TOpenSessionResp.prototype.write = function(output) {
   if (this.configuration !== null && this.configuration !== undefined) {
     output.writeFieldBegin('configuration', Thrift.Type.MAP, 4);
     output.writeMapBegin(Thrift.Type.STRING, Thrift.Type.STRING, Thrift.objectLength(this.configuration));
-    for (var kiter148 in this.configuration) {
-      if (this.configuration.hasOwnProperty(kiter148)) {
-        var viter149 = this.configuration[kiter148];
-        output.writeString(kiter148);
-        output.writeString(viter149);
+    for (var kiter165 in this.configuration) {
+      if (this.configuration.hasOwnProperty(kiter165)) {
+        var viter166 = this.configuration[kiter165];
+        output.writeString(kiter165);
+        output.writeString(viter166);
       }
     }
     output.writeMapEnd();
@@ -4115,10 +4985,10 @@ TOpenSessionResp.prototype.write = function(output) {
   if (this.getInfos !== null && this.getInfos !== undefined) {
     output.writeFieldBegin('getInfos', Thrift.Type.LIST, 1281);
     output.writeListBegin(Thrift.Type.STRUCT, this.getInfos.length);
-    for (var iter150 in this.getInfos) {
-      if (this.getInfos.hasOwnProperty(iter150)) {
-        iter150 = this.getInfos[iter150];
-        iter150.write(output);
+    for (var iter167 in this.getInfos) {
+      if (this.getInfos.hasOwnProperty(iter167)) {
+        iter167 = this.getInfos[iter167];
+        iter167.write(output);
       }
     }
     output.writeListEnd();
@@ -4685,6 +5555,7 @@ var TSparkArrowTypes = module.exports.TSparkArrowTypes = function(args) {
   this.decimalAsArrow = null;
   this.complexTypesAsArrow = null;
   this.intervalTypesAsArrow = null;
+  this.nullTypeAsArrow = null;
   if (args) {
     if (args.timestampAsArrow !== undefined && args.timestampAsArrow !== null) {
       this.timestampAsArrow = args.timestampAsArrow;
@@ -4697,6 +5568,9 @@ var TSparkArrowTypes = module.exports.TSparkArrowTypes = function(args) {
     }
     if (args.intervalTypesAsArrow !== undefined && args.intervalTypesAsArrow !== null) {
       this.intervalTypesAsArrow = args.intervalTypesAsArrow;
+    }
+    if (args.nullTypeAsArrow !== undefined && args.nullTypeAsArrow !== null) {
+      this.nullTypeAsArrow = args.nullTypeAsArrow;
     }
   }
 };
@@ -4739,6 +5613,13 @@ TSparkArrowTypes.prototype.read = function(input) {
         input.skip(ftype);
       }
       break;
+      case 5:
+      if (ftype == Thrift.Type.BOOL) {
+        this.nullTypeAsArrow = input.readBool();
+      } else {
+        input.skip(ftype);
+      }
+      break;
       default:
         input.skip(ftype);
     }
@@ -4770,6 +5651,11 @@ TSparkArrowTypes.prototype.write = function(output) {
     output.writeBool(this.intervalTypesAsArrow);
     output.writeFieldEnd();
   }
+  if (this.nullTypeAsArrow !== null && this.nullTypeAsArrow !== undefined) {
+    output.writeFieldBegin('nullTypeAsArrow', Thrift.Type.BOOL, 5);
+    output.writeBool(this.nullTypeAsArrow);
+    output.writeFieldEnd();
+  }
   output.writeFieldStop();
   output.writeStructEnd();
   return;
@@ -4787,11 +5673,24 @@ var TExecuteStatementReq = module.exports.TExecuteStatementReq = function(args) 
   this.canDecompressLZ4Result = null;
   this.maxBytesPerFile = null;
   this.useArrowNativeTypes = null;
+  this.resultRowLimit = null;
+  this.parameters = null;
   this.operationId = null;
   this.sessionConf = null;
   this.rejectHighCostQueries = null;
   this.estimatedCost = null;
   this.executionVersion = null;
+  this.requestValidation = null;
+  this.resultPersistenceMode = null;
+  this.trimArrowBatchesToLimit = null;
+  this.fetchDisposition = null;
+  this.enforceResultPersistenceMode = null;
+  this.statementList = null;
+  this.persistResultManifest = null;
+  this.resultRetentionSeconds = null;
+  this.resultByteLimit = null;
+  this.resultDataFormat = null;
+  this.originatingClientIdentity = null;
   if (args) {
     if (args.sessionHandle !== undefined && args.sessionHandle !== null) {
       this.sessionHandle = new ttypes.TSessionHandle(args.sessionHandle);
@@ -4830,6 +5729,12 @@ var TExecuteStatementReq = module.exports.TExecuteStatementReq = function(args) 
     if (args.useArrowNativeTypes !== undefined && args.useArrowNativeTypes !== null) {
       this.useArrowNativeTypes = new ttypes.TSparkArrowTypes(args.useArrowNativeTypes);
     }
+    if (args.resultRowLimit !== undefined && args.resultRowLimit !== null) {
+      this.resultRowLimit = args.resultRowLimit;
+    }
+    if (args.parameters !== undefined && args.parameters !== null) {
+      this.parameters = Thrift.copyList(args.parameters, [ttypes.TSparkParameter]);
+    }
     if (args.operationId !== undefined && args.operationId !== null) {
       this.operationId = new ttypes.THandleIdentifier(args.operationId);
     }
@@ -4844,6 +5749,39 @@ var TExecuteStatementReq = module.exports.TExecuteStatementReq = function(args) 
     }
     if (args.executionVersion !== undefined && args.executionVersion !== null) {
       this.executionVersion = args.executionVersion;
+    }
+    if (args.requestValidation !== undefined && args.requestValidation !== null) {
+      this.requestValidation = args.requestValidation;
+    }
+    if (args.resultPersistenceMode !== undefined && args.resultPersistenceMode !== null) {
+      this.resultPersistenceMode = args.resultPersistenceMode;
+    }
+    if (args.trimArrowBatchesToLimit !== undefined && args.trimArrowBatchesToLimit !== null) {
+      this.trimArrowBatchesToLimit = args.trimArrowBatchesToLimit;
+    }
+    if (args.fetchDisposition !== undefined && args.fetchDisposition !== null) {
+      this.fetchDisposition = args.fetchDisposition;
+    }
+    if (args.enforceResultPersistenceMode !== undefined && args.enforceResultPersistenceMode !== null) {
+      this.enforceResultPersistenceMode = args.enforceResultPersistenceMode;
+    }
+    if (args.statementList !== undefined && args.statementList !== null) {
+      this.statementList = Thrift.copyList(args.statementList, [null]);
+    }
+    if (args.persistResultManifest !== undefined && args.persistResultManifest !== null) {
+      this.persistResultManifest = args.persistResultManifest;
+    }
+    if (args.resultRetentionSeconds !== undefined && args.resultRetentionSeconds !== null) {
+      this.resultRetentionSeconds = args.resultRetentionSeconds;
+    }
+    if (args.resultByteLimit !== undefined && args.resultByteLimit !== null) {
+      this.resultByteLimit = args.resultByteLimit;
+    }
+    if (args.resultDataFormat !== undefined && args.resultDataFormat !== null) {
+      this.resultDataFormat = new ttypes.TDBSqlResultFormat(args.resultDataFormat);
+    }
+    if (args.originatingClientIdentity !== undefined && args.originatingClientIdentity !== null) {
+      this.originatingClientIdentity = args.originatingClientIdentity;
     }
   }
 };
@@ -4876,14 +5814,14 @@ TExecuteStatementReq.prototype.read = function(input) {
       case 3:
       if (ftype == Thrift.Type.MAP) {
         this.confOverlay = {};
-        var _rtmp3152 = input.readMapBegin();
-        var _size151 = _rtmp3152.size || 0;
-        for (var _i153 = 0; _i153 < _size151; ++_i153) {
-          var key154 = null;
-          var val155 = null;
-          key154 = input.readString();
-          val155 = input.readString();
-          this.confOverlay[key154] = val155;
+        var _rtmp3169 = input.readMapBegin();
+        var _size168 = _rtmp3169.size || 0;
+        for (var _i170 = 0; _i170 < _size168; ++_i170) {
+          var key171 = null;
+          var val172 = null;
+          key171 = input.readString();
+          val172 = input.readString();
+          this.confOverlay[key171] = val172;
         }
         input.readMapEnd();
       } else {
@@ -4948,6 +5886,29 @@ TExecuteStatementReq.prototype.read = function(input) {
         input.skip(ftype);
       }
       break;
+      case 1287:
+      if (ftype == Thrift.Type.I64) {
+        this.resultRowLimit = input.readI64();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 1288:
+      if (ftype == Thrift.Type.LIST) {
+        this.parameters = [];
+        var _rtmp3174 = input.readListBegin();
+        var _size173 = _rtmp3174.size || 0;
+        for (var _i175 = 0; _i175 < _size173; ++_i175) {
+          var elem176 = null;
+          elem176 = new ttypes.TSparkParameter();
+          elem176.read(input);
+          this.parameters.push(elem176);
+        }
+        input.readListEnd();
+      } else {
+        input.skip(ftype);
+      }
+      break;
       case 3329:
       if (ftype == Thrift.Type.STRUCT) {
         this.operationId = new ttypes.THandleIdentifier();
@@ -4985,6 +5946,93 @@ TExecuteStatementReq.prototype.read = function(input) {
         input.skip(ftype);
       }
       break;
+      case 3334:
+      if (ftype == Thrift.Type.STRING) {
+        this.requestValidation = input.readBinary();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 3335:
+      if (ftype == Thrift.Type.I32) {
+        this.resultPersistenceMode = input.readI32();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 3336:
+      if (ftype == Thrift.Type.BOOL) {
+        this.trimArrowBatchesToLimit = input.readBool();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 3337:
+      if (ftype == Thrift.Type.I32) {
+        this.fetchDisposition = input.readI32();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 3344:
+      if (ftype == Thrift.Type.BOOL) {
+        this.enforceResultPersistenceMode = input.readBool();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 3345:
+      if (ftype == Thrift.Type.LIST) {
+        this.statementList = [];
+        var _rtmp3178 = input.readListBegin();
+        var _size177 = _rtmp3178.size || 0;
+        for (var _i179 = 0; _i179 < _size177; ++_i179) {
+          var elem180 = null;
+          elem180 = new ttypes.TDBSqlStatement();
+          elem180.read(input);
+          this.statementList.push(elem180);
+        }
+        input.readListEnd();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 3346:
+      if (ftype == Thrift.Type.BOOL) {
+        this.persistResultManifest = input.readBool();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 3347:
+      if (ftype == Thrift.Type.I64) {
+        this.resultRetentionSeconds = input.readI64();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 3348:
+      if (ftype == Thrift.Type.I64) {
+        this.resultByteLimit = input.readI64();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 3349:
+      if (ftype == Thrift.Type.STRUCT) {
+        this.resultDataFormat = new ttypes.TDBSqlResultFormat();
+        this.resultDataFormat.read(input);
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 3350:
+      if (ftype == Thrift.Type.STRING) {
+        this.originatingClientIdentity = input.readString();
+      } else {
+        input.skip(ftype);
+      }
+      break;
       default:
         input.skip(ftype);
     }
@@ -5009,11 +6057,11 @@ TExecuteStatementReq.prototype.write = function(output) {
   if (this.confOverlay !== null && this.confOverlay !== undefined) {
     output.writeFieldBegin('confOverlay', Thrift.Type.MAP, 3);
     output.writeMapBegin(Thrift.Type.STRING, Thrift.Type.STRING, Thrift.objectLength(this.confOverlay));
-    for (var kiter156 in this.confOverlay) {
-      if (this.confOverlay.hasOwnProperty(kiter156)) {
-        var viter157 = this.confOverlay[kiter156];
-        output.writeString(kiter156);
-        output.writeString(viter157);
+    for (var kiter181 in this.confOverlay) {
+      if (this.confOverlay.hasOwnProperty(kiter181)) {
+        var viter182 = this.confOverlay[kiter181];
+        output.writeString(kiter181);
+        output.writeString(viter182);
       }
     }
     output.writeMapEnd();
@@ -5059,6 +6107,23 @@ TExecuteStatementReq.prototype.write = function(output) {
     this.useArrowNativeTypes.write(output);
     output.writeFieldEnd();
   }
+  if (this.resultRowLimit !== null && this.resultRowLimit !== undefined) {
+    output.writeFieldBegin('resultRowLimit', Thrift.Type.I64, 1287);
+    output.writeI64(this.resultRowLimit);
+    output.writeFieldEnd();
+  }
+  if (this.parameters !== null && this.parameters !== undefined) {
+    output.writeFieldBegin('parameters', Thrift.Type.LIST, 1288);
+    output.writeListBegin(Thrift.Type.STRUCT, this.parameters.length);
+    for (var iter183 in this.parameters) {
+      if (this.parameters.hasOwnProperty(iter183)) {
+        iter183 = this.parameters[iter183];
+        iter183.write(output);
+      }
+    }
+    output.writeListEnd();
+    output.writeFieldEnd();
+  }
   if (this.operationId !== null && this.operationId !== undefined) {
     output.writeFieldBegin('operationId', Thrift.Type.STRUCT, 3329);
     this.operationId.write(output);
@@ -5084,6 +6149,293 @@ TExecuteStatementReq.prototype.write = function(output) {
     output.writeI16(this.executionVersion);
     output.writeFieldEnd();
   }
+  if (this.requestValidation !== null && this.requestValidation !== undefined) {
+    output.writeFieldBegin('requestValidation', Thrift.Type.STRING, 3334);
+    output.writeBinary(this.requestValidation);
+    output.writeFieldEnd();
+  }
+  if (this.resultPersistenceMode !== null && this.resultPersistenceMode !== undefined) {
+    output.writeFieldBegin('resultPersistenceMode', Thrift.Type.I32, 3335);
+    output.writeI32(this.resultPersistenceMode);
+    output.writeFieldEnd();
+  }
+  if (this.trimArrowBatchesToLimit !== null && this.trimArrowBatchesToLimit !== undefined) {
+    output.writeFieldBegin('trimArrowBatchesToLimit', Thrift.Type.BOOL, 3336);
+    output.writeBool(this.trimArrowBatchesToLimit);
+    output.writeFieldEnd();
+  }
+  if (this.fetchDisposition !== null && this.fetchDisposition !== undefined) {
+    output.writeFieldBegin('fetchDisposition', Thrift.Type.I32, 3337);
+    output.writeI32(this.fetchDisposition);
+    output.writeFieldEnd();
+  }
+  if (this.enforceResultPersistenceMode !== null && this.enforceResultPersistenceMode !== undefined) {
+    output.writeFieldBegin('enforceResultPersistenceMode', Thrift.Type.BOOL, 3344);
+    output.writeBool(this.enforceResultPersistenceMode);
+    output.writeFieldEnd();
+  }
+  if (this.statementList !== null && this.statementList !== undefined) {
+    output.writeFieldBegin('statementList', Thrift.Type.LIST, 3345);
+    output.writeListBegin(Thrift.Type.STRUCT, this.statementList.length);
+    for (var iter184 in this.statementList) {
+      if (this.statementList.hasOwnProperty(iter184)) {
+        iter184 = this.statementList[iter184];
+        iter184.write(output);
+      }
+    }
+    output.writeListEnd();
+    output.writeFieldEnd();
+  }
+  if (this.persistResultManifest !== null && this.persistResultManifest !== undefined) {
+    output.writeFieldBegin('persistResultManifest', Thrift.Type.BOOL, 3346);
+    output.writeBool(this.persistResultManifest);
+    output.writeFieldEnd();
+  }
+  if (this.resultRetentionSeconds !== null && this.resultRetentionSeconds !== undefined) {
+    output.writeFieldBegin('resultRetentionSeconds', Thrift.Type.I64, 3347);
+    output.writeI64(this.resultRetentionSeconds);
+    output.writeFieldEnd();
+  }
+  if (this.resultByteLimit !== null && this.resultByteLimit !== undefined) {
+    output.writeFieldBegin('resultByteLimit', Thrift.Type.I64, 3348);
+    output.writeI64(this.resultByteLimit);
+    output.writeFieldEnd();
+  }
+  if (this.resultDataFormat !== null && this.resultDataFormat !== undefined) {
+    output.writeFieldBegin('resultDataFormat', Thrift.Type.STRUCT, 3349);
+    this.resultDataFormat.write(output);
+    output.writeFieldEnd();
+  }
+  if (this.originatingClientIdentity !== null && this.originatingClientIdentity !== undefined) {
+    output.writeFieldBegin('originatingClientIdentity', Thrift.Type.STRING, 3350);
+    output.writeString(this.originatingClientIdentity);
+    output.writeFieldEnd();
+  }
+  output.writeFieldStop();
+  output.writeStructEnd();
+  return;
+};
+
+var TDBSqlStatement = module.exports.TDBSqlStatement = function(args) {
+  this.statement = null;
+  if (args) {
+    if (args.statement !== undefined && args.statement !== null) {
+      this.statement = args.statement;
+    }
+  }
+};
+TDBSqlStatement.prototype = {};
+TDBSqlStatement.prototype.read = function(input) {
+  input.readStructBegin();
+  while (true) {
+    var ret = input.readFieldBegin();
+    var ftype = ret.ftype;
+    var fid = ret.fid;
+    if (ftype == Thrift.Type.STOP) {
+      break;
+    }
+    switch (fid) {
+      case 1:
+      if (ftype == Thrift.Type.STRING) {
+        this.statement = input.readString();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 0:
+        input.skip(ftype);
+        break;
+      default:
+        input.skip(ftype);
+    }
+    input.readFieldEnd();
+  }
+  input.readStructEnd();
+  return;
+};
+
+TDBSqlStatement.prototype.write = function(output) {
+  output.writeStructBegin('TDBSqlStatement');
+  if (this.statement !== null && this.statement !== undefined) {
+    output.writeFieldBegin('statement', Thrift.Type.STRING, 1);
+    output.writeString(this.statement);
+    output.writeFieldEnd();
+  }
+  output.writeFieldStop();
+  output.writeStructEnd();
+  return;
+};
+
+var TSparkParameterValue = module.exports.TSparkParameterValue = function(args) {
+  this.stringValue = null;
+  this.doubleValue = null;
+  this.booleanValue = null;
+  if (args) {
+    if (args.stringValue !== undefined && args.stringValue !== null) {
+      this.stringValue = args.stringValue;
+    }
+    if (args.doubleValue !== undefined && args.doubleValue !== null) {
+      this.doubleValue = args.doubleValue;
+    }
+    if (args.booleanValue !== undefined && args.booleanValue !== null) {
+      this.booleanValue = args.booleanValue;
+    }
+  }
+};
+TSparkParameterValue.prototype = {};
+TSparkParameterValue.prototype.read = function(input) {
+  input.readStructBegin();
+  while (true) {
+    var ret = input.readFieldBegin();
+    var ftype = ret.ftype;
+    var fid = ret.fid;
+    if (ftype == Thrift.Type.STOP) {
+      break;
+    }
+    switch (fid) {
+      case 1:
+      if (ftype == Thrift.Type.STRING) {
+        this.stringValue = input.readString();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 2:
+      if (ftype == Thrift.Type.DOUBLE) {
+        this.doubleValue = input.readDouble();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 3:
+      if (ftype == Thrift.Type.BOOL) {
+        this.booleanValue = input.readBool();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      default:
+        input.skip(ftype);
+    }
+    input.readFieldEnd();
+  }
+  input.readStructEnd();
+  return;
+};
+
+TSparkParameterValue.prototype.write = function(output) {
+  output.writeStructBegin('TSparkParameterValue');
+  if (this.stringValue !== null && this.stringValue !== undefined) {
+    output.writeFieldBegin('stringValue', Thrift.Type.STRING, 1);
+    output.writeString(this.stringValue);
+    output.writeFieldEnd();
+  }
+  if (this.doubleValue !== null && this.doubleValue !== undefined) {
+    output.writeFieldBegin('doubleValue', Thrift.Type.DOUBLE, 2);
+    output.writeDouble(this.doubleValue);
+    output.writeFieldEnd();
+  }
+  if (this.booleanValue !== null && this.booleanValue !== undefined) {
+    output.writeFieldBegin('booleanValue', Thrift.Type.BOOL, 3);
+    output.writeBool(this.booleanValue);
+    output.writeFieldEnd();
+  }
+  output.writeFieldStop();
+  output.writeStructEnd();
+  return;
+};
+
+var TSparkParameter = module.exports.TSparkParameter = function(args) {
+  this.ordinal = null;
+  this.name = null;
+  this.type = null;
+  this.value = null;
+  if (args) {
+    if (args.ordinal !== undefined && args.ordinal !== null) {
+      this.ordinal = args.ordinal;
+    }
+    if (args.name !== undefined && args.name !== null) {
+      this.name = args.name;
+    }
+    if (args.type !== undefined && args.type !== null) {
+      this.type = args.type;
+    }
+    if (args.value !== undefined && args.value !== null) {
+      this.value = new ttypes.TSparkParameterValue(args.value);
+    }
+  }
+};
+TSparkParameter.prototype = {};
+TSparkParameter.prototype.read = function(input) {
+  input.readStructBegin();
+  while (true) {
+    var ret = input.readFieldBegin();
+    var ftype = ret.ftype;
+    var fid = ret.fid;
+    if (ftype == Thrift.Type.STOP) {
+      break;
+    }
+    switch (fid) {
+      case 1:
+      if (ftype == Thrift.Type.I32) {
+        this.ordinal = input.readI32();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 2:
+      if (ftype == Thrift.Type.STRING) {
+        this.name = input.readString();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 3:
+      if (ftype == Thrift.Type.STRING) {
+        this.type = input.readString();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 4:
+      if (ftype == Thrift.Type.STRUCT) {
+        this.value = new ttypes.TSparkParameterValue();
+        this.value.read(input);
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      default:
+        input.skip(ftype);
+    }
+    input.readFieldEnd();
+  }
+  input.readStructEnd();
+  return;
+};
+
+TSparkParameter.prototype.write = function(output) {
+  output.writeStructBegin('TSparkParameter');
+  if (this.ordinal !== null && this.ordinal !== undefined) {
+    output.writeFieldBegin('ordinal', Thrift.Type.I32, 1);
+    output.writeI32(this.ordinal);
+    output.writeFieldEnd();
+  }
+  if (this.name !== null && this.name !== undefined) {
+    output.writeFieldBegin('name', Thrift.Type.STRING, 2);
+    output.writeString(this.name);
+    output.writeFieldEnd();
+  }
+  if (this.type !== null && this.type !== undefined) {
+    output.writeFieldBegin('type', Thrift.Type.STRING, 3);
+    output.writeString(this.type);
+    output.writeFieldEnd();
+  }
+  if (this.value !== null && this.value !== undefined) {
+    output.writeFieldBegin('value', Thrift.Type.STRUCT, 4);
+    this.value.write(output);
+    output.writeFieldEnd();
+  }
   output.writeFieldStop();
   output.writeStructEnd();
   return;
@@ -5099,6 +6451,9 @@ var TExecuteStatementResp = module.exports.TExecuteStatementResp = function(args
   this.sessionConf = null;
   this.currentClusterLoad = null;
   this.idempotencyType = null;
+  this.remoteResultCacheEnabled = null;
+  this.isServerless = null;
+  this.operationHandles = null;
   if (args) {
     if (args.status !== undefined && args.status !== null) {
       this.status = new ttypes.TStatus(args.status);
@@ -5128,6 +6483,15 @@ var TExecuteStatementResp = module.exports.TExecuteStatementResp = function(args
     }
     if (args.idempotencyType !== undefined && args.idempotencyType !== null) {
       this.idempotencyType = args.idempotencyType;
+    }
+    if (args.remoteResultCacheEnabled !== undefined && args.remoteResultCacheEnabled !== null) {
+      this.remoteResultCacheEnabled = args.remoteResultCacheEnabled;
+    }
+    if (args.isServerless !== undefined && args.isServerless !== null) {
+      this.isServerless = args.isServerless;
+    }
+    if (args.operationHandles !== undefined && args.operationHandles !== null) {
+      this.operationHandles = Thrift.copyList(args.operationHandles, [ttypes.TOperationHandle]);
     }
   }
 };
@@ -5209,6 +6573,36 @@ TExecuteStatementResp.prototype.read = function(input) {
         input.skip(ftype);
       }
       break;
+      case 3335:
+      if (ftype == Thrift.Type.BOOL) {
+        this.remoteResultCacheEnabled = input.readBool();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 3336:
+      if (ftype == Thrift.Type.BOOL) {
+        this.isServerless = input.readBool();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 3337:
+      if (ftype == Thrift.Type.LIST) {
+        this.operationHandles = [];
+        var _rtmp3186 = input.readListBegin();
+        var _size185 = _rtmp3186.size || 0;
+        for (var _i187 = 0; _i187 < _size185; ++_i187) {
+          var elem188 = null;
+          elem188 = new ttypes.TOperationHandle();
+          elem188.read(input);
+          this.operationHandles.push(elem188);
+        }
+        input.readListEnd();
+      } else {
+        input.skip(ftype);
+      }
+      break;
       default:
         input.skip(ftype);
     }
@@ -5263,6 +6657,28 @@ TExecuteStatementResp.prototype.write = function(output) {
   if (this.idempotencyType !== null && this.idempotencyType !== undefined) {
     output.writeFieldBegin('idempotencyType', Thrift.Type.I32, 3334);
     output.writeI32(this.idempotencyType);
+    output.writeFieldEnd();
+  }
+  if (this.remoteResultCacheEnabled !== null && this.remoteResultCacheEnabled !== undefined) {
+    output.writeFieldBegin('remoteResultCacheEnabled', Thrift.Type.BOOL, 3335);
+    output.writeBool(this.remoteResultCacheEnabled);
+    output.writeFieldEnd();
+  }
+  if (this.isServerless !== null && this.isServerless !== undefined) {
+    output.writeFieldBegin('isServerless', Thrift.Type.BOOL, 3336);
+    output.writeBool(this.isServerless);
+    output.writeFieldEnd();
+  }
+  if (this.operationHandles !== null && this.operationHandles !== undefined) {
+    output.writeFieldBegin('operationHandles', Thrift.Type.LIST, 3337);
+    output.writeListBegin(Thrift.Type.STRUCT, this.operationHandles.length);
+    for (var iter189 in this.operationHandles) {
+      if (this.operationHandles.hasOwnProperty(iter189)) {
+        iter189 = this.operationHandles[iter189];
+        iter189.write(output);
+      }
+    }
+    output.writeListEnd();
     output.writeFieldEnd();
   }
   output.writeFieldStop();
@@ -5990,12 +7406,12 @@ TGetTablesReq.prototype.read = function(input) {
       case 5:
       if (ftype == Thrift.Type.LIST) {
         this.tableTypes = [];
-        var _rtmp3159 = input.readListBegin();
-        var _size158 = _rtmp3159.size || 0;
-        for (var _i160 = 0; _i160 < _size158; ++_i160) {
-          var elem161 = null;
-          elem161 = input.readString();
-          this.tableTypes.push(elem161);
+        var _rtmp3191 = input.readListBegin();
+        var _size190 = _rtmp3191.size || 0;
+        for (var _i192 = 0; _i192 < _size190; ++_i192) {
+          var elem193 = null;
+          elem193 = input.readString();
+          this.tableTypes.push(elem193);
         }
         input.readListEnd();
       } else {
@@ -6067,10 +7483,10 @@ TGetTablesReq.prototype.write = function(output) {
   if (this.tableTypes !== null && this.tableTypes !== undefined) {
     output.writeFieldBegin('tableTypes', Thrift.Type.LIST, 5);
     output.writeListBegin(Thrift.Type.STRING, this.tableTypes.length);
-    for (var iter162 in this.tableTypes) {
-      if (this.tableTypes.hasOwnProperty(iter162)) {
-        iter162 = this.tableTypes[iter162];
-        output.writeString(iter162);
+    for (var iter194 in this.tableTypes) {
+      if (this.tableTypes.hasOwnProperty(iter194)) {
+        iter194 = this.tableTypes[iter194];
+        output.writeString(iter194);
       }
     }
     output.writeListEnd();
@@ -7528,6 +8944,10 @@ var TGetOperationStatusResp = module.exports.TGetOperationStatusResp = function(
   this.numModifiedRows = null;
   this.displayMessage = null;
   this.diagnosticInfo = null;
+  this.responseValidation = null;
+  this.idempotencyType = null;
+  this.statementTimeout = null;
+  this.statementTimeoutLevel = null;
   if (args) {
     if (args.status !== undefined && args.status !== null) {
       this.status = new ttypes.TStatus(args.status);
@@ -7569,6 +8989,18 @@ var TGetOperationStatusResp = module.exports.TGetOperationStatusResp = function(
     }
     if (args.diagnosticInfo !== undefined && args.diagnosticInfo !== null) {
       this.diagnosticInfo = args.diagnosticInfo;
+    }
+    if (args.responseValidation !== undefined && args.responseValidation !== null) {
+      this.responseValidation = args.responseValidation;
+    }
+    if (args.idempotencyType !== undefined && args.idempotencyType !== null) {
+      this.idempotencyType = args.idempotencyType;
+    }
+    if (args.statementTimeout !== undefined && args.statementTimeout !== null) {
+      this.statementTimeout = args.statementTimeout;
+    }
+    if (args.statementTimeoutLevel !== undefined && args.statementTimeoutLevel !== null) {
+      this.statementTimeoutLevel = args.statementTimeoutLevel;
     }
   }
 };
@@ -7676,6 +9108,34 @@ TGetOperationStatusResp.prototype.read = function(input) {
         input.skip(ftype);
       }
       break;
+      case 3329:
+      if (ftype == Thrift.Type.STRING) {
+        this.responseValidation = input.readBinary();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 3330:
+      if (ftype == Thrift.Type.I32) {
+        this.idempotencyType = input.readI32();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 3331:
+      if (ftype == Thrift.Type.I64) {
+        this.statementTimeout = input.readI64();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 3332:
+      if (ftype == Thrift.Type.I32) {
+        this.statementTimeoutLevel = input.readI32();
+      } else {
+        input.skip(ftype);
+      }
+      break;
       default:
         input.skip(ftype);
     }
@@ -7752,6 +9212,26 @@ TGetOperationStatusResp.prototype.write = function(output) {
     output.writeString(this.diagnosticInfo);
     output.writeFieldEnd();
   }
+  if (this.responseValidation !== null && this.responseValidation !== undefined) {
+    output.writeFieldBegin('responseValidation', Thrift.Type.STRING, 3329);
+    output.writeBinary(this.responseValidation);
+    output.writeFieldEnd();
+  }
+  if (this.idempotencyType !== null && this.idempotencyType !== undefined) {
+    output.writeFieldBegin('idempotencyType', Thrift.Type.I32, 3330);
+    output.writeI32(this.idempotencyType);
+    output.writeFieldEnd();
+  }
+  if (this.statementTimeout !== null && this.statementTimeout !== undefined) {
+    output.writeFieldBegin('statementTimeout', Thrift.Type.I64, 3331);
+    output.writeI64(this.statementTimeout);
+    output.writeFieldEnd();
+  }
+  if (this.statementTimeoutLevel !== null && this.statementTimeoutLevel !== undefined) {
+    output.writeFieldBegin('statementTimeoutLevel', Thrift.Type.I32, 3332);
+    output.writeI32(this.statementTimeoutLevel);
+    output.writeFieldEnd();
+  }
   output.writeFieldStop();
   output.writeStructEnd();
   return;
@@ -7760,6 +9240,7 @@ TGetOperationStatusResp.prototype.write = function(output) {
 var TCancelOperationReq = module.exports.TCancelOperationReq = function(args) {
   this.operationHandle = null;
   this.executionVersion = null;
+  this.replacedByNextAttempt = null;
   if (args) {
     if (args.operationHandle !== undefined && args.operationHandle !== null) {
       this.operationHandle = new ttypes.TOperationHandle(args.operationHandle);
@@ -7768,6 +9249,9 @@ var TCancelOperationReq = module.exports.TCancelOperationReq = function(args) {
     }
     if (args.executionVersion !== undefined && args.executionVersion !== null) {
       this.executionVersion = args.executionVersion;
+    }
+    if (args.replacedByNextAttempt !== undefined && args.replacedByNextAttempt !== null) {
+      this.replacedByNextAttempt = args.replacedByNextAttempt;
     }
   }
 };
@@ -7797,6 +9281,13 @@ TCancelOperationReq.prototype.read = function(input) {
         input.skip(ftype);
       }
       break;
+      case 3330:
+      if (ftype == Thrift.Type.BOOL) {
+        this.replacedByNextAttempt = input.readBool();
+      } else {
+        input.skip(ftype);
+      }
+      break;
       default:
         input.skip(ftype);
     }
@@ -7816,6 +9307,11 @@ TCancelOperationReq.prototype.write = function(output) {
   if (this.executionVersion !== null && this.executionVersion !== undefined) {
     output.writeFieldBegin('executionVersion', Thrift.Type.I16, 3329);
     output.writeI16(this.executionVersion);
+    output.writeFieldEnd();
+  }
+  if (this.replacedByNextAttempt !== null && this.replacedByNextAttempt !== undefined) {
+    output.writeFieldBegin('replacedByNextAttempt', Thrift.Type.BOOL, 3330);
+    output.writeBool(this.replacedByNextAttempt);
     output.writeFieldEnd();
   }
   output.writeFieldStop();
@@ -7984,11 +9480,15 @@ TCloseOperationResp.prototype.write = function(output) {
 
 var TGetResultSetMetadataReq = module.exports.TGetResultSetMetadataReq = function(args) {
   this.operationHandle = null;
+  this.includeCloudResultFiles = null;
   if (args) {
     if (args.operationHandle !== undefined && args.operationHandle !== null) {
       this.operationHandle = new ttypes.TOperationHandle(args.operationHandle);
     } else {
       throw new Thrift.TProtocolException(Thrift.TProtocolExceptionType.UNKNOWN, 'Required field operationHandle is unset!');
+    }
+    if (args.includeCloudResultFiles !== undefined && args.includeCloudResultFiles !== null) {
+      this.includeCloudResultFiles = args.includeCloudResultFiles;
     }
   }
 };
@@ -8011,9 +9511,13 @@ TGetResultSetMetadataReq.prototype.read = function(input) {
         input.skip(ftype);
       }
       break;
-      case 0:
+      case 3329:
+      if (ftype == Thrift.Type.BOOL) {
+        this.includeCloudResultFiles = input.readBool();
+      } else {
         input.skip(ftype);
-        break;
+      }
+      break;
       default:
         input.skip(ftype);
     }
@@ -8030,6 +9534,11 @@ TGetResultSetMetadataReq.prototype.write = function(output) {
     this.operationHandle.write(output);
     output.writeFieldEnd();
   }
+  if (this.includeCloudResultFiles !== null && this.includeCloudResultFiles !== undefined) {
+    output.writeFieldBegin('includeCloudResultFiles', Thrift.Type.BOOL, 3329);
+    output.writeBool(this.includeCloudResultFiles);
+    output.writeFieldEnd();
+  }
   output.writeFieldStop();
   output.writeStructEnd();
   return;
@@ -8044,6 +9553,18 @@ var TGetResultSetMetadataResp = module.exports.TGetResultSetMetadataResp = funct
   this.cacheLookupResult = null;
   this.uncompressedBytes = null;
   this.compressedBytes = null;
+  this.isStagingOperation = null;
+  this.reasonForNoCloudFetch = null;
+  this.resultFiles = null;
+  this.manifestFile = null;
+  this.manifestFileFormat = null;
+  this.cacheLookupLatency = null;
+  this.remoteCacheMissReason = null;
+  this.fetchDisposition = null;
+  this.remoteResultCacheEnabled = null;
+  this.isServerless = null;
+  this.resultDataFormat = null;
+  this.truncatedByThriftLimit = null;
   if (args) {
     if (args.status !== undefined && args.status !== null) {
       this.status = new ttypes.TStatus(args.status);
@@ -8070,6 +9591,42 @@ var TGetResultSetMetadataResp = module.exports.TGetResultSetMetadataResp = funct
     }
     if (args.compressedBytes !== undefined && args.compressedBytes !== null) {
       this.compressedBytes = args.compressedBytes;
+    }
+    if (args.isStagingOperation !== undefined && args.isStagingOperation !== null) {
+      this.isStagingOperation = args.isStagingOperation;
+    }
+    if (args.reasonForNoCloudFetch !== undefined && args.reasonForNoCloudFetch !== null) {
+      this.reasonForNoCloudFetch = args.reasonForNoCloudFetch;
+    }
+    if (args.resultFiles !== undefined && args.resultFiles !== null) {
+      this.resultFiles = Thrift.copyList(args.resultFiles, [ttypes.TDBSqlCloudResultFile]);
+    }
+    if (args.manifestFile !== undefined && args.manifestFile !== null) {
+      this.manifestFile = args.manifestFile;
+    }
+    if (args.manifestFileFormat !== undefined && args.manifestFileFormat !== null) {
+      this.manifestFileFormat = args.manifestFileFormat;
+    }
+    if (args.cacheLookupLatency !== undefined && args.cacheLookupLatency !== null) {
+      this.cacheLookupLatency = args.cacheLookupLatency;
+    }
+    if (args.remoteCacheMissReason !== undefined && args.remoteCacheMissReason !== null) {
+      this.remoteCacheMissReason = args.remoteCacheMissReason;
+    }
+    if (args.fetchDisposition !== undefined && args.fetchDisposition !== null) {
+      this.fetchDisposition = args.fetchDisposition;
+    }
+    if (args.remoteResultCacheEnabled !== undefined && args.remoteResultCacheEnabled !== null) {
+      this.remoteResultCacheEnabled = args.remoteResultCacheEnabled;
+    }
+    if (args.isServerless !== undefined && args.isServerless !== null) {
+      this.isServerless = args.isServerless;
+    }
+    if (args.resultDataFormat !== undefined && args.resultDataFormat !== null) {
+      this.resultDataFormat = new ttypes.TDBSqlResultFormat(args.resultDataFormat);
+    }
+    if (args.truncatedByThriftLimit !== undefined && args.truncatedByThriftLimit !== null) {
+      this.truncatedByThriftLimit = args.truncatedByThriftLimit;
     }
   }
 };
@@ -8142,6 +9699,100 @@ TGetResultSetMetadataResp.prototype.read = function(input) {
         input.skip(ftype);
       }
       break;
+      case 1287:
+      if (ftype == Thrift.Type.BOOL) {
+        this.isStagingOperation = input.readBool();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 3329:
+      if (ftype == Thrift.Type.I32) {
+        this.reasonForNoCloudFetch = input.readI32();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 3330:
+      if (ftype == Thrift.Type.LIST) {
+        this.resultFiles = [];
+        var _rtmp3196 = input.readListBegin();
+        var _size195 = _rtmp3196.size || 0;
+        for (var _i197 = 0; _i197 < _size195; ++_i197) {
+          var elem198 = null;
+          elem198 = new ttypes.TDBSqlCloudResultFile();
+          elem198.read(input);
+          this.resultFiles.push(elem198);
+        }
+        input.readListEnd();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 3331:
+      if (ftype == Thrift.Type.STRING) {
+        this.manifestFile = input.readString();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 3332:
+      if (ftype == Thrift.Type.I32) {
+        this.manifestFileFormat = input.readI32();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 3333:
+      if (ftype == Thrift.Type.I64) {
+        this.cacheLookupLatency = input.readI64();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 3334:
+      if (ftype == Thrift.Type.STRING) {
+        this.remoteCacheMissReason = input.readString();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 3335:
+      if (ftype == Thrift.Type.I32) {
+        this.fetchDisposition = input.readI32();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 3336:
+      if (ftype == Thrift.Type.BOOL) {
+        this.remoteResultCacheEnabled = input.readBool();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 3337:
+      if (ftype == Thrift.Type.BOOL) {
+        this.isServerless = input.readBool();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 3344:
+      if (ftype == Thrift.Type.STRUCT) {
+        this.resultDataFormat = new ttypes.TDBSqlResultFormat();
+        this.resultDataFormat.read(input);
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 3345:
+      if (ftype == Thrift.Type.BOOL) {
+        this.truncatedByThriftLimit = input.readBool();
+      } else {
+        input.skip(ftype);
+      }
+      break;
       default:
         input.skip(ftype);
     }
@@ -8191,6 +9842,73 @@ TGetResultSetMetadataResp.prototype.write = function(output) {
   if (this.compressedBytes !== null && this.compressedBytes !== undefined) {
     output.writeFieldBegin('compressedBytes', Thrift.Type.I64, 1286);
     output.writeI64(this.compressedBytes);
+    output.writeFieldEnd();
+  }
+  if (this.isStagingOperation !== null && this.isStagingOperation !== undefined) {
+    output.writeFieldBegin('isStagingOperation', Thrift.Type.BOOL, 1287);
+    output.writeBool(this.isStagingOperation);
+    output.writeFieldEnd();
+  }
+  if (this.reasonForNoCloudFetch !== null && this.reasonForNoCloudFetch !== undefined) {
+    output.writeFieldBegin('reasonForNoCloudFetch', Thrift.Type.I32, 3329);
+    output.writeI32(this.reasonForNoCloudFetch);
+    output.writeFieldEnd();
+  }
+  if (this.resultFiles !== null && this.resultFiles !== undefined) {
+    output.writeFieldBegin('resultFiles', Thrift.Type.LIST, 3330);
+    output.writeListBegin(Thrift.Type.STRUCT, this.resultFiles.length);
+    for (var iter199 in this.resultFiles) {
+      if (this.resultFiles.hasOwnProperty(iter199)) {
+        iter199 = this.resultFiles[iter199];
+        iter199.write(output);
+      }
+    }
+    output.writeListEnd();
+    output.writeFieldEnd();
+  }
+  if (this.manifestFile !== null && this.manifestFile !== undefined) {
+    output.writeFieldBegin('manifestFile', Thrift.Type.STRING, 3331);
+    output.writeString(this.manifestFile);
+    output.writeFieldEnd();
+  }
+  if (this.manifestFileFormat !== null && this.manifestFileFormat !== undefined) {
+    output.writeFieldBegin('manifestFileFormat', Thrift.Type.I32, 3332);
+    output.writeI32(this.manifestFileFormat);
+    output.writeFieldEnd();
+  }
+  if (this.cacheLookupLatency !== null && this.cacheLookupLatency !== undefined) {
+    output.writeFieldBegin('cacheLookupLatency', Thrift.Type.I64, 3333);
+    output.writeI64(this.cacheLookupLatency);
+    output.writeFieldEnd();
+  }
+  if (this.remoteCacheMissReason !== null && this.remoteCacheMissReason !== undefined) {
+    output.writeFieldBegin('remoteCacheMissReason', Thrift.Type.STRING, 3334);
+    output.writeString(this.remoteCacheMissReason);
+    output.writeFieldEnd();
+  }
+  if (this.fetchDisposition !== null && this.fetchDisposition !== undefined) {
+    output.writeFieldBegin('fetchDisposition', Thrift.Type.I32, 3335);
+    output.writeI32(this.fetchDisposition);
+    output.writeFieldEnd();
+  }
+  if (this.remoteResultCacheEnabled !== null && this.remoteResultCacheEnabled !== undefined) {
+    output.writeFieldBegin('remoteResultCacheEnabled', Thrift.Type.BOOL, 3336);
+    output.writeBool(this.remoteResultCacheEnabled);
+    output.writeFieldEnd();
+  }
+  if (this.isServerless !== null && this.isServerless !== undefined) {
+    output.writeFieldBegin('isServerless', Thrift.Type.BOOL, 3337);
+    output.writeBool(this.isServerless);
+    output.writeFieldEnd();
+  }
+  if (this.resultDataFormat !== null && this.resultDataFormat !== undefined) {
+    output.writeFieldBegin('resultDataFormat', Thrift.Type.STRUCT, 3344);
+    this.resultDataFormat.write(output);
+    output.writeFieldEnd();
+  }
+  if (this.truncatedByThriftLimit !== null && this.truncatedByThriftLimit !== undefined) {
+    output.writeFieldBegin('truncatedByThriftLimit', Thrift.Type.BOOL, 3345);
+    output.writeBool(this.truncatedByThriftLimit);
     output.writeFieldEnd();
   }
   output.writeFieldStop();
@@ -8353,6 +10071,7 @@ var TFetchResultsResp = module.exports.TFetchResultsResp = function(args) {
   this.hasMoreRows = null;
   this.results = null;
   this.resultSetMetadata = null;
+  this.responseValidation = null;
   if (args) {
     if (args.status !== undefined && args.status !== null) {
       this.status = new ttypes.TStatus(args.status);
@@ -8367,6 +10086,9 @@ var TFetchResultsResp = module.exports.TFetchResultsResp = function(args) {
     }
     if (args.resultSetMetadata !== undefined && args.resultSetMetadata !== null) {
       this.resultSetMetadata = new ttypes.TGetResultSetMetadataResp(args.resultSetMetadata);
+    }
+    if (args.responseValidation !== undefined && args.responseValidation !== null) {
+      this.responseValidation = args.responseValidation;
     }
   }
 };
@@ -8412,6 +10134,13 @@ TFetchResultsResp.prototype.read = function(input) {
         input.skip(ftype);
       }
       break;
+      case 3329:
+      if (ftype == Thrift.Type.STRING) {
+        this.responseValidation = input.readBinary();
+      } else {
+        input.skip(ftype);
+      }
+      break;
       default:
         input.skip(ftype);
     }
@@ -8441,6 +10170,11 @@ TFetchResultsResp.prototype.write = function(output) {
   if (this.resultSetMetadata !== null && this.resultSetMetadata !== undefined) {
     output.writeFieldBegin('resultSetMetadata', Thrift.Type.STRUCT, 1281);
     this.resultSetMetadata.write(output);
+    output.writeFieldEnd();
+  }
+  if (this.responseValidation !== null && this.responseValidation !== undefined) {
+    output.writeFieldBegin('responseValidation', Thrift.Type.STRING, 3329);
+    output.writeBinary(this.responseValidation);
     output.writeFieldEnd();
   }
   output.writeFieldStop();
@@ -8947,12 +10681,12 @@ TProgressUpdateResp.prototype.read = function(input) {
       case 1:
       if (ftype == Thrift.Type.LIST) {
         this.headerNames = [];
-        var _rtmp3164 = input.readListBegin();
-        var _size163 = _rtmp3164.size || 0;
-        for (var _i165 = 0; _i165 < _size163; ++_i165) {
-          var elem166 = null;
-          elem166 = input.readString();
-          this.headerNames.push(elem166);
+        var _rtmp3201 = input.readListBegin();
+        var _size200 = _rtmp3201.size || 0;
+        for (var _i202 = 0; _i202 < _size200; ++_i202) {
+          var elem203 = null;
+          elem203 = input.readString();
+          this.headerNames.push(elem203);
         }
         input.readListEnd();
       } else {
@@ -8962,20 +10696,20 @@ TProgressUpdateResp.prototype.read = function(input) {
       case 2:
       if (ftype == Thrift.Type.LIST) {
         this.rows = [];
-        var _rtmp3168 = input.readListBegin();
-        var _size167 = _rtmp3168.size || 0;
-        for (var _i169 = 0; _i169 < _size167; ++_i169) {
-          var elem170 = null;
-          elem170 = [];
-          var _rtmp3172 = input.readListBegin();
-          var _size171 = _rtmp3172.size || 0;
-          for (var _i173 = 0; _i173 < _size171; ++_i173) {
-            var elem174 = null;
-            elem174 = input.readString();
-            elem170.push(elem174);
+        var _rtmp3205 = input.readListBegin();
+        var _size204 = _rtmp3205.size || 0;
+        for (var _i206 = 0; _i206 < _size204; ++_i206) {
+          var elem207 = null;
+          elem207 = [];
+          var _rtmp3209 = input.readListBegin();
+          var _size208 = _rtmp3209.size || 0;
+          for (var _i210 = 0; _i210 < _size208; ++_i210) {
+            var elem211 = null;
+            elem211 = input.readString();
+            elem207.push(elem211);
           }
           input.readListEnd();
-          this.rows.push(elem170);
+          this.rows.push(elem207);
         }
         input.readListEnd();
       } else {
@@ -9024,10 +10758,10 @@ TProgressUpdateResp.prototype.write = function(output) {
   if (this.headerNames !== null && this.headerNames !== undefined) {
     output.writeFieldBegin('headerNames', Thrift.Type.LIST, 1);
     output.writeListBegin(Thrift.Type.STRING, this.headerNames.length);
-    for (var iter175 in this.headerNames) {
-      if (this.headerNames.hasOwnProperty(iter175)) {
-        iter175 = this.headerNames[iter175];
-        output.writeString(iter175);
+    for (var iter212 in this.headerNames) {
+      if (this.headerNames.hasOwnProperty(iter212)) {
+        iter212 = this.headerNames[iter212];
+        output.writeString(iter212);
       }
     }
     output.writeListEnd();
@@ -9036,14 +10770,14 @@ TProgressUpdateResp.prototype.write = function(output) {
   if (this.rows !== null && this.rows !== undefined) {
     output.writeFieldBegin('rows', Thrift.Type.LIST, 2);
     output.writeListBegin(Thrift.Type.LIST, this.rows.length);
-    for (var iter176 in this.rows) {
-      if (this.rows.hasOwnProperty(iter176)) {
-        iter176 = this.rows[iter176];
-        output.writeListBegin(Thrift.Type.STRING, iter176.length);
-        for (var iter177 in iter176) {
-          if (iter176.hasOwnProperty(iter177)) {
-            iter177 = iter176[iter177];
-            output.writeString(iter177);
+    for (var iter213 in this.rows) {
+      if (this.rows.hasOwnProperty(iter213)) {
+        iter213 = this.rows[iter213];
+        output.writeListBegin(Thrift.Type.STRING, iter213.length);
+        for (var iter214 in iter213) {
+          if (iter213.hasOwnProperty(iter214)) {
+            iter214 = iter213[iter214];
+            output.writeString(iter214);
           }
         }
         output.writeListEnd();
