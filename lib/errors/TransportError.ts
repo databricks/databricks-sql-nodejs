@@ -2,7 +2,7 @@ import { IncomingMessage, IncomingHttpHeaders } from 'http';
 import DBSQLError, { DBSQLErrorOptions } from './DBSQLError';
 
 function isString(value: unknown): value is string {
-  return Object.prototype.toString.call(value) == '[object String]';
+  return Object.prototype.toString.call(value) === '[object String]';
 }
 
 function getHeaderValue(headers: IncomingHttpHeaders, name: string): string {
@@ -14,9 +14,9 @@ export interface TransportErrorOptions extends DBSQLErrorOptions {
   response: IncomingMessage;
 }
 
-const thriftErrorMessageHeader = "x-thriftserver-error-message"
-const databricksErrorOrRedirectHeader = "x-databricks-error-or-redirect-message"
-const databricksReasonHeader = "x-databricks-reason-phrase"
+const thriftErrorMessageHeader = 'x-thriftserver-error-message';
+const databricksErrorOrRedirectHeader = 'x-databricks-error-or-redirect-message';
+const databricksReasonHeader = 'x-databricks-reason-phrase';
 
 function extractErrorFromHeaders(headers: IncomingHttpHeaders, defaultMessage: string): string {
   let result: string = defaultMessage;

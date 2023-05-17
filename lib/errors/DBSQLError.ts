@@ -18,4 +18,3 @@ export default class DBSQLError extends Error {
     this.cause = options.cause;
   }
 }
-

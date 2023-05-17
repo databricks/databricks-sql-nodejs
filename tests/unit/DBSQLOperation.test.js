@@ -5,7 +5,7 @@ const { TStatusCode, TOperationState, TTypeId, TSparkRowSetType } = require('../
 const DBSQLOperation = require('../../dist/DBSQLOperation').default;
 const StatusError = require('../../dist/errors/StatusError').default;
 const OperationStateError = require('../../dist/errors/OperationStateError').default;
-const HiveDriverError = require('../../dist/errors/HiveDriverError').default;
+const DBSQLOperationError = require('../../dist/errors/DBSQLOperationError').default;
 const JsonResult = require('../../dist/result/JsonResult').default;
 const ArrowResult = require('../../dist/result/ArrowResult').default;
 
@@ -953,12 +953,12 @@ describe('DBSQLOperation', () => {
 
       try {
         await operation.fetchChunk();
-        expect.fail('It should throw a HiveDriverError');
+        expect.fail('It should throw a DBSQLOperationError');
       } catch (e) {
         if (e instanceof AssertionError) {
           throw e;
         }
-        expect(e).to.be.instanceOf(HiveDriverError);
+        expect(e).to.be.instanceOf(DBSQLOperationError);
       }
     });
   });

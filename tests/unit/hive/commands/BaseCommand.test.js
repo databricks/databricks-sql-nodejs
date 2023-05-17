@@ -1,6 +1,9 @@
 const { expect, AssertionError } = require('chai');
 const { Thrift } = require('thrift');
-const HiveDriverError = require('../../../../dist/errors/HiveDriverError').default;
+const { IncomingMessage } = require('http');
+const DriverError = require('../../../../dist/errors/DriverError').default;
+const { default: RetryError, RetryErrorCode } = require('../../../../dist/errors/RetryError');
+const TransportError = require('../../../../dist/errors/TransportError').default;
 const BaseCommand = require('../../../../dist/hive/Commands/BaseCommand').default;
 const globalConfig = require('../../../../dist/globalConfig').default;
 
@@ -31,6 +34,20 @@ class CustomCommand extends BaseCommand {
   }
 }
 
+// Mock THTTPException from `thrift` (not exported from the library, but used in http_connection)
+class ThriftHTTPException extends Thrift.TApplicationException {
+  constructor(statusCode, headers) {
+    super(
+      Thrift.TApplicationExceptionType.PROTOCOL_ERROR,
+      `Received a response with a bad HTTP status code: ${statusCode}`,
+    );
+    this.statusCode = statusCode;
+    this.response = new IncomingMessage({});
+    this.response.statusCode = statusCode;
+    this.response.headers = { ...headers };
+  }
+}
+
 describe('BaseCommand', () => {
   afterEach(() => {
     Object.assign(globalConfig, savedGlobalConfig);
@@ -46,8 +63,8 @@ describe('BaseCommand', () => {
       if (error instanceof AssertionError) {
         throw error;
       }
-      expect(error).to.be.instanceof(HiveDriverError);
-      expect(error.message).to.contain('the operation does not exist');
+      expect(error).to.be.instanceof(DriverError);
+      expect(error.message).to.contain('The operation does not exist');
     }
   });
 
@@ -84,9 +101,7 @@ describe('BaseCommand', () => {
         const command = new CustomCommand(
           new ThriftClientMock(() => {
             methodCallCount += 1;
-            const error = new Thrift.TApplicationException();
-            error.statusCode = statusCode;
-            throw error;
+            throw new ThriftHTTPException(statusCode);
           }),
         );
 
@@ -97,8 +112,9 @@ describe('BaseCommand', () => {
           if (error instanceof AssertionError) {
             throw error;
           }
-          expect(error).to.be.instanceof(HiveDriverError);
-          expect(error.message).to.contain(`${statusCode} when connecting to resource`);
+
+          expect(error).to.be.instanceof(RetryError);
+          expect(error.errorCode).to.equal(RetryErrorCode.OutOfAttempts);
           expect(error.message).to.contain('Max retry count exceeded');
           expect(methodCallCount).to.equal(globalConfig.retryMaxAttempts);
         }
@@ -114,9 +130,7 @@ describe('BaseCommand', () => {
         const command = new CustomCommand(
           new ThriftClientMock(() => {
             methodCallCount += 1;
-            const error = new Thrift.TApplicationException();
-            error.statusCode = statusCode;
-            throw error;
+            throw new ThriftHTTPException(statusCode);
           }),
         );
 
@@ -127,8 +141,8 @@ describe('BaseCommand', () => {
           if (error instanceof AssertionError) {
             throw error;
           }
-          expect(error).to.be.instanceof(HiveDriverError);
-          expect(error.message).to.contain(`${statusCode} when connecting to resource`);
+          expect(error).to.be.instanceof(RetryError);
+          expect(error.errorCode).to.equal(RetryErrorCode.OutOfTime);
           expect(error.message).to.contain('Retry timeout exceeded');
           // We set pretty low intervals/timeouts to make this test pass faster, but it also means
           // that it's harder to predict how much times command will be invoked. So we check that
@@ -148,9 +162,7 @@ describe('BaseCommand', () => {
           new ThriftClientMock(() => {
             methodCallCount += 1;
             if (methodCallCount <= 3) {
-              const error = new Thrift.TApplicationException();
-              error.statusCode = statusCode;
-              throw error;
+              throw new ThriftHTTPException(statusCode);
             }
             return ThriftClientMock.defaultResponse;
           }),
@@ -164,13 +176,9 @@ describe('BaseCommand', () => {
   });
 
   it(`should re-throw unrecognized HTTP errors`, async () => {
-    const errorMessage = 'Unrecognized HTTP error';
-
     const command = new CustomCommand(
       new ThriftClientMock(() => {
-        const error = new Thrift.TApplicationException(undefined, errorMessage);
-        error.statusCode = 500;
-        throw error;
+        throw new ThriftHTTPException(500);
       }),
     );
 
@@ -181,13 +189,13 @@ describe('BaseCommand', () => {
       if (error instanceof AssertionError) {
         throw error;
       }
-      expect(error).to.be.instanceof(Thrift.TApplicationException);
-      expect(error.message).to.contain(errorMessage);
+      expect(error).to.be.instanceof(TransportError);
+      expect(error.message).to.contain('HTTP status code: 500');
     }
   });
 
   it(`should re-throw unrecognized Thrift errors`, async () => {
-    const errorMessage = 'Unrecognized HTTP error';
+    const errorMessage = 'Unrecognized error';
 
     const command = new CustomCommand(
       new ThriftClientMock(() => {
@@ -202,7 +210,7 @@ describe('BaseCommand', () => {
       if (error instanceof AssertionError) {
         throw error;
       }
-      expect(error).to.be.instanceof(Thrift.TApplicationException);
+      expect(error).to.be.instanceof(DriverError);
       expect(error.message).to.contain(errorMessage);
     }
   });

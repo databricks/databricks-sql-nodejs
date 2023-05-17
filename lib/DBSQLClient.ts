@@ -15,7 +15,7 @@ import NoSaslAuthentication from './connection/auth/NoSaslAuthentication';
 import HttpConnection from './connection/connections/HttpConnection';
 import IConnectionOptions from './connection/contracts/IConnectionOptions';
 import Status from './dto/Status';
-import HiveDriverError from './errors/HiveDriverError';
+import DBSQLClientError from './errors/DBSQLClientError';
 import { buildUserAgentString, definedOrError } from './utils';
 import PlainHttpAuthentication from './connection/auth/PlainHttpAuthentication';
 import IDBSQLLogger, { LogLevel } from './contracts/IDBSQLLogger';
@@ -142,7 +142,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
    */
   public async openSession(request: OpenSessionRequest = {}): Promise<IDBSQLSession> {
     if (!this.connection?.isConnected()) {
-      throw new HiveDriverError('DBSQLClient: connection is lost');
+      throw new DBSQLClientError('Connection is lost');
     }
 
     const driver = new HiveDriver(this.getClient());
@@ -158,7 +158,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
 
   public getClient() {
     if (!this.client) {
-      throw new HiveDriverError('DBSQLClient: client is not initialized');
+      throw new DBSQLClientError('Client is not initialized');
     }
 
     return this.client;

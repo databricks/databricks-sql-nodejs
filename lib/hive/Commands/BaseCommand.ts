@@ -1,8 +1,9 @@
 import { Thrift } from 'thrift';
 import { IncomingMessage } from 'http';
 import TCLIService from '../../../thrift/TCLIService';
-import HiveDriverError from '../../errors/HiveDriverError';
+import DriverError from '../../errors/DriverError';
 import TransportError from '../../errors/TransportError';
+import RetryError, { RetryErrorCode } from '../../errors/RetryError';
 import globalConfig from '../../globalConfig';
 
 interface CommandExecutionInfo {
@@ -21,7 +22,7 @@ function delay(milliseconds: number): Promise<void> {
   });
 }
 
-function convertThriftError(error: Error): HiveDriverError | Error {
+function convertThriftError(error: Error): Error {
   if (error instanceof Thrift.TApplicationException) {
     // Detect THTTPException which is not exported from `thrift`
     if ('response' in error && error.response instanceof IncomingMessage) {
@@ -31,9 +32,11 @@ function convertThriftError(error: Error): HiveDriverError | Error {
       });
     }
 
-    return new HiveDriverError(error.message, {
-      cause: error,
-    });
+    return new DriverError(error.message, { cause: error });
+  }
+
+  if (error instanceof Thrift.TProtocolException) {
+    return new DriverError(error.message, { cause: error });
   }
 
   // Return other errors as is
@@ -74,18 +77,12 @@ export default abstract class BaseCommand {
 
           const attemptsExceeded = info.attempt >= globalConfig.retryMaxAttempts;
           if (attemptsExceeded) {
-            throw new HiveDriverError(
-              `Hive driver: ${error.statusCode} when connecting to resource. Max retry count exceeded.`,
-              { cause: error },
-            );
+            throw new RetryError(RetryErrorCode.OutOfAttempts, { cause: error });
           }
 
           const timeoutExceeded = Date.now() - info.startTime + retryDelay >= globalConfig.retriesTimeout;
           if (timeoutExceeded) {
-            throw new HiveDriverError(
-              `Hive driver: ${error.statusCode} when connecting to resource. Retry timeout exceeded.`,
-              { cause: error },
-            );
+            throw new RetryError(RetryErrorCode.OutOfTime, { cause: error });
           }
 
           await delay(retryDelay);
@@ -100,9 +97,7 @@ export default abstract class BaseCommand {
 
   private invokeCommand<Response>(request: object, command: Function | void): Promise<Response> {
     if (typeof command !== 'function') {
-      return Promise.reject(
-        new HiveDriverError('Hive driver: the operation does not exist, try to choose another Thrift file.'),
-      );
+      return Promise.reject(new DriverError('The operation does not exist, try to choose another Thrift file.'));
     }
 
     return new Promise((resolve, reject) => {
