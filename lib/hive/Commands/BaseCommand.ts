@@ -1,6 +1,8 @@
 import { Thrift } from 'thrift';
+import { IncomingMessage } from 'http';
 import TCLIService from '../../../thrift/TCLIService';
 import HiveDriverError from '../../errors/HiveDriverError';
+import TransportError from '../../errors/TransportError';
 import globalConfig from '../../globalConfig';
 
 interface CommandExecutionInfo {
@@ -17,6 +19,25 @@ function delay(milliseconds: number): Promise<void> {
   return new Promise<void>((resolve) => {
     setTimeout(() => resolve(), milliseconds);
   });
+}
+
+function convertThriftError(error: Error): HiveDriverError | Error {
+  if (error instanceof Thrift.TApplicationException) {
+    // Detect THTTPException which is not exported from `thrift`
+    if ('response' in error && error.response instanceof IncomingMessage) {
+      return new TransportError(error.message, {
+        cause: error,
+        response: error.response,
+      });
+    }
+
+    return new HiveDriverError(error.message, {
+      cause: error,
+    });
+  }
+
+  // Return other errors as is
+  return error;
 }
 
 export default abstract class BaseCommand {
@@ -38,43 +59,37 @@ export default abstract class BaseCommand {
     try {
       return await this.invokeCommand<Response>(request, command);
     } catch (error) {
-      if (error instanceof Thrift.TApplicationException) {
-        if ('statusCode' in error) {
-          switch (error.statusCode) {
-            // On these status codes it's safe to retry the request. However,
-            // both error codes mean that server is overwhelmed or even down.
-            // Therefore, we need to add some delay between attempts so
-            // server can recover and more likely handle next request
-            case 429: // Too Many Requests
-            case 503: // Service Unavailable
-              info.attempt += 1;
+      if (error instanceof TransportError) {
+        // When handling retryable errors we should keep in mind that
+        // error may be caused by server being overwhelmed or even down.
+        // Therefore, we need to add some delay between attempts so
+        // server can recover and more likely handle next request
+        if (error.isRetryable) {
+          info.attempt += 1;
 
-              // Delay interval depends on current attempt - the more attempts we do
-              // the longer the interval will be
-              // TODO: Respect `Retry-After` header (PECO-729)
-              const retryDelay = getRetryDelay(info.attempt);
+          // Delay interval depends on current attempt - the more attempts we do
+          // the longer the interval will be
+          // TODO: Respect `Retry-After` header (PECO-729)
+          const retryDelay = getRetryDelay(info.attempt);
 
-              const attemptsExceeded = info.attempt >= globalConfig.retryMaxAttempts;
-              if (attemptsExceeded) {
-                throw new HiveDriverError(
-                  `Hive driver: ${error.statusCode} when connecting to resource. Max retry count exceeded.`,
-                );
-              }
-
-              const timeoutExceeded = Date.now() - info.startTime + retryDelay >= globalConfig.retriesTimeout;
-              if (timeoutExceeded) {
-                throw new HiveDriverError(
-                  `Hive driver: ${error.statusCode} when connecting to resource. Retry timeout exceeded.`,
-                );
-              }
-
-              await delay(retryDelay);
-              return this.invokeWithErrorHandling(request, command, info);
-
-            // TODO: Here we should handle other error types (see PECO-730)
-
-            // no default
+          const attemptsExceeded = info.attempt >= globalConfig.retryMaxAttempts;
+          if (attemptsExceeded) {
+            throw new HiveDriverError(
+              `Hive driver: ${error.statusCode} when connecting to resource. Max retry count exceeded.`,
+              { cause: error },
+            );
           }
+
+          const timeoutExceeded = Date.now() - info.startTime + retryDelay >= globalConfig.retriesTimeout;
+          if (timeoutExceeded) {
+            throw new HiveDriverError(
+              `Hive driver: ${error.statusCode} when connecting to resource. Retry timeout exceeded.`,
+              { cause: error },
+            );
+          }
+
+          await delay(retryDelay);
+          return this.invokeWithErrorHandling(request, command, info);
         }
       }
 
@@ -94,13 +109,17 @@ export default abstract class BaseCommand {
       try {
         command.call(this.client, request, (err: Error, response: Response) => {
           if (err) {
-            reject(err);
+            reject(convertThriftError(err));
           } else {
             resolve(response);
           }
         });
       } catch (error) {
-        reject(error);
+        if (error instanceof Error) {
+          reject(convertThriftError(error));
+        } else {
+          reject(error);
+        }
       }
     });
   }

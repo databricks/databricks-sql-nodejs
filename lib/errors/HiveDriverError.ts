@@ -1,1 +1,3 @@
-export default class HiveDriverError extends Error {}
+import DBSQLError from './DBSQLError';
+
+export default class HiveDriverError extends DBSQLError {}
