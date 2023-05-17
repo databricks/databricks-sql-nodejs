@@ -40,18 +40,14 @@ function extractErrorFromHeaders(headers: IncomingHttpHeaders, defaultMessage: s
 }
 
 export default class TransportError extends DBSQLError {
-  public readonly response?: IncomingMessage;
+  public readonly response: IncomingMessage;
 
   public get statusCode(): number | undefined {
-    return this.response?.statusCode;
+    return this.response.statusCode;
   }
 
   public get isRetryable(): boolean {
-    if (this.response) {
-      return this.response.statusCode === 429 || this.response.statusCode === 503;
-    }
-
-    return false;
+    return this.response.statusCode === 429 || this.response.statusCode === 503;
   }
 
   constructor(message: string, options: TransportErrorOptions) {

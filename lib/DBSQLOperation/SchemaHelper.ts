@@ -4,7 +4,7 @@ import Status from '../dto/Status';
 import IOperationResult from '../result/IOperationResult';
 import JsonResult from '../result/JsonResult';
 import ArrowResult from '../result/ArrowResult';
-import DBSQLOperationError from '../errors/DBSQLOperationError';
+import OperationError from '../errors/OperationError';
 import { definedOrError } from '../utils';
 
 export default class SchemaHelper {
@@ -47,7 +47,7 @@ export default class SchemaHelper {
       case TSparkRowSetType.ARROW_BASED_SET:
         return new ArrowResult(metadata.schema, metadata.arrowSchema);
       default:
-        throw new DBSQLOperationError(`Unsupported result format: ${TSparkRowSetType[resultFormat]}`);
+        throw new OperationError(`Unsupported result format: ${TSparkRowSetType[resultFormat]}`);
     }
   }
 }

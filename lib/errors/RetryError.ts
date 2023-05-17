@@ -15,7 +15,7 @@ export interface RetryErrorOptions extends DBSQLErrorOptions {}
 export default class RetryError extends DBSQLError {
   public readonly errorCode: RetryErrorCode;
 
-  constructor(errorCode: RetryErrorCode, options: RetryErrorOptions) {
+  constructor(errorCode: RetryErrorCode, options: RetryErrorOptions = {}) {
     let message = errorMessages[errorCode];
     if (options.cause) {
       message = `${options.cause.message} ${message}`;

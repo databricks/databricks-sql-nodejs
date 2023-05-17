@@ -5,6 +5,10 @@ export interface DBSQLErrorOptions {
 export default class DBSQLError extends Error {
   public readonly cause?: Error;
 
+  public get name() {
+    return this.constructor.name;
+  }
+
   public get isRetryable(): boolean {
     return false;
   }

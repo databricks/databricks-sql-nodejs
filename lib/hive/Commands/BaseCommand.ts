@@ -1,6 +1,7 @@
 import { Thrift } from 'thrift';
 import { IncomingMessage } from 'http';
 import TCLIService from '../../../thrift/TCLIService';
+import DBSQLError from '../../errors/DBSQLError';
 import DriverError from '../../errors/DriverError';
 import TransportError from '../../errors/TransportError';
 import RetryError, { RetryErrorCode } from '../../errors/RetryError';
@@ -62,7 +63,7 @@ export default abstract class BaseCommand {
     try {
       return await this.invokeCommand<Response>(request, command);
     } catch (error) {
-      if (error instanceof TransportError) {
+      if (error instanceof DBSQLError) {
         // When handling retryable errors we should keep in mind that
         // error may be caused by server being overwhelmed or even down.
         // Therefore, we need to add some delay between attempts so
