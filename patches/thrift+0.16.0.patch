@@ -1,5 +1,5 @@
 diff --git a/node_modules/thrift/lib/nodejs/lib/thrift/http_connection.js b/node_modules/thrift/lib/nodejs/lib/thrift/http_connection.js
-index 17e0d0c..9e90096 100644
+index 17e0d0c..f7764af 100644
 --- a/node_modules/thrift/lib/nodejs/lib/thrift/http_connection.js
 +++ b/node_modules/thrift/lib/nodejs/lib/thrift/http_connection.js
 @@ -106,7 +106,7 @@ var HttpConnection = exports.HttpConnection = function(options) {
@@ -68,7 +68,7 @@ index 17e0d0c..9e90096 100644
      });
    };
  };
-@@ -212,18 +215,33 @@ util.inherits(HttpConnection, EventEmitter);
+@@ -212,18 +215,41 @@ util.inherits(HttpConnection, EventEmitter);
   * @event {error} the "error" event is raised upon request failure passing the
   *     Node.js error object to the listener.
   */
@@ -101,9 +101,16 @@ index 17e0d0c..9e90096 100644
 -      http.request(opts, self.responseCallback);
 -  req.on('error', function(err) {
 -    self.emit("error", err);
--  });
 +      https.request(opts, responseCallback) :
 +      http.request(opts, responseCallback);
++  req.on('timeout', () => {
++    // Ignore all subsequent errors on this request
++    req.off('error', handleError);
++    req.on('error', () => console.log());
++    // Emit a single error and destroy request
++    handleError(new thrift.TApplicationException(thrift.TApplicationExceptionType.PROTOCOL_ERROR, 'Request timed out'));
++    req.destroy();
+   });
 +  req.on('error', handleError);
    req.write(data);
    req.end();

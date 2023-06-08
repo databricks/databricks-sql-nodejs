@@ -1,12 +1,13 @@
 import thrift from 'thrift';
 import https from 'https';
-
 import http, { IncomingMessage } from 'http';
+
 import IThriftConnection from '../contracts/IThriftConnection';
 import IConnectionProvider from '../contracts/IConnectionProvider';
 import IConnectionOptions, { Options } from '../contracts/IConnectionOptions';
 import IAuthentication from '../contracts/IAuthentication';
 import HttpTransport from '../transports/HttpTransport';
+import globalConfig from '../../globalConfig';
 
 type NodeOptions = {
   ca?: Buffer | string;
@@ -25,6 +26,7 @@ export default class HttpConnection implements IConnectionProvider, IThriftConne
       keepAlive: true,
       maxSockets: 5,
       keepAliveMsecs: 10000,
+      timeout: globalConfig.httpRequestTimeout,
     };
 
     const agent = options.options?.https
@@ -39,6 +41,7 @@ export default class HttpConnection implements IConnectionProvider, IThriftConne
         agent,
         ...this.getNodeOptions(options.options || {}),
         ...(options.options?.nodeOptions || {}),
+        timeout: globalConfig.httpRequestTimeout,
       },
     });
 
