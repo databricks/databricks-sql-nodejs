@@ -1,4 +1,5 @@
 export type Options = {
+  socketTimeout?: number;
   username?: string;
   password?: string;
   ssl?: boolean;
