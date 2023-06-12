@@ -1,7 +1,7 @@
 interface GlobalConfig {
   arrowEnabled?: boolean;
   useArrowNativeTypes?: boolean;
-  httpRequestTimeout: number;
+  socketTimeout: number;
 
   retryMaxAttempts: number;
   retriesTimeout: number; // in milliseconds
@@ -12,7 +12,7 @@ interface GlobalConfig {
 export default {
   arrowEnabled: true,
   useArrowNativeTypes: true,
-  httpRequestTimeout: 15 * 60 * 1000, // 15 minutes
+  socketTimeout: 15 * 60 * 1000, // 15 minutes
 
   retryMaxAttempts: 30,
   retriesTimeout: 900 * 1000,

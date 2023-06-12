@@ -26,7 +26,7 @@ export default class HttpConnection implements IConnectionProvider, IThriftConne
       keepAlive: true,
       maxSockets: 5,
       keepAliveMsecs: 10000,
-      timeout: globalConfig.httpRequestTimeout,
+      timeout: options.options?.socketTimeout ?? globalConfig.socketTimeout,
     };
 
     const agent = options.options?.https
@@ -41,7 +41,7 @@ export default class HttpConnection implements IConnectionProvider, IThriftConne
         agent,
         ...this.getNodeOptions(options.options || {}),
         ...(options.options?.nodeOptions || {}),
-        timeout: globalConfig.httpRequestTimeout,
+        timeout: options.options?.socketTimeout ?? globalConfig.socketTimeout,
       },
     });
 

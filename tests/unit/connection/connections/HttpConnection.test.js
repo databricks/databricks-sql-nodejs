@@ -162,7 +162,7 @@ describe('HttpConnection.connect', () => {
       .then(() => {
         resultConnection.responseCallback({ headers: {} });
         expect(resultConnection.executed).to.be.true;
-        expect(Object.keys(connection.thrift.options.nodeOptions)).to.be.deep.eq(['agent']);
+        expect(Object.keys(connection.thrift.options.nodeOptions)).to.be.deep.eq(['agent', 'timeout']);
       });
   });
 
