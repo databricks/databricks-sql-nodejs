@@ -11,7 +11,6 @@ import IDBSQLSession from './contracts/IDBSQLSession';
 import IThriftConnection from './connection/contracts/IThriftConnection';
 import IConnectionProvider from './connection/contracts/IConnectionProvider';
 import IAuthentication from './connection/contracts/IAuthentication';
-import NoSaslAuthentication from './connection/auth/NoSaslAuthentication';
 import HttpConnection from './connection/connections/HttpConnection';
 import IConnectionOptions from './connection/contracts/IConnectionOptions';
 import Status from './dto/Status';
@@ -48,8 +47,6 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
 
   private connectionProvider: IConnectionProvider;
 
-  private authProvider: IAuthentication;
-
   private readonly logger: IDBSQLLogger;
 
   private readonly thrift = thrift;
@@ -57,7 +54,6 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
   constructor(options?: ClientOptions) {
     super();
     this.connectionProvider = new HttpConnection();
-    this.authProvider = new NoSaslAuthentication();
     this.logger = options?.logger || new DBSQLLogger();
     this.client = null;
     this.connection = null;
@@ -87,7 +83,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
    * const session = client.connect({host, path, token});
    */
   public async connect(options: ConnectionOptions, authProvider?: IAuthentication): Promise<IDBSQLClient> {
-    this.authProvider =
+    authProvider =
       authProvider ||
       new PlainHttpAuthentication({
         username: 'token',
@@ -97,7 +93,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
         },
       });
 
-    this.connection = await this.connectionProvider.connect(this.getConnectionOptions(options), this.authProvider);
+    this.connection = await this.connectionProvider.connect(this.getConnectionOptions(options), authProvider);
 
     this.client = this.thrift.createClient(TCLIService, this.connection.getConnection());
 
