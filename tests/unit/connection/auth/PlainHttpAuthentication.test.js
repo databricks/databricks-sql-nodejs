@@ -29,7 +29,7 @@ describe('PlainHttpAuthentication', () => {
     expect(auth.password).to.be.eq('');
   });
 
-  it('auth token must be set to header', () => {
+  it('auth token must be set to header', async () => {
     const auth = new PlainHttpAuthentication();
     const transportMock = {
       updateHeaders(headers) {
@@ -38,8 +38,6 @@ describe('PlainHttpAuthentication', () => {
         });
       },
     };
-    return auth.authenticate(transportMock).then((transport) => {
-      expect(transport).to.be.eq(transportMock);
-    });
+    await auth.authenticate(transportMock); // it just should not fail
   });
 });
