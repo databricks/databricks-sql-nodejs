@@ -69,6 +69,9 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
         path: prependSlash(path),
         https: true,
         ...otherOptions,
+        headers: {
+          'User-Agent': buildUserAgentString(options.clientId),
+        },
       },
     };
   }
@@ -88,9 +91,6 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
       new PlainHttpAuthentication({
         username: 'token',
         password: options.token,
-        headers: {
-          'User-Agent': buildUserAgentString(options.clientId),
-        },
       });
 
     this.connection = await this.connectionProvider.connect(this.getConnectionOptions(options), authProvider);
