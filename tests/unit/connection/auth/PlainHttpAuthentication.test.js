@@ -29,16 +29,15 @@ describe('PlainHttpAuthentication', () => {
     expect(auth.password).to.be.eq('');
   });
 
-  it('auth token must be set to header', () => {
+  it('auth token must be set to header', async () => {
     const auth = new PlainHttpAuthentication();
     const transportMock = {
-      setOptions(name, value) {
-        expect(name).to.be.eq('headers');
-        expect(value.Authorization).to.be.eq('Bearer anonymous');
+      updateHeaders(headers) {
+        expect(headers).to.deep.equal({
+          Authorization: 'Bearer anonymous',
+        });
       },
     };
-    return auth.authenticate(transportMock).then((transport) => {
-      expect(transport).to.be.eq(transportMock);
-    });
+    await auth.authenticate(transportMock); // it just should not fail
   });
 });

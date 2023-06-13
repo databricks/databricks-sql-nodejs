@@ -1,18 +1,18 @@
+import { HttpHeaders } from 'thrift';
 import IAuthentication from '../../contracts/IAuthentication';
-import ITransport from '../../contracts/ITransport';
+import HttpTransport from '../../transports/HttpTransport';
 import IDBSQLLogger from '../../../contracts/IDBSQLLogger';
-import { AuthOptions } from '../../types/AuthOptions';
 import OAuthPersistence from './OAuthPersistence';
 import OAuthManager from './OAuthManager';
 
-interface DatabricksOAuthOptions extends AuthOptions {
+interface DatabricksOAuthOptions {
   host: string;
   redirectPorts?: Array<number>;
   clientId?: string;
   scopes?: Array<string>;
   logger?: IDBSQLLogger;
   persistence?: OAuthPersistence;
-  headers?: object;
+  headers?: HttpHeaders;
 }
 
 const defaultOAuthOptions = {
@@ -34,7 +34,7 @@ export default class DatabricksOAuth implements IAuthentication {
 
   private readonly persistence?: OAuthPersistence;
 
-  private readonly headers?: object;
+  private readonly headers?: HttpHeaders;
 
   private readonly manager: OAuthManager;
 
@@ -55,7 +55,7 @@ export default class DatabricksOAuth implements IAuthentication {
     });
   }
 
-  async authenticate(transport: ITransport): Promise<ITransport> {
+  public async authenticate(transport: HttpTransport): Promise<void> {
     let token = await this.persistence?.read(this.host);
     if (!token) {
       token = await this.manager.getToken(this.scopes);
@@ -64,11 +64,9 @@ export default class DatabricksOAuth implements IAuthentication {
     token = await this.manager.refreshAccessToken(token);
     await this.persistence?.persist(this.host, token);
 
-    transport.setOptions('headers', {
+    transport.updateHeaders({
       ...this.headers,
       Authorization: `Bearer ${token.accessToken}`,
     });
-
-    return transport;
   }
 }

@@ -1,24 +1,56 @@
-import ITransport from '../contracts/ITransport';
+import { ConnectOptions, HttpHeaders } from 'thrift';
 
-export default class HttpTransport implements ITransport {
-  private httpOptions: object;
+export default class HttpTransport {
+  private options: ConnectOptions;
 
-  constructor(httpOptions: object = {}) {
-    this.httpOptions = httpOptions;
+  constructor(options: ConnectOptions = {}) {
+    this.options = { ...options };
   }
 
-  getTransport(): any {
-    return this.httpOptions;
+  public getOptions(): ConnectOptions {
+    return this.options;
   }
 
-  setOptions(option: string, value: any) {
-    this.httpOptions = {
-      ...this.httpOptions,
+  public setOptions(options: ConnectOptions) {
+    this.options = { ...options };
+  }
+
+  public updateOptions(options: Partial<ConnectOptions>) {
+    this.options = {
+      ...this.options,
+      ...options,
+    };
+  }
+
+  public getOption<K extends keyof ConnectOptions>(option: K): ConnectOptions[K] {
+    return this.options[option];
+  }
+
+  public setOption<K extends keyof ConnectOptions>(option: K, value: ConnectOptions[K]) {
+    this.options = {
+      ...this.options,
       [option]: value,
     };
   }
 
-  getOptions(): object {
-    return this.httpOptions;
+  public getHeaders(): HttpHeaders {
+    return this.options.headers ?? {};
+  }
+
+  public setHeaders(headers: HttpHeaders) {
+    this.options = {
+      ...this.options,
+      headers: { ...headers },
+    };
+  }
+
+  public updateHeaders(headers: Partial<ConnectOptions['headers']>) {
+    this.options = {
+      ...this.options,
+      headers: {
+        ...this.options.headers,
+        ...headers,
+      },
+    };
   }
 }

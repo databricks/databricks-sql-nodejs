@@ -1,4 +1,7 @@
+import { HttpHeaders } from 'thrift';
+
 export type Options = {
+  socketTimeout?: number;
   username?: string;
   password?: string;
   ssl?: boolean;
@@ -8,7 +11,7 @@ export type Options = {
   retry_max_delay?: number;
   connect_timeout?: number;
   timeout?: number;
-  headers?: object;
+  headers?: HttpHeaders;
   path?: string;
   ca?: Buffer | string;
   cert?: Buffer | string;
