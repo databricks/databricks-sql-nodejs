@@ -1,5 +1,5 @@
-import ITransport from './ITransport';
+import HttpTransport from '../transports/HttpTransport';
 
 export default interface IAuthentication {
-  authenticate(connection: ITransport): Promise<ITransport>;
+  authenticate(transport: HttpTransport): Promise<void>;
 }
