@@ -3,7 +3,7 @@ import thrift from 'thrift';
 import { EventEmitter } from 'events';
 import TCLIService from '../thrift/TCLIService';
 import { TProtocolVersion } from '../thrift/TCLIService_types';
-import IDBSQLClient, { ConnectionOptions, OpenSessionRequest, ClientOptions } from './contracts/IDBSQLClient';
+import IDBSQLClient, { ClientOptions, ConnectionOptions, OpenSessionRequest } from './contracts/IDBSQLClient';
 import HiveDriver from './hive/HiveDriver';
 import { Int64 } from './hive/Types';
 import DBSQLSession from './DBSQLSession';
@@ -14,7 +14,7 @@ import IAuthentication from './connection/contracts/IAuthentication';
 import HttpConnection from './connection/connections/HttpConnection';
 import IConnectionOptions from './connection/contracts/IConnectionOptions';
 import Status from './dto/Status';
-import HiveDriverError from './errors/HiveDriverError';
+import ClientError, { ClientErrorCode } from './errors/ClientError';
 import { buildUserAgentString, definedOrError } from './utils';
 import PlainHttpAuthentication from './connection/auth/PlainHttpAuthentication';
 import IDBSQLLogger, { LogLevel } from './contracts/IDBSQLLogger';
@@ -138,7 +138,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
    */
   public async openSession(request: OpenSessionRequest = {}): Promise<IDBSQLSession> {
     if (!this.connection?.isConnected()) {
-      throw new HiveDriverError('DBSQLClient: connection is lost');
+      throw new ClientError(ClientErrorCode.ConnectionLost);
     }
 
     const driver = new HiveDriver(this.getClient());
@@ -154,7 +154,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
 
   public getClient() {
     if (!this.client) {
-      throw new HiveDriverError('DBSQLClient: client is not initialized');
+      throw new ClientError(ClientErrorCode.ClientNotInitialized);
     }
 
     return this.client;

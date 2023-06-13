@@ -2,7 +2,7 @@ const { expect } = require('chai');
 const { TCLIService_types } = require('../../../').thrift;
 const Status = require('../../../dist/dto/Status').default;
 
-describe('StatusFactory', () => {
+describe('Status', () => {
   it('should be success', () => {
     const status = new Status({
       statusCode: TCLIService_types.TStatusCode.SUCCESS_STATUS,
@@ -84,8 +84,8 @@ describe('StatusFactory', () => {
         });
       }).to.throw('error');
       error.with.property('stack', 'line1\nline2');
-      error.with.property('code', 1);
-      error.with.property('name', 'Status Error');
+      error.with.property('errorCode', 1);
+      error.with.property('name', 'StatusError');
     });
 
     it('should throw exception on invalid handle status', () => {
@@ -95,9 +95,9 @@ describe('StatusFactory', () => {
           errorMessage: 'error',
         });
       }).to.throw('error');
-      error.with.property('name', 'Status Error');
+      error.with.property('name', 'StatusError');
       error.with.property('message', 'error');
-      error.with.property('code', -1);
+      error.with.property('errorCode', -1);
     });
 
     it('should not throw exception on success and execution status', () => {

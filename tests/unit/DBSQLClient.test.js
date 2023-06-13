@@ -2,6 +2,7 @@ const { expect } = require('chai');
 const sinon = require('sinon');
 const DBSQLClient = require('../../dist/DBSQLClient').default;
 const DBSQLSession = require('../../dist/DBSQLSession').default;
+const ClientError = require('../../dist/errors/ClientError').default;
 const {
   auth: { PlainHttpAuthentication },
   connections: { HttpConnection },
@@ -167,7 +168,8 @@ describe('DBSQLClient.openSession', () => {
       await client.openSession();
       expect.fail('It should throw an error');
     } catch (error) {
-      expect(error.message).to.be.eq('DBSQLClient: connection is lost');
+      expect(error).to.be.instanceOf(ClientError);
+      expect(error.message).to.be.eq('Connection is lost');
     }
   });
 
@@ -183,7 +185,8 @@ describe('DBSQLClient.openSession', () => {
       await client.openSession();
       expect.fail('It should throw an error');
     } catch (error) {
-      expect(error.message).to.be.eq('DBSQLClient: connection is lost');
+      expect(error).to.be.instanceOf(ClientError);
+      expect(error.message).to.be.eq('Connection is lost');
     }
   });
 });
@@ -191,7 +194,7 @@ describe('DBSQLClient.openSession', () => {
 describe('DBSQLClient.getClient', () => {
   it('should throw an error if the client is not set', () => {
     const client = new DBSQLClient();
-    expect(() => client.getClient()).to.throw('DBSQLClient: client is not initialized');
+    expect(() => client.getClient()).to.throw(ClientError, 'Client is not initialized');
   });
 });
 
