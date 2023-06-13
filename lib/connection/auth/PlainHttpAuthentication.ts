@@ -1,5 +1,5 @@
 import IAuthentication from '../contracts/IAuthentication';
-import ITransport from '../contracts/ITransport';
+import HttpTransport from '../transports/HttpTransport';
 import { AuthOptions } from '../types/AuthOptions';
 
 type HttpAuthOptions = AuthOptions & {
@@ -7,11 +7,11 @@ type HttpAuthOptions = AuthOptions & {
 };
 
 export default class PlainHttpAuthentication implements IAuthentication {
-  private username: string;
+  private readonly username: string;
 
-  private password: string;
+  private readonly password: string;
 
-  private headers: object;
+  private readonly headers: object;
 
   constructor(options: HttpAuthOptions) {
     this.username = options?.username || 'anonymous';
@@ -19,16 +19,12 @@ export default class PlainHttpAuthentication implements IAuthentication {
     this.headers = options?.headers || {};
   }
 
-  authenticate(transport: ITransport): Promise<ITransport> {
-    transport.setOptions('headers', {
+  public async authenticate(transport: HttpTransport): Promise<HttpTransport> {
+    transport.updateHeaders({
       ...this.headers,
-      Authorization: this.getToken(this.username, this.password),
+      Authorization: `Bearer ${this.password}`,
     });
 
-    return Promise.resolve(transport);
-  }
-
-  private getToken(username: string, password: string): string {
-    return `Bearer ${password}`;
+    return transport;
   }
 }

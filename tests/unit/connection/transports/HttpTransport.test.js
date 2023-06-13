@@ -5,7 +5,6 @@ const HttpTransport = require('../../../../dist/connection/transports/HttpTransp
 describe('HttpTransport', () => {
   it('should initialize with default options', () => {
     const transport = new HttpTransport();
-    expect(transport.getTransport()).to.deep.equal({});
     expect(transport.getOptions()).to.deep.equal({});
   });
 
@@ -13,7 +12,6 @@ describe('HttpTransport', () => {
     const initialOptions = { test: 'Hello, World' };
 
     const transport = new HttpTransport(initialOptions);
-    expect(transport.getTransport()).to.deep.equal(initialOptions);
     expect(transport.getOptions()).to.deep.equal(initialOptions);
 
     const optionName = 'option';
@@ -23,8 +21,7 @@ describe('HttpTransport', () => {
       [optionName]: optionValue,
     };
 
-    transport.setOptions(optionName, optionValue);
-    expect(transport.getTransport()).to.deep.equal(updatedOptions);
+    transport.setOption(optionName, optionValue);
     expect(transport.getOptions()).to.deep.equal(updatedOptions);
   });
 });
