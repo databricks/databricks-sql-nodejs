@@ -101,7 +101,7 @@ export default class ArrowResult implements IOperationResult {
     }
 
     if (DataType.isTimestamp(valueType)) {
-      return new Date(value);
+      return value ? new Date(value) : null;
     }
 
     // Convert big number values to BigInt
