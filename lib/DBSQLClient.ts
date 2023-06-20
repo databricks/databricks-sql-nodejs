@@ -17,7 +17,7 @@ import Status from './dto/Status';
 import HiveDriverError from './errors/HiveDriverError';
 import { buildUserAgentString, definedOrError } from './utils';
 import PlainHttpAuthentication from './connection/auth/PlainHttpAuthentication';
-// import DatabricksOAuth from './connection/auth/DatabricksOAuth';
+import DatabricksOAuth from './connection/auth/DatabricksOAuth';
 import IDBSQLLogger, { LogLevel } from './contracts/IDBSQLLogger';
 import DBSQLLogger from './DBSQLLogger';
 
@@ -62,7 +62,21 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
   }
 
   private getConnectionOptions(options: ConnectionOptions): IConnectionOptions {
-    const { host, port, path, token, clientId, ...otherOptions } = options;
+    const {
+      host,
+      port,
+      path,
+      clientId,
+      authType,
+      // @ts-expect-error TS2339: Property 'token' does not exist on type 'ConnectionOptions'
+      token,
+      // @ts-expect-error TS2339: Property 'persistence' does not exist on type 'ConnectionOptions'
+      persistence,
+      // @ts-expect-error TS2339: Property 'provider' does not exist on type 'ConnectionOptions'
+      provider,
+      ...otherOptions
+    } = options;
+
     return {
       host,
       port: port || 443,
@@ -77,22 +91,41 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
     };
   }
 
+  private getAuthProvider(options: ConnectionOptions, authProvider?: IAuthentication): IAuthentication {
+    if (authProvider) {
+      return authProvider;
+    }
+
+    switch (options.authType) {
+      case undefined:
+      case 'access-token':
+        return new PlainHttpAuthentication({
+          username: 'token',
+          password: options.token,
+        });
+      case 'databricks-oauth':
+        return new DatabricksOAuth({
+          host: options.host,
+          logger: this.logger,
+          persistence: options.persistence,
+        });
+      case 'custom':
+        return options.provider;
+      // no default
+    }
+  }
+
   /**
    * Connects DBSQLClient to endpoint
    * @public
    * @param options - host, path, and token are required
-   * @param authProvider - Optional custom authentication provider
+   * @param authProvider - [DEPRECATED - use `authType: 'custom'] Optional custom authentication provider
    * @returns Session object that can be used to execute statements
    * @example
    * const session = client.connect({host, path, token});
    */
   public async connect(options: ConnectionOptions, authProvider?: IAuthentication): Promise<IDBSQLClient> {
-    authProvider =
-      authProvider ||
-      new PlainHttpAuthentication({
-        username: 'token',
-        password: options.token,
-      });
+    authProvider = this.getAuthProvider(options, authProvider);
 
     this.connection = await this.connectionProvider.connect(this.getConnectionOptions(options), authProvider);
 
