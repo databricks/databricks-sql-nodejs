@@ -1,5 +1,5 @@
-import http, { Server, IncomingMessage, ServerResponse } from 'http';
-import { BaseClient, generators } from 'openid-client';
+import http, { IncomingMessage, Server, ServerResponse } from 'http';
+import { BaseClient, CallbackParamsType, generators } from 'openid-client';
 import open from 'open';
 import IDBSQLLogger, { LogLevel } from '../../../contracts/IDBSQLLogger';
 
@@ -81,12 +81,12 @@ export default class AuthorizationCode {
     const challengeString = generators.codeChallenge(verifierString);
     const state = generators.state(16);
 
-    let code: string | undefined;
+    let receivedParams: CallbackParamsType | undefined;
 
     const server = await this.startServer((req, res) => {
       const params = this.client.callbackParams(req);
       if (params.state === state) {
-        code = params.code;
+        receivedParams = params;
         res.writeHead(200);
         res.end(this.renderCallbackResponse());
         server.stop();
@@ -110,11 +110,15 @@ export default class AuthorizationCode {
     await this.openUrl(authUrl);
     await server.stopped();
 
-    if (!code) {
+    if (!receivedParams || !receivedParams.code) {
+      if (receivedParams?.error) {
+        const errorMessage = `OAuth error: ${receivedParams.error} ${receivedParams.error_description}`;
+        throw new Error(errorMessage);
+      }
       throw new Error(`No path parameters were returned to the callback at ${redirectUri}`);
     }
 
-    return { code, verifier: verifierString, redirectUri };
+    return { code: receivedParams.code, verifier: verifierString, redirectUri };
   }
 
   private async startServer(requestHandler: (req: IncomingMessage, res: ServerResponse) => void) {

@@ -16,8 +16,8 @@ interface DatabricksOAuthOptions {
 }
 
 const defaultOAuthOptions = {
-  clientId: 'databricks-sql-python',
-  redirectPorts: [8020, 8021, 8022, 8023, 8024, 8025],
+  clientId: 'databricks-sql-connector',
+  redirectPorts: [8030],
   scopes: ['sql', 'offline_access'],
 } satisfies Partial<DatabricksOAuthOptions>;
 

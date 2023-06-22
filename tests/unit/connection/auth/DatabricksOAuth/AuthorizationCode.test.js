@@ -202,6 +202,35 @@ describe('AuthorizationCode', () => {
     }
   });
 
+  it('should use error details from callback params', async () => {
+    const { authCode, oauthClient } = prepareTestInstances({
+      ports: [8000],
+    });
+
+    sinon.stub(oauthClient, 'callbackParams').callsFake((req) => {
+      // Omit authorization code from params
+      const { code, ...otherParams } = req.params;
+      return {
+        ...otherParams,
+        error: 'test_error',
+        error_description: 'Test error',
+      };
+    });
+
+    try {
+      await authCode.fetch([]);
+      expect.fail('It should throw an error');
+    } catch (error) {
+      if (error instanceof AssertionError) {
+        throw error;
+      }
+      expect(http.createServer.callCount).to.be.equal(1);
+      expect(authCode.openUrl.callCount).to.be.equal(1);
+
+      expect(error.message).to.contain('Test error');
+    }
+  });
+
   it('should serve 404 for unrecognized requests', async () => {
     const { authCode, oauthClient, reloadUrl } = prepareTestInstances({
       ports: [8000],
