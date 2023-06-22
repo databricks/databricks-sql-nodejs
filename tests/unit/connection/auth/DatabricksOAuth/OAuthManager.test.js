@@ -1,5 +1,6 @@
 const { expect, AssertionError } = require('chai');
 const sinon = require('sinon');
+const { Issuer } = require('openid-client');
 const OAuthManager = require('../../../../../dist/connection/auth/DatabricksOAuth/OAuthManager').default;
 const OAuthToken = require('../../../../../dist/connection/auth/DatabricksOAuth/OAuthToken').default;
 const AuthorizationCodeModule = require('../../../../../dist/connection/auth/DatabricksOAuth/AuthorizationCode');
@@ -78,8 +79,18 @@ function prepareTestInstances(options) {
   sinon.stub(oauthClient, 'grant').callThrough();
   sinon.stub(oauthClient, 'refresh').callThrough();
 
-  const oauthManager = new OAuthManager({ ...options });
-  sinon.stub(oauthManager, 'getClient').returns(Promise.resolve(oauthClient));
+  sinon.stub(Issuer, 'discover').returns(
+    Promise.resolve({
+      Client: function () {
+        return oauthClient;
+      },
+    }),
+  );
+
+  const oauthManager = new OAuthManager({
+    host: 'https://example.com',
+    ...options,
+  });
 
   const authCode = new AuthorizationCodeMock();
   authCode.fetchResult = { ...AuthorizationCodeMock.validCode };
@@ -92,6 +103,7 @@ function prepareTestInstances(options) {
 describe('OAuthManager', () => {
   afterEach(() => {
     AuthorizationCodeModule.default.restore?.();
+    Issuer.discover.restore?.();
   });
 
   it('should get access token', async () => {
@@ -221,7 +233,8 @@ describe('OAuthManager', () => {
   it('should refresh expired token', async () => {
     const { oauthManager, oauthClient } = prepareTestInstances();
 
-    const token = new OAuthToken(createExpiredAccessToken(), oauthClient.refreshToken);
+    oauthClient.accessToken = createExpiredAccessToken();
+    const token = await oauthManager.getToken([]);
     expect(token.hasExpired).to.be.true;
 
     const newToken = await oauthManager.refreshAccessToken(token);
