@@ -72,6 +72,10 @@ export default class AuthorizationCode {
     this.logger = options.logger;
   }
 
+  private async openUrl(url: string) {
+    return open(url);
+  }
+
   public async fetch(scopes: Array<string>): Promise<AuthorizationCodeFetchResult> {
     const verifierString = generators.codeVerifier(32);
     const challengeString = generators.codeChallenge(verifierString);
@@ -103,7 +107,7 @@ export default class AuthorizationCode {
       redirect_uri: redirectUri,
     });
 
-    await open(authUrl);
+    await this.openUrl(authUrl);
     await server.stopped();
 
     if (!code) {
