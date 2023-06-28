@@ -2,10 +2,10 @@ const { expect } = require('chai');
 const sinon = require('sinon');
 const DBSQLClient = require('../../dist/DBSQLClient').default;
 const DBSQLSession = require('../../dist/DBSQLSession').default;
-const {
-  auth: { PlainHttpAuthentication },
-  connections: { HttpConnection },
-} = require('../../');
+
+const PlainHttpAuthentication = require('../../dist/connection/auth/PlainHttpAuthentication').default;
+const DatabricksOAuth = require('../../dist/connection/auth/DatabricksOAuth').default;
+const HttpConnection = require('../../dist/connection/connections/HttpConnection').default;
 
 const ConnectionProviderMock = (connection) => ({
   connect(options, auth) {
@@ -225,5 +225,70 @@ describe('DBSQLClient.close', () => {
 
     await client.close();
     // No additional asserts needed - it should just reach this point
+  });
+});
+
+describe('DBSQLClient.getAuthProvider', () => {
+  it('should use access token auth method', () => {
+    const client = new DBSQLClient();
+
+    const testAccessToken = 'token';
+    const provider = client.getAuthProvider({
+      authType: 'access-token',
+      token: testAccessToken,
+    });
+
+    expect(provider).to.be.instanceOf(PlainHttpAuthentication);
+    expect(provider.password).to.be.equal(testAccessToken);
+  });
+
+  it('should use access token auth method by default (compatibility)', () => {
+    const client = new DBSQLClient();
+
+    const testAccessToken = 'token';
+    const provider = client.getAuthProvider({
+      // note: no `authType` provided
+      token: testAccessToken,
+    });
+
+    expect(provider).to.be.instanceOf(PlainHttpAuthentication);
+    expect(provider.password).to.be.equal(testAccessToken);
+  });
+
+  it('should use Databricks OAuth method', () => {
+    const client = new DBSQLClient();
+
+    const provider = client.getAuthProvider({
+      authType: 'databricks-oauth',
+    });
+
+    expect(provider).to.be.instanceOf(DatabricksOAuth);
+  });
+
+  it('should use custom auth method', () => {
+    const client = new DBSQLClient();
+
+    const customProvider = {};
+
+    const provider = client.getAuthProvider({
+      authType: 'custom',
+      provider: customProvider,
+    });
+
+    expect(provider).to.be.equal(customProvider);
+  });
+
+  it('should use custom auth method (legacy way)', () => {
+    const client = new DBSQLClient();
+
+    const customProvider = {};
+
+    const provider = client.getAuthProvider(
+      // custom provider from second arg should be used no matter what's specified in config
+      { authType: 'access-token', token: 'token' },
+      customProvider,
+    );
+
+    expect(provider).to.be.equal(customProvider);
   });
 });
