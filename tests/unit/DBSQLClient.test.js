@@ -260,6 +260,8 @@ describe('DBSQLClient.getAuthProvider', () => {
 
     const provider = client.getAuthProvider({
       authType: 'databricks-oauth',
+      // host is used when creating OAuth manager, so make it look like something real
+      host: 'example.dev.databricks.com',
     });
 
     expect(provider).to.be.instanceOf(DatabricksOAuth);

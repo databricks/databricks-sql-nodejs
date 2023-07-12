@@ -1,7 +1,11 @@
 const { expect, AssertionError } = require('chai');
 const sinon = require('sinon');
 const { Issuer } = require('openid-client');
-const OAuthManager = require('../../../../../dist/connection/auth/DatabricksOAuth/OAuthManager').default;
+const {
+  default: OAuthManager,
+  AWSOAuthManager,
+  AzureOAuthManager,
+} = require('../../../../../dist/connection/auth/DatabricksOAuth/OAuthManager');
 const OAuthToken = require('../../../../../dist/connection/auth/DatabricksOAuth/OAuthToken').default;
 const AuthorizationCodeModule = require('../../../../../dist/connection/auth/DatabricksOAuth/AuthorizationCode');
 
@@ -87,7 +91,8 @@ function prepareTestInstances(options) {
     }),
   );
 
-  const oauthManager = new OAuthManager({
+  // TODO: Need to test separately AWS and Azure managers
+  const oauthManager = new AWSOAuthManager({
     host: 'https://example.com',
     ...options,
   });

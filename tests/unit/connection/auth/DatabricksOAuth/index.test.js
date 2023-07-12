@@ -2,7 +2,7 @@ const { expect, AssertionError } = require('chai');
 const sinon = require('sinon');
 const DatabricksOAuth = require('../../../../../dist/connection/auth/DatabricksOAuth/index').default;
 const OAuthToken = require('../../../../../dist/connection/auth/DatabricksOAuth/OAuthToken').default;
-const OAuthManagerModule = require('../../../../../dist/connection/auth/DatabricksOAuth/OAuthManager');
+const OAuthManager = require('../../../../../dist/connection/auth/DatabricksOAuth/OAuthManager').default;
 
 const { createValidAccessToken, createExpiredAccessToken } = require('./utils');
 
@@ -57,7 +57,7 @@ function prepareTestInstances(options) {
   sinon.stub(oauthManager, 'refreshAccessToken').callThrough();
   sinon.stub(oauthManager, 'getToken').callThrough();
 
-  sinon.stub(OAuthManagerModule, 'default').returns(oauthManager);
+  sinon.stub(OAuthManager, 'getManager').returns(oauthManager);
 
   const provider = new DatabricksOAuth({ ...options });
 
@@ -69,7 +69,7 @@ function prepareTestInstances(options) {
 
 describe('DatabricksOAuth', () => {
   afterEach(() => {
-    OAuthManagerModule.default.restore?.();
+    OAuthManager.getManager.restore?.();
   });
 
   it('should get persisted token if available', async () => {
