@@ -2,14 +2,13 @@ import http, { IncomingMessage, Server, ServerResponse } from 'http';
 import { BaseClient, CallbackParamsType, generators } from 'openid-client';
 import open from 'open';
 import IDBSQLLogger, { LogLevel } from '../../../contracts/IDBSQLLogger';
+import { OAuthScopes, scopeDelimiter } from './OAuthScope';
 
 export interface AuthorizationCodeOptions {
   client: BaseClient;
   ports: Array<number>;
   logger?: IDBSQLLogger;
 }
-
-const scopeDelimiter = ' ';
 
 async function startServer(
   host: string,
@@ -76,7 +75,7 @@ export default class AuthorizationCode {
     return open(url);
   }
 
-  public async fetch(scopes: Array<string>): Promise<AuthorizationCodeFetchResult> {
+  public async fetch(scopes: OAuthScopes): Promise<AuthorizationCodeFetchResult> {
     const verifierString = generators.codeVerifier(32);
     const challengeString = generators.codeChallenge(verifierString);
     const state = generators.state(16);
@@ -96,7 +95,7 @@ export default class AuthorizationCode {
       }
     });
 
-    const redirectUri = `http://${server.host}:${server.port}/`;
+    const redirectUri = `http://${server.host}:${server.port}`;
     const authUrl = this.client.authorizationUrl({
       response_type: 'code',
       response_mode: 'query',

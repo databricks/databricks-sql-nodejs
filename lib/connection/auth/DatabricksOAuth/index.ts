@@ -3,69 +3,42 @@ import IAuthentication from '../../contracts/IAuthentication';
 import HttpTransport from '../../transports/HttpTransport';
 import IDBSQLLogger from '../../../contracts/IDBSQLLogger';
 import OAuthPersistence from './OAuthPersistence';
-import OAuthManager from './OAuthManager';
+import OAuthManager, { OAuthManagerOptions } from './OAuthManager';
+import { OAuthScopes, defaultOAuthScopes } from './OAuthScope';
 
-interface DatabricksOAuthOptions {
-  host: string;
-  redirectPorts?: Array<number>;
-  clientId?: string;
-  scopes?: Array<string>;
+interface DatabricksOAuthOptions extends OAuthManagerOptions {
+  scopes?: OAuthScopes;
   logger?: IDBSQLLogger;
   persistence?: OAuthPersistence;
   headers?: HttpHeaders;
 }
 
-const defaultOAuthOptions = {
-  clientId: 'databricks-sql-connector',
-  redirectPorts: [8030],
-  scopes: ['sql', 'offline_access'],
-} satisfies Partial<DatabricksOAuthOptions>;
-
 export default class DatabricksOAuth implements IAuthentication {
-  private readonly host: string;
-
-  private readonly redirectPorts: Array<number>;
-
-  private readonly clientId: string;
-
-  private readonly scopes: Array<string>;
+  private readonly options: DatabricksOAuthOptions;
 
   private readonly logger?: IDBSQLLogger;
-
-  private readonly persistence?: OAuthPersistence;
-
-  private readonly headers?: HttpHeaders;
 
   private readonly manager: OAuthManager;
 
   constructor(options: DatabricksOAuthOptions) {
-    this.host = options.host;
-    this.redirectPorts = options.redirectPorts || defaultOAuthOptions.redirectPorts;
-    this.clientId = options.clientId || defaultOAuthOptions.clientId;
-    this.scopes = options.scopes || defaultOAuthOptions.scopes;
+    this.options = options;
     this.logger = options.logger;
-    this.persistence = options.persistence;
-    this.headers = options.headers;
-
-    this.manager = new OAuthManager({
-      host: this.host,
-      callbackPorts: this.redirectPorts,
-      clientId: this.clientId,
-      logger: this.logger,
-    });
+    this.manager = OAuthManager.getManager(this.options);
   }
 
   public async authenticate(transport: HttpTransport): Promise<void> {
-    let token = await this.persistence?.read(this.host);
+    const { host, scopes, headers, persistence } = this.options;
+
+    let token = await persistence?.read(host);
     if (!token) {
-      token = await this.manager.getToken(this.scopes);
+      token = await this.manager.getToken(scopes ?? defaultOAuthScopes);
     }
 
     token = await this.manager.refreshAccessToken(token);
-    await this.persistence?.persist(this.host, token);
+    await persistence?.persist(host, token);
 
     transport.updateHeaders({
-      ...this.headers,
+      ...headers,
       Authorization: `Bearer ${token.accessToken}`,
     });
   }
