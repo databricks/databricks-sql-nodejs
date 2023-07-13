@@ -5,6 +5,7 @@ const DBSQLSession = require('../../dist/DBSQLSession').default;
 
 const PlainHttpAuthentication = require('../../dist/connection/auth/PlainHttpAuthentication').default;
 const DatabricksOAuth = require('../../dist/connection/auth/DatabricksOAuth').default;
+const { AWSOAuthManager, AzureOAuthManager } = require('../../dist/connection/auth/DatabricksOAuth/OAuthManager');
 const HttpConnection = require('../../dist/connection/connections/HttpConnection').default;
 
 const ConnectionProviderMock = (connection) => ({
@@ -255,16 +256,42 @@ describe('DBSQLClient.getAuthProvider', () => {
     expect(provider.password).to.be.equal(testAccessToken);
   });
 
-  it('should use Databricks OAuth method', () => {
+  it('should use Databricks OAuth method (AWS)', () => {
     const client = new DBSQLClient();
 
     const provider = client.getAuthProvider({
       authType: 'databricks-oauth',
-      // host is used when creating OAuth manager, so make it look like something real
+      // host is used when creating OAuth manager, so make it look like a real AWS instance
       host: 'example.dev.databricks.com',
     });
 
     expect(provider).to.be.instanceOf(DatabricksOAuth);
+    expect(provider.manager).to.be.instanceOf(AWSOAuthManager);
+  });
+
+  it('should use Databricks OAuth method (Azure)', () => {
+    const client = new DBSQLClient();
+
+    const provider = client.getAuthProvider({
+      authType: 'databricks-oauth',
+      // host is used when creating OAuth manager, so make it look like a real Azure instance
+      host: 'example.databricks.azure.us',
+    });
+
+    expect(provider).to.be.instanceOf(DatabricksOAuth);
+    expect(provider.manager).to.be.instanceOf(AzureOAuthManager);
+  });
+
+  it('should throw error when OAuth not supported for host', () => {
+    const client = new DBSQLClient();
+
+    expect(() => {
+      client.getAuthProvider({
+        authType: 'databricks-oauth',
+        // use host which is not supported for sure
+        host: 'example.com',
+      });
+    }).to.throw();
   });
 
   it('should use custom auth method', () => {
