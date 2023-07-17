@@ -15,6 +15,7 @@ type AuthOptions =
   | {
       authType: 'databricks-oauth';
       persistence?: OAuthPersistence;
+      azureTenantId?: string;
     }
   | {
       authType: 'custom';

@@ -1,6 +1,6 @@
 const { expect, AssertionError } = require('chai');
 const sinon = require('sinon');
-const { Issuer } = require('openid-client');
+const openidClientLib = require('openid-client');
 const {
   default: OAuthManager,
   AWSOAuthManager,
@@ -84,13 +84,14 @@ class OAuthClientMock {
     sinon.stub(oauthClient, 'grant').callThrough();
     sinon.stub(oauthClient, 'refresh').callThrough();
 
-    sinon.stub(Issuer, 'discover').returns(
-      Promise.resolve({
-        Client: function () {
-          return oauthClient;
-        },
-      }),
-    );
+    const issuer = {
+      Client: function () {
+        return oauthClient;
+      },
+    };
+
+    sinon.stub(openidClientLib, 'Issuer').returns(issuer);
+    openidClientLib.Issuer.discover = () => Promise.resolve(issuer);
 
     // TODO: Need to test separately AWS and Azure managers
     const oauthManager = new OAuthManagerClass({
@@ -109,7 +110,7 @@ class OAuthClientMock {
   describe(OAuthManagerClass.name, () => {
     afterEach(() => {
       AuthorizationCodeModule.default.restore?.();
-      Issuer.discover.restore?.();
+      openidClientLib.Issuer.restore?.();
     });
 
     it('should get access token', async () => {

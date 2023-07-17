@@ -9,7 +9,14 @@ export interface OAuthManagerOptions {
   host: string;
   callbackPorts?: Array<number>;
   clientId?: string;
+  azureTenantId?: string;
   logger?: IDBSQLLogger;
+}
+
+function getDatabricksOIDCUrl(host: string): string {
+  const schema = host.startsWith('https://') ? '' : 'https://';
+  const trailingSlash = host.endsWith('/') ? '' : '/';
+  return `${schema}${host}${trailingSlash}oidc`;
 }
 
 export default abstract class OAuthManager {
@@ -28,6 +35,8 @@ export default abstract class OAuthManager {
 
   protected abstract getOIDCConfigUrl(): string;
 
+  protected abstract getAuthorizationUrl(): string;
+
   protected abstract getClientId(): string;
 
   protected abstract getCallbackPorts(): Array<number>;
@@ -38,7 +47,13 @@ export default abstract class OAuthManager {
 
   protected async getClient(): Promise<BaseClient> {
     if (!this.issuer) {
-      this.issuer = await Issuer.discover(this.getOIDCConfigUrl());
+      const issuer = await Issuer.discover(this.getOIDCConfigUrl());
+      // Overwrite `authorization_endpoint` in default config (specifically needed for Azure flow
+      // where this URL has to be different)
+      this.issuer = new Issuer({
+        ...issuer.metadata,
+        authorization_endpoint: this.getAuthorizationUrl(),
+      });
     }
 
     if (!this.client) {
@@ -135,11 +150,11 @@ export class AWSOAuthManager extends OAuthManager {
   public static defaultCallbackPorts = [8030];
 
   protected getOIDCConfigUrl(): string {
-    const { host } = this.options;
-    const schema = host.startsWith('https://') ? '' : 'https://';
-    const trailingSlash = host.endsWith('/') ? '' : '/';
-    const oidcConfigPath = 'oidc/.well-known/oauth-authorization-server';
-    return `${schema}${host}${trailingSlash}${oidcConfigPath}`;
+    return `${getDatabricksOIDCUrl(this.options.host)}/.well-known/oauth-authorization-server`;
+  }
+
+  protected getAuthorizationUrl(): string {
+    return `${getDatabricksOIDCUrl(this.options.host)}/oauth2/v2.0/authorize`;
   }
 
   protected getClientId(): string {
@@ -164,6 +179,10 @@ export class AzureOAuthManager extends OAuthManager {
     return 'https://login.microsoftonline.com/organizations/v2.0/.well-known/openid-configuration';
   }
 
+  protected getAuthorizationUrl(): string {
+    return `${getDatabricksOIDCUrl(this.options.host)}/oauth2/v2.0/authorize`;
+  }
+
   protected getClientId(): string {
     return this.options.clientId ?? AzureOAuthManager.defaultClientId;
   }
@@ -174,7 +193,7 @@ export class AzureOAuthManager extends OAuthManager {
 
   protected getScopes(requestedScopes: OAuthScopes): OAuthScopes {
     // There is no corresponding scopes in Azure, instead, access control will be delegated to Databricks
-    const tenantId = AzureOAuthManager.datatricksAzureApp; // TODO: Get from env DATABRICKS_AZURE_TENANT_ID ?
+    const tenantId = this.options.azureTenantId ?? AzureOAuthManager.datatricksAzureApp;
     const azureScopes = [`${tenantId}/user_impersonation`];
 
     if (requestedScopes.includes(OAuthScope.offlineAccess)) {
