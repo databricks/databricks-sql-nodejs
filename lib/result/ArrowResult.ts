@@ -68,6 +68,10 @@ export default class ArrowResult implements IOperationResult {
   }
 
   private convertArrowTypes(value: any, valueType: DataType | undefined, fields: Array<ArrowSchemaField> = []): any {
+    if (value === null) {
+      return value;
+    }
+
     const fieldsMap: Record<string, ArrowSchemaField> = {};
     for (const field of fields) {
       fieldsMap[field.name] = field;
