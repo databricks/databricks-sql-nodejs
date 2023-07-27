@@ -5,7 +5,6 @@ import http, { IncomingMessage } from 'http';
 import IThriftConnection from '../contracts/IThriftConnection';
 import IConnectionProvider from '../contracts/IConnectionProvider';
 import IConnectionOptions, { Options } from '../contracts/IConnectionOptions';
-import HttpTransport from '../transports/HttpTransport';
 import globalConfig from '../../globalConfig';
 
 type NodeOptions = {
@@ -32,7 +31,7 @@ export default class HttpConnection implements IConnectionProvider, IThriftConne
       ? new https.Agent({ ...agentOptions, minVersion: 'TLSv1.2' })
       : new http.Agent(agentOptions);
 
-    const httpTransport = new HttpTransport({
+    const thriftOptions = {
       transport: thrift.TBufferedTransport,
       protocol: thrift.TBinaryProtocol,
       ...options.options,
@@ -42,9 +41,9 @@ export default class HttpConnection implements IConnectionProvider, IThriftConne
         ...(options.options?.nodeOptions || {}),
         timeout: options.options?.socketTimeout ?? globalConfig.socketTimeout,
       },
-    });
+    };
 
-    this.connection = this.thrift.createHttpConnection(options.host, options.port, httpTransport.getOptions());
+    this.connection = this.thrift.createHttpConnection(options.host, options.port, thriftOptions);
     this.addCookieHandler();
 
     return this;
