@@ -1,20 +1,24 @@
 const { expect } = require('chai');
+const sinon = require('sinon');
 const { TCLIService_types } = require('../../../').thrift;
 const HiveDriver = require('../../../dist/hive/HiveDriver').default;
 
 const toTitleCase = (str) => str[0].toUpperCase() + str.slice(1);
 
-const testCommand = (command, request) => {
+const testCommand = async (command, request) => {
   const client = {};
-  const driver = new HiveDriver(() => Promise.resolve(client));
+  const clientFactory = sinon.stub().returns(Promise.resolve(client));
+  const driver = new HiveDriver(clientFactory);
+
   const response = { response: 'value' };
   client[toTitleCase(command)] = function (req, cb) {
     expect(req).to.be.deep.eq(new TCLIService_types[`T${toTitleCase(command)}Req`](request));
     cb(null, response);
   };
-  return driver[command](request).then((resp) => {
-    expect(resp).to.be.deep.eq(response);
-  });
+
+  const resp = await driver[command](request);
+  expect(resp).to.be.deep.eq(response);
+  expect(clientFactory.called).to.be.true;
 };
 
 describe('HiveDriver', () => {

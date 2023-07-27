@@ -7,22 +7,17 @@ const PlainHttpAuthentication = require('../../dist/connection/auth/PlainHttpAut
 const DatabricksOAuth = require('../../dist/connection/auth/DatabricksOAuth').default;
 const { AWSOAuthManager, AzureOAuthManager } = require('../../dist/connection/auth/DatabricksOAuth/OAuthManager');
 
-const ConnectionProviderMock = (connection) => ({
-  connect(options, auth) {
-    this.options = options;
-    this.auth = auth;
+const HttpConnectionModule = require('../../dist/connection/connections/HttpConnection');
 
-    return Promise.resolve({
-      getConnection() {
-        return (
-          connection || {
-            on: () => {},
-          }
-        );
-      },
-    });
-  },
-});
+class AuthProviderMock {
+  constructor() {
+    this.authResult = {};
+  }
+
+  authenticate() {
+    return Promise.resolve(this.authResult);
+  }
+}
 
 describe('DBSQLClient.connect', () => {
   const options = {
@@ -49,30 +44,18 @@ describe('DBSQLClient.connect', () => {
     expect(connectionOptions.options.path).to.equal(path);
   });
 
-  // client.connect() now does not actually attempt any network operations. for http it never did it
-  // even before, but this test was not quite correct even then. it needs to be updated
-  it.skip('should handle network errors', (cb) => {
+  it('should initialize connection state', async () => {
     const client = new DBSQLClient();
-    client.thrift = {
-      createClient() {},
-    };
-    const connectionProvider = ConnectionProviderMock({
-      on(name, handler) {
-        handler(new Error('network error'));
-      },
-    });
 
-    sinon.stub(client, 'createConnection').returns(Promise.resolve(connectionProvider));
+    expect(client.client).to.be.null;
+    expect(client.authProvider).to.be.null;
+    expect(client.connectionOptions).to.be.null;
 
-    client.on('error', (error) => {
-      expect(error.message).to.be.eq('network error');
-      cb();
-    });
+    await client.connect(options);
 
-    client.connectionProvider = connectionProvider;
-    client.connect(options).catch((error) => {
-      cb(error);
-    });
+    expect(client.client).to.be.null; // it should not be initialized at this point
+    expect(client.authProvider).to.be.instanceOf(PlainHttpAuthentication);
+    expect(client.connectionOptions).to.be.deep.equal(options);
   });
 });
 
@@ -155,7 +138,13 @@ describe('DBSQLClient.openSession', () => {
 });
 
 describe('DBSQLClient.getClient', () => {
-  it('should throw an error if the client is not set', async () => {
+  const options = {
+    host: '127.0.0.1',
+    path: '',
+    token: 'dapi********************************',
+  };
+
+  it('should throw an error if not connected', async () => {
     const client = new DBSQLClient();
     try {
       await client.getClient();
@@ -167,15 +156,108 @@ describe('DBSQLClient.getClient', () => {
       expect(error.message).to.contain('DBSQLClient: not connected');
     }
   });
+
+  it("should create client if wasn't not initialized yet", async () => {
+    const client = new DBSQLClient();
+
+    const thriftClient = {};
+
+    client.authProvider = new AuthProviderMock();
+    client.connectionOptions = { ...options };
+    client.thrift = {
+      createClient: sinon.stub().returns(thriftClient),
+    };
+    sinon.stub(client, 'createConnection').returns({
+      getConnection: () => null,
+    });
+
+    const result = await client.getClient();
+    expect(client.thrift.createClient.called).to.be.true;
+    expect(client.createConnection.called).to.be.true;
+    expect(result).to.be.equal(thriftClient);
+  });
+
+  it('should re-create client if auth credentials change', async () => {
+    const client = new DBSQLClient();
+
+    const thriftClient = {};
+
+    client.authProvider = new AuthProviderMock();
+    client.connectionOptions = { ...options };
+    client.thrift = {
+      createClient: sinon.stub().returns(thriftClient),
+    };
+    sinon.stub(client, 'createConnection').returns({
+      getConnection: () => null,
+    });
+
+    // initialize client
+    firstCall: {
+      const result = await client.getClient();
+      expect(client.thrift.createClient.callCount).to.be.equal(1);
+      expect(client.createConnection.callCount).to.be.equal(1);
+      expect(result).to.be.equal(thriftClient);
+    }
+
+    // credentials stay the same, client should not be re-created
+    secondCall: {
+      const result = await client.getClient();
+      expect(client.thrift.createClient.callCount).to.be.equal(1);
+      expect(client.createConnection.callCount).to.be.equal(1);
+      expect(result).to.be.equal(thriftClient);
+    }
+
+    // change credentials mock - client should be re-created
+    thirdCall: {
+      client.authProvider.authResult = { b: 2 };
+
+      const result = await client.getClient();
+      expect(client.thrift.createClient.callCount).to.be.equal(2);
+      expect(client.createConnection.callCount).to.be.equal(2);
+      expect(result).to.be.equal(thriftClient);
+    }
+  });
+});
+
+describe('DBSQLClient.createConnection', () => {
+  afterEach(() => {
+    HttpConnectionModule.default.restore?.();
+  });
+
+  it('should create connection', async () => {
+    const thriftConnection = {
+      on: sinon.stub(),
+    };
+
+    const connectionMock = {
+      getConnection: sinon.stub().returns(thriftConnection),
+    };
+
+    const connectionProviderMock = {
+      connect: sinon.stub().returns(Promise.resolve(connectionMock)),
+    };
+
+    sinon.stub(HttpConnectionModule, 'default').returns(connectionProviderMock);
+
+    const client = new DBSQLClient();
+
+    const result = await client.createConnection({});
+    expect(result).to.be.equal(connectionMock);
+    expect(connectionProviderMock.connect.called).to.be.true;
+    expect(connectionMock.getConnection.called).to.be.true;
+    expect(thriftConnection.on.called).to.be.true;
+  });
 });
 
 describe('DBSQLClient.close', () => {
   it('should close the connection if it was initiated', async () => {
     const client = new DBSQLClient();
+    client.client = {};
     client.authProvider = {};
     client.connectionOptions = {};
 
     await client.close();
+    expect(client.client).to.be.null;
     expect(client.authProvider).to.be.null;
     expect(client.connectionOptions).to.be.null;
     // No additional asserts needed - it should just reach this point
@@ -185,6 +267,7 @@ describe('DBSQLClient.close', () => {
     const client = new DBSQLClient();
 
     await client.close();
+    expect(client.client).to.be.null;
     expect(client.authProvider).to.be.null;
     expect(client.connectionOptions).to.be.null;
     // No additional asserts needed - it should just reach this point
