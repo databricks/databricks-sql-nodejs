@@ -1,5 +1,5 @@
-import HttpTransport from '../transports/HttpTransport';
+import { HttpHeaders } from 'thrift';
 
 export default interface IAuthentication {
-  authenticate(transport: HttpTransport): Promise<void>;
+  authenticate(): Promise<HttpHeaders>;
 }

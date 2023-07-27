@@ -1,6 +1,5 @@
 import { HttpHeaders } from 'thrift';
 import IAuthentication from '../../contracts/IAuthentication';
-import HttpTransport from '../../transports/HttpTransport';
 import IDBSQLLogger from '../../../contracts/IDBSQLLogger';
 import OAuthPersistence from './OAuthPersistence';
 import OAuthManager, { OAuthManagerOptions } from './OAuthManager';
@@ -26,7 +25,7 @@ export default class DatabricksOAuth implements IAuthentication {
     this.manager = OAuthManager.getManager(this.options);
   }
 
-  public async authenticate(transport: HttpTransport): Promise<void> {
+  public async authenticate(): Promise<HttpHeaders> {
     const { host, scopes, headers, persistence } = this.options;
 
     let token = await persistence?.read(host);
@@ -37,9 +36,9 @@ export default class DatabricksOAuth implements IAuthentication {
     token = await this.manager.refreshAccessToken(token);
     await persistence?.persist(host, token);
 
-    transport.updateHeaders({
+    return {
       ...headers,
       Authorization: `Bearer ${token.accessToken}`,
-    });
+    };
   }
 }

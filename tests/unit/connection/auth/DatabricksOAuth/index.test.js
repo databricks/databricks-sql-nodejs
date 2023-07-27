@@ -21,19 +21,6 @@ class OAuthManagerMock {
   }
 }
 
-class TransportMock {
-  constructor() {
-    this.headers = {};
-  }
-
-  updateHeaders(newHeaders) {
-    this.headers = {
-      ...this.headers,
-      ...newHeaders,
-    };
-  }
-}
-
 class OAuthPersistenceMock {
   constructor() {
     this.token = undefined;
@@ -61,10 +48,7 @@ function prepareTestInstances(options) {
 
   const provider = new DatabricksOAuth({ ...options });
 
-  const transport = new TransportMock();
-  sinon.stub(transport, 'updateHeaders').callThrough();
-
-  return { oauthManager, provider, transport };
+  return { oauthManager, provider };
 }
 
 describe('DatabricksOAuth', () => {
@@ -76,25 +60,25 @@ describe('DatabricksOAuth', () => {
     const persistence = new OAuthPersistenceMock();
     persistence.token = new OAuthToken(createValidAccessToken());
 
-    const { provider, transport } = prepareTestInstances({ persistence });
+    const { provider } = prepareTestInstances({ persistence });
 
-    await provider.authenticate(transport);
+    await provider.authenticate();
     expect(persistence.read.called).to.be.true;
   });
 
   it('should get new token if storage not available', async () => {
-    const { oauthManager, provider, transport } = prepareTestInstances();
+    const { oauthManager, provider } = prepareTestInstances();
 
-    await provider.authenticate(transport);
+    await provider.authenticate();
     expect(oauthManager.getToken.called).to.be.true;
   });
 
   it('should get new token if persisted token not available, and store valid token', async () => {
     const persistence = new OAuthPersistenceMock();
     persistence.token = undefined;
-    const { oauthManager, provider, transport } = prepareTestInstances({ persistence });
+    const { oauthManager, provider } = prepareTestInstances({ persistence });
 
-    await provider.authenticate(transport);
+    await provider.authenticate();
     expect(oauthManager.getToken.called).to.be.true;
     expect(persistence.persist.called).to.be.true;
     expect(persistence.token).to.be.equal(oauthManager.getTokenResult);
@@ -104,11 +88,11 @@ describe('DatabricksOAuth', () => {
     const persistence = new OAuthPersistenceMock();
     persistence.token = undefined;
 
-    const { oauthManager, provider, transport } = prepareTestInstances({ persistence });
+    const { oauthManager, provider } = prepareTestInstances({ persistence });
     oauthManager.getTokenResult = new OAuthToken(createExpiredAccessToken());
     oauthManager.refreshTokenResult = new OAuthToken(createValidAccessToken());
 
-    await provider.authenticate(transport);
+    await provider.authenticate();
     expect(oauthManager.getToken.called).to.be.true;
     expect(oauthManager.refreshAccessToken.called).to.be.true;
     expect(oauthManager.refreshAccessToken.firstCall.firstArg).to.be.equal(oauthManager.getTokenResult);
@@ -118,18 +102,10 @@ describe('DatabricksOAuth', () => {
   });
 
   it('should configure transport using valid token', async () => {
-    const { oauthManager, provider, transport } = prepareTestInstances();
+    const { oauthManager, provider } = prepareTestInstances();
 
-    const initialHeaders = {
-      x: 'x',
-      y: 'y',
-    };
-
-    transport.headers = initialHeaders;
-
-    await provider.authenticate(transport);
+    const authHeaders = await provider.authenticate();
     expect(oauthManager.getToken.called).to.be.true;
-    expect(transport.updateHeaders.called).to.be.true;
-    expect(Object.keys(transport.headers)).to.deep.equal([...Object.keys(initialHeaders), 'Authorization']);
+    expect(Object.keys(authHeaders)).to.deep.equal(['Authorization']);
   });
 });

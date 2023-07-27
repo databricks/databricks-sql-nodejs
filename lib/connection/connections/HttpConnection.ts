@@ -5,7 +5,6 @@ import http, { IncomingMessage } from 'http';
 import IThriftConnection from '../contracts/IThriftConnection';
 import IConnectionProvider from '../contracts/IConnectionProvider';
 import IConnectionOptions, { Options } from '../contracts/IConnectionOptions';
-import IAuthentication from '../contracts/IAuthentication';
 import HttpTransport from '../transports/HttpTransport';
 import globalConfig from '../../globalConfig';
 
@@ -21,7 +20,7 @@ export default class HttpConnection implements IConnectionProvider, IThriftConne
 
   private connection: any;
 
-  connect(options: IConnectionOptions, authProvider: IAuthentication): Promise<IThriftConnection> {
+  async connect(options: IConnectionOptions): Promise<IThriftConnection> {
     const agentOptions: http.AgentOptions = {
       keepAlive: true,
       maxSockets: 5,
@@ -45,13 +44,10 @@ export default class HttpConnection implements IConnectionProvider, IThriftConne
       },
     });
 
-    return authProvider.authenticate(httpTransport).then(() => {
-      this.connection = this.thrift.createHttpConnection(options.host, options.port, httpTransport.getOptions());
+    this.connection = this.thrift.createHttpConnection(options.host, options.port, httpTransport.getOptions());
+    this.addCookieHandler();
 
-      this.addCookieHandler();
-
-      return this;
-    });
+    return this;
   }
 
   getConnection() {
