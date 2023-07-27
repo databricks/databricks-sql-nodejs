@@ -42,11 +42,11 @@ function getInitialNamespaceOptions(catalogName?: string, schemaName?: string) {
 }
 
 export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
-  private client: TCLIService.Client | null;
+  private client: TCLIService.Client | null = null;
 
-  private connection: IThriftConnection | null;
+  private connection: IThriftConnection | null = null;
 
-  private connectionProvider: IConnectionProvider;
+  private connectionProvider: IConnectionProvider = new HttpConnection();
 
   private readonly logger: IDBSQLLogger;
 
@@ -54,10 +54,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
 
   constructor(options?: ClientOptions) {
     super();
-    this.connectionProvider = new HttpConnection();
     this.logger = options?.logger || new DBSQLLogger();
-    this.client = null;
-    this.connection = null;
     this.logger.log(LogLevel.info, 'Created DBSQLClient');
   }
 
@@ -176,7 +173,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
       throw new HiveDriverError('DBSQLClient: connection is lost');
     }
 
-    const driver = new HiveDriver(this.getClient());
+    const driver = new HiveDriver(() => this.getClient());
 
     const response = await driver.openSession({
       client_protocol_i64: new Int64(TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V6),
@@ -187,7 +184,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
     return new DBSQLSession(driver, definedOrError(response.sessionHandle), this.logger);
   }
 
-  public getClient() {
+  private async getClient() {
     if (!this.client) {
       throw new HiveDriverError('DBSQLClient: client is not initialized');
     }

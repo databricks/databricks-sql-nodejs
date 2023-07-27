@@ -1,4 +1,4 @@
-const { expect } = require('chai');
+const { expect, AssertionError } = require('chai');
 const sinon = require('sinon');
 const DBSQLClient = require('../../dist/DBSQLClient').default;
 const DBSQLSession = require('../../dist/DBSQLSession').default;
@@ -190,9 +190,17 @@ describe('DBSQLClient.openSession', () => {
 });
 
 describe('DBSQLClient.getClient', () => {
-  it('should throw an error if the client is not set', () => {
+  it('should throw an error if the client is not set', async () => {
     const client = new DBSQLClient();
-    expect(() => client.getClient()).to.throw('DBSQLClient: client is not initialized');
+    try {
+      await client.getClient();
+      expect.fail('It should throw an error');
+    } catch (error) {
+      if (error instanceof AssertionError) {
+        throw error;
+      }
+      expect(error.message).to.contain('DBSQLClient: client is not initialized');
+    }
   });
 });
 

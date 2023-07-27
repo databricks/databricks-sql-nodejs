@@ -6,7 +6,7 @@ const toTitleCase = (str) => str[0].toUpperCase() + str.slice(1);
 
 const testCommand = (command, request) => {
   const client = {};
-  const driver = new HiveDriver(client);
+  const driver = new HiveDriver(() => Promise.resolve(client));
   const response = { response: 'value' };
   client[toTitleCase(command)] = function (req, cb) {
     expect(req).to.be.deep.eq(new TCLIService_types[`T${toTitleCase(command)}Req`](request));
