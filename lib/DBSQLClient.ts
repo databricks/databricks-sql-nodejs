@@ -3,7 +3,7 @@ import thrift, { HttpHeaders } from 'thrift';
 import { EventEmitter } from 'events';
 import TCLIService from '../thrift/TCLIService';
 import { TProtocolVersion } from '../thrift/TCLIService_types';
-import IDBSQLClient, { ConnectionOptions, OpenSessionRequest, ClientOptions } from './contracts/IDBSQLClient';
+import IDBSQLClient, { ClientOptions, ConnectionOptions, OpenSessionRequest } from './contracts/IDBSQLClient';
 import HiveDriver from './hive/HiveDriver';
 import { Int64 } from './hive/Types';
 import DBSQLSession from './DBSQLSession';
@@ -13,7 +13,7 @@ import HttpConnection from './connection/connections/HttpConnection';
 import IConnectionOptions from './connection/contracts/IConnectionOptions';
 import Status from './dto/Status';
 import HiveDriverError from './errors/HiveDriverError';
-import { buildUserAgentString, definedOrError } from './utils';
+import { areHeadersEqual, buildUserAgentString, definedOrError } from './utils';
 import PlainHttpAuthentication from './connection/auth/PlainHttpAuthentication';
 import DatabricksOAuth from './connection/auth/DatabricksOAuth';
 import IDBSQLLogger, { LogLevel } from './contracts/IDBSQLLogger';
@@ -45,6 +45,8 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
   private authProvider: IAuthentication | null = null;
 
   private connectionOptions: ConnectionOptions | null = null;
+
+  private additionalHeaders: HttpHeaders = {};
 
   private readonly logger: IDBSQLLogger;
 
@@ -153,9 +155,13 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
       throw new HiveDriverError('DBSQLClient: not connected');
     }
 
-    if (!this.client) {
-      const authHeaders = await this.authProvider.authenticate();
-      const connectionOptions = this.getConnectionOptions(this.connectionOptions, authHeaders);
+    const authHeaders = await this.authProvider.authenticate();
+    // When auth headers change - recreate client. Thrift library does not provide API for updating
+    // changed options, therefore we have to recreate both connection and client to apply new headers
+    if (!this.client || !areHeadersEqual(this.additionalHeaders, authHeaders)) {
+      this.logger.log(LogLevel.info, 'DBSQLClient: initializing thrift client');
+      this.additionalHeaders = authHeaders;
+      const connectionOptions = this.getConnectionOptions(this.connectionOptions, this.additionalHeaders);
 
       const connection = await this.createConnection(connectionOptions);
       this.client = this.thrift.createClient(TCLIService, connection.getConnection());
