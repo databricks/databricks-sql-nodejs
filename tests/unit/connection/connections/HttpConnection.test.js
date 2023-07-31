@@ -11,17 +11,10 @@ const thriftMock = (connection) => ({
     return connection;
   },
 });
-const authProviderMock = () => ({
-  authenticate() {
-    this.executed = true;
-    return Promise.resolve();
-  },
-});
 
 describe('HttpConnection.connect', () => {
   it('should successfully connect', () => {
     const connection = new HttpConnection();
-    const authenticator = authProviderMock();
     const resultConnection = {
       responseCallback() {},
     };
@@ -30,18 +23,14 @@ describe('HttpConnection.connect', () => {
     expect(connection.isConnected()).to.be.false;
 
     return connection
-      .connect(
-        {
-          host: 'localhost',
-          port: 10001,
-          options: {
-            path: '/hive',
-          },
+      .connect({
+        host: 'localhost',
+        port: 10001,
+        options: {
+          path: '/hive',
         },
-        authenticator,
-      )
+      })
       .then(() => {
-        expect(authenticator.executed).to.be.true;
         expect(connection.thrift.executed).to.be.true;
         expect(connection.thrift.host).to.be.eq('localhost');
         expect(connection.thrift.port).to.be.eq(10001);
@@ -53,27 +42,23 @@ describe('HttpConnection.connect', () => {
 
   it('should set SSL certificates and disable rejectUnauthorized', () => {
     const connection = new HttpConnection();
-    const authenticator = authProviderMock();
     const resultConnection = {
       responseCallback() {},
     };
     connection.thrift = thriftMock(resultConnection);
 
     return connection
-      .connect(
-        {
-          host: 'localhost',
-          port: 10001,
-          options: {
-            path: '/hive',
-            https: true,
-            ca: 'ca',
-            cert: 'cert',
-            key: 'key',
-          },
+      .connect({
+        host: 'localhost',
+        port: 10001,
+        options: {
+          path: '/hive',
+          https: true,
+          ca: 'ca',
+          cert: 'cert',
+          key: 'key',
         },
-        authenticator,
-      )
+      })
       .then(() => {
         expect(connection.thrift.options.nodeOptions.rejectUnauthorized).to.be.false;
         expect(connection.thrift.options.nodeOptions.ca).to.be.eq('ca');
@@ -84,7 +69,6 @@ describe('HttpConnection.connect', () => {
 
   it('should set cookie', () => {
     const connection = new HttpConnection();
-    const authenticator = authProviderMock();
     const resultConnection = {
       nodeOptions: { headers: { cookie: '' } },
       responseCallback() {},
@@ -92,16 +76,13 @@ describe('HttpConnection.connect', () => {
     connection.thrift = thriftMock(resultConnection);
 
     return connection
-      .connect(
-        {
-          host: 'localhost',
-          port: 10001,
-          options: {
-            path: '/hive',
-          },
+      .connect({
+        host: 'localhost',
+        port: 10001,
+        options: {
+          path: '/hive',
         },
-        authenticator,
-      )
+      })
       .then(() => {
         resultConnection.responseCallback({
           headers: {
@@ -115,27 +96,23 @@ describe('HttpConnection.connect', () => {
 
   it('should overlay rejectUnauthorized', () => {
     const connection = new HttpConnection();
-    const authenticator = authProviderMock();
     const resultConnection = {
       responseCallback() {},
     };
     connection.thrift = thriftMock(resultConnection);
 
     return connection
-      .connect(
-        {
-          host: 'localhost',
-          port: 10001,
-          options: {
-            path: '/hive',
-            https: true,
-            nodeOptions: {
-              rejectUnauthorized: true,
-            },
+      .connect({
+        host: 'localhost',
+        port: 10001,
+        options: {
+          path: '/hive',
+          https: true,
+          nodeOptions: {
+            rejectUnauthorized: true,
           },
         },
-        authenticator,
-      )
+      })
       .then(() => {
         expect(connection.thrift.options.nodeOptions.rejectUnauthorized).to.be.true;
       });
@@ -143,7 +120,6 @@ describe('HttpConnection.connect', () => {
 
   it('should call response callback if cookie is not set', () => {
     const connection = new HttpConnection();
-    const authenticator = authProviderMock();
     const resultConnection = {
       responseCallback() {
         this.executed = true;
@@ -152,13 +128,10 @@ describe('HttpConnection.connect', () => {
     connection.thrift = thriftMock(resultConnection);
 
     return connection
-      .connect(
-        {
-          host: 'localhost',
-          port: 10001,
-        },
-        authenticator,
-      )
+      .connect({
+        host: 'localhost',
+        port: 10001,
+      })
       .then(() => {
         resultConnection.responseCallback({ headers: {} });
         expect(resultConnection.executed).to.be.true;
@@ -168,24 +141,20 @@ describe('HttpConnection.connect', () => {
 
   it('should use a http agent if https is not enabled', () => {
     const connection = new HttpConnection();
-    const authenticator = authProviderMock();
     const resultConnection = {
       responseCallback() {},
     };
     connection.thrift = thriftMock(resultConnection);
 
     return connection
-      .connect(
-        {
-          host: 'localhost',
-          port: 10001,
-          options: {
-            https: false,
-            path: '/hive',
-          },
+      .connect({
+        host: 'localhost',
+        port: 10001,
+        options: {
+          https: false,
+          path: '/hive',
         },
-        authenticator,
-      )
+      })
       .then(() => {
         expect(connection.thrift.options.nodeOptions.agent).to.be.instanceOf(http.Agent);
       });

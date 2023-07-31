@@ -44,136 +44,138 @@ import GetDelegationTokenCommand from './Commands/GetDelegationTokenCommand';
 import CancelDelegationTokenCommand from './Commands/CancelDelegationTokenCommand';
 import RenewDelegationTokenCommand from './Commands/RenewDelegationTokenCommand';
 
-export default class HiveDriver {
-  private client: TCLIService.Client;
+export type ClientFactory = () => Promise<TCLIService.Client>;
 
-  constructor(client: TCLIService.Client) {
-    this.client = client;
+export default class HiveDriver {
+  private readonly clientFactory: ClientFactory;
+
+  constructor(clientFactory: ClientFactory) {
+    this.clientFactory = clientFactory;
   }
 
-  openSession(request: TOpenSessionReq) {
-    const action = new OpenSessionCommand(this.client);
-
+  async openSession(request: TOpenSessionReq) {
+    const client = await this.clientFactory();
+    const action = new OpenSessionCommand(client);
     return action.execute(request);
   }
 
-  closeSession(request: TCloseSessionReq) {
-    const command = new CloseSessionCommand(this.client);
-
+  async closeSession(request: TCloseSessionReq) {
+    const client = await this.clientFactory();
+    const command = new CloseSessionCommand(client);
     return command.execute(request);
   }
 
-  executeStatement(request: TExecuteStatementReq) {
-    const command = new ExecuteStatementCommand(this.client);
-
+  async executeStatement(request: TExecuteStatementReq) {
+    const client = await this.clientFactory();
+    const command = new ExecuteStatementCommand(client);
     return command.execute(request);
   }
 
-  getResultSetMetadata(request: TGetResultSetMetadataReq) {
-    const command = new GetResultSetMetadataCommand(this.client);
-
+  async getResultSetMetadata(request: TGetResultSetMetadataReq) {
+    const client = await this.clientFactory();
+    const command = new GetResultSetMetadataCommand(client);
     return command.execute(request);
   }
 
-  fetchResults(request: TFetchResultsReq) {
-    const command = new FetchResultsCommand(this.client);
-
+  async fetchResults(request: TFetchResultsReq) {
+    const client = await this.clientFactory();
+    const command = new FetchResultsCommand(client);
     return command.execute(request);
   }
 
-  getInfo(request: TGetInfoReq) {
-    const command = new GetInfoCommand(this.client);
-
+  async getInfo(request: TGetInfoReq) {
+    const client = await this.clientFactory();
+    const command = new GetInfoCommand(client);
     return command.execute(request);
   }
 
-  getTypeInfo(request: TGetTypeInfoReq) {
-    const command = new GetTypeInfoCommand(this.client);
-
+  async getTypeInfo(request: TGetTypeInfoReq) {
+    const client = await this.clientFactory();
+    const command = new GetTypeInfoCommand(client);
     return command.execute(request);
   }
 
-  getCatalogs(request: TGetCatalogsReq) {
-    const command = new GetCatalogsCommand(this.client);
-
+  async getCatalogs(request: TGetCatalogsReq) {
+    const client = await this.clientFactory();
+    const command = new GetCatalogsCommand(client);
     return command.execute(request);
   }
 
-  getSchemas(request: TGetSchemasReq) {
-    const command = new GetSchemasCommand(this.client);
-
+  async getSchemas(request: TGetSchemasReq) {
+    const client = await this.clientFactory();
+    const command = new GetSchemasCommand(client);
     return command.execute(request);
   }
 
-  getTables(request: TGetTablesReq) {
-    const command = new GetTablesCommand(this.client);
-
+  async getTables(request: TGetTablesReq) {
+    const client = await this.clientFactory();
+    const command = new GetTablesCommand(client);
     return command.execute(request);
   }
 
-  getTableTypes(request: TGetTableTypesReq) {
-    const command = new GetTableTypesCommand(this.client);
-
+  async getTableTypes(request: TGetTableTypesReq) {
+    const client = await this.clientFactory();
+    const command = new GetTableTypesCommand(client);
     return command.execute(request);
   }
 
-  getColumns(request: TGetColumnsReq) {
-    const command = new GetColumnsCommand(this.client);
-
+  async getColumns(request: TGetColumnsReq) {
+    const client = await this.clientFactory();
+    const command = new GetColumnsCommand(client);
     return command.execute(request);
   }
 
-  getFunctions(request: TGetFunctionsReq) {
-    const command = new GetFunctionsCommand(this.client);
-
+  async getFunctions(request: TGetFunctionsReq) {
+    const client = await this.clientFactory();
+    const command = new GetFunctionsCommand(client);
     return command.execute(request);
   }
 
-  getPrimaryKeys(request: TGetPrimaryKeysReq) {
-    const command = new GetPrimaryKeysCommand(this.client);
-
+  async getPrimaryKeys(request: TGetPrimaryKeysReq) {
+    const client = await this.clientFactory();
+    const command = new GetPrimaryKeysCommand(client);
     return command.execute(request);
   }
 
-  getCrossReference(request: TGetCrossReferenceReq) {
-    const command = new GetCrossReferenceCommand(this.client);
-
+  async getCrossReference(request: TGetCrossReferenceReq) {
+    const client = await this.clientFactory();
+    const command = new GetCrossReferenceCommand(client);
     return command.execute(request);
   }
 
-  getOperationStatus(request: TGetOperationStatusReq) {
-    const command = new GetOperationStatusCommand(this.client);
-
+  async getOperationStatus(request: TGetOperationStatusReq) {
+    const client = await this.clientFactory();
+    const command = new GetOperationStatusCommand(client);
     return command.execute(request);
   }
 
-  cancelOperation(request: TCancelOperationReq) {
-    const command = new CancelOperationCommand(this.client);
-
+  async cancelOperation(request: TCancelOperationReq) {
+    const client = await this.clientFactory();
+    const command = new CancelOperationCommand(client);
     return command.execute(request);
   }
 
-  closeOperation(request: TCloseOperationReq) {
-    const command = new CloseOperationCommand(this.client);
-
+  async closeOperation(request: TCloseOperationReq) {
+    const client = await this.clientFactory();
+    const command = new CloseOperationCommand(client);
     return command.execute(request);
   }
 
-  getDelegationToken(request: TGetDelegationTokenReq) {
-    const command = new GetDelegationTokenCommand(this.client);
-
+  async getDelegationToken(request: TGetDelegationTokenReq) {
+    const client = await this.clientFactory();
+    const command = new GetDelegationTokenCommand(client);
     return command.execute(request);
   }
 
-  cancelDelegationToken(request: TCancelDelegationTokenReq) {
-    const command = new CancelDelegationTokenCommand(this.client);
-
+  async cancelDelegationToken(request: TCancelDelegationTokenReq) {
+    const client = await this.clientFactory();
+    const command = new CancelDelegationTokenCommand(client);
     return command.execute(request);
   }
 
-  renewDelegationToken(request: TRenewDelegationTokenReq) {
-    const command = new RenewDelegationTokenCommand(this.client);
-
+  async renewDelegationToken(request: TRenewDelegationTokenReq) {
+    const client = await this.clientFactory();
+    const command = new RenewDelegationTokenCommand(client);
     return command.execute(request);
   }
 }

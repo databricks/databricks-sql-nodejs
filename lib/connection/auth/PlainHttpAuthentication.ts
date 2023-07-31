@@ -1,6 +1,5 @@
 import { HttpHeaders } from 'thrift';
 import IAuthentication from '../contracts/IAuthentication';
-import HttpTransport from '../transports/HttpTransport';
 
 interface PlainHttpAuthenticationOptions {
   username?: string;
@@ -21,10 +20,10 @@ export default class PlainHttpAuthentication implements IAuthentication {
     this.headers = options?.headers || {};
   }
 
-  public async authenticate(transport: HttpTransport): Promise<void> {
-    transport.updateHeaders({
+  public async authenticate(): Promise<HttpHeaders> {
+    return {
       ...this.headers,
       Authorization: `Bearer ${this.password}`,
-    });
+    };
   }
 }
