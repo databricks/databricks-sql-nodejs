@@ -106,7 +106,7 @@ export default class DBSQLOperation implements IOperation {
       this._data.fetch(options?.maxRows || defaultMaxRows),
     ]);
 
-    const result = resultHandler.getValue(data ? [data] : []);
+    const result = await resultHandler.getValue(data ? [data] : []);
     this.logger?.log(
       LogLevel.debug,
       `Fetched chunk of size: ${options?.maxRows || defaultMaxRows} from operation with id: ${this.getId()}`,
