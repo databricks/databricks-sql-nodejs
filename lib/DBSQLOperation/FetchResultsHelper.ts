@@ -42,7 +42,7 @@ export default class FetchResultsHelper {
 
   private fetchOrientation: TFetchOrientation = TFetchOrientation.FETCH_FIRST;
 
-  private pendingResults: TFetchResultsResp[] = [];
+  private prefetchedResults: TFetchResultsResp[] = [];
 
   private readonly returnOnlyPrefetchedResults: boolean;
 
@@ -58,7 +58,7 @@ export default class FetchResultsHelper {
     this.operationHandle = operationHandle;
     prefetchedResults.forEach((item) => {
       if (item) {
-        this.prepareCloudFetchChunks(item);
+        this.prefetchedResults.push(item);
       }
     });
     this.returnOnlyPrefetchedResults = returnOnlyPrefetchedResults;
@@ -68,7 +68,7 @@ export default class FetchResultsHelper {
     Status.assert(response.status);
     this.fetchOrientation = TFetchOrientation.FETCH_NEXT;
 
-    if (this.pendingResults.length > 0) {
+    if (this.prefetchedResults.length > 0) {
       this.hasMoreRows = true;
     } else if (this.returnOnlyPrefetchedResults) {
       this.hasMoreRows = false;
@@ -80,47 +80,18 @@ export default class FetchResultsHelper {
   }
 
   public async fetch(maxRows: number) {
-    if (this.pendingResults.length === 0) {
-      const results = await this.driver.fetchResults({
-        operationHandle: this.operationHandle,
-        orientation: this.fetchOrientation,
-        maxRows: new Int64(maxRows),
-        fetchType: FetchType.Data,
-      });
-
-      this.prepareCloudFetchChunks(results);
+    const prefetchedResponse = this.prefetchedResults.shift();
+    if (prefetchedResponse) {
+      return this.processFetchResponse(prefetchedResponse);
     }
 
-    const response = this.pendingResults.shift();
-    // This check is rather for safety and to make TS happy. In practice, such a case should not happen
-    if (!response) {
-      throw new Error('Unexpected error: no more data');
-    }
+    const response = await this.driver.fetchResults({
+      operationHandle: this.operationHandle,
+      orientation: this.fetchOrientation,
+      maxRows: new Int64(maxRows),
+      fetchType: FetchType.Data,
+    });
 
     return this.processFetchResponse(response);
-  }
-
-  private prepareCloudFetchChunks(response: TFetchResultsResp) {
-    // TODO: Make it configurable. Effectively, this is a concurrent downloads limit for an operation
-    const maxLinkCount = 1;
-
-    if (response.results && response.results.resultLinks && response.results.resultLinks.length > 0) {
-      const allLinks = [...response.results.resultLinks];
-      while (allLinks.length > 0) {
-        // Shallow clone the original response object, but rewrite cloud fetch links array
-        // to contain the only entry
-        const responseFragment = {
-          ...response,
-          results: {
-            ...response.results,
-            resultLinks: allLinks.splice(0, maxLinkCount),
-          },
-        };
-
-        this.pendingResults.push(responseFragment);
-      }
-    } else {
-      this.pendingResults.push(response);
-    }
   }
 }

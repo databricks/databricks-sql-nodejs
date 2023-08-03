@@ -3,31 +3,32 @@ import fetch from 'node-fetch';
 import { TRowSet, TSparkArrowResultLink } from '../../thrift/TCLIService_types';
 import ArrowResult from './ArrowResult';
 
+const concurrentDownloads = 10;
+
 export default class CloudFetchResult extends ArrowResult {
-  protected batchesToRows(batches: Array<Buffer>) {
-    if (batches.length === 1) {
-      return super.batchesToRows(batches);
-    }
+  private pendingLinks: Array<TSparkArrowResultLink> = [];
 
-    const results: Array<Array<any>> = [];
+  private downloadedBatches: Array<Buffer> = [];
 
-    for (const batch of batches) {
-      results.push(super.batchesToRows([batch]));
-    }
-
-    return results.flat(1);
+  async hasPendingData() {
+    return this.pendingLinks.length > 0 || this.downloadedBatches.length > 0;
   }
 
   protected async getBatches(data: Array<TRowSet>): Promise<Array<Buffer>> {
-    const tasks: Array<Promise<Buffer>> = [];
-
     data?.forEach((item) => {
       item.resultLinks?.forEach((link) => {
-        tasks.push(this.downloadLink(link));
+        this.pendingLinks.push(link);
       });
     });
 
-    return Promise.all(tasks);
+    if (this.downloadedBatches.length === 0) {
+      const links = this.pendingLinks.splice(0, concurrentDownloads);
+      const tasks = links.map((link) => this.downloadLink(link));
+      const batches = await Promise.all(tasks);
+      this.downloadedBatches.push(...batches);
+    }
+
+    return this.downloadedBatches.splice(0, 1);
   }
 
   private async downloadLink(link: TSparkArrowResultLink): Promise<Buffer> {

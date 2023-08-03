@@ -30,16 +30,16 @@ export default class ArrowResult implements IOperationResult {
     this.arrowSchema = arrowSchema;
   }
 
+  async hasPendingData() {
+    return false;
+  }
+
   async getValue(data?: Array<TRowSet>) {
     if (this.schema.length === 0 || !this.arrowSchema || !data) {
       return [];
     }
 
     const batches = await this.getBatches(data);
-    return this.batchesToRows(batches);
-  }
-
-  protected batchesToRows(batches: Array<Buffer>) {
     if (batches.length === 0) {
       return [];
     }
