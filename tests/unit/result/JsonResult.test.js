@@ -28,7 +28,7 @@ const getColumnSchema = (columnName, type, position) => {
 };
 
 describe('JsonResult', () => {
-  it('should convert schema with primitive types to json', () => {
+  it('should convert schema with primitive types to json', async () => {
     const schema = {
       columns: [
         getColumnSchema('table.str', TCLIService_types.TTypeId.STRING_TYPE, 1),
@@ -111,7 +111,7 @@ describe('JsonResult', () => {
 
     const result = new JsonResult(schema);
 
-    expect(result.getValue(data)).to.be.deep.eq([
+    expect(await result.getValue(data)).to.be.deep.eq([
       {
         'table.str': 'a',
         'table.int64': 282578800148737,
@@ -151,7 +151,7 @@ describe('JsonResult', () => {
     ]);
   });
 
-  it('should convert complex types', () => {
+  it('should convert complex types', async () => {
     const schema = {
       columns: [
         getColumnSchema('table.array', TCLIService_types.TTypeId.ARRAY_TYPE, 1),
@@ -181,7 +181,7 @@ describe('JsonResult', () => {
 
     const result = new JsonResult(schema);
 
-    expect(result.getValue(data)).to.be.deep.eq([
+    expect(await result.getValue(data)).to.be.deep.eq([
       {
         'table.array': ['a', 'b'],
         'table.map': { key: 12 },
@@ -197,7 +197,7 @@ describe('JsonResult', () => {
     ]);
   });
 
-  it('should merge data items', () => {
+  it('should merge data items', async () => {
     const schema = {
       columns: [getColumnSchema('table.id', TCLIService_types.TTypeId.STRING_TYPE, 1)],
     };
@@ -221,7 +221,7 @@ describe('JsonResult', () => {
 
     const result = new JsonResult(schema);
 
-    expect(result.getValue(data)).to.be.deep.eq([
+    expect(await result.getValue(data)).to.be.deep.eq([
       { 'table.id': '0' },
       { 'table.id': '1' },
       { 'table.id': '2' },
@@ -263,7 +263,7 @@ describe('JsonResult', () => {
     });
   });
 
-  it('should detect nulls for each type', () => {
+  it('should detect nulls for each type', async () => {
     const schema = {
       columns: [
         getColumnSchema('table.str', TCLIService_types.TTypeId.STRING_TYPE, 1),
@@ -344,7 +344,7 @@ describe('JsonResult', () => {
 
     const result = new JsonResult(schema);
 
-    expect(result.getValue(data)).to.be.deep.eq([
+    expect(await result.getValue(data)).to.be.deep.eq([
       {
         'table.str': null,
         'table.int64': null,
@@ -366,18 +366,18 @@ describe('JsonResult', () => {
     ]);
   });
 
-  it('should return empty array if no data to process', () => {
+  it('should return empty array if no data to process', async () => {
     const schema = {
       columns: [getColumnSchema('table.id', TCLIService_types.TTypeId.STRING_TYPE, 1)],
     };
 
     const result = new JsonResult(schema);
 
-    expect(result.getValue()).to.be.deep.eq([]);
-    expect(result.getValue([])).to.be.deep.eq([]);
+    expect(await result.getValue()).to.be.deep.eq([]);
+    expect(await result.getValue([])).to.be.deep.eq([]);
   });
 
-  it('should return empty array if no schema available', () => {
+  it('should return empty array if no schema available', async () => {
     const data = [
       {
         columns: [
@@ -390,10 +390,10 @@ describe('JsonResult', () => {
 
     const result = new JsonResult();
 
-    expect(result.getValue(data)).to.be.deep.eq([]);
+    expect(await result.getValue(data)).to.be.deep.eq([]);
   });
 
-  it('should return raw data if types are not specified', () => {
+  it('should return raw data if types are not specified', async () => {
     const schema = {
       columns: [
         getColumnSchema('table.array', undefined, 1),
@@ -423,7 +423,7 @@ describe('JsonResult', () => {
 
     const result = new JsonResult(schema);
 
-    expect(result.getValue(data)).to.be.deep.eq([
+    expect(await result.getValue(data)).to.be.deep.eq([
       {
         'table.array': '["a", "b"]',
         'table.map': '{ "key": 12 }',

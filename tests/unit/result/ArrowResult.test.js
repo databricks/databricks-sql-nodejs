@@ -67,22 +67,22 @@ const sampleRowSet4 = {
 };
 
 describe('ArrowResult', () => {
-  it('should convert data', () => {
+  it('should convert data', async () => {
     const result = new ArrowResult(sampleThriftSchema, sampleArrowSchema);
-    expect(result.getValue([sampleRowSet1])).to.be.deep.eq([]);
-    expect(result.getValue([sampleRowSet2])).to.be.deep.eq([]);
-    expect(result.getValue([sampleRowSet3])).to.be.deep.eq([]);
-    expect(result.getValue([sampleRowSet4])).to.be.deep.eq([{ 1: 1 }]);
+    expect(await result.getValue([sampleRowSet1])).to.be.deep.eq([]);
+    expect(await result.getValue([sampleRowSet2])).to.be.deep.eq([]);
+    expect(await result.getValue([sampleRowSet3])).to.be.deep.eq([]);
+    expect(await result.getValue([sampleRowSet4])).to.be.deep.eq([{ 1: 1 }]);
   });
 
-  it('should return empty array if no data to process', () => {
+  it('should return empty array if no data to process', async () => {
     const result = new ArrowResult(sampleThriftSchema, sampleArrowSchema);
-    expect(result.getValue()).to.be.deep.eq([]);
-    expect(result.getValue([])).to.be.deep.eq([]);
+    expect(await result.getValue()).to.be.deep.eq([]);
+    expect(await result.getValue([])).to.be.deep.eq([]);
   });
 
-  it('should return empty array if no schema available', () => {
+  it('should return empty array if no schema available', async () => {
     const result = new ArrowResult();
-    expect(result.getValue([sampleRowSet4])).to.be.deep.eq([]);
+    expect(await result.getValue([sampleRowSet4])).to.be.deep.eq([]);
   });
 });

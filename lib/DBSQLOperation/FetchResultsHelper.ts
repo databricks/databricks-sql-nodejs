@@ -119,6 +119,8 @@ export default class FetchResultsHelper {
 
         this.pendingResults.push(responseFragment);
       }
+    } else {
+      this.pendingResults.push(response);
     }
   }
 }
