@@ -31,7 +31,10 @@ export default class CloudFetchResult extends ArrowResult {
   }
 
   private async downloadLink(link: TSparkArrowResultLink): Promise<Buffer> {
-    // TODO: Process expired links
+    if (Date.now() >= link.expiryTime.toNumber()) {
+      throw new Error('CloudFetch link has expired');
+    }
+
     const response = await fetch(link.fileLink);
     if (!response.ok) {
       throw new Error(`CloudFetch HTTP error ${response.status} ${response.statusText}`);
