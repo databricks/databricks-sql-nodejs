@@ -59,7 +59,7 @@ jobs:
           E2E_TABLE_SUFFIX: ${{github.sha}}
         run: |
           npm ci
-          npm run e2e
+          NODE_OPTIONS="--max-old-space-size=4096" npm run e2e
       - name: Coverage
         uses: codecov/codecov-action@v3
         with:
