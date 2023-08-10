@@ -68,10 +68,19 @@ describe('CloudFetch', () => {
     expect(resultHandler.pendingLinks.length).to.be.equal(0);
     expect(resultHandler.downloadedBatches.length).to.be.equal(0);
 
+    sinon.spy(operation._data, 'fetch');
+
     const chunk = await operation.fetchChunk({ maxRows: 100000 });
+    // Count links returned from server
+    const resultSet = await operation._data.fetch.firstCall.returnValue;
+    const resultLinksCount = resultSet?.resultLinks?.length ?? 0;
+
     expect(await resultHandler.hasPendingData()).to.be.true;
-    expect(resultHandler.pendingLinks.length).to.be.equal(3); // 8 batches minus first 5 already fetched
-    expect(resultHandler.downloadedBatches.length).to.be.equal(4);
+    // expected batches minus first 5 already fetched
+    expect(resultHandler.pendingLinks.length).to.be.equal(
+      resultLinksCount - globalConfig.cloudFetchConcurrentDownloads,
+    );
+    expect(resultHandler.downloadedBatches.length).to.be.equal(globalConfig.cloudFetchConcurrentDownloads - 1);
 
     let fetchedRowCount = chunk.length;
     while (await operation.hasMoreRows()) {
