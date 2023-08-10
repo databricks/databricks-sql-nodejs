@@ -1,14 +1,19 @@
 import { Buffer } from 'buffer';
 import fetch from 'node-fetch';
-import { TRowSet, TSparkArrowResultLink } from '../../thrift/TCLIService_types';
+import { TRowSet, TSparkArrowResultLink, TTableSchema } from '../../thrift/TCLIService_types';
 import ArrowResult from './ArrowResult';
-
-const concurrentDownloads = 10;
+import globalConfig from '../globalConfig';
 
 export default class CloudFetchResult extends ArrowResult {
   private pendingLinks: Array<TSparkArrowResultLink> = [];
 
   private downloadedBatches: Array<Buffer> = [];
+
+  constructor(schema?: TTableSchema, arrowSchema?: Buffer) {
+    // Arrow schema returned in metadata is not needed for CloudFetch results:
+    // each batch already contains schema and could be decoded as is
+    super(schema, Buffer.alloc(0));
+  }
 
   async hasPendingData() {
     return this.pendingLinks.length > 0 || this.downloadedBatches.length > 0;
@@ -22,7 +27,7 @@ export default class CloudFetchResult extends ArrowResult {
     });
 
     if (this.downloadedBatches.length === 0) {
-      const links = this.pendingLinks.splice(0, concurrentDownloads);
+      const links = this.pendingLinks.splice(0, globalConfig.cloudFetchConcurrentDownloads);
       const tasks = links.map((link) => this.downloadLink(link));
       const batches = await Promise.all(tasks);
       this.downloadedBatches.push(...batches);
