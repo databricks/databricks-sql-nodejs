@@ -53,7 +53,7 @@ export default class SchemaHelper {
           this.resultHandler = new ArrowResult(metadata.schema, metadata.arrowSchema);
           break;
         case TSparkRowSetType.URL_BASED_SET:
-          this.resultHandler = new CloudFetchResult(metadata.schema, metadata.arrowSchema);
+          this.resultHandler = new CloudFetchResult(metadata.schema);
           break;
         default:
           this.resultHandler = undefined;

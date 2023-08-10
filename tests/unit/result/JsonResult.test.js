@@ -28,6 +28,21 @@ const getColumnSchema = (columnName, type, position) => {
 };
 
 describe('JsonResult', () => {
+  it('should not buffer any data', async () => {
+    const schema = {
+      columns: [getColumnSchema('table.id', TCLIService_types.TTypeId.STRING_TYPE, 1)],
+    };
+    const data = [
+      {
+        columns: [{ stringVal: { values: ['0', '1'] } }],
+      },
+    ];
+
+    const result = new JsonResult(schema);
+    await result.getValue(data);
+    expect(await result.hasPendingData()).to.be.false;
+  });
+
   it('should convert schema with primitive types to json', async () => {
     const schema = {
       columns: [

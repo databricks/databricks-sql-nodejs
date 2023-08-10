@@ -1,5 +1,5 @@
 import { Buffer } from 'buffer';
-import fetch from 'node-fetch';
+import fetch, { RequestInfo, RequestInit } from 'node-fetch';
 import { TRowSet, TSparkArrowResultLink, TTableSchema } from '../../thrift/TCLIService_types';
 import ArrowResult from './ArrowResult';
 import globalConfig from '../globalConfig';
@@ -9,7 +9,7 @@ export default class CloudFetchResult extends ArrowResult {
 
   private downloadedBatches: Array<Buffer> = [];
 
-  constructor(schema?: TTableSchema, arrowSchema?: Buffer) {
+  constructor(schema?: TTableSchema) {
     // Arrow schema returned in metadata is not needed for CloudFetch results:
     // each batch already contains schema and could be decoded as is
     super(schema, Buffer.alloc(0));
@@ -20,7 +20,7 @@ export default class CloudFetchResult extends ArrowResult {
   }
 
   protected async getBatches(data: Array<TRowSet>): Promise<Array<Buffer>> {
-    data?.forEach((item) => {
+    data.forEach((item) => {
       item.resultLinks?.forEach((link) => {
         this.pendingLinks.push(link);
       });
@@ -41,12 +41,16 @@ export default class CloudFetchResult extends ArrowResult {
       throw new Error('CloudFetch link has expired');
     }
 
-    const response = await fetch(link.fileLink);
+    const response = await this.fetch(link.fileLink);
     if (!response.ok) {
       throw new Error(`CloudFetch HTTP error ${response.status} ${response.statusText}`);
     }
 
     const result = await response.arrayBuffer();
     return Buffer.from(result);
+  }
+
+  private async fetch(url: RequestInfo, init?: RequestInit) {
+    return fetch(url, init);
   }
 }

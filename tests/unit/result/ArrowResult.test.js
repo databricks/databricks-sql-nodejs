@@ -67,6 +67,12 @@ const sampleRowSet4 = {
 };
 
 describe('ArrowResult', () => {
+  it('should not buffer any data', async () => {
+    const result = new ArrowResult(sampleThriftSchema, sampleArrowSchema);
+    await result.getValue([sampleRowSet1]);
+    expect(await result.hasPendingData()).to.be.false;
+  });
+
   it('should convert data', async () => {
     const result = new ArrowResult(sampleThriftSchema, sampleArrowSchema);
     expect(await result.getValue([sampleRowSet1])).to.be.deep.eq([]);

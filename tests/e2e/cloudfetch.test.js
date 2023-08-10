@@ -28,7 +28,6 @@ describe('CloudFetch', () => {
 
   beforeEach(() => {
     savedConcurrentDownloads = globalConfig.cloudFetchConcurrentDownloads;
-    globalConfig.cloudFetchConcurrentDownloads = 5;
   });
 
   afterEach(() => {
@@ -36,10 +35,11 @@ describe('CloudFetch', () => {
   });
 
   it('should fetch data', async () => {
+    globalConfig.cloudFetchConcurrentDownloads = 5;
+
     const session = await openSession();
 
     const queriedRowsCount = 10000000; // result has to be quite big to enable CloudFetch
-
     const operation = await session.executeStatement(
       `
         SELECT *
