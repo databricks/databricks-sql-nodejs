@@ -4,6 +4,7 @@ import Status from '../dto/Status';
 import IOperationResult from '../result/IOperationResult';
 import JsonResult from '../result/JsonResult';
 import ArrowResult from '../result/ArrowResult';
+import CloudFetchResult from '../result/CloudFetchResult';
 import HiveDriverError from '../errors/HiveDriverError';
 import { definedOrError } from '../utils';
 
@@ -13,6 +14,8 @@ export default class SchemaHelper {
   private readonly operationHandle: TOperationHandle;
 
   private metadata?: TGetResultSetMetadataResp;
+
+  private resultHandler?: IOperationResult;
 
   constructor(driver: HiveDriver, operationHandle: TOperationHandle, metadata?: TGetResultSetMetadataResp) {
     this.driver = driver;
@@ -41,13 +44,27 @@ export default class SchemaHelper {
     const metadata = await this.fetchMetadata();
     const resultFormat = definedOrError(metadata.resultFormat);
 
-    switch (resultFormat) {
-      case TSparkRowSetType.COLUMN_BASED_SET:
-        return new JsonResult(metadata.schema);
-      case TSparkRowSetType.ARROW_BASED_SET:
-        return new ArrowResult(metadata.schema, metadata.arrowSchema);
-      default:
-        throw new HiveDriverError(`Unsupported result format: ${TSparkRowSetType[resultFormat]}`);
+    if (!this.resultHandler) {
+      switch (resultFormat) {
+        case TSparkRowSetType.COLUMN_BASED_SET:
+          this.resultHandler = new JsonResult(metadata.schema);
+          break;
+        case TSparkRowSetType.ARROW_BASED_SET:
+          this.resultHandler = new ArrowResult(metadata.schema, metadata.arrowSchema);
+          break;
+        case TSparkRowSetType.URL_BASED_SET:
+          this.resultHandler = new CloudFetchResult(metadata.schema);
+          break;
+        default:
+          this.resultHandler = undefined;
+          break;
+      }
     }
+
+    if (!this.resultHandler) {
+      throw new HiveDriverError(`Unsupported result format: ${TSparkRowSetType[resultFormat]}`);
+    }
+
+    return this.resultHandler;
   }
 }

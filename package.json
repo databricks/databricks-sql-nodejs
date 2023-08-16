@@ -50,6 +50,7 @@
   "license": "Apache 2.0",
   "devDependencies": {
     "@types/node": "^18.11.9",
+    "@types/node-fetch": "^2.6.4",
     "@types/node-int64": "^0.4.29",
     "@types/thrift": "^0.10.11",
     "@types/uuid": "^8.3.4",
@@ -73,6 +74,7 @@
   "dependencies": {
     "apache-arrow": "^10.0.1",
     "commander": "^9.3.0",
+    "node-fetch": "^2.6.12",
     "node-int64": "^0.4.0",
     "open": "^8.4.2",
     "openid-client": "^5.4.2",

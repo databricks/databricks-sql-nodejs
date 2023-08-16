@@ -30,12 +30,16 @@ export default class ArrowResult implements IOperationResult {
     this.arrowSchema = arrowSchema;
   }
 
-  getValue(data?: Array<TRowSet>) {
+  async hasPendingData() {
+    return false;
+  }
+
+  async getValue(data?: Array<TRowSet>) {
     if (this.schema.length === 0 || !this.arrowSchema || !data) {
       return [];
     }
 
-    const batches = this.getBatches(data);
+    const batches = await this.getBatches(data);
     if (batches.length === 0) {
       return [];
     }
@@ -44,7 +48,7 @@ export default class ArrowResult implements IOperationResult {
     return this.getRows(table.schema, table.toArray());
   }
 
-  private getBatches(data: Array<TRowSet>): Array<Buffer> {
+  protected async getBatches(data: Array<TRowSet>): Promise<Array<Buffer>> {
     const result: Array<Buffer> = [];
 
     data.forEach((rowSet) => {

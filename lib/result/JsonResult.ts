@@ -10,7 +10,11 @@ export default class JsonResult implements IOperationResult {
     this.schema = getSchemaColumns(schema);
   }
 
-  getValue(data?: Array<TRowSet>): Array<object> {
+  async hasPendingData() {
+    return false;
+  }
+
+  async getValue(data?: Array<TRowSet>): Promise<Array<object>> {
     if (this.schema.length === 0 || !data) {
       return [];
     }

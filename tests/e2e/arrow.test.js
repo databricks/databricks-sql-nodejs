@@ -137,7 +137,7 @@ describe('Arrow support', () => {
     // but with much enough rows there should be more than one result batch
     expect(rawData.arrowBatches?.length).to.be.gt(1);
 
-    const result = resultHandler.getValue([rawData]);
+    const result = await resultHandler.getValue([rawData]);
     expect(result.length).to.be.eq(rowsCount);
   });
 });
