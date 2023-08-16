@@ -93,6 +93,15 @@ export default interface IDBSQLSession {
   executeStatement(statement: string, options?: ExecuteStatementOptions): Promise<IOperation>;
 
   /**
+   * Executes staging statements
+   *
+   * @param statement DDL/DML statement
+   * @param options
+   */
+    executeStagingStatement(statement: string, options?: ExecuteStatementOptions): Promise<void>;
+
+
+  /**
    * Information about supported data types
    *
    * @param request

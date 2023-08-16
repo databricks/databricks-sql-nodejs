@@ -52,10 +52,13 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
 
   private readonly thrift = thrift;
 
+  private stagingAllowedLocalPath: string[] | null
+
   constructor(options?: ClientOptions) {
     super();
     this.logger = options?.logger || new DBSQLLogger();
     this.logger.log(LogLevel.info, 'Created DBSQLClient');
+    this.stagingAllowedLocalPath = options?.stagingAllowedLocalPath || null
   }
 
   private getConnectionOptions(options: ConnectionOptions, headers: HttpHeaders): IConnectionOptions {
@@ -147,7 +150,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
     });
 
     Status.assert(response.status);
-    return new DBSQLSession(driver, definedOrError(response.sessionHandle), this.logger);
+    return new DBSQLSession(driver, definedOrError(response.sessionHandle), this.logger, this.stagingAllowedLocalPath);
   }
 
   private async getClient() {

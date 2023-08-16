@@ -1,0 +1,7 @@
+{"level":"info","message":"Created DBSQLClient"}
+{"level":"info","message":"Created DBSQLClient"}
+{"level":"debug","message":"Operation created with id: 01ed9c52-dd9c-1fc5-bae6-34882fc0c082"}
+{"level":"debug","message":"Fetched chunk of size: 100000 from operation with id: 01ed9c52-dd9c-1fc5-bae6-34882fc0c082"}
+{"level":"debug","message":"Fetched all data from operation with id: 01ed9c52-dd9c-1fc5-bae6-34882fc0c082"}
+{"level":"debug","message":"Closing operation with id: 01ed9c52-dd9c-1fc5-bae6-34882fc0c082"}
+{"level":"debug","message":"Session closed with id: 01ed9c52-ccf2-1c5d-9bf8-1144872eb5fb"}
