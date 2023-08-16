@@ -275,7 +275,8 @@ describe('DBSQLClient.close', () => {
 
   it('should close sessions that belong to it', async () => {
     const client = new DBSQLClient();
-    client.client = {
+
+    const thriftClientMock = {
       OpenSession(req, cb) {
         cb(null, {
           status: {},
@@ -291,19 +292,15 @@ describe('DBSQLClient.close', () => {
         cb(null, { status: {} });
       },
     };
-    client.connection = {
-      isConnected() {
-        return true;
-      },
-      getConnection: () => ({}),
-    };
+    client.client = thriftClientMock;
+    sinon.stub(client, 'getClient').returns(Promise.resolve(thriftClientMock));
 
     const session = await client.openSession();
     expect(session.onClose).to.be.not.undefined;
     expect(session.isOpen).to.be.true;
     expect(client.sessions.items.size).to.eq(1);
 
-    sinon.spy(client.client, 'CloseSession');
+    sinon.spy(thriftClientMock, 'CloseSession');
     sinon.spy(client.sessions, 'closeAll');
     sinon.spy(session, 'close');
 
@@ -313,7 +310,7 @@ describe('DBSQLClient.close', () => {
     expect(session.onClose).to.be.undefined;
     expect(session.isOpen).to.be.false;
     expect(client.sessions.items.size).to.eq(0);
-    expect(client.client.CloseSession.called).to.be.true;
+    expect(thriftClientMock.CloseSession.called).to.be.true;
   });
 });
 
