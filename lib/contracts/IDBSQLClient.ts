@@ -1,17 +1,34 @@
 import IDBSQLLogger from './IDBSQLLogger';
 import IDBSQLSession from './IDBSQLSession';
+import IAuthentication from '../connection/contracts/IAuthentication';
+import OAuthPersistence from '../connection/auth/DatabricksOAuth/OAuthPersistence';
 
 export interface ClientOptions {
   logger?: IDBSQLLogger;
 }
 
-export interface ConnectionOptions {
+type AuthOptions =
+  | {
+      authType?: 'access-token';
+      token: string;
+    }
+  | {
+      authType: 'databricks-oauth';
+      persistence?: OAuthPersistence;
+      azureTenantId?: string;
+    }
+  | {
+      authType: 'custom';
+      provider: IAuthentication;
+    };
+
+export type ConnectionOptions = {
   host: string;
   port?: number;
   path: string;
-  token: string;
   clientId?: string;
-}
+  socketTimeout?: number;
+} & AuthOptions;
 
 export interface OpenSessionRequest {
   initialCatalog?: string;

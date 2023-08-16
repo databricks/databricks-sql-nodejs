@@ -1,6 +1,11 @@
 # Release History
 
-## 1.x (Unreleased)
+## 1.3.0
+
+- Implemented automatic retry for some HTTP errors (429, 503) (databricks/databricks-sql-nodejs#127)
+- Implemented request timeout + added option to configure it (databricks/databricks-sql-nodejs#148)
+- Added OAuth (U2M) support for AWS and Azure (databricks/databricks-sql-nodejs#147 and databricks/databricks-sql-nodejs#154)
+- Fixed bug: for Arrow results, `null` values were ignored (@ivan-parada databricks/databricks-sql-nodejs#151)
 
 ## 1.2.1
 

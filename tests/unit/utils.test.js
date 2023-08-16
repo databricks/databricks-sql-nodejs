@@ -1,6 +1,12 @@
 const { expect, AssertionError } = require('chai');
 
-const { buildUserAgentString, definedOrError, formatProgress, ProgressUpdateTransformer } = require('../../dist/utils');
+const {
+  areHeadersEqual,
+  buildUserAgentString,
+  definedOrError,
+  formatProgress,
+  ProgressUpdateTransformer,
+} = require('../../dist/utils');
 const CloseableCollection = require('../../dist/utils/CloseableCollection').default;
 
 describe('buildUserAgentString', () => {
@@ -90,6 +96,103 @@ describe('definedOrError', () => {
     expect(() => {
       definedOrError(undefined);
     }).to.throw();
+  });
+});
+
+describe('areHeadersEqual', () => {
+  it('should return true for same objects', () => {
+    const a = {};
+    expect(areHeadersEqual(a, a)).to.be.true;
+  });
+
+  it('should return false for objects with different keys', () => {
+    const a = { a: 1, x: 2 };
+    const b = { b: 3, x: 4 };
+    const c = { c: 5 };
+
+    expect(areHeadersEqual(a, b)).to.be.false;
+    expect(areHeadersEqual(b, a)).to.be.false;
+    expect(areHeadersEqual(a, c)).to.be.false;
+    expect(areHeadersEqual(c, a)).to.be.false;
+  });
+
+  it('should compare different types of properties', () => {
+    case1: {
+      expect(
+        areHeadersEqual(
+          {
+            a: 1,
+            b: 'b',
+            c: ['x', 'y', 'z'],
+          },
+          {
+            a: 1,
+            b: 'b',
+            c: ['x', 'y', 'z'],
+          },
+        ),
+      ).to.be.true;
+    }
+
+    case2: {
+      const arr = ['a', 'b'];
+
+      expect(
+        areHeadersEqual(
+          {
+            a: 1,
+            b: 'b',
+            c: arr,
+          },
+          {
+            a: 1,
+            b: 'b',
+            c: arr,
+          },
+        ),
+      ).to.be.true;
+    }
+
+    case3: {
+      expect(
+        areHeadersEqual(
+          {
+            arr: ['a'],
+          },
+          {
+            arr: ['b'],
+          },
+        ),
+      ).to.be.false;
+    }
+
+    case4: {
+      expect(
+        areHeadersEqual(
+          {
+            arr: ['a'],
+          },
+          {
+            arr: ['a', 'b'],
+          },
+        ),
+      ).to.be.false;
+    }
+
+    case5: {
+      expect(
+        areHeadersEqual(
+          {
+            arr: ['a'],
+            prop: 'x',
+          },
+          {
+            arr: ['a'],
+            prop: 1,
+          },
+        ),
+      ).to.be.false;
+    }
   });
 });
 

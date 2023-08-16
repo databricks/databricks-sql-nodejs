@@ -14,7 +14,8 @@
         "no-bitwise": "off",
         "@typescript-eslint/no-throw-literal": "off",
         "no-restricted-syntax": "off",
-        "no-case-declarations": "off"
+        "no-case-declarations": "off",
+        "max-classes-per-file": "off"
       }
     }
   ]

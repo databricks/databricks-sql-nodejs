@@ -121,7 +121,7 @@ export default class DBSQLOperation implements IOperation {
 
     await this.failIfClosed();
 
-    const result = resultHandler.getValue(data ? [data] : []);
+    const result = await resultHandler.getValue(data ? [data] : []);
     this.logger?.log(
       LogLevel.debug,
       `Fetched chunk of size: ${options?.maxRows || defaultMaxRows} from operation with id: ${this.getId()}`,
@@ -179,10 +179,19 @@ export default class DBSQLOperation implements IOperation {
   }
 
   public async hasMoreRows(): Promise<boolean> {
+    // If operation is closed or cancelled - we should not try to get data from it
     if (this._completeOperation.closed || this._completeOperation.cancelled) {
       return false;
     }
-    return this._data.hasMoreRows;
+
+    // Return early if there are still data available for fetching
+    if (this._data.hasMoreRows) {
+      return true;
+    }
+
+    // If we fetched all the data from server - check if there's anything buffered in result handler
+    const resultHandler = await this._schema.getResultHandler();
+    return resultHandler.hasPendingData();
   }
 
   public async getSchema(options?: GetSchemaOptions): Promise<TTableSchema | null> {

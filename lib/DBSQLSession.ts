@@ -139,6 +139,7 @@ export default class DBSQLSession implements IDBSQLSession {
       runAsync: options.runAsync || false,
       ...getDirectResultsOptions(options.maxRows),
       ...getArrowOptions(),
+      canDownloadResult: options.useCloudFetch ?? globalConfig.useCloudFetch,
     });
     const response = await this.handleResponse(operationPromise);
     return this.createOperation(response);

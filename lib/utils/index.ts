@@ -1,5 +1,6 @@
+import areHeadersEqual from './areHeadersEqual';
 import definedOrError from './definedOrError';
 import buildUserAgentString from './buildUserAgentString';
 import formatProgress, { ProgressUpdateTransformer } from './formatProgress';
 
-export { definedOrError, buildUserAgentString, formatProgress, ProgressUpdateTransformer };
+export { areHeadersEqual, definedOrError, buildUserAgentString, formatProgress, ProgressUpdateTransformer };

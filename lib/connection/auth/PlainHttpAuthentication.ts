@@ -1,34 +1,29 @@
+import { HttpHeaders } from 'thrift';
 import IAuthentication from '../contracts/IAuthentication';
-import ITransport from '../contracts/ITransport';
-import { AuthOptions } from '../types/AuthOptions';
 
-type HttpAuthOptions = AuthOptions & {
-  headers?: object;
-};
+interface PlainHttpAuthenticationOptions {
+  username?: string;
+  password?: string;
+  headers?: HttpHeaders;
+}
 
 export default class PlainHttpAuthentication implements IAuthentication {
-  private username: string;
+  private readonly username: string;
 
-  private password: string;
+  private readonly password: string;
 
-  private headers: object;
+  private readonly headers: HttpHeaders;
 
-  constructor(options: HttpAuthOptions) {
+  constructor(options: PlainHttpAuthenticationOptions) {
     this.username = options?.username || 'anonymous';
-    this.password = options?.password !== undefined ? options?.password : 'anonymous';
+    this.password = options?.password ?? 'anonymous';
     this.headers = options?.headers || {};
   }
 
-  authenticate(transport: ITransport): Promise<ITransport> {
-    transport.setOptions('headers', {
+  public async authenticate(): Promise<HttpHeaders> {
+    return {
       ...this.headers,
-      Authorization: this.getToken(this.username, this.password),
-    });
-
-    return Promise.resolve(transport);
-  }
-
-  private getToken(username: string, password: string): string {
-    return `Bearer ${password}`;
+      Authorization: `Bearer ${this.password}`,
+    };
   }
 }
