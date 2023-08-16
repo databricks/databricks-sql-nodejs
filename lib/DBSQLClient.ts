@@ -1,6 +1,6 @@
+import { EventEmitter } from 'events';
 import thrift, { HttpHeaders } from 'thrift';
 
-import { EventEmitter } from 'events';
 import TCLIService from '../thrift/TCLIService';
 import { TProtocolVersion } from '../thrift/TCLIService_types';
 import IDBSQLClient, { ClientOptions, ConnectionOptions, OpenSessionRequest } from './contracts/IDBSQLClient';
@@ -52,13 +52,10 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
 
   private readonly thrift = thrift;
 
-  private stagingAllowedLocalPath: string[] | null
-
   constructor(options?: ClientOptions) {
     super();
     this.logger = options?.logger || new DBSQLLogger();
     this.logger.log(LogLevel.info, 'Created DBSQLClient');
-    this.stagingAllowedLocalPath = options?.stagingAllowedLocalPath || null
   }
 
   private getConnectionOptions(options: ConnectionOptions, headers: HttpHeaders): IConnectionOptions {
@@ -150,7 +147,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
     });
 
     Status.assert(response.status);
-    return new DBSQLSession(driver, definedOrError(response.sessionHandle), this.logger, this.stagingAllowedLocalPath);
+    return new DBSQLSession(driver, definedOrError(response.sessionHandle), this.logger);
   }
 
   private async getClient() {

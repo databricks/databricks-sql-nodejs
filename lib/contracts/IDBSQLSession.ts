@@ -7,6 +7,7 @@ export type ExecuteStatementOptions = {
   queryTimeout?: Int64;
   runAsync?: boolean;
   maxRows?: number | null;
+  stagingAllowedLocalPath?: string[]
 };
 
 export type TypeInfoRequest = {
@@ -91,14 +92,6 @@ export default interface IDBSQLSession {
    * @param options
    */
   executeStatement(statement: string, options?: ExecuteStatementOptions): Promise<IOperation>;
-
-  /**
-   * Executes staging statements
-   *
-   * @param statement DDL/DML statement
-   * @param options
-   */
-    executeStagingStatement(statement: string, options?: ExecuteStatementOptions): Promise<void>;
 
 
   /**

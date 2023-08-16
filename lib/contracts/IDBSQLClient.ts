@@ -5,7 +5,6 @@ import OAuthPersistence from '../connection/auth/DatabricksOAuth/OAuthPersistenc
 
 export interface ClientOptions {
   logger?: IDBSQLLogger;
-  stagingAllowedLocalPath?: string[]
 }
 
 type AuthOptions =

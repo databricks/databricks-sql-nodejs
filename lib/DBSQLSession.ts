@@ -1,6 +1,8 @@
-import { stringify, NIL, parse } from 'uuid';
 import * as fs from 'fs'
 import * as path from 'path'
+import { assert } from 'console';
+import { stringify, NIL, parse } from 'uuid';
+import axios from 'axios';
 import {
   TSessionHandle,
   TStatus,
@@ -29,10 +31,9 @@ import InfoValue from './dto/InfoValue';
 import { definedOrError } from './utils';
 import IDBSQLLogger, { LogLevel } from './contracts/IDBSQLLogger';
 import globalConfig from './globalConfig';
-import { assert } from 'console';
-import {Axios} from 'axios';
+import StagingError from './errors/StagingError';
 
-const axios = new Axios()
+
 
 const defaultMaxRows = 100000;
 
@@ -85,14 +86,11 @@ export default class DBSQLSession implements IDBSQLSession {
 
   private readonly logger: IDBSQLLogger;
   
-  private readonly stagingAllowedLocalPath: string[] | null 
-
-  constructor(driver: HiveDriver, sessionHandle: TSessionHandle, logger: IDBSQLLogger, stagingAllowedLocalPath: string[] | null ) {
+  constructor(driver: HiveDriver, sessionHandle: TSessionHandle, logger: IDBSQLLogger) {
     this.driver = driver;
     this.sessionHandle = sessionHandle;
     this.logger = logger;
     this.logger.log(LogLevel.debug, `Session created with id: ${this.getId()}`);
-    this.stagingAllowedLocalPath = stagingAllowedLocalPath
   }
 
   public getId() {
@@ -135,48 +133,21 @@ export default class DBSQLSession implements IDBSQLSession {
       ...getDirectResultsOptions(options.maxRows),
       ...getArrowOptions(),
     });
-
-    return this.createOperation(response);
-  }
-
-  /**
-   * Executes staging statement
-   * @public
-   * @param statement - SQL statement to be executed
-   * @param options - maxRows field is used to specify Direct Results
-   * @returns DBSQLOperation
-   * @example
-   * const operation = await session.executeStatement(query, { runAsync: true });
-   */
-    public async executeStagingStatement(statement: string, options: ExecuteStatementOptions = {}): Promise<void>{
-      if(this.stagingAllowedLocalPath == null){
-        // Add error message.
-        return
-      }
-      const response = await this.driver.executeStatement({
-        sessionHandle: this.sessionHandle,
-        statement,
-        queryTimeout: options.queryTimeout,
-        runAsync: options.runAsync || false,
-        ...getDirectResultsOptions(options.maxRows),
-        ...getArrowOptions(),
-      });
+    const operation = this.createOperation(response);
+    if(options.stagingAllowedLocalPath) {
       type StagingResponse = {
         presignedUrl: string 
         localFile: string
         headers: object
         operation: string
       }
-
-  
-      let operation = this.createOperation(response);
-      let result = await operation.fetchAll()
-      assert(result.length == 1)
-      let row = result[0] as StagingResponse
+      const result = await operation.fetchAll()
+      assert(result.length === 1)
+      const row = result[0] as StagingResponse
 
       let allowOperation = false
-      for(let filepath of this.stagingAllowedLocalPath){
-        let relativePath = path.relative(filepath,row.localFile)
+      for(const filepath of options.stagingAllowedLocalPath){
+        const relativePath = path.relative(filepath,row.localFile)
 
         if(!relativePath.startsWith('..') && !path.isAbsolute(relativePath)){
           allowOperation = true
@@ -184,48 +155,55 @@ export default class DBSQLSession implements IDBSQLSession {
 
       }
       if(!allowOperation) {
-        return
+        throw new StagingError("Staging path not a subset of allowed local paths.")
       }
-
-      let handler_args = {
+ 
+      const handlerArgs = {
         "presigned_url": row.presignedUrl,
         "local_file": row.localFile,
         "headers": row.headers,
       }
       switch(row.operation) {
         case "GET":
-          await this.handleStagingGet(handler_args.local_file, handler_args.presigned_url, handler_args.headers)
+          await this.handleStagingGet(handlerArgs.local_file, handlerArgs.presigned_url, handlerArgs.headers)
+          break;
         case "PUT":
-          await this.handleStagingPut(handler_args.local_file, handler_args.presigned_url, handler_args.headers)
+          await this.handleStagingPut(handlerArgs.local_file, handlerArgs.presigned_url, handlerArgs.headers)
+          break;
         case "REMOVE":
-          await this.handleStagingRemove(handler_args.local_file, handler_args.presigned_url, handler_args.headers)
-  
+          await this.handleStagingRemove(handlerArgs.local_file, handlerArgs.presigned_url, handlerArgs.headers)
+          break;
+        default:
+          throw new StagingError("Staging query operation is not supported.");
+
       }
-
-
-
     }
+    return operation 
+  }
+
   public async handleStagingGet(local_file: string, presigned_url: string, headers: object) {
-    let response = await axios.get(presigned_url,{headers: headers})
-    let respJson = await response.data
-    if(respJson['ok']){
-      fs.writeFileSync(local_file,respJson['content'])
+    const response = await axios.get(presigned_url,{headers})
+    const buffer = Buffer.from(response.data.body.data)
+    if(response.statusText === 'OK'){
+      fs.writeFileSync(local_file,buffer)
     }
   }
+
   public async handleStagingRemove(local_file: string, presigned_url: string, headers: object) {
-    let response = await axios.delete(presigned_url,{headers: headers})
-    let respJson = await response.data
-    if(!respJson['ok']){
+    const response = await axios.delete(presigned_url,{headers})
+    const respJson = await response.data
+    if(!respJson.ok){
       // Throw
     }
   }
-  public async handleStagingPut(local_file: string, presigned_url: string, headers: object) {
-    let data = fs.readFileSync(local_file)
 
-    let response = await axios.put(presigned_url,{body: data, headers: headers})
-    let respJson = await response.data
-    if(respJson['ok']){
-      fs.writeFileSync(local_file,respJson['content'])
+  public async handleStagingPut(local_file: string, presigned_url: string, headers: object) {
+    const data = fs.readFileSync(local_file)
+
+    const response = await axios.put(presigned_url,{body: data, headers})
+
+    if(response.statusText === 'OK'){
+      fs.writeFileSync(local_file,response.data)
     }
   }
 
