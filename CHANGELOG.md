@@ -1,5 +1,9 @@
 # Release History
 
+## 1.4.0
+
+- Added Cloud Fetch support (databricks/databricks-sql-nodejs#158)
+
 ## 1.3.0
 
 - Implemented automatic retry for some HTTP errors (429, 503) (databricks/databricks-sql-nodejs#127)
