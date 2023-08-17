@@ -73,7 +73,6 @@
   },
   "dependencies": {
     "apache-arrow": "^10.0.1",
-    "axios": "^1.4.0",
     "commander": "^9.3.0",
     "node-fetch": "^2.6.12",
     "node-int64": "^0.4.0",

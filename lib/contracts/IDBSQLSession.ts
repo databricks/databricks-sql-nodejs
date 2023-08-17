@@ -8,7 +8,7 @@ export type ExecuteStatementOptions = {
   runAsync?: boolean;
   maxRows?: number | null;
   useCloudFetch?: boolean;
-  stagingAllowedLocalPath?: string[]
+  stagingAllowedLocalPath?: string[];
 };
 
 export type TypeInfoRequest = {
@@ -93,7 +93,6 @@ export default interface IDBSQLSession {
    * @param options
    */
   executeStatement(statement: string, options?: ExecuteStatementOptions): Promise<IOperation>;
-
 
   /**
    * Information about supported data types
