@@ -226,16 +226,6 @@ export default class DBSQLSession implements IDBSQLSession {
   }
 
   /**
-   * Executes statement
-   * @public
-   * @param statement - SQL statement to be executed
-   * @param options - maxRows field is used to specify Direct Results
-   * @returns DBSQLOperation
-   * @example
-   * const operation = await session.executeStatement(query, { runAsync: true });
-   */
-
-  /**
    * Information about supported data types
    * @public
    * @param request
