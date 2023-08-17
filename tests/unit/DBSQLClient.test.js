@@ -272,6 +272,46 @@ describe('DBSQLClient.close', () => {
     expect(client.connectionOptions).to.be.null;
     // No additional asserts needed - it should just reach this point
   });
+
+  it('should close sessions that belong to it', async () => {
+    const client = new DBSQLClient();
+
+    const thriftClientMock = {
+      OpenSession(req, cb) {
+        cb(null, {
+          status: {},
+          sessionHandle: {
+            sessionId: {
+              guid: Buffer.alloc(16),
+              secret: Buffer.alloc(0),
+            },
+          },
+        });
+      },
+      CloseSession(req, cb) {
+        cb(null, { status: {} });
+      },
+    };
+    client.client = thriftClientMock;
+    sinon.stub(client, 'getClient').returns(Promise.resolve(thriftClientMock));
+
+    const session = await client.openSession();
+    expect(session.onClose).to.be.not.undefined;
+    expect(session.isOpen).to.be.true;
+    expect(client.sessions.items.size).to.eq(1);
+
+    sinon.spy(thriftClientMock, 'CloseSession');
+    sinon.spy(client.sessions, 'closeAll');
+    sinon.spy(session, 'close');
+
+    await client.close();
+    expect(client.sessions.closeAll.called).to.be.true;
+    expect(session.close.called).to.be.true;
+    expect(session.onClose).to.be.undefined;
+    expect(session.isOpen).to.be.false;
+    expect(client.sessions.items.size).to.eq(0);
+    expect(thriftClientMock.CloseSession.called).to.be.true;
+  });
 });
 
 describe('DBSQLClient.getAuthProvider', () => {
