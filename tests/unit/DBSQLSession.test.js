@@ -1,5 +1,6 @@
-const { expect } = require('chai');
+const { expect, AssertionError } = require('chai');
 const { DBSQLLogger, LogLevel } = require('../../dist');
+const sinon = require('sinon');
 const DBSQLSession = require('../../dist/DBSQLSession').default;
 const InfoValue = require('../../dist/dto/InfoValue').default;
 const Status = require('../../dist/dto/Status').default;
@@ -34,6 +35,17 @@ function createDriverMock(customMethodHandler) {
 function createSession(customMethodHandler) {
   const driver = createDriverMock(customMethodHandler);
   return new DBSQLSession(driver, { sessionId: 'id' }, logger);
+}
+
+async function expectFailure(fn) {
+  try {
+    await fn();
+    expect.fail('It should throw an error');
+  } catch (error) {
+    if (error instanceof AssertionError) {
+      throw error;
+    }
+  }
 }
 
 describe('DBSQLSession', () => {
@@ -390,14 +402,76 @@ describe('DBSQLSession', () => {
 
   describe('close', () => {
     it('should run operation', async () => {
-      const session = createSession(() => ({
+      const driverMethodStub = sinon.stub().returns({
         status: {
           statusCode: 0,
         },
-      }));
+      });
+
+      const session = createSession(driverMethodStub);
+      expect(session.isOpen).to.be.true;
 
       const result = await session.close();
       expect(result).instanceOf(Status);
+      expect(session.isOpen).to.be.false;
+      expect(driverMethodStub.callCount).to.eq(1);
+    });
+
+    it('should not run operation twice', async () => {
+      const driverMethodStub = sinon.stub().returns({
+        status: {
+          statusCode: 0,
+        },
+      });
+
+      const session = createSession(driverMethodStub);
+      expect(session.isOpen).to.be.true;
+
+      const result = await session.close();
+      expect(result).instanceOf(Status);
+      expect(session.isOpen).to.be.false;
+      expect(driverMethodStub.callCount).to.eq(1);
+
+      const result2 = await session.close();
+      expect(result2).instanceOf(Status);
+      expect(session.isOpen).to.be.false;
+      expect(driverMethodStub.callCount).to.eq(1); // second time it should not be called
+    });
+
+    it('should close operations that belong to it', async () => {
+      const session = createSession();
+      const operation = await session.executeStatement('SELECT * FROM table');
+      expect(operation.onClose).to.be.not.undefined;
+      expect(operation._completeOperation.closed).to.be.false;
+      expect(session.operations.items.size).to.eq(1);
+
+      sinon.spy(session.operations, 'closeAll');
+      sinon.spy(operation, 'close');
+
+      await session.close();
+      expect(operation.close.called).to.be.true;
+      expect(session.operations.closeAll.called).to.be.true;
+      expect(operation.onClose).to.be.undefined;
+      expect(operation._completeOperation.closed).to.be.true;
+      expect(session.operations.items.size).to.eq(0);
+    });
+
+    it('should reject all methods once closed', async () => {
+      const session = createSession();
+      await session.close();
+      expect(session.isOpen).to.be.false;
+
+      await expectFailure(() => session.getInfo(1));
+      await expectFailure(() => session.executeStatement('SELECT * FROM table'));
+      await expectFailure(() => session.getTypeInfo());
+      await expectFailure(() => session.getCatalogs());
+      await expectFailure(() => session.getSchemas());
+      await expectFailure(() => session.getTables());
+      await expectFailure(() => session.getTableTypes());
+      await expectFailure(() => session.getColumns());
+      await expectFailure(() => session.getFunctions());
+      await expectFailure(() => session.getPrimaryKeys());
+      await expectFailure(() => session.getCrossReference());
     });
   });
 });
