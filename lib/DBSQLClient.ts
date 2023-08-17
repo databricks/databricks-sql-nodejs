@@ -18,6 +18,7 @@ import PlainHttpAuthentication from './connection/auth/PlainHttpAuthentication';
 import DatabricksOAuth from './connection/auth/DatabricksOAuth';
 import IDBSQLLogger, { LogLevel } from './contracts/IDBSQLLogger';
 import DBSQLLogger from './DBSQLLogger';
+import CloseableCollection from './utils/CloseableCollection';
 
 function prependSlash(str: string): string {
   if (str.length > 0 && str.charAt(0) !== '/') {
@@ -51,6 +52,8 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
   private readonly logger: IDBSQLLogger;
 
   private readonly thrift = thrift;
+
+  private sessions = new CloseableCollection<DBSQLSession>();
 
   constructor(options?: ClientOptions) {
     super();
@@ -147,7 +150,11 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
     });
 
     Status.assert(response.status);
-    return new DBSQLSession(driver, definedOrError(response.sessionHandle), this.logger);
+    const session = new DBSQLSession(driver, definedOrError(response.sessionHandle), {
+      logger: this.logger,
+    });
+    this.sessions.add(session);
+    return session;
   }
 
   private async getClient() {
@@ -206,6 +213,8 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
   }
 
   public async close(): Promise<void> {
+    await this.sessions.closeAll();
+
     this.client = null;
     this.authProvider = null;
     this.connectionOptions = null;

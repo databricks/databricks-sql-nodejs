@@ -7,6 +7,7 @@ export type ExecuteStatementOptions = {
   queryTimeout?: Int64;
   runAsync?: boolean;
   maxRows?: number | null;
+  useCloudFetch?: boolean;
   stagingAllowedLocalPath?: string[]
 };
 
