@@ -3,6 +3,34 @@
 ## 1.4.0
 
 - Added Cloud Fetch support (databricks/databricks-sql-nodejs#158)
+- Improved handling of closed sessions and operations (databricks/databricks-sql-nodejs#129).
+  Now, when session gets closed, all operations associated with it are immediately closed.
+  Similarly, if client gets closed - all associated sessions (and their operations) are closed as well.
+
+**Notes**:
+
+Cloud Fetch is disabled by default. To use it, pass `useCloudFetch: true`
+to `IDBSQLSession.executeStatement()`. For example:
+
+```ts
+// obtain session object as usual
+const operation = session.executeStatement(query, {
+  runAsync: true,
+  useCloudFetch: true,
+});
+```
+
+Note that Cloud Fetch is effectively enabled only for really large datasets, so if
+the query returns only few thousands records, Cloud Fetch won't be enabled no matter
+what `useCloudFetch` setting is. Also gentle reminder that for large datasets
+it's better to use `fetchChunk` instead of `fetchAll` to avoid OOM errors:
+
+```ts
+do {
+  const chunk = await operation.fetchChunk({ maxRows: 100000 });
+  // process chunk here
+} while (await operation.hasMoreRows());
+```
 
 ## 1.3.0
 
