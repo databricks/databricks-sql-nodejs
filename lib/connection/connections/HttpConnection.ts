@@ -1,6 +1,6 @@
-import thrift from 'thrift';
 import https from 'https';
 import http, { IncomingMessage } from 'http';
+import thrift from 'thrift';
 
 import IThriftConnection from '../contracts/IThriftConnection';
 import IConnectionProvider from '../contracts/IConnectionProvider';
