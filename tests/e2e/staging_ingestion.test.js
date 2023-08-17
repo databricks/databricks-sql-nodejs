@@ -13,15 +13,15 @@ describe('Staging Test', () => {
       path: config.path,
       token: config.token,
     });
-    let temp_path = 'tests/e2e/staging/data';
-    fs.writeFileSync(temp_path, (data = 'Hello World!'));
+    let tempPath = 'tests/e2e/staging/data';
+    fs.writeFileSync(tempPath, 'Hello World!');
 
-    let session = await client.openSession({
+    const session = await client.openSession({
       initialCatalog: config.database[0],
       initialSchema: config.database[1],
     });
     await session.executeStatement(
-      `PUT '${temp_path}' INTO '/Volumes/${config.database[0]}/${config.database[1]}/e2etests/file1.csv' OVERWRITE`,
+      `PUT '${tempPath}' INTO '/Volumes/${config.database[0]}/${config.database[1]}/e2etests/file1.csv' OVERWRITE`,
       { stagingAllowedLocalPath: ['tests/e2e/staging'] },
     );
     await session.executeStatement(
@@ -39,15 +39,15 @@ describe('Staging Test', () => {
       path: config.path,
       token: config.token,
     });
-    let temp_path = 'tests/e2e/staging/data';
-    fs.writeFileSync(temp_path, (data = 'Hello World!'));
+    let tempPath = 'tests/e2e/staging/data';
+    fs.writeFileSync(tempPath, (data = 'Hello World!'));
 
     let session = await client.openSession({
       initialCatalog: config.database[0],
       initialSchema: config.database[1],
     });
     await session.executeStatement(
-      `PUT '${temp_path}' INTO '/Volumes/${config.database[0]}/${config.database[1]}/e2etests/file1.csv' OVERWRITE`,
+      `PUT '${tempPath}' INTO '/Volumes/${config.database[0]}/${config.database[1]}/e2etests/file1.csv' OVERWRITE`,
       { stagingAllowedLocalPath: ['tests/e2e/staging'] },
     );
     await session.executeStatement(
@@ -65,15 +65,15 @@ describe('Staging Test', () => {
       path: config.path,
       token: config.token,
     });
-    let temp_path = 'tests/e2e/staging/data';
-    fs.writeFileSync(temp_path, (data = 'Hello World!'));
+    let tempPath = 'tests/e2e/staging/data';
+    fs.writeFileSync(tempPath, (data = 'Hello World!'));
 
     let session = await client.openSession({
       initialCatalog: config.database[0],
       initialSchema: config.database[1],
     });
     await session.executeStatement(
-      `PUT '${temp_path}' INTO '/Volumes/${config.database[0]}/${config.database[1]}/e2etests/file1.csv' OVERWRITE`,
+      `PUT '${tempPath}' INTO '/Volumes/${config.database[0]}/${config.database[1]}/e2etests/file1.csv' OVERWRITE`,
       { stagingAllowedLocalPath: ['tests/e2e/staging'] },
     );
     await session.executeStatement(`REMOVE '/Volumes/${config.database[0]}/${config.database[1]}/e2etests/file1.csv'`, {
@@ -88,15 +88,15 @@ describe('Staging Test', () => {
       path: config.path,
       token: config.token,
     });
-    let temp_path = 'tests/e2e/staging/data';
-    fs.writeFileSync(temp_path, (data = 'Hello World!'));
+    let tempPath = 'tests/e2e/staging/data';
+    fs.writeFileSync(tempPath, (data = 'Hello World!'));
 
     let session = await client.openSession({
       initialCatalog: config.database[0],
       initialSchema: config.database[1],
     });
     await session.executeStatement(
-      `PUT '${temp_path}' INTO '/Volumes/${config.database[0]}/${config.database[1]}/e2etests/file1.csv' OVERWRITE`,
+      `PUT '${tempPath}' INTO '/Volumes/${config.database[0]}/${config.database[1]}/e2etests/file1.csv' OVERWRITE`,
       { stagingAllowedLocalPath: ['tests/e2e/staging'] },
     );
     await session.executeStatement(
