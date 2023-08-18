@@ -158,51 +158,58 @@ export default class DBSQLSession implements IDBSQLSession {
     if (options.stagingAllowedLocalPath) {
       const metadata = await operation.getMetadata();
       if (metadata.isStagingOperation) {
-        type StagingResponse = {
-          presignedUrl: string;
-          localFile: string;
-          headers: HeadersInit;
-          operation: string;
-        };
-        const rows = await operation.fetchAll();
-        if (rows.length !== 1) {
-          throw new StagingError('Staging operation: expected the only row in result');
-        }
-        const row = rows[0] as StagingResponse;
-
-        let allowOperation = false;
-        for (const filepath of options.stagingAllowedLocalPath) {
-          const relativePath = path.relative(filepath, row.localFile);
-
-          if (!relativePath.startsWith('..') && !path.isAbsolute(relativePath)) {
-            allowOperation = true;
-          }
-        }
-        if (!allowOperation) {
-          throw new StagingError('Staging path not a subset of allowed local paths.');
-        }
-
-        const { localFile, presignedUrl, headers } = row;
-
-        switch (row.operation) {
-          case 'GET':
-            await this.handleStagingGet(localFile, presignedUrl, headers);
-            break;
-          case 'PUT':
-            await this.handleStagingPut(localFile, presignedUrl, headers);
-            break;
-          case 'REMOVE':
-            await this.handleStagingRemove(localFile, presignedUrl, headers);
-            break;
-          default:
-            throw new StagingError('Staging query operation is not supported.');
-        }
+        const allowedLocalPath = Array.isArray(options.stagingAllowedLocalPath)
+          ? options.stagingAllowedLocalPath
+          : [options.stagingAllowedLocalPath];
+        return this.handleStagingOperation(operation, allowedLocalPath);
       }
     }
     return operation;
   }
 
-  public async handleStagingGet(localFile: string, presignedUrl: string, headers: HeadersInit) {
+  private async handleStagingOperation(operation: IOperation, allowedLocalPath: Array<string>): Promise<IOperation> {
+    type StagingResponse = {
+      presignedUrl: string;
+      localFile: string;
+      headers: HeadersInit;
+      operation: string;
+    };
+    const rows = await operation.fetchAll();
+    if (rows.length !== 1) {
+      throw new StagingError('Staging operation: expected the only row in result');
+    }
+    const row = rows[0] as StagingResponse;
+
+    let allowOperation = false;
+    for (const filepath of allowedLocalPath) {
+      const relativePath = path.relative(filepath, row.localFile);
+
+      if (!relativePath.startsWith('..') && !path.isAbsolute(relativePath)) {
+        allowOperation = true;
+      }
+    }
+    if (!allowOperation) {
+      throw new StagingError('Staging path not a subset of allowed local paths.');
+    }
+
+    const { localFile, presignedUrl, headers } = row;
+
+    switch (row.operation) {
+      case 'GET':
+        await this.handleStagingGet(localFile, presignedUrl, headers);
+        return operation;
+      case 'PUT':
+        await this.handleStagingPut(localFile, presignedUrl, headers);
+        return operation;
+      case 'REMOVE':
+        await this.handleStagingRemove(localFile, presignedUrl, headers);
+        return operation;
+      default:
+        throw new StagingError(`Staging query operation is not supported: ${row.operation}`);
+    }
+  }
+
+  private async handleStagingGet(localFile: string, presignedUrl: string, headers: HeadersInit): Promise<void> {
     const response = await fetch(presignedUrl, { method: 'GET', headers });
     if (!response.ok) {
       throw new StagingError(`HTTP error ${response.status} ${response.statusText}`);
@@ -211,14 +218,14 @@ export default class DBSQLSession implements IDBSQLSession {
     fs.writeFileSync(localFile, Buffer.from(buffer));
   }
 
-  public async handleStagingRemove(localFile: string, presignedUrl: string, headers: HeadersInit) {
+  private async handleStagingRemove(localFile: string, presignedUrl: string, headers: HeadersInit): Promise<void> {
     const response = await fetch(presignedUrl, { method: 'DELETE', headers });
     if (!response.ok) {
       throw new StagingError(`HTTP error ${response.status} ${response.statusText}`);
     }
   }
 
-  public async handleStagingPut(localFile: string, presignedUrl: string, headers: HeadersInit) {
+  private async handleStagingPut(localFile: string, presignedUrl: string, headers: HeadersInit): Promise<void> {
     const data = fs.readFileSync(localFile);
     const response = await fetch(presignedUrl, { method: 'PUT', headers, body: data });
     if (!response.ok) {

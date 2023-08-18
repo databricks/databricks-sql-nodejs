@@ -8,7 +8,7 @@ export type ExecuteStatementOptions = {
   runAsync?: boolean;
   maxRows?: number | null;
   useCloudFetch?: boolean;
-  stagingAllowedLocalPath?: string[];
+  stagingAllowedLocalPath?: string | string[];
 };
 
 export type TypeInfoRequest = {
