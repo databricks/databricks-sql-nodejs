@@ -11,6 +11,7 @@ import {
   TOperationHandle,
   TTableSchema,
   TSparkDirectResults,
+  TGetResultSetMetadataResp,
 } from '../../thrift/TCLIService_types';
 import Status from '../dto/Status';
 import OperationStatusHelper from './OperationStatusHelper';
@@ -205,6 +206,11 @@ export default class DBSQLOperation implements IOperation {
 
     this.logger?.log(LogLevel.debug, `Fetching schema for operation with id: ${this.getId()}`);
     return this._schema.fetch();
+  }
+
+  public async getMetadata(): Promise<TGetResultSetMetadataResp> {
+    await this.failIfClosed();
+    return this._schema.fetchMetadata();
   }
 
   private async failIfClosed(): Promise<void> {

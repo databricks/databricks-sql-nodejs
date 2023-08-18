@@ -23,7 +23,7 @@ export default class SchemaHelper {
     this.metadata = metadata;
   }
 
-  private async fetchMetadata() {
+  public async fetchMetadata() {
     if (!this.metadata) {
       const metadata = await this.driver.getResultSetMetadata({
         operationHandle: this.operationHandle,

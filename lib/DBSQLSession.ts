@@ -148,45 +148,55 @@ export default class DBSQLSession implements IDBSQLSession {
     const response = await this.handleResponse(operationPromise);
     const operation = this.createOperation(response);
 
+    // If `stagingAllowedLocalPath` is provided - assume that operation possibly may be a staging operation.
+    // To know for sure, fetch metadata and check a `isStagingOperation` flag. If it happens that it wasn't
+    // a staging operation - not a big deal, we just fetched metadata earlier, but operation is still usable
+    // and user can get data from it.
+    // If `stagingAllowedLocalPath` is not provided - don't do anything to the operation. In a case of regular
+    // operation, everything will work as usual. In a case of staging operation, it will be processed like any
+    // other query - it will be possible to get data from it as usual, or use other operation methods.
     if (options.stagingAllowedLocalPath) {
-      type StagingResponse = {
-        presignedUrl: string;
-        localFile: string;
-        headers: HeadersInit;
-        operation: string;
-      };
-      const rows = await operation.fetchAll();
-      if (rows.length !== 1) {
-        throw new StagingError('Staging operation: expected the only row in result');
-      }
-      const row = rows[0] as StagingResponse;
-
-      let allowOperation = false;
-      for (const filepath of options.stagingAllowedLocalPath) {
-        const relativePath = path.relative(filepath, row.localFile);
-
-        if (!relativePath.startsWith('..') && !path.isAbsolute(relativePath)) {
-          allowOperation = true;
+      const metadata = await operation.getMetadata();
+      if (metadata.isStagingOperation) {
+        type StagingResponse = {
+          presignedUrl: string;
+          localFile: string;
+          headers: HeadersInit;
+          operation: string;
+        };
+        const rows = await operation.fetchAll();
+        if (rows.length !== 1) {
+          throw new StagingError('Staging operation: expected the only row in result');
         }
-      }
-      if (!allowOperation) {
-        throw new StagingError('Staging path not a subset of allowed local paths.');
-      }
+        const row = rows[0] as StagingResponse;
 
-      const { localFile, presignedUrl, headers } = row;
+        let allowOperation = false;
+        for (const filepath of options.stagingAllowedLocalPath) {
+          const relativePath = path.relative(filepath, row.localFile);
 
-      switch (row.operation) {
-        case 'GET':
-          await this.handleStagingGet(localFile, presignedUrl, headers);
-          break;
-        case 'PUT':
-          await this.handleStagingPut(localFile, presignedUrl, headers);
-          break;
-        case 'REMOVE':
-          await this.handleStagingRemove(localFile, presignedUrl, headers);
-          break;
-        default:
-          throw new StagingError('Staging query operation is not supported.');
+          if (!relativePath.startsWith('..') && !path.isAbsolute(relativePath)) {
+            allowOperation = true;
+          }
+        }
+        if (!allowOperation) {
+          throw new StagingError('Staging path not a subset of allowed local paths.');
+        }
+
+        const { localFile, presignedUrl, headers } = row;
+
+        switch (row.operation) {
+          case 'GET':
+            await this.handleStagingGet(localFile, presignedUrl, headers);
+            break;
+          case 'PUT':
+            await this.handleStagingPut(localFile, presignedUrl, headers);
+            break;
+          case 'REMOVE':
+            await this.handleStagingRemove(localFile, presignedUrl, headers);
+            break;
+          default:
+            throw new StagingError('Staging query operation is not supported.');
+        }
       }
     }
     return operation;
@@ -412,7 +422,7 @@ export default class DBSQLSession implements IDBSQLSession {
     return new Status(response.status);
   }
 
-  private createOperation(response: OperationResponseShape): IOperation {
+  private createOperation(response: OperationResponseShape): DBSQLOperation {
     Status.assert(response.status);
     const handle = definedOrError(response.operationHandle);
     const operation = new DBSQLOperation(
