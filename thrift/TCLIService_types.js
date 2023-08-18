@@ -2947,6 +2947,7 @@ var TSparkArrowResultLink = module.exports.TSparkArrowResultLink = function(args
   this.startRowOffset = null;
   this.rowCount = null;
   this.bytesNum = null;
+  this.httpHeaders = null;
   if (args) {
     if (args.fileLink !== undefined && args.fileLink !== null) {
       this.fileLink = args.fileLink;
@@ -2972,6 +2973,9 @@ var TSparkArrowResultLink = module.exports.TSparkArrowResultLink = function(args
       this.bytesNum = args.bytesNum;
     } else {
       throw new Thrift.TProtocolException(Thrift.TProtocolExceptionType.UNKNOWN, 'Required field bytesNum is unset!');
+    }
+    if (args.httpHeaders !== undefined && args.httpHeaders !== null) {
+      this.httpHeaders = Thrift.copyMap(args.httpHeaders, [null]);
     }
   }
 };
@@ -3021,6 +3025,23 @@ TSparkArrowResultLink.prototype.read = function(input) {
         input.skip(ftype);
       }
       break;
+      case 6:
+      if (ftype == Thrift.Type.MAP) {
+        this.httpHeaders = {};
+        var _rtmp377 = input.readMapBegin();
+        var _size76 = _rtmp377.size || 0;
+        for (var _i78 = 0; _i78 < _size76; ++_i78) {
+          var key79 = null;
+          var val80 = null;
+          key79 = input.readString();
+          val80 = input.readString();
+          this.httpHeaders[key79] = val80;
+        }
+        input.readMapEnd();
+      } else {
+        input.skip(ftype);
+      }
+      break;
       default:
         input.skip(ftype);
     }
@@ -3057,6 +3078,19 @@ TSparkArrowResultLink.prototype.write = function(output) {
     output.writeI64(this.bytesNum);
     output.writeFieldEnd();
   }
+  if (this.httpHeaders !== null && this.httpHeaders !== undefined) {
+    output.writeFieldBegin('httpHeaders', Thrift.Type.MAP, 6);
+    output.writeMapBegin(Thrift.Type.STRING, Thrift.Type.STRING, Thrift.objectLength(this.httpHeaders));
+    for (var kiter81 in this.httpHeaders) {
+      if (this.httpHeaders.hasOwnProperty(kiter81)) {
+        var viter82 = this.httpHeaders[kiter81];
+        output.writeString(kiter81);
+        output.writeString(viter82);
+      }
+    }
+    output.writeMapEnd();
+    output.writeFieldEnd();
+  }
   output.writeFieldStop();
   output.writeStructEnd();
   return;
@@ -3070,6 +3104,7 @@ var TDBSqlCloudResultFile = module.exports.TDBSqlCloudResultFile = function(args
   this.compressedBytes = null;
   this.fileLink = null;
   this.linkExpiryTime = null;
+  this.httpHeaders = null;
   if (args) {
     if (args.filePath !== undefined && args.filePath !== null) {
       this.filePath = args.filePath;
@@ -3091,6 +3126,9 @@ var TDBSqlCloudResultFile = module.exports.TDBSqlCloudResultFile = function(args
     }
     if (args.linkExpiryTime !== undefined && args.linkExpiryTime !== null) {
       this.linkExpiryTime = args.linkExpiryTime;
+    }
+    if (args.httpHeaders !== undefined && args.httpHeaders !== null) {
+      this.httpHeaders = Thrift.copyMap(args.httpHeaders, [null]);
     }
   }
 };
@@ -3154,6 +3192,23 @@ TDBSqlCloudResultFile.prototype.read = function(input) {
         input.skip(ftype);
       }
       break;
+      case 8:
+      if (ftype == Thrift.Type.MAP) {
+        this.httpHeaders = {};
+        var _rtmp384 = input.readMapBegin();
+        var _size83 = _rtmp384.size || 0;
+        for (var _i85 = 0; _i85 < _size83; ++_i85) {
+          var key86 = null;
+          var val87 = null;
+          key86 = input.readString();
+          val87 = input.readString();
+          this.httpHeaders[key86] = val87;
+        }
+        input.readMapEnd();
+      } else {
+        input.skip(ftype);
+      }
+      break;
       default:
         input.skip(ftype);
     }
@@ -3198,6 +3253,19 @@ TDBSqlCloudResultFile.prototype.write = function(output) {
   if (this.linkExpiryTime !== null && this.linkExpiryTime !== undefined) {
     output.writeFieldBegin('linkExpiryTime', Thrift.Type.I64, 7);
     output.writeI64(this.linkExpiryTime);
+    output.writeFieldEnd();
+  }
+  if (this.httpHeaders !== null && this.httpHeaders !== undefined) {
+    output.writeFieldBegin('httpHeaders', Thrift.Type.MAP, 8);
+    output.writeMapBegin(Thrift.Type.STRING, Thrift.Type.STRING, Thrift.objectLength(this.httpHeaders));
+    for (var kiter88 in this.httpHeaders) {
+      if (this.httpHeaders.hasOwnProperty(kiter88)) {
+        var viter89 = this.httpHeaders[kiter88];
+        output.writeString(kiter88);
+        output.writeString(viter89);
+      }
+    }
+    output.writeMapEnd();
     output.writeFieldEnd();
   }
   output.writeFieldStop();
@@ -3266,13 +3334,13 @@ TRowSet.prototype.read = function(input) {
       case 2:
       if (ftype == Thrift.Type.LIST) {
         this.rows = [];
-        var _rtmp377 = input.readListBegin();
-        var _size76 = _rtmp377.size || 0;
-        for (var _i78 = 0; _i78 < _size76; ++_i78) {
-          var elem79 = null;
-          elem79 = new ttypes.TRow();
-          elem79.read(input);
-          this.rows.push(elem79);
+        var _rtmp391 = input.readListBegin();
+        var _size90 = _rtmp391.size || 0;
+        for (var _i92 = 0; _i92 < _size90; ++_i92) {
+          var elem93 = null;
+          elem93 = new ttypes.TRow();
+          elem93.read(input);
+          this.rows.push(elem93);
         }
         input.readListEnd();
       } else {
@@ -3282,13 +3350,13 @@ TRowSet.prototype.read = function(input) {
       case 3:
       if (ftype == Thrift.Type.LIST) {
         this.columns = [];
-        var _rtmp381 = input.readListBegin();
-        var _size80 = _rtmp381.size || 0;
-        for (var _i82 = 0; _i82 < _size80; ++_i82) {
-          var elem83 = null;
-          elem83 = new ttypes.TColumn();
-          elem83.read(input);
-          this.columns.push(elem83);
+        var _rtmp395 = input.readListBegin();
+        var _size94 = _rtmp395.size || 0;
+        for (var _i96 = 0; _i96 < _size94; ++_i96) {
+          var elem97 = null;
+          elem97 = new ttypes.TColumn();
+          elem97.read(input);
+          this.columns.push(elem97);
         }
         input.readListEnd();
       } else {
@@ -3312,13 +3380,13 @@ TRowSet.prototype.read = function(input) {
       case 1281:
       if (ftype == Thrift.Type.LIST) {
         this.arrowBatches = [];
-        var _rtmp385 = input.readListBegin();
-        var _size84 = _rtmp385.size || 0;
-        for (var _i86 = 0; _i86 < _size84; ++_i86) {
-          var elem87 = null;
-          elem87 = new ttypes.TSparkArrowBatch();
-          elem87.read(input);
-          this.arrowBatches.push(elem87);
+        var _rtmp399 = input.readListBegin();
+        var _size98 = _rtmp399.size || 0;
+        for (var _i100 = 0; _i100 < _size98; ++_i100) {
+          var elem101 = null;
+          elem101 = new ttypes.TSparkArrowBatch();
+          elem101.read(input);
+          this.arrowBatches.push(elem101);
         }
         input.readListEnd();
       } else {
@@ -3328,13 +3396,13 @@ TRowSet.prototype.read = function(input) {
       case 1282:
       if (ftype == Thrift.Type.LIST) {
         this.resultLinks = [];
-        var _rtmp389 = input.readListBegin();
-        var _size88 = _rtmp389.size || 0;
-        for (var _i90 = 0; _i90 < _size88; ++_i90) {
-          var elem91 = null;
-          elem91 = new ttypes.TSparkArrowResultLink();
-          elem91.read(input);
-          this.resultLinks.push(elem91);
+        var _rtmp3103 = input.readListBegin();
+        var _size102 = _rtmp3103.size || 0;
+        for (var _i104 = 0; _i104 < _size102; ++_i104) {
+          var elem105 = null;
+          elem105 = new ttypes.TSparkArrowResultLink();
+          elem105.read(input);
+          this.resultLinks.push(elem105);
         }
         input.readListEnd();
       } else {
@@ -3344,13 +3412,13 @@ TRowSet.prototype.read = function(input) {
       case 3329:
       if (ftype == Thrift.Type.LIST) {
         this.cloudFetchResults = [];
-        var _rtmp393 = input.readListBegin();
-        var _size92 = _rtmp393.size || 0;
-        for (var _i94 = 0; _i94 < _size92; ++_i94) {
-          var elem95 = null;
-          elem95 = new ttypes.TDBSqlCloudResultFile();
-          elem95.read(input);
-          this.cloudFetchResults.push(elem95);
+        var _rtmp3107 = input.readListBegin();
+        var _size106 = _rtmp3107.size || 0;
+        for (var _i108 = 0; _i108 < _size106; ++_i108) {
+          var elem109 = null;
+          elem109 = new ttypes.TDBSqlCloudResultFile();
+          elem109.read(input);
+          this.cloudFetchResults.push(elem109);
         }
         input.readListEnd();
       } else {
@@ -3376,10 +3444,10 @@ TRowSet.prototype.write = function(output) {
   if (this.rows !== null && this.rows !== undefined) {
     output.writeFieldBegin('rows', Thrift.Type.LIST, 2);
     output.writeListBegin(Thrift.Type.STRUCT, this.rows.length);
-    for (var iter96 in this.rows) {
-      if (this.rows.hasOwnProperty(iter96)) {
-        iter96 = this.rows[iter96];
-        iter96.write(output);
+    for (var iter110 in this.rows) {
+      if (this.rows.hasOwnProperty(iter110)) {
+        iter110 = this.rows[iter110];
+        iter110.write(output);
       }
     }
     output.writeListEnd();
@@ -3388,10 +3456,10 @@ TRowSet.prototype.write = function(output) {
   if (this.columns !== null && this.columns !== undefined) {
     output.writeFieldBegin('columns', Thrift.Type.LIST, 3);
     output.writeListBegin(Thrift.Type.STRUCT, this.columns.length);
-    for (var iter97 in this.columns) {
-      if (this.columns.hasOwnProperty(iter97)) {
-        iter97 = this.columns[iter97];
-        iter97.write(output);
+    for (var iter111 in this.columns) {
+      if (this.columns.hasOwnProperty(iter111)) {
+        iter111 = this.columns[iter111];
+        iter111.write(output);
       }
     }
     output.writeListEnd();
@@ -3410,10 +3478,10 @@ TRowSet.prototype.write = function(output) {
   if (this.arrowBatches !== null && this.arrowBatches !== undefined) {
     output.writeFieldBegin('arrowBatches', Thrift.Type.LIST, 1281);
     output.writeListBegin(Thrift.Type.STRUCT, this.arrowBatches.length);
-    for (var iter98 in this.arrowBatches) {
-      if (this.arrowBatches.hasOwnProperty(iter98)) {
-        iter98 = this.arrowBatches[iter98];
-        iter98.write(output);
+    for (var iter112 in this.arrowBatches) {
+      if (this.arrowBatches.hasOwnProperty(iter112)) {
+        iter112 = this.arrowBatches[iter112];
+        iter112.write(output);
       }
     }
     output.writeListEnd();
@@ -3422,10 +3490,10 @@ TRowSet.prototype.write = function(output) {
   if (this.resultLinks !== null && this.resultLinks !== undefined) {
     output.writeFieldBegin('resultLinks', Thrift.Type.LIST, 1282);
     output.writeListBegin(Thrift.Type.STRUCT, this.resultLinks.length);
-    for (var iter99 in this.resultLinks) {
-      if (this.resultLinks.hasOwnProperty(iter99)) {
-        iter99 = this.resultLinks[iter99];
-        iter99.write(output);
+    for (var iter113 in this.resultLinks) {
+      if (this.resultLinks.hasOwnProperty(iter113)) {
+        iter113 = this.resultLinks[iter113];
+        iter113.write(output);
       }
     }
     output.writeListEnd();
@@ -3434,10 +3502,10 @@ TRowSet.prototype.write = function(output) {
   if (this.cloudFetchResults !== null && this.cloudFetchResults !== undefined) {
     output.writeFieldBegin('cloudFetchResults', Thrift.Type.LIST, 3329);
     output.writeListBegin(Thrift.Type.STRUCT, this.cloudFetchResults.length);
-    for (var iter100 in this.cloudFetchResults) {
-      if (this.cloudFetchResults.hasOwnProperty(iter100)) {
-        iter100 = this.cloudFetchResults[iter100];
-        iter100.write(output);
+    for (var iter114 in this.cloudFetchResults) {
+      if (this.cloudFetchResults.hasOwnProperty(iter114)) {
+        iter114 = this.cloudFetchResults[iter114];
+        iter114.write(output);
       }
     }
     output.writeListEnd();
@@ -3496,14 +3564,14 @@ TDBSqlTempView.prototype.read = function(input) {
       case 3:
       if (ftype == Thrift.Type.MAP) {
         this.properties = {};
-        var _rtmp3102 = input.readMapBegin();
-        var _size101 = _rtmp3102.size || 0;
-        for (var _i103 = 0; _i103 < _size101; ++_i103) {
-          var key104 = null;
-          var val105 = null;
-          key104 = input.readString();
-          val105 = input.readString();
-          this.properties[key104] = val105;
+        var _rtmp3116 = input.readMapBegin();
+        var _size115 = _rtmp3116.size || 0;
+        for (var _i117 = 0; _i117 < _size115; ++_i117) {
+          var key118 = null;
+          var val119 = null;
+          key118 = input.readString();
+          val119 = input.readString();
+          this.properties[key118] = val119;
         }
         input.readMapEnd();
       } else {
@@ -3541,11 +3609,11 @@ TDBSqlTempView.prototype.write = function(output) {
   if (this.properties !== null && this.properties !== undefined) {
     output.writeFieldBegin('properties', Thrift.Type.MAP, 3);
     output.writeMapBegin(Thrift.Type.STRING, Thrift.Type.STRING, Thrift.objectLength(this.properties));
-    for (var kiter106 in this.properties) {
-      if (this.properties.hasOwnProperty(kiter106)) {
-        var viter107 = this.properties[kiter106];
-        output.writeString(kiter106);
-        output.writeString(viter107);
+    for (var kiter120 in this.properties) {
+      if (this.properties.hasOwnProperty(kiter120)) {
+        var viter121 = this.properties[kiter120];
+        output.writeString(kiter120);
+        output.writeString(viter121);
       }
     }
     output.writeMapEnd();
@@ -3930,14 +3998,14 @@ TDBSqlSessionConf.prototype.read = function(input) {
       case 1:
       if (ftype == Thrift.Type.MAP) {
         this.confs = {};
-        var _rtmp3109 = input.readMapBegin();
-        var _size108 = _rtmp3109.size || 0;
-        for (var _i110 = 0; _i110 < _size108; ++_i110) {
-          var key111 = null;
-          var val112 = null;
-          key111 = input.readString();
-          val112 = input.readString();
-          this.confs[key111] = val112;
+        var _rtmp3123 = input.readMapBegin();
+        var _size122 = _rtmp3123.size || 0;
+        for (var _i124 = 0; _i124 < _size122; ++_i124) {
+          var key125 = null;
+          var val126 = null;
+          key125 = input.readString();
+          val126 = input.readString();
+          this.confs[key125] = val126;
         }
         input.readMapEnd();
       } else {
@@ -3947,13 +4015,13 @@ TDBSqlSessionConf.prototype.read = function(input) {
       case 2:
       if (ftype == Thrift.Type.LIST) {
         this.tempViews = [];
-        var _rtmp3114 = input.readListBegin();
-        var _size113 = _rtmp3114.size || 0;
-        for (var _i115 = 0; _i115 < _size113; ++_i115) {
-          var elem116 = null;
-          elem116 = new ttypes.TDBSqlTempView();
-          elem116.read(input);
-          this.tempViews.push(elem116);
+        var _rtmp3128 = input.readListBegin();
+        var _size127 = _rtmp3128.size || 0;
+        for (var _i129 = 0; _i129 < _size127; ++_i129) {
+          var elem130 = null;
+          elem130 = new ttypes.TDBSqlTempView();
+          elem130.read(input);
+          this.tempViews.push(elem130);
         }
         input.readListEnd();
       } else {
@@ -3985,13 +4053,13 @@ TDBSqlSessionConf.prototype.read = function(input) {
       case 6:
       if (ftype == Thrift.Type.LIST) {
         this.expressionsInfos = [];
-        var _rtmp3118 = input.readListBegin();
-        var _size117 = _rtmp3118.size || 0;
-        for (var _i119 = 0; _i119 < _size117; ++_i119) {
-          var elem120 = null;
-          elem120 = new ttypes.TExpressionInfo();
-          elem120.read(input);
-          this.expressionsInfos.push(elem120);
+        var _rtmp3132 = input.readListBegin();
+        var _size131 = _rtmp3132.size || 0;
+        for (var _i133 = 0; _i133 < _size131; ++_i133) {
+          var elem134 = null;
+          elem134 = new ttypes.TExpressionInfo();
+          elem134.read(input);
+          this.expressionsInfos.push(elem134);
         }
         input.readListEnd();
       } else {
@@ -4001,15 +4069,15 @@ TDBSqlSessionConf.prototype.read = function(input) {
       case 7:
       if (ftype == Thrift.Type.MAP) {
         this.internalConfs = {};
-        var _rtmp3122 = input.readMapBegin();
-        var _size121 = _rtmp3122.size || 0;
-        for (var _i123 = 0; _i123 < _size121; ++_i123) {
-          var key124 = null;
-          var val125 = null;
-          key124 = input.readString();
-          val125 = new ttypes.TDBSqlConfValue();
-          val125.read(input);
-          this.internalConfs[key124] = val125;
+        var _rtmp3136 = input.readMapBegin();
+        var _size135 = _rtmp3136.size || 0;
+        for (var _i137 = 0; _i137 < _size135; ++_i137) {
+          var key138 = null;
+          var val139 = null;
+          key138 = input.readString();
+          val139 = new ttypes.TDBSqlConfValue();
+          val139.read(input);
+          this.internalConfs[key138] = val139;
         }
         input.readMapEnd();
       } else {
@@ -4030,11 +4098,11 @@ TDBSqlSessionConf.prototype.write = function(output) {
   if (this.confs !== null && this.confs !== undefined) {
     output.writeFieldBegin('confs', Thrift.Type.MAP, 1);
     output.writeMapBegin(Thrift.Type.STRING, Thrift.Type.STRING, Thrift.objectLength(this.confs));
-    for (var kiter126 in this.confs) {
-      if (this.confs.hasOwnProperty(kiter126)) {
-        var viter127 = this.confs[kiter126];
-        output.writeString(kiter126);
-        output.writeString(viter127);
+    for (var kiter140 in this.confs) {
+      if (this.confs.hasOwnProperty(kiter140)) {
+        var viter141 = this.confs[kiter140];
+        output.writeString(kiter140);
+        output.writeString(viter141);
       }
     }
     output.writeMapEnd();
@@ -4043,10 +4111,10 @@ TDBSqlSessionConf.prototype.write = function(output) {
   if (this.tempViews !== null && this.tempViews !== undefined) {
     output.writeFieldBegin('tempViews', Thrift.Type.LIST, 2);
     output.writeListBegin(Thrift.Type.STRUCT, this.tempViews.length);
-    for (var iter128 in this.tempViews) {
-      if (this.tempViews.hasOwnProperty(iter128)) {
-        iter128 = this.tempViews[iter128];
-        iter128.write(output);
+    for (var iter142 in this.tempViews) {
+      if (this.tempViews.hasOwnProperty(iter142)) {
+        iter142 = this.tempViews[iter142];
+        iter142.write(output);
       }
     }
     output.writeListEnd();
@@ -4070,10 +4138,10 @@ TDBSqlSessionConf.prototype.write = function(output) {
   if (this.expressionsInfos !== null && this.expressionsInfos !== undefined) {
     output.writeFieldBegin('expressionsInfos', Thrift.Type.LIST, 6);
     output.writeListBegin(Thrift.Type.STRUCT, this.expressionsInfos.length);
-    for (var iter129 in this.expressionsInfos) {
-      if (this.expressionsInfos.hasOwnProperty(iter129)) {
-        iter129 = this.expressionsInfos[iter129];
-        iter129.write(output);
+    for (var iter143 in this.expressionsInfos) {
+      if (this.expressionsInfos.hasOwnProperty(iter143)) {
+        iter143 = this.expressionsInfos[iter143];
+        iter143.write(output);
       }
     }
     output.writeListEnd();
@@ -4082,11 +4150,11 @@ TDBSqlSessionConf.prototype.write = function(output) {
   if (this.internalConfs !== null && this.internalConfs !== undefined) {
     output.writeFieldBegin('internalConfs', Thrift.Type.MAP, 7);
     output.writeMapBegin(Thrift.Type.STRING, Thrift.Type.STRUCT, Thrift.objectLength(this.internalConfs));
-    for (var kiter130 in this.internalConfs) {
-      if (this.internalConfs.hasOwnProperty(kiter130)) {
-        var viter131 = this.internalConfs[kiter130];
-        output.writeString(kiter130);
-        viter131.write(output);
+    for (var kiter144 in this.internalConfs) {
+      if (this.internalConfs.hasOwnProperty(kiter144)) {
+        var viter145 = this.internalConfs[kiter144];
+        output.writeString(kiter144);
+        viter145.write(output);
       }
     }
     output.writeMapEnd();
@@ -4104,6 +4172,7 @@ var TStatus = module.exports.TStatus = function(args) {
   this.errorCode = null;
   this.errorMessage = null;
   this.displayMessage = null;
+  this.errorDetailsJson = null;
   this.responseValidation = null;
   if (args) {
     if (args.statusCode !== undefined && args.statusCode !== null) {
@@ -4125,6 +4194,9 @@ var TStatus = module.exports.TStatus = function(args) {
     }
     if (args.displayMessage !== undefined && args.displayMessage !== null) {
       this.displayMessage = args.displayMessage;
+    }
+    if (args.errorDetailsJson !== undefined && args.errorDetailsJson !== null) {
+      this.errorDetailsJson = args.errorDetailsJson;
     }
     if (args.responseValidation !== undefined && args.responseValidation !== null) {
       this.responseValidation = args.responseValidation;
@@ -4152,12 +4224,12 @@ TStatus.prototype.read = function(input) {
       case 2:
       if (ftype == Thrift.Type.LIST) {
         this.infoMessages = [];
-        var _rtmp3133 = input.readListBegin();
-        var _size132 = _rtmp3133.size || 0;
-        for (var _i134 = 0; _i134 < _size132; ++_i134) {
-          var elem135 = null;
-          elem135 = input.readString();
-          this.infoMessages.push(elem135);
+        var _rtmp3147 = input.readListBegin();
+        var _size146 = _rtmp3147.size || 0;
+        for (var _i148 = 0; _i148 < _size146; ++_i148) {
+          var elem149 = null;
+          elem149 = input.readString();
+          this.infoMessages.push(elem149);
         }
         input.readListEnd();
       } else {
@@ -4192,6 +4264,13 @@ TStatus.prototype.read = function(input) {
         input.skip(ftype);
       }
       break;
+      case 1281:
+      if (ftype == Thrift.Type.STRING) {
+        this.errorDetailsJson = input.readString();
+      } else {
+        input.skip(ftype);
+      }
+      break;
       case 3329:
       if (ftype == Thrift.Type.STRING) {
         this.responseValidation = input.readBinary();
@@ -4218,10 +4297,10 @@ TStatus.prototype.write = function(output) {
   if (this.infoMessages !== null && this.infoMessages !== undefined) {
     output.writeFieldBegin('infoMessages', Thrift.Type.LIST, 2);
     output.writeListBegin(Thrift.Type.STRING, this.infoMessages.length);
-    for (var iter136 in this.infoMessages) {
-      if (this.infoMessages.hasOwnProperty(iter136)) {
-        iter136 = this.infoMessages[iter136];
-        output.writeString(iter136);
+    for (var iter150 in this.infoMessages) {
+      if (this.infoMessages.hasOwnProperty(iter150)) {
+        iter150 = this.infoMessages[iter150];
+        output.writeString(iter150);
       }
     }
     output.writeListEnd();
@@ -4245,6 +4324,11 @@ TStatus.prototype.write = function(output) {
   if (this.displayMessage !== null && this.displayMessage !== undefined) {
     output.writeFieldBegin('displayMessage', Thrift.Type.STRING, 6);
     output.writeString(this.displayMessage);
+    output.writeFieldEnd();
+  }
+  if (this.errorDetailsJson !== null && this.errorDetailsJson !== undefined) {
+    output.writeFieldBegin('errorDetailsJson', Thrift.Type.STRING, 1281);
+    output.writeString(this.errorDetailsJson);
     output.writeFieldEnd();
   }
   if (this.responseValidation !== null && this.responseValidation !== undefined) {
@@ -4650,14 +4734,14 @@ TOpenSessionReq.prototype.read = function(input) {
       case 4:
       if (ftype == Thrift.Type.MAP) {
         this.configuration = {};
-        var _rtmp3138 = input.readMapBegin();
-        var _size137 = _rtmp3138.size || 0;
-        for (var _i139 = 0; _i139 < _size137; ++_i139) {
-          var key140 = null;
-          var val141 = null;
-          key140 = input.readString();
-          val141 = input.readString();
-          this.configuration[key140] = val141;
+        var _rtmp3152 = input.readMapBegin();
+        var _size151 = _rtmp3152.size || 0;
+        for (var _i153 = 0; _i153 < _size151; ++_i153) {
+          var key154 = null;
+          var val155 = null;
+          key154 = input.readString();
+          val155 = input.readString();
+          this.configuration[key154] = val155;
         }
         input.readMapEnd();
       } else {
@@ -4667,12 +4751,12 @@ TOpenSessionReq.prototype.read = function(input) {
       case 1281:
       if (ftype == Thrift.Type.LIST) {
         this.getInfos = [];
-        var _rtmp3143 = input.readListBegin();
-        var _size142 = _rtmp3143.size || 0;
-        for (var _i144 = 0; _i144 < _size142; ++_i144) {
-          var elem145 = null;
-          elem145 = input.readI32();
-          this.getInfos.push(elem145);
+        var _rtmp3157 = input.readListBegin();
+        var _size156 = _rtmp3157.size || 0;
+        for (var _i158 = 0; _i158 < _size156; ++_i158) {
+          var elem159 = null;
+          elem159 = input.readI32();
+          this.getInfos.push(elem159);
         }
         input.readListEnd();
       } else {
@@ -4689,14 +4773,14 @@ TOpenSessionReq.prototype.read = function(input) {
       case 1283:
       if (ftype == Thrift.Type.MAP) {
         this.connectionProperties = {};
-        var _rtmp3147 = input.readMapBegin();
-        var _size146 = _rtmp3147.size || 0;
-        for (var _i148 = 0; _i148 < _size146; ++_i148) {
-          var key149 = null;
-          var val150 = null;
-          key149 = input.readString();
-          val150 = input.readString();
-          this.connectionProperties[key149] = val150;
+        var _rtmp3161 = input.readMapBegin();
+        var _size160 = _rtmp3161.size || 0;
+        for (var _i162 = 0; _i162 < _size160; ++_i162) {
+          var key163 = null;
+          var val164 = null;
+          key163 = input.readString();
+          val164 = input.readString();
+          this.connectionProperties[key163] = val164;
         }
         input.readMapEnd();
       } else {
@@ -4755,11 +4839,11 @@ TOpenSessionReq.prototype.write = function(output) {
   if (this.configuration !== null && this.configuration !== undefined) {
     output.writeFieldBegin('configuration', Thrift.Type.MAP, 4);
     output.writeMapBegin(Thrift.Type.STRING, Thrift.Type.STRING, Thrift.objectLength(this.configuration));
-    for (var kiter151 in this.configuration) {
-      if (this.configuration.hasOwnProperty(kiter151)) {
-        var viter152 = this.configuration[kiter151];
-        output.writeString(kiter151);
-        output.writeString(viter152);
+    for (var kiter165 in this.configuration) {
+      if (this.configuration.hasOwnProperty(kiter165)) {
+        var viter166 = this.configuration[kiter165];
+        output.writeString(kiter165);
+        output.writeString(viter166);
       }
     }
     output.writeMapEnd();
@@ -4768,10 +4852,10 @@ TOpenSessionReq.prototype.write = function(output) {
   if (this.getInfos !== null && this.getInfos !== undefined) {
     output.writeFieldBegin('getInfos', Thrift.Type.LIST, 1281);
     output.writeListBegin(Thrift.Type.I32, this.getInfos.length);
-    for (var iter153 in this.getInfos) {
-      if (this.getInfos.hasOwnProperty(iter153)) {
-        iter153 = this.getInfos[iter153];
-        output.writeI32(iter153);
+    for (var iter167 in this.getInfos) {
+      if (this.getInfos.hasOwnProperty(iter167)) {
+        iter167 = this.getInfos[iter167];
+        output.writeI32(iter167);
       }
     }
     output.writeListEnd();
@@ -4785,11 +4869,11 @@ TOpenSessionReq.prototype.write = function(output) {
   if (this.connectionProperties !== null && this.connectionProperties !== undefined) {
     output.writeFieldBegin('connectionProperties', Thrift.Type.MAP, 1283);
     output.writeMapBegin(Thrift.Type.STRING, Thrift.Type.STRING, Thrift.objectLength(this.connectionProperties));
-    for (var kiter154 in this.connectionProperties) {
-      if (this.connectionProperties.hasOwnProperty(kiter154)) {
-        var viter155 = this.connectionProperties[kiter154];
-        output.writeString(kiter154);
-        output.writeString(viter155);
+    for (var kiter168 in this.connectionProperties) {
+      if (this.connectionProperties.hasOwnProperty(kiter168)) {
+        var viter169 = this.connectionProperties[kiter168];
+        output.writeString(kiter168);
+        output.writeString(viter169);
       }
     }
     output.writeMapEnd();
@@ -4888,14 +4972,14 @@ TOpenSessionResp.prototype.read = function(input) {
       case 4:
       if (ftype == Thrift.Type.MAP) {
         this.configuration = {};
-        var _rtmp3157 = input.readMapBegin();
-        var _size156 = _rtmp3157.size || 0;
-        for (var _i158 = 0; _i158 < _size156; ++_i158) {
-          var key159 = null;
-          var val160 = null;
-          key159 = input.readString();
-          val160 = input.readString();
-          this.configuration[key159] = val160;
+        var _rtmp3171 = input.readMapBegin();
+        var _size170 = _rtmp3171.size || 0;
+        for (var _i172 = 0; _i172 < _size170; ++_i172) {
+          var key173 = null;
+          var val174 = null;
+          key173 = input.readString();
+          val174 = input.readString();
+          this.configuration[key173] = val174;
         }
         input.readMapEnd();
       } else {
@@ -4920,13 +5004,13 @@ TOpenSessionResp.prototype.read = function(input) {
       case 1281:
       if (ftype == Thrift.Type.LIST) {
         this.getInfos = [];
-        var _rtmp3162 = input.readListBegin();
-        var _size161 = _rtmp3162.size || 0;
-        for (var _i163 = 0; _i163 < _size161; ++_i163) {
-          var elem164 = null;
-          elem164 = new ttypes.TGetInfoValue();
-          elem164.read(input);
-          this.getInfos.push(elem164);
+        var _rtmp3176 = input.readListBegin();
+        var _size175 = _rtmp3176.size || 0;
+        for (var _i177 = 0; _i177 < _size175; ++_i177) {
+          var elem178 = null;
+          elem178 = new ttypes.TGetInfoValue();
+          elem178.read(input);
+          this.getInfos.push(elem178);
         }
         input.readListEnd();
       } else {
@@ -4962,11 +5046,11 @@ TOpenSessionResp.prototype.write = function(output) {
   if (this.configuration !== null && this.configuration !== undefined) {
     output.writeFieldBegin('configuration', Thrift.Type.MAP, 4);
     output.writeMapBegin(Thrift.Type.STRING, Thrift.Type.STRING, Thrift.objectLength(this.configuration));
-    for (var kiter165 in this.configuration) {
-      if (this.configuration.hasOwnProperty(kiter165)) {
-        var viter166 = this.configuration[kiter165];
-        output.writeString(kiter165);
-        output.writeString(viter166);
+    for (var kiter179 in this.configuration) {
+      if (this.configuration.hasOwnProperty(kiter179)) {
+        var viter180 = this.configuration[kiter179];
+        output.writeString(kiter179);
+        output.writeString(viter180);
       }
     }
     output.writeMapEnd();
@@ -4985,10 +5069,10 @@ TOpenSessionResp.prototype.write = function(output) {
   if (this.getInfos !== null && this.getInfos !== undefined) {
     output.writeFieldBegin('getInfos', Thrift.Type.LIST, 1281);
     output.writeListBegin(Thrift.Type.STRUCT, this.getInfos.length);
-    for (var iter167 in this.getInfos) {
-      if (this.getInfos.hasOwnProperty(iter167)) {
-        iter167 = this.getInfos[iter167];
-        iter167.write(output);
+    for (var iter181 in this.getInfos) {
+      if (this.getInfos.hasOwnProperty(iter181)) {
+        iter181 = this.getInfos[iter181];
+        iter181.write(output);
       }
     }
     output.writeListEnd();
@@ -5675,6 +5759,8 @@ var TExecuteStatementReq = module.exports.TExecuteStatementReq = function(args) 
   this.useArrowNativeTypes = null;
   this.resultRowLimit = null;
   this.parameters = null;
+  this.maxBytesPerBatch = null;
+  this.statementConf = null;
   this.operationId = null;
   this.sessionConf = null;
   this.rejectHighCostQueries = null;
@@ -5691,6 +5777,10 @@ var TExecuteStatementReq = module.exports.TExecuteStatementReq = function(args) 
   this.resultByteLimit = null;
   this.resultDataFormat = null;
   this.originatingClientIdentity = null;
+  this.preferSingleFileResult = null;
+  this.preferDriverOnlyUpload = null;
+  this.enforceEmbeddedSchemaCorrectness = false;
+  this.idempotencyToken = null;
   if (args) {
     if (args.sessionHandle !== undefined && args.sessionHandle !== null) {
       this.sessionHandle = new ttypes.TSessionHandle(args.sessionHandle);
@@ -5734,6 +5824,12 @@ var TExecuteStatementReq = module.exports.TExecuteStatementReq = function(args) 
     }
     if (args.parameters !== undefined && args.parameters !== null) {
       this.parameters = Thrift.copyList(args.parameters, [ttypes.TSparkParameter]);
+    }
+    if (args.maxBytesPerBatch !== undefined && args.maxBytesPerBatch !== null) {
+      this.maxBytesPerBatch = args.maxBytesPerBatch;
+    }
+    if (args.statementConf !== undefined && args.statementConf !== null) {
+      this.statementConf = new ttypes.TStatementConf(args.statementConf);
     }
     if (args.operationId !== undefined && args.operationId !== null) {
       this.operationId = new ttypes.THandleIdentifier(args.operationId);
@@ -5783,6 +5879,18 @@ var TExecuteStatementReq = module.exports.TExecuteStatementReq = function(args) 
     if (args.originatingClientIdentity !== undefined && args.originatingClientIdentity !== null) {
       this.originatingClientIdentity = args.originatingClientIdentity;
     }
+    if (args.preferSingleFileResult !== undefined && args.preferSingleFileResult !== null) {
+      this.preferSingleFileResult = args.preferSingleFileResult;
+    }
+    if (args.preferDriverOnlyUpload !== undefined && args.preferDriverOnlyUpload !== null) {
+      this.preferDriverOnlyUpload = args.preferDriverOnlyUpload;
+    }
+    if (args.enforceEmbeddedSchemaCorrectness !== undefined && args.enforceEmbeddedSchemaCorrectness !== null) {
+      this.enforceEmbeddedSchemaCorrectness = args.enforceEmbeddedSchemaCorrectness;
+    }
+    if (args.idempotencyToken !== undefined && args.idempotencyToken !== null) {
+      this.idempotencyToken = args.idempotencyToken;
+    }
   }
 };
 TExecuteStatementReq.prototype = {};
@@ -5814,14 +5922,14 @@ TExecuteStatementReq.prototype.read = function(input) {
       case 3:
       if (ftype == Thrift.Type.MAP) {
         this.confOverlay = {};
-        var _rtmp3169 = input.readMapBegin();
-        var _size168 = _rtmp3169.size || 0;
-        for (var _i170 = 0; _i170 < _size168; ++_i170) {
-          var key171 = null;
-          var val172 = null;
-          key171 = input.readString();
-          val172 = input.readString();
-          this.confOverlay[key171] = val172;
+        var _rtmp3183 = input.readMapBegin();
+        var _size182 = _rtmp3183.size || 0;
+        for (var _i184 = 0; _i184 < _size182; ++_i184) {
+          var key185 = null;
+          var val186 = null;
+          key185 = input.readString();
+          val186 = input.readString();
+          this.confOverlay[key185] = val186;
         }
         input.readMapEnd();
       } else {
@@ -5896,15 +6004,30 @@ TExecuteStatementReq.prototype.read = function(input) {
       case 1288:
       if (ftype == Thrift.Type.LIST) {
         this.parameters = [];
-        var _rtmp3174 = input.readListBegin();
-        var _size173 = _rtmp3174.size || 0;
-        for (var _i175 = 0; _i175 < _size173; ++_i175) {
-          var elem176 = null;
-          elem176 = new ttypes.TSparkParameter();
-          elem176.read(input);
-          this.parameters.push(elem176);
+        var _rtmp3188 = input.readListBegin();
+        var _size187 = _rtmp3188.size || 0;
+        for (var _i189 = 0; _i189 < _size187; ++_i189) {
+          var elem190 = null;
+          elem190 = new ttypes.TSparkParameter();
+          elem190.read(input);
+          this.parameters.push(elem190);
         }
         input.readListEnd();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 1289:
+      if (ftype == Thrift.Type.I64) {
+        this.maxBytesPerBatch = input.readI64();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 1296:
+      if (ftype == Thrift.Type.STRUCT) {
+        this.statementConf = new ttypes.TStatementConf();
+        this.statementConf.read(input);
       } else {
         input.skip(ftype);
       }
@@ -5984,13 +6107,13 @@ TExecuteStatementReq.prototype.read = function(input) {
       case 3345:
       if (ftype == Thrift.Type.LIST) {
         this.statementList = [];
-        var _rtmp3178 = input.readListBegin();
-        var _size177 = _rtmp3178.size || 0;
-        for (var _i179 = 0; _i179 < _size177; ++_i179) {
-          var elem180 = null;
-          elem180 = new ttypes.TDBSqlStatement();
-          elem180.read(input);
-          this.statementList.push(elem180);
+        var _rtmp3192 = input.readListBegin();
+        var _size191 = _rtmp3192.size || 0;
+        for (var _i193 = 0; _i193 < _size191; ++_i193) {
+          var elem194 = null;
+          elem194 = new ttypes.TDBSqlStatement();
+          elem194.read(input);
+          this.statementList.push(elem194);
         }
         input.readListEnd();
       } else {
@@ -6033,6 +6156,34 @@ TExecuteStatementReq.prototype.read = function(input) {
         input.skip(ftype);
       }
       break;
+      case 3351:
+      if (ftype == Thrift.Type.BOOL) {
+        this.preferSingleFileResult = input.readBool();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 3352:
+      if (ftype == Thrift.Type.BOOL) {
+        this.preferDriverOnlyUpload = input.readBool();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 3353:
+      if (ftype == Thrift.Type.BOOL) {
+        this.enforceEmbeddedSchemaCorrectness = input.readBool();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 3360:
+      if (ftype == Thrift.Type.STRING) {
+        this.idempotencyToken = input.readString();
+      } else {
+        input.skip(ftype);
+      }
+      break;
       default:
         input.skip(ftype);
     }
@@ -6057,11 +6208,11 @@ TExecuteStatementReq.prototype.write = function(output) {
   if (this.confOverlay !== null && this.confOverlay !== undefined) {
     output.writeFieldBegin('confOverlay', Thrift.Type.MAP, 3);
     output.writeMapBegin(Thrift.Type.STRING, Thrift.Type.STRING, Thrift.objectLength(this.confOverlay));
-    for (var kiter181 in this.confOverlay) {
-      if (this.confOverlay.hasOwnProperty(kiter181)) {
-        var viter182 = this.confOverlay[kiter181];
-        output.writeString(kiter181);
-        output.writeString(viter182);
+    for (var kiter195 in this.confOverlay) {
+      if (this.confOverlay.hasOwnProperty(kiter195)) {
+        var viter196 = this.confOverlay[kiter195];
+        output.writeString(kiter195);
+        output.writeString(viter196);
       }
     }
     output.writeMapEnd();
@@ -6115,13 +6266,23 @@ TExecuteStatementReq.prototype.write = function(output) {
   if (this.parameters !== null && this.parameters !== undefined) {
     output.writeFieldBegin('parameters', Thrift.Type.LIST, 1288);
     output.writeListBegin(Thrift.Type.STRUCT, this.parameters.length);
-    for (var iter183 in this.parameters) {
-      if (this.parameters.hasOwnProperty(iter183)) {
-        iter183 = this.parameters[iter183];
-        iter183.write(output);
+    for (var iter197 in this.parameters) {
+      if (this.parameters.hasOwnProperty(iter197)) {
+        iter197 = this.parameters[iter197];
+        iter197.write(output);
       }
     }
     output.writeListEnd();
+    output.writeFieldEnd();
+  }
+  if (this.maxBytesPerBatch !== null && this.maxBytesPerBatch !== undefined) {
+    output.writeFieldBegin('maxBytesPerBatch', Thrift.Type.I64, 1289);
+    output.writeI64(this.maxBytesPerBatch);
+    output.writeFieldEnd();
+  }
+  if (this.statementConf !== null && this.statementConf !== undefined) {
+    output.writeFieldBegin('statementConf', Thrift.Type.STRUCT, 1296);
+    this.statementConf.write(output);
     output.writeFieldEnd();
   }
   if (this.operationId !== null && this.operationId !== undefined) {
@@ -6177,10 +6338,10 @@ TExecuteStatementReq.prototype.write = function(output) {
   if (this.statementList !== null && this.statementList !== undefined) {
     output.writeFieldBegin('statementList', Thrift.Type.LIST, 3345);
     output.writeListBegin(Thrift.Type.STRUCT, this.statementList.length);
-    for (var iter184 in this.statementList) {
-      if (this.statementList.hasOwnProperty(iter184)) {
-        iter184 = this.statementList[iter184];
-        iter184.write(output);
+    for (var iter198 in this.statementList) {
+      if (this.statementList.hasOwnProperty(iter198)) {
+        iter198 = this.statementList[iter198];
+        iter198.write(output);
       }
     }
     output.writeListEnd();
@@ -6209,6 +6370,26 @@ TExecuteStatementReq.prototype.write = function(output) {
   if (this.originatingClientIdentity !== null && this.originatingClientIdentity !== undefined) {
     output.writeFieldBegin('originatingClientIdentity', Thrift.Type.STRING, 3350);
     output.writeString(this.originatingClientIdentity);
+    output.writeFieldEnd();
+  }
+  if (this.preferSingleFileResult !== null && this.preferSingleFileResult !== undefined) {
+    output.writeFieldBegin('preferSingleFileResult', Thrift.Type.BOOL, 3351);
+    output.writeBool(this.preferSingleFileResult);
+    output.writeFieldEnd();
+  }
+  if (this.preferDriverOnlyUpload !== null && this.preferDriverOnlyUpload !== undefined) {
+    output.writeFieldBegin('preferDriverOnlyUpload', Thrift.Type.BOOL, 3352);
+    output.writeBool(this.preferDriverOnlyUpload);
+    output.writeFieldEnd();
+  }
+  if (this.enforceEmbeddedSchemaCorrectness !== null && this.enforceEmbeddedSchemaCorrectness !== undefined) {
+    output.writeFieldBegin('enforceEmbeddedSchemaCorrectness', Thrift.Type.BOOL, 3353);
+    output.writeBool(this.enforceEmbeddedSchemaCorrectness);
+    output.writeFieldEnd();
+  }
+  if (this.idempotencyToken !== null && this.idempotencyToken !== undefined) {
+    output.writeFieldBegin('idempotencyToken', Thrift.Type.STRING, 3360);
+    output.writeString(this.idempotencyToken);
     output.writeFieldEnd();
   }
   output.writeFieldStop();
@@ -6441,6 +6622,102 @@ TSparkParameter.prototype.write = function(output) {
   return;
 };
 
+var TStatementConf = module.exports.TStatementConf = function(args) {
+  this.sessionless = null;
+  this.initialNamespace = null;
+  this.client_protocol = null;
+  this.client_protocol_i64 = null;
+  if (args) {
+    if (args.sessionless !== undefined && args.sessionless !== null) {
+      this.sessionless = args.sessionless;
+    }
+    if (args.initialNamespace !== undefined && args.initialNamespace !== null) {
+      this.initialNamespace = new ttypes.TNamespace(args.initialNamespace);
+    }
+    if (args.client_protocol !== undefined && args.client_protocol !== null) {
+      this.client_protocol = args.client_protocol;
+    }
+    if (args.client_protocol_i64 !== undefined && args.client_protocol_i64 !== null) {
+      this.client_protocol_i64 = args.client_protocol_i64;
+    }
+  }
+};
+TStatementConf.prototype = {};
+TStatementConf.prototype.read = function(input) {
+  input.readStructBegin();
+  while (true) {
+    var ret = input.readFieldBegin();
+    var ftype = ret.ftype;
+    var fid = ret.fid;
+    if (ftype == Thrift.Type.STOP) {
+      break;
+    }
+    switch (fid) {
+      case 1:
+      if (ftype == Thrift.Type.BOOL) {
+        this.sessionless = input.readBool();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 2:
+      if (ftype == Thrift.Type.STRUCT) {
+        this.initialNamespace = new ttypes.TNamespace();
+        this.initialNamespace.read(input);
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 3:
+      if (ftype == Thrift.Type.I32) {
+        this.client_protocol = input.readI32();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 4:
+      if (ftype == Thrift.Type.I64) {
+        this.client_protocol_i64 = input.readI64();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      default:
+        input.skip(ftype);
+    }
+    input.readFieldEnd();
+  }
+  input.readStructEnd();
+  return;
+};
+
+TStatementConf.prototype.write = function(output) {
+  output.writeStructBegin('TStatementConf');
+  if (this.sessionless !== null && this.sessionless !== undefined) {
+    output.writeFieldBegin('sessionless', Thrift.Type.BOOL, 1);
+    output.writeBool(this.sessionless);
+    output.writeFieldEnd();
+  }
+  if (this.initialNamespace !== null && this.initialNamespace !== undefined) {
+    output.writeFieldBegin('initialNamespace', Thrift.Type.STRUCT, 2);
+    this.initialNamespace.write(output);
+    output.writeFieldEnd();
+  }
+  if (this.client_protocol !== null && this.client_protocol !== undefined) {
+    output.writeFieldBegin('client_protocol', Thrift.Type.I32, 3);
+    output.writeI32(this.client_protocol);
+    output.writeFieldEnd();
+  }
+  if (this.client_protocol_i64 !== null && this.client_protocol_i64 !== undefined) {
+    output.writeFieldBegin('client_protocol_i64', Thrift.Type.I64, 4);
+    output.writeI64(this.client_protocol_i64);
+    output.writeFieldEnd();
+  }
+  output.writeFieldStop();
+  output.writeStructEnd();
+  return;
+};
+
 var TExecuteStatementResp = module.exports.TExecuteStatementResp = function(args) {
   this.status = null;
   this.operationHandle = null;
@@ -6590,13 +6867,13 @@ TExecuteStatementResp.prototype.read = function(input) {
       case 3337:
       if (ftype == Thrift.Type.LIST) {
         this.operationHandles = [];
-        var _rtmp3186 = input.readListBegin();
-        var _size185 = _rtmp3186.size || 0;
-        for (var _i187 = 0; _i187 < _size185; ++_i187) {
-          var elem188 = null;
-          elem188 = new ttypes.TOperationHandle();
-          elem188.read(input);
-          this.operationHandles.push(elem188);
+        var _rtmp3200 = input.readListBegin();
+        var _size199 = _rtmp3200.size || 0;
+        for (var _i201 = 0; _i201 < _size199; ++_i201) {
+          var elem202 = null;
+          elem202 = new ttypes.TOperationHandle();
+          elem202.read(input);
+          this.operationHandles.push(elem202);
         }
         input.readListEnd();
       } else {
@@ -6672,10 +6949,10 @@ TExecuteStatementResp.prototype.write = function(output) {
   if (this.operationHandles !== null && this.operationHandles !== undefined) {
     output.writeFieldBegin('operationHandles', Thrift.Type.LIST, 3337);
     output.writeListBegin(Thrift.Type.STRUCT, this.operationHandles.length);
-    for (var iter189 in this.operationHandles) {
-      if (this.operationHandles.hasOwnProperty(iter189)) {
-        iter189 = this.operationHandles[iter189];
-        iter189.write(output);
+    for (var iter203 in this.operationHandles) {
+      if (this.operationHandles.hasOwnProperty(iter203)) {
+        iter203 = this.operationHandles[iter203];
+        iter203.write(output);
       }
     }
     output.writeListEnd();
@@ -7406,12 +7683,12 @@ TGetTablesReq.prototype.read = function(input) {
       case 5:
       if (ftype == Thrift.Type.LIST) {
         this.tableTypes = [];
-        var _rtmp3191 = input.readListBegin();
-        var _size190 = _rtmp3191.size || 0;
-        for (var _i192 = 0; _i192 < _size190; ++_i192) {
-          var elem193 = null;
-          elem193 = input.readString();
-          this.tableTypes.push(elem193);
+        var _rtmp3205 = input.readListBegin();
+        var _size204 = _rtmp3205.size || 0;
+        for (var _i206 = 0; _i206 < _size204; ++_i206) {
+          var elem207 = null;
+          elem207 = input.readString();
+          this.tableTypes.push(elem207);
         }
         input.readListEnd();
       } else {
@@ -7483,10 +7760,10 @@ TGetTablesReq.prototype.write = function(output) {
   if (this.tableTypes !== null && this.tableTypes !== undefined) {
     output.writeFieldBegin('tableTypes', Thrift.Type.LIST, 5);
     output.writeListBegin(Thrift.Type.STRING, this.tableTypes.length);
-    for (var iter194 in this.tableTypes) {
-      if (this.tableTypes.hasOwnProperty(iter194)) {
-        iter194 = this.tableTypes[iter194];
-        output.writeString(iter194);
+    for (var iter208 in this.tableTypes) {
+      if (this.tableTypes.hasOwnProperty(iter208)) {
+        iter208 = this.tableTypes[iter208];
+        output.writeString(iter208);
       }
     }
     output.writeListEnd();
@@ -8944,6 +9221,7 @@ var TGetOperationStatusResp = module.exports.TGetOperationStatusResp = function(
   this.numModifiedRows = null;
   this.displayMessage = null;
   this.diagnosticInfo = null;
+  this.errorDetailsJson = null;
   this.responseValidation = null;
   this.idempotencyType = null;
   this.statementTimeout = null;
@@ -8989,6 +9267,9 @@ var TGetOperationStatusResp = module.exports.TGetOperationStatusResp = function(
     }
     if (args.diagnosticInfo !== undefined && args.diagnosticInfo !== null) {
       this.diagnosticInfo = args.diagnosticInfo;
+    }
+    if (args.errorDetailsJson !== undefined && args.errorDetailsJson !== null) {
+      this.errorDetailsJson = args.errorDetailsJson;
     }
     if (args.responseValidation !== undefined && args.responseValidation !== null) {
       this.responseValidation = args.responseValidation;
@@ -9108,6 +9389,13 @@ TGetOperationStatusResp.prototype.read = function(input) {
         input.skip(ftype);
       }
       break;
+      case 1283:
+      if (ftype == Thrift.Type.STRING) {
+        this.errorDetailsJson = input.readString();
+      } else {
+        input.skip(ftype);
+      }
+      break;
       case 3329:
       if (ftype == Thrift.Type.STRING) {
         this.responseValidation = input.readBinary();
@@ -9210,6 +9498,11 @@ TGetOperationStatusResp.prototype.write = function(output) {
   if (this.diagnosticInfo !== null && this.diagnosticInfo !== undefined) {
     output.writeFieldBegin('diagnosticInfo', Thrift.Type.STRING, 1282);
     output.writeString(this.diagnosticInfo);
+    output.writeFieldEnd();
+  }
+  if (this.errorDetailsJson !== null && this.errorDetailsJson !== undefined) {
+    output.writeFieldBegin('errorDetailsJson', Thrift.Type.STRING, 1283);
+    output.writeString(this.errorDetailsJson);
     output.writeFieldEnd();
   }
   if (this.responseValidation !== null && this.responseValidation !== undefined) {
@@ -9565,6 +9858,7 @@ var TGetResultSetMetadataResp = module.exports.TGetResultSetMetadataResp = funct
   this.isServerless = null;
   this.resultDataFormat = null;
   this.truncatedByThriftLimit = null;
+  this.resultByteLimit = null;
   if (args) {
     if (args.status !== undefined && args.status !== null) {
       this.status = new ttypes.TStatus(args.status);
@@ -9627,6 +9921,9 @@ var TGetResultSetMetadataResp = module.exports.TGetResultSetMetadataResp = funct
     }
     if (args.truncatedByThriftLimit !== undefined && args.truncatedByThriftLimit !== null) {
       this.truncatedByThriftLimit = args.truncatedByThriftLimit;
+    }
+    if (args.resultByteLimit !== undefined && args.resultByteLimit !== null) {
+      this.resultByteLimit = args.resultByteLimit;
     }
   }
 };
@@ -9716,13 +10013,13 @@ TGetResultSetMetadataResp.prototype.read = function(input) {
       case 3330:
       if (ftype == Thrift.Type.LIST) {
         this.resultFiles = [];
-        var _rtmp3196 = input.readListBegin();
-        var _size195 = _rtmp3196.size || 0;
-        for (var _i197 = 0; _i197 < _size195; ++_i197) {
-          var elem198 = null;
-          elem198 = new ttypes.TDBSqlCloudResultFile();
-          elem198.read(input);
-          this.resultFiles.push(elem198);
+        var _rtmp3210 = input.readListBegin();
+        var _size209 = _rtmp3210.size || 0;
+        for (var _i211 = 0; _i211 < _size209; ++_i211) {
+          var elem212 = null;
+          elem212 = new ttypes.TDBSqlCloudResultFile();
+          elem212.read(input);
+          this.resultFiles.push(elem212);
         }
         input.readListEnd();
       } else {
@@ -9793,6 +10090,13 @@ TGetResultSetMetadataResp.prototype.read = function(input) {
         input.skip(ftype);
       }
       break;
+      case 3346:
+      if (ftype == Thrift.Type.I64) {
+        this.resultByteLimit = input.readI64();
+      } else {
+        input.skip(ftype);
+      }
+      break;
       default:
         input.skip(ftype);
     }
@@ -9857,10 +10161,10 @@ TGetResultSetMetadataResp.prototype.write = function(output) {
   if (this.resultFiles !== null && this.resultFiles !== undefined) {
     output.writeFieldBegin('resultFiles', Thrift.Type.LIST, 3330);
     output.writeListBegin(Thrift.Type.STRUCT, this.resultFiles.length);
-    for (var iter199 in this.resultFiles) {
-      if (this.resultFiles.hasOwnProperty(iter199)) {
-        iter199 = this.resultFiles[iter199];
-        iter199.write(output);
+    for (var iter213 in this.resultFiles) {
+      if (this.resultFiles.hasOwnProperty(iter213)) {
+        iter213 = this.resultFiles[iter213];
+        iter213.write(output);
       }
     }
     output.writeListEnd();
@@ -9909,6 +10213,11 @@ TGetResultSetMetadataResp.prototype.write = function(output) {
   if (this.truncatedByThriftLimit !== null && this.truncatedByThriftLimit !== undefined) {
     output.writeFieldBegin('truncatedByThriftLimit', Thrift.Type.BOOL, 3345);
     output.writeBool(this.truncatedByThriftLimit);
+    output.writeFieldEnd();
+  }
+  if (this.resultByteLimit !== null && this.resultByteLimit !== undefined) {
+    output.writeFieldBegin('resultByteLimit', Thrift.Type.I64, 3346);
+    output.writeI64(this.resultByteLimit);
     output.writeFieldEnd();
   }
   output.writeFieldStop();
@@ -10681,12 +10990,12 @@ TProgressUpdateResp.prototype.read = function(input) {
       case 1:
       if (ftype == Thrift.Type.LIST) {
         this.headerNames = [];
-        var _rtmp3201 = input.readListBegin();
-        var _size200 = _rtmp3201.size || 0;
-        for (var _i202 = 0; _i202 < _size200; ++_i202) {
-          var elem203 = null;
-          elem203 = input.readString();
-          this.headerNames.push(elem203);
+        var _rtmp3215 = input.readListBegin();
+        var _size214 = _rtmp3215.size || 0;
+        for (var _i216 = 0; _i216 < _size214; ++_i216) {
+          var elem217 = null;
+          elem217 = input.readString();
+          this.headerNames.push(elem217);
         }
         input.readListEnd();
       } else {
@@ -10696,20 +11005,20 @@ TProgressUpdateResp.prototype.read = function(input) {
       case 2:
       if (ftype == Thrift.Type.LIST) {
         this.rows = [];
-        var _rtmp3205 = input.readListBegin();
-        var _size204 = _rtmp3205.size || 0;
-        for (var _i206 = 0; _i206 < _size204; ++_i206) {
-          var elem207 = null;
-          elem207 = [];
-          var _rtmp3209 = input.readListBegin();
-          var _size208 = _rtmp3209.size || 0;
-          for (var _i210 = 0; _i210 < _size208; ++_i210) {
-            var elem211 = null;
-            elem211 = input.readString();
-            elem207.push(elem211);
+        var _rtmp3219 = input.readListBegin();
+        var _size218 = _rtmp3219.size || 0;
+        for (var _i220 = 0; _i220 < _size218; ++_i220) {
+          var elem221 = null;
+          elem221 = [];
+          var _rtmp3223 = input.readListBegin();
+          var _size222 = _rtmp3223.size || 0;
+          for (var _i224 = 0; _i224 < _size222; ++_i224) {
+            var elem225 = null;
+            elem225 = input.readString();
+            elem221.push(elem225);
           }
           input.readListEnd();
-          this.rows.push(elem207);
+          this.rows.push(elem221);
         }
         input.readListEnd();
       } else {
@@ -10758,10 +11067,10 @@ TProgressUpdateResp.prototype.write = function(output) {
   if (this.headerNames !== null && this.headerNames !== undefined) {
     output.writeFieldBegin('headerNames', Thrift.Type.LIST, 1);
     output.writeListBegin(Thrift.Type.STRING, this.headerNames.length);
-    for (var iter212 in this.headerNames) {
-      if (this.headerNames.hasOwnProperty(iter212)) {
-        iter212 = this.headerNames[iter212];
-        output.writeString(iter212);
+    for (var iter226 in this.headerNames) {
+      if (this.headerNames.hasOwnProperty(iter226)) {
+        iter226 = this.headerNames[iter226];
+        output.writeString(iter226);
       }
     }
     output.writeListEnd();
@@ -10770,14 +11079,14 @@ TProgressUpdateResp.prototype.write = function(output) {
   if (this.rows !== null && this.rows !== undefined) {
     output.writeFieldBegin('rows', Thrift.Type.LIST, 2);
     output.writeListBegin(Thrift.Type.LIST, this.rows.length);
-    for (var iter213 in this.rows) {
-      if (this.rows.hasOwnProperty(iter213)) {
-        iter213 = this.rows[iter213];
-        output.writeListBegin(Thrift.Type.STRING, iter213.length);
-        for (var iter214 in iter213) {
-          if (iter213.hasOwnProperty(iter214)) {
-            iter214 = iter213[iter214];
-            output.writeString(iter214);
+    for (var iter227 in this.rows) {
+      if (this.rows.hasOwnProperty(iter227)) {
+        iter227 = this.rows[iter227];
+        output.writeListBegin(Thrift.Type.STRING, iter227.length);
+        for (var iter228 in iter227) {
+          if (iter227.hasOwnProperty(iter228)) {
+            iter228 = iter227[iter228];
+            output.writeString(iter228);
           }
         }
         output.writeListEnd();
