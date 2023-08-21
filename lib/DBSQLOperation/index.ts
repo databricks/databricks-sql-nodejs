@@ -16,7 +16,6 @@ import Status from '../dto/Status';
 import OperationStatusHelper from './OperationStatusHelper';
 import SchemaHelper from './SchemaHelper';
 import FetchResultsHelper from './FetchResultsHelper';
-import CompleteOperationHelper from './CompleteOperationHelper';
 import IDBSQLLogger, { LogLevel } from '../contracts/IDBSQLLogger';
 import OperationStateError, { OperationStateErrorCode } from '../errors/OperationStateError';
 
@@ -41,7 +40,11 @@ export default class DBSQLOperation implements IOperation {
 
   private readonly _data: FetchResultsHelper;
 
-  private readonly _completeOperation: CompleteOperationHelper;
+  private readonly directResults?: TSparkDirectResults;
+
+  private closed: boolean = false;
+
+  private cancelled: boolean = false;
 
   constructor(
     driver: HiveDriver,
@@ -63,11 +66,7 @@ export default class DBSQLOperation implements IOperation {
       [directResults?.resultSet],
       useOnlyPrefetchedResults,
     );
-    this._completeOperation = new CompleteOperationHelper(
-      this.driver,
-      this.operationHandle,
-      directResults?.closeOperation,
-    );
+    this.directResults = directResults;
     this.logger.log(LogLevel.debug, `Operation created with id: ${this.getId()}`);
   }
 
@@ -145,12 +144,18 @@ export default class DBSQLOperation implements IOperation {
    * @throws {StatusError}
    */
   public async cancel(): Promise<Status> {
-    if (this._completeOperation.closed || this._completeOperation.cancelled) {
+    if (this.closed || this.cancelled) {
       return Status.success();
     }
 
     this.logger?.log(LogLevel.debug, `Cancelling operation with id: ${this.getId()}`);
-    const result = this._completeOperation.cancel();
+
+    const response = await this.driver.cancelOperation({
+      operationHandle: this.operationHandle,
+    });
+    Status.assert(response.status);
+    this.cancelled = true;
+    const result = new Status(response.status);
 
     // Cancelled operation becomes unusable, similarly to being closed
     this.onClose?.();
@@ -162,12 +167,20 @@ export default class DBSQLOperation implements IOperation {
    * @throws {StatusError}
    */
   public async close(): Promise<Status> {
-    if (this._completeOperation.closed || this._completeOperation.cancelled) {
+    if (this.closed || this.cancelled) {
       return Status.success();
     }
 
     this.logger?.log(LogLevel.debug, `Closing operation with id: ${this.getId()}`);
-    const result = await this._completeOperation.close();
+
+    const response =
+      this.directResults?.closeOperation ??
+      (await this.driver.closeOperation({
+        operationHandle: this.operationHandle,
+      }));
+    Status.assert(response.status);
+    this.closed = true;
+    const result = new Status(response.status);
 
     this.onClose?.();
     return result;
@@ -180,7 +193,7 @@ export default class DBSQLOperation implements IOperation {
 
   public async hasMoreRows(): Promise<boolean> {
     // If operation is closed or cancelled - we should not try to get data from it
-    if (this._completeOperation.closed || this._completeOperation.cancelled) {
+    if (this.closed || this.cancelled) {
       return false;
     }
 
@@ -208,10 +221,10 @@ export default class DBSQLOperation implements IOperation {
   }
 
   private async failIfClosed(): Promise<void> {
-    if (this._completeOperation.closed) {
+    if (this.closed) {
       throw new OperationStateError(OperationStateErrorCode.Closed);
     }
-    if (this._completeOperation.cancelled) {
+    if (this.cancelled) {
       throw new OperationStateError(OperationStateErrorCode.Canceled);
     }
   }
@@ -222,10 +235,10 @@ export default class DBSQLOperation implements IOperation {
     } catch (error) {
       if (error instanceof OperationStateError) {
         if (error.errorCode === OperationStateErrorCode.Canceled) {
-          this._completeOperation.cancelled = true;
+          this.cancelled = true;
         }
         if (error.errorCode === OperationStateErrorCode.Closed) {
-          this._completeOperation.closed = true;
+          this.closed = true;
         }
       }
       throw error;
