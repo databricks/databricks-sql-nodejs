@@ -8,6 +8,7 @@ const OperationStateError = require('../../dist/errors/OperationStateError').def
 const HiveDriverError = require('../../dist/errors/HiveDriverError').default;
 const JsonResult = require('../../dist/result/JsonResult').default;
 const ArrowResult = require('../../dist/result/ArrowResult').default;
+const CloudFetchResult = require('../../dist/result/CloudFetchResult').default;
 
 // Create logger that won't emit
 //
@@ -819,7 +820,7 @@ describe('DBSQLOperation', () => {
         driver.getResultSetMetadata.resetHistory();
 
         const operation = new DBSQLOperation(driver, handle, logger);
-        const resultHandler = await operation._schema.getResultHandler();
+        const resultHandler = await operation.getResultHandler();
         expect(driver.getResultSetMetadata.called).to.be.true;
         expect(resultHandler).to.be.instanceOf(JsonResult);
       }
@@ -829,9 +830,19 @@ describe('DBSQLOperation', () => {
         driver.getResultSetMetadata.resetHistory();
 
         const operation = new DBSQLOperation(driver, handle, logger);
-        const resultHandler = await operation._schema.getResultHandler();
+        const resultHandler = await operation.getResultHandler();
         expect(driver.getResultSetMetadata.called).to.be.true;
         expect(resultHandler).to.be.instanceOf(ArrowResult);
+      }
+
+      cloudFetchHandler: {
+        driver.getResultSetMetadataResp.resultFormat = TSparkRowSetType.URL_BASED_SET;
+        driver.getResultSetMetadata.resetHistory();
+
+        const operation = new DBSQLOperation(driver, handle, logger);
+        const resultHandler = await operation.getResultHandler();
+        expect(driver.getResultSetMetadata.called).to.be.true;
+        expect(resultHandler).to.be.instanceOf(CloudFetchResult);
       }
     });
   });

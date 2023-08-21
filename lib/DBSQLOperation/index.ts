@@ -11,13 +11,21 @@ import {
   TOperationHandle,
   TTableSchema,
   TSparkDirectResults,
+  TGetResultSetMetadataResp,
+  TSparkRowSetType,
+  TCloseOperationResp,
 } from '../../thrift/TCLIService_types';
 import Status from '../dto/Status';
 import OperationStatusHelper from './OperationStatusHelper';
-import SchemaHelper from './SchemaHelper';
 import FetchResultsHelper from './FetchResultsHelper';
 import IDBSQLLogger, { LogLevel } from '../contracts/IDBSQLLogger';
 import OperationStateError, { OperationStateErrorCode } from '../errors/OperationStateError';
+import IOperationResult from '../result/IOperationResult';
+import JsonResult from '../result/JsonResult';
+import ArrowResult from '../result/ArrowResult';
+import CloudFetchResult from '../result/CloudFetchResult';
+import { definedOrError } from '../utils';
+import HiveDriverError from '../errors/HiveDriverError';
 
 const defaultMaxRows = 100000;
 
@@ -36,15 +44,17 @@ export default class DBSQLOperation implements IOperation {
 
   private readonly _status: OperationStatusHelper;
 
-  private readonly _schema: SchemaHelper;
-
   private readonly _data: FetchResultsHelper;
 
-  private readonly directResults?: TSparkDirectResults;
+  private readonly closeOperation?: TCloseOperationResp;
 
   private closed: boolean = false;
 
   private cancelled: boolean = false;
+
+  private metadata?: TGetResultSetMetadataResp;
+
+  private resultHandler?: IOperationResult;
 
   constructor(
     driver: HiveDriver,
@@ -59,14 +69,14 @@ export default class DBSQLOperation implements IOperation {
     const useOnlyPrefetchedResults = Boolean(directResults?.closeOperation);
 
     this._status = new OperationStatusHelper(this.driver, this.operationHandle, directResults?.operationStatus);
-    this._schema = new SchemaHelper(this.driver, this.operationHandle, directResults?.resultSetMetadata);
+    this.metadata = directResults?.resultSetMetadata;
     this._data = new FetchResultsHelper(
       this.driver,
       this.operationHandle,
       [directResults?.resultSet],
       useOnlyPrefetchedResults,
     );
-    this.directResults = directResults;
+    this.closeOperation = directResults?.closeOperation;
     this.logger.log(LogLevel.debug, `Operation created with id: ${this.getId()}`);
   }
 
@@ -114,7 +124,7 @@ export default class DBSQLOperation implements IOperation {
     await this.waitUntilReady(options);
 
     const [resultHandler, data] = await Promise.all([
-      this._schema.getResultHandler(),
+      this.getResultHandler(),
       this._data.fetch(options?.maxRows || defaultMaxRows),
     ]);
 
@@ -174,7 +184,7 @@ export default class DBSQLOperation implements IOperation {
     this.logger?.log(LogLevel.debug, `Closing operation with id: ${this.getId()}`);
 
     const response =
-      this.directResults?.closeOperation ??
+      this.closeOperation ??
       (await this.driver.closeOperation({
         operationHandle: this.operationHandle,
       }));
@@ -203,7 +213,7 @@ export default class DBSQLOperation implements IOperation {
     }
 
     // If we fetched all the data from server - check if there's anything buffered in result handler
-    const resultHandler = await this._schema.getResultHandler();
+    const resultHandler = await this.getResultHandler();
     return resultHandler.hasPendingData();
   }
 
@@ -217,7 +227,8 @@ export default class DBSQLOperation implements IOperation {
     await this.waitUntilReady(options);
 
     this.logger?.log(LogLevel.debug, `Fetching schema for operation with id: ${this.getId()}`);
-    return this._schema.fetch();
+    const metadata = await this.fetchMetadata();
+    return metadata.schema ?? null;
   }
 
   private async failIfClosed(): Promise<void> {
@@ -243,5 +254,45 @@ export default class DBSQLOperation implements IOperation {
       }
       throw error;
     }
+  }
+
+  private async fetchMetadata() {
+    if (!this.metadata) {
+      const metadata = await this.driver.getResultSetMetadata({
+        operationHandle: this.operationHandle,
+      });
+      Status.assert(metadata.status);
+      this.metadata = metadata;
+    }
+
+    return this.metadata;
+  }
+
+  private async getResultHandler(): Promise<IOperationResult> {
+    const metadata = await this.fetchMetadata();
+    const resultFormat = definedOrError(metadata.resultFormat);
+
+    if (!this.resultHandler) {
+      switch (resultFormat) {
+        case TSparkRowSetType.COLUMN_BASED_SET:
+          this.resultHandler = new JsonResult(metadata.schema);
+          break;
+        case TSparkRowSetType.ARROW_BASED_SET:
+          this.resultHandler = new ArrowResult(metadata.schema, metadata.arrowSchema);
+          break;
+        case TSparkRowSetType.URL_BASED_SET:
+          this.resultHandler = new CloudFetchResult(metadata.schema);
+          break;
+        default:
+          this.resultHandler = undefined;
+          break;
+      }
+    }
+
+    if (!this.resultHandler) {
+      throw new HiveDriverError(`Unsupported result format: ${TSparkRowSetType[resultFormat]}`);
+    }
+
+    return this.resultHandler;
   }
 }
