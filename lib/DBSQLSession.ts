@@ -29,7 +29,7 @@ import CloseableCollection from './utils/CloseableCollection';
 import IDBSQLLogger, { LogLevel } from './contracts/IDBSQLLogger';
 import HiveDriverError from './errors/HiveDriverError';
 import globalConfig from './globalConfig';
-import convertToSparkParameters from './utils/ParameterConverter';
+import convertToSparkParameters from './utils/convertToSparkParameters';
 
 const defaultMaxRows = 100000;
 
@@ -141,7 +141,7 @@ export default class DBSQLSession implements IDBSQLSession {
       ...getDirectResultsOptions(options.maxRows),
       ...getArrowOptions(),
       canDownloadResult: options.useCloudFetch ?? globalConfig.useCloudFetch,
-      parameters: options.parameters ? convertToSparkParameters(options.parameters) : undefined,
+      parameters: options.namedParameters ? convertToSparkParameters(options.namedParameters) : undefined,
     });
     const response = await this.handleResponse(operationPromise);
     return this.createOperation(response);

@@ -8,7 +8,8 @@ export type ExecuteStatementOptions = {
   runAsync?: boolean;
   maxRows?: number | null;
   useCloudFetch?: boolean;
-  parameters?: object;
+  namedParameters?: Record<string, unknown>;
+  positionalParameters?: Record<string, unknown>;
 };
 
 export type TypeInfoRequest = {
