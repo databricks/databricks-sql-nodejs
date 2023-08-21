@@ -155,7 +155,7 @@ export default class DBSQLSession implements IDBSQLSession {
     // If `stagingAllowedLocalPath` is not provided - don't do anything to the operation. In a case of regular
     // operation, everything will work as usual. In a case of staging operation, it will be processed like any
     // other query - it will be possible to get data from it as usual, or use other operation methods.
-    if (options.stagingAllowedLocalPath) {
+    if (options.stagingAllowedLocalPath !== undefined) {
       const metadata = await operation.getMetadata();
       if (metadata.isStagingOperation) {
         const allowedLocalPath = Array.isArray(options.stagingAllowedLocalPath)
@@ -176,7 +176,7 @@ export default class DBSQLSession implements IDBSQLSession {
     };
     const rows = await operation.fetchAll();
     if (rows.length !== 1) {
-      throw new StagingError('Staging operation: expected the only row in result');
+      throw new StagingError('Staging operation: expected only one row in result');
     }
     const row = rows[0] as StagingResponse;
 
