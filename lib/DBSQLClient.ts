@@ -1,6 +1,6 @@
-import { EventEmitter } from 'events';
 import thrift, { HttpHeaders } from 'thrift';
 
+import { EventEmitter } from 'events';
 import TCLIService from '../thrift/TCLIService';
 import { TProtocolVersion } from '../thrift/TCLIService_types';
 import IDBSQLClient, { ClientOptions, ConnectionOptions, OpenSessionRequest } from './contracts/IDBSQLClient';
