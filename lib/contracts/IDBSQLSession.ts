@@ -2,14 +2,14 @@ import IOperation from './IOperation';
 import Status from '../dto/Status';
 import InfoValue from '../dto/InfoValue';
 import { Int64 } from '../hive/Types';
+import DBSQLParameter from '../DBSQLParameter';
 
 export type ExecuteStatementOptions = {
   queryTimeout?: Int64;
   runAsync?: boolean;
   maxRows?: number | null;
   useCloudFetch?: boolean;
-  namedParameters?: Record<string, unknown>;
-  positionalParameters?: Record<string, unknown>;
+  parameters?: DBSQLParameter[];
 };
 
 export type TypeInfoRequest = {

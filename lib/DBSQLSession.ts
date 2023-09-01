@@ -141,7 +141,7 @@ export default class DBSQLSession implements IDBSQLSession {
       ...getDirectResultsOptions(options.maxRows),
       ...getArrowOptions(),
       canDownloadResult: options.useCloudFetch ?? globalConfig.useCloudFetch,
-      parameters: options.namedParameters ? convertToSparkParameters(options.namedParameters) : undefined,
+      parameters: options.parameters ? convertToSparkParameters(options.parameters) : undefined,
     });
     const response = await this.handleResponse(operationPromise);
     return this.createOperation(response);
