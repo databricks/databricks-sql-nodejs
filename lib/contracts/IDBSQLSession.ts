@@ -9,7 +9,7 @@ export type ExecuteStatementOptions = {
   runAsync?: boolean;
   maxRows?: number | null;
   useCloudFetch?: boolean;
-  parameters?: DBSQLParameter[];
+  namedParameters?: Record<string, DBSQLParameter>;
 };
 
 export type TypeInfoRequest = {
