@@ -7,8 +7,6 @@ const { default: DBSQLParameter } = require('../../dist/DBSQLParameter');
 describe('DBSQLParameter', () => {
   it('should infer types correctly', () => {
     const cases = [
-      [undefined, new TSparkParameter({ type: 'VOID', value: new TSparkParameterValue() })],
-      [null, new TSparkParameter({ type: 'VOID', value: new TSparkParameterValue() })],
       [false, new TSparkParameter({ type: 'BOOLEAN', value: new TSparkParameterValue({ stringValue: 'FALSE' }) })],
       [true, new TSparkParameter({ type: 'BOOLEAN', value: new TSparkParameterValue({ stringValue: 'TRUE' }) })],
       [123, new TSparkParameter({ type: 'INTEGER', value: new TSparkParameterValue({ stringValue: '123' }) })],
@@ -31,8 +29,6 @@ describe('DBSQLParameter', () => {
     const expectedType = '_CUSTOM_TYPE_'; // it doesn't have to be valid type name, just any string
 
     const cases = [
-      [undefined, new TSparkParameter({ type: expectedType, value: new TSparkParameterValue() })],
-      [null, new TSparkParameter({ type: expectedType, value: new TSparkParameterValue() })],
       [false, new TSparkParameter({ type: expectedType, value: new TSparkParameterValue({ stringValue: 'FALSE' }) })],
       [true, new TSparkParameter({ type: expectedType, value: new TSparkParameterValue({ stringValue: 'TRUE' }) })],
       [123, new TSparkParameter({ type: expectedType, value: new TSparkParameterValue({ stringValue: '123' }) })],

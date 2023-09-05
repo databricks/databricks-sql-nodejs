@@ -20,10 +20,7 @@ export default class DBSQLParameter {
 
   public toSparkParameter(): TSparkParameter {
     if (this.value === undefined || this.value === null) {
-      return new TSparkParameter({
-        type: this.type ?? 'VOID',
-        value: new TSparkParameterValue({}),
-      });
+      throw new TypeError(`Null parameter values are not supported`);
     }
 
     if (typeof this.value === 'boolean') {
