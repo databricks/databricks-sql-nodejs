@@ -3,6 +3,7 @@ import TCLIService from '../thrift/TCLIService';
 import TCLIService_types from '../thrift/TCLIService_types';
 import DBSQLClient from './DBSQLClient';
 import DBSQLSession from './DBSQLSession';
+import DBSQLParameter from './DBSQLParameter';
 import DBSQLLogger from './DBSQLLogger';
 import PlainHttpAuthentication from './connection/auth/PlainHttpAuthentication';
 import HttpConnection from './connection/connections/HttpConnection';
@@ -31,4 +32,4 @@ export const utils = {
   formatProgress,
 };
 
-export { DBSQLClient, DBSQLSession, DBSQLLogger, LogLevel };
+export { DBSQLClient, DBSQLSession, DBSQLParameter, DBSQLLogger, LogLevel };
