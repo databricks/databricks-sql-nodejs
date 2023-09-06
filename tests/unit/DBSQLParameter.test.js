@@ -16,6 +16,13 @@ describe('DBSQLParameter', () => {
         new Int64(1234),
         new TSparkParameter({ type: 'BIGINT', value: new TSparkParameterValue({ stringValue: '1234' }) }),
       ],
+      [
+        new Date('2023-09-06T03:14:27.843Z'),
+        new TSparkParameter({
+          type: 'TIMESTAMP',
+          value: new TSparkParameterValue({ stringValue: '2023-09-06T03:14:27.843Z' }),
+        }),
+      ],
       ['Hello', new TSparkParameter({ type: 'STRING', value: new TSparkParameterValue({ stringValue: 'Hello' }) })],
     ];
 
@@ -40,6 +47,13 @@ describe('DBSQLParameter', () => {
       [
         new Int64(1234),
         new TSparkParameter({ type: expectedType, value: new TSparkParameterValue({ stringValue: '1234' }) }),
+      ],
+      [
+        new Date('2023-09-06T03:14:27.843Z'),
+        new TSparkParameter({
+          type: expectedType,
+          value: new TSparkParameterValue({ stringValue: '2023-09-06T03:14:27.843Z' }),
+        }),
       ],
       ['Hello', new TSparkParameter({ type: expectedType, value: new TSparkParameterValue({ stringValue: 'Hello' }) })],
     ];

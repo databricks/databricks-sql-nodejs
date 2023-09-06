@@ -1,7 +1,7 @@
 import Int64 from 'node-int64';
 import { TSparkParameter, TSparkParameterValue } from '../thrift/TCLIService_types';
 
-export type DBSQLParameterValue = boolean | number | bigint | Int64 | string;
+export type DBSQLParameterValue = boolean | number | bigint | Int64 | Date | string;
 
 interface DBSQLParameterOptions {
   type?: string;
@@ -42,6 +42,15 @@ export default class DBSQLParameter {
         type: this.type ?? 'BIGINT',
         value: new TSparkParameterValue({
           stringValue: this.value.toString(),
+        }),
+      });
+    }
+
+    if (this.value instanceof Date) {
+      return new TSparkParameter({
+        type: this.type ?? 'TIMESTAMP',
+        value: new TSparkParameterValue({
+          stringValue: this.value.toISOString(),
         }),
       });
     }
