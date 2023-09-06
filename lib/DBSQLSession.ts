@@ -30,7 +30,7 @@ import CloseableCollection from './utils/CloseableCollection';
 import IDBSQLLogger, { LogLevel } from './contracts/IDBSQLLogger';
 import HiveDriverError from './errors/HiveDriverError';
 import globalConfig from './globalConfig';
-import DBSQLParameter from './DBSQLParameter';
+import DBSQLParameter, { DBSQLParameterValue } from './DBSQLParameter';
 
 const defaultMaxRows = 100000;
 
@@ -76,14 +76,18 @@ function getArrowOptions(): {
   };
 }
 
-function getQueryParameters(namedParameters?: Record<string, DBSQLParameter>): Array<TSparkParameter> {
+function getQueryParameters(
+  namedParameters?: Record<string, DBSQLParameter | DBSQLParameterValue>,
+): Array<TSparkParameter> {
   const result: Array<TSparkParameter> = [];
 
   if (namedParameters !== undefined) {
     for (const name of Object.keys(namedParameters)) {
-      const param = namedParameters[name].toSparkParameter();
-      param.name = name;
-      result.push(param);
+      const value = namedParameters[name];
+      const param = value instanceof DBSQLParameter ? value : new DBSQLParameter({ value });
+      const sparkParam = param.toSparkParameter();
+      sparkParam.name = name;
+      result.push(sparkParam);
     }
   }
 
