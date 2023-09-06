@@ -1,11 +1,11 @@
 import Int64 from 'node-int64';
 import { TSparkParameter, TSparkParameterValue } from '../thrift/TCLIService_types';
 
-export type DBSQLParameterValue = undefined | null | boolean | number | bigint | Int64 | string;
+export type DBSQLParameterValue = boolean | number | bigint | Int64 | string;
 
 interface DBSQLParameterOptions {
   type?: string;
-  value?: DBSQLParameterValue;
+  value: DBSQLParameterValue;
 }
 
 export default class DBSQLParameter {
@@ -13,16 +13,12 @@ export default class DBSQLParameter {
 
   public readonly value: DBSQLParameterValue;
 
-  constructor({ type, value }: DBSQLParameterOptions = {}) {
+  constructor({ type, value }: DBSQLParameterOptions) {
     this.type = type;
     this.value = value;
   }
 
   public toSparkParameter(): TSparkParameter {
-    if (this.value === undefined || this.value === null) {
-      throw new TypeError(`Null parameter values are not supported`);
-    }
-
     if (typeof this.value === 'boolean') {
       return new TSparkParameter({
         type: this.type ?? 'BOOLEAN',
