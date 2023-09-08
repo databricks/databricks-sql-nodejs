@@ -53,7 +53,7 @@ jobs:
 
   e2e-test:
     runs-on: ubuntu-latest
-    environment: nodejs-sql-prod
+    environment: azure-prod
     env:
       E2E_HOST: ${{ secrets.DATABRICKS_HOST }}
       E2E_PATH: ${{ secrets.TEST_PECO_WAREHOUSE_HTTP_PATH }}
