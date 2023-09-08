@@ -54,8 +54,6 @@ jobs:
           E2E_HOST: ${{ secrets.DATABRICKS_HOST }}
           E2E_PATH: ${{ secrets.TEST_PECO_WAREHOUSE_HTTP_PATH }}
           E2E_ACCESS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
-          E2E_CATALOG: peco
-          E2E_DATABASE: client_libs_test
           E2E_TABLE_SUFFIX: ${{github.sha}}
         run: |
           npm ci
