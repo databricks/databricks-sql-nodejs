@@ -53,7 +53,7 @@ jobs:
 
   e2e-test:
     runs-on: ubuntu-latest
-    environment: azure-prod
+    environment: nodejs-sql-prod
     env:
       E2E_HOST: ${{ secrets.DATABRICKS_HOST }}
       E2E_PATH: ${{ secrets.TEST_PECO_WAREHOUSE_HTTP_PATH }}
@@ -74,7 +74,7 @@ jobs:
             ${{ runner.os }}-
       - name: Run e2e tests
         run: |
-          E2E_HOST=${{ env.E2E_HOST }} E2E_PATH=${{env.E2E_PATH}}  E2E_ACCESS_TOKEN=${{env.E2E_ACCESS_TOKEN}} npm ci
+          npm ci
           NODE_OPTIONS="--max-old-space-size=4096" npm run e2e
       - name: Coverage
         uses: codecov/codecov-action@v3
