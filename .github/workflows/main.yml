@@ -58,7 +58,7 @@ jobs:
       - name: Run e2e tests
         run: |
           npm ci
-          E2E_HOST=$E2E_HOST E2E_PATH=$E2E_PATH E2E_ACCESS_TOKEN=$E2E_ACCESS_TOKEN NODE_OPTIONS="--max-old-space-size=4096" npm run e2e
+          E2E_HOST={{env.E2E_HOST}} E2E_PATH={{env.E2E_PATH}}  E2E_ACCESS_TOKEN={{env.E2E_ACCESS_TOKEN}}  NODE_OPTIONS="--max-old-space-size=4096" npm run e2e
       - name: Coverage
         uses: codecov/codecov-action@v3
         with:
