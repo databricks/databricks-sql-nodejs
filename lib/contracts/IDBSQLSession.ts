@@ -2,6 +2,7 @@ import IOperation from './IOperation';
 import Status from '../dto/Status';
 import InfoValue from '../dto/InfoValue';
 import { Int64 } from '../hive/Types';
+import DBSQLParameter, { DBSQLParameterValue } from '../DBSQLParameter';
 
 export type ExecuteStatementOptions = {
   queryTimeout?: Int64;
@@ -9,6 +10,7 @@ export type ExecuteStatementOptions = {
   maxRows?: number | null;
   useCloudFetch?: boolean;
   stagingAllowedLocalPath?: string | string[];
+  namedParameters?: Record<string, DBSQLParameter | DBSQLParameterValue>;
 };
 
 export type TypeInfoRequest = {

@@ -8,6 +8,7 @@ import {
   TOperationHandle,
   TSparkDirectResults,
   TSparkArrowTypes,
+  TSparkParameter,
 } from '../thrift/TCLIService_types';
 import HiveDriver from './hive/HiveDriver';
 import { Int64 } from './hive/Types';
@@ -33,6 +34,7 @@ import IDBSQLLogger, { LogLevel } from './contracts/IDBSQLLogger';
 import HiveDriverError from './errors/HiveDriverError';
 import globalConfig from './globalConfig';
 import StagingError from './errors/StagingError';
+import DBSQLParameter, { DBSQLParameterValue } from './DBSQLParameter';
 
 const defaultMaxRows = 100000;
 
@@ -76,6 +78,24 @@ function getArrowOptions(): {
       intervalTypesAsArrow: false,
     },
   };
+}
+
+function getQueryParameters(
+  namedParameters?: Record<string, DBSQLParameter | DBSQLParameterValue>,
+): Array<TSparkParameter> {
+  const result: Array<TSparkParameter> = [];
+
+  if (namedParameters !== undefined) {
+    for (const name of Object.keys(namedParameters)) {
+      const value = namedParameters[name];
+      const param = value instanceof DBSQLParameter ? value : new DBSQLParameter({ value });
+      const sparkParam = param.toSparkParameter();
+      sparkParam.name = name;
+      result.push(sparkParam);
+    }
+  }
+
+  return result;
 }
 
 interface DBSQLSessionConstructorOptions {
@@ -144,6 +164,7 @@ export default class DBSQLSession implements IDBSQLSession {
       ...getDirectResultsOptions(options.maxRows),
       ...getArrowOptions(),
       canDownloadResult: options.useCloudFetch ?? globalConfig.useCloudFetch,
+      parameters: getQueryParameters(options.namedParameters),
     });
     const response = await this.handleResponse(operationPromise);
     const operation = this.createOperation(response);
