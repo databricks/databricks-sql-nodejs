@@ -33,6 +33,13 @@ jobs:
   test:
     runs-on: ubuntu-latest
     environment: azure-prod
+    env:
+      E2E_HOST: ${{ secrets.DATABRICKS_HOST }}
+      E2E_PATH: ${{ secrets.TEST_PECO_WAREHOUSE_HTTP_PATH }}
+      E2E_ACCESS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+      E2E_TABLE_SUFFIX: ${{github.sha}}
+      cache-name: cache-node-modules
+
     steps:
       - uses: actions/checkout@v3
       - name: Cache node modules
