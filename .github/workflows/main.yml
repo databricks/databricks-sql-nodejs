@@ -101,8 +101,8 @@ jobs:
       - uses: actions/download-artifact@v3
         with:
           name: coverage_e2e
-      - run: tar -xvf coverage_unit.tar
-      - run: tar -xvf coverage_e2e.tar
+      - run: tar -xvf coverage_unit.tar && rm coverage_unit.tar
+      - run: tar -xvf coverage_e2e.tar && rm coverage_e2e.tar
       - name: Coverage
         uses: codecov/codecov-action@v3
         with:
