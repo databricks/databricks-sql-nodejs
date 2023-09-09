@@ -50,6 +50,13 @@ jobs:
         run: |
           npm ci
           npm run test
+      - run: tar -cvf coverage_unit.tar coverage_unit
+      - name: Store coverage report
+        uses: actions/upload-artifact@v3
+        with:
+          name: coverage_unit
+          path: coverage_unit.tar
+          retention-days: 1
 
   e2e-test:
     runs-on: ubuntu-latest
@@ -76,6 +83,28 @@ jobs:
         run: |
           npm ci
           NODE_OPTIONS="--max-old-space-size=4096" npm run e2e
+      - run: tar -cvf coverage_e2e.tar coverage_e2e
+      - name: Store coverage report
+        uses: actions/upload-artifact@v3
+        with:
+          name: coverage_e2e
+          path: coverage_e2e.tar
+          retention-days: 1
+
+  coverage:
+    needs: [unit-test, e2e-test]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/download-artifact@v3
+        with:
+          name: coverage_unit
+          path: coverage_unit.tar
+      - uses: actions/download-artifact@v3
+        with:
+          name: coverage_e2e
+          path: coverage_e2e.tar
+      - run: tar -xvf coverage_unit.tar coverage_unit
+      - run: tar -xvf coverage_e2e.tar coverage_e2e
       - name: Coverage
         uses: codecov/codecov-action@v3
         with:
