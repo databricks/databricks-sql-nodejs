@@ -98,13 +98,11 @@ jobs:
       - uses: actions/download-artifact@v3
         with:
           name: coverage_unit
-          path: coverage_unit.tar
       - uses: actions/download-artifact@v3
         with:
           name: coverage_e2e
-          path: coverage_e2e.tar
-      - run: tar -xvf coverage_unit.tar coverage_unit
-      - run: tar -xvf coverage_e2e.tar coverage_e2e
+      - run: tar -xvf coverage_unit.tar
+      - run: tar -xvf coverage_e2e.tar
       - name: Coverage
         uses: codecov/codecov-action@v3
         with:
