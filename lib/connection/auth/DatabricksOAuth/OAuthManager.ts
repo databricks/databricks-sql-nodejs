@@ -10,6 +10,7 @@ export interface OAuthManagerOptions {
   callbackPorts?: Array<number>;
   clientId?: string;
   azureTenantId?: string;
+  clientSecret?: string;
   logger?: IDBSQLLogger;
 }
 
@@ -59,7 +60,8 @@ export default abstract class OAuthManager {
     if (!this.client) {
       this.client = new this.issuer.Client({
         client_id: this.getClientId(),
-        token_endpoint_auth_method: 'none',
+        client_secret: this.options.clientSecret,
+        token_endpoint_auth_method: this.options.clientSecret === undefined ? 'none' : 'client_secret_basic',
       });
     }
 
@@ -97,8 +99,7 @@ export default abstract class OAuthManager {
     return new OAuthToken(accessToken, refreshToken);
   }
 
-  public async getToken(scopes: OAuthScopes): Promise<OAuthToken> {
-    const client = await this.getClient();
+  private async getTokenU2M(client: BaseClient, scopes: OAuthScopes) {
     const authCode = new AuthorizationCode({
       client,
       ports: this.getCallbackPorts(),
@@ -109,12 +110,26 @@ export default abstract class OAuthManager {
 
     const { code, verifier, redirectUri } = await authCode.fetch(mappedScopes);
 
-    const { access_token: accessToken, refresh_token: refreshToken } = await client.grant({
+    return client.grant({
       grant_type: 'authorization_code',
       code,
       code_verifier: verifier,
       redirect_uri: redirectUri,
     });
+  }
+
+  public async getTokenM2M(client: BaseClient) {
+    return client.grant({
+      grant_type: 'client_credentials',
+      scope: 'all-apis', // this is the only allowed scope for M2M flow
+    });
+  }
+
+  public async getToken(scopes: OAuthScopes): Promise<OAuthToken> {
+    const client = await this.getClient();
+
+    const { access_token: accessToken, refresh_token: refreshToken } =
+      this.options.clientSecret === undefined ? await this.getTokenU2M(client, scopes) : await this.getTokenM2M(client);
 
     if (!accessToken) {
       throw new Error('Failed to fetch access token');
