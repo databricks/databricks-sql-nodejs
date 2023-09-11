@@ -3,8 +3,24 @@ import { TSparkParameter, TSparkParameterValue } from '../thrift/TCLIService_typ
 
 export type DBSQLParameterValue = boolean | number | bigint | Int64 | Date | string;
 
+enum DBSQLParameterType {
+  STRING = "STRING",
+  DATE = "DATE",
+  TIMESTAMP = "TIMESTAMP",
+  FLOAT = "FLOAT",
+  DECIMAL = "DECIMAL",
+  DOUBLE = "DOUBLE",
+  INTEGER = "INTEGER",
+  BIGINT = "BIGINT",
+  SMALLINT = "SMALLINT",
+  TINYINT = "TINYINT",
+  BOOLEAN = "BOOLEAN",
+  INTERVALMONTH = "INTERVAL MONTH",
+  INTERVALDAY = "INTERVAL DAY"
+}
+
 interface DBSQLParameterOptions {
-  type?: string;
+  type?: DBSQLParameterType;
   value: DBSQLParameterValue;
 }
 
@@ -21,7 +37,7 @@ export default class DBSQLParameter {
   public toSparkParameter(): TSparkParameter {
     if (typeof this.value === 'boolean') {
       return new TSparkParameter({
-        type: this.type ?? 'BOOLEAN',
+        type: this.type ?? DBSQLParameterType.BOOLEAN,
         value: new TSparkParameterValue({
           stringValue: this.value ? 'TRUE' : 'FALSE',
         }),
@@ -30,7 +46,7 @@ export default class DBSQLParameter {
 
     if (typeof this.value === 'number') {
       return new TSparkParameter({
-        type: this.type ?? (Number.isInteger(this.value) ? 'INTEGER' : 'DOUBLE'),
+        type: this.type ?? (Number.isInteger(this.value) ? DBSQLParameterType.INTEGER : DBSQLParameterType.DOUBLE),
         value: new TSparkParameterValue({
           stringValue: Number(this.value).toString(),
         }),
@@ -39,7 +55,7 @@ export default class DBSQLParameter {
 
     if (this.value instanceof Int64 || typeof this.value === 'bigint') {
       return new TSparkParameter({
-        type: this.type ?? 'BIGINT',
+        type: this.type ?? DBSQLParameterType.BIGINT,
         value: new TSparkParameterValue({
           stringValue: this.value.toString(),
         }),
@@ -48,7 +64,7 @@ export default class DBSQLParameter {
 
     if (this.value instanceof Date) {
       return new TSparkParameter({
-        type: this.type ?? 'TIMESTAMP',
+        type: this.type ?? DBSQLParameterType.TIMESTAMP,
         value: new TSparkParameterValue({
           stringValue: this.value.toISOString(),
         }),
@@ -56,7 +72,7 @@ export default class DBSQLParameter {
     }
 
     return new TSparkParameter({
-      type: this.type ?? 'STRING',
+      type: this.type ?? DBSQLParameterType.STRING,
       value: new TSparkParameterValue({
         stringValue: this.value,
       }),
