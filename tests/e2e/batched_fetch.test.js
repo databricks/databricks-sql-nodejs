@@ -40,7 +40,7 @@ describe('Data fetching', () => {
     sinon.spy(session.driver, 'fetchResults');
     try {
       // set `maxRows` to null to disable direct results so all the data are fetched through `driver.fetchResults`
-      const operation = await session.executeStatement(query, { runAsync: true, maxRows: null });
+      const operation = await session.executeStatement(query, { maxRows: null });
       let chunkedOp = await operation.fetchChunk({ maxRows: 10 }).catch((error) => logger(error));
       expect(chunkedOp.length).to.be.equal(10);
       // we explicitly requested only one chunk
@@ -55,7 +55,7 @@ describe('Data fetching', () => {
     sinon.spy(session.driver, 'fetchResults');
     try {
       // set `maxRows` to null to disable direct results so all the data are fetched through `driver.fetchResults`
-      const operation = await session.executeStatement(query, { runAsync: true, maxRows: null });
+      const operation = await session.executeStatement(query, { maxRows: null });
       let all = await operation.fetchAll({ maxRows: 200 });
       expect(all.length).to.be.equal(1000);
       // 1000/200 = 5 chunks + one extra request to ensure that there's no more data
@@ -70,7 +70,7 @@ describe('Data fetching', () => {
     sinon.spy(session.driver, 'fetchResults');
     try {
       // here `maxRows` enables direct results with limit of the first batch
-      const operation = await session.executeStatement(query, { runAsync: true, maxRows: 1000 });
+      const operation = await session.executeStatement(query, { maxRows: 1000 });
       let all = await operation.fetchAll();
       expect(all.length).to.be.equal(1000);
       // all the data returned immediately from direct results, so no additional requests
@@ -85,7 +85,7 @@ describe('Data fetching', () => {
     sinon.spy(session.driver, 'fetchResults');
     try {
       // here `maxRows` enables direct results with limit of the first batch
-      const operation = await session.executeStatement(query, { runAsync: true, maxRows: 200 });
+      const operation = await session.executeStatement(query, { maxRows: 200 });
       // here `maxRows` sets limit for `driver.fetchResults`
       let all = await operation.fetchAll({ maxRows: 200 });
       expect(all.length).to.be.equal(1000);

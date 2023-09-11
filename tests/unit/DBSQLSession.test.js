@@ -66,7 +66,7 @@ describe('DBSQLSession', () => {
 
     it('should execute statement asynchronously', async () => {
       const session = createSession();
-      const result = await session.executeStatement('SELECT * FROM table', { runAsync: true });
+      const result = await session.executeStatement('SELECT * FROM table');
       expect(result).instanceOf(DBSQLOperation);
     });
 

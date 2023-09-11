@@ -148,7 +148,7 @@ export default class DBSQLSession implements IDBSQLSession {
    * @param options - maxRows field is used to specify Direct Results
    * @returns DBSQLOperation
    * @example
-   * const operation = await session.executeStatement(query, { runAsync: true });
+   * const operation = await session.executeStatement(query);
    */
   public async executeStatement(statement: string, options: ExecuteStatementOptions = {}): Promise<IOperation> {
     await this.failIfClosed();
@@ -156,7 +156,7 @@ export default class DBSQLSession implements IDBSQLSession {
       sessionHandle: this.sessionHandle,
       statement,
       queryTimeout: options.queryTimeout,
-      runAsync: options.runAsync || false,
+      runAsync: true,
       ...getDirectResultsOptions(options.maxRows),
       ...getArrowOptions(),
       canDownloadResult: options.useCloudFetch ?? globalConfig.useCloudFetch,
@@ -176,7 +176,7 @@ export default class DBSQLSession implements IDBSQLSession {
     await this.failIfClosed();
     const operationPromise = this.driver.getTypeInfo({
       sessionHandle: this.sessionHandle,
-      runAsync: request.runAsync || false,
+      runAsync: true,
       ...getDirectResultsOptions(request.maxRows),
     });
     const response = await this.handleResponse(operationPromise);
@@ -193,7 +193,7 @@ export default class DBSQLSession implements IDBSQLSession {
     await this.failIfClosed();
     const operationPromise = this.driver.getCatalogs({
       sessionHandle: this.sessionHandle,
-      runAsync: request.runAsync || false,
+      runAsync: true,
       ...getDirectResultsOptions(request.maxRows),
     });
     const response = await this.handleResponse(operationPromise);
@@ -212,7 +212,7 @@ export default class DBSQLSession implements IDBSQLSession {
       sessionHandle: this.sessionHandle,
       catalogName: request.catalogName,
       schemaName: request.schemaName,
-      runAsync: request.runAsync || false,
+      runAsync: true,
       ...getDirectResultsOptions(request.maxRows),
     });
     const response = await this.handleResponse(operationPromise);
@@ -233,7 +233,7 @@ export default class DBSQLSession implements IDBSQLSession {
       schemaName: request.schemaName,
       tableName: request.tableName,
       tableTypes: request.tableTypes,
-      runAsync: request.runAsync || false,
+      runAsync: true,
       ...getDirectResultsOptions(request.maxRows),
     });
     const response = await this.handleResponse(operationPromise);
@@ -250,7 +250,7 @@ export default class DBSQLSession implements IDBSQLSession {
     await this.failIfClosed();
     const operationPromise = this.driver.getTableTypes({
       sessionHandle: this.sessionHandle,
-      runAsync: request.runAsync || false,
+      runAsync: true,
       ...getDirectResultsOptions(request.maxRows),
     });
     const response = await this.handleResponse(operationPromise);
@@ -271,7 +271,7 @@ export default class DBSQLSession implements IDBSQLSession {
       schemaName: request.schemaName,
       tableName: request.tableName,
       columnName: request.columnName,
-      runAsync: request.runAsync || false,
+      runAsync: true,
       ...getDirectResultsOptions(request.maxRows),
     });
     const response = await this.handleResponse(operationPromise);
@@ -291,7 +291,7 @@ export default class DBSQLSession implements IDBSQLSession {
       catalogName: request.catalogName,
       schemaName: request.schemaName,
       functionName: request.functionName,
-      runAsync: request.runAsync || false,
+      runAsync: true,
       ...getDirectResultsOptions(request.maxRows),
     });
     const response = await this.handleResponse(operationPromise);
@@ -305,7 +305,7 @@ export default class DBSQLSession implements IDBSQLSession {
       catalogName: request.catalogName,
       schemaName: request.schemaName,
       tableName: request.tableName,
-      runAsync: request.runAsync || false,
+      runAsync: true,
       ...getDirectResultsOptions(request.maxRows),
     });
     const response = await this.handleResponse(operationPromise);
@@ -328,7 +328,7 @@ export default class DBSQLSession implements IDBSQLSession {
       foreignCatalogName: request.foreignCatalogName,
       foreignSchemaName: request.foreignSchemaName,
       foreignTableName: request.foreignTableName,
-      runAsync: request.runAsync || false,
+      runAsync: true,
       ...getDirectResultsOptions(request.maxRows),
     });
     const response = await this.handleResponse(operationPromise);
