@@ -3,20 +3,20 @@ import { TSparkParameter, TSparkParameterValue } from '../thrift/TCLIService_typ
 
 export type DBSQLParameterValue = boolean | number | bigint | Int64 | Date | string;
 
-enum DBSQLParameterType {
-  STRING = "STRING",
-  DATE = "DATE",
-  TIMESTAMP = "TIMESTAMP",
-  FLOAT = "FLOAT",
-  DECIMAL = "DECIMAL",
-  DOUBLE = "DOUBLE",
-  INTEGER = "INTEGER",
-  BIGINT = "BIGINT",
-  SMALLINT = "SMALLINT",
-  TINYINT = "TINYINT",
-  BOOLEAN = "BOOLEAN",
-  INTERVALMONTH = "INTERVAL MONTH",
-  INTERVALDAY = "INTERVAL DAY"
+export enum DBSQLParameterType {
+  STRING = 'STRING',
+  DATE = 'DATE',
+  TIMESTAMP = 'TIMESTAMP',
+  FLOAT = 'FLOAT',
+  DECIMAL = 'DECIMAL',
+  DOUBLE = 'DOUBLE',
+  INTEGER = 'INTEGER',
+  BIGINT = 'BIGINT',
+  SMALLINT = 'SMALLINT',
+  TINYINT = 'TINYINT',
+  BOOLEAN = 'BOOLEAN',
+  INTERVALMONTH = 'INTERVAL MONTH',
+  INTERVALDAY = 'INTERVAL DAY',
 }
 
 interface DBSQLParameterOptions {
@@ -24,7 +24,7 @@ interface DBSQLParameterOptions {
   value: DBSQLParameterValue;
 }
 
-export default class DBSQLParameter {
+export class DBSQLParameter {
   public readonly type?: string;
 
   public readonly value: DBSQLParameterValue;
