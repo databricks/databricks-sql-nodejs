@@ -110,6 +110,8 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
           logger: this.logger,
           persistence: options.persistence,
           azureTenantId: options.azureTenantId,
+          clientId: options.oauthClientId,
+          clientSecret: options.oauthClientSecret,
         });
       case 'custom':
         return options.provider;
