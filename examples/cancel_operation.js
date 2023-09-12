@@ -40,7 +40,7 @@ client
         SELECT *
         FROM RANGE(100000000)
         ORDER BY RANDOM() ASC
-      `
+      `,
     );
     getQueryResult(queryOperation)
       .then((result) => console.log(`Query returned ${result.length} row(s)`))
