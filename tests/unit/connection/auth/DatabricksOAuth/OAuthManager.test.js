@@ -2,7 +2,6 @@ const { expect, AssertionError } = require('chai');
 const sinon = require('sinon');
 const openidClientLib = require('openid-client');
 const {
-  default: OAuthManager,
   AWSOAuthManager,
   AzureOAuthManager,
 } = require('../../../../../dist/connection/auth/DatabricksOAuth/OAuthManager');
@@ -29,6 +28,10 @@ AuthorizationCodeMock.validCode = {
 
 class OAuthClientMock {
   constructor() {
+    this.clientOptions = {};
+    this.expectedClientId = undefined;
+    this.expectedClientSecret = undefined;
+
     this.grantError = undefined;
     this.refreshError = undefined;
 
@@ -43,7 +46,7 @@ class OAuthClientMock {
     this.refreshToken = `refresh.${suffix}`;
   }
 
-  async grant(params) {
+  async grantU2M(params) {
     if (this.grantError) {
       const error = this.grantError;
       this.grantError = undefined;
@@ -59,6 +62,32 @@ class OAuthClientMock {
       access_token: this.accessToken,
       refresh_token: this.refreshToken,
     };
+  }
+
+  async grantM2M(params) {
+    if (this.grantError) {
+      const error = this.grantError;
+      this.grantError = undefined;
+      throw error;
+    }
+
+    expect(params.grant_type).to.be.equal('client_credentials');
+    expect(params.scope).to.be.equal('all-apis');
+
+    return {
+      access_token: this.accessToken,
+      refresh_token: this.refreshToken,
+    };
+  }
+
+  async grant(params) {
+    switch (this.clientOptions.token_endpoint_auth_method) {
+      case 'client_secret_basic':
+        return this.grantM2M(params);
+      case 'none':
+        return this.grantU2M(params);
+    }
+    throw new Error(`OAuthClientMock: unrecognized auth method: ${this.clientOptions.token_endpoint_auth_method}`);
   }
 
   async refresh(refreshToken) {
@@ -84,8 +113,12 @@ class OAuthClientMock {
     sinon.stub(oauthClient, 'grant').callThrough();
     sinon.stub(oauthClient, 'refresh').callThrough();
 
+    oauthClient.expectedClientId = options?.clientId;
+    oauthClient.expectedClientSecret = options?.clientSecret;
+
     const issuer = {
-      Client: function () {
+      Client: function (clientOptions) {
+        oauthClient.clientOptions = clientOptions;
         return oauthClient;
       },
     };
@@ -93,7 +126,6 @@ class OAuthClientMock {
     sinon.stub(openidClientLib, 'Issuer').returns(issuer);
     openidClientLib.Issuer.discover = () => Promise.resolve(issuer);
 
-    // TODO: Need to test separately AWS and Azure managers
     const oauthManager = new OAuthManagerClass({
       host: 'https://example.com',
       ...options,
@@ -113,11 +145,25 @@ class OAuthClientMock {
       openidClientLib.Issuer.restore?.();
     });
 
-    it('should get access token', async () => {
+    it('should get access token (U2M)', async () => {
       const { oauthManager, oauthClient } = prepareTestInstances({
         logger: {
           log: () => {},
         },
+      });
+
+      const token = await oauthManager.getToken(['offline_access']);
+      expect(oauthClient.grant.called).to.be.true;
+      expect(token).to.be.instanceOf(OAuthToken);
+      expect(token.accessToken).to.be.equal(oauthClient.accessToken);
+      expect(token.refreshToken).to.be.equal(oauthClient.refreshToken);
+    });
+
+    it('should get access token (M2M)', async () => {
+      const { oauthManager, oauthClient } = prepareTestInstances({
+        // setup for M2M flow
+        clientId: 'test_client_id',
+        clientSecret: 'test_client_secret',
       });
 
       const token = await oauthManager.getToken([]);
