@@ -74,6 +74,7 @@ export default class AxiosHttpConnection extends EventEmitter {
       },
       data,
       responseType: 'arraybuffer',
+      timeoutErrorMessage: 'Request timed out',
     };
 
     axios
@@ -84,7 +85,7 @@ export default class AxiosHttpConnection extends EventEmitter {
         }
 
         const buffer = Buffer.from(response.data);
-        this.transport.receiver((transportWithData) => this.decodeCallback(transportWithData), seqId)(buffer);
+        this.transport.receiver((transportWithData) => this.handleThriftResponse(transportWithData), seqId)(buffer);
       })
       .catch((error) => {
         const defaultErrorHandler = (err: unknown) => {
@@ -101,7 +102,7 @@ export default class AxiosHttpConnection extends EventEmitter {
       });
   }
 
-  private decodeCallback(transportWithData: TTransport) {
+  private handleThriftResponse(transportWithData: TTransport) {
     if (!this.client) {
       throw new Thrift.TApplicationException(Thrift.TApplicationExceptionType.INTERNAL_ERROR, 'Client not available');
     }
