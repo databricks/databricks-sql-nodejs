@@ -63,7 +63,7 @@ export default class AxiosHttpConnection extends EventEmitter {
   }
 
   public write(data: Buffer, seqId: number) {
-    const axiosConfig: AxiosRequestConfig = {
+    const axiosConfig: AxiosRequestConfig<Buffer> = {
       ...this.config,
       method: 'POST',
       headers: {

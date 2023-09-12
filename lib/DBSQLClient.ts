@@ -62,32 +62,15 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
   }
 
   private getConnectionOptions(options: ConnectionOptions, headers: HttpHeaders): IConnectionOptions {
-    const {
-      host,
-      port,
-      path,
-      clientId,
-      authType,
-      // @ts-expect-error TS2339: Property 'token' does not exist on type 'ConnectionOptions'
-      token,
-      // @ts-expect-error TS2339: Property 'persistence' does not exist on type 'ConnectionOptions'
-      persistence,
-      // @ts-expect-error TS2339: Property 'provider' does not exist on type 'ConnectionOptions'
-      provider,
-      ...otherOptions
-    } = options;
-
     return {
-      host,
-      port: port || 443,
-      options: {
-        path: prependSlash(path),
-        https: true,
-        ...otherOptions,
-        headers: {
-          ...headers,
-          'User-Agent': buildUserAgentString(options.clientId),
-        },
+      host: options.host,
+      port: options.port || 443,
+      path: prependSlash(options.path),
+      https: true,
+      socketTimeout: options.socketTimeout,
+      headers: {
+        ...headers,
+        'User-Agent': buildUserAgentString(options.clientId),
       },
     };
   }
