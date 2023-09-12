@@ -1,11 +1,13 @@
 import thrift from 'thrift';
 import https from 'https';
-import http, { IncomingMessage } from 'http';
+import http from 'http';
 
 import IThriftConnection from '../contracts/IThriftConnection';
 import IConnectionProvider from '../contracts/IConnectionProvider';
 import IConnectionOptions, { Options } from '../contracts/IConnectionOptions';
 import globalConfig from '../../globalConfig';
+
+import AxiosHttpConnection from './AxiosHttpConnection';
 
 type NodeOptions = {
   ca?: Buffer | string;
@@ -27,24 +29,20 @@ export default class HttpConnection implements IConnectionProvider, IThriftConne
       timeout: options.options?.socketTimeout ?? globalConfig.socketTimeout,
     };
 
-    const agent = options.options?.https
-      ? new https.Agent({ ...agentOptions, minVersion: 'TLSv1.2' })
-      : new http.Agent(agentOptions);
-
-    const thriftOptions = {
-      transport: thrift.TBufferedTransport,
-      protocol: thrift.TBinaryProtocol,
-      ...options.options,
-      nodeOptions: {
-        agent,
-        ...this.getNodeOptions(options.options || {}),
-        ...(options.options?.nodeOptions || {}),
+    this.connection = new AxiosHttpConnection(
+      {
+        // TODO: Proper url construction based on options
+        url: `${options.options?.https ? 'https' : 'http'}://${options.host}:${options.port}${options.options?.path}`,
+        httpsAgent: new https.Agent({ ...agentOptions, minVersion: 'TLSv1.2' }),
+        httpAgent: new http.Agent(agentOptions),
         timeout: options.options?.socketTimeout ?? globalConfig.socketTimeout,
+        headers: options.options?.headers,
       },
-    };
-
-    this.connection = this.thrift.createHttpConnection(options.host, options.port, thriftOptions);
-    this.addCookieHandler();
+      {
+        transport: thrift.TBufferedTransport,
+        protocol: thrift.TBinaryProtocol,
+      },
+    );
 
     return this;
   }
@@ -79,22 +77,5 @@ export default class HttpConnection implements IConnectionProvider, IThriftConne
     }
 
     return nodeOptions;
-  }
-
-  private addCookieHandler() {
-    const { responseCallback } = this.connection;
-
-    this.connection.responseCallback = (response: IncomingMessage, ...rest: Array<unknown>) => {
-      if (Array.isArray(response.headers['set-cookie'])) {
-        const cookie = [this.connection.nodeOptions.headers.cookie];
-
-        this.connection.nodeOptions.headers.cookie = cookie
-          .concat(response.headers['set-cookie'])
-          .filter(Boolean)
-          .join(';');
-      }
-
-      responseCallback.call(this.connection, response, ...rest);
-    };
   }
 }
