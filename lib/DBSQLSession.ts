@@ -30,7 +30,7 @@ import CloseableCollection from './utils/CloseableCollection';
 import IDBSQLLogger, { LogLevel } from './contracts/IDBSQLLogger';
 import HiveDriverError from './errors/HiveDriverError';
 import globalConfig from './globalConfig';
-import DBSQLParameter, { DBSQLParameterValue } from './DBSQLParameter';
+import { DBSQLParameter, DBSQLParameterValue } from './DBSQLParameter';
 
 const defaultMaxRows = 100000;
 
