@@ -170,7 +170,7 @@ class OAuthClientMock {
       expect(oauthClient.grant.called).to.be.true;
       expect(token).to.be.instanceOf(OAuthToken);
       expect(token.accessToken).to.be.equal(oauthClient.accessToken);
-      expect(token.refreshToken).to.be.equal(oauthClient.refreshToken);
+      expect(token.refreshToken).to.be.undefined;
     });
 
     it('should throw an error if cannot get access token', async () => {
