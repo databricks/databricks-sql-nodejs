@@ -42,7 +42,6 @@ type ThriftClient = {
   [key: string]: (input: TProtocol, mtype: Thrift.MessageType, seqId: number) => void;
 };
 
-// TODO: Cookie handling - ?
 export default class AxiosHttpConnection extends EventEmitter {
   private readonly config: AxiosRequestConfig;
 
