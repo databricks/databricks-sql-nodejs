@@ -1,6 +1,7 @@
 import IDBSQLLogger from './IDBSQLLogger';
 import IDBSQLSession from './IDBSQLSession';
 import IAuthentication from '../connection/contracts/IAuthentication';
+import { ProxyOptions } from '../connection/contracts/IConnectionOptions';
 import OAuthPersistence from '../connection/auth/DatabricksOAuth/OAuthPersistence';
 
 export interface ClientOptions {
@@ -30,7 +31,7 @@ export type ConnectionOptions = {
   path: string;
   clientId?: string;
   socketTimeout?: number;
-  proxy?: string; // proxy URL
+  proxy?: ProxyOptions;
 } & AuthOptions;
 
 export interface OpenSessionRequest {

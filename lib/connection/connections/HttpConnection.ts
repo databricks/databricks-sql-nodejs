@@ -1,16 +1,20 @@
 import thrift from 'thrift';
 import https from 'https';
 import http from 'http';
-import { URL } from 'url';
 
 import { ProxyAgent } from 'proxy-agent';
 
 import IThriftConnection from '../contracts/IThriftConnection';
 import IConnectionProvider from '../contracts/IConnectionProvider';
-import IConnectionOptions from '../contracts/IConnectionOptions';
+import IConnectionOptions, { ProxyOptions } from '../contracts/IConnectionOptions';
 import globalConfig from '../../globalConfig';
 
 import ThriftHttpConnection from './ThriftHttpConnection';
+
+function buildProxyUrl(options: ProxyOptions): string {
+  const auth = options.auth?.username ? `${options.auth.username}:${options.auth?.password ?? ''}@` : '';
+  return `${options.protocol}://${auth}${options.host}:${options.port}`;
+}
 
 export default class HttpConnection implements IConnectionProvider, IThriftConnection {
   private connection: any;
@@ -35,8 +39,8 @@ export default class HttpConnection implements IConnectionProvider, IThriftConne
     let agent: http.Agent | undefined;
 
     if (options.proxy !== undefined) {
-      const proxyUrl = options.proxy;
-      const proxyProtocol = new URL(proxyUrl).protocol;
+      const proxyUrl = buildProxyUrl(options.proxy);
+      const proxyProtocol = `${options.proxy.protocol}:`;
 
       agent = new ProxyAgent({
         ...httpAgentOptions,
