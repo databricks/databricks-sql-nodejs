@@ -34,7 +34,6 @@ describe('Query parameters', () => {
           :p_str AS col_str
       `,
       {
-        runAsync: true,
         namedParameters: {
           p_bool: new DBSQLParameter({ value: true }),
           p_int: new DBSQLParameter({ value: 1234 }),
@@ -76,7 +75,6 @@ describe('Query parameters', () => {
           :p_str AS col_str
       `,
       {
-        runAsync: true,
         namedParameters: {
           p_bool: true,
           p_int: 1234,

@@ -47,7 +47,6 @@ describe('CloudFetch', () => {
         LEFT JOIN (SELECT 1) AS t2
       `,
       {
-        runAsync: true,
         maxRows: 100000,
         useCloudFetch: true, // tell server that we would like to use CloudFetch
       },
