@@ -27,7 +27,7 @@ async function openSession() {
 }
 
 async function execute(session, statement) {
-  const operation = await session.executeStatement(statement, { runAsync: true });
+  const operation = await session.executeStatement(statement);
   const result = await operation.fetchAll();
   await operation.close();
   return result;

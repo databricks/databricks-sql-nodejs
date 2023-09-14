@@ -47,7 +47,7 @@ client
     await loadDataOperation.fetchAll();
     await loadDataOperation.close();
 
-    const selectDataOperation = await session.executeStatement('SELECT * FROM pokes', { runAsync: true });
+    const selectDataOperation = await session.executeStatement('SELECT * FROM pokes');
     const result = await selectDataOperation.fetchAll(selectDataOperation);
     await selectDataOperation.close();
 
@@ -101,8 +101,6 @@ const operation = await session.executeStatement(
 - "statement" is DDL/DML statement (CREATE TABLE, INSERT, UPDATE, SELECT, LOAD, etc.)
 
 - [options](/lib/contracts/IDBSQLSession.ts#L14)
-
-  - runAsync allows executing operation asynchronously.
 
   - confOverlay overrides session configuration properties.
 

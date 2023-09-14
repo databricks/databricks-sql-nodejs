@@ -41,7 +41,7 @@ client
   .then(async (client) => {
     const session = await client.openSession();
 
-    const queryOperation = await session.executeStatement('SELECT "Hello, World!"', { runAsync: true });
+    const queryOperation = await session.executeStatement('SELECT "Hello, World!"');
     const result = await queryOperation.fetchAll();
     await queryOperation.close();
 
