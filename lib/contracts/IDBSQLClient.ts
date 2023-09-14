@@ -30,6 +30,7 @@ export type ConnectionOptions = {
   path: string;
   clientId?: string;
   socketTimeout?: number;
+  proxy?: string; // proxy URL
 } & AuthOptions;
 
 export interface OpenSessionRequest {

@@ -1,12 +1,13 @@
-import { AxiosRequestConfig } from 'axios';
+import { HeadersInit } from 'node-fetch';
 
 export default interface IConnectionOptions {
   host: string;
   port: number;
   path?: string;
   https?: boolean;
-  headers?: AxiosRequestConfig['headers'];
+  headers?: HeadersInit;
   socketTimeout?: number;
+  proxy?: string;
 
   ca?: Buffer | string;
   cert?: Buffer | string;

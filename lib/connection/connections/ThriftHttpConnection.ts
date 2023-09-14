@@ -1,19 +1,21 @@
 /*
   This file is created using node_modules/thrift/lib/nodejs/lib/thrift/http_connection.js as an example
+
+  The code relies on thrift internals, so be careful when upgrading `thrift` library
 */
 
 import { EventEmitter } from 'events';
 import { TBinaryProtocol, TBufferedTransport, Thrift, TProtocol, TProtocolConstructor, TTransport } from 'thrift';
-import axios, { AxiosRequestConfig, AxiosResponse } from 'axios';
+import fetch, { RequestInit, Response } from 'node-fetch';
 // @ts-expect-error TS7016: Could not find a declaration file for module
 import InputBufferUnderrunError from 'thrift/lib/nodejs/lib/thrift/input_buffer_underrun_error';
 
 export class THTTPException extends Thrift.TApplicationException {
   public readonly statusCode: unknown;
 
-  public readonly response: AxiosResponse;
+  public readonly response: Response;
 
-  constructor(response: AxiosResponse) {
+  constructor(response: Response) {
     super(
       Thrift.TApplicationExceptionType.PROTOCOL_ERROR,
       `Received a response with a bad HTTP status code: ${response.status}`,
@@ -26,6 +28,7 @@ export class THTTPException extends Thrift.TApplicationException {
 type TTransportType = typeof TBufferedTransport;
 
 interface ThriftHttpConnectionOptions {
+  url: string;
   transport?: TTransportType;
   protocol?: TProtocolConstructor;
 }
@@ -42,8 +45,10 @@ type ThriftClient = {
   [key: string]: (input: TProtocol, mtype: Thrift.MessageType, seqId: number) => void;
 };
 
-export default class AxiosHttpConnection extends EventEmitter {
-  private readonly config: AxiosRequestConfig;
+export default class ThriftHttpConnection extends EventEmitter {
+  private readonly url: string;
+
+  private readonly config: RequestInit;
 
   // This field is used by Thrift internally, so name and type are important
   private readonly transport: TTransportType;
@@ -54,36 +59,36 @@ export default class AxiosHttpConnection extends EventEmitter {
   // thrift.createClient sets this field internally
   public client?: ThriftClient;
 
-  constructor(config: AxiosRequestConfig, options: ThriftHttpConnectionOptions = {}) {
+  constructor(options: ThriftHttpConnectionOptions, config: RequestInit = {}) {
     super();
+    this.url = options.url;
     this.config = config;
     this.transport = options.transport ?? TBufferedTransport;
     this.protocol = options.protocol ?? TBinaryProtocol;
   }
 
   public write(data: Buffer, seqId: number) {
-    const axiosConfig: AxiosRequestConfig<Buffer> = {
+    const requestConfig: RequestInit = {
       ...this.config,
       method: 'POST',
       headers: {
         ...this.config.headers,
         Connection: 'keep-alive',
-        'Content-Length': data.length,
+        'Content-Length': `${data.length}`,
         'Content-Type': 'application/x-thrift',
       },
-      data,
-      responseType: 'arraybuffer',
-      timeoutErrorMessage: 'Request timed out',
+      body: data,
     };
 
-    axios
-      .request(axiosConfig)
+    fetch(this.url, requestConfig)
       .then((response) => {
         if (response.status !== 200) {
           throw new THTTPException(response);
         }
 
-        const buffer = Buffer.from(response.data);
+        return response.buffer();
+      })
+      .then((buffer) => {
         this.transport.receiver((transportWithData) => this.handleThriftResponse(transportWithData), seqId)(buffer);
       })
       .catch((error) => {

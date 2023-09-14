@@ -68,6 +68,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
       path: prependSlash(options.path),
       https: true,
       socketTimeout: options.socketTimeout,
+      proxy: options.proxy,
       headers: {
         ...headers,
         'User-Agent': buildUserAgentString(options.clientId),

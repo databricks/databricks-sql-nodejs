@@ -2,7 +2,7 @@ const http = require('http');
 const https = require('https');
 const { expect } = require('chai');
 const HttpConnection = require('../../../../dist/connection/connections/HttpConnection').default;
-const AxiosHttpConnection = require('../../../../dist/connection/connections/AxiosHttpConnection').default;
+const ThriftHttpConnection = require('../../../../dist/connection/connections/ThriftHttpConnection').default;
 
 const thriftMock = (connection) => ({
   createHttpConnection(host, port, options) {
@@ -26,8 +26,8 @@ describe('HttpConnection.connect', () => {
       path: '/hive',
     });
 
-    expect(connection.connection.config.url).to.be.eq('http://localhost:10001/hive');
-    expect(connection.getConnection()).to.be.instanceOf(AxiosHttpConnection);
+    expect(connection.connection.url).to.be.eq('http://localhost:10001/hive');
+    expect(connection.getConnection()).to.be.instanceOf(ThriftHttpConnection);
     expect(connection.isConnected()).to.be.true;
   });
 
@@ -44,13 +44,13 @@ describe('HttpConnection.connect', () => {
       key: 'key',
     });
 
-    expect(connection.connection.config.httpsAgent.options.rejectUnauthorized).to.be.false;
-    expect(connection.connection.config.httpsAgent.options.ca).to.be.eq('ca');
-    expect(connection.connection.config.httpsAgent.options.cert).to.be.eq('cert');
-    expect(connection.connection.config.httpsAgent.options.key).to.be.eq('key');
+    expect(connection.connection.config.agent.options.rejectUnauthorized).to.be.false;
+    expect(connection.connection.config.agent.options.ca).to.be.eq('ca');
+    expect(connection.connection.config.agent.options.cert).to.be.eq('cert');
+    expect(connection.connection.config.agent.options.key).to.be.eq('key');
   });
 
-  it('should initialize both http and https agents', async () => {
+  it('should initialize http agents', async () => {
     const connection = new HttpConnection();
 
     await connection.connect({
@@ -60,7 +60,6 @@ describe('HttpConnection.connect', () => {
       path: '/hive',
     });
 
-    expect(connection.connection.config.httpAgent).to.be.instanceOf(http.Agent);
-    expect(connection.connection.config.httpsAgent).to.be.instanceOf(https.Agent);
+    expect(connection.connection.config.agent).to.be.instanceOf(http.Agent);
   });
 });

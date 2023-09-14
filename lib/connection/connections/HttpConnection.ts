@@ -1,13 +1,16 @@
 import thrift from 'thrift';
 import https from 'https';
 import http from 'http';
+import { URL } from 'url';
+
+import { ProxyAgent } from 'proxy-agent';
 
 import IThriftConnection from '../contracts/IThriftConnection';
 import IConnectionProvider from '../contracts/IConnectionProvider';
 import IConnectionOptions from '../contracts/IConnectionOptions';
 import globalConfig from '../../globalConfig';
 
-import AxiosHttpConnection from './AxiosHttpConnection';
+import ThriftHttpConnection from './ThriftHttpConnection';
 
 export default class HttpConnection implements IConnectionProvider, IThriftConnection {
   private connection: any;
@@ -29,17 +32,33 @@ export default class HttpConnection implements IConnectionProvider, IThriftConne
       key: options.key,
     };
 
-    this.connection = new AxiosHttpConnection(
-      {
-        url: `${options.https ? 'https' : 'http'}://${options.host}:${options.port}${options.path ?? '/'}`,
+    let agent: http.Agent | undefined;
+
+    if (options.proxy !== undefined) {
+      const proxyUrl = options.proxy;
+      const proxyProtocol = new URL(proxyUrl).protocol;
+
+      agent = new ProxyAgent({
+        ...httpAgentOptions,
+        getProxyForUrl: () => proxyUrl,
         httpsAgent: new https.Agent(httpsAgentOptions),
         httpAgent: new http.Agent(httpAgentOptions),
-        timeout: options.socketTimeout ?? globalConfig.socketTimeout,
-        headers: options.headers,
-      },
+        protocol: proxyProtocol,
+      });
+    } else {
+      agent = options.https ? new https.Agent(httpsAgentOptions) : new http.Agent(httpAgentOptions);
+    }
+
+    this.connection = new ThriftHttpConnection(
       {
+        url: `${options.https ? 'https' : 'http'}://${options.host}:${options.port}${options.path ?? '/'}`,
         transport: thrift.TBufferedTransport,
         protocol: thrift.TBinaryProtocol,
+      },
+      {
+        agent,
+        timeout: options.socketTimeout ?? globalConfig.socketTimeout,
+        headers: options.headers,
       },
     );
 
