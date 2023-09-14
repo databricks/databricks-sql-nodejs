@@ -16,7 +16,7 @@ client
   .then(async (client) => {
     const session = await client.openSession();
 
-    let queryOperation = await session.executeStatement('SELECT "Hello, World!"', { runAsync: true });
+    let queryOperation = await session.executeStatement('SELECT "Hello, World!"');
     let result = await queryOperation.fetchAll();
     await queryOperation.close();
 
@@ -26,7 +26,7 @@ client
     //
     logger.setLevel(LogLevel.debug);
 
-    queryOperation = await session.executeStatement('SELECT "Hello, World!"', { runAsync: true });
+    queryOperation = await session.executeStatement('SELECT "Hello, World!"');
     result = await queryOperation.fetchAll();
     await queryOperation.close();
 

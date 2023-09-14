@@ -173,7 +173,7 @@ const testComplexTypes = async (session) => {
 };
 
 const execute = async (session, statement) => {
-  const operation = await session.executeStatement(statement, { runAsync: true });
+  const operation = await session.executeStatement(statement);
 
   const result = await operation.fetchAll({
     progress: true,
