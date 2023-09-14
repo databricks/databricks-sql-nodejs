@@ -6,7 +6,7 @@
 
 import { EventEmitter } from 'events';
 import { TBinaryProtocol, TBufferedTransport, Thrift, TProtocol, TProtocolConstructor, TTransport } from 'thrift';
-import fetch, { RequestInit, Response } from 'node-fetch';
+import fetch, { RequestInit, Response, FetchError } from 'node-fetch';
 // @ts-expect-error TS7016: Could not find a declaration file for module
 import InputBufferUnderrunError from 'thrift/lib/nodejs/lib/thrift/input_buffer_underrun_error';
 
@@ -92,6 +92,15 @@ export default class ThriftHttpConnection extends EventEmitter {
         this.transport.receiver((transportWithData) => this.handleThriftResponse(transportWithData), seqId)(buffer);
       })
       .catch((error) => {
+        if (error instanceof FetchError) {
+          if (error.type === 'request-timeout') {
+            error = new Thrift.TApplicationException(
+              Thrift.TApplicationExceptionType.PROTOCOL_ERROR,
+              'Request timed out',
+            );
+          }
+        }
+
         const defaultErrorHandler = (err: unknown) => {
           this.emit('error', err);
         };
