@@ -64,12 +64,6 @@ describe('DBSQLSession', () => {
       expect(result).instanceOf(DBSQLOperation);
     });
 
-    it('should execute statement asynchronously', async () => {
-      const session = createSession();
-      const result = await session.executeStatement('SELECT * FROM table');
-      expect(result).instanceOf(DBSQLOperation);
-    });
-
     it('should use direct results', async () => {
       const session = createSession();
       const result = await session.executeStatement('SELECT * FROM table', { maxRows: 10 });
