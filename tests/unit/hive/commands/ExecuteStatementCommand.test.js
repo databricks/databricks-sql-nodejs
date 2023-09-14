@@ -9,7 +9,6 @@ const requestMock = {
   },
   statement: 'SHOW TABLES',
   confOverlay: {},
-  runAsync: false,
   queryTimeout: 0,
 };
 

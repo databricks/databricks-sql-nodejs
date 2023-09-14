@@ -41,7 +41,6 @@ client
         FROM RANGE(100000000)
         ORDER BY RANDOM() ASC
       `,
-      { runAsync: true },
     );
     getQueryResult(queryOperation)
       .then((result) => console.log(`Query returned ${result.length} row(s)`))

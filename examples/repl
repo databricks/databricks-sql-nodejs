@@ -20,7 +20,7 @@ async function initClient({ host, endpointId, token }) {
 }
 
 async function runQuery(session, query) {
-    const queryOperation = await session.executeStatement(query, { runAsync: true });
+    const queryOperation = await session.executeStatement(query);
     const result = await queryOperation.fetchAll();
     await queryOperation.close();
     return result;
