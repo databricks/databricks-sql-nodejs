@@ -1,4 +1,5 @@
 import { HeadersInit } from 'node-fetch';
+import http from 'http';
 import IAuthentication from '../../contracts/IAuthentication';
 import IDBSQLLogger from '../../../contracts/IDBSQLLogger';
 import OAuthPersistence, { OAuthPersistenceCache } from './OAuthPersistence';
@@ -27,7 +28,9 @@ export default class DatabricksOAuth implements IAuthentication {
     this.manager = OAuthManager.getManager(this.options);
   }
 
-  public async authenticate(): Promise<HeadersInit> {
+  public async authenticate(agent?: http.Agent): Promise<HeadersInit> {
+    this.manager.setAgent(agent);
+
     const { host, scopes, headers } = this.options;
 
     const persistence = this.options.persistence ?? this.defaultPersistence;

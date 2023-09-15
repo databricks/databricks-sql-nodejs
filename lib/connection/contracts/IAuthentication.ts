@@ -1,5 +1,6 @@
 import { HeadersInit } from 'node-fetch';
+import http from 'http';
 
 export default interface IAuthentication {
-  authenticate(): Promise<HeadersInit>;
+  authenticate(agent?: http.Agent): Promise<HeadersInit>;
 }
