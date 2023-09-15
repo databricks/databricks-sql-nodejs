@@ -1,5 +1,5 @@
-import { HttpHeaders } from 'thrift';
+import { HeadersInit } from 'node-fetch';
 
 export default interface IAuthentication {
-  authenticate(): Promise<HttpHeaders>;
+  authenticate(): Promise<HeadersInit>;
 }
