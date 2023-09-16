@@ -47,7 +47,6 @@ describe('CloudFetch', () => {
         LEFT JOIN (SELECT 1) AS t2
       `,
       {
-        runAsync: true,
         maxRows: 100000,
         useCloudFetch: true, // tell server that we would like to use CloudFetch
       },
@@ -57,7 +56,7 @@ describe('CloudFetch', () => {
     await operation.finished();
 
     // Check if we're actually getting data via CloudFetch
-    const resultHandler = await operation._schema.getResultHandler();
+    const resultHandler = await operation.getResultHandler();
     expect(resultHandler).to.be.instanceOf(CloudFetchResult);
 
     // Fetch first chunk and check if result handler behaves properly.

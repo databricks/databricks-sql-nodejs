@@ -2,7 +2,6 @@ const { expect, AssertionError } = require('chai');
 const sinon = require('sinon');
 const openidClientLib = require('openid-client');
 const {
-  default: OAuthManager,
   AWSOAuthManager,
   AzureOAuthManager,
 } = require('../../../../../dist/connection/auth/DatabricksOAuth/OAuthManager');
@@ -29,6 +28,10 @@ AuthorizationCodeMock.validCode = {
 
 class OAuthClientMock {
   constructor() {
+    this.clientOptions = {};
+    this.expectedClientId = undefined;
+    this.expectedClientSecret = undefined;
+
     this.grantError = undefined;
     this.refreshError = undefined;
 
@@ -43,7 +46,7 @@ class OAuthClientMock {
     this.refreshToken = `refresh.${suffix}`;
   }
 
-  async grant(params) {
+  async grantU2M(params) {
     if (this.grantError) {
       const error = this.grantError;
       this.grantError = undefined;
@@ -59,6 +62,32 @@ class OAuthClientMock {
       access_token: this.accessToken,
       refresh_token: this.refreshToken,
     };
+  }
+
+  async grantM2M(params) {
+    if (this.grantError) {
+      const error = this.grantError;
+      this.grantError = undefined;
+      throw error;
+    }
+
+    expect(params.grant_type).to.be.equal('client_credentials');
+    expect(params.scope).to.be.equal('all-apis');
+
+    return {
+      access_token: this.accessToken,
+      refresh_token: this.refreshToken,
+    };
+  }
+
+  async grant(params) {
+    switch (this.clientOptions.token_endpoint_auth_method) {
+      case 'client_secret_basic':
+        return this.grantM2M(params);
+      case 'none':
+        return this.grantU2M(params);
+    }
+    throw new Error(`OAuthClientMock: unrecognized auth method: ${this.clientOptions.token_endpoint_auth_method}`);
   }
 
   async refresh(refreshToken) {
@@ -84,8 +113,12 @@ class OAuthClientMock {
     sinon.stub(oauthClient, 'grant').callThrough();
     sinon.stub(oauthClient, 'refresh').callThrough();
 
+    oauthClient.expectedClientId = options?.clientId;
+    oauthClient.expectedClientSecret = options?.clientSecret;
+
     const issuer = {
-      Client: function () {
+      Client: function (clientOptions) {
+        oauthClient.clientOptions = clientOptions;
         return oauthClient;
       },
     };
@@ -93,7 +126,6 @@ class OAuthClientMock {
     sinon.stub(openidClientLib, 'Issuer').returns(issuer);
     openidClientLib.Issuer.discover = () => Promise.resolve(issuer);
 
-    // TODO: Need to test separately AWS and Azure managers
     const oauthManager = new OAuthManagerClass({
       host: 'https://example.com',
       ...options,
@@ -113,150 +145,278 @@ class OAuthClientMock {
       openidClientLib.Issuer.restore?.();
     });
 
-    it('should get access token', async () => {
-      const { oauthManager, oauthClient } = prepareTestInstances({
-        logger: {
-          log: () => {},
-        },
+    describe('U2M flow', () => {
+      it('should get access token', async () => {
+        const { oauthManager, oauthClient } = prepareTestInstances({
+          logger: {
+            log: () => {},
+          },
+        });
+
+        const token = await oauthManager.getToken(['offline_access']);
+        expect(oauthClient.grant.called).to.be.true;
+        expect(token).to.be.instanceOf(OAuthToken);
+        expect(token.accessToken).to.be.equal(oauthClient.accessToken);
+        expect(token.refreshToken).to.be.equal(oauthClient.refreshToken);
       });
 
-      const token = await oauthManager.getToken([]);
-      expect(oauthClient.grant.called).to.be.true;
-      expect(token).to.be.instanceOf(OAuthToken);
-      expect(token.accessToken).to.be.equal(oauthClient.accessToken);
-      expect(token.refreshToken).to.be.equal(oauthClient.refreshToken);
-    });
+      it('should throw an error if cannot get access token', async () => {
+        const { oauthManager, oauthClient } = prepareTestInstances();
 
-    it('should throw an error if cannot get access token', async () => {
-      const { oauthManager, oauthClient } = prepareTestInstances();
+        // Make it return empty tokens
+        oauthClient.accessToken = undefined;
+        oauthClient.refreshToken = undefined;
 
-      // Make it return empty tokens
-      oauthClient.accessToken = undefined;
-      oauthClient.refreshToken = undefined;
-
-      try {
-        await oauthManager.getToken([]);
-        expect.fail('It should throw an error');
-      } catch (error) {
-        if (error instanceof AssertionError) {
-          throw error;
+        try {
+          await oauthManager.getToken([]);
+          expect.fail('It should throw an error');
+        } catch (error) {
+          if (error instanceof AssertionError) {
+            throw error;
+          }
+          expect(oauthClient.grant.called).to.be.true;
+          expect(error.message).to.contain('Failed to fetch access token');
         }
-        expect(oauthClient.grant.called).to.be.true;
-        expect(error.message).to.contain('Failed to fetch access token');
-      }
-    });
-
-    it('should re-throw unhandled errors when getting access token', async () => {
-      const { oauthManager, oauthClient } = prepareTestInstances();
-
-      const testError = new Error('Test');
-      oauthClient.grantError = testError;
-
-      try {
-        await oauthManager.getToken([]);
-        expect.fail('It should throw an error');
-      } catch (error) {
-        if (error instanceof AssertionError) {
-          throw error;
-        }
-        expect(oauthClient.grant.called).to.be.true;
-        expect(error).to.be.equal(testError);
-      }
-    });
-
-    it('should not refresh valid token', async () => {
-      const { oauthManager, oauthClient } = prepareTestInstances();
-
-      const token = new OAuthToken(createValidAccessToken(), oauthClient.refreshToken);
-      expect(token.hasExpired).to.be.false;
-
-      const newToken = await oauthManager.refreshAccessToken(token);
-      expect(oauthClient.refresh.called).to.be.false;
-      expect(newToken).to.be.instanceOf(OAuthToken);
-      expect(newToken.accessToken).to.be.equal(token.accessToken);
-      expect(newToken.hasExpired).to.be.false;
-    });
-
-    it('should throw an error if no refresh token is available', async () => {
-      const { oauthManager, oauthClient } = prepareTestInstances({
-        logger: {
-          log: () => {},
-        },
       });
 
-      try {
-        const token = new OAuthToken(createExpiredAccessToken());
-        expect(token.hasExpired).to.be.true;
+      it('should re-throw unhandled errors when getting access token', async () => {
+        const { oauthManager, oauthClient } = prepareTestInstances();
 
-        await oauthManager.refreshAccessToken(token);
-        expect.fail('It should throw an error');
-      } catch (error) {
-        if (error instanceof AssertionError) {
-          throw error;
+        const testError = new Error('Test');
+        oauthClient.grantError = testError;
+
+        try {
+          await oauthManager.getToken([]);
+          expect.fail('It should throw an error');
+        } catch (error) {
+          if (error instanceof AssertionError) {
+            throw error;
+          }
+          expect(oauthClient.grant.called).to.be.true;
+          expect(error).to.be.equal(testError);
         }
+      });
+
+      it('should not refresh valid token', async () => {
+        const { oauthManager, oauthClient } = prepareTestInstances();
+
+        const token = new OAuthToken(createValidAccessToken(), oauthClient.refreshToken);
+        expect(token.hasExpired).to.be.false;
+
+        const newToken = await oauthManager.refreshAccessToken(token);
         expect(oauthClient.refresh.called).to.be.false;
-        expect(error.message).to.contain('token expired');
-      }
-    });
-
-    it('should throw an error on invalid response', async () => {
-      const { oauthManager, oauthClient } = prepareTestInstances({
-        logger: {
-          log: () => {},
-        },
+        expect(newToken).to.be.instanceOf(OAuthToken);
+        expect(newToken.accessToken).to.be.equal(token.accessToken);
+        expect(newToken.hasExpired).to.be.false;
       });
 
-      oauthClient.refresh.restore();
-      sinon.stub(oauthClient, 'refresh').returns({});
+      it('should throw an error if no refresh token is available', async () => {
+        const { oauthManager, oauthClient } = prepareTestInstances({
+          logger: {
+            log: () => {},
+          },
+        });
 
-      try {
-        const token = new OAuthToken(createExpiredAccessToken(), oauthClient.refreshToken);
+        try {
+          const token = new OAuthToken(createExpiredAccessToken());
+          expect(token.hasExpired).to.be.true;
+
+          await oauthManager.refreshAccessToken(token);
+          expect.fail('It should throw an error');
+        } catch (error) {
+          if (error instanceof AssertionError) {
+            throw error;
+          }
+          expect(oauthClient.refresh.called).to.be.false;
+          expect(error.message).to.contain('token expired');
+        }
+      });
+
+      it('should throw an error for invalid token', async () => {
+        const { oauthManager, oauthClient } = prepareTestInstances({
+          logger: {
+            log: () => {},
+          },
+        });
+
+        try {
+          const token = new OAuthToken('invalid_access_token', 'invalid_refresh_token');
+          await oauthManager.refreshAccessToken(token);
+          expect.fail('It should throw an error');
+        } catch (error) {
+          if (error instanceof AssertionError) {
+            throw error;
+          }
+          expect(oauthClient.refresh.called).to.be.false;
+          // Random malformed string passed as access token will cause JSON parse errors
+          expect(error).to.be.instanceof(TypeError);
+        }
+      });
+
+      it('should refresh expired token', async () => {
+        const { oauthManager, oauthClient } = prepareTestInstances();
+
+        oauthClient.accessToken = createExpiredAccessToken();
+        const token = await oauthManager.getToken([]);
         expect(token.hasExpired).to.be.true;
 
-        await oauthManager.refreshAccessToken(token);
-        expect.fail('It should throw an error');
-      } catch (error) {
-        if (error instanceof AssertionError) {
-          throw error;
-        }
+        const newToken = await oauthManager.refreshAccessToken(token);
         expect(oauthClient.refresh.called).to.be.true;
-        expect(error.message).to.contain('invalid response');
-      }
-    });
-
-    it('should throw an error for invalid token', async () => {
-      const { oauthManager, oauthClient } = prepareTestInstances({
-        logger: {
-          log: () => {},
-        },
+        expect(newToken).to.be.instanceOf(OAuthToken);
+        expect(newToken.accessToken).to.be.not.equal(token.accessToken);
+        expect(newToken.hasExpired).to.be.false;
       });
 
-      try {
-        const token = new OAuthToken('invalid_access_token', 'invalid_refresh_token');
-        await oauthManager.refreshAccessToken(token);
-        expect.fail('It should throw an error');
-      } catch (error) {
-        if (error instanceof AssertionError) {
-          throw error;
+      it('should throw an error if cannot refresh token', async () => {
+        const { oauthManager, oauthClient } = prepareTestInstances({
+          logger: {
+            log: () => {},
+          },
+        });
+
+        oauthClient.refresh.restore();
+        sinon.stub(oauthClient, 'refresh').returns({});
+
+        try {
+          const token = new OAuthToken(createExpiredAccessToken(), oauthClient.refreshToken);
+          expect(token.hasExpired).to.be.true;
+
+          await oauthManager.refreshAccessToken(token);
+          expect.fail('It should throw an error');
+        } catch (error) {
+          if (error instanceof AssertionError) {
+            throw error;
+          }
+          expect(oauthClient.refresh.called).to.be.true;
+          expect(error.message).to.contain('invalid response');
         }
-        expect(oauthClient.refresh.called).to.be.false;
-        // Random malformed string passed as access token will cause JSON parse errors
-        expect(error).to.be.instanceof(TypeError);
-      }
+      });
     });
 
-    it('should refresh expired token', async () => {
-      const { oauthManager, oauthClient } = prepareTestInstances();
+    describe('M2M flow', () => {
+      it('should get access token', async () => {
+        const { oauthManager, oauthClient } = prepareTestInstances({
+          // setup for M2M flow
+          clientId: 'test_client_id',
+          clientSecret: 'test_client_secret',
+        });
 
-      oauthClient.accessToken = createExpiredAccessToken();
-      const token = await oauthManager.getToken([]);
-      expect(token.hasExpired).to.be.true;
+        const token = await oauthManager.getToken([]);
+        expect(oauthClient.grant.called).to.be.true;
+        expect(token).to.be.instanceOf(OAuthToken);
+        expect(token.accessToken).to.be.equal(oauthClient.accessToken);
+        expect(token.refreshToken).to.be.undefined;
+      });
 
-      const newToken = await oauthManager.refreshAccessToken(token);
-      expect(oauthClient.refresh.called).to.be.true;
-      expect(newToken).to.be.instanceOf(OAuthToken);
-      expect(newToken.accessToken).to.be.not.equal(token.accessToken);
-      expect(newToken.hasExpired).to.be.false;
+      it('should throw an error if cannot get access token', async () => {
+        const { oauthManager, oauthClient } = prepareTestInstances({
+          // setup for M2M flow
+          clientId: 'test_client_id',
+          clientSecret: 'test_client_secret',
+        });
+
+        // Make it return empty tokens
+        oauthClient.accessToken = undefined;
+        oauthClient.refreshToken = undefined;
+
+        try {
+          await oauthManager.getToken([]);
+          expect.fail('It should throw an error');
+        } catch (error) {
+          if (error instanceof AssertionError) {
+            throw error;
+          }
+          expect(oauthClient.grant.called).to.be.true;
+          expect(error.message).to.contain('Failed to fetch access token');
+        }
+      });
+
+      it('should re-throw unhandled errors when getting access token', async () => {
+        const { oauthManager, oauthClient } = prepareTestInstances({
+          // setup for M2M flow
+          clientId: 'test_client_id',
+          clientSecret: 'test_client_secret',
+        });
+
+        const testError = new Error('Test');
+        oauthClient.grantError = testError;
+
+        try {
+          await oauthManager.getToken([]);
+          expect.fail('It should throw an error');
+        } catch (error) {
+          if (error instanceof AssertionError) {
+            throw error;
+          }
+          expect(oauthClient.grant.called).to.be.true;
+          expect(error).to.be.equal(testError);
+        }
+      });
+
+      it('should not refresh valid token', async () => {
+        const { oauthManager, oauthClient } = prepareTestInstances({
+          // setup for M2M flow
+          clientId: 'test_client_id',
+          clientSecret: 'test_client_secret',
+        });
+
+        const token = new OAuthToken(createValidAccessToken());
+        expect(token.hasExpired).to.be.false;
+
+        const newToken = await oauthManager.refreshAccessToken(token);
+        expect(oauthClient.grant.called).to.be.false;
+        expect(oauthClient.refresh.called).to.be.false;
+        expect(newToken).to.be.instanceOf(OAuthToken);
+        expect(newToken.accessToken).to.be.equal(token.accessToken);
+        expect(newToken.hasExpired).to.be.false;
+      });
+
+      it('should refresh expired token', async () => {
+        const { oauthManager, oauthClient } = prepareTestInstances({
+          // setup for M2M flow
+          clientId: 'test_client_id',
+          clientSecret: 'test_client_secret',
+        });
+
+        oauthClient.accessToken = createExpiredAccessToken();
+        const token = await oauthManager.getToken([]);
+        expect(token.hasExpired).to.be.true;
+
+        oauthClient.accessToken = createValidAccessToken();
+        const newToken = await oauthManager.refreshAccessToken(token);
+        expect(oauthClient.grant.called).to.be.true;
+        expect(oauthClient.refresh.called).to.be.false;
+        expect(newToken).to.be.instanceOf(OAuthToken);
+        expect(newToken.accessToken).to.be.not.equal(token.accessToken);
+        expect(newToken.hasExpired).to.be.false;
+      });
+
+      it('should throw an error if cannot refresh token', async () => {
+        const { oauthManager, oauthClient } = prepareTestInstances({
+          // setup for M2M flow
+          clientId: 'test_client_id',
+          clientSecret: 'test_client_secret',
+        });
+
+        oauthClient.accessToken = createExpiredAccessToken();
+        const token = await oauthManager.getToken([]);
+        expect(token.hasExpired).to.be.true;
+
+        oauthClient.grant.restore();
+        sinon.stub(oauthClient, 'grant').returns({});
+
+        try {
+          await oauthManager.refreshAccessToken(token);
+          expect.fail('It should throw an error');
+        } catch (error) {
+          if (error instanceof AssertionError) {
+            throw error;
+          }
+          expect(oauthClient.grant.called).to.be.true;
+          expect(oauthClient.refresh.called).to.be.false;
+          expect(error.message).to.contain('Failed to fetch access token');
+        }
+      });
     });
   });
 });

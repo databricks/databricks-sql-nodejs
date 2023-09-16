@@ -2,10 +2,13 @@ import IOperation from './IOperation';
 import Status from '../dto/Status';
 import InfoValue from '../dto/InfoValue';
 import { Int64 } from '../hive/Types';
-import DBSQLParameter, { DBSQLParameterValue } from '../DBSQLParameter';
+import { DBSQLParameter, DBSQLParameterValue } from '../DBSQLParameter';
 
 export type ExecuteStatementOptions = {
   queryTimeout?: Int64;
+  /**
+   * @deprecated This option is no longer supported and will be removed in future releases
+   */
   runAsync?: boolean;
   maxRows?: number | null;
   useCloudFetch?: boolean;
@@ -14,11 +17,17 @@ export type ExecuteStatementOptions = {
 };
 
 export type TypeInfoRequest = {
+  /**
+   * @deprecated This option is no longer supported and will be removed in future releases
+   */
   runAsync?: boolean;
   maxRows?: number | null;
 };
 
 export type CatalogsRequest = {
+  /**
+   * @deprecated This option is no longer supported and will be removed in future releases
+   */
   runAsync?: boolean;
   maxRows?: number | null;
 };
@@ -26,6 +35,9 @@ export type CatalogsRequest = {
 export type SchemasRequest = {
   catalogName?: string;
   schemaName?: string;
+  /**
+   * @deprecated This option is no longer supported and will be removed in future releases
+   */
   runAsync?: boolean;
   maxRows?: number | null;
 };
@@ -35,11 +47,17 @@ export type TablesRequest = {
   schemaName?: string;
   tableName?: string;
   tableTypes?: Array<string>;
+  /**
+   * @deprecated This option is no longer supported and will be removed in future releases
+   */
   runAsync?: boolean;
   maxRows?: number | null;
 };
 
 export type TableTypesRequest = {
+  /**
+   * @deprecated This option is no longer supported and will be removed in future releases
+   */
   runAsync?: boolean;
   maxRows?: number | null;
 };
@@ -49,6 +67,9 @@ export type ColumnsRequest = {
   schemaName?: string;
   tableName?: string;
   columnName?: string;
+  /**
+   * @deprecated This option is no longer supported and will be removed in future releases
+   */
   runAsync?: boolean;
   maxRows?: number | null;
 };
@@ -57,6 +78,9 @@ export type FunctionsRequest = {
   catalogName?: string;
   schemaName?: string;
   functionName: string;
+  /**
+   * @deprecated This option is no longer supported and will be removed in future releases
+   */
   runAsync?: boolean;
   maxRows?: number | null;
 };
@@ -65,6 +89,9 @@ export type PrimaryKeysRequest = {
   catalogName?: string;
   schemaName: string;
   tableName: string;
+  /**
+   * @deprecated This option is no longer supported and will be removed in future releases
+   */
   runAsync?: boolean;
   maxRows?: number | null;
 };
@@ -76,6 +103,9 @@ export type CrossReferenceRequest = {
   foreignCatalogName: string;
   foreignSchemaName: string;
   foreignTableName: string;
+  /**
+   * @deprecated This option is no longer supported and will be removed in future releases
+   */
   runAsync?: boolean;
   maxRows?: number | null;
 };

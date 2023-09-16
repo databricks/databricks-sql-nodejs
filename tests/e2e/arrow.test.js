@@ -27,7 +27,7 @@ async function openSession() {
 }
 
 async function execute(session, statement) {
-  const operation = await session.executeStatement(statement, { runAsync: true });
+  const operation = await session.executeStatement(statement);
   const result = await operation.fetchAll();
   await operation.close();
   return result;
@@ -75,7 +75,7 @@ describe('Arrow support', () => {
       const result = await operation.fetchAll();
       expect(result).to.deep.equal(expectedColumn);
 
-      const resultHandler = await operation._schema.getResultHandler();
+      const resultHandler = await operation.getResultHandler();
       expect(resultHandler).to.be.not.instanceof(ArrowResult);
 
       await operation.close();
@@ -92,7 +92,7 @@ describe('Arrow support', () => {
       const result = await operation.fetchAll();
       expect(fixArrowResult(result)).to.deep.equal(expectedArrow);
 
-      const resultHandler = await operation._schema.getResultHandler();
+      const resultHandler = await operation.getResultHandler();
       expect(resultHandler).to.be.instanceof(ArrowResult);
 
       await operation.close();
@@ -109,7 +109,7 @@ describe('Arrow support', () => {
       const result = await operation.fetchAll();
       expect(fixArrowResult(result)).to.deep.equal(expectedArrowNativeTypes);
 
-      const resultHandler = await operation._schema.getResultHandler();
+      const resultHandler = await operation.getResultHandler();
       expect(resultHandler).to.be.instanceof(ArrowResult);
 
       await operation.close();
@@ -129,7 +129,7 @@ describe('Arrow support', () => {
     `);
 
     // We use some internals here to check that server returned response with multiple batches
-    const resultHandler = await operation._schema.getResultHandler();
+    const resultHandler = await operation.getResultHandler();
     expect(resultHandler).to.be.instanceof(ArrowResult);
 
     const rawData = await operation._data.fetch(rowsCount);

@@ -8,6 +8,7 @@ const OperationStateError = require('../../dist/errors/OperationStateError').def
 const HiveDriverError = require('../../dist/errors/HiveDriverError').default;
 const JsonResult = require('../../dist/result/JsonResult').default;
 const ArrowResult = require('../../dist/result/ArrowResult').default;
+const CloudFetchResult = require('../../dist/result/CloudFetchResult').default;
 
 // Create logger that won't emit
 //
@@ -289,14 +290,14 @@ describe('DBSQLOperation', () => {
       sinon.spy(driver, 'cancelOperation');
       const operation = new DBSQLOperation(driver, handle, logger);
 
-      expect(operation._completeOperation.cancelled).to.be.false;
-      expect(operation._completeOperation.closed).to.be.false;
+      expect(operation.cancelled).to.be.false;
+      expect(operation.closed).to.be.false;
 
       await operation.cancel();
 
       expect(driver.cancelOperation.called).to.be.true;
-      expect(operation._completeOperation.cancelled).to.be.true;
-      expect(operation._completeOperation.closed).to.be.false;
+      expect(operation.cancelled).to.be.true;
+      expect(operation.closed).to.be.false;
     });
 
     it('should return immediately if already cancelled', async () => {
@@ -305,18 +306,18 @@ describe('DBSQLOperation', () => {
       sinon.spy(driver, 'cancelOperation');
       const operation = new DBSQLOperation(driver, handle, logger);
 
-      expect(operation._completeOperation.cancelled).to.be.false;
-      expect(operation._completeOperation.closed).to.be.false;
+      expect(operation.cancelled).to.be.false;
+      expect(operation.closed).to.be.false;
 
       await operation.cancel();
       expect(driver.cancelOperation.callCount).to.be.equal(1);
-      expect(operation._completeOperation.cancelled).to.be.true;
-      expect(operation._completeOperation.closed).to.be.false;
+      expect(operation.cancelled).to.be.true;
+      expect(operation.closed).to.be.false;
 
       await operation.cancel();
       expect(driver.cancelOperation.callCount).to.be.equal(1);
-      expect(operation._completeOperation.cancelled).to.be.true;
-      expect(operation._completeOperation.closed).to.be.false;
+      expect(operation.cancelled).to.be.true;
+      expect(operation.closed).to.be.false;
     });
 
     it('should return immediately if already closed', async () => {
@@ -326,18 +327,18 @@ describe('DBSQLOperation', () => {
       sinon.spy(driver, 'closeOperation');
       const operation = new DBSQLOperation(driver, handle, logger);
 
-      expect(operation._completeOperation.cancelled).to.be.false;
-      expect(operation._completeOperation.closed).to.be.false;
+      expect(operation.cancelled).to.be.false;
+      expect(operation.closed).to.be.false;
 
       await operation.close();
       expect(driver.closeOperation.callCount).to.be.equal(1);
-      expect(operation._completeOperation.cancelled).to.be.false;
-      expect(operation._completeOperation.closed).to.be.true;
+      expect(operation.cancelled).to.be.false;
+      expect(operation.closed).to.be.true;
 
       await operation.cancel();
       expect(driver.cancelOperation.callCount).to.be.equal(0);
-      expect(operation._completeOperation.cancelled).to.be.false;
-      expect(operation._completeOperation.closed).to.be.true;
+      expect(operation.cancelled).to.be.false;
+      expect(operation.closed).to.be.true;
     });
 
     it('should throw an error in case of a status error and keep state', async () => {
@@ -346,8 +347,8 @@ describe('DBSQLOperation', () => {
       driver.cancelOperationResp.status.statusCode = TStatusCode.ERROR_STATUS;
       const operation = new DBSQLOperation(driver, handle, logger);
 
-      expect(operation._completeOperation.cancelled).to.be.false;
-      expect(operation._completeOperation.closed).to.be.false;
+      expect(operation.cancelled).to.be.false;
+      expect(operation.closed).to.be.false;
 
       try {
         await operation.cancel();
@@ -357,8 +358,8 @@ describe('DBSQLOperation', () => {
           throw e;
         }
         expect(e).to.be.instanceOf(StatusError);
-        expect(operation._completeOperation.cancelled).to.be.false;
-        expect(operation._completeOperation.closed).to.be.false;
+        expect(operation.cancelled).to.be.false;
+        expect(operation.closed).to.be.false;
       }
     });
 
@@ -368,7 +369,7 @@ describe('DBSQLOperation', () => {
       const operation = new DBSQLOperation(driver, handle, logger);
 
       await operation.cancel();
-      expect(operation._completeOperation.cancelled).to.be.true;
+      expect(operation.cancelled).to.be.true;
 
       await expectFailure(() => operation.fetchAll());
       await expectFailure(() => operation.fetchChunk());
@@ -385,14 +386,14 @@ describe('DBSQLOperation', () => {
       sinon.spy(driver, 'closeOperation');
       const operation = new DBSQLOperation(driver, handle, logger);
 
-      expect(operation._completeOperation.cancelled).to.be.false;
-      expect(operation._completeOperation.closed).to.be.false;
+      expect(operation.cancelled).to.be.false;
+      expect(operation.closed).to.be.false;
 
       await operation.close();
 
       expect(driver.closeOperation.called).to.be.true;
-      expect(operation._completeOperation.cancelled).to.be.false;
-      expect(operation._completeOperation.closed).to.be.true;
+      expect(operation.cancelled).to.be.false;
+      expect(operation.closed).to.be.true;
     });
 
     it('should return immediately if already closed', async () => {
@@ -401,18 +402,18 @@ describe('DBSQLOperation', () => {
       sinon.spy(driver, 'closeOperation');
       const operation = new DBSQLOperation(driver, handle, logger);
 
-      expect(operation._completeOperation.cancelled).to.be.false;
-      expect(operation._completeOperation.closed).to.be.false;
+      expect(operation.cancelled).to.be.false;
+      expect(operation.closed).to.be.false;
 
       await operation.close();
       expect(driver.closeOperation.callCount).to.be.equal(1);
-      expect(operation._completeOperation.cancelled).to.be.false;
-      expect(operation._completeOperation.closed).to.be.true;
+      expect(operation.cancelled).to.be.false;
+      expect(operation.closed).to.be.true;
 
       await operation.close();
       expect(driver.closeOperation.callCount).to.be.equal(1);
-      expect(operation._completeOperation.cancelled).to.be.false;
-      expect(operation._completeOperation.closed).to.be.true;
+      expect(operation.cancelled).to.be.false;
+      expect(operation.closed).to.be.true;
     });
 
     it('should return immediately if already cancelled', async () => {
@@ -422,18 +423,18 @@ describe('DBSQLOperation', () => {
       sinon.spy(driver, 'cancelOperation');
       const operation = new DBSQLOperation(driver, handle, logger);
 
-      expect(operation._completeOperation.cancelled).to.be.false;
-      expect(operation._completeOperation.closed).to.be.false;
+      expect(operation.cancelled).to.be.false;
+      expect(operation.closed).to.be.false;
 
       await operation.cancel();
       expect(driver.cancelOperation.callCount).to.be.equal(1);
-      expect(operation._completeOperation.cancelled).to.be.true;
-      expect(operation._completeOperation.closed).to.be.false;
+      expect(operation.cancelled).to.be.true;
+      expect(operation.closed).to.be.false;
 
       await operation.close();
       expect(driver.closeOperation.callCount).to.be.equal(0);
-      expect(operation._completeOperation.cancelled).to.be.true;
-      expect(operation._completeOperation.closed).to.be.false;
+      expect(operation.cancelled).to.be.true;
+      expect(operation.closed).to.be.false;
     });
 
     it('should initialize from directResults', async () => {
@@ -446,14 +447,14 @@ describe('DBSQLOperation', () => {
         },
       });
 
-      expect(operation._completeOperation.cancelled).to.be.false;
-      expect(operation._completeOperation.closed).to.be.false;
+      expect(operation.cancelled).to.be.false;
+      expect(operation.closed).to.be.false;
 
       await operation.close();
 
       expect(driver.closeOperation.called).to.be.false;
-      expect(operation._completeOperation.cancelled).to.be.false;
-      expect(operation._completeOperation.closed).to.be.true;
+      expect(operation.cancelled).to.be.false;
+      expect(operation.closed).to.be.true;
       expect(driver.closeOperation.callCount).to.be.equal(0);
     });
 
@@ -463,8 +464,8 @@ describe('DBSQLOperation', () => {
       driver.closeOperationResp.status.statusCode = TStatusCode.ERROR_STATUS;
       const operation = new DBSQLOperation(driver, handle, logger);
 
-      expect(operation._completeOperation.cancelled).to.be.false;
-      expect(operation._completeOperation.closed).to.be.false;
+      expect(operation.cancelled).to.be.false;
+      expect(operation.closed).to.be.false;
 
       try {
         await operation.close();
@@ -474,8 +475,8 @@ describe('DBSQLOperation', () => {
           throw e;
         }
         expect(e).to.be.instanceOf(StatusError);
-        expect(operation._completeOperation.cancelled).to.be.false;
-        expect(operation._completeOperation.closed).to.be.false;
+        expect(operation.cancelled).to.be.false;
+        expect(operation.closed).to.be.false;
       }
     });
 
@@ -485,7 +486,7 @@ describe('DBSQLOperation', () => {
       const operation = new DBSQLOperation(driver, handle, logger);
 
       await operation.close();
-      expect(operation._completeOperation.closed).to.be.true;
+      expect(operation.closed).to.be.true;
 
       await expectFailure(() => operation.fetchAll());
       await expectFailure(() => operation.fetchChunk());
@@ -819,7 +820,7 @@ describe('DBSQLOperation', () => {
         driver.getResultSetMetadata.resetHistory();
 
         const operation = new DBSQLOperation(driver, handle, logger);
-        const resultHandler = await operation._schema.getResultHandler();
+        const resultHandler = await operation.getResultHandler();
         expect(driver.getResultSetMetadata.called).to.be.true;
         expect(resultHandler).to.be.instanceOf(JsonResult);
       }
@@ -829,9 +830,19 @@ describe('DBSQLOperation', () => {
         driver.getResultSetMetadata.resetHistory();
 
         const operation = new DBSQLOperation(driver, handle, logger);
-        const resultHandler = await operation._schema.getResultHandler();
+        const resultHandler = await operation.getResultHandler();
         expect(driver.getResultSetMetadata.called).to.be.true;
         expect(resultHandler).to.be.instanceOf(ArrowResult);
+      }
+
+      cloudFetchHandler: {
+        driver.getResultSetMetadataResp.resultFormat = TSparkRowSetType.URL_BASED_SET;
+        driver.getResultSetMetadata.resetHistory();
+
+        const operation = new DBSQLOperation(driver, handle, logger);
+        const resultHandler = await operation.getResultHandler();
+        expect(driver.getResultSetMetadata.called).to.be.true;
+        expect(resultHandler).to.be.instanceOf(CloudFetchResult);
       }
     });
   });

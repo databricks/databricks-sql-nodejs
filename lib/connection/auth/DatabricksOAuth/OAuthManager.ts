@@ -10,6 +10,7 @@ export interface OAuthManagerOptions {
   callbackPorts?: Array<number>;
   clientId?: string;
   azureTenantId?: string;
+  clientSecret?: string;
   logger?: IDBSQLLogger;
 }
 
@@ -59,24 +60,15 @@ export default abstract class OAuthManager {
     if (!this.client) {
       this.client = new this.issuer.Client({
         client_id: this.getClientId(),
-        token_endpoint_auth_method: 'none',
+        client_secret: this.options.clientSecret,
+        token_endpoint_auth_method: this.options.clientSecret === undefined ? 'none' : 'client_secret_basic',
       });
     }
 
     return this.client;
   }
 
-  public async refreshAccessToken(token: OAuthToken): Promise<OAuthToken> {
-    try {
-      if (!token.hasExpired) {
-        // The access token is fine. Just return it.
-        return token;
-      }
-    } catch (error) {
-      this.logger?.log(LogLevel.error, `${error}`);
-      throw error;
-    }
-
+  private async refreshAccessTokenU2M(token: OAuthToken): Promise<OAuthToken> {
     if (!token.refreshToken) {
       const message = `OAuth access token expired on ${token.expirationTime}.`;
       this.logger?.log(LogLevel.error, message);
@@ -97,8 +89,33 @@ export default abstract class OAuthManager {
     return new OAuthToken(accessToken, refreshToken);
   }
 
-  public async getToken(scopes: OAuthScopes): Promise<OAuthToken> {
+  private async refreshAccessTokenM2M(): Promise<OAuthToken> {
+    const { access_token: accessToken, refresh_token: refreshToken } = await this.getTokenM2M();
+
+    if (!accessToken) {
+      throw new Error('Failed to fetch access token');
+    }
+
+    return new OAuthToken(accessToken, refreshToken);
+  }
+
+  public async refreshAccessToken(token: OAuthToken): Promise<OAuthToken> {
+    try {
+      if (!token.hasExpired) {
+        // The access token is fine. Just return it.
+        return token;
+      }
+    } catch (error) {
+      this.logger?.log(LogLevel.error, `${error}`);
+      throw error;
+    }
+
+    return this.options.clientSecret === undefined ? this.refreshAccessTokenU2M(token) : this.refreshAccessTokenM2M();
+  }
+
+  private async getTokenU2M(scopes: OAuthScopes) {
     const client = await this.getClient();
+
     const authCode = new AuthorizationCode({
       client,
       ports: this.getCallbackPorts(),
@@ -109,12 +126,31 @@ export default abstract class OAuthManager {
 
     const { code, verifier, redirectUri } = await authCode.fetch(mappedScopes);
 
-    const { access_token: accessToken, refresh_token: refreshToken } = await client.grant({
+    return client.grant({
       grant_type: 'authorization_code',
       code,
       code_verifier: verifier,
       redirect_uri: redirectUri,
     });
+  }
+
+  private async getTokenM2M() {
+    const client = await this.getClient();
+
+    // M2M flow doesn't really support token refreshing, and refresh should not be available
+    // in response. Each time access token expires, client can just acquire a new one using
+    // client secret. Here we explicitly return access token only as a sign that we're not going
+    // to use refresh token for M2M flow anywhere later
+    const { access_token: accessToken } = await client.grant({
+      grant_type: 'client_credentials',
+      scope: 'all-apis', // this is the only allowed scope for M2M flow
+    });
+    return { access_token: accessToken, refresh_token: undefined };
+  }
+
+  public async getToken(scopes: OAuthScopes): Promise<OAuthToken> {
+    const { access_token: accessToken, refresh_token: refreshToken } =
+      this.options.clientSecret === undefined ? await this.getTokenU2M(scopes) : await this.getTokenM2M();
 
     if (!accessToken) {
       throw new Error('Failed to fetch access token');

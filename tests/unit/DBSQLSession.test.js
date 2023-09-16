@@ -64,12 +64,6 @@ describe('DBSQLSession', () => {
       expect(result).instanceOf(DBSQLOperation);
     });
 
-    it('should execute statement asynchronously', async () => {
-      const session = createSession();
-      const result = await session.executeStatement('SELECT * FROM table', { runAsync: true });
-      expect(result).instanceOf(DBSQLOperation);
-    });
-
     it('should use direct results', async () => {
       const session = createSession();
       const result = await session.executeStatement('SELECT * FROM table', { maxRows: 10 });
@@ -442,7 +436,7 @@ describe('DBSQLSession', () => {
       const session = createSession();
       const operation = await session.executeStatement('SELECT * FROM table');
       expect(operation.onClose).to.be.not.undefined;
-      expect(operation._completeOperation.closed).to.be.false;
+      expect(operation.closed).to.be.false;
       expect(session.operations.items.size).to.eq(1);
 
       sinon.spy(session.operations, 'closeAll');
@@ -452,7 +446,7 @@ describe('DBSQLSession', () => {
       expect(operation.close.called).to.be.true;
       expect(session.operations.closeAll.called).to.be.true;
       expect(operation.onClose).to.be.undefined;
-      expect(operation._completeOperation.closed).to.be.true;
+      expect(operation.closed).to.be.true;
       expect(session.operations.items.size).to.eq(0);
     });
 
