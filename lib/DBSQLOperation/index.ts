@@ -233,6 +233,7 @@ export default class DBSQLOperation implements IOperation {
 
   public async getMetadata(): Promise<TGetResultSetMetadataResp> {
     await this.failIfClosed();
+    await this.waitUntilReady();
     return this.fetchMetadata();
   }
 
