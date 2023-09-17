@@ -201,16 +201,21 @@ export default class DBSQLSession implements IDBSQLSession {
     }
     const row = rows[0] as StagingResponse;
 
-    let allowOperation = false;
-    for (const filepath of allowedLocalPath) {
-      const relativePath = path.relative(filepath, row.localFile);
+    // For REMOVE operation local file is not available, so no need to validate it
+    if (row.localFile !== undefined) {
+      let allowOperation = false;
 
-      if (!relativePath.startsWith('..') && !path.isAbsolute(relativePath)) {
-        allowOperation = true;
+      for (const filepath of allowedLocalPath) {
+        const relativePath = path.relative(filepath, row.localFile);
+
+        if (!relativePath.startsWith('..') && !path.isAbsolute(relativePath)) {
+          allowOperation = true;
+        }
       }
-    }
-    if (!allowOperation) {
-      throw new StagingError('Staging path not a subset of allowed local paths.');
+
+      if (!allowOperation) {
+        throw new StagingError('Staging path not a subset of allowed local paths.');
+      }
     }
 
     const { localFile, presignedUrl, headers } = row;

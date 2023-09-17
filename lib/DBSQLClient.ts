@@ -147,7 +147,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
     const driver = new HiveDriver(() => this.getClient());
 
     const response = await driver.openSession({
-      client_protocol_i64: new Int64(TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V6),
+      client_protocol_i64: new Int64(TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V8),
       ...getInitialNamespaceOptions(request.initialCatalog, request.initialSchema),
     });
 
