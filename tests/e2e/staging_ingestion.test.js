@@ -3,7 +3,8 @@ const config = require('./utils/config');
 const { DBSQLClient } = require('../..');
 const fs = require('fs');
 
-describe('Staging Test', () => {
+// TODO Temporarily disable those tests until we figure out issues with E2E test env
+describe.skip('Staging Test', () => {
   it('put staging data and receive it', async () => {
     const client = new DBSQLClient();
     await client.connect({

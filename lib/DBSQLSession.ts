@@ -191,7 +191,7 @@ export default class DBSQLSession implements IDBSQLSession {
   private async handleStagingOperation(operation: IOperation, allowedLocalPath: Array<string>): Promise<IOperation> {
     type StagingResponse = {
       presignedUrl: string;
-      localFile: string;
+      localFile?: string;
       headers: HeadersInit;
       operation: string;
     };
@@ -228,14 +228,21 @@ export default class DBSQLSession implements IDBSQLSession {
         await this.handleStagingPut(localFile, presignedUrl, headers);
         return operation;
       case 'REMOVE':
-        await this.handleStagingRemove(localFile, presignedUrl, headers);
+        await this.handleStagingRemove(presignedUrl, headers);
         return operation;
       default:
         throw new StagingError(`Staging query operation is not supported: ${row.operation}`);
     }
   }
 
-  private async handleStagingGet(localFile: string, presignedUrl: string, headers: HeadersInit): Promise<void> {
+  private async handleStagingGet(
+    localFile: string | undefined,
+    presignedUrl: string,
+    headers: HeadersInit,
+  ): Promise<void> {
+    if (localFile === undefined) {
+      throw new StagingError('Local file path not provided');
+    }
     const response = await fetch(presignedUrl, { method: 'GET', headers });
     if (!response.ok) {
       throw new StagingError(`HTTP error ${response.status} ${response.statusText}`);
@@ -244,14 +251,21 @@ export default class DBSQLSession implements IDBSQLSession {
     fs.writeFileSync(localFile, Buffer.from(buffer));
   }
 
-  private async handleStagingRemove(localFile: string, presignedUrl: string, headers: HeadersInit): Promise<void> {
+  private async handleStagingRemove(presignedUrl: string, headers: HeadersInit): Promise<void> {
     const response = await fetch(presignedUrl, { method: 'DELETE', headers });
     if (!response.ok) {
       throw new StagingError(`HTTP error ${response.status} ${response.statusText}`);
     }
   }
 
-  private async handleStagingPut(localFile: string, presignedUrl: string, headers: HeadersInit): Promise<void> {
+  private async handleStagingPut(
+    localFile: string | undefined,
+    presignedUrl: string,
+    headers: HeadersInit,
+  ): Promise<void> {
+    if (localFile === undefined) {
+      throw new StagingError('Local file path not provided');
+    }
     const data = fs.readFileSync(localFile);
     const response = await fetch(presignedUrl, { method: 'PUT', headers, body: data });
     if (!response.ok) {
