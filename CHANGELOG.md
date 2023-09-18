@@ -27,7 +27,7 @@ client.connect({
 ```
 
 U2M flow involves user interaction - the library will open a browser tab asking user to log in. To use this flow,
-no other options are required except of setting the auth provider type.
+no other options are required except for `authType`.
 
 M2M flow does not require any user interaction, and therefore is a good option, say, for scripting. To use this
 flow, two extra options are required for `DBSQLClient.connect`: `oauthClientId` and `oauthClientSecret`.
@@ -37,7 +37,7 @@ for more details about Databricks OAuth.
 
 ### Named query parameters
 
-v1.5.0 adds a support of [query parameters](https://docs.databricks.com/en/sql/language-manual/sql-ref-parameter-marker.html).
+v1.5.0 adds a support for [query parameters](https://docs.databricks.com/en/sql/language-manual/sql-ref-parameter-marker.html).
 Currently only named parameters are supported.
 
 Basic usage example:
@@ -56,8 +56,8 @@ const operation = session.executeStatement('SELECT :p1 AS "str_param", :p2 AS "n
 The library will infer parameter types from passed primitive objects. Supported data types include booleans, various
 numeric types (including native `BigInt` and `Int64` from `node-int64`), native `Date` type, and string.
 
-It's also possible to explicitly specify parameter type by passing a `DBSQLParameter` instances instead of primitive
-values. It also allows to use values that don't have a corresponding primitive representation:
+It's also possible to explicitly specify the parameter type by passing `DBSQLParameter` instances instead of primitive
+values. It also allows one to use values that don't have a corresponding primitive representation:
 
 ```ts
 import { ..., DBSQLParameter, DBSQLParameterType } from '@databricks/sql';
@@ -87,12 +87,12 @@ Of course, you can mix primitive values and `DBSQLParameter` instances.
 ### `runAsync` deprecation
 
 The `runAsync` is going to become unsupported soon, and we're deprecating it. It will remain available for the next
-few releases, but from now it will be ignored and behave like it's always `true`. From user's point, the library
-behaviour won't change, so if you used `runAsync` anywhere in your code - you can now just remove it.
+few releases, but from now it will be ignored and behave like it's always `true`. From user's perspective, the library
+behaviour won't change. So if you used `runAsync` anywhere in your code - you can now just remove it.
 
 ### Data ingestion support
 
-This feature allows to upload, retrieve and remove unity catalog volume files using SQL `PUT`, `GET` and `REMOVE` commands.
+This feature allows you to upload, retrieve, and remove unity catalog volume files using SQL `PUT`, `GET` and `REMOVE` commands.
 
 ## 1.4.0
 
