@@ -1,7 +1,7 @@
 const { expect } = require('chai');
 const Int64 = require('node-int64');
 const config = require('./utils/config');
-const { DBSQLClient, DBSQLParameter } = require('../..');
+const { DBSQLClient, DBSQLParameter, DBSQLParameterType } = require('../..');
 
 const openSession = async () => {
   const client = new DBSQLClient();
@@ -40,7 +40,7 @@ describe('Query parameters', () => {
           p_double: new DBSQLParameter({ value: 3.14 }),
           p_bigint_1: new DBSQLParameter({ value: BigInt(1234) }),
           p_bigint_2: new DBSQLParameter({ value: new Int64(1234) }),
-          p_date: new DBSQLParameter({ value: new Date('2023-09-06T03:14:27.843Z'), type: 'DATE' }),
+          p_date: new DBSQLParameter({ value: new Date('2023-09-06T03:14:27.843Z'), type: DBSQLParameterType.DATE }),
           p_timestamp: new DBSQLParameter({ value: new Date('2023-09-06T03:14:27.843Z') }),
           p_str: new DBSQLParameter({ value: 'Hello' }),
         },
