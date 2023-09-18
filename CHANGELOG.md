@@ -1,5 +1,99 @@
 # Release History
 
+## 1.5.0
+
+### Highlights
+
+- Added OAuth M2M support (databricks/databricks-sql-nodejs#168, databricks/databricks-sql-nodejs#177)
+- Added named query parameters support (databricks/databricks-sql-nodejs#162, databricks/databricks-sql-nodejs#175)
+- `runAsync` options is now deprecated (databricks/databricks-sql-nodejs#176)
+- Added staging ingestion support (databricks/databricks-sql-nodejs#164)
+
+### Databricks OAuth support
+
+Databricks OAuth support added in v1.4.0 is now extended with M2M flow. To use OAuth instead of PAT, pass
+a corresponding auth provider type and options to `DBSQL.connect`:
+
+```ts
+// instantiate DBSQLClient as usual
+
+client.connect({
+  // other mandatory options - e.g. host, path, etc.
+  authType: 'databricks-oauth',
+  oauthClientId: '...', // optional - overwrite default OAuth client ID
+  azureTenantId: '...', // optional - provide custom Azure tenant ID
+  persistence: ...,     // optional; user-provided storage for OAuth tokens, should implement OAuthPersistence interface
+})
+```
+
+U2M flow involves user interaction - the library will open a browser tab asking user to log in. To use this flow,
+no other options are required except of selecting auth provider type.
+
+M2M flow does not require any user interaction, and therefore may be a good option, say, for scripting. To use this
+flow, two extra options are required for `DBSQLClient.connect`: `oauthClientId` and `oauthClientSecret`.
+
+Also see [Databricks docs](https://docs.databricks.com/en/dev-tools/auth.html#oauth-machine-to-machine-m2m-authentication)
+for more details about Databricks OAuth.
+
+### Named query parameters
+
+v1.5.0 adds a support of [query parameters](https://docs.databricks.com/en/sql/language-manual/sql-ref-parameter-marker.html).
+Currently only named parameters are supported.
+
+Basic usage example:
+
+```ts
+// obtain session object as usual
+
+const operation = session.executeStatement('SELECT :p1 AS "str_param", :p2 AS "number_param"', {
+  namedParameters: {
+    p1: 'Hello, World',
+    p2: 3.14,
+  },
+});
+```
+
+The library will infer parameter types from passed primitive objects. Supported data types include booleans, various
+numeric types (including native `BigInt` and `Int64` from `node-int64`), native `Date` type, and string.
+
+It's also possible to explicitly specify parameter type by passing a `DBSQLParameter` instances instead of primitive
+values. It also allows to use values that don't have a corresponding primitive representation:
+
+```ts
+import { ..., DBSQLParameter, DBSQLParameterType } from '@databricks/sql';
+
+// obtain session object as usual
+
+const operation = session.executeStatement('SELECT :p1 AS "date_param", :p2 AS "interval_type"', {
+  namedParameters: {
+    p1: new DBSQLParameter({
+      value: new DBSQLParameter({
+        value: new Date('2023-09-06T03:14:27.843Z'),
+        type: DBSQLParameterType.DATE, // by default, Date objects are inferred as TIMESTAMP, this allows to override the type
+      }),
+    }),
+    p2: new DBSQLParameter({
+      value: new DBSQLParameter({
+        value: 5, // INTERVAL '5' DAY
+        type: DBSQLParameterType.INTERVALDAY
+      }),
+    }),
+  },
+});
+```
+
+Of course, you can mix primitive values and `DBSQLParameter` instances.
+
+### `runAsync` deprecation
+
+The `runAsync` is going to become unsupported soon, and we're deprecating it. It will remain available for the next
+few releases, but from now it will be ignored and behave like it's always `true`. From user's point, the library
+behaviour won't change, so if you used `runAsync` anywhere in your code - you can now just remove it.
+
+### Data ingestion support
+
+This feature allows to upload, retrieve and remove unity catalog volume files using SQL `PUT`, `GET` and `REMOVE` commands.
+
 ## 1.4.0
 
 - Added Cloud Fetch support (databricks/databricks-sql-nodejs#158)
