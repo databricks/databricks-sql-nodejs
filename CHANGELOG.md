@@ -12,24 +12,24 @@
 ### Databricks OAuth support
 
 Databricks OAuth support added in v1.4.0 is now extended with M2M flow. To use OAuth instead of PAT, pass
-a corresponding auth provider type and options to `DBSQL.connect`:
+a corresponding auth provider type and options to `DBSQLClient.connect`:
 
 ```ts
 // instantiate DBSQLClient as usual
 
 client.connect({
-  // other mandatory options - e.g. host, path, etc.
+  // provide other mandatory options as usual - e.g. host, path, etc.
   authType: 'databricks-oauth',
   oauthClientId: '...', // optional - overwrite default OAuth client ID
   azureTenantId: '...', // optional - provide custom Azure tenant ID
-  persistence: ...,     // optional; user-provided storage for OAuth tokens, should implement OAuthPersistence interface
+  persistence: ...,     // optional - user-provided storage for OAuth tokens, should implement OAuthPersistence interface
 })
 ```
 
 U2M flow involves user interaction - the library will open a browser tab asking user to log in. To use this flow,
-no other options are required except of selecting auth provider type.
+no other options are required except of setting the auth provider type.
 
-M2M flow does not require any user interaction, and therefore may be a good option, say, for scripting. To use this
+M2M flow does not require any user interaction, and therefore is a good option, say, for scripting. To use this
 flow, two extra options are required for `DBSQLClient.connect`: `oauthClientId` and `oauthClientSecret`.
 
 Also see [Databricks docs](https://docs.databricks.com/en/dev-tools/auth.html#oauth-machine-to-machine-m2m-authentication)
