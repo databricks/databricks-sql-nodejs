@@ -12,6 +12,7 @@ export type ExecuteStatementOptions = {
   runAsync?: boolean;
   maxRows?: number | null;
   useCloudFetch?: boolean;
+  stagingAllowedLocalPath?: string | string[];
   namedParameters?: Record<string, DBSQLParameter | DBSQLParameterValue>;
 };
 

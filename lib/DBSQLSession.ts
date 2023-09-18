@@ -1,4 +1,7 @@
+import * as fs from 'fs';
+import * as path from 'path';
 import { stringify, NIL, parse } from 'uuid';
+import fetch, { HeadersInit } from 'node-fetch';
 import {
   TSessionHandle,
   TStatus,
@@ -30,6 +33,7 @@ import CloseableCollection from './utils/CloseableCollection';
 import IDBSQLLogger, { LogLevel } from './contracts/IDBSQLLogger';
 import HiveDriverError from './errors/HiveDriverError';
 import globalConfig from './globalConfig';
+import StagingError from './errors/StagingError';
 import { DBSQLParameter, DBSQLParameterValue } from './DBSQLParameter';
 
 const defaultMaxRows = 100000;
@@ -163,7 +167,110 @@ export default class DBSQLSession implements IDBSQLSession {
       parameters: getQueryParameters(options.namedParameters),
     });
     const response = await this.handleResponse(operationPromise);
-    return this.createOperation(response);
+    const operation = this.createOperation(response);
+
+    // If `stagingAllowedLocalPath` is provided - assume that operation possibly may be a staging operation.
+    // To know for sure, fetch metadata and check a `isStagingOperation` flag. If it happens that it wasn't
+    // a staging operation - not a big deal, we just fetched metadata earlier, but operation is still usable
+    // and user can get data from it.
+    // If `stagingAllowedLocalPath` is not provided - don't do anything to the operation. In a case of regular
+    // operation, everything will work as usual. In a case of staging operation, it will be processed like any
+    // other query - it will be possible to get data from it as usual, or use other operation methods.
+    if (options.stagingAllowedLocalPath !== undefined) {
+      const metadata = await operation.getMetadata();
+      if (metadata.isStagingOperation) {
+        const allowedLocalPath = Array.isArray(options.stagingAllowedLocalPath)
+          ? options.stagingAllowedLocalPath
+          : [options.stagingAllowedLocalPath];
+        return this.handleStagingOperation(operation, allowedLocalPath);
+      }
+    }
+    return operation;
+  }
+
+  private async handleStagingOperation(operation: IOperation, allowedLocalPath: Array<string>): Promise<IOperation> {
+    type StagingResponse = {
+      presignedUrl: string;
+      localFile?: string;
+      headers: HeadersInit;
+      operation: string;
+    };
+    const rows = await operation.fetchAll();
+    if (rows.length !== 1) {
+      throw new StagingError('Staging operation: expected only one row in result');
+    }
+    const row = rows[0] as StagingResponse;
+
+    // For REMOVE operation local file is not available, so no need to validate it
+    if (row.localFile !== undefined) {
+      let allowOperation = false;
+
+      for (const filepath of allowedLocalPath) {
+        const relativePath = path.relative(filepath, row.localFile);
+
+        if (!relativePath.startsWith('..') && !path.isAbsolute(relativePath)) {
+          allowOperation = true;
+        }
+      }
+
+      if (!allowOperation) {
+        throw new StagingError('Staging path not a subset of allowed local paths.');
+      }
+    }
+
+    const { localFile, presignedUrl, headers } = row;
+
+    switch (row.operation) {
+      case 'GET':
+        await this.handleStagingGet(localFile, presignedUrl, headers);
+        return operation;
+      case 'PUT':
+        await this.handleStagingPut(localFile, presignedUrl, headers);
+        return operation;
+      case 'REMOVE':
+        await this.handleStagingRemove(presignedUrl, headers);
+        return operation;
+      default:
+        throw new StagingError(`Staging query operation is not supported: ${row.operation}`);
+    }
+  }
+
+  private async handleStagingGet(
+    localFile: string | undefined,
+    presignedUrl: string,
+    headers: HeadersInit,
+  ): Promise<void> {
+    if (localFile === undefined) {
+      throw new StagingError('Local file path not provided');
+    }
+    const response = await fetch(presignedUrl, { method: 'GET', headers });
+    if (!response.ok) {
+      throw new StagingError(`HTTP error ${response.status} ${response.statusText}`);
+    }
+    const buffer = await response.arrayBuffer();
+    fs.writeFileSync(localFile, Buffer.from(buffer));
+  }
+
+  private async handleStagingRemove(presignedUrl: string, headers: HeadersInit): Promise<void> {
+    const response = await fetch(presignedUrl, { method: 'DELETE', headers });
+    if (!response.ok) {
+      throw new StagingError(`HTTP error ${response.status} ${response.statusText}`);
+    }
+  }
+
+  private async handleStagingPut(
+    localFile: string | undefined,
+    presignedUrl: string,
+    headers: HeadersInit,
+  ): Promise<void> {
+    if (localFile === undefined) {
+      throw new StagingError('Local file path not provided');
+    }
+    const data = fs.readFileSync(localFile);
+    const response = await fetch(presignedUrl, { method: 'PUT', headers, body: data });
+    if (!response.ok) {
+      throw new StagingError(`HTTP error ${response.status} ${response.statusText}`);
+    }
   }
 
   /**
@@ -362,7 +469,7 @@ export default class DBSQLSession implements IDBSQLSession {
     return new Status(response.status);
   }
 
-  private createOperation(response: OperationResponseShape): IOperation {
+  private createOperation(response: OperationResponseShape): DBSQLOperation {
     Status.assert(response.status);
     const handle = definedOrError(response.operationHandle);
     const operation = new DBSQLOperation(

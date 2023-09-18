@@ -231,6 +231,12 @@ export default class DBSQLOperation implements IOperation {
     return metadata.schema ?? null;
   }
 
+  public async getMetadata(): Promise<TGetResultSetMetadataResp> {
+    await this.failIfClosed();
+    await this.waitUntilReady();
+    return this.fetchMetadata();
+  }
+
   private async failIfClosed(): Promise<void> {
     if (this.closed) {
       throw new OperationStateError(OperationStateErrorCode.Closed);
