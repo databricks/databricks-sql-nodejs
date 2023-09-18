@@ -67,16 +67,12 @@ import { ..., DBSQLParameter, DBSQLParameterType } from '@databricks/sql';
 const operation = session.executeStatement('SELECT :p1 AS "date_param", :p2 AS "interval_type"', {
   namedParameters: {
     p1: new DBSQLParameter({
-      value: new DBSQLParameter({
-        value: new Date('2023-09-06T03:14:27.843Z'),
-        type: DBSQLParameterType.DATE, // by default, Date objects are inferred as TIMESTAMP, this allows to override the type
-      }),
+      value: new Date('2023-09-06T03:14:27.843Z'),
+      type: DBSQLParameterType.DATE, // by default, Date objects are inferred as TIMESTAMP, this allows to override the type
     }),
     p2: new DBSQLParameter({
-      value: new DBSQLParameter({
-        value: 5, // INTERVAL '5' DAY
-        type: DBSQLParameterType.INTERVALDAY
-      }),
+      value: 5, // INTERVAL '5' DAY
+      type: DBSQLParameterType.INTERVALDAY
     }),
   },
 });
