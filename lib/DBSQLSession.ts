@@ -2,6 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { stringify, NIL, parse } from 'uuid';
 import fetch, { HeadersInit } from 'node-fetch';
+import { Thrift } from 'thrift';
 import {
   TSessionHandle,
   TStatus,
@@ -9,6 +10,7 @@ import {
   TSparkDirectResults,
   TSparkArrowTypes,
   TSparkParameter,
+  TProtocolVersion,
 } from '../thrift/TCLIService_types';
 import HiveDriver from './hive/HiveDriver';
 import { Int64 } from './hive/Types';
@@ -81,17 +83,28 @@ function getArrowOptions(): {
 }
 
 function getQueryParameters(
+  sessionHandle: TSessionHandle,
   namedParameters?: Record<string, DBSQLParameter | DBSQLParameterValue>,
 ): Array<TSparkParameter> {
   const result: Array<TSparkParameter> = [];
 
   if (namedParameters !== undefined) {
-    for (const name of Object.keys(namedParameters)) {
-      const value = namedParameters[name];
-      const param = value instanceof DBSQLParameter ? value : new DBSQLParameter({ value });
-      const sparkParam = param.toSparkParameter();
-      sparkParam.name = name;
-      result.push(sparkParam);
+    if (
+      sessionHandle?.serverProtocolVersion &&
+      sessionHandle.serverProtocolVersion >= TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V8
+    ) {
+      for (const name of Object.keys(namedParameters)) {
+        const value = namedParameters[name];
+        const param = value instanceof DBSQLParameter ? value : new DBSQLParameter({ value });
+        const sparkParam = param.toSparkParameter();
+        sparkParam.name = name;
+        result.push(sparkParam);
+      }
+    } else {
+      throw new Thrift.TProtocolException(
+        Thrift.TProtocolExceptionType.BAD_VERSION,
+        'Server version does not support parameterized queries',
+      );
     }
   }
 
@@ -164,7 +177,7 @@ export default class DBSQLSession implements IDBSQLSession {
       ...getDirectResultsOptions(options.maxRows),
       ...getArrowOptions(),
       canDownloadResult: options.useCloudFetch ?? globalConfig.useCloudFetch,
-      parameters: getQueryParameters(options.namedParameters),
+      parameters: getQueryParameters(this.sessionHandle, options.namedParameters),
     });
     const response = await this.handleResponse(operationPromise);
     const operation = this.createOperation(response);
