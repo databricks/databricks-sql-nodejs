@@ -82,9 +82,9 @@ Of course, you can mix primitive values and `DBSQLParameter` instances.
 
 ### `runAsync` deprecation
 
-The `runAsync` is going to become unsupported soon, and we're deprecating it. It will remain available for the next
-few releases, but from now it will be ignored and behave like it's always `true`. From user's perspective, the library
-behaviour won't change. So if you used `runAsync` anywhere in your code - you can now just remove it.
+Since this release, the library will execute all queries asynchronously, so we deprecate `runAsync` option.
+It will be completely removed in v2, but we encourage to stop using it since now and remove all the usages
+from your code. From user's perspective, the library behaviour won't change.
 
 ### Data ingestion support
 
