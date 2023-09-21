@@ -99,4 +99,35 @@ describe('Query parameters', () => {
       },
     ]);
   });
+
+  it('should accept primitives as values for named parameters', async () => {
+    const session = await openSession();
+    const operation = await session.executeStatement(
+      `
+        SELECT
+          :1 AS col_bool,
+          :2 AS col_int,
+          :3 AS col_double,
+          :4 AS col_bigint_1,
+          :5 AS col_bigint_2,
+          :6 as col_timestamp,
+          :7 AS col_str
+      `,
+      {
+        ordinalParameters:[true,1234,3.14,BigInt(1234),new Int64(1234),new Date('2023-09-06T03:14:27.843Z'), 'Hello']
+      },
+    );
+    const result = await operation.fetchAll();
+    expect(result).to.deep.equal([
+      {
+        col_bool: true,
+        col_int: 1234,
+        col_double: 3.14,
+        col_bigint_1: 1234,
+        col_bigint_2: 1234,
+        col_timestamp: new Date('2023-09-06T03:14:27.843Z'),
+        col_str: 'Hello',
+      },
+    ]);
+  });
 });

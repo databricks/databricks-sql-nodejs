@@ -37,6 +37,7 @@ import HiveDriverError from './errors/HiveDriverError';
 import globalConfig from './globalConfig';
 import StagingError from './errors/StagingError';
 import { DBSQLParameter, DBSQLParameterValue } from './DBSQLParameter';
+import ParameterError from './errors/ParameterError';
 
 const defaultMaxRows = 100000;
 
@@ -85,10 +86,13 @@ function getArrowOptions(): {
 function getQueryParameters(
   sessionHandle: TSessionHandle,
   namedParameters?: Record<string, DBSQLParameter | DBSQLParameterValue>,
+  ordinalParameters?: (DBSQLParameter | DBSQLParameterValue)[],
 ): Array<TSparkParameter> {
   const result: Array<TSparkParameter> = [];
-
-  if (namedParameters !== undefined) {
+  if (namedParameters !== undefined && ordinalParameters !== undefined) {
+    throw new ParameterError("Driver does not support both ordinal and named parameters.")
+  }
+  else if (namedParameters !== undefined) {
     if (
       sessionHandle?.serverProtocolVersion &&
       sessionHandle.serverProtocolVersion >= TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V8
@@ -105,6 +109,13 @@ function getQueryParameters(
         Thrift.TProtocolExceptionType.BAD_VERSION,
         'Server version does not support parameterized queries',
       );
+    }
+  }
+  else if(ordinalParameters !== undefined) {
+    for (const value of ordinalParameters) {
+      const param = value instanceof DBSQLParameter ? value : new DBSQLParameter({ value });
+      const sparkParam = param.toSparkParameter();
+      result.push(sparkParam);
     }
   }
 
@@ -177,7 +188,7 @@ export default class DBSQLSession implements IDBSQLSession {
       ...getDirectResultsOptions(options.maxRows),
       ...getArrowOptions(),
       canDownloadResult: options.useCloudFetch ?? globalConfig.useCloudFetch,
-      parameters: getQueryParameters(this.sessionHandle, options.namedParameters),
+      parameters: getQueryParameters(this.sessionHandle, options.namedParameters, options.ordinalParameters),
     });
     const response = await this.handleResponse(operationPromise);
     const operation = this.createOperation(response);
