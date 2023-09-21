@@ -92,11 +92,16 @@ function getQueryParameters(
   if (namedParameters !== undefined && ordinalParameters !== undefined) {
     throw new ParameterError("Driver does not support both ordinal and named parameters.")
   }
-  else if (namedParameters !== undefined) {
-    if (
-      sessionHandle?.serverProtocolVersion &&
-      sessionHandle.serverProtocolVersion >= TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V8
-    ) {
+  if(namedParameters === undefined && ordinalParameters === undefined) {
+    return []
+  }
+  if(!sessionHandle.serverProtocolVersion || sessionHandle.serverProtocolVersion < TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V8){
+    throw new Thrift.TProtocolException(
+      Thrift.TProtocolExceptionType.BAD_VERSION,
+      'Server version does not support parameterized queries',
+    );
+  }
+  if (namedParameters !== undefined) {
       for (const name of Object.keys(namedParameters)) {
         const value = namedParameters[name];
         const param = value instanceof DBSQLParameter ? value : new DBSQLParameter({ value });
@@ -104,13 +109,8 @@ function getQueryParameters(
         sparkParam.name = name;
         result.push(sparkParam);
       }
-    } else {
-      throw new Thrift.TProtocolException(
-        Thrift.TProtocolExceptionType.BAD_VERSION,
-        'Server version does not support parameterized queries',
-      );
-    }
-  }
+    } 
+    
   else if(ordinalParameters !== undefined) {
     for (const value of ordinalParameters) {
       const param = value instanceof DBSQLParameter ? value : new DBSQLParameter({ value });
