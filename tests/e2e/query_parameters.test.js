@@ -106,13 +106,13 @@ describe.skip('Query parameters', () => {
     const operation = await session.executeStatement(
       `
         SELECT
-          :1 AS col_bool,
-          :2 AS col_int,
-          :3 AS col_double,
-          :4 AS col_bigint_1,
-          :5 AS col_bigint_2,
-          :6 as col_timestamp,
-          :7 AS col_str
+          ? AS col_bool,
+          ? AS col_int,
+          ? AS col_double,
+          ? AS col_bigint_1,
+          ? AS col_bigint_2,
+          ? as col_timestamp,
+          ? AS col_str
       `,
       {
         ordinalParameters:[true,1234,3.14,BigInt(1234),new Int64(1234),new Date('2023-09-06T03:14:27.843Z'), 'Hello']
