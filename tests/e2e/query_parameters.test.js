@@ -115,7 +115,15 @@ describe.skip('Query parameters', () => {
           ? AS col_str
       `,
       {
-        ordinalParameters:[true,1234,3.14,BigInt(1234),new Int64(1234),new Date('2023-09-06T03:14:27.843Z'), 'Hello']
+        ordinalParameters: [
+          true,
+          1234,
+          3.14,
+          BigInt(1234),
+          new Int64(1234),
+          new Date('2023-09-06T03:14:27.843Z'),
+          'Hello',
+        ],
       },
     );
     const result = await operation.fetchAll();
