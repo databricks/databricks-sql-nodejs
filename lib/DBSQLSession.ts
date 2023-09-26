@@ -86,15 +86,19 @@ function getArrowOptions(): {
 function getQueryParameters(
   sessionHandle: TSessionHandle,
   namedParameters?: Record<string, DBSQLParameter | DBSQLParameterValue>,
-  ordinalParameters?: (DBSQLParameter | DBSQLParameterValue)[],
+  ordinalParameters?: Array<DBSQLParameter | DBSQLParameterValue>,
 ): Array<TSparkParameter> {
-  const result: Array<TSparkParameter> = [];
-  if (namedParameters !== undefined && ordinalParameters !== undefined) {
+  const namedParametersProvided = namedParameters !== undefined && Object.keys(namedParameters).length > 0;
+  const ordinalParametersProvided = ordinalParameters !== undefined && ordinalParameters.length > 0;
+
+  if (namedParametersProvided && ordinalParametersProvided) {
     throw new ParameterError('Driver does not support both ordinal and named parameters.');
   }
-  if (namedParameters === undefined && ordinalParameters === undefined) {
+
+  if (!namedParametersProvided && !ordinalParametersProvided) {
     return [];
   }
+
   if (
     !sessionHandle.serverProtocolVersion ||
     sessionHandle.serverProtocolVersion < TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V8
@@ -104,6 +108,9 @@ function getQueryParameters(
       'Server version does not support parameterized queries',
     );
   }
+
+  const result: Array<TSparkParameter> = [];
+
   if (namedParameters !== undefined) {
     for (const name of Object.keys(namedParameters)) {
       const value = namedParameters[name];
@@ -112,7 +119,9 @@ function getQueryParameters(
       sparkParam.name = name;
       result.push(sparkParam);
     }
-  } else if (ordinalParameters !== undefined) {
+  }
+
+  if (ordinalParameters !== undefined) {
     for (const value of ordinalParameters) {
       const param = value instanceof DBSQLParameter ? value : new DBSQLParameter({ value });
       const sparkParam = param.toSparkParameter();

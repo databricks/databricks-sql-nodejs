@@ -14,7 +14,7 @@ export type ExecuteStatementOptions = {
   useCloudFetch?: boolean;
   stagingAllowedLocalPath?: string | string[];
   namedParameters?: Record<string, DBSQLParameter | DBSQLParameterValue>;
-  ordinalParameters?: (DBSQLParameter | DBSQLParameterValue)[];
+  ordinalParameters?: Array<DBSQLParameter | DBSQLParameterValue>;
 };
 
 export type TypeInfoRequest = {
