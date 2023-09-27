@@ -37,6 +37,7 @@ import HiveDriverError from './errors/HiveDriverError';
 import globalConfig from './globalConfig';
 import StagingError from './errors/StagingError';
 import { DBSQLParameter, DBSQLParameterValue } from './DBSQLParameter';
+import ParameterError from './errors/ParameterError';
 
 const defaultMaxRows = 100000;
 
@@ -85,26 +86,46 @@ function getArrowOptions(): {
 function getQueryParameters(
   sessionHandle: TSessionHandle,
   namedParameters?: Record<string, DBSQLParameter | DBSQLParameterValue>,
+  ordinalParameters?: Array<DBSQLParameter | DBSQLParameterValue>,
 ): Array<TSparkParameter> {
+  const namedParametersProvided = namedParameters !== undefined && Object.keys(namedParameters).length > 0;
+  const ordinalParametersProvided = ordinalParameters !== undefined && ordinalParameters.length > 0;
+
+  if (namedParametersProvided && ordinalParametersProvided) {
+    throw new ParameterError('Driver does not support both ordinal and named parameters.');
+  }
+
+  if (!namedParametersProvided && !ordinalParametersProvided) {
+    return [];
+  }
+
+  if (
+    !sessionHandle.serverProtocolVersion ||
+    sessionHandle.serverProtocolVersion < TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V8
+  ) {
+    throw new Thrift.TProtocolException(
+      Thrift.TProtocolExceptionType.BAD_VERSION,
+      'Server version does not support parameterized queries',
+    );
+  }
+
   const result: Array<TSparkParameter> = [];
 
   if (namedParameters !== undefined) {
-    if (
-      sessionHandle?.serverProtocolVersion &&
-      sessionHandle.serverProtocolVersion >= TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V8
-    ) {
-      for (const name of Object.keys(namedParameters)) {
-        const value = namedParameters[name];
-        const param = value instanceof DBSQLParameter ? value : new DBSQLParameter({ value });
-        const sparkParam = param.toSparkParameter();
-        sparkParam.name = name;
-        result.push(sparkParam);
-      }
-    } else {
-      throw new Thrift.TProtocolException(
-        Thrift.TProtocolExceptionType.BAD_VERSION,
-        'Server version does not support parameterized queries',
-      );
+    for (const name of Object.keys(namedParameters)) {
+      const value = namedParameters[name];
+      const param = value instanceof DBSQLParameter ? value : new DBSQLParameter({ value });
+      const sparkParam = param.toSparkParameter();
+      sparkParam.name = name;
+      result.push(sparkParam);
+    }
+  }
+
+  if (ordinalParameters !== undefined) {
+    for (const value of ordinalParameters) {
+      const param = value instanceof DBSQLParameter ? value : new DBSQLParameter({ value });
+      const sparkParam = param.toSparkParameter();
+      result.push(sparkParam);
     }
   }
 
@@ -177,7 +198,7 @@ export default class DBSQLSession implements IDBSQLSession {
       ...getDirectResultsOptions(options.maxRows),
       ...getArrowOptions(),
       canDownloadResult: options.useCloudFetch ?? globalConfig.useCloudFetch,
-      parameters: getQueryParameters(this.sessionHandle, options.namedParameters),
+      parameters: getQueryParameters(this.sessionHandle, options.namedParameters, options.ordinalParameters),
     });
     const response = await this.handleResponse(operationPromise);
     const operation = this.createOperation(response);

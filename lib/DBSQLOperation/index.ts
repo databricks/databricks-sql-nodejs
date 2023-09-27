@@ -14,9 +14,9 @@ import {
   TGetResultSetMetadataResp,
   TSparkRowSetType,
   TCloseOperationResp,
+  TOperationState,
 } from '../../thrift/TCLIService_types';
 import Status from '../dto/Status';
-import OperationStatusHelper from './OperationStatusHelper';
 import FetchResultsHelper from './FetchResultsHelper';
 import IDBSQLLogger, { LogLevel } from '../contracts/IDBSQLLogger';
 import OperationStateError, { OperationStateErrorCode } from '../errors/OperationStateError';
@@ -33,6 +33,14 @@ interface DBSQLOperationConstructorOptions {
   logger: IDBSQLLogger;
 }
 
+async function delay(ms?: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(() => {
+      resolve();
+    }, ms);
+  });
+}
+
 export default class DBSQLOperation implements IOperation {
   private readonly driver: HiveDriver;
 
@@ -41,8 +49,6 @@ export default class DBSQLOperation implements IOperation {
   private readonly logger: IDBSQLLogger;
 
   public onClose?: () => void;
-
-  private readonly _status: OperationStatusHelper;
 
   private readonly _data: FetchResultsHelper;
 
@@ -53,6 +59,14 @@ export default class DBSQLOperation implements IOperation {
   private cancelled: boolean = false;
 
   private metadata?: TGetResultSetMetadataResp;
+
+  private state: number = TOperationState.INITIALIZED_STATE;
+
+  // Once operation is finished or fails - cache status response, because subsequent calls
+  // to `getOperationStatus()` may fail with irrelevant errors, e.g. HTTP 404
+  private operationStatus?: TGetOperationStatusResp;
+
+  private hasResultSet: boolean = false;
 
   private resultHandler?: IOperationResult;
 
@@ -68,7 +82,11 @@ export default class DBSQLOperation implements IOperation {
 
     const useOnlyPrefetchedResults = Boolean(directResults?.closeOperation);
 
-    this._status = new OperationStatusHelper(this.driver, this.operationHandle, directResults?.operationStatus);
+    this.hasResultSet = operationHandle.hasResultSet;
+    if (directResults?.operationStatus) {
+      this.processOperationStatusResponse(directResults.operationStatus);
+    }
+
     this.metadata = directResults?.resultSetMetadata;
     this._data = new FetchResultsHelper(
       this.driver,
@@ -117,7 +135,7 @@ export default class DBSQLOperation implements IOperation {
   public async fetchChunk(options?: FetchOptions): Promise<Array<object>> {
     await this.failIfClosed();
 
-    if (!this._status.hasResultSet) {
+    if (!this.hasResultSet) {
       return [];
     }
 
@@ -146,7 +164,17 @@ export default class DBSQLOperation implements IOperation {
   public async status(progress: boolean = false): Promise<TGetOperationStatusResp> {
     await this.failIfClosed();
     this.logger?.log(LogLevel.debug, `Fetching status for operation with id: ${this.getId()}`);
-    return this._status.status(progress);
+
+    if (this.operationStatus) {
+      return this.operationStatus;
+    }
+
+    const response = await this.driver.getOperationStatus({
+      operationHandle: this.operationHandle,
+      getProgressUpdate: progress,
+    });
+
+    return this.processOperationStatusResponse(response);
   }
 
   /**
@@ -220,7 +248,7 @@ export default class DBSQLOperation implements IOperation {
   public async getSchema(options?: GetSchemaOptions): Promise<TTableSchema | null> {
     await this.failIfClosed();
 
-    if (!this._status.hasResultSet) {
+    if (!this.hasResultSet) {
       return null;
     }
 
@@ -247,18 +275,58 @@ export default class DBSQLOperation implements IOperation {
   }
 
   private async waitUntilReady(options?: WaitUntilReadyOptions) {
-    try {
-      await this._status.waitUntilReady(options);
-    } catch (error) {
-      if (error instanceof OperationStateError) {
-        if (error.errorCode === OperationStateErrorCode.Canceled) {
-          this.cancelled = true;
-        }
-        if (error.errorCode === OperationStateErrorCode.Closed) {
-          this.closed = true;
-        }
+    if (this.state === TOperationState.FINISHED_STATE) {
+      return;
+    }
+
+    let isReady = false;
+
+    while (!isReady) {
+      // eslint-disable-next-line no-await-in-loop
+      const response = await this.status(Boolean(options?.progress));
+
+      if (options?.callback) {
+        // eslint-disable-next-line no-await-in-loop
+        await Promise.resolve(options.callback(response));
       }
-      throw error;
+
+      switch (response.operationState) {
+        // For these states do nothing and continue waiting
+        case TOperationState.INITIALIZED_STATE:
+        case TOperationState.PENDING_STATE:
+        case TOperationState.RUNNING_STATE:
+          break;
+
+        // Operation is completed, so exit the loop
+        case TOperationState.FINISHED_STATE:
+          isReady = true;
+          break;
+
+        // Operation was cancelled, so set a flag and exit the loop (throw an error)
+        case TOperationState.CANCELED_STATE:
+          this.cancelled = true;
+          throw new OperationStateError(OperationStateErrorCode.Canceled, response);
+
+        // Operation was closed, so set a flag and exit the loop (throw an error)
+        case TOperationState.CLOSED_STATE:
+          this.closed = true;
+          throw new OperationStateError(OperationStateErrorCode.Closed, response);
+
+        // Error states - throw and exit the loop
+        case TOperationState.ERROR_STATE:
+          throw new OperationStateError(OperationStateErrorCode.Error, response);
+        case TOperationState.TIMEDOUT_STATE:
+          throw new OperationStateError(OperationStateErrorCode.Timeout, response);
+        case TOperationState.UKNOWN_STATE:
+        default:
+          throw new OperationStateError(OperationStateErrorCode.Unknown, response);
+      }
+
+      // If not ready yet - make some delay before the next status requests
+      if (!isReady) {
+        // eslint-disable-next-line no-await-in-loop
+        await delay(100);
+      }
     }
   }
 
@@ -300,5 +368,27 @@ export default class DBSQLOperation implements IOperation {
     }
 
     return this.resultHandler;
+  }
+
+  private processOperationStatusResponse(response: TGetOperationStatusResp) {
+    Status.assert(response.status);
+
+    this.state = response.operationState ?? this.state;
+
+    if (typeof response.hasResultSet === 'boolean') {
+      this.hasResultSet = response.hasResultSet;
+    }
+
+    const isInProgress = [
+      TOperationState.INITIALIZED_STATE,
+      TOperationState.PENDING_STATE,
+      TOperationState.RUNNING_STATE,
+    ].includes(this.state);
+
+    if (!isInProgress) {
+      this.operationStatus = response;
+    }
+
+    return response;
   }
 }
