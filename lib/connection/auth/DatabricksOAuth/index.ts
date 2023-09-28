@@ -1,4 +1,4 @@
-import { HttpHeaders } from 'thrift';
+import { HeadersInit } from 'node-fetch';
 import IAuthentication from '../../contracts/IAuthentication';
 import IDBSQLLogger from '../../../contracts/IDBSQLLogger';
 import OAuthPersistence, { OAuthPersistenceCache } from './OAuthPersistence';
@@ -9,7 +9,7 @@ interface DatabricksOAuthOptions extends OAuthManagerOptions {
   scopes?: OAuthScopes;
   logger?: IDBSQLLogger;
   persistence?: OAuthPersistence;
-  headers?: HttpHeaders;
+  headers?: HeadersInit;
 }
 
 export default class DatabricksOAuth implements IAuthentication {
@@ -27,7 +27,7 @@ export default class DatabricksOAuth implements IAuthentication {
     this.manager = OAuthManager.getManager(this.options);
   }
 
-  public async authenticate(): Promise<HttpHeaders> {
+  public async authenticate(): Promise<HeadersInit> {
     const { host, scopes, headers } = this.options;
 
     const persistence = this.options.persistence ?? this.defaultPersistence;

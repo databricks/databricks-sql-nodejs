@@ -3,37 +3,26 @@ const { expect } = require('chai');
 const HttpConnection = require('../../../../dist/connection/connections/HttpConnection').default;
 const ThriftHttpConnection = require('../../../../dist/connection/connections/ThriftHttpConnection').default;
 
-const thriftMock = (connection) => ({
-  createHttpConnection(host, port, options) {
-    this.host = host;
-    this.port = port;
-    this.options = options;
-    this.executed = true;
-    return connection;
-  },
-});
-
 describe('HttpConnection.connect', () => {
-  it('should successfully connect', async () => {
-    const connection = new HttpConnection();
-
-    expect(connection.isConnected()).to.be.false;
-
-    await connection.connect({
+  it('should create Thrift connection', async () => {
+    const connection = new HttpConnection({
       host: 'localhost',
       port: 10001,
       path: '/hive',
     });
 
-    expect(connection.connection.url).to.be.eq('http://localhost:10001/hive');
-    expect(connection.getConnection()).to.be.instanceOf(ThriftHttpConnection);
-    expect(connection.isConnected()).to.be.true;
+    const thriftConnection = await connection.getThriftConnection();
+
+    expect(thriftConnection).to.be.instanceOf(ThriftHttpConnection);
+    expect(thriftConnection.url).to.be.equal('http://localhost:10001/hive');
+
+    // We expect that connection will be cached
+    const anotherConnection = await connection.getThriftConnection();
+    expect(anotherConnection).to.eq(thriftConnection);
   });
 
   it('should set SSL certificates and disable rejectUnauthorized', async () => {
-    const connection = new HttpConnection();
-
-    await connection.connect({
+    const connection = new HttpConnection({
       host: 'localhost',
       port: 10001,
       path: '/hive',
@@ -43,22 +32,82 @@ describe('HttpConnection.connect', () => {
       key: 'key',
     });
 
-    expect(connection.connection.config.agent.options.rejectUnauthorized).to.be.false;
-    expect(connection.connection.config.agent.options.ca).to.be.eq('ca');
-    expect(connection.connection.config.agent.options.cert).to.be.eq('cert');
-    expect(connection.connection.config.agent.options.key).to.be.eq('key');
+    const thriftConnection = await connection.getThriftConnection();
+
+    expect(thriftConnection.config.agent.options.rejectUnauthorized).to.be.false;
+    expect(thriftConnection.config.agent.options.ca).to.be.eq('ca');
+    expect(thriftConnection.config.agent.options.cert).to.be.eq('cert');
+    expect(thriftConnection.config.agent.options.key).to.be.eq('key');
   });
 
   it('should initialize http agents', async () => {
-    const connection = new HttpConnection();
-
-    await connection.connect({
+    const connection = new HttpConnection({
       host: 'localhost',
       port: 10001,
       https: false,
       path: '/hive',
     });
 
-    expect(connection.connection.config.agent).to.be.instanceOf(http.Agent);
+    const thriftConnection = await connection.getThriftConnection();
+
+    expect(thriftConnection.config.agent).to.be.instanceOf(http.Agent);
+  });
+
+  it('should update headers (case 1: Thrift connection not initialized)', async () => {
+    const initialHeaders = {
+      a: 'test header A',
+      b: 'test header B',
+    };
+
+    const connection = new HttpConnection({
+      host: 'localhost',
+      port: 10001,
+      path: '/hive',
+      headers: initialHeaders,
+    });
+
+    const extraHeaders = {
+      b: 'new header B',
+      c: 'test header C',
+    };
+    connection.setHeaders(extraHeaders);
+    expect(connection.headers).to.deep.equal(extraHeaders);
+
+    const thriftConnection = await connection.getThriftConnection();
+
+    expect(thriftConnection.config.headers).to.deep.equal({
+      ...initialHeaders,
+      ...extraHeaders,
+    });
+  });
+
+  it('should update headers (case 2: Thrift connection initialized)', async () => {
+    const initialHeaders = {
+      a: 'test header A',
+      b: 'test header B',
+    };
+
+    const connection = new HttpConnection({
+      host: 'localhost',
+      port: 10001,
+      path: '/hive',
+      headers: initialHeaders,
+    });
+
+    const thriftConnection = await connection.getThriftConnection();
+
+    expect(connection.headers).to.deep.equal({});
+    expect(thriftConnection.config.headers).to.deep.equal(initialHeaders);
+
+    const extraHeaders = {
+      b: 'new header B',
+      c: 'test header C',
+    };
+    connection.setHeaders(extraHeaders);
+    expect(connection.headers).to.deep.equal(extraHeaders);
+    expect(thriftConnection.config.headers).to.deep.equal({
+      ...initialHeaders,
+      ...extraHeaders,
+    });
   });
 });
