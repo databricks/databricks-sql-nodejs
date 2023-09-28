@@ -32,7 +32,7 @@ describe('DBSQLClient.connect', () => {
     const path = 'example/path';
     const connectionOptions = client.getConnectionOptions({ ...options, path }, {});
 
-    expect(connectionOptions.options.path).to.equal(`/${path}`);
+    expect(connectionOptions.path).to.equal(`/${path}`);
   });
 
   it('should not prepend "/" to path if it is already available', async () => {
@@ -41,7 +41,7 @@ describe('DBSQLClient.connect', () => {
     const path = '/example/path';
     const connectionOptions = client.getConnectionOptions({ ...options, path }, {});
 
-    expect(connectionOptions.options.path).to.equal(path);
+    expect(connectionOptions.path).to.equal(path);
   });
 
   it('should initialize connection state', async () => {

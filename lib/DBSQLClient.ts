@@ -80,14 +80,12 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
     return {
       host,
       port: port || 443,
-      options: {
-        path: prependSlash(path),
-        https: true,
-        ...otherOptions,
-        headers: {
-          ...headers,
-          'User-Agent': buildUserAgentString(options.clientId),
-        },
+      path: prependSlash(path),
+      https: true,
+      ...otherOptions,
+      headers: {
+        ...headers,
+        'User-Agent': buildUserAgentString(options.clientId),
       },
     };
   }
