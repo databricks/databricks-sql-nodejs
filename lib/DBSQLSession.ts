@@ -105,7 +105,7 @@ function getQueryParameters(
   ) {
     throw new Thrift.TProtocolException(
       Thrift.TProtocolExceptionType.BAD_VERSION,
-      'Server version does not support parameterized queries',
+      'Parameterized operations are not supported by this server. Support will begin with server version DBR 14.1',
     );
   }
 
