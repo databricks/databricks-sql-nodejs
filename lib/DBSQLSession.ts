@@ -115,17 +115,14 @@ function getQueryParameters(
     for (const name of Object.keys(namedParameters)) {
       const value = namedParameters[name];
       const param = value instanceof DBSQLParameter ? value : new DBSQLParameter({ value });
-      const sparkParam = param.toSparkParameter();
-      sparkParam.name = name;
-      result.push(sparkParam);
+      result.push(param.toSparkParameter({ name }));
     }
   }
 
   if (ordinalParameters !== undefined) {
     for (const value of ordinalParameters) {
       const param = value instanceof DBSQLParameter ? value : new DBSQLParameter({ value });
-      const sparkParam = param.toSparkParameter();
-      result.push(sparkParam);
+      result.push(param.toSparkParameter());
     }
   }
 
