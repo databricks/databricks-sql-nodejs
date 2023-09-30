@@ -1,7 +1,7 @@
 import Int64 from 'node-int64';
 import { TSparkParameter, TSparkParameterValue } from '../thrift/TCLIService_types';
 
-export type DBSQLParameterValue = boolean | number | bigint | Int64 | Date | string;
+export type DBSQLParameterValue = undefined | null | boolean | number | bigint | Int64 | Date | string;
 
 export enum DBSQLParameterType {
   STRING = 'STRING',
@@ -35,6 +35,10 @@ export class DBSQLParameter {
   }
 
   public toSparkParameter(): TSparkParameter {
+    if (this.value === undefined || this.value === null) {
+      return new TSparkParameter(); // for NULL neither `type` nor `value` should be set
+    }
+
     if (typeof this.value === 'boolean') {
       return new TSparkParameter({
         type: this.type ?? DBSQLParameterType.BOOLEAN,
