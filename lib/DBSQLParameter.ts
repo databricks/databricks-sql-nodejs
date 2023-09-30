@@ -4,6 +4,7 @@ import { TSparkParameter, TSparkParameterValue } from '../thrift/TCLIService_typ
 export type DBSQLParameterValue = undefined | null | boolean | number | bigint | Int64 | Date | string;
 
 export enum DBSQLParameterType {
+  VOID = 'VOID', // aka NULL
   STRING = 'STRING',
   DATE = 'DATE',
   TIMESTAMP = 'TIMESTAMP',
@@ -35,6 +36,12 @@ export class DBSQLParameter {
   }
 
   public toSparkParameter(): TSparkParameter {
+    // If VOID type was set explicitly - ignore value
+    if (this.type === DBSQLParameterType.VOID) {
+      return new TSparkParameter(); // for NULL neither `type` nor `value` should be set
+    }
+
+    // Infer NULL values
     if (this.value === undefined || this.value === null) {
       return new TSparkParameter(); // for NULL neither `type` nor `value` should be set
     }

@@ -28,6 +28,7 @@ describe('Query parameters', () => {
         SELECT
           :p_null_1 AS col_null_1,
           :p_null_2 AS col_null_2,
+          :p_null_3 AS col_null_3,
           :p_bool AS col_bool,
           :p_int AS col_int,
           :p_double AS col_double,
@@ -41,6 +42,7 @@ describe('Query parameters', () => {
         namedParameters: {
           p_null_1: new DBSQLParameter({ value: undefined }),
           p_null_2: new DBSQLParameter({ value: null }),
+          p_null_3: new DBSQLParameter({ type: DBSQLParameterType.VOID, value: 'Test' }),
           p_bool: new DBSQLParameter({ value: true }),
           p_int: new DBSQLParameter({ value: 1234 }),
           p_double: new DBSQLParameter({ value: 3.14 }),
@@ -57,6 +59,7 @@ describe('Query parameters', () => {
       {
         col_null_1: null,
         col_null_2: null,
+        col_null_3: null,
         col_bool: true,
         col_int: 1234,
         col_double: 3.14,
@@ -121,6 +124,7 @@ describe('Query parameters', () => {
         SELECT
           ? AS col_null_1,
           ? AS col_null_2,
+          ? AS col_null_3,
           ? AS col_bool,
           ? AS col_int,
           ? AS col_double,
@@ -134,6 +138,7 @@ describe('Query parameters', () => {
         ordinalParameters: [
           new DBSQLParameter({ value: undefined }),
           new DBSQLParameter({ value: null }),
+          new DBSQLParameter({ type: DBSQLParameterType.VOID, value: 'Test' }),
           new DBSQLParameter({ value: true }),
           new DBSQLParameter({ value: 1234 }),
           new DBSQLParameter({ value: 3.14 }),
@@ -150,6 +155,7 @@ describe('Query parameters', () => {
       {
         col_null_1: null,
         col_null_2: null,
+        col_null_3: null,
         col_bool: true,
         col_int: 1234,
         col_double: 3.14,
