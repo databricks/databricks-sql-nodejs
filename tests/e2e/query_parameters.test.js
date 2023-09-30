@@ -26,6 +26,9 @@ describe('Query parameters', () => {
     const operation = await session.executeStatement(
       `
         SELECT
+          :p_null_1 AS col_null_1,
+          :p_null_2 AS col_null_2,
+          :p_null_3 AS col_null_3,
           :p_bool AS col_bool,
           :p_int AS col_int,
           :p_double AS col_double,
@@ -37,6 +40,9 @@ describe('Query parameters', () => {
       `,
       {
         namedParameters: {
+          p_null_1: new DBSQLParameter({ value: undefined }),
+          p_null_2: new DBSQLParameter({ value: null }),
+          p_null_3: new DBSQLParameter({ type: DBSQLParameterType.VOID, value: 'Test' }),
           p_bool: new DBSQLParameter({ value: true }),
           p_int: new DBSQLParameter({ value: 1234 }),
           p_double: new DBSQLParameter({ value: 3.14 }),
@@ -51,6 +57,9 @@ describe('Query parameters', () => {
     const result = await operation.fetchAll();
     expect(result).to.deep.equal([
       {
+        col_null_1: null,
+        col_null_2: null,
+        col_null_3: null,
         col_bool: true,
         col_int: 1234,
         col_double: 3.14,
@@ -68,6 +77,8 @@ describe('Query parameters', () => {
     const operation = await session.executeStatement(
       `
         SELECT
+          :p_null_1 AS col_null_1,
+          :p_null_2 AS col_null_2,
           :p_bool AS col_bool,
           :p_int AS col_int,
           :p_double AS col_double,
@@ -78,6 +89,8 @@ describe('Query parameters', () => {
       `,
       {
         namedParameters: {
+          p_null_1: undefined,
+          p_null_2: null,
           p_bool: true,
           p_int: 1234,
           p_double: 3.14,
@@ -91,6 +104,8 @@ describe('Query parameters', () => {
     const result = await operation.fetchAll();
     expect(result).to.deep.equal([
       {
+        col_null_1: null,
+        col_null_2: null,
         col_bool: true,
         col_int: 1234,
         col_double: 3.14,
@@ -107,6 +122,9 @@ describe('Query parameters', () => {
     const operation = await session.executeStatement(
       `
         SELECT
+          ? AS col_null_1,
+          ? AS col_null_2,
+          ? AS col_null_3,
           ? AS col_bool,
           ? AS col_int,
           ? AS col_double,
@@ -117,21 +135,27 @@ describe('Query parameters', () => {
           ? AS col_str
       `,
       {
-        namedParameters: {
-          p_bool: new DBSQLParameter({ value: true }),
-          p_int: new DBSQLParameter({ value: 1234 }),
-          p_double: new DBSQLParameter({ value: 3.14 }),
-          p_bigint_1: new DBSQLParameter({ value: BigInt(1234) }),
-          p_bigint_2: new DBSQLParameter({ value: new Int64(1234) }),
-          p_date: new DBSQLParameter({ value: new Date('2023-09-06T03:14:27.843Z'), type: DBSQLParameterType.DATE }),
-          p_timestamp: new DBSQLParameter({ value: new Date('2023-09-06T03:14:27.843Z') }),
-          p_str: new DBSQLParameter({ value: 'Hello' }),
-        },
+        ordinalParameters: [
+          new DBSQLParameter({ value: undefined }),
+          new DBSQLParameter({ value: null }),
+          new DBSQLParameter({ type: DBSQLParameterType.VOID, value: 'Test' }),
+          new DBSQLParameter({ value: true }),
+          new DBSQLParameter({ value: 1234 }),
+          new DBSQLParameter({ value: 3.14 }),
+          new DBSQLParameter({ value: BigInt(1234) }),
+          new DBSQLParameter({ value: new Int64(1234) }),
+          new DBSQLParameter({ value: new Date('2023-09-06T03:14:27.843Z'), type: DBSQLParameterType.DATE }),
+          new DBSQLParameter({ value: new Date('2023-09-06T03:14:27.843Z') }),
+          new DBSQLParameter({ value: 'Hello' }),
+        ],
       },
     );
     const result = await operation.fetchAll();
     expect(result).to.deep.equal([
       {
+        col_null_1: null,
+        col_null_2: null,
+        col_null_3: null,
         col_bool: true,
         col_int: 1234,
         col_double: 3.14,
@@ -149,6 +173,8 @@ describe('Query parameters', () => {
     const operation = await session.executeStatement(
       `
         SELECT
+          ? AS col_null_1,
+          ? AS col_null_2,
           ? AS col_bool,
           ? AS col_int,
           ? AS col_double,
@@ -159,6 +185,8 @@ describe('Query parameters', () => {
       `,
       {
         ordinalParameters: [
+          undefined,
+          null,
           true,
           1234,
           3.14,
@@ -172,6 +200,8 @@ describe('Query parameters', () => {
     const result = await operation.fetchAll();
     expect(result).to.deep.equal([
       {
+        col_null_1: null,
+        col_null_2: null,
         col_bool: true,
         col_int: 1234,
         col_double: 3.14,
