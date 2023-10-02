@@ -6,7 +6,6 @@ import {
   TRowSet,
 } from '../../thrift/TCLIService_types';
 import { ColumnCode, FetchType, Int64 } from '../hive/Types';
-import HiveDriver from '../hive/HiveDriver';
 import Status from '../dto/Status';
 import IClientContext from '../contracts/IClientContext';
 
@@ -39,8 +38,6 @@ function checkIfOperationHasMoreRows(response: TFetchResultsResp): boolean {
 export default class FetchResultsHelper {
   private readonly context: IClientContext;
 
-  private readonly driver: HiveDriver;
-
   private readonly operationHandle: TOperationHandle;
 
   private fetchOrientation: TFetchOrientation = TFetchOrientation.FETCH_FIRST;
@@ -53,13 +50,11 @@ export default class FetchResultsHelper {
 
   constructor(
     context: IClientContext,
-    driver: HiveDriver,
     operationHandle: TOperationHandle,
     prefetchedResults: Array<TFetchResultsResp | undefined>,
     returnOnlyPrefetchedResults: boolean,
   ) {
     this.context = context;
-    this.driver = driver;
     this.operationHandle = operationHandle;
     prefetchedResults.forEach((item) => {
       if (item) {
@@ -90,7 +85,8 @@ export default class FetchResultsHelper {
       return this.processFetchResponse(prefetchedResponse);
     }
 
-    const response = await this.driver.fetchResults({
+    const driver = await this.context.getDriver();
+    const response = await driver.fetchResults({
       operationHandle: this.operationHandle,
       orientation: this.fetchOrientation,
       maxRows: new Int64(maxRows),

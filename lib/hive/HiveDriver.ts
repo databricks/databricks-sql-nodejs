@@ -42,13 +42,14 @@ import CloseOperationCommand from './Commands/CloseOperationCommand';
 import GetDelegationTokenCommand from './Commands/GetDelegationTokenCommand';
 import CancelDelegationTokenCommand from './Commands/CancelDelegationTokenCommand';
 import RenewDelegationTokenCommand from './Commands/RenewDelegationTokenCommand';
+import IDriver from '../contracts/IDriver';
 import IClientContext from '../contracts/IClientContext';
 
 export interface HiveDriverOptions {
   context: IClientContext;
 }
 
-export default class HiveDriver {
+export default class HiveDriver implements IDriver {
   private readonly context: IClientContext;
 
   constructor(options: HiveDriverOptions) {

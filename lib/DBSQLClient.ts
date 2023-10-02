@@ -4,6 +4,7 @@ import { EventEmitter } from 'events';
 import TCLIService from '../thrift/TCLIService';
 import { TProtocolVersion } from '../thrift/TCLIService_types';
 import IDBSQLClient, { ClientOptions, ConnectionOptions, OpenSessionRequest } from './contracts/IDBSQLClient';
+import IDriver from './contracts/IDriver';
 import IClientContext from './contracts/IClientContext';
 import HiveDriver from './hive/HiveDriver';
 import { Int64 } from './hive/Types';
@@ -48,6 +49,10 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
   private authProvider?: IAuthentication;
 
   private client?: TCLIService.Client;
+
+  private readonly driver = new HiveDriver({
+    context: this,
+  });
 
   private readonly logger: IDBSQLLogger;
 
@@ -158,18 +163,13 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
    * const session = await client.openSession();
    */
   public async openSession(request: OpenSessionRequest = {}): Promise<IDBSQLSession> {
-    const driver = new HiveDriver({
-      context: this,
-    });
-
-    const response = await driver.openSession({
+    const response = await this.driver.openSession({
       client_protocol_i64: new Int64(TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V8),
       ...getInitialNamespaceOptions(request.initialCatalog, request.initialSchema),
     });
 
     Status.assert(response.status);
     const session = new DBSQLSession({
-      driver,
       handle: definedOrError(response.sessionHandle),
       context: this,
     });
@@ -211,5 +211,9 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
     }
 
     return this.client;
+  }
+
+  public async getDriver(): Promise<IDriver> {
+    return this.driver;
   }
 }

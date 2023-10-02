@@ -5,7 +5,6 @@ import IOperation, {
   GetSchemaOptions,
   WaitUntilReadyOptions,
 } from '../contracts/IOperation';
-import HiveDriver from '../hive/HiveDriver';
 import {
   TGetOperationStatusResp,
   TOperationHandle,
@@ -32,7 +31,6 @@ const defaultMaxRows = 100000;
 
 interface DBSQLOperationConstructorOptions {
   handle: TOperationHandle;
-  driver: HiveDriver;
   directResults?: TSparkDirectResults;
   context: IClientContext;
 }
@@ -47,8 +45,6 @@ async function delay(ms?: number): Promise<void> {
 
 export default class DBSQLOperation implements IOperation {
   private readonly context: IClientContext;
-
-  private readonly driver: HiveDriver;
 
   private readonly operationHandle: TOperationHandle;
 
@@ -74,8 +70,7 @@ export default class DBSQLOperation implements IOperation {
 
   private resultHandler?: IOperationResult;
 
-  constructor({ driver, handle, directResults, context }: DBSQLOperationConstructorOptions) {
-    this.driver = driver;
+  constructor({ handle, directResults, context }: DBSQLOperationConstructorOptions) {
     this.operationHandle = handle;
     this.context = context;
 
@@ -89,7 +84,6 @@ export default class DBSQLOperation implements IOperation {
     this.metadata = directResults?.resultSetMetadata;
     this._data = new FetchResultsHelper(
       this.context,
-      this.driver,
       this.operationHandle,
       [directResults?.resultSet],
       useOnlyPrefetchedResults,
@@ -171,7 +165,8 @@ export default class DBSQLOperation implements IOperation {
       return this.operationStatus;
     }
 
-    const response = await this.driver.getOperationStatus({
+    const driver = await this.context.getDriver();
+    const response = await driver.getOperationStatus({
       operationHandle: this.operationHandle,
       getProgressUpdate: progress,
     });
@@ -190,7 +185,8 @@ export default class DBSQLOperation implements IOperation {
 
     this.context.getLogger().log(LogLevel.debug, `Cancelling operation with id: ${this.getId()}`);
 
-    const response = await this.driver.cancelOperation({
+    const driver = await this.context.getDriver();
+    const response = await driver.cancelOperation({
       operationHandle: this.operationHandle,
     });
     Status.assert(response.status);
@@ -213,9 +209,10 @@ export default class DBSQLOperation implements IOperation {
 
     this.context.getLogger().log(LogLevel.debug, `Closing operation with id: ${this.getId()}`);
 
+    const driver = await this.context.getDriver();
     const response =
       this.closeOperation ??
-      (await this.driver.closeOperation({
+      (await driver.closeOperation({
         operationHandle: this.operationHandle,
       }));
     Status.assert(response.status);
@@ -334,7 +331,8 @@ export default class DBSQLOperation implements IOperation {
 
   private async fetchMetadata() {
     if (!this.metadata) {
-      const metadata = await this.driver.getResultSetMetadata({
+      const driver = await this.context.getDriver();
+      const metadata = await driver.getResultSetMetadata({
         operationHandle: this.operationHandle,
       });
       Status.assert(metadata.status);
