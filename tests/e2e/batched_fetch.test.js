@@ -37,14 +37,14 @@ describe('Data fetching', () => {
 
   it('fetch chunks should return a max row set of chunkSize', async () => {
     const session = await openSession();
-    sinon.spy(session.driver, 'fetchResults');
+    sinon.spy(session.context.driver, 'fetchResults');
     try {
       // set `maxRows` to null to disable direct results so all the data are fetched through `driver.fetchResults`
       const operation = await session.executeStatement(query, { maxRows: null });
       let chunkedOp = await operation.fetchChunk({ maxRows: 10 }).catch((error) => logger(error));
       expect(chunkedOp.length).to.be.equal(10);
       // we explicitly requested only one chunk
-      expect(session.driver.fetchResults.callCount).to.equal(1);
+      expect(session.context.driver.fetchResults.callCount).to.equal(1);
     } finally {
       await session.close();
     }
@@ -52,14 +52,14 @@ describe('Data fetching', () => {
 
   it('fetch all should fetch all records', async () => {
     const session = await openSession();
-    sinon.spy(session.driver, 'fetchResults');
+    sinon.spy(session.context.driver, 'fetchResults');
     try {
       // set `maxRows` to null to disable direct results so all the data are fetched through `driver.fetchResults`
       const operation = await session.executeStatement(query, { maxRows: null });
       let all = await operation.fetchAll({ maxRows: 200 });
       expect(all.length).to.be.equal(1000);
       // 1000/200 = 5 chunks + one extra request to ensure that there's no more data
-      expect(session.driver.fetchResults.callCount).to.equal(6);
+      expect(session.context.driver.fetchResults.callCount).to.equal(6);
     } finally {
       await session.close();
     }
@@ -67,14 +67,14 @@ describe('Data fetching', () => {
 
   it('should fetch all records if they fit within directResults response', async () => {
     const session = await openSession();
-    sinon.spy(session.driver, 'fetchResults');
+    sinon.spy(session.context.driver, 'fetchResults');
     try {
       // here `maxRows` enables direct results with limit of the first batch
       const operation = await session.executeStatement(query, { maxRows: 1000 });
       let all = await operation.fetchAll();
       expect(all.length).to.be.equal(1000);
       // all the data returned immediately from direct results, so no additional requests
-      expect(session.driver.fetchResults.callCount).to.equal(0);
+      expect(session.context.driver.fetchResults.callCount).to.equal(0);
     } finally {
       await session.close();
     }
@@ -82,7 +82,7 @@ describe('Data fetching', () => {
 
   it('should fetch all records if only part of them fit within directResults response', async () => {
     const session = await openSession();
-    sinon.spy(session.driver, 'fetchResults');
+    sinon.spy(session.context.driver, 'fetchResults');
     try {
       // here `maxRows` enables direct results with limit of the first batch
       const operation = await session.executeStatement(query, { maxRows: 200 });
@@ -91,7 +91,7 @@ describe('Data fetching', () => {
       expect(all.length).to.be.equal(1000);
       // 1 chunk returned immediately from direct results + 4 remaining chunks + one extra chunk to ensure
       // that there's no more data
-      expect(session.driver.fetchResults.callCount).to.equal(5);
+      expect(session.context.driver.fetchResults.callCount).to.equal(5);
     } finally {
       await session.close();
     }
