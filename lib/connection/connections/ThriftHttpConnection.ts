@@ -1,4 +1,4 @@
-/*
+/**
   This file is created using node_modules/thrift/lib/nodejs/lib/thrift/http_connection.js as an example
 
   The code relies on thrift internals, so be careful when upgrading `thrift` library

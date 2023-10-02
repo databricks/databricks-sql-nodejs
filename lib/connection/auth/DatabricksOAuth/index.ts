@@ -1,5 +1,5 @@
-import { HeadersInit } from 'node-fetch';
 import http from 'http';
+import { HeadersInit } from 'node-fetch';
 import IAuthentication from '../../contracts/IAuthentication';
 import IDBSQLLogger from '../../../contracts/IDBSQLLogger';
 import OAuthPersistence, { OAuthPersistenceCache } from './OAuthPersistence';

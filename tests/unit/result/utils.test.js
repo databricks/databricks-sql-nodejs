@@ -2,7 +2,6 @@ const { expect } = require('chai');
 const Int64 = require('node-int64');
 const { TCLIService_types } = require('../../../').thrift;
 const { getSchemaColumns, convertThriftValue } = require('../../../dist/result/utils');
-const { BigInt } = require('apache-arrow/util/compat');
 
 const { TTypeId } = TCLIService_types;
 

@@ -112,6 +112,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
    */
   public async connect(options: ConnectionOptions, authProvider?: IAuthentication): Promise<IDBSQLClient> {
     this.authProvider = this.getAuthProvider(options, authProvider);
+
     this.connectionProvider = new HttpConnection(this.getConnectionOptions(options));
 
     const thriftConnection = await this.connectionProvider.getThriftConnection();
@@ -159,7 +160,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
     const driver = new HiveDriver(() => this.getClient());
 
     const response = await driver.openSession({
-      client_protocol_i64: new Int64(TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V6),
+      client_protocol_i64: new Int64(TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V8),
       ...getInitialNamespaceOptions(request.initialCatalog, request.initialSchema),
     });
 

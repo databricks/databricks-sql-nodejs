@@ -23,7 +23,7 @@ export default class OperationStateError extends HiveDriverError {
   public response?: TGetOperationStatusResp;
 
   constructor(errorCode: OperationStateErrorCode, response?: TGetOperationStatusResp) {
-    super(errorMessages[errorCode]);
+    super(response?.displayMessage ?? errorMessages[errorCode]);
 
     this.errorCode = errorCode;
     this.response = response;

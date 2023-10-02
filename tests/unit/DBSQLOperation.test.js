@@ -113,8 +113,8 @@ describe('DBSQLOperation', () => {
       const driver = new DriverMock();
       const operation = new DBSQLOperation(driver, handle, logger);
 
-      expect(operation._status.state).to.equal(TOperationState.INITIALIZED_STATE);
-      expect(operation._status.hasResultSet).to.be.true;
+      expect(operation.state).to.equal(TOperationState.INITIALIZED_STATE);
+      expect(operation.hasResultSet).to.be.true;
     });
 
     it('should pick up state from directResults', async () => {
@@ -129,8 +129,8 @@ describe('DBSQLOperation', () => {
         },
       });
 
-      expect(operation._status.state).to.equal(TOperationState.FINISHED_STATE);
-      expect(operation._status.hasResultSet).to.be.true;
+      expect(operation.state).to.equal(TOperationState.FINISHED_STATE);
+      expect(operation.hasResultSet).to.be.true;
     });
 
     it('should fetch status and update internal state', async () => {
@@ -144,15 +144,15 @@ describe('DBSQLOperation', () => {
 
       const operation = new DBSQLOperation(driver, handle, logger);
 
-      expect(operation._status.state).to.equal(TOperationState.INITIALIZED_STATE);
-      expect(operation._status.hasResultSet).to.be.false;
+      expect(operation.state).to.equal(TOperationState.INITIALIZED_STATE);
+      expect(operation.hasResultSet).to.be.false;
 
       const status = await operation.status();
 
       expect(driver.getOperationStatus.called).to.be.true;
       expect(status.operationState).to.equal(TOperationState.FINISHED_STATE);
-      expect(operation._status.state).to.equal(TOperationState.FINISHED_STATE);
-      expect(operation._status.hasResultSet).to.be.true;
+      expect(operation.state).to.equal(TOperationState.FINISHED_STATE);
+      expect(operation.hasResultSet).to.be.true;
     });
 
     it('should request progress', async () => {
@@ -181,8 +181,8 @@ describe('DBSQLOperation', () => {
 
       const operation = new DBSQLOperation(driver, handle, logger);
 
-      expect(operation._status.state).to.equal(TOperationState.INITIALIZED_STATE);
-      expect(operation._status.hasResultSet).to.be.false;
+      expect(operation.state).to.equal(TOperationState.INITIALIZED_STATE);
+      expect(operation.hasResultSet).to.be.false;
 
       // First call - should fetch data and cache
       driver.getOperationStatusResp = {
@@ -193,8 +193,8 @@ describe('DBSQLOperation', () => {
 
       expect(driver.getOperationStatus.callCount).to.equal(1);
       expect(status1.operationState).to.equal(TOperationState.FINISHED_STATE);
-      expect(operation._status.state).to.equal(TOperationState.FINISHED_STATE);
-      expect(operation._status.hasResultSet).to.be.true;
+      expect(operation.state).to.equal(TOperationState.FINISHED_STATE);
+      expect(operation.hasResultSet).to.be.true;
 
       // Second call - should return cached data
       driver.getOperationStatusResp = {
@@ -205,8 +205,8 @@ describe('DBSQLOperation', () => {
 
       expect(driver.getOperationStatus.callCount).to.equal(1);
       expect(status2.operationState).to.equal(TOperationState.FINISHED_STATE);
-      expect(operation._status.state).to.equal(TOperationState.FINISHED_STATE);
-      expect(operation._status.hasResultSet).to.be.true;
+      expect(operation.state).to.equal(TOperationState.FINISHED_STATE);
+      expect(operation.hasResultSet).to.be.true;
     });
 
     it('should fetch status if directResults status is not finished', async () => {
@@ -226,15 +226,15 @@ describe('DBSQLOperation', () => {
         },
       });
 
-      expect(operation._status.state).to.equal(TOperationState.RUNNING_STATE); // from directResults
-      expect(operation._status.hasResultSet).to.be.false;
+      expect(operation.state).to.equal(TOperationState.RUNNING_STATE); // from directResults
+      expect(operation.hasResultSet).to.be.false;
 
       const status = await operation.status(false);
 
       expect(driver.getOperationStatus.called).to.be.true;
       expect(status.operationState).to.equal(TOperationState.FINISHED_STATE);
-      expect(operation._status.state).to.equal(TOperationState.FINISHED_STATE);
-      expect(operation._status.hasResultSet).to.be.true;
+      expect(operation.state).to.equal(TOperationState.FINISHED_STATE);
+      expect(operation.hasResultSet).to.be.true;
     });
 
     it('should not fetch status if directResults status is finished', async () => {
@@ -254,15 +254,15 @@ describe('DBSQLOperation', () => {
         },
       });
 
-      expect(operation._status.state).to.equal(TOperationState.FINISHED_STATE); // from directResults
-      expect(operation._status.hasResultSet).to.be.false;
+      expect(operation.state).to.equal(TOperationState.FINISHED_STATE); // from directResults
+      expect(operation.hasResultSet).to.be.false;
 
       const status = await operation.status(false);
 
       expect(driver.getOperationStatus.called).to.be.false;
       expect(status.operationState).to.equal(TOperationState.FINISHED_STATE);
-      expect(operation._status.state).to.equal(TOperationState.FINISHED_STATE);
-      expect(operation._status.hasResultSet).to.be.false;
+      expect(operation.state).to.equal(TOperationState.FINISHED_STATE);
+      expect(operation.hasResultSet).to.be.false;
     });
 
     it('should throw an error in case of a status error', async () => {
@@ -516,12 +516,12 @@ describe('DBSQLOperation', () => {
 
           const operation = new DBSQLOperation(driver, handle, logger);
 
-          expect(operation._status.state).to.equal(TOperationState.INITIALIZED_STATE);
+          expect(operation.state).to.equal(TOperationState.INITIALIZED_STATE);
 
           await operation.finished();
 
           expect(driver.getOperationStatus.callCount).to.be.equal(attemptsUntilFinished);
-          expect(operation._status.state).to.equal(TOperationState.FINISHED_STATE);
+          expect(operation.state).to.equal(TOperationState.FINISHED_STATE);
         });
       },
     );
@@ -676,7 +676,7 @@ describe('DBSQLOperation', () => {
 
       expect(driver.getOperationStatus.called).to.be.true;
       expect(schema).to.deep.equal(driver.getResultSetMetadataResp.schema);
-      expect(operation._status.state).to.equal(TOperationState.FINISHED_STATE);
+      expect(operation.state).to.equal(TOperationState.FINISHED_STATE);
     });
 
     it('should request progress', async () => {
@@ -887,7 +887,7 @@ describe('DBSQLOperation', () => {
 
       expect(driver.getOperationStatus.called).to.be.true;
       expect(results).to.deep.equal([]);
-      expect(operation._status.state).to.equal(TOperationState.FINISHED_STATE);
+      expect(operation.state).to.equal(TOperationState.FINISHED_STATE);
     });
 
     it('should request progress', async () => {

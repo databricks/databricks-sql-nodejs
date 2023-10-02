@@ -1,6 +1,6 @@
 {
   "name": "@databricks/sql",
-  "version": "1.4.0",
+  "version": "1.5.0",
   "description": "Driver for connection to Databricks SQL via Thrift API.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -12,9 +12,7 @@
     "node": ">=14.0.0"
   },
   "scripts": {
-    "postinstall": "patch-package",
     "prepare": "npm run build",
-    "prepack": "mkdir dist/node_modules && cp -R node_modules/thrift dist/node_modules/thrift",
     "e2e": "nyc --reporter=lcov --report-dir=coverage_e2e mocha --config tests/e2e/.mocharc.js",
     "test": "nyc --reporter=lcov --report-dir=coverage_unit mocha  --config tests/unit/.mocharc.js",
     "update-version": "node bin/update-version.js && prettier --write ./lib/version.ts",
@@ -72,13 +70,12 @@
     "typescript": "^4.9.3"
   },
   "dependencies": {
-    "apache-arrow": "^10.0.1",
+    "apache-arrow": "^13.0.0",
     "commander": "^9.3.0",
     "node-fetch": "^2.6.12",
     "node-int64": "^0.4.0",
     "open": "^8.4.2",
     "openid-client": "^5.4.2",
-    "patch-package": "^7.0.0",
     "proxy-agent": "^6.3.1",
     "thrift": "^0.16.0",
     "uuid": "^9.0.0",

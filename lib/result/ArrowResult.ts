@@ -15,7 +15,7 @@ import { TRowSet, TTableSchema, TColumnDesc } from '../../thrift/TCLIService_typ
 import IOperationResult from './IOperationResult';
 import { getSchemaColumns, convertThriftValue } from './utils';
 
-const { isArrowBigNumSymbol, bignumToBigInt } = arrowUtils;
+const { isArrowBigNumSymbol, bigNumToBigInt } = arrowUtils;
 
 type ArrowSchema = Schema<TypeMap>;
 type ArrowSchemaField = Field<DataType<Type, TypeMap>>;
@@ -115,7 +115,7 @@ export default class ArrowResult implements IOperationResult {
     // Convert big number values to BigInt
     // Decimals are also represented as big numbers in Arrow, so additionally process them (convert to float)
     if (value instanceof Object && value[isArrowBigNumSymbol]) {
-      const result = bignumToBigInt(value);
+      const result = bigNumToBigInt(value);
       if (DataType.isDecimal(valueType)) {
         return Number(result) / 10 ** valueType.scale;
       }
