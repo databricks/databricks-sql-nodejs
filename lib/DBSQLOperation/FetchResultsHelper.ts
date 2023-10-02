@@ -8,6 +8,7 @@ import {
 import { ColumnCode, FetchType, Int64 } from '../hive/Types';
 import HiveDriver from '../hive/HiveDriver';
 import Status from '../dto/Status';
+import IClientContext from '../contracts/IClientContext';
 
 function checkIfOperationHasMoreRows(response: TFetchResultsResp): boolean {
   if (response.hasMoreRows) {
@@ -36,6 +37,8 @@ function checkIfOperationHasMoreRows(response: TFetchResultsResp): boolean {
 }
 
 export default class FetchResultsHelper {
+  private readonly context: IClientContext;
+
   private readonly driver: HiveDriver;
 
   private readonly operationHandle: TOperationHandle;
@@ -49,11 +52,13 @@ export default class FetchResultsHelper {
   public hasMoreRows: boolean = false;
 
   constructor(
+    context: IClientContext,
     driver: HiveDriver,
     operationHandle: TOperationHandle,
     prefetchedResults: Array<TFetchResultsResp | undefined>,
     returnOnlyPrefetchedResults: boolean,
   ) {
+    this.context = context;
     this.driver = driver;
     this.operationHandle = operationHandle;
     prefetchedResults.forEach((item) => {

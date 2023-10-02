@@ -88,6 +88,7 @@ export default class DBSQLOperation implements IOperation {
 
     this.metadata = directResults?.resultSetMetadata;
     this._data = new FetchResultsHelper(
+      this.context,
       this.driver,
       this.operationHandle,
       [directResults?.resultSet],
@@ -350,13 +351,13 @@ export default class DBSQLOperation implements IOperation {
     if (!this.resultHandler) {
       switch (resultFormat) {
         case TSparkRowSetType.COLUMN_BASED_SET:
-          this.resultHandler = new JsonResult(metadata.schema);
+          this.resultHandler = new JsonResult(this.context, metadata.schema);
           break;
         case TSparkRowSetType.ARROW_BASED_SET:
-          this.resultHandler = new ArrowResult(metadata.schema, metadata.arrowSchema);
+          this.resultHandler = new ArrowResult(this.context, metadata.schema, metadata.arrowSchema);
           break;
         case TSparkRowSetType.URL_BASED_SET:
-          this.resultHandler = new CloudFetchResult(metadata.schema);
+          this.resultHandler = new CloudFetchResult(this.context, metadata.schema);
           break;
         default:
           this.resultHandler = undefined;

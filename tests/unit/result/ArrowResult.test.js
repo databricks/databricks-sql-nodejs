@@ -68,13 +68,15 @@ const sampleRowSet4 = {
 
 describe('ArrowResult', () => {
   it('should not buffer any data', async () => {
-    const result = new ArrowResult(sampleThriftSchema, sampleArrowSchema);
+    const context = {};
+    const result = new ArrowResult(context, sampleThriftSchema, sampleArrowSchema);
     await result.getValue([sampleRowSet1]);
     expect(await result.hasPendingData()).to.be.false;
   });
 
   it('should convert data', async () => {
-    const result = new ArrowResult(sampleThriftSchema, sampleArrowSchema);
+    const context = {};
+    const result = new ArrowResult(context, sampleThriftSchema, sampleArrowSchema);
     expect(await result.getValue([sampleRowSet1])).to.be.deep.eq([]);
     expect(await result.getValue([sampleRowSet2])).to.be.deep.eq([]);
     expect(await result.getValue([sampleRowSet3])).to.be.deep.eq([]);
@@ -82,13 +84,15 @@ describe('ArrowResult', () => {
   });
 
   it('should return empty array if no data to process', async () => {
-    const result = new ArrowResult(sampleThriftSchema, sampleArrowSchema);
+    const context = {};
+    const result = new ArrowResult(context, sampleThriftSchema, sampleArrowSchema);
     expect(await result.getValue()).to.be.deep.eq([]);
     expect(await result.getValue([])).to.be.deep.eq([]);
   });
 
   it('should return empty array if no schema available', async () => {
-    const result = new ArrowResult();
+    const context = {};
+    const result = new ArrowResult(context);
     expect(await result.getValue([sampleRowSet4])).to.be.deep.eq([]);
   });
 });
