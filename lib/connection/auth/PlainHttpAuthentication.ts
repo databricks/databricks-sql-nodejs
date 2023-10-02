@@ -1,10 +1,10 @@
-import { HttpHeaders } from 'thrift';
+import { HeadersInit } from 'node-fetch';
 import IAuthentication from '../contracts/IAuthentication';
 
 interface PlainHttpAuthenticationOptions {
   username?: string;
   password?: string;
-  headers?: HttpHeaders;
+  headers?: HeadersInit;
 }
 
 export default class PlainHttpAuthentication implements IAuthentication {
@@ -12,7 +12,7 @@ export default class PlainHttpAuthentication implements IAuthentication {
 
   private readonly password: string;
 
-  private readonly headers: HttpHeaders;
+  private readonly headers: HeadersInit;
 
   constructor(options: PlainHttpAuthenticationOptions) {
     this.username = options?.username || 'anonymous';
@@ -20,7 +20,7 @@ export default class PlainHttpAuthentication implements IAuthentication {
     this.headers = options?.headers || {};
   }
 
-  public async authenticate(): Promise<HttpHeaders> {
+  public async authenticate(): Promise<HeadersInit> {
     return {
       ...this.headers,
       Authorization: `Bearer ${this.password}`,

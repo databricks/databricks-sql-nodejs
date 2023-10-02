@@ -1,4 +1,4 @@
-import thrift, { HttpHeaders } from 'thrift';
+import thrift from 'thrift';
 
 import { EventEmitter } from 'events';
 import TCLIService from '../thrift/TCLIService';
@@ -13,12 +13,13 @@ import HttpConnection from './connection/connections/HttpConnection';
 import IConnectionOptions from './connection/contracts/IConnectionOptions';
 import Status from './dto/Status';
 import HiveDriverError from './errors/HiveDriverError';
-import { areHeadersEqual, buildUserAgentString, definedOrError } from './utils';
+import { buildUserAgentString, definedOrError } from './utils';
 import PlainHttpAuthentication from './connection/auth/PlainHttpAuthentication';
 import DatabricksOAuth from './connection/auth/DatabricksOAuth';
 import IDBSQLLogger, { LogLevel } from './contracts/IDBSQLLogger';
 import DBSQLLogger from './DBSQLLogger';
 import CloseableCollection from './utils/CloseableCollection';
+import IConnectionProvider from './connection/contracts/IConnectionProvider';
 
 function prependSlash(str: string): string {
   if (str.length > 0 && str.charAt(0) !== '/') {
@@ -41,13 +42,11 @@ function getInitialNamespaceOptions(catalogName?: string, schemaName?: string) {
 }
 
 export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
-  private client: TCLIService.Client | null = null;
+  private connectionProvider?: IConnectionProvider;
 
-  private authProvider: IAuthentication | null = null;
+  private authProvider?: IAuthentication;
 
-  private connectionOptions: ConnectionOptions | null = null;
-
-  private additionalHeaders: HttpHeaders = {};
+  private client?: TCLIService.Client;
 
   private readonly logger: IDBSQLLogger;
 
@@ -61,30 +60,14 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
     this.logger.log(LogLevel.info, 'Created DBSQLClient');
   }
 
-  private getConnectionOptions(options: ConnectionOptions, headers: HttpHeaders): IConnectionOptions {
-    const {
-      host,
-      port,
-      path,
-      clientId,
-      authType,
-      // @ts-expect-error TS2339: Property 'token' does not exist on type 'ConnectionOptions'
-      token,
-      // @ts-expect-error TS2339: Property 'persistence' does not exist on type 'ConnectionOptions'
-      persistence,
-      // @ts-expect-error TS2339: Property 'provider' does not exist on type 'ConnectionOptions'
-      provider,
-      ...otherOptions
-    } = options;
-
+  private getConnectionOptions(options: ConnectionOptions): IConnectionOptions {
     return {
-      host,
-      port: port || 443,
-      path: prependSlash(path),
+      host: options.host,
+      port: options.port || 443,
+      path: prependSlash(options.path),
       https: true,
-      ...otherOptions,
+      socketTimeout: options.socketTimeout,
       headers: {
-        ...headers,
         'User-Agent': buildUserAgentString(options.clientId),
       },
     };
@@ -128,7 +111,38 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
    */
   public async connect(options: ConnectionOptions, authProvider?: IAuthentication): Promise<IDBSQLClient> {
     this.authProvider = this.getAuthProvider(options, authProvider);
-    this.connectionOptions = options;
+
+    this.connectionProvider = new HttpConnection(this.getConnectionOptions(options));
+
+    const thriftConnection = await this.connectionProvider.getThriftConnection();
+
+    thriftConnection.on('error', (error: Error) => {
+      // Error.stack already contains error type and message, so log stack if available,
+      // otherwise fall back to just error type + message
+      this.logger.log(LogLevel.error, error.stack || `${error.name}: ${error.message}`);
+      try {
+        this.emit('error', error);
+      } catch (e) {
+        // EventEmitter will throw unhandled error when emitting 'error' event.
+        // Since we already logged it few lines above, just suppress this behaviour
+      }
+    });
+
+    thriftConnection.on('reconnecting', (params: { delay: number; attempt: number }) => {
+      this.logger.log(LogLevel.debug, `Reconnecting, params: ${JSON.stringify(params)}`);
+      this.emit('reconnecting', params);
+    });
+
+    thriftConnection.on('close', () => {
+      this.logger.log(LogLevel.debug, 'Closing connection.');
+      this.emit('close');
+    });
+
+    thriftConnection.on('timeout', () => {
+      this.logger.log(LogLevel.debug, 'Connection timed out.');
+      this.emit('timeout');
+    });
+
     return this;
   }
 
@@ -158,65 +172,28 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
   }
 
   private async getClient() {
-    if (!this.connectionOptions || !this.authProvider) {
+    if (!this.connectionProvider) {
       throw new HiveDriverError('DBSQLClient: not connected');
     }
 
-    const authHeaders = await this.authProvider.authenticate();
-    // When auth headers change - recreate client. Thrift library does not provide API for updating
-    // changed options, therefore we have to recreate both connection and client to apply new headers
-    if (!this.client || !areHeadersEqual(this.additionalHeaders, authHeaders)) {
+    if (!this.client) {
       this.logger.log(LogLevel.info, 'DBSQLClient: initializing thrift client');
-      this.additionalHeaders = authHeaders;
-      const connectionOptions = this.getConnectionOptions(this.connectionOptions, this.additionalHeaders);
+      this.client = this.thrift.createClient(TCLIService, await this.connectionProvider.getThriftConnection());
+    }
 
-      const connection = await this.createConnection(connectionOptions);
-      this.client = this.thrift.createClient(TCLIService, connection.getConnection());
+    if (this.authProvider) {
+      const authHeaders = await this.authProvider.authenticate();
+      this.connectionProvider.setHeaders(authHeaders);
     }
 
     return this.client;
   }
 
-  private async createConnection(options: IConnectionOptions) {
-    const connectionProvider = new HttpConnection();
-    const connection = await connectionProvider.connect(options);
-    const thriftConnection = connection.getConnection();
-
-    thriftConnection.on('error', (error: Error) => {
-      // Error.stack already contains error type and message, so log stack if available,
-      // otherwise fall back to just error type + message
-      this.logger.log(LogLevel.error, error.stack || `${error.name}: ${error.message}`);
-      try {
-        this.emit('error', error);
-      } catch (e) {
-        // EventEmitter will throw unhandled error when emitting 'error' event.
-        // Since we already logged it few lines above, just suppress this behaviour
-      }
-    });
-
-    thriftConnection.on('reconnecting', (params: { delay: number; attempt: number }) => {
-      this.logger.log(LogLevel.debug, `Reconnecting, params: ${JSON.stringify(params)}`);
-      this.emit('reconnecting', params);
-    });
-
-    thriftConnection.on('close', () => {
-      this.logger.log(LogLevel.debug, 'Closing connection.');
-      this.emit('close');
-    });
-
-    thriftConnection.on('timeout', () => {
-      this.logger.log(LogLevel.debug, 'Connection timed out.');
-      this.emit('timeout');
-    });
-
-    return connection;
-  }
-
   public async close(): Promise<void> {
     await this.sessions.closeAll();
 
-    this.client = null;
-    this.authProvider = null;
-    this.connectionOptions = null;
+    this.client = undefined;
+    this.connectionProvider = undefined;
+    this.authProvider = undefined;
   }
 }

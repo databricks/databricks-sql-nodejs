@@ -1,6 +1,7 @@
-import IConnectionOptions from './IConnectionOptions';
-import IThriftConnection from './IThriftConnection';
+import { HeadersInit } from 'node-fetch';
 
 export default interface IConnectionProvider {
-  connect(options: IConnectionOptions): Promise<IThriftConnection>;
+  getThriftConnection(): Promise<any>;
+
+  setHeaders(headers: HeadersInit): void;
 }

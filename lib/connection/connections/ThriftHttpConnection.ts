@@ -6,7 +6,7 @@
 
 import { EventEmitter } from 'events';
 import { TBinaryProtocol, TBufferedTransport, Thrift, TProtocol, TProtocolConstructor, TTransport } from 'thrift';
-import fetch, { RequestInit, Response, FetchError } from 'node-fetch';
+import fetch, { RequestInit, HeadersInit, Response, FetchError } from 'node-fetch';
 // @ts-expect-error TS7016: Could not find a declaration file for module
 import InputBufferUnderrunError from 'thrift/lib/nodejs/lib/thrift/input_buffer_underrun_error';
 
@@ -48,7 +48,7 @@ type ThriftClient = {
 export default class ThriftHttpConnection extends EventEmitter {
   private readonly url: string;
 
-  private readonly config: RequestInit;
+  private config: RequestInit;
 
   // This field is used by Thrift internally, so name and type are important
   private readonly transport: TTransportType;
@@ -65,6 +65,13 @@ export default class ThriftHttpConnection extends EventEmitter {
     this.config = config;
     this.transport = options.transport ?? TBufferedTransport;
     this.protocol = options.protocol ?? TBinaryProtocol;
+  }
+
+  public setHeaders(headers: HeadersInit) {
+    this.config = {
+      ...this.config,
+      headers,
+    };
   }
 
   public write(data: Buffer, seqId: number) {
