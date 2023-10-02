@@ -19,6 +19,8 @@ class OAuthManagerMock {
   async getToken() {
     return this.getTokenResult;
   }
+
+  setAgent() {}
 }
 
 class OAuthPersistenceMock {
