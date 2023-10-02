@@ -1,4 +1,3 @@
-import TCLIService from '../../thrift/TCLIService';
 import {
   TOpenSessionReq,
   TCloseSessionReq,
@@ -43,138 +42,141 @@ import CloseOperationCommand from './Commands/CloseOperationCommand';
 import GetDelegationTokenCommand from './Commands/GetDelegationTokenCommand';
 import CancelDelegationTokenCommand from './Commands/CancelDelegationTokenCommand';
 import RenewDelegationTokenCommand from './Commands/RenewDelegationTokenCommand';
+import IClientContext from '../contracts/IClientContext';
 
-export type ClientFactory = () => Promise<TCLIService.Client>;
+export interface HiveDriverOptions {
+  context: IClientContext;
+}
 
 export default class HiveDriver {
-  private readonly clientFactory: ClientFactory;
+  private readonly context: IClientContext;
 
-  constructor(clientFactory: ClientFactory) {
-    this.clientFactory = clientFactory;
+  constructor(options: HiveDriverOptions) {
+    this.context = options.context;
   }
 
   async openSession(request: TOpenSessionReq) {
-    const client = await this.clientFactory();
+    const client = await this.context.getClient();
     const action = new OpenSessionCommand(client);
     return action.execute(request);
   }
 
   async closeSession(request: TCloseSessionReq) {
-    const client = await this.clientFactory();
+    const client = await this.context.getClient();
     const command = new CloseSessionCommand(client);
     return command.execute(request);
   }
 
   async executeStatement(request: TExecuteStatementReq) {
-    const client = await this.clientFactory();
+    const client = await this.context.getClient();
     const command = new ExecuteStatementCommand(client);
     return command.execute(request);
   }
 
   async getResultSetMetadata(request: TGetResultSetMetadataReq) {
-    const client = await this.clientFactory();
+    const client = await this.context.getClient();
     const command = new GetResultSetMetadataCommand(client);
     return command.execute(request);
   }
 
   async fetchResults(request: TFetchResultsReq) {
-    const client = await this.clientFactory();
+    const client = await this.context.getClient();
     const command = new FetchResultsCommand(client);
     return command.execute(request);
   }
 
   async getInfo(request: TGetInfoReq) {
-    const client = await this.clientFactory();
+    const client = await this.context.getClient();
     const command = new GetInfoCommand(client);
     return command.execute(request);
   }
 
   async getTypeInfo(request: TGetTypeInfoReq) {
-    const client = await this.clientFactory();
+    const client = await this.context.getClient();
     const command = new GetTypeInfoCommand(client);
     return command.execute(request);
   }
 
   async getCatalogs(request: TGetCatalogsReq) {
-    const client = await this.clientFactory();
+    const client = await this.context.getClient();
     const command = new GetCatalogsCommand(client);
     return command.execute(request);
   }
 
   async getSchemas(request: TGetSchemasReq) {
-    const client = await this.clientFactory();
+    const client = await this.context.getClient();
     const command = new GetSchemasCommand(client);
     return command.execute(request);
   }
 
   async getTables(request: TGetTablesReq) {
-    const client = await this.clientFactory();
+    const client = await this.context.getClient();
     const command = new GetTablesCommand(client);
     return command.execute(request);
   }
 
   async getTableTypes(request: TGetTableTypesReq) {
-    const client = await this.clientFactory();
+    const client = await this.context.getClient();
     const command = new GetTableTypesCommand(client);
     return command.execute(request);
   }
 
   async getColumns(request: TGetColumnsReq) {
-    const client = await this.clientFactory();
+    const client = await this.context.getClient();
     const command = new GetColumnsCommand(client);
     return command.execute(request);
   }
 
   async getFunctions(request: TGetFunctionsReq) {
-    const client = await this.clientFactory();
+    const client = await this.context.getClient();
     const command = new GetFunctionsCommand(client);
     return command.execute(request);
   }
 
   async getPrimaryKeys(request: TGetPrimaryKeysReq) {
-    const client = await this.clientFactory();
+    const client = await this.context.getClient();
     const command = new GetPrimaryKeysCommand(client);
     return command.execute(request);
   }
 
   async getCrossReference(request: TGetCrossReferenceReq) {
-    const client = await this.clientFactory();
+    const client = await this.context.getClient();
     const command = new GetCrossReferenceCommand(client);
     return command.execute(request);
   }
 
   async getOperationStatus(request: TGetOperationStatusReq) {
-    const client = await this.clientFactory();
+    const client = await this.context.getClient();
     const command = new GetOperationStatusCommand(client);
     return command.execute(request);
   }
 
   async cancelOperation(request: TCancelOperationReq) {
-    const client = await this.clientFactory();
+    const client = await this.context.getClient();
     const command = new CancelOperationCommand(client);
     return command.execute(request);
   }
 
   async closeOperation(request: TCloseOperationReq) {
-    const client = await this.clientFactory();
+    const client = await this.context.getClient();
     const command = new CloseOperationCommand(client);
     return command.execute(request);
   }
 
   async getDelegationToken(request: TGetDelegationTokenReq) {
-    const client = await this.clientFactory();
+    const client = await this.context.getClient();
     const command = new GetDelegationTokenCommand(client);
     return command.execute(request);
   }
 
   async cancelDelegationToken(request: TCancelDelegationTokenReq) {
-    const client = await this.clientFactory();
+    const client = await this.context.getClient();
     const command = new CancelDelegationTokenCommand(client);
     return command.execute(request);
   }
 
   async renewDelegationToken(request: TRenewDelegationTokenReq) {
-    const client = await this.clientFactory();
+    const client = await this.context.getClient();
     const command = new RenewDelegationTokenCommand(client);
     return command.execute(request);
   }

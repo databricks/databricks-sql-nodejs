@@ -306,12 +306,12 @@ describe('DBSQLClient.close', () => {
   });
 });
 
-describe('DBSQLClient.getAuthProvider', () => {
+describe('DBSQLClient.initAuthProvider', () => {
   it('should use access token auth method', () => {
     const client = new DBSQLClient();
 
     const testAccessToken = 'token';
-    const provider = client.getAuthProvider({
+    const provider = client.initAuthProvider({
       authType: 'access-token',
       token: testAccessToken,
     });
@@ -324,7 +324,7 @@ describe('DBSQLClient.getAuthProvider', () => {
     const client = new DBSQLClient();
 
     const testAccessToken = 'token';
-    const provider = client.getAuthProvider({
+    const provider = client.initAuthProvider({
       // note: no `authType` provided
       token: testAccessToken,
     });
@@ -336,7 +336,7 @@ describe('DBSQLClient.getAuthProvider', () => {
   it('should use Databricks OAuth method (AWS)', () => {
     const client = new DBSQLClient();
 
-    const provider = client.getAuthProvider({
+    const provider = client.initAuthProvider({
       authType: 'databricks-oauth',
       // host is used when creating OAuth manager, so make it look like a real AWS instance
       host: 'example.dev.databricks.com',
@@ -349,7 +349,7 @@ describe('DBSQLClient.getAuthProvider', () => {
   it('should use Databricks OAuth method (Azure)', () => {
     const client = new DBSQLClient();
 
-    const provider = client.getAuthProvider({
+    const provider = client.initAuthProvider({
       authType: 'databricks-oauth',
       // host is used when creating OAuth manager, so make it look like a real Azure instance
       host: 'example.databricks.azure.us',
@@ -363,7 +363,7 @@ describe('DBSQLClient.getAuthProvider', () => {
     const client = new DBSQLClient();
 
     expect(() => {
-      client.getAuthProvider({
+      client.initAuthProvider({
         authType: 'databricks-oauth',
         // use host which is not supported for sure
         host: 'example.com',
@@ -376,7 +376,7 @@ describe('DBSQLClient.getAuthProvider', () => {
 
     const customProvider = {};
 
-    const provider = client.getAuthProvider({
+    const provider = client.initAuthProvider({
       authType: 'custom',
       provider: customProvider,
     });
@@ -389,7 +389,7 @@ describe('DBSQLClient.getAuthProvider', () => {
 
     const customProvider = {};
 
-    const provider = client.getAuthProvider(
+    const provider = client.initAuthProvider(
       // custom provider from second arg should be used no matter what's specified in config
       { authType: 'access-token', token: 'token' },
       customProvider,

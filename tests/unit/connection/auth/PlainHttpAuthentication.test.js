@@ -3,7 +3,7 @@ const PlainHttpAuthentication = require('../../../../dist/connection/auth/PlainH
 
 describe('PlainHttpAuthentication', () => {
   it('username and password must be anonymous if nothing passed', () => {
-    const auth = new PlainHttpAuthentication();
+    const auth = new PlainHttpAuthentication({});
 
     expect(auth.username).to.be.eq('anonymous');
     expect(auth.password).to.be.eq('anonymous');
@@ -30,7 +30,7 @@ describe('PlainHttpAuthentication', () => {
   });
 
   it('auth token must be set to header', async () => {
-    const auth = new PlainHttpAuthentication();
+    const auth = new PlainHttpAuthentication({});
     const transportMock = {
       updateHeaders(headers) {
         expect(headers).to.deep.equal({

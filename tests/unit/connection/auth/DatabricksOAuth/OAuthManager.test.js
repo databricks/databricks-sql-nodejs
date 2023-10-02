@@ -1,6 +1,7 @@
 const { expect, AssertionError } = require('chai');
 const sinon = require('sinon');
 const openidClientLib = require('openid-client');
+const { DBSQLLogger, LogLevel } = require('../../../../../dist');
 const {
   AWSOAuthManager,
   AzureOAuthManager,
@@ -9,6 +10,8 @@ const OAuthToken = require('../../../../../dist/connection/auth/DatabricksOAuth/
 const AuthorizationCodeModule = require('../../../../../dist/connection/auth/DatabricksOAuth/AuthorizationCode');
 
 const { createValidAccessToken, createExpiredAccessToken } = require('./utils');
+
+const logger = new DBSQLLogger({ level: LogLevel.error });
 
 class AuthorizationCodeMock {
   constructor() {
@@ -129,6 +132,9 @@ class OAuthClientMock {
     const oauthManager = new OAuthManagerClass({
       host: 'https://example.com',
       ...options,
+      context: {
+        getLogger: () => logger,
+      },
     });
 
     const authCode = new AuthorizationCodeMock();

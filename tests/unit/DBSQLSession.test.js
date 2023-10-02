@@ -34,7 +34,13 @@ function createDriverMock(customMethodHandler) {
 
 function createSession(customMethodHandler) {
   const driver = createDriverMock(customMethodHandler);
-  return new DBSQLSession(driver, { sessionId: 'id' }, logger);
+  return new DBSQLSession({
+    driver,
+    handle: { sessionId: 'id' },
+    context: {
+      getLogger: () => logger,
+    },
+  });
 }
 
 async function expectFailure(fn) {

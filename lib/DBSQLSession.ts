@@ -32,12 +32,13 @@ import Status from './dto/Status';
 import InfoValue from './dto/InfoValue';
 import { definedOrError } from './utils';
 import CloseableCollection from './utils/CloseableCollection';
-import IDBSQLLogger, { LogLevel } from './contracts/IDBSQLLogger';
+import { LogLevel } from './contracts/IDBSQLLogger';
 import HiveDriverError from './errors/HiveDriverError';
 import globalConfig from './globalConfig';
 import StagingError from './errors/StagingError';
 import { DBSQLParameter, DBSQLParameterValue } from './DBSQLParameter';
 import ParameterError from './errors/ParameterError';
+import IClientContext from './contracts/IClientContext';
 
 const defaultMaxRows = 100000;
 
@@ -130,15 +131,17 @@ function getQueryParameters(
 }
 
 interface DBSQLSessionConstructorOptions {
-  logger: IDBSQLLogger;
+  handle: TSessionHandle;
+  driver: HiveDriver;
+  context: IClientContext;
 }
 
 export default class DBSQLSession implements IDBSQLSession {
+  private readonly context: IClientContext;
+
   private readonly driver: HiveDriver;
 
   private readonly sessionHandle: TSessionHandle;
-
-  private readonly logger: IDBSQLLogger;
 
   private isOpen = true;
 
@@ -146,11 +149,11 @@ export default class DBSQLSession implements IDBSQLSession {
 
   private operations = new CloseableCollection<DBSQLOperation>();
 
-  constructor(driver: HiveDriver, sessionHandle: TSessionHandle, { logger }: DBSQLSessionConstructorOptions) {
+  constructor({ handle, driver, context }: DBSQLSessionConstructorOptions) {
     this.driver = driver;
-    this.sessionHandle = sessionHandle;
-    this.logger = logger;
-    this.logger.log(LogLevel.debug, `Session created with id: ${this.getId()}`);
+    this.sessionHandle = handle;
+    this.context = context;
+    this.context.getLogger().log(LogLevel.debug, `Session created with id: ${this.getId()}`);
   }
 
   public getId() {
@@ -496,21 +499,19 @@ export default class DBSQLSession implements IDBSQLSession {
     this.onClose?.();
     this.isOpen = false;
 
-    this.logger.log(LogLevel.debug, `Session closed with id: ${this.getId()}`);
+    this.context.getLogger().log(LogLevel.debug, `Session closed with id: ${this.getId()}`);
     return new Status(response.status);
   }
 
   private createOperation(response: OperationResponseShape): DBSQLOperation {
     Status.assert(response.status);
     const handle = definedOrError(response.operationHandle);
-    const operation = new DBSQLOperation(
-      this.driver,
+    const operation = new DBSQLOperation({
+      driver: this.driver,
       handle,
-      {
-        logger: this.logger,
-      },
-      response.directResults,
-    );
+      directResults: response.directResults,
+      context: this.context,
+    });
 
     this.operations.add(operation);
 

@@ -18,7 +18,7 @@ import {
 } from '../../thrift/TCLIService_types';
 import Status from '../dto/Status';
 import FetchResultsHelper from './FetchResultsHelper';
-import IDBSQLLogger, { LogLevel } from '../contracts/IDBSQLLogger';
+import { LogLevel } from '../contracts/IDBSQLLogger';
 import OperationStateError, { OperationStateErrorCode } from '../errors/OperationStateError';
 import IOperationResult from '../result/IOperationResult';
 import JsonResult from '../result/JsonResult';
@@ -26,11 +26,15 @@ import ArrowResult from '../result/ArrowResult';
 import CloudFetchResult from '../result/CloudFetchResult';
 import { definedOrError } from '../utils';
 import HiveDriverError from '../errors/HiveDriverError';
+import IClientContext from '../contracts/IClientContext';
 
 const defaultMaxRows = 100000;
 
 interface DBSQLOperationConstructorOptions {
-  logger: IDBSQLLogger;
+  handle: TOperationHandle;
+  driver: HiveDriver;
+  directResults?: TSparkDirectResults;
+  context: IClientContext;
 }
 
 async function delay(ms?: number): Promise<void> {
@@ -42,11 +46,11 @@ async function delay(ms?: number): Promise<void> {
 }
 
 export default class DBSQLOperation implements IOperation {
+  private readonly context: IClientContext;
+
   private readonly driver: HiveDriver;
 
   private readonly operationHandle: TOperationHandle;
-
-  private readonly logger: IDBSQLLogger;
 
   public onClose?: () => void;
 
@@ -70,19 +74,14 @@ export default class DBSQLOperation implements IOperation {
 
   private resultHandler?: IOperationResult;
 
-  constructor(
-    driver: HiveDriver,
-    operationHandle: TOperationHandle,
-    { logger }: DBSQLOperationConstructorOptions,
-    directResults?: TSparkDirectResults,
-  ) {
+  constructor({ driver, handle, directResults, context }: DBSQLOperationConstructorOptions) {
     this.driver = driver;
-    this.operationHandle = operationHandle;
-    this.logger = logger;
+    this.operationHandle = handle;
+    this.context = context;
 
     const useOnlyPrefetchedResults = Boolean(directResults?.closeOperation);
 
-    this.hasResultSet = operationHandle.hasResultSet;
+    this.hasResultSet = this.operationHandle.hasResultSet;
     if (directResults?.operationStatus) {
       this.processOperationStatusResponse(directResults.operationStatus);
     }
@@ -95,7 +94,7 @@ export default class DBSQLOperation implements IOperation {
       useOnlyPrefetchedResults,
     );
     this.closeOperation = directResults?.closeOperation;
-    this.logger.log(LogLevel.debug, `Operation created with id: ${this.getId()}`);
+    this.context.getLogger().log(LogLevel.debug, `Operation created with id: ${this.getId()}`);
   }
 
   public getId() {
@@ -118,7 +117,7 @@ export default class DBSQLOperation implements IOperation {
       const chunk = await this.fetchChunk(options);
       data.push(chunk);
     } while (await this.hasMoreRows()); // eslint-disable-line no-await-in-loop
-    this.logger?.log(LogLevel.debug, `Fetched all data from operation with id: ${this.getId()}`);
+    this.context.getLogger().log(LogLevel.debug, `Fetched all data from operation with id: ${this.getId()}`);
 
     return data.flat();
   }
@@ -149,10 +148,12 @@ export default class DBSQLOperation implements IOperation {
     await this.failIfClosed();
 
     const result = await resultHandler.getValue(data ? [data] : []);
-    this.logger?.log(
-      LogLevel.debug,
-      `Fetched chunk of size: ${options?.maxRows || defaultMaxRows} from operation with id: ${this.getId()}`,
-    );
+    this.context
+      .getLogger()
+      .log(
+        LogLevel.debug,
+        `Fetched chunk of size: ${options?.maxRows || defaultMaxRows} from operation with id: ${this.getId()}`,
+      );
     return result;
   }
 
@@ -163,7 +164,7 @@ export default class DBSQLOperation implements IOperation {
    */
   public async status(progress: boolean = false): Promise<TGetOperationStatusResp> {
     await this.failIfClosed();
-    this.logger?.log(LogLevel.debug, `Fetching status for operation with id: ${this.getId()}`);
+    this.context.getLogger().log(LogLevel.debug, `Fetching status for operation with id: ${this.getId()}`);
 
     if (this.operationStatus) {
       return this.operationStatus;
@@ -186,7 +187,7 @@ export default class DBSQLOperation implements IOperation {
       return Status.success();
     }
 
-    this.logger?.log(LogLevel.debug, `Cancelling operation with id: ${this.getId()}`);
+    this.context.getLogger().log(LogLevel.debug, `Cancelling operation with id: ${this.getId()}`);
 
     const response = await this.driver.cancelOperation({
       operationHandle: this.operationHandle,
@@ -209,7 +210,7 @@ export default class DBSQLOperation implements IOperation {
       return Status.success();
     }
 
-    this.logger?.log(LogLevel.debug, `Closing operation with id: ${this.getId()}`);
+    this.context.getLogger().log(LogLevel.debug, `Closing operation with id: ${this.getId()}`);
 
     const response =
       this.closeOperation ??
@@ -254,7 +255,7 @@ export default class DBSQLOperation implements IOperation {
 
     await this.waitUntilReady(options);
 
-    this.logger?.log(LogLevel.debug, `Fetching schema for operation with id: ${this.getId()}`);
+    this.context.getLogger().log(LogLevel.debug, `Fetching schema for operation with id: ${this.getId()}`);
     const metadata = await this.fetchMetadata();
     return metadata.schema ?? null;
   }

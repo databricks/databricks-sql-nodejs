@@ -1,9 +1,10 @@
 import { Issuer, BaseClient } from 'openid-client';
 import HiveDriverError from '../../../errors/HiveDriverError';
-import IDBSQLLogger, { LogLevel } from '../../../contracts/IDBSQLLogger';
+import { LogLevel } from '../../../contracts/IDBSQLLogger';
 import OAuthToken from './OAuthToken';
 import AuthorizationCode from './AuthorizationCode';
 import { OAuthScope, OAuthScopes } from './OAuthScope';
+import IClientContext from '../../../contracts/IClientContext';
 
 export interface OAuthManagerOptions {
   host: string;
@@ -11,7 +12,7 @@ export interface OAuthManagerOptions {
   clientId?: string;
   azureTenantId?: string;
   clientSecret?: string;
-  logger?: IDBSQLLogger;
+  context: IClientContext;
 }
 
 function getDatabricksOIDCUrl(host: string): string {
@@ -21,9 +22,9 @@ function getDatabricksOIDCUrl(host: string): string {
 }
 
 export default abstract class OAuthManager {
-  protected readonly options: OAuthManagerOptions;
+  protected readonly context: IClientContext;
 
-  protected readonly logger?: IDBSQLLogger;
+  protected readonly options: OAuthManagerOptions;
 
   protected issuer?: Issuer;
 
@@ -31,7 +32,7 @@ export default abstract class OAuthManager {
 
   constructor(options: OAuthManagerOptions) {
     this.options = options;
-    this.logger = options.logger;
+    this.context = options.context;
   }
 
   protected abstract getOIDCConfigUrl(): string;
@@ -71,15 +72,14 @@ export default abstract class OAuthManager {
   private async refreshAccessTokenU2M(token: OAuthToken): Promise<OAuthToken> {
     if (!token.refreshToken) {
       const message = `OAuth access token expired on ${token.expirationTime}.`;
-      this.logger?.log(LogLevel.error, message);
+      this.context.getLogger().log(LogLevel.error, message);
       throw new HiveDriverError(message);
     }
 
     // Try to refresh using the refresh token
-    this.logger?.log(
-      LogLevel.debug,
-      `Attempting to refresh OAuth access token that expired on ${token.expirationTime}`,
-    );
+    this.context
+      .getLogger()
+      .log(LogLevel.debug, `Attempting to refresh OAuth access token that expired on ${token.expirationTime}`);
 
     const client = await this.getClient();
     const { access_token: accessToken, refresh_token: refreshToken } = await client.refresh(token.refreshToken);
@@ -106,7 +106,7 @@ export default abstract class OAuthManager {
         return token;
       }
     } catch (error) {
-      this.logger?.log(LogLevel.error, `${error}`);
+      this.context.getLogger().log(LogLevel.error, `${error}`);
       throw error;
     }
 
@@ -119,7 +119,7 @@ export default abstract class OAuthManager {
     const authCode = new AuthorizationCode({
       client,
       ports: this.getCallbackPorts(),
-      logger: this.logger,
+      context: this.context,
     });
 
     const mappedScopes = this.getScopes(scopes);

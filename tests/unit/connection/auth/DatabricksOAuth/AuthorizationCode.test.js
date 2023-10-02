@@ -2,7 +2,10 @@ const { expect, AssertionError } = require('chai');
 const { EventEmitter } = require('events');
 const sinon = require('sinon');
 const http = require('http');
+const { DBSQLLogger, LogLevel } = require('../../../../../dist');
 const AuthorizationCode = require('../../../../../dist/connection/auth/DatabricksOAuth/AuthorizationCode').default;
+
+const logger = new DBSQLLogger({ level: LogLevel.error });
 
 class HttpServerMock extends EventEmitter {
   constructor() {
@@ -66,6 +69,9 @@ function prepareTestInstances(options) {
   const authCode = new AuthorizationCode({
     client: oauthClient,
     ...options,
+    context: {
+      getLogger: () => logger,
+    },
   });
 
   sinon.stub(http, 'createServer').callsFake((requestHandler) => {
