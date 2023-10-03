@@ -52,6 +52,12 @@ export default class CloudFetchResult extends ArrowResult {
   }
 
   private async fetch(url: RequestInfo, init?: RequestInit) {
-    return fetch(url, init);
+    const connectionProvider = await this.context.getConnectionProvider();
+    const agent = await connectionProvider.getAgent();
+
+    return fetch(url, {
+      agent,
+      ...init,
+    });
   }
 }

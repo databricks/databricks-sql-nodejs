@@ -2,12 +2,18 @@ import thrift from 'thrift';
 import https from 'https';
 import http from 'http';
 import { HeadersInit } from 'node-fetch';
+import { ProxyAgent } from 'proxy-agent';
 
 import IConnectionProvider from '../contracts/IConnectionProvider';
-import IConnectionOptions from '../contracts/IConnectionOptions';
+import IConnectionOptions, { ProxyOptions } from '../contracts/IConnectionOptions';
 import globalConfig from '../../globalConfig';
 
 import ThriftHttpConnection from './ThriftHttpConnection';
+
+function buildProxyUrl(options: ProxyOptions): string {
+  const auth = options.auth?.username ? `${options.auth.username}:${options.auth?.password ?? ''}@` : '';
+  return `${options.protocol}://${auth}${options.host}:${options.port}`;
+}
 
 export default class HttpConnection implements IConnectionProvider {
   private readonly options: IConnectionOptions;
@@ -15,6 +21,8 @@ export default class HttpConnection implements IConnectionProvider {
   private headers: HeadersInit = {};
 
   private connection?: ThriftHttpConnection;
+
+  private agent?: http.Agent;
 
   constructor(options: IConnectionOptions) {
     this.options = options;
@@ -28,26 +36,43 @@ export default class HttpConnection implements IConnectionProvider {
     });
   }
 
-  private async getAgent(): Promise<http.Agent> {
-    const { options } = this;
+  public async getAgent(): Promise<http.Agent> {
+    if (!this.agent) {
+      const { options } = this;
 
-    const httpAgentOptions: http.AgentOptions = {
-      keepAlive: true,
-      maxSockets: 5,
-      keepAliveMsecs: 10000,
-      timeout: options.socketTimeout ?? globalConfig.socketTimeout,
-    };
+      const httpAgentOptions: http.AgentOptions = {
+        keepAlive: true,
+        maxSockets: 5,
+        keepAliveMsecs: 10000,
+        timeout: options.socketTimeout ?? globalConfig.socketTimeout,
+      };
 
-    const httpsAgentOptions: https.AgentOptions = {
-      ...httpAgentOptions,
-      minVersion: 'TLSv1.2',
-      rejectUnauthorized: false,
-      ca: options.ca,
-      cert: options.cert,
-      key: options.key,
-    };
+      const httpsAgentOptions: https.AgentOptions = {
+        ...httpAgentOptions,
+        minVersion: 'TLSv1.2',
+        rejectUnauthorized: false,
+        ca: options.ca,
+        cert: options.cert,
+        key: options.key,
+      };
 
-    return options.https ? new https.Agent(httpsAgentOptions) : new http.Agent(httpAgentOptions);
+      if (options.proxy !== undefined) {
+        const proxyUrl = buildProxyUrl(options.proxy);
+        const proxyProtocol = `${options.proxy.protocol}:`;
+
+        this.agent = new ProxyAgent({
+          ...httpAgentOptions,
+          getProxyForUrl: () => proxyUrl,
+          httpsAgent: new https.Agent(httpsAgentOptions),
+          httpAgent: new http.Agent(httpAgentOptions),
+          protocol: proxyProtocol,
+        });
+      } else {
+        this.agent = options.https ? new https.Agent(httpsAgentOptions) : new http.Agent(httpAgentOptions);
+      }
+    }
+
+    return this.agent;
   }
 
   public async getThriftConnection(): Promise<any> {
