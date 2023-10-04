@@ -1,4 +1,5 @@
-import { Issuer, BaseClient } from 'openid-client';
+import http from 'http';
+import { Issuer, BaseClient, custom } from 'openid-client';
 import HiveDriverError from '../../../errors/HiveDriverError';
 import { LogLevel } from '../../../contracts/IDBSQLLogger';
 import OAuthToken from './OAuthToken';
@@ -26,6 +27,8 @@ export default abstract class OAuthManager {
 
   protected readonly options: OAuthManagerOptions;
 
+  protected agent?: http.Agent;
+
   protected issuer?: Issuer;
 
   protected client?: BaseClient;
@@ -48,14 +51,35 @@ export default abstract class OAuthManager {
   }
 
   protected async getClient(): Promise<BaseClient> {
+    // Obtain http agent each time when we need an OAuth client
+    // to ensure that we always use a valid agent instance
+    const connectionProvider = await this.context.getConnectionProvider();
+    this.agent = await connectionProvider.getAgent();
+
+    const getHttpOptions = () => ({
+      agent: this.agent,
+    });
+
     if (!this.issuer) {
-      const issuer = await Issuer.discover(this.getOIDCConfigUrl());
+      // To use custom http agent in Issuer.discover(), we'd have to set Issuer[custom.http_options].
+      // However, that's a static field, and if multiple instances of OAuthManager used, race condition
+      // may occur when they simultaneously override that field and then try to use Issuer.discover().
+      // Therefore we create a local class derived from Issuer, and set that field for it, thus making
+      // sure that it will not interfere with other instances (or other code that may use Issuer)
+      class CustomIssuer extends Issuer {
+        static [custom.http_options] = getHttpOptions;
+      }
+
+      const issuer = await CustomIssuer.discover(this.getOIDCConfigUrl());
+
       // Overwrite `authorization_endpoint` in default config (specifically needed for Azure flow
       // where this URL has to be different)
       this.issuer = new Issuer({
         ...issuer.metadata,
         authorization_endpoint: this.getAuthorizationUrl(),
       });
+
+      this.issuer[custom.http_options] = getHttpOptions;
     }
 
     if (!this.client) {
@@ -64,6 +88,8 @@ export default abstract class OAuthManager {
         client_secret: this.options.clientSecret,
         token_endpoint_auth_method: this.options.clientSecret === undefined ? 'none' : 'client_secret_basic',
       });
+
+      this.client[custom.http_options] = getHttpOptions;
     }
 
     return this.client;

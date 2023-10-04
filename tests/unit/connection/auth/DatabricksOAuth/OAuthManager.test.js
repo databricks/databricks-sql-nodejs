@@ -134,6 +134,9 @@ class OAuthClientMock {
       ...options,
       context: {
         getLogger: () => logger,
+        getConnectionProvider: async () => ({
+          getAgent: async () => undefined,
+        }),
       },
     });
 
@@ -153,11 +156,7 @@ class OAuthClientMock {
 
     describe('U2M flow', () => {
       it('should get access token', async () => {
-        const { oauthManager, oauthClient } = prepareTestInstances({
-          logger: {
-            log: () => {},
-          },
-        });
+        const { oauthManager, oauthClient } = prepareTestInstances();
 
         const token = await oauthManager.getToken(['offline_access']);
         expect(oauthClient.grant.called).to.be.true;
@@ -217,11 +216,7 @@ class OAuthClientMock {
       });
 
       it('should throw an error if no refresh token is available', async () => {
-        const { oauthManager, oauthClient } = prepareTestInstances({
-          logger: {
-            log: () => {},
-          },
-        });
+        const { oauthManager, oauthClient } = prepareTestInstances();
 
         try {
           const token = new OAuthToken(createExpiredAccessToken());
@@ -239,11 +234,7 @@ class OAuthClientMock {
       });
 
       it('should throw an error for invalid token', async () => {
-        const { oauthManager, oauthClient } = prepareTestInstances({
-          logger: {
-            log: () => {},
-          },
-        });
+        const { oauthManager, oauthClient } = prepareTestInstances();
 
         try {
           const token = new OAuthToken('invalid_access_token', 'invalid_refresh_token');
@@ -274,11 +265,7 @@ class OAuthClientMock {
       });
 
       it('should throw an error if cannot refresh token', async () => {
-        const { oauthManager, oauthClient } = prepareTestInstances({
-          logger: {
-            log: () => {},
-          },
-        });
+        const { oauthManager, oauthClient } = prepareTestInstances();
 
         oauthClient.refresh.restore();
         sinon.stub(oauthClient, 'refresh').returns({});

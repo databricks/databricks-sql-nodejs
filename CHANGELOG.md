@@ -1,5 +1,31 @@
 # Release History
 
+## 1.x (unreleased)
+
+### Highlights
+
+- Proxy support added
+
+### Proxy support
+
+This feature allows to pass through proxy all the requests library makes. By default, proxy is disabled.
+To enable proxy, pass a configuration object to `DBSQLClient.connect`:
+
+```ts
+client.connect({
+    // pass host, path, auth options as usual
+    proxy: {
+      protocol: 'http',  // supported protocols: 'http', 'https', 'socks', 'socks4', 'socks4a', 'socks5', 'socks5h'
+      host: 'localhost', // proxy host (string)
+      port: 8070,        // proxy port (number)
+      auth: {            // optional proxy basic auth config
+        username: ...
+        password: ...
+      },
+    },
+  })
+```
+
 ## 1.5.0
 
 ### Highlights

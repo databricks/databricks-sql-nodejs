@@ -2,9 +2,10 @@ import thrift from 'thrift';
 import https from 'https';
 import http from 'http';
 import { HeadersInit } from 'node-fetch';
+import { ProxyAgent } from 'proxy-agent';
 
 import IConnectionProvider from '../contracts/IConnectionProvider';
-import IConnectionOptions from '../contracts/IConnectionOptions';
+import IConnectionOptions, { ProxyOptions } from '../contracts/IConnectionOptions';
 import globalConfig from '../../globalConfig';
 
 import ThriftHttpConnection from './ThriftHttpConnection';
@@ -15,6 +16,8 @@ export default class HttpConnection implements IConnectionProvider {
   private headers: HeadersInit = {};
 
   private connection?: ThriftHttpConnection;
+
+  private agent?: http.Agent;
 
   constructor(options: IConnectionOptions) {
     this.options = options;
@@ -28,26 +31,59 @@ export default class HttpConnection implements IConnectionProvider {
     });
   }
 
-  private async getAgent(): Promise<http.Agent> {
-    const { options } = this;
+  public async getAgent(): Promise<http.Agent> {
+    if (!this.agent) {
+      if (this.options.proxy !== undefined) {
+        this.agent = this.createProxyAgent(this.options.proxy);
+      } else {
+        this.agent = this.options.https ? this.createHttpsAgent() : this.createHttpAgent();
+      }
+    }
 
-    const httpAgentOptions: http.AgentOptions = {
+    return this.agent;
+  }
+
+  private getAgentDefaultOptions(): http.AgentOptions {
+    return {
       keepAlive: true,
       maxSockets: 5,
       keepAliveMsecs: 10000,
-      timeout: options.socketTimeout ?? globalConfig.socketTimeout,
+      timeout: this.options.socketTimeout ?? globalConfig.socketTimeout,
     };
+  }
 
+  private createHttpAgent(): http.Agent {
+    const httpAgentOptions = this.getAgentDefaultOptions();
+    return new http.Agent(httpAgentOptions);
+  }
+
+  private createHttpsAgent(): https.Agent {
     const httpsAgentOptions: https.AgentOptions = {
-      ...httpAgentOptions,
+      ...this.getAgentDefaultOptions(),
       minVersion: 'TLSv1.2',
       rejectUnauthorized: false,
-      ca: options.ca,
-      cert: options.cert,
-      key: options.key,
+      ca: this.options.ca,
+      cert: this.options.cert,
+      key: this.options.key,
     };
+    return new https.Agent(httpsAgentOptions);
+  }
 
-    return options.https ? new https.Agent(httpsAgentOptions) : new http.Agent(httpAgentOptions);
+  private createProxyAgent(proxyOptions: ProxyOptions): ProxyAgent {
+    const proxyAuth = proxyOptions.auth?.username
+      ? `${proxyOptions.auth.username}:${proxyOptions.auth?.password ?? ''}@`
+      : '';
+    const proxyUrl = `${proxyOptions.protocol}://${proxyAuth}${proxyOptions.host}:${proxyOptions.port}`;
+
+    const proxyProtocol = `${proxyOptions.protocol}:`;
+
+    return new ProxyAgent({
+      ...this.getAgentDefaultOptions(),
+      getProxyForUrl: () => proxyUrl,
+      httpsAgent: this.createHttpsAgent(),
+      httpAgent: this.createHttpAgent(),
+      protocol: proxyProtocol,
+    });
   }
 
   public async getThriftConnection(): Promise<any> {

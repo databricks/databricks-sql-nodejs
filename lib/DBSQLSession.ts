@@ -274,7 +274,11 @@ export default class DBSQLSession implements IDBSQLSession {
     if (localFile === undefined) {
       throw new StagingError('Local file path not provided');
     }
-    const response = await fetch(presignedUrl, { method: 'GET', headers });
+
+    const connectionProvider = await this.context.getConnectionProvider();
+    const agent = await connectionProvider.getAgent();
+
+    const response = await fetch(presignedUrl, { method: 'GET', headers, agent });
     if (!response.ok) {
       throw new StagingError(`HTTP error ${response.status} ${response.statusText}`);
     }
@@ -283,7 +287,10 @@ export default class DBSQLSession implements IDBSQLSession {
   }
 
   private async handleStagingRemove(presignedUrl: string, headers: HeadersInit): Promise<void> {
-    const response = await fetch(presignedUrl, { method: 'DELETE', headers });
+    const connectionProvider = await this.context.getConnectionProvider();
+    const agent = await connectionProvider.getAgent();
+
+    const response = await fetch(presignedUrl, { method: 'DELETE', headers, agent });
     if (!response.ok) {
       throw new StagingError(`HTTP error ${response.status} ${response.statusText}`);
     }
@@ -297,8 +304,12 @@ export default class DBSQLSession implements IDBSQLSession {
     if (localFile === undefined) {
       throw new StagingError('Local file path not provided');
     }
+
+    const connectionProvider = await this.context.getConnectionProvider();
+    const agent = await connectionProvider.getAgent();
+
     const data = fs.readFileSync(localFile);
-    const response = await fetch(presignedUrl, { method: 'PUT', headers, body: data });
+    const response = await fetch(presignedUrl, { method: 'PUT', headers, agent, body: data });
     if (!response.ok) {
       throw new StagingError(`HTTP error ${response.status} ${response.statusText}`);
     }
