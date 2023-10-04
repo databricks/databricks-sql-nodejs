@@ -5,7 +5,6 @@ import IOperation, {
   GetSchemaOptions,
   WaitUntilReadyOptions,
 } from '../contracts/IOperation';
-import HiveDriver from '../hive/HiveDriver';
 import {
   TGetOperationStatusResp,
   TOperationHandle,
@@ -18,7 +17,7 @@ import {
 } from '../../thrift/TCLIService_types';
 import Status from '../dto/Status';
 import FetchResultsHelper from './FetchResultsHelper';
-import IDBSQLLogger, { LogLevel } from '../contracts/IDBSQLLogger';
+import { LogLevel } from '../contracts/IDBSQLLogger';
 import OperationStateError, { OperationStateErrorCode } from '../errors/OperationStateError';
 import IOperationResult from '../result/IOperationResult';
 import JsonResult from '../result/JsonResult';
@@ -26,11 +25,14 @@ import ArrowResult from '../result/ArrowResult';
 import CloudFetchResult from '../result/CloudFetchResult';
 import { definedOrError } from '../utils';
 import HiveDriverError from '../errors/HiveDriverError';
+import IClientContext from '../contracts/IClientContext';
 
 const defaultMaxRows = 100000;
 
 interface DBSQLOperationConstructorOptions {
-  logger: IDBSQLLogger;
+  handle: TOperationHandle;
+  directResults?: TSparkDirectResults;
+  context: IClientContext;
 }
 
 async function delay(ms?: number): Promise<void> {
@@ -42,11 +44,9 @@ async function delay(ms?: number): Promise<void> {
 }
 
 export default class DBSQLOperation implements IOperation {
-  private readonly driver: HiveDriver;
+  private readonly context: IClientContext;
 
   private readonly operationHandle: TOperationHandle;
-
-  private readonly logger: IDBSQLLogger;
 
   public onClose?: () => void;
 
@@ -70,32 +70,26 @@ export default class DBSQLOperation implements IOperation {
 
   private resultHandler?: IOperationResult;
 
-  constructor(
-    driver: HiveDriver,
-    operationHandle: TOperationHandle,
-    { logger }: DBSQLOperationConstructorOptions,
-    directResults?: TSparkDirectResults,
-  ) {
-    this.driver = driver;
-    this.operationHandle = operationHandle;
-    this.logger = logger;
+  constructor({ handle, directResults, context }: DBSQLOperationConstructorOptions) {
+    this.operationHandle = handle;
+    this.context = context;
 
     const useOnlyPrefetchedResults = Boolean(directResults?.closeOperation);
 
-    this.hasResultSet = operationHandle.hasResultSet;
+    this.hasResultSet = this.operationHandle.hasResultSet;
     if (directResults?.operationStatus) {
       this.processOperationStatusResponse(directResults.operationStatus);
     }
 
     this.metadata = directResults?.resultSetMetadata;
     this._data = new FetchResultsHelper(
-      this.driver,
+      this.context,
       this.operationHandle,
       [directResults?.resultSet],
       useOnlyPrefetchedResults,
     );
     this.closeOperation = directResults?.closeOperation;
-    this.logger.log(LogLevel.debug, `Operation created with id: ${this.getId()}`);
+    this.context.getLogger().log(LogLevel.debug, `Operation created with id: ${this.getId()}`);
   }
 
   public getId() {
@@ -118,7 +112,7 @@ export default class DBSQLOperation implements IOperation {
       const chunk = await this.fetchChunk(options);
       data.push(chunk);
     } while (await this.hasMoreRows()); // eslint-disable-line no-await-in-loop
-    this.logger?.log(LogLevel.debug, `Fetched all data from operation with id: ${this.getId()}`);
+    this.context.getLogger().log(LogLevel.debug, `Fetched all data from operation with id: ${this.getId()}`);
 
     return data.flat();
   }
@@ -149,10 +143,12 @@ export default class DBSQLOperation implements IOperation {
     await this.failIfClosed();
 
     const result = await resultHandler.getValue(data ? [data] : []);
-    this.logger?.log(
-      LogLevel.debug,
-      `Fetched chunk of size: ${options?.maxRows || defaultMaxRows} from operation with id: ${this.getId()}`,
-    );
+    this.context
+      .getLogger()
+      .log(
+        LogLevel.debug,
+        `Fetched chunk of size: ${options?.maxRows || defaultMaxRows} from operation with id: ${this.getId()}`,
+      );
     return result;
   }
 
@@ -163,13 +159,14 @@ export default class DBSQLOperation implements IOperation {
    */
   public async status(progress: boolean = false): Promise<TGetOperationStatusResp> {
     await this.failIfClosed();
-    this.logger?.log(LogLevel.debug, `Fetching status for operation with id: ${this.getId()}`);
+    this.context.getLogger().log(LogLevel.debug, `Fetching status for operation with id: ${this.getId()}`);
 
     if (this.operationStatus) {
       return this.operationStatus;
     }
 
-    const response = await this.driver.getOperationStatus({
+    const driver = await this.context.getDriver();
+    const response = await driver.getOperationStatus({
       operationHandle: this.operationHandle,
       getProgressUpdate: progress,
     });
@@ -186,9 +183,10 @@ export default class DBSQLOperation implements IOperation {
       return Status.success();
     }
 
-    this.logger?.log(LogLevel.debug, `Cancelling operation with id: ${this.getId()}`);
+    this.context.getLogger().log(LogLevel.debug, `Cancelling operation with id: ${this.getId()}`);
 
-    const response = await this.driver.cancelOperation({
+    const driver = await this.context.getDriver();
+    const response = await driver.cancelOperation({
       operationHandle: this.operationHandle,
     });
     Status.assert(response.status);
@@ -209,11 +207,12 @@ export default class DBSQLOperation implements IOperation {
       return Status.success();
     }
 
-    this.logger?.log(LogLevel.debug, `Closing operation with id: ${this.getId()}`);
+    this.context.getLogger().log(LogLevel.debug, `Closing operation with id: ${this.getId()}`);
 
+    const driver = await this.context.getDriver();
     const response =
       this.closeOperation ??
-      (await this.driver.closeOperation({
+      (await driver.closeOperation({
         operationHandle: this.operationHandle,
       }));
     Status.assert(response.status);
@@ -254,7 +253,7 @@ export default class DBSQLOperation implements IOperation {
 
     await this.waitUntilReady(options);
 
-    this.logger?.log(LogLevel.debug, `Fetching schema for operation with id: ${this.getId()}`);
+    this.context.getLogger().log(LogLevel.debug, `Fetching schema for operation with id: ${this.getId()}`);
     const metadata = await this.fetchMetadata();
     return metadata.schema ?? null;
   }
@@ -332,7 +331,8 @@ export default class DBSQLOperation implements IOperation {
 
   private async fetchMetadata() {
     if (!this.metadata) {
-      const metadata = await this.driver.getResultSetMetadata({
+      const driver = await this.context.getDriver();
+      const metadata = await driver.getResultSetMetadata({
         operationHandle: this.operationHandle,
       });
       Status.assert(metadata.status);
@@ -349,13 +349,13 @@ export default class DBSQLOperation implements IOperation {
     if (!this.resultHandler) {
       switch (resultFormat) {
         case TSparkRowSetType.COLUMN_BASED_SET:
-          this.resultHandler = new JsonResult(metadata.schema);
+          this.resultHandler = new JsonResult(this.context, metadata.schema);
           break;
         case TSparkRowSetType.ARROW_BASED_SET:
-          this.resultHandler = new ArrowResult(metadata.schema, metadata.arrowSchema);
+          this.resultHandler = new ArrowResult(this.context, metadata.schema, metadata.arrowSchema);
           break;
         case TSparkRowSetType.URL_BASED_SET:
-          this.resultHandler = new CloudFetchResult(metadata.schema);
+          this.resultHandler = new CloudFetchResult(this.context, metadata.schema);
           break;
         default:
           this.resultHandler = undefined;

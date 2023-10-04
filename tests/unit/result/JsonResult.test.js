@@ -38,7 +38,9 @@ describe('JsonResult', () => {
       },
     ];
 
-    const result = new JsonResult(schema);
+    const context = {};
+
+    const result = new JsonResult(context, schema);
     await result.getValue(data);
     expect(await result.hasPendingData()).to.be.false;
   });
@@ -124,7 +126,9 @@ describe('JsonResult', () => {
       },
     ];
 
-    const result = new JsonResult(schema);
+    const context = {};
+
+    const result = new JsonResult(context, schema);
 
     expect(await result.getValue(data)).to.be.deep.eq([
       {
@@ -194,7 +198,9 @@ describe('JsonResult', () => {
       },
     ];
 
-    const result = new JsonResult(schema);
+    const context = {};
+
+    const result = new JsonResult(context, schema);
 
     expect(await result.getValue(data)).to.be.deep.eq([
       {
@@ -234,7 +240,9 @@ describe('JsonResult', () => {
       },
     ];
 
-    const result = new JsonResult(schema);
+    const context = {};
+
+    const result = new JsonResult(context, schema);
 
     expect(await result.getValue(data)).to.be.deep.eq([
       { 'table.id': '0' },
@@ -245,7 +253,9 @@ describe('JsonResult', () => {
   });
 
   it('should detect nulls', () => {
-    const result = new JsonResult(null);
+    const context = {};
+
+    const result = new JsonResult(context, null);
     const buf = Buffer.from([0x55, 0xaa, 0xc3]);
 
     [
@@ -357,7 +367,9 @@ describe('JsonResult', () => {
       },
     ];
 
-    const result = new JsonResult(schema);
+    const context = {};
+
+    const result = new JsonResult(context, schema);
 
     expect(await result.getValue(data)).to.be.deep.eq([
       {
@@ -386,7 +398,9 @@ describe('JsonResult', () => {
       columns: [getColumnSchema('table.id', TCLIService_types.TTypeId.STRING_TYPE, 1)],
     };
 
-    const result = new JsonResult(schema);
+    const context = {};
+
+    const result = new JsonResult(context, schema);
 
     expect(await result.getValue()).to.be.deep.eq([]);
     expect(await result.getValue([])).to.be.deep.eq([]);
@@ -403,7 +417,9 @@ describe('JsonResult', () => {
       },
     ];
 
-    const result = new JsonResult();
+    const context = {};
+
+    const result = new JsonResult(context);
 
     expect(await result.getValue(data)).to.be.deep.eq([]);
   });
@@ -436,7 +452,9 @@ describe('JsonResult', () => {
       },
     ];
 
-    const result = new JsonResult(schema);
+    const context = {};
+
+    const result = new JsonResult(context, schema);
 
     expect(await result.getValue(data)).to.be.deep.eq([
       {

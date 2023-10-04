@@ -106,7 +106,8 @@ describe('CloudFetchResult', () => {
   });
 
   it('should report pending data if there are any', async () => {
-    const result = new CloudFetchResult(sampleThriftSchema, sampleArrowSchema);
+    const context = {};
+    const result = new CloudFetchResult({}, sampleThriftSchema, sampleArrowSchema);
 
     case1: {
       result.pendingLinks = [];
@@ -130,7 +131,9 @@ describe('CloudFetchResult', () => {
   it('should extract links from row sets', async () => {
     globalConfig.cloudFetchConcurrentDownloads = 0; // this will prevent it from downloading batches
 
-    const result = new CloudFetchResult(sampleThriftSchema, sampleArrowSchema);
+    const context = {};
+
+    const result = new CloudFetchResult({}, sampleThriftSchema, sampleArrowSchema);
 
     sinon.stub(result, 'fetch').returns(
       Promise.resolve({
@@ -153,7 +156,9 @@ describe('CloudFetchResult', () => {
   it('should download batches according to settings', async () => {
     globalConfig.cloudFetchConcurrentDownloads = 2;
 
-    const result = new CloudFetchResult(sampleThriftSchema, sampleArrowSchema);
+    const context = {};
+
+    const result = new CloudFetchResult({}, sampleThriftSchema, sampleArrowSchema);
 
     sinon.stub(result, 'fetch').returns(
       Promise.resolve({
@@ -199,7 +204,9 @@ describe('CloudFetchResult', () => {
   it('should handle HTTP errors', async () => {
     globalConfig.cloudFetchConcurrentDownloads = 1;
 
-    const result = new CloudFetchResult(sampleThriftSchema, sampleArrowSchema);
+    const context = {};
+
+    const result = new CloudFetchResult({}, sampleThriftSchema, sampleArrowSchema);
 
     sinon.stub(result, 'fetch').returns(
       Promise.resolve({
@@ -225,7 +232,9 @@ describe('CloudFetchResult', () => {
   });
 
   it('should handle expired links', async () => {
-    const result = new CloudFetchResult(sampleThriftSchema, sampleArrowSchema);
+    const context = {};
+
+    const result = new CloudFetchResult(context, sampleThriftSchema, sampleArrowSchema);
 
     sinon.stub(result, 'fetch').returns(
       Promise.resolve({

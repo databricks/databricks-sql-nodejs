@@ -5,6 +5,7 @@ const DBSQLSession = require('../../dist/DBSQLSession').default;
 const InfoValue = require('../../dist/dto/InfoValue').default;
 const Status = require('../../dist/dto/Status').default;
 const DBSQLOperation = require('../../dist/DBSQLOperation').default;
+const HiveDriver = require('../../dist/hive/HiveDriver').default;
 
 // Create logger that won't emit
 //
@@ -13,10 +14,12 @@ const logger = new DBSQLLogger({ level: LogLevel.error });
 function createDriverMock(customMethodHandler) {
   customMethodHandler = customMethodHandler || ((methodName, value) => value);
 
-  return new Proxy(
-    {},
-    {
-      get: function (target, prop) {
+  const driver = new HiveDriver({});
+
+  return new Proxy(driver, {
+    get: function (target, prop) {
+      // Mock only methods of driver
+      if (typeof target[prop] === 'function') {
         return () =>
           Promise.resolve(
             customMethodHandler(prop, {
@@ -27,14 +30,20 @@ function createDriverMock(customMethodHandler) {
               infoValue: {},
             }),
           );
-      },
+      }
     },
-  );
+  });
 }
 
 function createSession(customMethodHandler) {
   const driver = createDriverMock(customMethodHandler);
-  return new DBSQLSession(driver, { sessionId: 'id' }, logger);
+  return new DBSQLSession({
+    handle: { sessionId: 'id' },
+    context: {
+      getLogger: () => logger,
+      getDriver: async () => driver,
+    },
+  });
 }
 
 async function expectFailure(fn) {

@@ -4,6 +4,8 @@ import { EventEmitter } from 'events';
 import TCLIService from '../thrift/TCLIService';
 import { TProtocolVersion } from '../thrift/TCLIService_types';
 import IDBSQLClient, { ClientOptions, ConnectionOptions, OpenSessionRequest } from './contracts/IDBSQLClient';
+import IDriver from './contracts/IDriver';
+import IClientContext from './contracts/IClientContext';
 import HiveDriver from './hive/HiveDriver';
 import { Int64 } from './hive/Types';
 import DBSQLSession from './DBSQLSession';
@@ -41,12 +43,16 @@ function getInitialNamespaceOptions(catalogName?: string, schemaName?: string) {
   };
 }
 
-export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
+export default class DBSQLClient extends EventEmitter implements IDBSQLClient, IClientContext {
   private connectionProvider?: IConnectionProvider;
 
   private authProvider?: IAuthentication;
 
   private client?: TCLIService.Client;
+
+  private readonly driver = new HiveDriver({
+    context: this,
+  });
 
   private readonly logger: IDBSQLLogger;
 
@@ -73,7 +79,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
     };
   }
 
-  private getAuthProvider(options: ConnectionOptions, authProvider?: IAuthentication): IAuthentication {
+  private initAuthProvider(options: ConnectionOptions, authProvider?: IAuthentication): IAuthentication {
     if (authProvider) {
       return authProvider;
     }
@@ -84,15 +90,16 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
         return new PlainHttpAuthentication({
           username: 'token',
           password: options.token,
+          context: this,
         });
       case 'databricks-oauth':
         return new DatabricksOAuth({
           host: options.host,
-          logger: this.logger,
           persistence: options.persistence,
           azureTenantId: options.azureTenantId,
           clientId: options.oauthClientId,
           clientSecret: options.oauthClientSecret,
+          context: this,
         });
       case 'custom':
         return options.provider;
@@ -110,7 +117,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
    * const session = client.connect({host, path, token});
    */
   public async connect(options: ConnectionOptions, authProvider?: IAuthentication): Promise<IDBSQLClient> {
-    this.authProvider = this.getAuthProvider(options, authProvider);
+    this.authProvider = this.initAuthProvider(options, authProvider);
 
     this.connectionProvider = new HttpConnection(this.getConnectionOptions(options));
 
@@ -156,37 +163,18 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
    * const session = await client.openSession();
    */
   public async openSession(request: OpenSessionRequest = {}): Promise<IDBSQLSession> {
-    const driver = new HiveDriver(() => this.getClient());
-
-    const response = await driver.openSession({
+    const response = await this.driver.openSession({
       client_protocol_i64: new Int64(TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V8),
       ...getInitialNamespaceOptions(request.initialCatalog, request.initialSchema),
     });
 
     Status.assert(response.status);
-    const session = new DBSQLSession(driver, definedOrError(response.sessionHandle), {
-      logger: this.logger,
+    const session = new DBSQLSession({
+      handle: definedOrError(response.sessionHandle),
+      context: this,
     });
     this.sessions.add(session);
     return session;
-  }
-
-  private async getClient() {
-    if (!this.connectionProvider) {
-      throw new HiveDriverError('DBSQLClient: not connected');
-    }
-
-    if (!this.client) {
-      this.logger.log(LogLevel.info, 'DBSQLClient: initializing thrift client');
-      this.client = this.thrift.createClient(TCLIService, await this.connectionProvider.getThriftConnection());
-    }
-
-    if (this.authProvider) {
-      const authHeaders = await this.authProvider.authenticate();
-      this.connectionProvider.setHeaders(authHeaders);
-    }
-
-    return this.client;
   }
 
   public async close(): Promise<void> {
@@ -195,5 +183,37 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient {
     this.client = undefined;
     this.connectionProvider = undefined;
     this.authProvider = undefined;
+  }
+
+  public getLogger(): IDBSQLLogger {
+    return this.logger;
+  }
+
+  public async getConnectionProvider(): Promise<IConnectionProvider> {
+    if (!this.connectionProvider) {
+      throw new HiveDriverError('DBSQLClient: not connected');
+    }
+
+    return this.connectionProvider;
+  }
+
+  public async getClient(): Promise<TCLIService.Client> {
+    const connectionProvider = await this.getConnectionProvider();
+
+    if (!this.client) {
+      this.logger.log(LogLevel.info, 'DBSQLClient: initializing thrift client');
+      this.client = this.thrift.createClient(TCLIService, await connectionProvider.getThriftConnection());
+    }
+
+    if (this.authProvider) {
+      const authHeaders = await this.authProvider.authenticate();
+      connectionProvider.setHeaders(authHeaders);
+    }
+
+    return this.client;
+  }
+
+  public async getDriver(): Promise<IDriver> {
+    return this.driver;
   }
 }

@@ -12,6 +12,7 @@ import {
   util as arrowUtils,
 } from 'apache-arrow';
 import { TRowSet, TTableSchema, TColumnDesc } from '../../thrift/TCLIService_types';
+import IClientContext from '../contracts/IClientContext';
 import IOperationResult from './IOperationResult';
 import { getSchemaColumns, convertThriftValue } from './utils';
 
@@ -21,11 +22,14 @@ type ArrowSchema = Schema<TypeMap>;
 type ArrowSchemaField = Field<DataType<Type, TypeMap>>;
 
 export default class ArrowResult implements IOperationResult {
+  protected readonly context: IClientContext;
+
   private readonly schema: Array<TColumnDesc>;
 
   private readonly arrowSchema?: Buffer;
 
-  constructor(schema?: TTableSchema, arrowSchema?: Buffer) {
+  constructor(context: IClientContext, schema?: TTableSchema, arrowSchema?: Buffer) {
+    this.context = context;
     this.schema = getSchemaColumns(schema);
     this.arrowSchema = arrowSchema;
   }

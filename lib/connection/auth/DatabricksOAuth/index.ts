@@ -1,29 +1,28 @@
 import { HeadersInit } from 'node-fetch';
 import IAuthentication from '../../contracts/IAuthentication';
-import IDBSQLLogger from '../../../contracts/IDBSQLLogger';
 import OAuthPersistence, { OAuthPersistenceCache } from './OAuthPersistence';
 import OAuthManager, { OAuthManagerOptions } from './OAuthManager';
 import { OAuthScopes, defaultOAuthScopes } from './OAuthScope';
+import IClientContext from '../../../contracts/IClientContext';
 
 interface DatabricksOAuthOptions extends OAuthManagerOptions {
   scopes?: OAuthScopes;
-  logger?: IDBSQLLogger;
   persistence?: OAuthPersistence;
   headers?: HeadersInit;
 }
 
 export default class DatabricksOAuth implements IAuthentication {
-  private readonly options: DatabricksOAuthOptions;
+  private readonly context: IClientContext;
 
-  private readonly logger?: IDBSQLLogger;
+  private readonly options: DatabricksOAuthOptions;
 
   private readonly manager: OAuthManager;
 
   private readonly defaultPersistence = new OAuthPersistenceCache();
 
   constructor(options: DatabricksOAuthOptions) {
+    this.context = options.context;
     this.options = options;
-    this.logger = options.logger;
     this.manager = OAuthManager.getManager(this.options);
   }
 

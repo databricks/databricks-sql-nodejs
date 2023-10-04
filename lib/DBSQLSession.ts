@@ -12,7 +12,6 @@ import {
   TSparkParameter,
   TProtocolVersion,
 } from '../thrift/TCLIService_types';
-import HiveDriver from './hive/HiveDriver';
 import { Int64 } from './hive/Types';
 import IDBSQLSession, {
   ExecuteStatementOptions,
@@ -32,12 +31,13 @@ import Status from './dto/Status';
 import InfoValue from './dto/InfoValue';
 import { definedOrError } from './utils';
 import CloseableCollection from './utils/CloseableCollection';
-import IDBSQLLogger, { LogLevel } from './contracts/IDBSQLLogger';
+import { LogLevel } from './contracts/IDBSQLLogger';
 import HiveDriverError from './errors/HiveDriverError';
 import globalConfig from './globalConfig';
 import StagingError from './errors/StagingError';
 import { DBSQLParameter, DBSQLParameterValue } from './DBSQLParameter';
 import ParameterError from './errors/ParameterError';
+import IClientContext from './contracts/IClientContext';
 
 const defaultMaxRows = 100000;
 
@@ -130,15 +130,14 @@ function getQueryParameters(
 }
 
 interface DBSQLSessionConstructorOptions {
-  logger: IDBSQLLogger;
+  handle: TSessionHandle;
+  context: IClientContext;
 }
 
 export default class DBSQLSession implements IDBSQLSession {
-  private readonly driver: HiveDriver;
+  private readonly context: IClientContext;
 
   private readonly sessionHandle: TSessionHandle;
-
-  private readonly logger: IDBSQLLogger;
 
   private isOpen = true;
 
@@ -146,11 +145,10 @@ export default class DBSQLSession implements IDBSQLSession {
 
   private operations = new CloseableCollection<DBSQLOperation>();
 
-  constructor(driver: HiveDriver, sessionHandle: TSessionHandle, { logger }: DBSQLSessionConstructorOptions) {
-    this.driver = driver;
-    this.sessionHandle = sessionHandle;
-    this.logger = logger;
-    this.logger.log(LogLevel.debug, `Session created with id: ${this.getId()}`);
+  constructor({ handle, context }: DBSQLSessionConstructorOptions) {
+    this.sessionHandle = handle;
+    this.context = context;
+    this.context.getLogger().log(LogLevel.debug, `Session created with id: ${this.getId()}`);
   }
 
   public getId() {
@@ -167,7 +165,8 @@ export default class DBSQLSession implements IDBSQLSession {
    */
   public async getInfo(infoType: number): Promise<InfoValue> {
     await this.failIfClosed();
-    const operationPromise = this.driver.getInfo({
+    const driver = await this.context.getDriver();
+    const operationPromise = driver.getInfo({
       sessionHandle: this.sessionHandle,
       infoType,
     });
@@ -187,7 +186,8 @@ export default class DBSQLSession implements IDBSQLSession {
    */
   public async executeStatement(statement: string, options: ExecuteStatementOptions = {}): Promise<IOperation> {
     await this.failIfClosed();
-    const operationPromise = this.driver.executeStatement({
+    const driver = await this.context.getDriver();
+    const operationPromise = driver.executeStatement({
       sessionHandle: this.sessionHandle,
       statement,
       queryTimeout: options.queryTimeout,
@@ -312,7 +312,8 @@ export default class DBSQLSession implements IDBSQLSession {
    */
   public async getTypeInfo(request: TypeInfoRequest = {}): Promise<IOperation> {
     await this.failIfClosed();
-    const operationPromise = this.driver.getTypeInfo({
+    const driver = await this.context.getDriver();
+    const operationPromise = driver.getTypeInfo({
       sessionHandle: this.sessionHandle,
       runAsync: true,
       ...getDirectResultsOptions(request.maxRows),
@@ -329,7 +330,8 @@ export default class DBSQLSession implements IDBSQLSession {
    */
   public async getCatalogs(request: CatalogsRequest = {}): Promise<IOperation> {
     await this.failIfClosed();
-    const operationPromise = this.driver.getCatalogs({
+    const driver = await this.context.getDriver();
+    const operationPromise = driver.getCatalogs({
       sessionHandle: this.sessionHandle,
       runAsync: true,
       ...getDirectResultsOptions(request.maxRows),
@@ -346,7 +348,8 @@ export default class DBSQLSession implements IDBSQLSession {
    */
   public async getSchemas(request: SchemasRequest = {}): Promise<IOperation> {
     await this.failIfClosed();
-    const operationPromise = this.driver.getSchemas({
+    const driver = await this.context.getDriver();
+    const operationPromise = driver.getSchemas({
       sessionHandle: this.sessionHandle,
       catalogName: request.catalogName,
       schemaName: request.schemaName,
@@ -365,7 +368,8 @@ export default class DBSQLSession implements IDBSQLSession {
    */
   public async getTables(request: TablesRequest = {}): Promise<IOperation> {
     await this.failIfClosed();
-    const operationPromise = this.driver.getTables({
+    const driver = await this.context.getDriver();
+    const operationPromise = driver.getTables({
       sessionHandle: this.sessionHandle,
       catalogName: request.catalogName,
       schemaName: request.schemaName,
@@ -386,7 +390,8 @@ export default class DBSQLSession implements IDBSQLSession {
    */
   public async getTableTypes(request: TableTypesRequest = {}): Promise<IOperation> {
     await this.failIfClosed();
-    const operationPromise = this.driver.getTableTypes({
+    const driver = await this.context.getDriver();
+    const operationPromise = driver.getTableTypes({
       sessionHandle: this.sessionHandle,
       runAsync: true,
       ...getDirectResultsOptions(request.maxRows),
@@ -403,7 +408,8 @@ export default class DBSQLSession implements IDBSQLSession {
    */
   public async getColumns(request: ColumnsRequest = {}): Promise<IOperation> {
     await this.failIfClosed();
-    const operationPromise = this.driver.getColumns({
+    const driver = await this.context.getDriver();
+    const operationPromise = driver.getColumns({
       sessionHandle: this.sessionHandle,
       catalogName: request.catalogName,
       schemaName: request.schemaName,
@@ -424,7 +430,8 @@ export default class DBSQLSession implements IDBSQLSession {
    */
   public async getFunctions(request: FunctionsRequest): Promise<IOperation> {
     await this.failIfClosed();
-    const operationPromise = this.driver.getFunctions({
+    const driver = await this.context.getDriver();
+    const operationPromise = driver.getFunctions({
       sessionHandle: this.sessionHandle,
       catalogName: request.catalogName,
       schemaName: request.schemaName,
@@ -438,7 +445,8 @@ export default class DBSQLSession implements IDBSQLSession {
 
   public async getPrimaryKeys(request: PrimaryKeysRequest): Promise<IOperation> {
     await this.failIfClosed();
-    const operationPromise = this.driver.getPrimaryKeys({
+    const driver = await this.context.getDriver();
+    const operationPromise = driver.getPrimaryKeys({
       sessionHandle: this.sessionHandle,
       catalogName: request.catalogName,
       schemaName: request.schemaName,
@@ -458,7 +466,8 @@ export default class DBSQLSession implements IDBSQLSession {
    */
   public async getCrossReference(request: CrossReferenceRequest): Promise<IOperation> {
     await this.failIfClosed();
-    const operationPromise = this.driver.getCrossReference({
+    const driver = await this.context.getDriver();
+    const operationPromise = driver.getCrossReference({
       sessionHandle: this.sessionHandle,
       parentCatalogName: request.parentCatalogName,
       parentSchemaName: request.parentSchemaName,
@@ -486,7 +495,8 @@ export default class DBSQLSession implements IDBSQLSession {
     // Close owned operations one by one, removing successfully closed ones from the list
     await this.operations.closeAll();
 
-    const response = await this.driver.closeSession({
+    const driver = await this.context.getDriver();
+    const response = await driver.closeSession({
       sessionHandle: this.sessionHandle,
     });
     // check status for being successful
@@ -496,21 +506,18 @@ export default class DBSQLSession implements IDBSQLSession {
     this.onClose?.();
     this.isOpen = false;
 
-    this.logger.log(LogLevel.debug, `Session closed with id: ${this.getId()}`);
+    this.context.getLogger().log(LogLevel.debug, `Session closed with id: ${this.getId()}`);
     return new Status(response.status);
   }
 
   private createOperation(response: OperationResponseShape): DBSQLOperation {
     Status.assert(response.status);
     const handle = definedOrError(response.operationHandle);
-    const operation = new DBSQLOperation(
-      this.driver,
+    const operation = new DBSQLOperation({
       handle,
-      {
-        logger: this.logger,
-      },
-      response.directResults,
-    );
+      directResults: response.directResults,
+      context: this.context,
+    });
 
     this.operations.add(operation);
 

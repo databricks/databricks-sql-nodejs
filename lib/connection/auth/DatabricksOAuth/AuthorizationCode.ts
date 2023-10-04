@@ -1,13 +1,14 @@
 import http, { IncomingMessage, Server, ServerResponse } from 'http';
 import { BaseClient, CallbackParamsType, generators } from 'openid-client';
 import open from 'open';
-import IDBSQLLogger, { LogLevel } from '../../../contracts/IDBSQLLogger';
+import { LogLevel } from '../../../contracts/IDBSQLLogger';
 import { OAuthScopes, scopeDelimiter } from './OAuthScope';
+import IClientContext from '../../../contracts/IClientContext';
 
 export interface AuthorizationCodeOptions {
   client: BaseClient;
   ports: Array<number>;
-  logger?: IDBSQLLogger;
+  context: IClientContext;
 }
 
 async function startServer(
@@ -57,18 +58,18 @@ export interface AuthorizationCodeFetchResult {
 }
 
 export default class AuthorizationCode {
+  private readonly context: IClientContext;
+
   private readonly client: BaseClient;
 
   private readonly host: string = 'localhost';
 
   private readonly ports: Array<number>;
 
-  private readonly logger?: IDBSQLLogger;
-
   constructor(options: AuthorizationCodeOptions) {
     this.client = options.client;
     this.ports = options.ports;
-    this.logger = options.logger;
+    this.context = options.context;
   }
 
   private async openUrl(url: string) {
@@ -125,7 +126,7 @@ export default class AuthorizationCode {
       const host = this.host; // eslint-disable-line prefer-destructuring
       try {
         const server = await startServer(host, port, requestHandler); // eslint-disable-line no-await-in-loop
-        this.logger?.log(LogLevel.info, `Listening for OAuth authorization callback at ${host}:${port}`);
+        this.context.getLogger().log(LogLevel.info, `Listening for OAuth authorization callback at ${host}:${port}`);
 
         let resolveStopped: () => void;
         let rejectStopped: (reason?: any) => void;
@@ -144,7 +145,7 @@ export default class AuthorizationCode {
       } catch (error) {
         // if port already in use - try another one, otherwise re-throw an exception
         if (error instanceof Error && 'code' in error && error.code === 'EADDRINUSE') {
-          this.logger?.log(LogLevel.debug, `Failed to start server at ${host}:${port}: ${error.code}`);
+          this.context.getLogger().log(LogLevel.debug, `Failed to start server at ${host}:${port}: ${error.code}`);
         } else {
           throw error;
         }

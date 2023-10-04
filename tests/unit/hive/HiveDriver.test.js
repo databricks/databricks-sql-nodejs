@@ -7,8 +7,12 @@ const toTitleCase = (str) => str[0].toUpperCase() + str.slice(1);
 
 const testCommand = async (command, request) => {
   const client = {};
-  const clientFactory = sinon.stub().returns(Promise.resolve(client));
-  const driver = new HiveDriver(clientFactory);
+  const clientContext = {
+    getClient: sinon.stub().returns(Promise.resolve(client)),
+  };
+  const driver = new HiveDriver({
+    context: clientContext,
+  });
 
   const response = { response: 'value' };
   client[toTitleCase(command)] = function (req, cb) {
@@ -18,7 +22,7 @@ const testCommand = async (command, request) => {
 
   const resp = await driver[command](request);
   expect(resp).to.be.deep.eq(response);
-  expect(clientFactory.called).to.be.true;
+  expect(clientContext.getClient.called).to.be.true;
 };
 
 describe('HiveDriver', () => {

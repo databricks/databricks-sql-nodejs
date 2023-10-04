@@ -1,12 +1,16 @@
 import { ColumnCode } from '../hive/Types';
 import { TRowSet, TTableSchema, TColumn, TColumnDesc } from '../../thrift/TCLIService_types';
+import IClientContext from '../contracts/IClientContext';
 import IOperationResult from './IOperationResult';
 import { getSchemaColumns, convertThriftValue } from './utils';
 
 export default class JsonResult implements IOperationResult {
+  private readonly context: IClientContext;
+
   private readonly schema: Array<TColumnDesc>;
 
-  constructor(schema?: TTableSchema) {
+  constructor(context: IClientContext, schema?: TTableSchema) {
+    this.context = context;
     this.schema = getSchemaColumns(schema);
   }
 

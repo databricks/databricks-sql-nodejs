@@ -1,6 +1,7 @@
 import { Buffer } from 'buffer';
 import fetch, { RequestInfo, RequestInit } from 'node-fetch';
 import { TRowSet, TSparkArrowResultLink, TTableSchema } from '../../thrift/TCLIService_types';
+import IClientContext from '../contracts/IClientContext';
 import ArrowResult from './ArrowResult';
 import globalConfig from '../globalConfig';
 
@@ -9,10 +10,10 @@ export default class CloudFetchResult extends ArrowResult {
 
   private downloadedBatches: Array<Buffer> = [];
 
-  constructor(schema?: TTableSchema) {
+  constructor(context: IClientContext, schema?: TTableSchema) {
     // Arrow schema returned in metadata is not needed for CloudFetch results:
     // each batch already contains schema and could be decoded as is
-    super(schema, Buffer.alloc(0));
+    super(context, schema, Buffer.alloc(0));
   }
 
   async hasPendingData() {
