@@ -10,11 +10,6 @@ import globalConfig from '../../globalConfig';
 
 import ThriftHttpConnection from './ThriftHttpConnection';
 
-function buildProxyUrl(options: ProxyOptions): string {
-  const auth = options.auth?.username ? `${options.auth.username}:${options.auth?.password ?? ''}@` : '';
-  return `${options.protocol}://${auth}${options.host}:${options.port}`;
-}
-
 export default class HttpConnection implements IConnectionProvider {
   private readonly options: IConnectionOptions;
 
@@ -75,7 +70,11 @@ export default class HttpConnection implements IConnectionProvider {
   }
 
   private createProxyAgent(proxyOptions: ProxyOptions): ProxyAgent {
-    const proxyUrl = buildProxyUrl(proxyOptions);
+    const proxyAuth = proxyOptions.auth?.username
+      ? `${proxyOptions.auth.username}:${proxyOptions.auth?.password ?? ''}@`
+      : '';
+    const proxyUrl = `${proxyOptions.protocol}://${proxyAuth}${proxyOptions.host}:${proxyOptions.port}`;
+
     const proxyProtocol = `${proxyOptions.protocol}:`;
 
     return new ProxyAgent({
