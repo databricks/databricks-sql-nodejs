@@ -6,6 +6,7 @@
 
 - Added proxy support (databricks/databricks-sql-nodejs#193)
 - Added support for inferring NULL values passed as query parameters (databricks/databricks-sql-nodejs#189)
+- Fixed bug with NULL handling for Arrow results (databricks/databricks-sql-nodejs#195)
 
 ### Proxy support
 
