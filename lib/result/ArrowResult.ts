@@ -141,7 +141,8 @@ export default class ArrowResult implements IOperationResult {
     this.schema.forEach((column) => {
       const typeDescriptor = column.typeDesc.types[0]?.primitiveEntry;
       const field = column.columnName;
-      result[field] = convertThriftValue(typeDescriptor, record[field]);
+      const value = record[field];
+      result[field] = value === null ? null : convertThriftValue(typeDescriptor, value);
     });
 
     return result;
