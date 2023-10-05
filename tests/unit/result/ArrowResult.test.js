@@ -1,4 +1,6 @@
 const { expect } = require('chai');
+const fs = require('fs');
+const path = require('path');
 const ArrowResult = require('../../../dist/result/ArrowResult').default;
 
 const sampleThriftSchema = {
@@ -66,6 +68,22 @@ const sampleRowSet4 = {
   arrowBatches: [sampleArrowBatch],
 };
 
+const thriftSchemaAllNulls = JSON.parse(
+  fs.readFileSync(path.join(__dirname, 'fixtures/thriftSchemaAllNulls.json')).toString('utf-8'),
+);
+
+const arrowSchemaAllNulls = fs.readFileSync(path.join(__dirname, 'fixtures/arrowSchemaAllNulls.arrow'));
+
+const rowSetAllNulls = {
+  startRowOffset: 0,
+  arrowBatches: [
+    {
+      batch: fs.readFileSync(path.join(__dirname, 'fixtures/dataAllNulls.arrow')),
+      rowCount: 1,
+    },
+  ],
+};
+
 describe('ArrowResult', () => {
   it('should not buffer any data', async () => {
     const context = {};
@@ -94,5 +112,38 @@ describe('ArrowResult', () => {
     const context = {};
     const result = new ArrowResult(context);
     expect(await result.getValue([sampleRowSet4])).to.be.deep.eq([]);
+  });
+
+  it('should detect nulls', async () => {
+    const context = {};
+    const result = new ArrowResult(context, thriftSchemaAllNulls, arrowSchemaAllNulls);
+    expect(await result.getValue([rowSetAllNulls])).to.be.deep.eq([
+      {
+        boolean_field: null,
+
+        tinyint_field: null,
+        smallint_field: null,
+        int_field: null,
+        bigint_field: null,
+
+        float_field: null,
+        double_field: null,
+        decimal_field: null,
+
+        string_field: null,
+        char_field: null,
+        varchar_field: null,
+
+        timestamp_field: null,
+        date_field: null,
+        day_interval_field: null,
+        month_interval_field: null,
+
+        binary_field: null,
+
+        struct_field: null,
+        array_field: null,
+      },
+    ]);
   });
 });
