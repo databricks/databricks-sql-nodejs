@@ -1,10 +1,11 @@
 # Release History
 
-## 1.x (unreleased)
+## 1.6.0
 
 ### Highlights
 
-- Proxy support added
+- Added proxy support (databricks/databricks-sql-nodejs#193)
+- Added support for inferring NULL values passed as query parameters (databricks/databricks-sql-nodejs#189)
 
 ### Proxy support
 
@@ -25,6 +26,8 @@ client.connect({
     },
   })
 ```
+
+**Note**: using proxy settings from environment variables is currently not supported
 
 ## 1.5.0
 
