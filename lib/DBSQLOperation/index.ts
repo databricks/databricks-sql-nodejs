@@ -16,10 +16,10 @@ import {
   TOperationState,
 } from '../../thrift/TCLIService_types';
 import Status from '../dto/Status';
-import FetchResultsHelper from './FetchResultsHelper';
 import { LogLevel } from '../contracts/IDBSQLLogger';
 import OperationStateError, { OperationStateErrorCode } from '../errors/OperationStateError';
 import IOperationResult from '../result/IOperationResult';
+import RowSetProvider from '../result/RowSetProvider';
 import JsonResult from '../result/JsonResult';
 import ArrowResult from '../result/ArrowResult';
 import CloudFetchResult from '../result/CloudFetchResult';
@@ -50,7 +50,7 @@ export default class DBSQLOperation implements IOperation {
 
   public onClose?: () => void;
 
-  private readonly _data: FetchResultsHelper;
+  private readonly _data: RowSetProvider;
 
   private readonly closeOperation?: TCloseOperationResp;
 
@@ -82,7 +82,7 @@ export default class DBSQLOperation implements IOperation {
     }
 
     this.metadata = directResults?.resultSetMetadata;
-    this._data = new FetchResultsHelper(
+    this._data = new RowSetProvider(
       this.context,
       this.operationHandle,
       [directResults?.resultSet],
@@ -137,7 +137,7 @@ export default class DBSQLOperation implements IOperation {
 
     const [resultHandler, data] = await Promise.all([
       this.getResultHandler(),
-      this._data.fetch(options?.maxRows || defaultMaxRows),
+      this._data.fetchNext({ limit: options?.maxRows || defaultMaxRows }),
     ]);
 
     await this.failIfClosed();
