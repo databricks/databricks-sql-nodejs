@@ -1,21 +1,29 @@
 import { ColumnCode } from '../hive/Types';
 import { TRowSet, TTableSchema, TColumn, TColumnDesc } from '../../thrift/TCLIService_types';
 import IClientContext from '../contracts/IClientContext';
-import IOperationResult from './IOperationResult';
+import IResultsProvider, { ResultsProviderFetchNextOptions } from './IResultsProvider';
 import { getSchemaColumns, convertThriftValue } from './utils';
 
-export default class JsonResult implements IOperationResult {
+export default class JsonResultHandler implements IResultsProvider<Array<any>> {
   private readonly context: IClientContext;
+
+  private readonly source: IResultsProvider<TRowSet | undefined>;
 
   private readonly schema: Array<TColumnDesc>;
 
-  constructor(context: IClientContext, schema?: TTableSchema) {
+  constructor(context: IClientContext, source: IResultsProvider<TRowSet | undefined>, schema?: TTableSchema) {
     this.context = context;
+    this.source = source;
     this.schema = getSchemaColumns(schema);
   }
 
-  async hasPendingData() {
-    return false;
+  async hasMore() {
+    return this.source.hasMore();
+  }
+
+  async fetchNext(options: ResultsProviderFetchNextOptions) {
+    const data = await this.source.fetchNext(options);
+    return this.getValue(data ? [data] : []);
   }
 
   async getValue(data?: Array<TRowSet>): Promise<Array<object>> {

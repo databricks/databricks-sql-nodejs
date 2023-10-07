@@ -18,11 +18,11 @@ import {
 import Status from '../dto/Status';
 import { LogLevel } from '../contracts/IDBSQLLogger';
 import OperationStateError, { OperationStateErrorCode } from '../errors/OperationStateError';
-import IOperationResult from '../result/IOperationResult';
+import IResultsProvider from '../result/IResultsProvider';
 import RowSetProvider from '../result/RowSetProvider';
-import JsonResult from '../result/JsonResult';
-import ArrowResult from '../result/ArrowResult';
-import CloudFetchResult from '../result/CloudFetchResult';
+import JsonResultHandler from '../result/JsonResultHandler';
+import ArrowResultHandler from '../result/ArrowResultHandler';
+import CloudFetchResultHandler from '../result/CloudFetchResultHandler';
 import { definedOrError } from '../utils';
 import HiveDriverError from '../errors/HiveDriverError';
 import IClientContext from '../contracts/IClientContext';
@@ -68,7 +68,7 @@ export default class DBSQLOperation implements IOperation {
 
   private hasResultSet: boolean = false;
 
-  private resultHandler?: IOperationResult;
+  private resultHandler?: IResultsProvider<Array<any>>;
 
   constructor({ handle, directResults, context }: DBSQLOperationConstructorOptions) {
     this.operationHandle = handle;
@@ -135,14 +135,12 @@ export default class DBSQLOperation implements IOperation {
 
     await this.waitUntilReady(options);
 
-    const [resultHandler, data] = await Promise.all([
-      this.getResultHandler(),
-      this._data.fetchNext({ limit: options?.maxRows || defaultMaxRows }),
-    ]);
-
+    const resultHandler = await this.getResultHandler();
     await this.failIfClosed();
 
-    const result = await resultHandler.getValue(data ? [data] : []);
+    const result = resultHandler.fetchNext({ limit: options?.maxRows || defaultMaxRows });
+    await this.failIfClosed();
+
     this.context
       .getLogger()
       .log(
@@ -234,14 +232,9 @@ export default class DBSQLOperation implements IOperation {
       return false;
     }
 
-    // Return early if there are still data available for fetching
-    if (this._data.hasMoreRows) {
-      return true;
-    }
-
     // If we fetched all the data from server - check if there's anything buffered in result handler
     const resultHandler = await this.getResultHandler();
-    return resultHandler.hasPendingData();
+    return resultHandler.hasMore();
   }
 
   public async getSchema(options?: GetSchemaOptions): Promise<TTableSchema | null> {
@@ -342,20 +335,20 @@ export default class DBSQLOperation implements IOperation {
     return this.metadata;
   }
 
-  private async getResultHandler(): Promise<IOperationResult> {
+  private async getResultHandler(): Promise<IResultsProvider<Array<any>>> {
     const metadata = await this.fetchMetadata();
     const resultFormat = definedOrError(metadata.resultFormat);
 
     if (!this.resultHandler) {
       switch (resultFormat) {
         case TSparkRowSetType.COLUMN_BASED_SET:
-          this.resultHandler = new JsonResult(this.context, metadata.schema);
+          this.resultHandler = new JsonResultHandler(this.context, this._data, metadata.schema);
           break;
         case TSparkRowSetType.ARROW_BASED_SET:
-          this.resultHandler = new ArrowResult(this.context, metadata.schema, metadata.arrowSchema);
+          this.resultHandler = new ArrowResultHandler(this.context, this._data, metadata.schema, metadata.arrowSchema);
           break;
         case TSparkRowSetType.URL_BASED_SET:
-          this.resultHandler = new CloudFetchResult(this.context, metadata.schema);
+          this.resultHandler = new CloudFetchResultHandler(this.context, this._data, metadata.schema);
           break;
         default:
           this.resultHandler = undefined;

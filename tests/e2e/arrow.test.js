@@ -2,7 +2,7 @@ const { expect } = require('chai');
 const config = require('./utils/config');
 const logger = require('./utils/logger')(config.logger);
 const { DBSQLClient } = require('../..');
-const ArrowResult = require('../../dist/result/ArrowResult').default;
+const ArrowResultHandler = require('../../dist/result/ArrowResultHandler').default;
 const globalConfig = require('../../dist/globalConfig').default;
 
 const fixtures = require('../fixtures/compatibility');
@@ -76,7 +76,7 @@ describe('Arrow support', () => {
       expect(result).to.deep.equal(expectedColumn);
 
       const resultHandler = await operation.getResultHandler();
-      expect(resultHandler).to.be.not.instanceof(ArrowResult);
+      expect(resultHandler).to.be.not.instanceof(ArrowResultHandler);
 
       await operation.close();
     }),
@@ -93,7 +93,7 @@ describe('Arrow support', () => {
       expect(fixArrowResult(result)).to.deep.equal(expectedArrow);
 
       const resultHandler = await operation.getResultHandler();
-      expect(resultHandler).to.be.instanceof(ArrowResult);
+      expect(resultHandler).to.be.instanceof(ArrowResultHandler);
 
       await operation.close();
     }),
@@ -110,7 +110,7 @@ describe('Arrow support', () => {
       expect(fixArrowResult(result)).to.deep.equal(expectedArrowNativeTypes);
 
       const resultHandler = await operation.getResultHandler();
-      expect(resultHandler).to.be.instanceof(ArrowResult);
+      expect(resultHandler).to.be.instanceof(ArrowResultHandler);
 
       await operation.close();
     }),
@@ -130,9 +130,9 @@ describe('Arrow support', () => {
 
     // We use some internals here to check that server returned response with multiple batches
     const resultHandler = await operation.getResultHandler();
-    expect(resultHandler).to.be.instanceof(ArrowResult);
+    expect(resultHandler).to.be.instanceof(ArrowResultHandler);
 
-    const rawData = await operation._data.fetch(rowsCount);
+    const rawData = await operation._data.fetchNext({ limit: rowsCount });
     // We don't know exact count of batches returned, it depends on server's configuration,
     // but with much enough rows there should be more than one result batch
     expect(rawData.arrowBatches?.length).to.be.gt(1);

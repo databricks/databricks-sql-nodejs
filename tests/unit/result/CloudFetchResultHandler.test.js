@@ -1,8 +1,9 @@
 const { expect, AssertionError } = require('chai');
 const sinon = require('sinon');
 const Int64 = require('node-int64');
-const CloudFetchResult = require('../../../dist/result/CloudFetchResult').default;
+const CloudFetchResultHandler = require('../../../dist/result/CloudFetchResultHandler').default;
 const globalConfig = require('../../../dist/globalConfig').default;
+const RowSetProviderMock = require('./fixtures/RowSetProviderMock');
 
 const sampleThriftSchema = {
   columns: [
@@ -94,7 +95,7 @@ const sampleExpiredRowSet = {
   ],
 };
 
-describe('CloudFetchResult', () => {
+describe('CloudFetchResultHandler', () => {
   let savedConcurrentDownloads;
 
   beforeEach(() => {
@@ -107,24 +108,25 @@ describe('CloudFetchResult', () => {
 
   it('should report pending data if there are any', async () => {
     const context = {};
-    const result = new CloudFetchResult({}, sampleThriftSchema, sampleArrowSchema);
+    const rowSetProvider = new RowSetProviderMock();
+    const result = new CloudFetchResultHandler(context, rowSetProvider, sampleThriftSchema, sampleArrowSchema);
 
     case1: {
       result.pendingLinks = [];
       result.downloadedBatches = [];
-      expect(await result.hasPendingData()).to.be.false;
+      expect(await result.hasMore()).to.be.false;
     }
 
     case2: {
       result.pendingLinks = [{}]; // just anything here
       result.downloadedBatches = [];
-      expect(await result.hasPendingData()).to.be.true;
+      expect(await result.hasMore()).to.be.true;
     }
 
     case3: {
       result.pendingLinks = [];
       result.downloadedBatches = [{}]; // just anything here
-      expect(await result.hasPendingData()).to.be.true;
+      expect(await result.hasMore()).to.be.true;
     }
   });
 
@@ -132,8 +134,9 @@ describe('CloudFetchResult', () => {
     globalConfig.cloudFetchConcurrentDownloads = 0; // this will prevent it from downloading batches
 
     const context = {};
+    const rowSetProvider = new RowSetProviderMock();
 
-    const result = new CloudFetchResult({}, sampleThriftSchema, sampleArrowSchema);
+    const result = new CloudFetchResultHandler(context, rowSetProvider, sampleThriftSchema, sampleArrowSchema);
 
     sinon.stub(result, 'fetch').returns(
       Promise.resolve({
@@ -157,8 +160,9 @@ describe('CloudFetchResult', () => {
     globalConfig.cloudFetchConcurrentDownloads = 2;
 
     const context = {};
+    const rowSetProvider = new RowSetProviderMock();
 
-    const result = new CloudFetchResult({}, sampleThriftSchema, sampleArrowSchema);
+    const result = new CloudFetchResultHandler(context, rowSetProvider, sampleThriftSchema, sampleArrowSchema);
 
     sinon.stub(result, 'fetch').returns(
       Promise.resolve({
@@ -205,8 +209,9 @@ describe('CloudFetchResult', () => {
     globalConfig.cloudFetchConcurrentDownloads = 1;
 
     const context = {};
+    const rowSetProvider = new RowSetProviderMock();
 
-    const result = new CloudFetchResult({}, sampleThriftSchema, sampleArrowSchema);
+    const result = new CloudFetchResultHandler(context, rowSetProvider, sampleThriftSchema, sampleArrowSchema);
 
     sinon.stub(result, 'fetch').returns(
       Promise.resolve({
@@ -233,8 +238,9 @@ describe('CloudFetchResult', () => {
 
   it('should handle expired links', async () => {
     const context = {};
+    const rowSetProvider = new RowSetProviderMock();
 
-    const result = new CloudFetchResult(context, sampleThriftSchema, sampleArrowSchema);
+    const result = new CloudFetchResultHandler(context, rowSetProvider, sampleThriftSchema, sampleArrowSchema);
 
     sinon.stub(result, 'fetch').returns(
       Promise.resolve({

@@ -13,7 +13,7 @@ import {
 } from 'apache-arrow';
 import { TRowSet, TTableSchema, TColumnDesc } from '../../thrift/TCLIService_types';
 import IClientContext from '../contracts/IClientContext';
-import IOperationResult from './IOperationResult';
+import IResultsProvider, { ResultsProviderFetchNextOptions } from './IResultsProvider';
 import { getSchemaColumns, convertThriftValue } from './utils';
 
 const { isArrowBigNumSymbol, bigNumToBigInt } = arrowUtils;
@@ -21,21 +21,34 @@ const { isArrowBigNumSymbol, bigNumToBigInt } = arrowUtils;
 type ArrowSchema = Schema<TypeMap>;
 type ArrowSchemaField = Field<DataType<Type, TypeMap>>;
 
-export default class ArrowResult implements IOperationResult {
+export default class ArrowResultHandler implements IResultsProvider<Array<any>> {
   protected readonly context: IClientContext;
+
+  private readonly source: IResultsProvider<TRowSet | undefined>;
 
   private readonly schema: Array<TColumnDesc>;
 
   private readonly arrowSchema?: Buffer;
 
-  constructor(context: IClientContext, schema?: TTableSchema, arrowSchema?: Buffer) {
+  constructor(
+    context: IClientContext,
+    source: IResultsProvider<TRowSet | undefined>,
+    schema?: TTableSchema,
+    arrowSchema?: Buffer,
+  ) {
     this.context = context;
+    this.source = source;
     this.schema = getSchemaColumns(schema);
     this.arrowSchema = arrowSchema;
   }
 
-  async hasPendingData() {
-    return false;
+  async hasMore() {
+    return this.source.hasMore();
+  }
+
+  async fetchNext(options: ResultsProviderFetchNextOptions) {
+    const data = await this.source.fetchNext(options);
+    return this.getValue(data ? [data] : []);
   }
 
   async getValue(data?: Array<TRowSet>) {

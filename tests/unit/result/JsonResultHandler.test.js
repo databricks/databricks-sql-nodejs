@@ -1,7 +1,8 @@
 const { expect } = require('chai');
-const JsonResult = require('../../../dist/result/JsonResult').default;
+const JsonResultHandler = require('../../../dist/result/JsonResultHandler').default;
 const { TCLIService_types } = require('../../../').thrift;
 const Int64 = require('node-int64');
+const RowSetProviderMock = require('./fixtures/RowSetProviderMock');
 
 const getColumnSchema = (columnName, type, position) => {
   if (type === undefined) {
@@ -27,7 +28,7 @@ const getColumnSchema = (columnName, type, position) => {
   };
 };
 
-describe('JsonResult', () => {
+describe('JsonResultHandler', () => {
   it('should not buffer any data', async () => {
     const schema = {
       columns: [getColumnSchema('table.id', TCLIService_types.TTypeId.STRING_TYPE, 1)],
@@ -39,10 +40,11 @@ describe('JsonResult', () => {
     ];
 
     const context = {};
+    const rowSetProvider = new RowSetProviderMock();
 
-    const result = new JsonResult(context, schema);
+    const result = new JsonResultHandler(context, rowSetProvider, schema);
     await result.getValue(data);
-    expect(await result.hasPendingData()).to.be.false;
+    expect(await result.hasMore()).to.be.false;
   });
 
   it('should convert schema with primitive types to json', async () => {
@@ -127,8 +129,9 @@ describe('JsonResult', () => {
     ];
 
     const context = {};
+    const rowSetProvider = new RowSetProviderMock();
 
-    const result = new JsonResult(context, schema);
+    const result = new JsonResultHandler(context, rowSetProvider, schema);
 
     expect(await result.getValue(data)).to.be.deep.eq([
       {
@@ -199,8 +202,9 @@ describe('JsonResult', () => {
     ];
 
     const context = {};
+    const rowSetProvider = new RowSetProviderMock();
 
-    const result = new JsonResult(context, schema);
+    const result = new JsonResultHandler(context, rowSetProvider, schema);
 
     expect(await result.getValue(data)).to.be.deep.eq([
       {
@@ -241,8 +245,9 @@ describe('JsonResult', () => {
     ];
 
     const context = {};
+    const rowSetProvider = new RowSetProviderMock();
 
-    const result = new JsonResult(context, schema);
+    const result = new JsonResultHandler(context, rowSetProvider, schema);
 
     expect(await result.getValue(data)).to.be.deep.eq([
       { 'table.id': '0' },
@@ -254,8 +259,9 @@ describe('JsonResult', () => {
 
   it('should detect nulls', () => {
     const context = {};
+    const rowSetProvider = new RowSetProviderMock();
 
-    const result = new JsonResult(context, null);
+    const result = new JsonResultHandler(context, rowSetProvider, null);
     const buf = Buffer.from([0x55, 0xaa, 0xc3]);
 
     [
@@ -368,8 +374,9 @@ describe('JsonResult', () => {
     ];
 
     const context = {};
+    const rowSetProvider = new RowSetProviderMock();
 
-    const result = new JsonResult(context, schema);
+    const result = new JsonResultHandler(context, rowSetProvider, schema);
 
     expect(await result.getValue(data)).to.be.deep.eq([
       {
@@ -399,8 +406,9 @@ describe('JsonResult', () => {
     };
 
     const context = {};
+    const rowSetProvider = new RowSetProviderMock();
 
-    const result = new JsonResult(context, schema);
+    const result = new JsonResultHandler(context, rowSetProvider, schema);
 
     expect(await result.getValue()).to.be.deep.eq([]);
     expect(await result.getValue([])).to.be.deep.eq([]);
@@ -418,8 +426,9 @@ describe('JsonResult', () => {
     ];
 
     const context = {};
+    const rowSetProvider = new RowSetProviderMock();
 
-    const result = new JsonResult(context);
+    const result = new JsonResultHandler(context, rowSetProvider);
 
     expect(await result.getValue(data)).to.be.deep.eq([]);
   });
@@ -453,8 +462,9 @@ describe('JsonResult', () => {
     ];
 
     const context = {};
+    const rowSetProvider = new RowSetProviderMock();
 
-    const result = new JsonResult(context, schema);
+    const result = new JsonResultHandler(context, rowSetProvider, schema);
 
     expect(await result.getValue(data)).to.be.deep.eq([
       {

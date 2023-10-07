@@ -6,9 +6,9 @@ const DBSQLOperation = require('../../dist/DBSQLOperation').default;
 const StatusError = require('../../dist/errors/StatusError').default;
 const OperationStateError = require('../../dist/errors/OperationStateError').default;
 const HiveDriverError = require('../../dist/errors/HiveDriverError').default;
-const JsonResult = require('../../dist/result/JsonResult').default;
-const ArrowResult = require('../../dist/result/ArrowResult').default;
-const CloudFetchResult = require('../../dist/result/CloudFetchResult').default;
+const JsonResultHandler = require('../../dist/result/JsonResultHandler').default;
+const ArrowResultHandler = require('../../dist/result/ArrowResultHandler').default;
+const CloudFetchResultHandler = require('../../dist/result/CloudFetchResultHandler').default;
 
 class OperationHandleMock {
   constructor(hasResultSet = true) {
@@ -885,7 +885,7 @@ describe('DBSQLOperation', () => {
         const operation = new DBSQLOperation({ handle, context });
         const resultHandler = await operation.getResultHandler();
         expect(context.driver.getResultSetMetadata.called).to.be.true;
-        expect(resultHandler).to.be.instanceOf(JsonResult);
+        expect(resultHandler).to.be.instanceOf(JsonResultHandler);
       }
 
       arrowHandler: {
@@ -895,7 +895,7 @@ describe('DBSQLOperation', () => {
         const operation = new DBSQLOperation({ handle, context });
         const resultHandler = await operation.getResultHandler();
         expect(context.driver.getResultSetMetadata.called).to.be.true;
-        expect(resultHandler).to.be.instanceOf(ArrowResult);
+        expect(resultHandler).to.be.instanceOf(ArrowResultHandler);
       }
 
       cloudFetchHandler: {
@@ -905,7 +905,7 @@ describe('DBSQLOperation', () => {
         const operation = new DBSQLOperation({ handle, context });
         const resultHandler = await operation.getResultHandler();
         expect(context.driver.getResultSetMetadata.called).to.be.true;
-        expect(resultHandler).to.be.instanceOf(CloudFetchResult);
+        expect(resultHandler).to.be.instanceOf(CloudFetchResultHandler);
       }
     });
   });

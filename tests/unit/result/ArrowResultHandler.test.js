@@ -1,7 +1,8 @@
 const { expect } = require('chai');
 const fs = require('fs');
 const path = require('path');
-const ArrowResult = require('../../../dist/result/ArrowResult').default;
+const ArrowResultHandler = require('../../../dist/result/ArrowResultHandler').default;
+const RowSetProviderMock = require('./fixtures/RowSetProviderMock');
 
 const sampleThriftSchema = {
   columns: [
@@ -84,17 +85,19 @@ const rowSetAllNulls = {
   ],
 };
 
-describe('ArrowResult', () => {
+describe('ArrowResultHandler', () => {
   it('should not buffer any data', async () => {
     const context = {};
-    const result = new ArrowResult(context, sampleThriftSchema, sampleArrowSchema);
+    const rowSetProvider = new RowSetProviderMock();
+    const result = new ArrowResultHandler(context, rowSetProvider, sampleThriftSchema, sampleArrowSchema);
     await result.getValue([sampleRowSet1]);
-    expect(await result.hasPendingData()).to.be.false;
+    expect(await result.hasMore()).to.be.false;
   });
 
   it('should convert data', async () => {
     const context = {};
-    const result = new ArrowResult(context, sampleThriftSchema, sampleArrowSchema);
+    const rowSetProvider = new RowSetProviderMock();
+    const result = new ArrowResultHandler(context, rowSetProvider, sampleThriftSchema, sampleArrowSchema);
     expect(await result.getValue([sampleRowSet1])).to.be.deep.eq([]);
     expect(await result.getValue([sampleRowSet2])).to.be.deep.eq([]);
     expect(await result.getValue([sampleRowSet3])).to.be.deep.eq([]);
@@ -103,20 +106,23 @@ describe('ArrowResult', () => {
 
   it('should return empty array if no data to process', async () => {
     const context = {};
-    const result = new ArrowResult(context, sampleThriftSchema, sampleArrowSchema);
+    const rowSetProvider = new RowSetProviderMock();
+    const result = new ArrowResultHandler(context, rowSetProvider, sampleThriftSchema, sampleArrowSchema);
     expect(await result.getValue()).to.be.deep.eq([]);
     expect(await result.getValue([])).to.be.deep.eq([]);
   });
 
   it('should return empty array if no schema available', async () => {
     const context = {};
-    const result = new ArrowResult(context);
+    const rowSetProvider = new RowSetProviderMock();
+    const result = new ArrowResultHandler(context, rowSetProvider);
     expect(await result.getValue([sampleRowSet4])).to.be.deep.eq([]);
   });
 
   it('should detect nulls', async () => {
     const context = {};
-    const result = new ArrowResult(context, thriftSchemaAllNulls, arrowSchemaAllNulls);
+    const rowSetProvider = new RowSetProviderMock();
+    const result = new ArrowResultHandler(context, rowSetProvider, thriftSchemaAllNulls, arrowSchemaAllNulls);
     expect(await result.getValue([rowSetAllNulls])).to.be.deep.eq([
       {
         boolean_field: null,
