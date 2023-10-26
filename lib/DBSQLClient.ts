@@ -44,6 +44,8 @@ function getInitialNamespaceOptions(catalogName?: string, schemaName?: string) {
 }
 
 export default class DBSQLClient extends EventEmitter implements IDBSQLClient, IClientContext {
+  private static defaultLogger?: IDBSQLLogger;
+
   private connectionProvider?: IConnectionProvider;
 
   private authProvider?: IAuthentication;
@@ -60,9 +62,16 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
 
   private sessions = new CloseableCollection<DBSQLSession>();
 
+  private static getDefaultLogger(): IDBSQLLogger {
+    if (!this.defaultLogger) {
+      this.defaultLogger = new DBSQLLogger();
+    }
+    return this.defaultLogger;
+  }
+
   constructor(options?: ClientOptions) {
     super();
-    this.logger = options?.logger || new DBSQLLogger();
+    this.logger = options?.logger ?? DBSQLClient.getDefaultLogger();
     this.logger.log(LogLevel.info, 'Created DBSQLClient');
   }
 
