@@ -1,10 +1,14 @@
 class RowSetProviderMock {
+  constructor(rowSets) {
+    this.rowSets = Array.isArray(rowSets) ? [...rowSets] : [];
+  }
+
   async hasMore() {
-    return false;
+    return this.rowSets.length > 0;
   }
 
   async fetchNext() {
-    return undefined;
+    return this.rowSets.shift();
   }
 }
 

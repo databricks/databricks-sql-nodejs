@@ -88,42 +88,60 @@ const rowSetAllNulls = {
 describe('ArrowResultHandler', () => {
   it('should not buffer any data', async () => {
     const context = {};
-    const rowSetProvider = new RowSetProviderMock();
+    const rowSetProvider = new RowSetProviderMock([sampleRowSet1]);
     const result = new ArrowResultHandler(context, rowSetProvider, sampleThriftSchema, sampleArrowSchema);
-    await result.getValue([sampleRowSet1]);
+    expect(await rowSetProvider.hasMore()).to.be.true;
+    expect(await result.hasMore()).to.be.true;
+
+    await result.fetchNext({ limit: 10000 });
+    expect(await rowSetProvider.hasMore()).to.be.false;
     expect(await result.hasMore()).to.be.false;
   });
 
   it('should convert data', async () => {
     const context = {};
-    const rowSetProvider = new RowSetProviderMock();
-    const result = new ArrowResultHandler(context, rowSetProvider, sampleThriftSchema, sampleArrowSchema);
-    expect(await result.getValue([sampleRowSet1])).to.be.deep.eq([]);
-    expect(await result.getValue([sampleRowSet2])).to.be.deep.eq([]);
-    expect(await result.getValue([sampleRowSet3])).to.be.deep.eq([]);
-    expect(await result.getValue([sampleRowSet4])).to.be.deep.eq([{ 1: 1 }]);
+
+    case1: {
+      const rowSetProvider = new RowSetProviderMock([sampleRowSet1]);
+      const result = new ArrowResultHandler(context, rowSetProvider, sampleThriftSchema, sampleArrowSchema);
+      expect(await result.fetchNext({ limit: 10000 })).to.be.deep.eq([]);
+    }
+    case2: {
+      const rowSetProvider = new RowSetProviderMock([sampleRowSet2]);
+      const result = new ArrowResultHandler(context, rowSetProvider, sampleThriftSchema, sampleArrowSchema);
+      expect(await result.fetchNext({ limit: 10000 })).to.be.deep.eq([]);
+    }
+    case3: {
+      const rowSetProvider = new RowSetProviderMock([sampleRowSet3]);
+      const result = new ArrowResultHandler(context, rowSetProvider, sampleThriftSchema, sampleArrowSchema);
+      expect(await result.fetchNext({ limit: 10000 })).to.be.deep.eq([]);
+    }
+    case4: {
+      const rowSetProvider = new RowSetProviderMock([sampleRowSet4]);
+      const result = new ArrowResultHandler(context, rowSetProvider, sampleThriftSchema, sampleArrowSchema);
+      expect(await result.fetchNext({ limit: 10000 })).to.be.deep.eq([{ 1: 1 }]);
+    }
   });
 
   it('should return empty array if no data to process', async () => {
     const context = {};
     const rowSetProvider = new RowSetProviderMock();
     const result = new ArrowResultHandler(context, rowSetProvider, sampleThriftSchema, sampleArrowSchema);
-    expect(await result.getValue()).to.be.deep.eq([]);
-    expect(await result.getValue([])).to.be.deep.eq([]);
+    expect(await result.fetchNext({ limit: 10000 })).to.be.deep.eq([]);
   });
 
   it('should return empty array if no schema available', async () => {
     const context = {};
-    const rowSetProvider = new RowSetProviderMock();
+    const rowSetProvider = new RowSetProviderMock([sampleRowSet4]);
     const result = new ArrowResultHandler(context, rowSetProvider);
-    expect(await result.getValue([sampleRowSet4])).to.be.deep.eq([]);
+    expect(await result.fetchNext({ limit: 10000 })).to.be.deep.eq([]);
   });
 
   it('should detect nulls', async () => {
     const context = {};
-    const rowSetProvider = new RowSetProviderMock();
+    const rowSetProvider = new RowSetProviderMock([rowSetAllNulls]);
     const result = new ArrowResultHandler(context, rowSetProvider, thriftSchemaAllNulls, arrowSchemaAllNulls);
-    expect(await result.getValue([rowSetAllNulls])).to.be.deep.eq([
+    expect(await result.fetchNext({ limit: 10000 })).to.be.deep.eq([
       {
         boolean_field: null,
 

@@ -109,7 +109,7 @@ describe('CloudFetchResultHandler', () => {
   it('should report pending data if there are any', async () => {
     const context = {};
     const rowSetProvider = new RowSetProviderMock();
-    const result = new CloudFetchResultHandler(context, rowSetProvider, sampleThriftSchema, sampleArrowSchema);
+    const result = new CloudFetchResultHandler(context, rowSetProvider, sampleThriftSchema);
 
     case1: {
       result.pendingLinks = [];
@@ -136,21 +136,26 @@ describe('CloudFetchResultHandler', () => {
     const context = {};
     const rowSetProvider = new RowSetProviderMock();
 
-    const result = new CloudFetchResultHandler(context, rowSetProvider, sampleThriftSchema, sampleArrowSchema);
+    const result = new CloudFetchResultHandler(context, rowSetProvider, sampleThriftSchema);
 
     sinon.stub(result, 'fetch').returns(
       Promise.resolve({
         ok: true,
         status: 200,
         statusText: 'OK',
-        arrayBuffer: async () => sampleArrowBatch,
+        arrayBuffer: async () => Buffer.concat([sampleArrowSchema, sampleArrowBatch]),
       }),
     );
 
     const rowSets = [sampleRowSet1, sampleEmptyRowSet, sampleRowSet2];
     const expectedLinksCount = rowSets.reduce((prev, item) => prev + (item.resultLinks?.length ?? 0), 0);
 
-    const batches = await result.getBatches(rowSets);
+    const batches = [];
+    for (const rowSet of rowSets) {
+      const items = await result.getBatches(rowSet);
+      batches.push(...items);
+    }
+
     expect(batches.length).to.be.equal(0);
     expect(result.fetch.called).to.be.false;
     expect(result.pendingLinks.length).to.be.equal(expectedLinksCount);
@@ -160,25 +165,31 @@ describe('CloudFetchResultHandler', () => {
     globalConfig.cloudFetchConcurrentDownloads = 2;
 
     const context = {};
-    const rowSetProvider = new RowSetProviderMock();
+    const rowSet = {
+      startRowOffset: 0,
+      resultLinks: [...sampleRowSet1.resultLinks, ...sampleRowSet2.resultLinks],
+    };
+    const expectedLinksCount = rowSet.resultLinks.length;
+    const rowSetProvider = new RowSetProviderMock([rowSet]);
 
-    const result = new CloudFetchResultHandler(context, rowSetProvider, sampleThriftSchema, sampleArrowSchema);
+    const result = new CloudFetchResultHandler(context, rowSetProvider, sampleThriftSchema);
 
     sinon.stub(result, 'fetch').returns(
       Promise.resolve({
         ok: true,
         status: 200,
         statusText: 'OK',
-        arrayBuffer: async () => sampleArrowBatch,
+        arrayBuffer: async () => Buffer.concat([sampleArrowSchema, sampleArrowBatch]),
       }),
     );
 
-    const rowSets = [sampleRowSet1, sampleRowSet2];
-    const expectedLinksCount = rowSets.reduce((prev, item) => prev + (item.resultLinks?.length ?? 0), 0);
+    expect(await rowSetProvider.hasMore()).to.be.true;
 
     initialFetch: {
-      const batches = await result.getBatches(rowSets);
-      expect(batches.length).to.be.equal(1);
+      const items = await result.fetchNext({ limit: 10000 });
+      expect(items.length).to.be.gt(0);
+      expect(await rowSetProvider.hasMore()).to.be.false;
+
       expect(result.fetch.callCount).to.be.equal(globalConfig.cloudFetchConcurrentDownloads);
       expect(result.pendingLinks.length).to.be.equal(expectedLinksCount - globalConfig.cloudFetchConcurrentDownloads);
       expect(result.downloadedBatches.length).to.be.equal(globalConfig.cloudFetchConcurrentDownloads - 1);
@@ -186,8 +197,10 @@ describe('CloudFetchResultHandler', () => {
 
     secondFetch: {
       // It should return previously fetched batch, not performing additional network requests
-      const batches = await result.getBatches([]);
-      expect(batches.length).to.be.equal(1);
+      const items = await result.fetchNext({ limit: 10000 });
+      expect(items.length).to.be.gt(0);
+      expect(await rowSetProvider.hasMore()).to.be.false;
+
       expect(result.fetch.callCount).to.be.equal(globalConfig.cloudFetchConcurrentDownloads); // no new fetches
       expect(result.pendingLinks.length).to.be.equal(expectedLinksCount - globalConfig.cloudFetchConcurrentDownloads);
       expect(result.downloadedBatches.length).to.be.equal(globalConfig.cloudFetchConcurrentDownloads - 2);
@@ -195,8 +208,10 @@ describe('CloudFetchResultHandler', () => {
 
     thirdFetch: {
       // Now buffer should be empty, and it should fetch next batches
-      const batches = await result.getBatches([]);
-      expect(batches.length).to.be.equal(1);
+      const items = await result.fetchNext({ limit: 10000 });
+      expect(items.length).to.be.gt(0);
+      expect(await rowSetProvider.hasMore()).to.be.false;
+
       expect(result.fetch.callCount).to.be.equal(globalConfig.cloudFetchConcurrentDownloads * 2);
       expect(result.pendingLinks.length).to.be.equal(
         expectedLinksCount - globalConfig.cloudFetchConcurrentDownloads * 2,
@@ -209,23 +224,21 @@ describe('CloudFetchResultHandler', () => {
     globalConfig.cloudFetchConcurrentDownloads = 1;
 
     const context = {};
-    const rowSetProvider = new RowSetProviderMock();
+    const rowSetProvider = new RowSetProviderMock([sampleRowSet1]);
 
-    const result = new CloudFetchResultHandler(context, rowSetProvider, sampleThriftSchema, sampleArrowSchema);
+    const result = new CloudFetchResultHandler(context, rowSetProvider, sampleThriftSchema);
 
     sinon.stub(result, 'fetch').returns(
       Promise.resolve({
         ok: false,
         status: 500,
         statusText: 'Internal Server Error',
-        arrayBuffer: async () => sampleArrowBatch,
+        arrayBuffer: async () => Buffer.concat([sampleArrowSchema, sampleArrowBatch]),
       }),
     );
 
-    const rowSets = [sampleRowSet1];
-
     try {
-      await result.getBatches(rowSets);
+      await result.fetchNext({ limit: 10000 });
       expect.fail('It should throw an error');
     } catch (error) {
       if (error instanceof AssertionError) {
@@ -238,23 +251,21 @@ describe('CloudFetchResultHandler', () => {
 
   it('should handle expired links', async () => {
     const context = {};
-    const rowSetProvider = new RowSetProviderMock();
+    const rowSetProvider = new RowSetProviderMock([sampleExpiredRowSet]);
 
-    const result = new CloudFetchResultHandler(context, rowSetProvider, sampleThriftSchema, sampleArrowSchema);
+    const result = new CloudFetchResultHandler(context, rowSetProvider, sampleThriftSchema);
 
     sinon.stub(result, 'fetch').returns(
       Promise.resolve({
         ok: true,
         status: 200,
         statusText: 'OK',
-        arrayBuffer: async () => sampleArrowBatch,
+        arrayBuffer: async () => Buffer.concat([sampleArrowSchema, sampleArrowBatch]),
       }),
     );
 
-    const rowSets = [sampleExpiredRowSet];
-
     try {
-      await result.getBatches(rowSets);
+      await result.fetchNext({ limit: 10000 });
       expect.fail('It should throw an error');
     } catch (error) {
       if (error instanceof AssertionError) {

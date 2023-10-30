@@ -40,10 +40,14 @@ describe('JsonResultHandler', () => {
     ];
 
     const context = {};
-    const rowSetProvider = new RowSetProviderMock();
+    const rowSetProvider = new RowSetProviderMock(data);
 
     const result = new JsonResultHandler(context, rowSetProvider, schema);
-    await result.getValue(data);
+    expect(await rowSetProvider.hasMore()).to.be.true;
+    expect(await result.hasMore()).to.be.true;
+
+    await result.fetchNext({ limit: 10000 });
+    expect(await rowSetProvider.hasMore()).to.be.false;
     expect(await result.hasMore()).to.be.false;
   });
 
@@ -129,11 +133,11 @@ describe('JsonResultHandler', () => {
     ];
 
     const context = {};
-    const rowSetProvider = new RowSetProviderMock();
+    const rowSetProvider = new RowSetProviderMock(data);
 
     const result = new JsonResultHandler(context, rowSetProvider, schema);
 
-    expect(await result.getValue(data)).to.be.deep.eq([
+    expect(await result.fetchNext({ limit: 10000 })).to.be.deep.eq([
       {
         'table.str': 'a',
         'table.int64': 282578800148737,
@@ -202,11 +206,11 @@ describe('JsonResultHandler', () => {
     ];
 
     const context = {};
-    const rowSetProvider = new RowSetProviderMock();
+    const rowSetProvider = new RowSetProviderMock(data);
 
     const result = new JsonResultHandler(context, rowSetProvider, schema);
 
-    expect(await result.getValue(data)).to.be.deep.eq([
+    expect(await result.fetchNext({ limit: 10000 })).to.be.deep.eq([
       {
         'table.array': ['a', 'b'],
         'table.map': { key: 12 },
@@ -219,41 +223,6 @@ describe('JsonResultHandler', () => {
         'table.struct': { name: 'Jane', surname: 'Doe' },
         'table.union': '{1:"foo"}',
       },
-    ]);
-  });
-
-  it('should merge data items', async () => {
-    const schema = {
-      columns: [getColumnSchema('table.id', TCLIService_types.TTypeId.STRING_TYPE, 1)],
-    };
-    const data = [
-      {
-        columns: [
-          {
-            stringVal: { values: ['0', '1'] },
-          },
-        ],
-      },
-      {}, // it should also handle empty sets
-      {
-        columns: [
-          {
-            stringVal: { values: ['2', '3'] },
-          },
-        ],
-      },
-    ];
-
-    const context = {};
-    const rowSetProvider = new RowSetProviderMock();
-
-    const result = new JsonResultHandler(context, rowSetProvider, schema);
-
-    expect(await result.getValue(data)).to.be.deep.eq([
-      { 'table.id': '0' },
-      { 'table.id': '1' },
-      { 'table.id': '2' },
-      { 'table.id': '3' },
     ]);
   });
 
@@ -374,11 +343,11 @@ describe('JsonResultHandler', () => {
     ];
 
     const context = {};
-    const rowSetProvider = new RowSetProviderMock();
+    const rowSetProvider = new RowSetProviderMock(data);
 
     const result = new JsonResultHandler(context, rowSetProvider, schema);
 
-    expect(await result.getValue(data)).to.be.deep.eq([
+    expect(await result.fetchNext({ limit: 10000 })).to.be.deep.eq([
       {
         'table.str': null,
         'table.int64': null,
@@ -409,9 +378,7 @@ describe('JsonResultHandler', () => {
     const rowSetProvider = new RowSetProviderMock();
 
     const result = new JsonResultHandler(context, rowSetProvider, schema);
-
-    expect(await result.getValue()).to.be.deep.eq([]);
-    expect(await result.getValue([])).to.be.deep.eq([]);
+    expect(await result.fetchNext({ limit: 10000 })).to.be.deep.eq([]);
   });
 
   it('should return empty array if no schema available', async () => {
@@ -426,11 +393,11 @@ describe('JsonResultHandler', () => {
     ];
 
     const context = {};
-    const rowSetProvider = new RowSetProviderMock();
+    const rowSetProvider = new RowSetProviderMock(data);
 
     const result = new JsonResultHandler(context, rowSetProvider);
 
-    expect(await result.getValue(data)).to.be.deep.eq([]);
+    expect(await result.fetchNext({ limit: 10000 })).to.be.deep.eq([]);
   });
 
   it('should return raw data if types are not specified', async () => {
@@ -462,11 +429,11 @@ describe('JsonResultHandler', () => {
     ];
 
     const context = {};
-    const rowSetProvider = new RowSetProviderMock();
+    const rowSetProvider = new RowSetProviderMock(data);
 
     const result = new JsonResultHandler(context, rowSetProvider, schema);
 
-    expect(await result.getValue(data)).to.be.deep.eq([
+    expect(await result.fetchNext({ limit: 10000 })).to.be.deep.eq([
       {
         'table.array': '["a", "b"]',
         'table.map': '{ "key": 12 }',

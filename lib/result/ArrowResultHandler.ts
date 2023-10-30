@@ -42,19 +42,16 @@ export default class ArrowResultHandler implements IResultsProvider<Array<any>> 
     this.arrowSchema = arrowSchema;
   }
 
-  async hasMore() {
+  public async hasMore() {
     return this.source.hasMore();
   }
 
-  async fetchNext(options: ResultsProviderFetchNextOptions) {
-    const data = await this.source.fetchNext(options);
-    return this.getValue(data ? [data] : []);
-  }
-
-  async getValue(data?: Array<TRowSet>) {
-    if (this.schema.length === 0 || !this.arrowSchema || !data) {
+  public async fetchNext(options: ResultsProviderFetchNextOptions) {
+    if (this.schema.length === 0 || !this.arrowSchema) {
       return [];
     }
+
+    const data = await this.source.fetchNext(options);
 
     const batches = await this.getBatches(data);
     if (batches.length === 0) {
@@ -65,15 +62,13 @@ export default class ArrowResultHandler implements IResultsProvider<Array<any>> 
     return this.getRows(table.schema, table.toArray());
   }
 
-  protected async getBatches(data: Array<TRowSet>): Promise<Array<Buffer>> {
+  protected async getBatches(rowSet?: TRowSet): Promise<Array<Buffer>> {
     const result: Array<Buffer> = [];
 
-    data.forEach((rowSet) => {
-      rowSet.arrowBatches?.forEach((arrowBatch) => {
-        if (arrowBatch.batch) {
-          result.push(arrowBatch.batch);
-        }
-      });
+    rowSet?.arrowBatches?.forEach((arrowBatch) => {
+      if (arrowBatch.batch) {
+        result.push(arrowBatch.batch);
+      }
     });
 
     return result;

@@ -17,18 +17,16 @@ export default class CloudFetchResultHandler extends ArrowResultHandler {
     super(context, source, schema, Buffer.alloc(0));
   }
 
-  async hasMore() {
+  public async hasMore() {
     if (this.pendingLinks.length > 0 || this.downloadedBatches.length > 0) {
       return true;
     }
     return super.hasMore();
   }
 
-  protected async getBatches(data: Array<TRowSet>): Promise<Array<Buffer>> {
-    data.forEach((item) => {
-      item.resultLinks?.forEach((link) => {
-        this.pendingLinks.push(link);
-      });
+  protected async getBatches(data?: TRowSet): Promise<Array<Buffer>> {
+    data?.resultLinks?.forEach((link) => {
+      this.pendingLinks.push(link);
     });
 
     if (this.downloadedBatches.length === 0) {

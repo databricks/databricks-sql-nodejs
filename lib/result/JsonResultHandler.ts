@@ -17,26 +17,22 @@ export default class JsonResultHandler implements IResultsProvider<Array<any>> {
     this.schema = getSchemaColumns(schema);
   }
 
-  async hasMore() {
+  public async hasMore() {
     return this.source.hasMore();
   }
 
-  async fetchNext(options: ResultsProviderFetchNextOptions) {
-    const data = await this.source.fetchNext(options);
-    return this.getValue(data ? [data] : []);
-  }
-
-  async getValue(data?: Array<TRowSet>): Promise<Array<object>> {
-    if (this.schema.length === 0 || !data) {
+  public async fetchNext(options: ResultsProviderFetchNextOptions) {
+    if (this.schema.length === 0) {
       return [];
     }
 
-    return data.reduce((result: Array<any>, rowSet: TRowSet) => {
-      const columns = rowSet.columns || [];
-      const rows = this.getRows(columns, this.schema);
+    const data = await this.source.fetchNext(options);
+    if (!data) {
+      return [];
+    }
 
-      return result.concat(rows);
-    }, []);
+    const columns = data.columns || [];
+    return this.getRows(columns, this.schema);
   }
 
   private getRows(columns: Array<TColumn>, descriptors: Array<TColumnDesc>): Array<any> {
