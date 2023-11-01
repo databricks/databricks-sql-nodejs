@@ -23,6 +23,7 @@ import RowSetProvider from '../result/RowSetProvider';
 import JsonResultHandler from '../result/JsonResultHandler';
 import ArrowResultHandler from '../result/ArrowResultHandler';
 import CloudFetchResultHandler from '../result/CloudFetchResultHandler';
+import ResultSlicer from '../result/ResultSlicer';
 import { definedOrError } from '../utils';
 import HiveDriverError from '../errors/HiveDriverError';
 import IClientContext from '../contracts/IClientContext';
@@ -342,13 +343,22 @@ export default class DBSQLOperation implements IOperation {
     if (!this.resultHandler) {
       switch (resultFormat) {
         case TSparkRowSetType.COLUMN_BASED_SET:
-          this.resultHandler = new JsonResultHandler(this.context, this._data, metadata.schema);
+          this.resultHandler = new ResultSlicer(
+            this.context,
+            new JsonResultHandler(this.context, this._data, metadata.schema),
+          );
           break;
         case TSparkRowSetType.ARROW_BASED_SET:
-          this.resultHandler = new ArrowResultHandler(this.context, this._data, metadata.schema, metadata.arrowSchema);
+          this.resultHandler = new ResultSlicer(
+            this.context,
+            new ArrowResultHandler(this.context, this._data, metadata.schema, metadata.arrowSchema),
+          );
           break;
         case TSparkRowSetType.URL_BASED_SET:
-          this.resultHandler = new CloudFetchResultHandler(this.context, this._data, metadata.schema);
+          this.resultHandler = new ResultSlicer(
+            this.context,
+            new CloudFetchResultHandler(this.context, this._data, metadata.schema),
+          );
           break;
         default:
           this.resultHandler = undefined;
