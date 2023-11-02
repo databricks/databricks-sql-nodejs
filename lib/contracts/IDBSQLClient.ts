@@ -1,11 +1,14 @@
 import IDBSQLLogger from './IDBSQLLogger';
 import IDBSQLSession from './IDBSQLSession';
 import IAuthentication from '../connection/contracts/IAuthentication';
-import { ProxyOptions } from '../connection/contracts/IConnectionOptions';
+import IConnectionOptions, { ProxyOptions } from '../connection/contracts/IConnectionOptions';
 import OAuthPersistence from '../connection/auth/DatabricksOAuth/OAuthPersistence';
+import IConnectionProvider from '../connection/contracts/IConnectionProvider';
 
 export interface ClientOptions {
   logger?: IDBSQLLogger;
+
+  connectionProvider: new (o: IConnectionOptions) => IConnectionProvider;
 }
 
 type AuthOptions =
@@ -26,13 +29,8 @@ type AuthOptions =
     };
 
 export type ConnectionOptions = {
-  host: string;
-  port?: number;
-  path: string;
   clientId?: string;
-  socketTimeout?: number;
-  proxy?: ProxyOptions;
-} & AuthOptions;
+} & AuthOptions & IConnectionOptions;
 
 export interface OpenSessionRequest {
   initialCatalog?: string;

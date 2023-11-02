@@ -61,7 +61,7 @@ export default class HttpConnection implements IConnectionProvider {
     const httpsAgentOptions: https.AgentOptions = {
       ...this.getAgentDefaultOptions(),
       minVersion: 'TLSv1.2',
-      rejectUnauthorized: false,
+      rejectUnauthorized: !!this.options.rejectUnauthorized,
       ca: this.options.ca,
       cert: this.options.cert,
       key: this.options.key,

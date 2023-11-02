@@ -22,4 +22,5 @@ export default interface IConnectionOptions {
   ca?: Buffer | string;
   cert?: Buffer | string;
   key?: Buffer | string;
+  rejectUnauthorized?: boolean;
 }

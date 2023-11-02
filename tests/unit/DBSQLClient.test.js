@@ -20,7 +20,7 @@ class AuthProviderMock {
   }
 }
 
-describe('DBSQLClient.connect', () => {
+describe('DBSQLClient.connect', function () {
   const options = {
     host: '127.0.0.1',
     path: '',
@@ -31,7 +31,7 @@ describe('DBSQLClient.connect', () => {
     HttpConnectionModule.default.restore?.();
   });
 
-  it('should prepend "/" to path if it is missing', async () => {
+  it('should prepend "/" to path if it is missing', async function () {
     const client = new DBSQLClient();
 
     const path = 'example/path';
@@ -40,7 +40,7 @@ describe('DBSQLClient.connect', () => {
     expect(connectionOptions.path).to.equal(`/${path}`);
   });
 
-  it('should not prepend "/" to path if it is already available', async () => {
+  it('should not prepend "/" to path if it is already available', async function () {
     const client = new DBSQLClient();
 
     const path = '/example/path';
@@ -49,7 +49,7 @@ describe('DBSQLClient.connect', () => {
     expect(connectionOptions.path).to.equal(path);
   });
 
-  it('should initialize connection state', async () => {
+  it('should initialize connection state', async function () {
     const client = new DBSQLClient();
 
     expect(client.client).to.be.undefined;
@@ -63,25 +63,65 @@ describe('DBSQLClient.connect', () => {
     expect(client.connectionProvider).to.be.instanceOf(HttpConnection);
   });
 
-  it('should listen for Thrift connection events', async () => {
-    const client = new DBSQLClient();
-
+  it('uses the overridden connection provider', async function () {
     const thriftConnectionMock = {
       on: sinon.stub(),
     };
 
-    sinon.stub(HttpConnectionModule, 'default').returns({
-      getThriftConnection: () => Promise.resolve(thriftConnectionMock),
+    function fakeClient(opt) {
+      expect(opt).to.deep.include(options);
+      this.getThriftConnection = () => Promise.resolve(thriftConnectionMock);
+    }
+
+    const client = new DBSQLClient({
+      connectionProvider: fakeClient
     });
 
     await client.connect(options);
+    expect(client.connectionProvider).to.be.instanceOf(fakeClient);
+  });
 
+  it('merges the connection options with the generated ones', async function () {
+    const thriftConnectionMock = {
+      on: sinon.stub(),
+    };
+
+    function fakeClient(opt) {
+      expect(opt).to.deep.include({
+        myprop: 'abc',
+        https: true
+      });
+      this.getThriftConnection = () => Promise.resolve(thriftConnectionMock);
+    }
+
+    const client = new DBSQLClient({
+      connectionProvider: fakeClient
+    });
+
+    await client.connect({...options, myprop: 'abc'});
+    expect(client.connectionProvider).to.be.instanceOf(fakeClient);
+  });
+
+  it('should listen for Thrift connection events', async function () {
+    const thriftConnectionMock = {
+      on: sinon.stub(),
+    };
+
+    const client = new DBSQLClient({
+      connectionProvider: function() {
+        return {
+          getThriftConnection: () => Promise.resolve(thriftConnectionMock),
+        };
+      }
+    });
+
+    await client.connect(options);
     expect(thriftConnectionMock.on.called).to.be.true;
   });
 });
 
-describe('DBSQLClient.openSession', () => {
-  it('should successfully open session', async () => {
+describe('DBSQLClient.openSession', function () {
+  it('should successfully open session', async function () {
     const client = new DBSQLClient();
 
     sinon.stub(client, 'getClient').returns(
@@ -99,7 +139,7 @@ describe('DBSQLClient.openSession', () => {
     expect(session).instanceOf(DBSQLSession);
   });
 
-  it('should use initial namespace options', async () => {
+  it('should use initial namespace options', async function () {
     const client = new DBSQLClient();
 
     sinon.stub(client, 'getClient').returns(
@@ -129,7 +169,7 @@ describe('DBSQLClient.openSession', () => {
     }
   });
 
-  it('should throw an exception when not connected', async () => {
+  it('should throw an exception when not connected', async function () {
     const client = new DBSQLClient();
     client.connection = null;
 
@@ -141,7 +181,7 @@ describe('DBSQLClient.openSession', () => {
     }
   });
 
-  it('should throw an exception when the connection is lost', async () => {
+  it('should throw an exception when the connection is lost', async function () {
     const client = new DBSQLClient();
     client.connection = {
       isConnected() {
@@ -158,14 +198,14 @@ describe('DBSQLClient.openSession', () => {
   });
 });
 
-describe('DBSQLClient.getClient', () => {
+describe('DBSQLClient.getClient', function () {
   const options = {
     host: '127.0.0.1',
     path: '',
     token: 'dapi********************************',
   };
 
-  it('should throw an error if not connected', async () => {
+  it('should throw an error if not connected', async function () {
     const client = new DBSQLClient();
     try {
       await client.getClient();
@@ -178,7 +218,7 @@ describe('DBSQLClient.getClient', () => {
     }
   });
 
-  it("should create client if wasn't not initialized yet", async () => {
+  it("should create client if wasn't not initialized yet", async function () {
     const client = new DBSQLClient();
 
     const thriftClient = {};
@@ -194,7 +234,7 @@ describe('DBSQLClient.getClient', () => {
     expect(result).to.be.equal(thriftClient);
   });
 
-  it('should update auth credentials each time when client is requested', async () => {
+  it('should update auth credentials each time when client is requested', async function () {
     const client = new DBSQLClient();
 
     const thriftClient = {};
@@ -241,8 +281,8 @@ describe('DBSQLClient.getClient', () => {
   });
 });
 
-describe('DBSQLClient.close', () => {
-  it('should close the connection if it was initiated', async () => {
+describe('DBSQLClient.close', function () {
+  it('should close the connection if it was initiated', async function () {
     const client = new DBSQLClient();
     client.client = {};
     client.connectionProvider = {};
@@ -255,7 +295,7 @@ describe('DBSQLClient.close', () => {
     // No additional asserts needed - it should just reach this point
   });
 
-  it('should do nothing if the connection does not exist', async () => {
+  it('should do nothing if the connection does not exist', async function () {
     const client = new DBSQLClient();
 
     await client.close();
@@ -265,7 +305,7 @@ describe('DBSQLClient.close', () => {
     // No additional asserts needed - it should just reach this point
   });
 
-  it('should close sessions that belong to it', async () => {
+  it('should close sessions that belong to it', async function () {
     const client = new DBSQLClient();
 
     const thriftClientMock = {
@@ -306,8 +346,8 @@ describe('DBSQLClient.close', () => {
   });
 });
 
-describe('DBSQLClient.initAuthProvider', () => {
-  it('should use access token auth method', () => {
+describe('DBSQLClient.initAuthProvider', function () {
+  it('should use access token auth method', function () {
     const client = new DBSQLClient();
 
     const testAccessToken = 'token';
@@ -320,7 +360,7 @@ describe('DBSQLClient.initAuthProvider', () => {
     expect(provider.password).to.be.equal(testAccessToken);
   });
 
-  it('should use access token auth method by default (compatibility)', () => {
+  it('should use access token auth method by default (compatibility)', function () {
     const client = new DBSQLClient();
 
     const testAccessToken = 'token';
@@ -333,7 +373,7 @@ describe('DBSQLClient.initAuthProvider', () => {
     expect(provider.password).to.be.equal(testAccessToken);
   });
 
-  it('should use Databricks OAuth method (AWS)', () => {
+  it('should use Databricks OAuth method (AWS)', function () {
     const client = new DBSQLClient();
 
     const provider = client.initAuthProvider({
@@ -346,7 +386,7 @@ describe('DBSQLClient.initAuthProvider', () => {
     expect(provider.manager).to.be.instanceOf(AWSOAuthManager);
   });
 
-  it('should use Databricks OAuth method (Azure)', () => {
+  it('should use Databricks OAuth method (Azure)', function () {
     const client = new DBSQLClient();
 
     const provider = client.initAuthProvider({
@@ -359,7 +399,7 @@ describe('DBSQLClient.initAuthProvider', () => {
     expect(provider.manager).to.be.instanceOf(AzureOAuthManager);
   });
 
-  it('should throw error when OAuth not supported for host', () => {
+  it('should throw error when OAuth not supported for host', function () {
     const client = new DBSQLClient();
 
     expect(() => {
@@ -371,7 +411,7 @@ describe('DBSQLClient.initAuthProvider', () => {
     }).to.throw();
   });
 
-  it('should use custom auth method', () => {
+  it('should use custom auth method', function () {
     const client = new DBSQLClient();
 
     const customProvider = {};
@@ -384,7 +424,7 @@ describe('DBSQLClient.initAuthProvider', () => {
     expect(provider).to.be.equal(customProvider);
   });
 
-  it('should use custom auth method (legacy way)', () => {
+  it('should use custom auth method (legacy way)', function () {
     const client = new DBSQLClient();
 
     const customProvider = {};
