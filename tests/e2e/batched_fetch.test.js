@@ -41,7 +41,9 @@ describe('Data fetching', () => {
     try {
       // set `maxRows` to null to disable direct results so all the data are fetched through `driver.fetchResults`
       const operation = await session.executeStatement(query, { maxRows: null });
-      let chunkedOp = await operation.fetchChunk({ maxRows: 10 }).catch((error) => logger(error));
+      let chunkedOp = await operation
+        .fetchChunk({ maxRows: 10, disableBuffering: true })
+        .catch((error) => logger(error));
       expect(chunkedOp.length).to.be.equal(10);
       // we explicitly requested only one chunk
       expect(session.context.driver.fetchResults.callCount).to.equal(1);

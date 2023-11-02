@@ -9,6 +9,7 @@ const HiveDriverError = require('../../dist/errors/HiveDriverError').default;
 const JsonResultHandler = require('../../dist/result/JsonResultHandler').default;
 const ArrowResultHandler = require('../../dist/result/ArrowResultHandler').default;
 const CloudFetchResultHandler = require('../../dist/result/CloudFetchResultHandler').default;
+const ResultSlicer = require('../../dist/result/ResultSlicer').default;
 
 class OperationHandleMock {
   constructor(hasResultSet = true) {
@@ -407,7 +408,7 @@ describe('DBSQLOperation', () => {
       expect(operation.cancelled).to.be.true;
 
       await expectFailure(() => operation.fetchAll());
-      await expectFailure(() => operation.fetchChunk());
+      await expectFailure(() => operation.fetchChunk({ disableBuffering: true }));
       await expectFailure(() => operation.status());
       await expectFailure(() => operation.finished());
       await expectFailure(() => operation.getSchema());
@@ -533,7 +534,7 @@ describe('DBSQLOperation', () => {
       expect(operation.closed).to.be.true;
 
       await expectFailure(() => operation.fetchAll());
-      await expectFailure(() => operation.fetchChunk());
+      await expectFailure(() => operation.fetchChunk({ disableBuffering: true }));
       await expectFailure(() => operation.status());
       await expectFailure(() => operation.finished());
       await expectFailure(() => operation.getSchema());
@@ -885,7 +886,8 @@ describe('DBSQLOperation', () => {
         const operation = new DBSQLOperation({ handle, context });
         const resultHandler = await operation.getResultHandler();
         expect(context.driver.getResultSetMetadata.called).to.be.true;
-        expect(resultHandler).to.be.instanceOf(JsonResultHandler);
+        expect(resultHandler).to.be.instanceOf(ResultSlicer);
+        expect(resultHandler.source).to.be.instanceOf(JsonResultHandler);
       }
 
       arrowHandler: {
@@ -895,7 +897,8 @@ describe('DBSQLOperation', () => {
         const operation = new DBSQLOperation({ handle, context });
         const resultHandler = await operation.getResultHandler();
         expect(context.driver.getResultSetMetadata.called).to.be.true;
-        expect(resultHandler).to.be.instanceOf(ArrowResultHandler);
+        expect(resultHandler).to.be.instanceOf(ResultSlicer);
+        expect(resultHandler.source).to.be.instanceOf(ArrowResultHandler);
       }
 
       cloudFetchHandler: {
@@ -905,7 +908,8 @@ describe('DBSQLOperation', () => {
         const operation = new DBSQLOperation({ handle, context });
         const resultHandler = await operation.getResultHandler();
         expect(context.driver.getResultSetMetadata.called).to.be.true;
-        expect(resultHandler).to.be.instanceOf(CloudFetchResultHandler);
+        expect(resultHandler).to.be.instanceOf(ResultSlicer);
+        expect(resultHandler.source).to.be.instanceOf(CloudFetchResultHandler);
       }
     });
   });
@@ -921,7 +925,7 @@ describe('DBSQLOperation', () => {
       sinon.spy(context.driver, 'fetchResults');
       const operation = new DBSQLOperation({ handle, context });
 
-      const results = await operation.fetchChunk();
+      const results = await operation.fetchChunk({ disableBuffering: true });
 
       expect(results).to.deep.equal([]);
       expect(context.driver.getResultSetMetadata.called).to.be.false;
@@ -948,7 +952,7 @@ describe('DBSQLOperation', () => {
 
       const operation = new DBSQLOperation({ handle, context });
 
-      const results = await operation.fetchChunk();
+      const results = await operation.fetchChunk({ disableBuffering: true });
 
       expect(context.driver.getOperationStatus.called).to.be.true;
       expect(results).to.deep.equal([]);
@@ -974,7 +978,7 @@ describe('DBSQLOperation', () => {
       context.driver.fetchResultsResp.results.columns = [];
 
       const operation = new DBSQLOperation({ handle, context });
-      await operation.fetchChunk({ progress: true });
+      await operation.fetchChunk({ progress: true, disableBuffering: true });
 
       expect(context.driver.getOperationStatus.called).to.be.true;
       const request = context.driver.getOperationStatus.getCall(0).args[0];
@@ -1005,7 +1009,7 @@ describe('DBSQLOperation', () => {
 
       const callback = sinon.stub();
 
-      await operation.fetchChunk({ callback });
+      await operation.fetchChunk({ callback, disableBuffering: true });
 
       expect(context.driver.getOperationStatus.called).to.be.true;
       expect(callback.callCount).to.be.equal(attemptsUntilFinished);
@@ -1023,7 +1027,7 @@ describe('DBSQLOperation', () => {
 
       const operation = new DBSQLOperation({ handle, context });
 
-      const results = await operation.fetchChunk();
+      const results = await operation.fetchChunk({ disableBuffering: true });
 
       expect(results).to.deep.equal([{ test: 1 }, { test: 2 }, { test: 3 }]);
       expect(context.driver.getResultSetMetadata.called).to.be.true;
@@ -1060,7 +1064,7 @@ describe('DBSQLOperation', () => {
         },
       });
 
-      const results = await operation.fetchChunk();
+      const results = await operation.fetchChunk({ disableBuffering: true });
 
       expect(results).to.deep.equal([{ test: 5 }, { test: 6 }]);
       expect(context.driver.getResultSetMetadata.called).to.be.true;
@@ -1098,13 +1102,13 @@ describe('DBSQLOperation', () => {
         },
       });
 
-      const results1 = await operation.fetchChunk();
+      const results1 = await operation.fetchChunk({ disableBuffering: true });
 
       expect(results1).to.deep.equal([{ test: 5 }, { test: 6 }]);
       expect(context.driver.getResultSetMetadata.callCount).to.be.eq(1);
       expect(context.driver.fetchResults.callCount).to.be.eq(0);
 
-      const results2 = await operation.fetchChunk();
+      const results2 = await operation.fetchChunk({ disableBuffering: true });
 
       expect(results2).to.deep.equal([{ test: 1 }, { test: 2 }, { test: 3 }]);
       expect(context.driver.getResultSetMetadata.callCount).to.be.eq(1);
@@ -1125,7 +1129,7 @@ describe('DBSQLOperation', () => {
       const operation = new DBSQLOperation({ handle, context });
 
       try {
-        await operation.fetchChunk();
+        await operation.fetchChunk({ disableBuffering: true });
         expect.fail('It should throw a HiveDriverError');
       } catch (e) {
         if (e instanceof AssertionError) {
@@ -1180,7 +1184,7 @@ describe('DBSQLOperation', () => {
       const operation = new DBSQLOperation({ handle, context });
 
       expect(await operation.hasMoreRows()).to.be.false;
-      await operation.fetchChunk();
+      await operation.fetchChunk({ disableBuffering: true });
       expect(await operation.hasMoreRows()).to.be.true;
     });
 
@@ -1196,7 +1200,7 @@ describe('DBSQLOperation', () => {
       const operation = new DBSQLOperation({ handle, context });
 
       expect(await operation.hasMoreRows()).to.be.false;
-      await operation.fetchChunk();
+      await operation.fetchChunk({ disableBuffering: true });
       expect(await operation.hasMoreRows()).to.be.true;
       await operation.close();
       expect(await operation.hasMoreRows()).to.be.false;
@@ -1214,7 +1218,7 @@ describe('DBSQLOperation', () => {
       const operation = new DBSQLOperation({ handle, context });
 
       expect(await operation.hasMoreRows()).to.be.false;
-      await operation.fetchChunk();
+      await operation.fetchChunk({ disableBuffering: true });
       expect(await operation.hasMoreRows()).to.be.true;
       await operation.cancel();
       expect(await operation.hasMoreRows()).to.be.false;
@@ -1232,7 +1236,7 @@ describe('DBSQLOperation', () => {
       const operation = new DBSQLOperation({ handle, context });
 
       expect(await operation.hasMoreRows()).to.be.false;
-      await operation.fetchChunk();
+      await operation.fetchChunk({ disableBuffering: true });
       expect(await operation.hasMoreRows()).to.be.true;
     });
 
@@ -1248,7 +1252,7 @@ describe('DBSQLOperation', () => {
       const operation = new DBSQLOperation({ handle, context });
 
       expect(await operation.hasMoreRows()).to.be.false;
-      await operation.fetchChunk();
+      await operation.fetchChunk({ disableBuffering: true });
       expect(await operation.hasMoreRows()).to.be.true;
     });
 
@@ -1264,7 +1268,7 @@ describe('DBSQLOperation', () => {
       const operation = new DBSQLOperation({ handle, context });
 
       expect(await operation.hasMoreRows()).to.be.false;
-      await operation.fetchChunk();
+      await operation.fetchChunk({ disableBuffering: true });
       expect(await operation.hasMoreRows()).to.be.true;
     });
 
@@ -1281,7 +1285,7 @@ describe('DBSQLOperation', () => {
       const operation = new DBSQLOperation({ handle, context });
 
       expect(await operation.hasMoreRows()).to.be.false;
-      await operation.fetchChunk();
+      await operation.fetchChunk({ disableBuffering: true });
       expect(await operation.hasMoreRows()).to.be.false;
     });
   });
