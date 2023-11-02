@@ -1,6 +1,10 @@
 import IClientContext from '../contracts/IClientContext';
 import IResultsProvider, { ResultsProviderFetchNextOptions } from './IResultsProvider';
 
+export interface ResultSlicerFetchNextOptions extends ResultsProviderFetchNextOptions {
+  disableBuffering?: boolean;
+}
+
 export default class ResultSlicer<T> implements IResultsProvider<Array<T>> {
   private readonly context: IClientContext;
 
@@ -20,7 +24,19 @@ export default class ResultSlicer<T> implements IResultsProvider<Array<T>> {
     return this.source.hasMore();
   }
 
-  public async fetchNext(options: ResultsProviderFetchNextOptions): Promise<Array<T>> {
+  public async fetchNext(options: ResultSlicerFetchNextOptions): Promise<Array<T>> {
+    // If we're asked to not use buffer - first try to return whatever we have in buffer.
+    // If buffer is empty - just proxy the call to underlying results provider
+    if (options.disableBuffering) {
+      if (this.remainingResults.length > 0) {
+        const result = this.remainingResults;
+        this.remainingResults = [];
+        return result;
+      }
+
+      return this.source.fetchNext(options);
+    }
+
     const result: Array<Array<T>> = [];
     let resultsCount = 0;
 

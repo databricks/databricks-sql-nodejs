@@ -108,9 +108,17 @@ export default class DBSQLOperation implements IOperation {
    */
   public async fetchAll(options?: FetchOptions): Promise<Array<object>> {
     const data: Array<Array<object>> = [];
+
+    const fetchChunkOptions = {
+      ...options,
+      // Tell slicer to return raw chunks. We're going to process all of them anyway,
+      // so no need to additionally buffer and slice chunks returned by server
+      disableBuffering: true,
+    };
+
     do {
       // eslint-disable-next-line no-await-in-loop
-      const chunk = await this.fetchChunk(options);
+      const chunk = await this.fetchChunk(fetchChunkOptions);
       data.push(chunk);
     } while (await this.hasMoreRows()); // eslint-disable-line no-await-in-loop
     this.context.getLogger().log(LogLevel.debug, `Fetched all data from operation with id: ${this.getId()}`);
@@ -139,7 +147,10 @@ export default class DBSQLOperation implements IOperation {
     const resultHandler = await this.getResultHandler();
     await this.failIfClosed();
 
-    const result = resultHandler.fetchNext({ limit: options?.maxRows || defaultMaxRows });
+    const result = resultHandler.fetchNext({
+      limit: options?.maxRows || defaultMaxRows,
+      ...(resultHandler instanceof ResultSlicer ? { disableBuffering: options?.disableBuffering } : {}),
+    });
     await this.failIfClosed();
 
     this.context
