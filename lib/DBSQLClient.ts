@@ -81,14 +81,12 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
   private getConnectionOptions(options: ConnectionOptions): IConnectionOptions {
     return {
       ...options,
-      host: options.host,
       port: options.port || 443,
       path: prependSlash(options.path || ''),
       https: true,
-      socketTimeout: options.socketTimeout,
-      proxy: options.proxy,
       headers: {
         'User-Agent': buildUserAgentString(options.clientId),
+        ...(options.headers || {})
       },
     };
   }
