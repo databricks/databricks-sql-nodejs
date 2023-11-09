@@ -33,11 +33,10 @@ import { definedOrError } from './utils';
 import CloseableCollection from './utils/CloseableCollection';
 import { LogLevel } from './contracts/IDBSQLLogger';
 import HiveDriverError from './errors/HiveDriverError';
-import globalConfig from './globalConfig';
 import StagingError from './errors/StagingError';
 import { DBSQLParameter, DBSQLParameterValue } from './DBSQLParameter';
 import ParameterError from './errors/ParameterError';
-import IClientContext from './contracts/IClientContext';
+import IClientContext, { ClientConfig } from './contracts/IClientContext';
 
 const defaultMaxRows = 100000;
 
@@ -59,11 +58,11 @@ function getDirectResultsOptions(maxRows: number | null = defaultMaxRows) {
   };
 }
 
-function getArrowOptions(): {
+function getArrowOptions(config: ClientConfig): {
   canReadArrowResult: boolean;
   useArrowNativeTypes?: TSparkArrowTypes;
 } {
-  const { arrowEnabled = true, useArrowNativeTypes = true } = globalConfig;
+  const { arrowEnabled = true, useArrowNativeTypes = true } = config;
 
   if (!arrowEnabled) {
     return {
@@ -187,14 +186,15 @@ export default class DBSQLSession implements IDBSQLSession {
   public async executeStatement(statement: string, options: ExecuteStatementOptions = {}): Promise<IOperation> {
     await this.failIfClosed();
     const driver = await this.context.getDriver();
+    const clientConfig = this.context.getConfig();
     const operationPromise = driver.executeStatement({
       sessionHandle: this.sessionHandle,
       statement,
       queryTimeout: options.queryTimeout,
       runAsync: true,
       ...getDirectResultsOptions(options.maxRows),
-      ...getArrowOptions(),
-      canDownloadResult: options.useCloudFetch ?? globalConfig.useCloudFetch,
+      ...getArrowOptions(clientConfig),
+      canDownloadResult: options.useCloudFetch ?? clientConfig.useCloudFetch,
       parameters: getQueryParameters(this.sessionHandle, options.namedParameters, options.ordinalParameters),
     });
     const response = await this.handleResponse(operationPromise);

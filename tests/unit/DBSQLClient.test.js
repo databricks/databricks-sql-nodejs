@@ -184,7 +184,7 @@ describe('DBSQLClient.getClient', () => {
     const thriftClient = {};
 
     client.authProvider = new AuthProviderMock();
-    client.connectionProvider = new HttpConnection({ ...options });
+    client.connectionProvider = new HttpConnection({ ...options }, client);
     client.thrift = {
       createClient: sinon.stub().returns(thriftClient),
     };
@@ -199,7 +199,7 @@ describe('DBSQLClient.getClient', () => {
 
     const thriftClient = {};
 
-    client.connectionProvider = new HttpConnection({ ...options });
+    client.connectionProvider = new HttpConnection({ ...options }, client);
     client.thrift = {
       createClient: sinon.stub().returns(thriftClient),
     };

@@ -2,7 +2,7 @@ const { expect, AssertionError } = require('chai');
 const sinon = require('sinon');
 const Int64 = require('node-int64');
 const CloudFetchResult = require('../../../dist/result/CloudFetchResult').default;
-const globalConfig = require('../../../dist/globalConfig').default;
+const DBSQLClient = require('../../../dist/DBSQLClient').default;
 
 const sampleThriftSchema = {
   columns: [
@@ -95,19 +95,14 @@ const sampleExpiredRowSet = {
 };
 
 describe('CloudFetchResult', () => {
-  let savedConcurrentDownloads;
-
-  beforeEach(() => {
-    savedConcurrentDownloads = globalConfig.cloudFetchConcurrentDownloads;
-  });
-
-  afterEach(() => {
-    globalConfig.cloudFetchConcurrentDownloads = savedConcurrentDownloads;
-  });
-
   it('should report pending data if there are any', async () => {
-    const context = {};
-    const result = new CloudFetchResult({}, sampleThriftSchema, sampleArrowSchema);
+    const clientConfig = DBSQLClient.getDefaultConfig();
+
+    const context = {
+      getConfig: () => clientConfig,
+    };
+
+    const result = new CloudFetchResult(context, sampleThriftSchema, sampleArrowSchema);
 
     case1: {
       result.pendingLinks = [];
@@ -129,11 +124,14 @@ describe('CloudFetchResult', () => {
   });
 
   it('should extract links from row sets', async () => {
-    globalConfig.cloudFetchConcurrentDownloads = 0; // this will prevent it from downloading batches
+    const clientConfig = DBSQLClient.getDefaultConfig();
+    clientConfig.cloudFetchConcurrentDownloads = 0; // this will prevent it from downloading batches
 
-    const context = {};
+    const context = {
+      getConfig: () => clientConfig,
+    };
 
-    const result = new CloudFetchResult({}, sampleThriftSchema, sampleArrowSchema);
+    const result = new CloudFetchResult(context, sampleThriftSchema, sampleArrowSchema);
 
     sinon.stub(result, 'fetch').returns(
       Promise.resolve({
@@ -154,11 +152,14 @@ describe('CloudFetchResult', () => {
   });
 
   it('should download batches according to settings', async () => {
-    globalConfig.cloudFetchConcurrentDownloads = 2;
+    const clientConfig = DBSQLClient.getDefaultConfig();
+    clientConfig.cloudFetchConcurrentDownloads = 2;
 
-    const context = {};
+    const context = {
+      getConfig: () => clientConfig,
+    };
 
-    const result = new CloudFetchResult({}, sampleThriftSchema, sampleArrowSchema);
+    const result = new CloudFetchResult(context, sampleThriftSchema, sampleArrowSchema);
 
     sinon.stub(result, 'fetch').returns(
       Promise.resolve({
@@ -175,38 +176,41 @@ describe('CloudFetchResult', () => {
     initialFetch: {
       const batches = await result.getBatches(rowSets);
       expect(batches.length).to.be.equal(1);
-      expect(result.fetch.callCount).to.be.equal(globalConfig.cloudFetchConcurrentDownloads);
-      expect(result.pendingLinks.length).to.be.equal(expectedLinksCount - globalConfig.cloudFetchConcurrentDownloads);
-      expect(result.downloadedBatches.length).to.be.equal(globalConfig.cloudFetchConcurrentDownloads - 1);
+      expect(result.fetch.callCount).to.be.equal(clientConfig.cloudFetchConcurrentDownloads);
+      expect(result.pendingLinks.length).to.be.equal(expectedLinksCount - clientConfig.cloudFetchConcurrentDownloads);
+      expect(result.downloadedBatches.length).to.be.equal(clientConfig.cloudFetchConcurrentDownloads - 1);
     }
 
     secondFetch: {
       // It should return previously fetched batch, not performing additional network requests
       const batches = await result.getBatches([]);
       expect(batches.length).to.be.equal(1);
-      expect(result.fetch.callCount).to.be.equal(globalConfig.cloudFetchConcurrentDownloads); // no new fetches
-      expect(result.pendingLinks.length).to.be.equal(expectedLinksCount - globalConfig.cloudFetchConcurrentDownloads);
-      expect(result.downloadedBatches.length).to.be.equal(globalConfig.cloudFetchConcurrentDownloads - 2);
+      expect(result.fetch.callCount).to.be.equal(clientConfig.cloudFetchConcurrentDownloads); // no new fetches
+      expect(result.pendingLinks.length).to.be.equal(expectedLinksCount - clientConfig.cloudFetchConcurrentDownloads);
+      expect(result.downloadedBatches.length).to.be.equal(clientConfig.cloudFetchConcurrentDownloads - 2);
     }
 
     thirdFetch: {
       // Now buffer should be empty, and it should fetch next batches
       const batches = await result.getBatches([]);
       expect(batches.length).to.be.equal(1);
-      expect(result.fetch.callCount).to.be.equal(globalConfig.cloudFetchConcurrentDownloads * 2);
+      expect(result.fetch.callCount).to.be.equal(clientConfig.cloudFetchConcurrentDownloads * 2);
       expect(result.pendingLinks.length).to.be.equal(
-        expectedLinksCount - globalConfig.cloudFetchConcurrentDownloads * 2,
+        expectedLinksCount - clientConfig.cloudFetchConcurrentDownloads * 2,
       );
-      expect(result.downloadedBatches.length).to.be.equal(globalConfig.cloudFetchConcurrentDownloads - 1);
+      expect(result.downloadedBatches.length).to.be.equal(clientConfig.cloudFetchConcurrentDownloads - 1);
     }
   });
 
   it('should handle HTTP errors', async () => {
-    globalConfig.cloudFetchConcurrentDownloads = 1;
+    const clientConfig = DBSQLClient.getDefaultConfig();
+    clientConfig.cloudFetchConcurrentDownloads = 1;
 
-    const context = {};
+    const context = {
+      getConfig: () => clientConfig,
+    };
 
-    const result = new CloudFetchResult({}, sampleThriftSchema, sampleArrowSchema);
+    const result = new CloudFetchResult(context, sampleThriftSchema, sampleArrowSchema);
 
     sinon.stub(result, 'fetch').returns(
       Promise.resolve({
@@ -232,7 +236,11 @@ describe('CloudFetchResult', () => {
   });
 
   it('should handle expired links', async () => {
-    const context = {};
+    const clientConfig = DBSQLClient.getDefaultConfig();
+
+    const context = {
+      getConfig: () => clientConfig,
+    };
 
     const result = new CloudFetchResult(context, sampleThriftSchema, sampleArrowSchema);
 

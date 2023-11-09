@@ -3,10 +3,15 @@ const sinon = require('sinon');
 const config = require('./utils/config');
 const logger = require('./utils/logger')(config.logger);
 const { DBSQLClient } = require('../..');
-const globalConfig = require('../../dist/globalConfig').default;
 
-const openSession = async () => {
+async function openSession(customConfig) {
   const client = new DBSQLClient();
+
+  const clientConfig = client.getConfig();
+  sinon.stub(client, 'getConfig').returns({
+    ...clientConfig,
+    ...customConfig,
+  });
 
   const connection = await client.connect({
     host: config.host,
@@ -18,17 +23,9 @@ const openSession = async () => {
     initialCatalog: config.database[0],
     initialSchema: config.database[1],
   });
-};
+}
 
 describe('Data fetching', () => {
-  beforeEach(() => {
-    globalConfig.arrowEnabled = false;
-  });
-
-  afterEach(() => {
-    globalConfig.arrowEnabled = true;
-  });
-
   const query = `
     SELECT *
     FROM range(0, 1000) AS t1
@@ -36,7 +33,7 @@ describe('Data fetching', () => {
   `;
 
   it('fetch chunks should return a max row set of chunkSize', async () => {
-    const session = await openSession();
+    const session = await openSession({ arrowEnabled: false });
     sinon.spy(session.context.driver, 'fetchResults');
     try {
       // set `maxRows` to null to disable direct results so all the data are fetched through `driver.fetchResults`
@@ -51,7 +48,7 @@ describe('Data fetching', () => {
   });
 
   it('fetch all should fetch all records', async () => {
-    const session = await openSession();
+    const session = await openSession({ arrowEnabled: false });
     sinon.spy(session.context.driver, 'fetchResults');
     try {
       // set `maxRows` to null to disable direct results so all the data are fetched through `driver.fetchResults`
@@ -66,7 +63,7 @@ describe('Data fetching', () => {
   });
 
   it('should fetch all records if they fit within directResults response', async () => {
-    const session = await openSession();
+    const session = await openSession({ arrowEnabled: false });
     sinon.spy(session.context.driver, 'fetchResults');
     try {
       // here `maxRows` enables direct results with limit of the first batch
@@ -81,7 +78,7 @@ describe('Data fetching', () => {
   });
 
   it('should fetch all records if only part of them fit within directResults response', async () => {
-    const session = await openSession();
+    const session = await openSession({ arrowEnabled: false });
     sinon.spy(session.context.driver, 'fetchResults');
     try {
       // here `maxRows` enables direct results with limit of the first batch

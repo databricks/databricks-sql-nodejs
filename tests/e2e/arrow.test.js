@@ -1,9 +1,9 @@
 const { expect } = require('chai');
+const sinon = require('sinon');
 const config = require('./utils/config');
 const logger = require('./utils/logger')(config.logger);
 const { DBSQLClient } = require('../..');
 const ArrowResult = require('../../dist/result/ArrowResult').default;
-const globalConfig = require('../../dist/globalConfig').default;
 
 const fixtures = require('../fixtures/compatibility');
 const { expected: expectedColumn } = require('../fixtures/compatibility/column');
@@ -11,8 +11,14 @@ const { expected: expectedArrow } = require('../fixtures/compatibility/arrow');
 const { expected: expectedArrowNativeTypes } = require('../fixtures/compatibility/arrow_native_types');
 const { fixArrowResult } = fixtures;
 
-async function openSession() {
+async function openSession(customConfig) {
   const client = new DBSQLClient();
+
+  const clientConfig = client.getConfig();
+  sinon.stub(client, 'getConfig').returns({
+    ...clientConfig,
+    ...customConfig,
+  });
 
   const connection = await client.connect({
     host: config.host,
@@ -50,9 +56,9 @@ async function initializeTable(session, tableName) {
 describe('Arrow support', () => {
   const tableName = `dbsql_nodejs_sdk_e2e_arrow_${config.tableSuffix}`;
 
-  function createTest(testBody) {
+  function createTest(testBody, customConfig) {
     return async () => {
-      const session = await openSession();
+      const session = await openSession(customConfig);
       try {
         await initializeTable(session, tableName);
         await testBody(session);
@@ -68,60 +74,69 @@ describe('Arrow support', () => {
 
   it(
     'should not use arrow if disabled',
-    createTest(async (session) => {
-      globalConfig.arrowEnabled = false;
+    createTest(
+      async (session) => {
+        const operation = await session.executeStatement(`SELECT * FROM ${tableName}`);
+        const result = await operation.fetchAll();
+        expect(result).to.deep.equal(expectedColumn);
 
-      const operation = await session.executeStatement(`SELECT * FROM ${tableName}`);
-      const result = await operation.fetchAll();
-      expect(result).to.deep.equal(expectedColumn);
+        const resultHandler = await operation.getResultHandler();
+        expect(resultHandler).to.be.not.instanceof(ArrowResult);
 
-      const resultHandler = await operation.getResultHandler();
-      expect(resultHandler).to.be.not.instanceof(ArrowResult);
-
-      await operation.close();
-    }),
+        await operation.close();
+      },
+      {
+        arrowEnabled: false,
+      },
+    ),
   );
 
   it(
     'should use arrow with native types disabled',
-    createTest(async (session) => {
-      globalConfig.arrowEnabled = true;
-      globalConfig.useArrowNativeTypes = false;
+    createTest(
+      async (session) => {
+        const operation = await session.executeStatement(`SELECT * FROM ${tableName}`);
+        const result = await operation.fetchAll();
+        expect(fixArrowResult(result)).to.deep.equal(expectedArrow);
 
-      const operation = await session.executeStatement(`SELECT * FROM ${tableName}`);
-      const result = await operation.fetchAll();
-      expect(fixArrowResult(result)).to.deep.equal(expectedArrow);
+        const resultHandler = await operation.getResultHandler();
+        expect(resultHandler).to.be.instanceof(ArrowResult);
 
-      const resultHandler = await operation.getResultHandler();
-      expect(resultHandler).to.be.instanceof(ArrowResult);
-
-      await operation.close();
-    }),
+        await operation.close();
+      },
+      {
+        arrowEnabled: true,
+        useArrowNativeTypes: false,
+      },
+    ),
   );
 
   it(
     'should use arrow with native types enabled',
-    createTest(async (session) => {
-      globalConfig.arrowEnabled = true;
-      globalConfig.useArrowNativeTypes = true;
+    createTest(
+      async (session) => {
+        const operation = await session.executeStatement(`SELECT * FROM ${tableName}`);
+        const result = await operation.fetchAll();
+        expect(fixArrowResult(result)).to.deep.equal(expectedArrowNativeTypes);
 
-      const operation = await session.executeStatement(`SELECT * FROM ${tableName}`);
-      const result = await operation.fetchAll();
-      expect(fixArrowResult(result)).to.deep.equal(expectedArrowNativeTypes);
+        const resultHandler = await operation.getResultHandler();
+        expect(resultHandler).to.be.instanceof(ArrowResult);
 
-      const resultHandler = await operation.getResultHandler();
-      expect(resultHandler).to.be.instanceof(ArrowResult);
-
-      await operation.close();
-    }),
+        await operation.close();
+      },
+      {
+        arrowEnabled: true,
+        useArrowNativeTypes: true,
+      },
+    ),
   );
 
   it('should handle multiple batches in response', async () => {
-    globalConfig.arrowEnabled = true;
-
     const rowsCount = 10000;
 
-    const session = await openSession();
+    const session = await openSession({
+      arrowEnabled: true,
+    });
     const operation = await session.executeStatement(`
       SELECT *
       FROM range(0, ${rowsCount}) AS t1

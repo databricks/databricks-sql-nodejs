@@ -5,7 +5,7 @@ import TCLIService from '../thrift/TCLIService';
 import { TProtocolVersion } from '../thrift/TCLIService_types';
 import IDBSQLClient, { ClientOptions, ConnectionOptions, OpenSessionRequest } from './contracts/IDBSQLClient';
 import IDriver from './contracts/IDriver';
-import IClientContext from './contracts/IClientContext';
+import IClientContext, { ClientConfig } from './contracts/IClientContext';
 import HiveDriver from './hive/HiveDriver';
 import { Int64 } from './hive/Types';
 import DBSQLSession from './DBSQLSession';
@@ -46,6 +46,8 @@ function getInitialNamespaceOptions(catalogName?: string, schemaName?: string) {
 export default class DBSQLClient extends EventEmitter implements IDBSQLClient, IClientContext {
   private static defaultLogger?: IDBSQLLogger;
 
+  private readonly config: ClientConfig;
+
   private connectionProvider?: IConnectionProvider;
 
   private authProvider?: IAuthentication;
@@ -69,8 +71,25 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
     return this.defaultLogger;
   }
 
+  private static getDefaultConfig(): ClientConfig {
+    return {
+      arrowEnabled: true,
+      useArrowNativeTypes: true,
+      socketTimeout: 15 * 60 * 1000, // 15 minutes
+
+      retryMaxAttempts: 30,
+      retriesTimeout: 900 * 1000,
+      retryDelayMin: 1 * 1000,
+      retryDelayMax: 60 * 1000,
+
+      useCloudFetch: false,
+      cloudFetchConcurrentDownloads: 10,
+    };
+  }
+
   constructor(options?: ClientOptions) {
     super();
+    this.config = DBSQLClient.getDefaultConfig();
     this.logger = options?.logger ?? DBSQLClient.getDefaultLogger();
     this.logger.log(LogLevel.info, 'Created DBSQLClient');
   }
@@ -129,7 +148,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
   public async connect(options: ConnectionOptions, authProvider?: IAuthentication): Promise<IDBSQLClient> {
     this.authProvider = this.initAuthProvider(options, authProvider);
 
-    this.connectionProvider = new HttpConnection(this.getConnectionOptions(options));
+    this.connectionProvider = new HttpConnection(this.getConnectionOptions(options), this);
 
     const thriftConnection = await this.connectionProvider.getThriftConnection();
 
@@ -193,6 +212,10 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
     this.client = undefined;
     this.connectionProvider = undefined;
     this.authProvider = undefined;
+  }
+
+  public getConfig(): ClientConfig {
+    return this.config;
   }
 
   public getLogger(): IDBSQLLogger {

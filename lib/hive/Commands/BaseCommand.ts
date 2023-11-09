@@ -1,16 +1,16 @@
 import { Thrift } from 'thrift';
 import TCLIService from '../../../thrift/TCLIService';
 import HiveDriverError from '../../errors/HiveDriverError';
-import globalConfig from '../../globalConfig';
+import IClientContext, { ClientConfig } from '../../contracts/IClientContext';
 
 interface CommandExecutionInfo {
   startTime: number; // in milliseconds
   attempt: number;
 }
 
-function getRetryDelay(attempt: number): number {
+function getRetryDelay(attempt: number, config: ClientConfig): number {
   const scale = Math.max(1, 1.5 ** (attempt - 1)); // ensure scale >= 1
-  return Math.min(globalConfig.retryDelayMin * scale, globalConfig.retryDelayMax);
+  return Math.min(config.retryDelayMin * scale, config.retryDelayMax);
 }
 
 function delay(milliseconds: number): Promise<void> {
@@ -22,8 +22,11 @@ function delay(milliseconds: number): Promise<void> {
 export default abstract class BaseCommand {
   protected client: TCLIService.Client;
 
-  constructor(client: TCLIService.Client) {
+  protected context: IClientContext;
+
+  constructor(client: TCLIService.Client, context: IClientContext) {
     this.client = client;
+    this.context = context;
   }
 
   protected executeCommand<Response>(request: object, command: Function | void): Promise<Response> {
@@ -49,19 +52,21 @@ export default abstract class BaseCommand {
             case 503: // Service Unavailable
               info.attempt += 1;
 
+              const clientConfig = this.context.getConfig();
+
               // Delay interval depends on current attempt - the more attempts we do
               // the longer the interval will be
               // TODO: Respect `Retry-After` header (PECO-729)
-              const retryDelay = getRetryDelay(info.attempt);
+              const retryDelay = getRetryDelay(info.attempt, clientConfig);
 
-              const attemptsExceeded = info.attempt >= globalConfig.retryMaxAttempts;
+              const attemptsExceeded = info.attempt >= clientConfig.retryMaxAttempts;
               if (attemptsExceeded) {
                 throw new HiveDriverError(
                   `Hive driver: ${error.statusCode} when connecting to resource. Max retry count exceeded.`,
                 );
               }
 
-              const timeoutExceeded = Date.now() - info.startTime + retryDelay >= globalConfig.retriesTimeout;
+              const timeoutExceeded = Date.now() - info.startTime + retryDelay >= clientConfig.retriesTimeout;
               if (timeoutExceeded) {
                 throw new HiveDriverError(
                   `Hive driver: ${error.statusCode} when connecting to resource. Retry timeout exceeded.`,

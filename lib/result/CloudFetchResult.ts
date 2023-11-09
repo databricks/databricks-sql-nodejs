@@ -3,7 +3,6 @@ import fetch, { RequestInfo, RequestInit } from 'node-fetch';
 import { TRowSet, TSparkArrowResultLink, TTableSchema } from '../../thrift/TCLIService_types';
 import IClientContext from '../contracts/IClientContext';
 import ArrowResult from './ArrowResult';
-import globalConfig from '../globalConfig';
 
 export default class CloudFetchResult extends ArrowResult {
   private pendingLinks: Array<TSparkArrowResultLink> = [];
@@ -28,7 +27,8 @@ export default class CloudFetchResult extends ArrowResult {
     });
 
     if (this.downloadedBatches.length === 0) {
-      const links = this.pendingLinks.splice(0, globalConfig.cloudFetchConcurrentDownloads);
+      const clientConfig = this.context.getConfig();
+      const links = this.pendingLinks.splice(0, clientConfig.cloudFetchConcurrentDownloads);
       const tasks = links.map((link) => this.downloadLink(link));
       const batches = await Promise.all(tasks);
       this.downloadedBatches.push(...batches);
