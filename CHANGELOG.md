@@ -1,5 +1,10 @@
 # Release History
 
+## 1.6.1
+
+- Make default logger singleton (databricks/databricks-sql-nodejs#199)
+- Enable `canUseMultipleCatalogs` option when creating session (databricks/databricks-sql-nodejs#203)
+
 ## 1.6.0
 
 ### Highlights
