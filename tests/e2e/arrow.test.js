@@ -3,7 +3,7 @@ const sinon = require('sinon');
 const config = require('./utils/config');
 const logger = require('./utils/logger')(config.logger);
 const { DBSQLClient } = require('../..');
-const ArrowResult = require('../../dist/result/ArrowResult').default;
+const ArrowResultHandler = require('../../dist/result/ArrowResultHandler').default;
 
 const fixtures = require('../fixtures/compatibility');
 const { expected: expectedColumn } = require('../fixtures/compatibility/column');
@@ -81,7 +81,7 @@ describe('Arrow support', () => {
         expect(result).to.deep.equal(expectedColumn);
 
         const resultHandler = await operation.getResultHandler();
-        expect(resultHandler).to.be.not.instanceof(ArrowResult);
+        expect(resultHandler).to.be.not.instanceof(ArrowResultHandler);
 
         await operation.close();
       },
@@ -100,7 +100,7 @@ describe('Arrow support', () => {
         expect(fixArrowResult(result)).to.deep.equal(expectedArrow);
 
         const resultHandler = await operation.getResultHandler();
-        expect(resultHandler).to.be.instanceof(ArrowResult);
+        expect(resultHandler).to.be.instanceof(ArrowResultHandler);
 
         await operation.close();
       },
@@ -120,7 +120,7 @@ describe('Arrow support', () => {
         expect(fixArrowResult(result)).to.deep.equal(expectedArrowNativeTypes);
 
         const resultHandler = await operation.getResultHandler();
-        expect(resultHandler).to.be.instanceof(ArrowResult);
+        expect(resultHandler).to.be.instanceof(ArrowResultHandler);
 
         await operation.close();
       },
@@ -145,14 +145,18 @@ describe('Arrow support', () => {
 
     // We use some internals here to check that server returned response with multiple batches
     const resultHandler = await operation.getResultHandler();
-    expect(resultHandler).to.be.instanceof(ArrowResult);
+    expect(resultHandler).to.be.instanceof(ArrowResultHandler);
 
-    const rawData = await operation._data.fetch(rowsCount);
+    sinon.spy(operation._data, 'fetchNext');
+
+    const result = await resultHandler.fetchNext({ limit: rowsCount });
+
+    expect(operation._data.fetchNext.callCount).to.be.eq(1);
+    const rawData = await operation._data.fetchNext.firstCall.returnValue;
     // We don't know exact count of batches returned, it depends on server's configuration,
     // but with much enough rows there should be more than one result batch
     expect(rawData.arrowBatches?.length).to.be.gt(1);
 
-    const result = await resultHandler.getValue([rawData]);
     expect(result.length).to.be.eq(rowsCount);
   });
 });

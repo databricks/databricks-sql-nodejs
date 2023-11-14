@@ -3,7 +3,7 @@ const sinon = require('sinon');
 const config = require('./utils/config');
 const logger = require('./utils/logger')(config.logger);
 const { DBSQLClient } = require('../..');
-const CloudFetchResult = require('../../dist/result/CloudFetchResult').default;
+const CloudFetchResultHandler = require('../../dist/result/CloudFetchResultHandler').default;
 
 async function openSession(customConfig) {
   const client = new DBSQLClient();
@@ -51,24 +51,24 @@ describe('CloudFetch', () => {
 
     // Check if we're actually getting data via CloudFetch
     const resultHandler = await operation.getResultHandler();
-    expect(resultHandler).to.be.instanceOf(CloudFetchResult);
+    expect(resultHandler).to.be.instanceOf(CloudFetchResultHandler);
 
     // Fetch first chunk and check if result handler behaves properly.
     // With the count of rows we queried, there should be at least one row set,
     // containing 8 result links. After fetching the first chunk,
     // result handler should download 5 of them and schedule the rest
-    expect(await resultHandler.hasPendingData()).to.be.false;
+    expect(await resultHandler.hasMore()).to.be.false;
     expect(resultHandler.pendingLinks.length).to.be.equal(0);
     expect(resultHandler.downloadedBatches.length).to.be.equal(0);
 
-    sinon.spy(operation._data, 'fetch');
+    sinon.spy(operation._data, 'fetchNext');
 
     const chunk = await operation.fetchChunk({ maxRows: 100000 });
     // Count links returned from server
-    const resultSet = await operation._data.fetch.firstCall.returnValue;
+    const resultSet = await operation._data.fetchNext.firstCall.returnValue;
     const resultLinksCount = resultSet?.resultLinks?.length ?? 0;
 
-    expect(await resultHandler.hasPendingData()).to.be.true;
+    expect(await resultHandler.hasMore()).to.be.true;
     // expected batches minus first 5 already fetched
     expect(resultHandler.pendingLinks.length).to.be.equal(resultLinksCount - cloudFetchConcurrentDownloads);
     expect(resultHandler.downloadedBatches.length).to.be.equal(cloudFetchConcurrentDownloads - 1);

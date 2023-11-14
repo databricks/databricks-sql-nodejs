@@ -8,6 +8,7 @@ import {
 import { ColumnCode, FetchType, Int64 } from '../hive/Types';
 import Status from '../dto/Status';
 import IClientContext from '../contracts/IClientContext';
+import IResultsProvider, { ResultsProviderFetchNextOptions } from './IResultsProvider';
 
 function checkIfOperationHasMoreRows(response: TFetchResultsResp): boolean {
   if (response.hasMoreRows) {
@@ -35,7 +36,7 @@ function checkIfOperationHasMoreRows(response: TFetchResultsResp): boolean {
   return (columnValue?.values?.length || 0) > 0;
 }
 
-export default class FetchResultsHelper {
+export default class RowSetProvider implements IResultsProvider<TRowSet | undefined> {
   private readonly context: IClientContext;
 
   private readonly operationHandle: TOperationHandle;
@@ -79,7 +80,7 @@ export default class FetchResultsHelper {
     return response.results;
   }
 
-  public async fetch(maxRows: number) {
+  public async fetchNext({ limit }: ResultsProviderFetchNextOptions) {
     const prefetchedResponse = this.prefetchedResults.shift();
     if (prefetchedResponse) {
       return this.processFetchResponse(prefetchedResponse);
@@ -89,10 +90,14 @@ export default class FetchResultsHelper {
     const response = await driver.fetchResults({
       operationHandle: this.operationHandle,
       orientation: this.fetchOrientation,
-      maxRows: new Int64(maxRows),
+      maxRows: new Int64(limit),
       fetchType: FetchType.Data,
     });
 
     return this.processFetchResponse(response);
+  }
+
+  public async hasMore() {
+    return this.hasMoreRows;
   }
 }
