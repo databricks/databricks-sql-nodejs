@@ -2,9 +2,7 @@ const { expect, AssertionError } = require('chai');
 const { Thrift } = require('thrift');
 const HiveDriverError = require('../../../../dist/errors/HiveDriverError').default;
 const BaseCommand = require('../../../../dist/hive/Commands/BaseCommand').default;
-const globalConfig = require('../../../../dist/globalConfig').default;
-
-const savedGlobalConfig = { ...globalConfig };
+const DBSQLClient = require('../../../../dist/DBSQLClient').default;
 
 class ThriftClientMock {
   constructor(methodHandler) {
@@ -26,18 +24,24 @@ ThriftClientMock.defaultResponse = {
 };
 
 class CustomCommand extends BaseCommand {
+  constructor(...args) {
+    super(...args);
+  }
+
   execute(request) {
     return this.executeCommand(request, this.client.CustomMethod);
   }
 }
 
 describe('BaseCommand', () => {
-  afterEach(() => {
-    Object.assign(globalConfig, savedGlobalConfig);
-  });
-
   it('should fail if trying to invoke non-existing command', async () => {
-    const command = new CustomCommand({});
+    const clientConfig = DBSQLClient.getDefaultConfig();
+
+    const context = {
+      getConfig: () => clientConfig,
+    };
+
+    const command = new CustomCommand({}, context);
 
     try {
       await command.execute();
@@ -54,11 +58,20 @@ describe('BaseCommand', () => {
   it('should handle exceptions thrown by command', async () => {
     const errorMessage = 'Unexpected error';
 
-    const command = new CustomCommand({
-      CustomMethod() {
-        throw new Error(errorMessage);
+    const clientConfig = DBSQLClient.getDefaultConfig();
+
+    const context = {
+      getConfig: () => clientConfig,
+    };
+
+    const command = new CustomCommand(
+      {
+        CustomMethod() {
+          throw new Error(errorMessage);
+        },
       },
-    });
+      context,
+    );
 
     try {
       await command.execute();
@@ -75,10 +88,16 @@ describe('BaseCommand', () => {
   [429, 503].forEach((statusCode) => {
     describe(`HTTP ${statusCode} error`, () => {
       it('should fail on max retry attempts exceeded', async () => {
-        globalConfig.retriesTimeout = 200; // ms
-        globalConfig.retryDelayMin = 5; // ms
-        globalConfig.retryDelayMax = 20; // ms
-        globalConfig.retryMaxAttempts = 3;
+        const clientConfig = DBSQLClient.getDefaultConfig();
+
+        clientConfig.retriesTimeout = 200; // ms
+        clientConfig.retryDelayMin = 5; // ms
+        clientConfig.retryDelayMax = 20; // ms
+        clientConfig.retryMaxAttempts = 3;
+
+        const context = {
+          getConfig: () => clientConfig,
+        };
 
         let methodCallCount = 0;
         const command = new CustomCommand(
@@ -88,6 +107,7 @@ describe('BaseCommand', () => {
             error.statusCode = statusCode;
             throw error;
           }),
+          context,
         );
 
         try {
@@ -100,15 +120,21 @@ describe('BaseCommand', () => {
           expect(error).to.be.instanceof(HiveDriverError);
           expect(error.message).to.contain(`${statusCode} when connecting to resource`);
           expect(error.message).to.contain('Max retry count exceeded');
-          expect(methodCallCount).to.equal(globalConfig.retryMaxAttempts);
+          expect(methodCallCount).to.equal(clientConfig.retryMaxAttempts);
         }
       });
 
       it('should fail on retry timeout exceeded', async () => {
-        globalConfig.retriesTimeout = 200; // ms
-        globalConfig.retryDelayMin = 5; // ms
-        globalConfig.retryDelayMax = 20; // ms
-        globalConfig.retryMaxAttempts = 50;
+        const clientConfig = DBSQLClient.getDefaultConfig();
+
+        clientConfig.retriesTimeout = 200; // ms
+        clientConfig.retryDelayMin = 5; // ms
+        clientConfig.retryDelayMax = 20; // ms
+        clientConfig.retryMaxAttempts = 50;
+
+        const context = {
+          getConfig: () => clientConfig,
+        };
 
         let methodCallCount = 0;
         const command = new CustomCommand(
@@ -118,6 +144,7 @@ describe('BaseCommand', () => {
             error.statusCode = statusCode;
             throw error;
           }),
+          context,
         );
 
         try {
@@ -138,10 +165,16 @@ describe('BaseCommand', () => {
       });
 
       it('should succeed after few attempts', async () => {
-        globalConfig.retriesTimeout = 200; // ms
-        globalConfig.retryDelayMin = 5; // ms
-        globalConfig.retryDelayMax = 20; // ms
-        globalConfig.retryMaxAttempts = 5;
+        const clientConfig = DBSQLClient.getDefaultConfig();
+
+        clientConfig.retriesTimeout = 200; // ms
+        clientConfig.retryDelayMin = 5; // ms
+        clientConfig.retryDelayMax = 20; // ms
+        clientConfig.retryMaxAttempts = 5;
+
+        const context = {
+          getConfig: () => clientConfig,
+        };
 
         let methodCallCount = 0;
         const command = new CustomCommand(
@@ -154,6 +187,7 @@ describe('BaseCommand', () => {
             }
             return ThriftClientMock.defaultResponse;
           }),
+          context,
         );
 
         const response = await command.execute();
@@ -166,12 +200,19 @@ describe('BaseCommand', () => {
   it(`should re-throw unrecognized HTTP errors`, async () => {
     const errorMessage = 'Unrecognized HTTP error';
 
+    const clientConfig = DBSQLClient.getDefaultConfig();
+
+    const context = {
+      getConfig: () => clientConfig,
+    };
+
     const command = new CustomCommand(
       new ThriftClientMock(() => {
         const error = new Thrift.TApplicationException(undefined, errorMessage);
         error.statusCode = 500;
         throw error;
       }),
+      context,
     );
 
     try {
@@ -189,10 +230,17 @@ describe('BaseCommand', () => {
   it(`should re-throw unrecognized Thrift errors`, async () => {
     const errorMessage = 'Unrecognized HTTP error';
 
+    const clientConfig = DBSQLClient.getDefaultConfig();
+
+    const context = {
+      getConfig: () => clientConfig,
+    };
+
     const command = new CustomCommand(
       new ThriftClientMock(() => {
         throw new Thrift.TApplicationException(undefined, errorMessage);
       }),
+      context,
     );
 
     try {
@@ -210,10 +258,17 @@ describe('BaseCommand', () => {
   it(`should re-throw unrecognized errors`, async () => {
     const errorMessage = 'Unrecognized error';
 
+    const clientConfig = DBSQLClient.getDefaultConfig();
+
+    const context = {
+      getConfig: () => clientConfig,
+    };
+
     const command = new CustomCommand(
       new ThriftClientMock(() => {
         throw new Error(errorMessage);
       }),
+      context,
     );
 
     try {

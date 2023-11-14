@@ -6,6 +6,7 @@ const InfoValue = require('../../dist/dto/InfoValue').default;
 const Status = require('../../dist/dto/Status').default;
 const DBSQLOperation = require('../../dist/DBSQLOperation').default;
 const HiveDriver = require('../../dist/hive/HiveDriver').default;
+const DBSQLClient = require('../../dist/DBSQLClient').default;
 
 // Create logger that won't emit
 //
@@ -37,9 +38,12 @@ function createDriverMock(customMethodHandler) {
 
 function createSession(customMethodHandler) {
   const driver = createDriverMock(customMethodHandler);
+  const clientConfig = DBSQLClient.getDefaultConfig();
+
   return new DBSQLSession({
     handle: { sessionId: 'id' },
     context: {
+      getConfig: () => clientConfig,
       getLogger: () => logger,
       getDriver: async () => driver,
     },

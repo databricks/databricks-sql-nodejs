@@ -2,8 +2,8 @@ const { expect, AssertionError } = require('chai');
 const sinon = require('sinon');
 const Int64 = require('node-int64');
 const CloudFetchResultHandler = require('../../../dist/result/CloudFetchResultHandler').default;
-const globalConfig = require('../../../dist/globalConfig').default;
 const RowSetProviderMock = require('./fixtures/RowSetProviderMock');
+const DBSQLClient = require('../../../dist/DBSQLClient').default;
 
 const sampleThriftSchema = {
   columns: [
@@ -96,19 +96,14 @@ const sampleExpiredRowSet = {
 };
 
 describe('CloudFetchResultHandler', () => {
-  let savedConcurrentDownloads;
-
-  beforeEach(() => {
-    savedConcurrentDownloads = globalConfig.cloudFetchConcurrentDownloads;
-  });
-
-  afterEach(() => {
-    globalConfig.cloudFetchConcurrentDownloads = savedConcurrentDownloads;
-  });
-
   it('should report pending data if there are any', async () => {
-    const context = {};
     const rowSetProvider = new RowSetProviderMock();
+    const clientConfig = DBSQLClient.getDefaultConfig();
+
+    const context = {
+      getConfig: () => clientConfig,
+    };
+
     const result = new CloudFetchResultHandler(context, rowSetProvider, sampleThriftSchema);
 
     case1: {
@@ -131,10 +126,13 @@ describe('CloudFetchResultHandler', () => {
   });
 
   it('should extract links from row sets', async () => {
-    globalConfig.cloudFetchConcurrentDownloads = 0; // this will prevent it from downloading batches
+    const clientConfig = DBSQLClient.getDefaultConfig();
+    clientConfig.cloudFetchConcurrentDownloads = 0; // this will prevent it from downloading batches
 
-    const context = {};
     const rowSetProvider = new RowSetProviderMock();
+    const context = {
+      getConfig: () => clientConfig,
+    };
 
     const result = new CloudFetchResultHandler(context, rowSetProvider, sampleThriftSchema);
 
@@ -162,15 +160,18 @@ describe('CloudFetchResultHandler', () => {
   });
 
   it('should download batches according to settings', async () => {
-    globalConfig.cloudFetchConcurrentDownloads = 2;
+    const clientConfig = DBSQLClient.getDefaultConfig();
+    clientConfig.cloudFetchConcurrentDownloads = 2;
 
-    const context = {};
     const rowSet = {
       startRowOffset: 0,
       resultLinks: [...sampleRowSet1.resultLinks, ...sampleRowSet2.resultLinks],
     };
     const expectedLinksCount = rowSet.resultLinks.length;
     const rowSetProvider = new RowSetProviderMock([rowSet]);
+    const context = {
+      getConfig: () => clientConfig,
+    };
 
     const result = new CloudFetchResultHandler(context, rowSetProvider, sampleThriftSchema);
 
@@ -190,9 +191,9 @@ describe('CloudFetchResultHandler', () => {
       expect(items.length).to.be.gt(0);
       expect(await rowSetProvider.hasMore()).to.be.false;
 
-      expect(result.fetch.callCount).to.be.equal(globalConfig.cloudFetchConcurrentDownloads);
-      expect(result.pendingLinks.length).to.be.equal(expectedLinksCount - globalConfig.cloudFetchConcurrentDownloads);
-      expect(result.downloadedBatches.length).to.be.equal(globalConfig.cloudFetchConcurrentDownloads - 1);
+      expect(result.fetch.callCount).to.be.equal(clientConfig.cloudFetchConcurrentDownloads);
+      expect(result.pendingLinks.length).to.be.equal(expectedLinksCount - clientConfig.cloudFetchConcurrentDownloads);
+      expect(result.downloadedBatches.length).to.be.equal(clientConfig.cloudFetchConcurrentDownloads - 1);
     }
 
     secondFetch: {
@@ -201,9 +202,9 @@ describe('CloudFetchResultHandler', () => {
       expect(items.length).to.be.gt(0);
       expect(await rowSetProvider.hasMore()).to.be.false;
 
-      expect(result.fetch.callCount).to.be.equal(globalConfig.cloudFetchConcurrentDownloads); // no new fetches
-      expect(result.pendingLinks.length).to.be.equal(expectedLinksCount - globalConfig.cloudFetchConcurrentDownloads);
-      expect(result.downloadedBatches.length).to.be.equal(globalConfig.cloudFetchConcurrentDownloads - 2);
+      expect(result.fetch.callCount).to.be.equal(clientConfig.cloudFetchConcurrentDownloads); // no new fetches
+      expect(result.pendingLinks.length).to.be.equal(expectedLinksCount - clientConfig.cloudFetchConcurrentDownloads);
+      expect(result.downloadedBatches.length).to.be.equal(clientConfig.cloudFetchConcurrentDownloads - 2);
     }
 
     thirdFetch: {
@@ -212,19 +213,22 @@ describe('CloudFetchResultHandler', () => {
       expect(items.length).to.be.gt(0);
       expect(await rowSetProvider.hasMore()).to.be.false;
 
-      expect(result.fetch.callCount).to.be.equal(globalConfig.cloudFetchConcurrentDownloads * 2);
+      expect(result.fetch.callCount).to.be.equal(clientConfig.cloudFetchConcurrentDownloads * 2);
       expect(result.pendingLinks.length).to.be.equal(
-        expectedLinksCount - globalConfig.cloudFetchConcurrentDownloads * 2,
+        expectedLinksCount - clientConfig.cloudFetchConcurrentDownloads * 2,
       );
-      expect(result.downloadedBatches.length).to.be.equal(globalConfig.cloudFetchConcurrentDownloads - 1);
+      expect(result.downloadedBatches.length).to.be.equal(clientConfig.cloudFetchConcurrentDownloads - 1);
     }
   });
 
   it('should handle HTTP errors', async () => {
-    globalConfig.cloudFetchConcurrentDownloads = 1;
+    const clientConfig = DBSQLClient.getDefaultConfig();
+    clientConfig.cloudFetchConcurrentDownloads = 1;
 
-    const context = {};
     const rowSetProvider = new RowSetProviderMock([sampleRowSet1]);
+    const context = {
+      getConfig: () => clientConfig,
+    };
 
     const result = new CloudFetchResultHandler(context, rowSetProvider, sampleThriftSchema);
 
@@ -250,8 +254,12 @@ describe('CloudFetchResultHandler', () => {
   });
 
   it('should handle expired links', async () => {
-    const context = {};
     const rowSetProvider = new RowSetProviderMock([sampleExpiredRowSet]);
+    const clientConfig = DBSQLClient.getDefaultConfig();
+
+    const context = {
+      getConfig: () => clientConfig,
+    };
 
     const result = new CloudFetchResultHandler(context, rowSetProvider, sampleThriftSchema);
 

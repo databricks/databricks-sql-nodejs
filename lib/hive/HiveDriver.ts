@@ -58,127 +58,127 @@ export default class HiveDriver implements IDriver {
 
   async openSession(request: TOpenSessionReq) {
     const client = await this.context.getClient();
-    const action = new OpenSessionCommand(client);
+    const action = new OpenSessionCommand(client, this.context);
     return action.execute(request);
   }
 
   async closeSession(request: TCloseSessionReq) {
     const client = await this.context.getClient();
-    const command = new CloseSessionCommand(client);
+    const command = new CloseSessionCommand(client, this.context);
     return command.execute(request);
   }
 
   async executeStatement(request: TExecuteStatementReq) {
     const client = await this.context.getClient();
-    const command = new ExecuteStatementCommand(client);
+    const command = new ExecuteStatementCommand(client, this.context);
     return command.execute(request);
   }
 
   async getResultSetMetadata(request: TGetResultSetMetadataReq) {
     const client = await this.context.getClient();
-    const command = new GetResultSetMetadataCommand(client);
+    const command = new GetResultSetMetadataCommand(client, this.context);
     return command.execute(request);
   }
 
   async fetchResults(request: TFetchResultsReq) {
     const client = await this.context.getClient();
-    const command = new FetchResultsCommand(client);
+    const command = new FetchResultsCommand(client, this.context);
     return command.execute(request);
   }
 
   async getInfo(request: TGetInfoReq) {
     const client = await this.context.getClient();
-    const command = new GetInfoCommand(client);
+    const command = new GetInfoCommand(client, this.context);
     return command.execute(request);
   }
 
   async getTypeInfo(request: TGetTypeInfoReq) {
     const client = await this.context.getClient();
-    const command = new GetTypeInfoCommand(client);
+    const command = new GetTypeInfoCommand(client, this.context);
     return command.execute(request);
   }
 
   async getCatalogs(request: TGetCatalogsReq) {
     const client = await this.context.getClient();
-    const command = new GetCatalogsCommand(client);
+    const command = new GetCatalogsCommand(client, this.context);
     return command.execute(request);
   }
 
   async getSchemas(request: TGetSchemasReq) {
     const client = await this.context.getClient();
-    const command = new GetSchemasCommand(client);
+    const command = new GetSchemasCommand(client, this.context);
     return command.execute(request);
   }
 
   async getTables(request: TGetTablesReq) {
     const client = await this.context.getClient();
-    const command = new GetTablesCommand(client);
+    const command = new GetTablesCommand(client, this.context);
     return command.execute(request);
   }
 
   async getTableTypes(request: TGetTableTypesReq) {
     const client = await this.context.getClient();
-    const command = new GetTableTypesCommand(client);
+    const command = new GetTableTypesCommand(client, this.context);
     return command.execute(request);
   }
 
   async getColumns(request: TGetColumnsReq) {
     const client = await this.context.getClient();
-    const command = new GetColumnsCommand(client);
+    const command = new GetColumnsCommand(client, this.context);
     return command.execute(request);
   }
 
   async getFunctions(request: TGetFunctionsReq) {
     const client = await this.context.getClient();
-    const command = new GetFunctionsCommand(client);
+    const command = new GetFunctionsCommand(client, this.context);
     return command.execute(request);
   }
 
   async getPrimaryKeys(request: TGetPrimaryKeysReq) {
     const client = await this.context.getClient();
-    const command = new GetPrimaryKeysCommand(client);
+    const command = new GetPrimaryKeysCommand(client, this.context);
     return command.execute(request);
   }
 
   async getCrossReference(request: TGetCrossReferenceReq) {
     const client = await this.context.getClient();
-    const command = new GetCrossReferenceCommand(client);
+    const command = new GetCrossReferenceCommand(client, this.context);
     return command.execute(request);
   }
 
   async getOperationStatus(request: TGetOperationStatusReq) {
     const client = await this.context.getClient();
-    const command = new GetOperationStatusCommand(client);
+    const command = new GetOperationStatusCommand(client, this.context);
     return command.execute(request);
   }
 
   async cancelOperation(request: TCancelOperationReq) {
     const client = await this.context.getClient();
-    const command = new CancelOperationCommand(client);
+    const command = new CancelOperationCommand(client, this.context);
     return command.execute(request);
   }
 
   async closeOperation(request: TCloseOperationReq) {
     const client = await this.context.getClient();
-    const command = new CloseOperationCommand(client);
+    const command = new CloseOperationCommand(client, this.context);
     return command.execute(request);
   }
 
   async getDelegationToken(request: TGetDelegationTokenReq) {
     const client = await this.context.getClient();
-    const command = new GetDelegationTokenCommand(client);
+    const command = new GetDelegationTokenCommand(client, this.context);
     return command.execute(request);
   }
 
   async cancelDelegationToken(request: TCancelDelegationTokenReq) {
     const client = await this.context.getClient();
-    const command = new CancelDelegationTokenCommand(client);
+    const command = new CancelDelegationTokenCommand(client, this.context);
     return command.execute(request);
   }
 
   async renewDelegationToken(request: TRenewDelegationTokenReq) {
     const client = await this.context.getClient();
-    const command = new RenewDelegationTokenCommand(client);
+    const command = new RenewDelegationTokenCommand(client, this.context);
     return command.execute(request);
   }
 }
