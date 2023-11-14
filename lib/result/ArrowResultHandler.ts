@@ -13,7 +13,7 @@ import {
 } from 'apache-arrow';
 import { TRowSet, TTableSchema, TColumnDesc } from '../../thrift/TCLIService_types';
 import IClientContext from '../contracts/IClientContext';
-import IOperationResult from './IOperationResult';
+import IResultsProvider, { ResultsProviderFetchNextOptions } from './IResultsProvider';
 import { getSchemaColumns, convertThriftValue } from './utils';
 
 const { isArrowBigNumSymbol, bigNumToBigInt } = arrowUtils;
@@ -21,27 +21,37 @@ const { isArrowBigNumSymbol, bigNumToBigInt } = arrowUtils;
 type ArrowSchema = Schema<TypeMap>;
 type ArrowSchemaField = Field<DataType<Type, TypeMap>>;
 
-export default class ArrowResult implements IOperationResult {
+export default class ArrowResultHandler implements IResultsProvider<Array<any>> {
   protected readonly context: IClientContext;
+
+  private readonly source: IResultsProvider<TRowSet | undefined>;
 
   private readonly schema: Array<TColumnDesc>;
 
   private readonly arrowSchema?: Buffer;
 
-  constructor(context: IClientContext, schema?: TTableSchema, arrowSchema?: Buffer) {
+  constructor(
+    context: IClientContext,
+    source: IResultsProvider<TRowSet | undefined>,
+    schema?: TTableSchema,
+    arrowSchema?: Buffer,
+  ) {
     this.context = context;
+    this.source = source;
     this.schema = getSchemaColumns(schema);
     this.arrowSchema = arrowSchema;
   }
 
-  async hasPendingData() {
-    return false;
+  public async hasMore() {
+    return this.source.hasMore();
   }
 
-  async getValue(data?: Array<TRowSet>) {
-    if (this.schema.length === 0 || !this.arrowSchema || !data) {
+  public async fetchNext(options: ResultsProviderFetchNextOptions) {
+    if (this.schema.length === 0 || !this.arrowSchema) {
       return [];
     }
+
+    const data = await this.source.fetchNext(options);
 
     const batches = await this.getBatches(data);
     if (batches.length === 0) {
@@ -52,15 +62,13 @@ export default class ArrowResult implements IOperationResult {
     return this.getRows(table.schema, table.toArray());
   }
 
-  protected async getBatches(data: Array<TRowSet>): Promise<Array<Buffer>> {
+  protected async getBatches(rowSet?: TRowSet): Promise<Array<Buffer>> {
     const result: Array<Buffer> = [];
 
-    data.forEach((rowSet) => {
-      rowSet.arrowBatches?.forEach((arrowBatch) => {
-        if (arrowBatch.batch) {
-          result.push(arrowBatch.batch);
-        }
-      });
+    rowSet?.arrowBatches?.forEach((arrowBatch) => {
+      if (arrowBatch.batch) {
+        result.push(arrowBatch.batch);
+      }
     });
 
     return result;

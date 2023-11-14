@@ -2,29 +2,31 @@ import { Buffer } from 'buffer';
 import fetch, { RequestInfo, RequestInit } from 'node-fetch';
 import { TRowSet, TSparkArrowResultLink, TTableSchema } from '../../thrift/TCLIService_types';
 import IClientContext from '../contracts/IClientContext';
-import ArrowResult from './ArrowResult';
+import IResultsProvider from './IResultsProvider';
+import ArrowResultHandler from './ArrowResultHandler';
 import globalConfig from '../globalConfig';
 
-export default class CloudFetchResult extends ArrowResult {
+export default class CloudFetchResultHandler extends ArrowResultHandler {
   private pendingLinks: Array<TSparkArrowResultLink> = [];
 
   private downloadedBatches: Array<Buffer> = [];
 
-  constructor(context: IClientContext, schema?: TTableSchema) {
+  constructor(context: IClientContext, source: IResultsProvider<TRowSet | undefined>, schema?: TTableSchema) {
     // Arrow schema returned in metadata is not needed for CloudFetch results:
     // each batch already contains schema and could be decoded as is
-    super(context, schema, Buffer.alloc(0));
+    super(context, source, schema, Buffer.alloc(0));
   }
 
-  async hasPendingData() {
-    return this.pendingLinks.length > 0 || this.downloadedBatches.length > 0;
+  public async hasMore() {
+    if (this.pendingLinks.length > 0 || this.downloadedBatches.length > 0) {
+      return true;
+    }
+    return super.hasMore();
   }
 
-  protected async getBatches(data: Array<TRowSet>): Promise<Array<Buffer>> {
-    data.forEach((item) => {
-      item.resultLinks?.forEach((link) => {
-        this.pendingLinks.push(link);
-      });
+  protected async getBatches(data?: TRowSet): Promise<Array<Buffer>> {
+    data?.resultLinks?.forEach((link) => {
+      this.pendingLinks.push(link);
     });
 
     if (this.downloadedBatches.length === 0) {
