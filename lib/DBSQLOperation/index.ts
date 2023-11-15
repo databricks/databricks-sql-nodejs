@@ -69,7 +69,7 @@ export default class DBSQLOperation implements IOperation {
 
   private hasResultSet: boolean = false;
 
-  private resultHandler?: IResultsProvider<Array<any>>;
+  private resultHandler?: ResultSlicer<any>;
 
   constructor({ handle, directResults, context }: DBSQLOperationConstructorOptions) {
     this.operationHandle = handle;
@@ -149,7 +149,7 @@ export default class DBSQLOperation implements IOperation {
 
     const result = resultHandler.fetchNext({
       limit: options?.maxRows || defaultMaxRows,
-      ...(resultHandler instanceof ResultSlicer ? { disableBuffering: options?.disableBuffering } : {}),
+      disableBuffering: options?.disableBuffering,
     });
     await this.failIfClosed();
 
@@ -347,33 +347,28 @@ export default class DBSQLOperation implements IOperation {
     return this.metadata;
   }
 
-  private async getResultHandler(): Promise<IResultsProvider<Array<any>>> {
+  private async getResultHandler(): Promise<ResultSlicer<any>> {
     const metadata = await this.fetchMetadata();
     const resultFormat = definedOrError(metadata.resultFormat);
 
     if (!this.resultHandler) {
+      let resultSource: IResultsProvider<Array<any>> | undefined;
+
       switch (resultFormat) {
         case TSparkRowSetType.COLUMN_BASED_SET:
-          this.resultHandler = new ResultSlicer(
-            this.context,
-            new JsonResultHandler(this.context, this._data, metadata.schema),
-          );
+          resultSource = new JsonResultHandler(this.context, this._data, metadata.schema);
           break;
         case TSparkRowSetType.ARROW_BASED_SET:
-          this.resultHandler = new ResultSlicer(
-            this.context,
-            new ArrowResultHandler(this.context, this._data, metadata.schema, metadata.arrowSchema),
-          );
+          resultSource = new ArrowResultHandler(this.context, this._data, metadata.schema, metadata.arrowSchema);
           break;
         case TSparkRowSetType.URL_BASED_SET:
-          this.resultHandler = new ResultSlicer(
-            this.context,
-            new CloudFetchResultHandler(this.context, this._data, metadata.schema),
-          );
+          resultSource = new CloudFetchResultHandler(this.context, this._data, metadata.schema);
           break;
-        default:
-          this.resultHandler = undefined;
-          break;
+        // no default
+      }
+
+      if (resultSource) {
+        this.resultHandler = new ResultSlicer(this.context, resultSource);
       }
     }
 

@@ -2,6 +2,8 @@ import IClientContext from '../contracts/IClientContext';
 import IResultsProvider, { ResultsProviderFetchNextOptions } from './IResultsProvider';
 
 export interface ResultSlicerFetchNextOptions extends ResultsProviderFetchNextOptions {
+  // Setting this to `true` will disable slicer, and it will return unprocessed chunks
+  // from underlying results provider
   disableBuffering?: boolean;
 }
 
