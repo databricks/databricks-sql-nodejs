@@ -5,10 +5,15 @@ const logger = require('./utils/logger')(config.logger);
 const { DBSQLClient } = require('../..');
 const CloudFetchResultHandler = require('../../dist/result/CloudFetchResultHandler').default;
 const ResultSlicer = require('../../dist/result/ResultSlicer').default;
-const globalConfig = require('../../dist/globalConfig').default;
 
-const openSession = async () => {
+async function openSession(customConfig) {
   const client = new DBSQLClient();
+
+  const clientConfig = client.getConfig();
+  sinon.stub(client, 'getConfig').returns({
+    ...clientConfig,
+    ...customConfig,
+  });
 
   const connection = await client.connect({
     host: config.host,
@@ -20,25 +25,14 @@ const openSession = async () => {
     initialCatalog: config.database[0],
     initialSchema: config.database[1],
   });
-};
+}
 
 // This suite takes a while to execute, and in this case it's expected.
 // If one day it starts to fail with timeouts - you may consider to just increase timeout for it
 describe('CloudFetch', () => {
-  let savedConcurrentDownloads;
-
-  beforeEach(() => {
-    savedConcurrentDownloads = globalConfig.cloudFetchConcurrentDownloads;
-  });
-
-  afterEach(() => {
-    globalConfig.cloudFetchConcurrentDownloads = savedConcurrentDownloads;
-  });
-
   it('should fetch data', async () => {
-    globalConfig.cloudFetchConcurrentDownloads = 5;
-
-    const session = await openSession();
+    const cloudFetchConcurrentDownloads = 5;
+    const session = await openSession({ cloudFetchConcurrentDownloads });
 
     const queriedRowsCount = 10000000; // result has to be quite big to enable CloudFetch
     const operation = await session.executeStatement(
@@ -80,10 +74,8 @@ describe('CloudFetch', () => {
 
     expect(await cfResultHandler.hasMore()).to.be.true;
     // expected batches minus first 5 already fetched
-    expect(cfResultHandler.pendingLinks.length).to.be.equal(
-      resultLinksCount - globalConfig.cloudFetchConcurrentDownloads,
-    );
-    expect(cfResultHandler.downloadedBatches.length).to.be.equal(globalConfig.cloudFetchConcurrentDownloads - 1);
+    expect(cfResultHandler.pendingLinks.length).to.be.equal(resultLinksCount - cloudFetchConcurrentDownloads);
+    expect(cfResultHandler.downloadedBatches.length).to.be.equal(cloudFetchConcurrentDownloads - 1);
 
     let fetchedRowCount = chunk.length;
     while (await operation.hasMoreRows()) {

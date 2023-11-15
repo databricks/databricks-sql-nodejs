@@ -6,12 +6,14 @@ import { ProxyAgent } from 'proxy-agent';
 
 import IConnectionProvider from '../contracts/IConnectionProvider';
 import IConnectionOptions, { ProxyOptions } from '../contracts/IConnectionOptions';
-import globalConfig from '../../globalConfig';
+import IClientContext from '../../contracts/IClientContext';
 
 import ThriftHttpConnection from './ThriftHttpConnection';
 
 export default class HttpConnection implements IConnectionProvider {
   private readonly options: IConnectionOptions;
+
+  private readonly context: IClientContext;
 
   private headers: HeadersInit = {};
 
@@ -19,8 +21,9 @@ export default class HttpConnection implements IConnectionProvider {
 
   private agent?: http.Agent;
 
-  constructor(options: IConnectionOptions) {
+  constructor(options: IConnectionOptions, context: IClientContext) {
     this.options = options;
+    this.context = context;
   }
 
   public setHeaders(headers: HeadersInit) {
@@ -44,11 +47,12 @@ export default class HttpConnection implements IConnectionProvider {
   }
 
   private getAgentDefaultOptions(): http.AgentOptions {
+    const clientConfig = this.context.getConfig();
     return {
       keepAlive: true,
       maxSockets: 5,
       keepAliveMsecs: 10000,
-      timeout: this.options.socketTimeout ?? globalConfig.socketTimeout,
+      timeout: this.options.socketTimeout ?? clientConfig.socketTimeout,
     };
   }
 
@@ -89,6 +93,7 @@ export default class HttpConnection implements IConnectionProvider {
   public async getThriftConnection(): Promise<any> {
     if (!this.connection) {
       const { options } = this;
+      const clientConfig = this.context.getConfig();
       const agent = await this.getAgent();
 
       this.connection = new ThriftHttpConnection(
@@ -99,7 +104,7 @@ export default class HttpConnection implements IConnectionProvider {
         },
         {
           agent,
-          timeout: options.socketTimeout ?? globalConfig.socketTimeout,
+          timeout: options.socketTimeout ?? clientConfig.socketTimeout,
           headers: {
             ...options.headers,
             ...this.headers,

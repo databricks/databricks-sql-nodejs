@@ -2,14 +2,24 @@ const http = require('http');
 const { expect } = require('chai');
 const HttpConnection = require('../../../../dist/connection/connections/HttpConnection').default;
 const ThriftHttpConnection = require('../../../../dist/connection/connections/ThriftHttpConnection').default;
+const DBSQLClient = require('../../../../dist/DBSQLClient').default;
 
 describe('HttpConnection.connect', () => {
   it('should create Thrift connection', async () => {
-    const connection = new HttpConnection({
-      host: 'localhost',
-      port: 10001,
-      path: '/hive',
-    });
+    const clientConfig = DBSQLClient.getDefaultConfig();
+
+    const context = {
+      getConfig: () => clientConfig,
+    };
+
+    const connection = new HttpConnection(
+      {
+        host: 'localhost',
+        port: 10001,
+        path: '/hive',
+      },
+      context,
+    );
 
     const thriftConnection = await connection.getThriftConnection();
 
@@ -22,15 +32,24 @@ describe('HttpConnection.connect', () => {
   });
 
   it('should set SSL certificates and disable rejectUnauthorized', async () => {
-    const connection = new HttpConnection({
-      host: 'localhost',
-      port: 10001,
-      path: '/hive',
-      https: true,
-      ca: 'ca',
-      cert: 'cert',
-      key: 'key',
-    });
+    const clientConfig = DBSQLClient.getDefaultConfig();
+
+    const context = {
+      getConfig: () => clientConfig,
+    };
+
+    const connection = new HttpConnection(
+      {
+        host: 'localhost',
+        port: 10001,
+        path: '/hive',
+        https: true,
+        ca: 'ca',
+        cert: 'cert',
+        key: 'key',
+      },
+      context,
+    );
 
     const thriftConnection = await connection.getThriftConnection();
 
@@ -41,12 +60,21 @@ describe('HttpConnection.connect', () => {
   });
 
   it('should initialize http agents', async () => {
-    const connection = new HttpConnection({
-      host: 'localhost',
-      port: 10001,
-      https: false,
-      path: '/hive',
-    });
+    const clientConfig = DBSQLClient.getDefaultConfig();
+
+    const context = {
+      getConfig: () => clientConfig,
+    };
+
+    const connection = new HttpConnection(
+      {
+        host: 'localhost',
+        port: 10001,
+        https: false,
+        path: '/hive',
+      },
+      context,
+    );
 
     const thriftConnection = await connection.getThriftConnection();
 
@@ -54,17 +82,26 @@ describe('HttpConnection.connect', () => {
   });
 
   it('should update headers (case 1: Thrift connection not initialized)', async () => {
+    const clientConfig = DBSQLClient.getDefaultConfig();
+
+    const context = {
+      getConfig: () => clientConfig,
+    };
+
     const initialHeaders = {
       a: 'test header A',
       b: 'test header B',
     };
 
-    const connection = new HttpConnection({
-      host: 'localhost',
-      port: 10001,
-      path: '/hive',
-      headers: initialHeaders,
-    });
+    const connection = new HttpConnection(
+      {
+        host: 'localhost',
+        port: 10001,
+        path: '/hive',
+        headers: initialHeaders,
+      },
+      context,
+    );
 
     const extraHeaders = {
       b: 'new header B',
@@ -82,17 +119,26 @@ describe('HttpConnection.connect', () => {
   });
 
   it('should update headers (case 2: Thrift connection initialized)', async () => {
+    const clientConfig = DBSQLClient.getDefaultConfig();
+
+    const context = {
+      getConfig: () => clientConfig,
+    };
+
     const initialHeaders = {
       a: 'test header A',
       b: 'test header B',
     };
 
-    const connection = new HttpConnection({
-      host: 'localhost',
-      port: 10001,
-      path: '/hive',
-      headers: initialHeaders,
-    });
+    const connection = new HttpConnection(
+      {
+        host: 'localhost',
+        port: 10001,
+        path: '/hive',
+        headers: initialHeaders,
+      },
+      context,
+    );
 
     const thriftConnection = await connection.getThriftConnection();
 

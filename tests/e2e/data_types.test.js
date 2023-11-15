@@ -1,11 +1,17 @@
 const { expect } = require('chai');
+const sinon = require('sinon');
 const config = require('./utils/config');
 const logger = require('./utils/logger')(config.logger);
 const { DBSQLClient } = require('../..');
-const globalConfig = require('../../dist/globalConfig').default;
 
-const openSession = async () => {
+async function openSession(customConfig) {
   const client = new DBSQLClient();
+
+  const clientConfig = client.getConfig();
+  sinon.stub(client, 'getConfig').returns({
+    ...clientConfig,
+    ...customConfig,
+  });
 
   const connection = await client.connect({
     host: config.host,
@@ -17,7 +23,7 @@ const openSession = async () => {
     initialCatalog: config.database[0],
     initialSchema: config.database[1],
   });
-};
+}
 
 const execute = async (session, statement) => {
   const operation = await session.executeStatement(statement);
@@ -39,18 +45,10 @@ function removeTrailingMetadata(columns) {
 }
 
 describe('Data types', () => {
-  beforeEach(() => {
-    globalConfig.arrowEnabled = false;
-  });
-
-  afterEach(() => {
-    globalConfig.arrowEnabled = true;
-  });
-
   it('primitive data types should presented correctly', async () => {
     const table = `dbsql_nodejs_sdk_e2e_primitive_types_${config.tableSuffix}`;
 
-    const session = await openSession();
+    const session = await openSession({ arrowEnabled: false });
     try {
       await execute(session, `DROP TABLE IF EXISTS ${table}`);
       await execute(
@@ -201,7 +199,7 @@ describe('Data types', () => {
   it('interval types should be presented correctly', async () => {
     const table = `dbsql_nodejs_sdk_e2e_interval_types_${config.tableSuffix}`;
 
-    const session = await openSession();
+    const session = await openSession({ arrowEnabled: false });
     try {
       await execute(session, `DROP TABLE IF EXISTS ${table}`);
       await execute(
@@ -246,7 +244,7 @@ describe('Data types', () => {
     const table = `dbsql_nodejs_sdk_e2e_complex_types_${config.tableSuffix}`;
     const helperTable = `dbsql_nodejs_sdk_e2e_complex_types_helper_${config.tableSuffix}`;
 
-    const session = await openSession();
+    const session = await openSession({ arrowEnabled: false });
     try {
       await execute(session, `DROP TABLE IF EXISTS ${helperTable}`);
       await execute(session, `DROP TABLE IF EXISTS ${table}`);
