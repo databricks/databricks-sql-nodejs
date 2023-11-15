@@ -49,6 +49,33 @@ describe('Data fetching', () => {
     }
   });
 
+  it('fetch chunks should respect maxRows', async () => {
+    const session = await openSession({ arrowEnabled: false });
+
+    const chunkSize = 300;
+    const lastChunkSize = 100; // 1000 % chunkSize
+
+    try {
+      const operation = await session.executeStatement(query, { maxRows: 500 });
+
+      let hasMoreRows = true;
+      let chunkCount = 0;
+
+      while (hasMoreRows) {
+        let chunkedOp = await operation.fetchChunk({ maxRows: 300 });
+        chunkCount += 1;
+        hasMoreRows = await operation.hasMoreRows();
+
+        const isLastChunk = !hasMoreRows;
+        expect(chunkedOp.length).to.be.equal(isLastChunk ? lastChunkSize : chunkSize);
+      }
+
+      expect(chunkCount).to.be.equal(4); // 1000 = 3*300 + 1*100
+    } finally {
+      await session.close();
+    }
+  });
+
   it('fetch all should fetch all records', async () => {
     const session = await openSession({ arrowEnabled: false });
     sinon.spy(session.context.driver, 'fetchResults');
