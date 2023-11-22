@@ -1,28 +1,18 @@
 const { expect } = require('chai');
 const sinon = require('sinon');
 const ResultSlicer = require('../../../dist/result/ResultSlicer').default;
-
-class ResultsProviderMock {
-  constructor(chunks) {
-    this.chunks = chunks;
-  }
-
-  async hasMore() {
-    return this.chunks.length > 0;
-  }
-
-  async fetchNext() {
-    return this.chunks.shift() ?? [];
-  }
-}
+const ResultsProviderMock = require('./fixtures/ResultsProviderMock');
 
 describe('ResultSlicer', () => {
   it('should return chunks of requested size', async () => {
-    const provider = new ResultsProviderMock([
-      [10, 11, 12, 13, 14, 15],
-      [20, 21, 22, 23, 24, 25],
-      [30, 31, 32, 33, 34, 35],
-    ]);
+    const provider = new ResultsProviderMock(
+      [
+        [10, 11, 12, 13, 14, 15],
+        [20, 21, 22, 23, 24, 25],
+        [30, 31, 32, 33, 34, 35],
+      ],
+      [],
+    );
 
     const slicer = new ResultSlicer({}, provider);
 
@@ -40,11 +30,14 @@ describe('ResultSlicer', () => {
   });
 
   it('should return raw chunks', async () => {
-    const provider = new ResultsProviderMock([
-      [10, 11, 12, 13, 14, 15],
-      [20, 21, 22, 23, 24, 25],
-      [30, 31, 32, 33, 34, 35],
-    ]);
+    const provider = new ResultsProviderMock(
+      [
+        [10, 11, 12, 13, 14, 15],
+        [20, 21, 22, 23, 24, 25],
+        [30, 31, 32, 33, 34, 35],
+      ],
+      [],
+    );
     sinon.spy(provider, 'fetchNext');
 
     const slicer = new ResultSlicer({}, provider);
@@ -61,11 +54,14 @@ describe('ResultSlicer', () => {
   });
 
   it('should switch between returning sliced and raw chunks', async () => {
-    const provider = new ResultsProviderMock([
-      [10, 11, 12, 13, 14, 15],
-      [20, 21, 22, 23, 24, 25],
-      [30, 31, 32, 33, 34, 35],
-    ]);
+    const provider = new ResultsProviderMock(
+      [
+        [10, 11, 12, 13, 14, 15],
+        [20, 21, 22, 23, 24, 25],
+        [30, 31, 32, 33, 34, 35],
+      ],
+      [],
+    );
 
     const slicer = new ResultSlicer({}, provider);
 

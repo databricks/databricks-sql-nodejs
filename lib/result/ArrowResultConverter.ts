@@ -41,6 +41,9 @@ export default class ArrowResultConverter implements IResultsProvider<Array<any>
   }
 
   public async hasMore() {
+    if (this.schema.length === 0) {
+      return false;
+    }
     if (this.pendingRecordBatch) {
       return true;
     }
@@ -48,6 +51,10 @@ export default class ArrowResultConverter implements IResultsProvider<Array<any>
   }
 
   public async fetchNext(options: ResultsProviderFetchNextOptions) {
+    if (this.schema.length === 0) {
+      return [];
+    }
+
     // eslint-disable-next-line no-constant-condition
     while (true) {
       // It's not possible to know if iterator has more items until trying

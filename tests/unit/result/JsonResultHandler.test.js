@@ -2,7 +2,7 @@ const { expect } = require('chai');
 const JsonResultHandler = require('../../../dist/result/JsonResultHandler').default;
 const { TCLIService_types } = require('../../../').thrift;
 const Int64 = require('node-int64');
-const RowSetProviderMock = require('./fixtures/RowSetProviderMock');
+const ResultsProviderMock = require('./fixtures/ResultsProviderMock');
 
 const getColumnSchema = (columnName, type, position) => {
   if (type === undefined) {
@@ -40,7 +40,7 @@ describe('JsonResultHandler', () => {
     ];
 
     const context = {};
-    const rowSetProvider = new RowSetProviderMock(data);
+    const rowSetProvider = new ResultsProviderMock(data);
 
     const result = new JsonResultHandler(context, rowSetProvider, schema);
     expect(await rowSetProvider.hasMore()).to.be.true;
@@ -133,7 +133,7 @@ describe('JsonResultHandler', () => {
     ];
 
     const context = {};
-    const rowSetProvider = new RowSetProviderMock(data);
+    const rowSetProvider = new ResultsProviderMock(data);
 
     const result = new JsonResultHandler(context, rowSetProvider, schema);
 
@@ -206,7 +206,7 @@ describe('JsonResultHandler', () => {
     ];
 
     const context = {};
-    const rowSetProvider = new RowSetProviderMock(data);
+    const rowSetProvider = new ResultsProviderMock(data);
 
     const result = new JsonResultHandler(context, rowSetProvider, schema);
 
@@ -228,7 +228,7 @@ describe('JsonResultHandler', () => {
 
   it('should detect nulls', () => {
     const context = {};
-    const rowSetProvider = new RowSetProviderMock();
+    const rowSetProvider = new ResultsProviderMock();
 
     const result = new JsonResultHandler(context, rowSetProvider, null);
     const buf = Buffer.from([0x55, 0xaa, 0xc3]);
@@ -343,7 +343,7 @@ describe('JsonResultHandler', () => {
     ];
 
     const context = {};
-    const rowSetProvider = new RowSetProviderMock(data);
+    const rowSetProvider = new ResultsProviderMock(data);
 
     const result = new JsonResultHandler(context, rowSetProvider, schema);
 
@@ -375,7 +375,7 @@ describe('JsonResultHandler', () => {
     };
 
     const context = {};
-    const rowSetProvider = new RowSetProviderMock();
+    const rowSetProvider = new ResultsProviderMock();
 
     const result = new JsonResultHandler(context, rowSetProvider, schema);
     expect(await result.fetchNext({ limit: 10000 })).to.be.deep.eq([]);
@@ -393,7 +393,7 @@ describe('JsonResultHandler', () => {
     ];
 
     const context = {};
-    const rowSetProvider = new RowSetProviderMock(data);
+    const rowSetProvider = new ResultsProviderMock(data);
 
     const result = new JsonResultHandler(context, rowSetProvider);
 
@@ -429,7 +429,7 @@ describe('JsonResultHandler', () => {
     ];
 
     const context = {};
-    const rowSetProvider = new RowSetProviderMock(data);
+    const rowSetProvider = new ResultsProviderMock(data);
 
     const result = new JsonResultHandler(context, rowSetProvider, schema);
 

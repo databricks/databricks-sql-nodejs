@@ -1,9 +1,9 @@
 const { expect } = require('chai');
 const sinon = require('sinon');
 const config = require('./utils/config');
-const logger = require('./utils/logger')(config.logger);
 const { DBSQLClient } = require('../..');
 const CloudFetchResultHandler = require('../../dist/result/CloudFetchResultHandler').default;
+const ArrowResultConverter = require('../../dist/result/ArrowResultConverter').default;
 const ResultSlicer = require('../../dist/result/ResultSlicer').default;
 
 async function openSession(customConfig) {
@@ -53,9 +53,10 @@ describe('CloudFetch', () => {
     // Check if we're actually getting data via CloudFetch
     const resultHandler = await operation.getResultHandler();
     expect(resultHandler).to.be.instanceof(ResultSlicer);
-    expect(resultHandler.source).to.be.instanceOf(CloudFetchResultHandler);
+    expect(resultHandler.source).to.be.instanceof(ArrowResultConverter);
+    expect(resultHandler.source.source).to.be.instanceOf(CloudFetchResultHandler);
 
-    const cfResultHandler = resultHandler.source;
+    const cfResultHandler = resultHandler.source.source;
 
     // Fetch first chunk and check if result handler behaves properly.
     // With the count of rows we queried, there should be at least one row set,

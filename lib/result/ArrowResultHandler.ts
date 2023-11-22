@@ -8,19 +8,26 @@ export default class ArrowResultHandler implements IResultsProvider<Array<Buffer
 
   private readonly source: IResultsProvider<TRowSet | undefined>;
 
-  private readonly arrowSchema: Buffer;
+  private readonly arrowSchema?: Buffer;
 
   constructor(context: IClientContext, source: IResultsProvider<TRowSet | undefined>, arrowSchema?: Buffer) {
     this.context = context;
     this.source = source;
-    this.arrowSchema = arrowSchema ?? Buffer.alloc(0);
+    this.arrowSchema = arrowSchema;
   }
 
   public async hasMore() {
+    if (!this.arrowSchema) {
+      return false;
+    }
     return this.source.hasMore();
   }
 
   public async fetchNext(options: ResultsProviderFetchNextOptions) {
+    if (!this.arrowSchema) {
+      return [];
+    }
+
     const rowSet = await this.source.fetchNext(options);
 
     const batches: Array<Buffer> = [];
