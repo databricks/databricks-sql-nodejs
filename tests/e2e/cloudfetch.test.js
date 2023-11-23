@@ -57,7 +57,7 @@ describe('CloudFetch', () => {
     // With the count of rows we queried, there should be at least one row set,
     // containing 8 result links. After fetching the first chunk,
     // result handler should download 5 of them and schedule the rest
-    expect(await resultHandler.hasMore()).to.be.false;
+    expect(await resultHandler.hasMore()).to.be.true;
     expect(resultHandler.pendingLinks.length).to.be.equal(0);
     expect(resultHandler.downloadedBatches.length).to.be.equal(0);
 

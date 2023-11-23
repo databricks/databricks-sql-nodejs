@@ -47,7 +47,16 @@ export default class RowSetProvider implements IResultsProvider<TRowSet | undefi
 
   private readonly returnOnlyPrefetchedResults: boolean;
 
-  public hasMoreRows: boolean = false;
+  private hasMoreRowsFlag?: boolean = undefined;
+
+  private get hasMoreRows(): boolean {
+    // `hasMoreRowsFlag` is populated only after fetching the first row set.
+    // Prior to that, we use a `operationHandle.hasResultSet` flag which
+    // is set if there are any data at all. Also, we have to choose appropriate
+    // flag in a getter because both `hasMoreRowsFlag` and `operationHandle.hasResultSet`
+    // may change between this getter calls
+    return this.hasMoreRowsFlag ?? this.operationHandle.hasResultSet;
+  }
 
   constructor(
     context: IClientContext,
@@ -68,7 +77,7 @@ export default class RowSetProvider implements IResultsProvider<TRowSet | undefi
   private processFetchResponse(response: TFetchResultsResp): TRowSet | undefined {
     Status.assert(response.status);
     this.fetchOrientation = TFetchOrientation.FETCH_NEXT;
-    this.hasMoreRows = checkIfOperationHasMoreRows(response);
+    this.hasMoreRowsFlag = checkIfOperationHasMoreRows(response);
     return response.results;
   }
 
@@ -83,6 +92,11 @@ export default class RowSetProvider implements IResultsProvider<TRowSet | undefi
       return undefined;
     }
 
+    // Don't fetch next chunk if there are no more data available
+    if (!this.hasMoreRows) {
+      return undefined;
+    }
+
     const driver = await this.context.getDriver();
     const response = await driver.fetchResults({
       operationHandle: this.operationHandle,
@@ -90,6 +104,7 @@ export default class RowSetProvider implements IResultsProvider<TRowSet | undefi
       maxRows: new Int64(limit),
       fetchType: FetchType.Data,
     });
+
     return this.processFetchResponse(response);
   }
 
