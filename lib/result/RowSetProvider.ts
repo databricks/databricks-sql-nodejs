@@ -68,15 +68,7 @@ export default class RowSetProvider implements IResultsProvider<TRowSet | undefi
   private processFetchResponse(response: TFetchResultsResp): TRowSet | undefined {
     Status.assert(response.status);
     this.fetchOrientation = TFetchOrientation.FETCH_NEXT;
-
-    if (this.prefetchedResults.length > 0) {
-      this.hasMoreRows = true;
-    } else if (this.returnOnlyPrefetchedResults) {
-      this.hasMoreRows = false;
-    } else {
-      this.hasMoreRows = checkIfOperationHasMoreRows(response);
-    }
-
+    this.hasMoreRows = checkIfOperationHasMoreRows(response);
     return response.results;
   }
 
@@ -86,6 +78,11 @@ export default class RowSetProvider implements IResultsProvider<TRowSet | undefi
       return this.processFetchResponse(prefetchedResponse);
     }
 
+    // We end up here if no more prefetched results available (checked above)
+    if (this.returnOnlyPrefetchedResults) {
+      return undefined;
+    }
+
     const driver = await this.context.getDriver();
     const response = await driver.fetchResults({
       operationHandle: this.operationHandle,
@@ -93,11 +90,20 @@ export default class RowSetProvider implements IResultsProvider<TRowSet | undefi
       maxRows: new Int64(limit),
       fetchType: FetchType.Data,
     });
-
     return this.processFetchResponse(response);
   }
 
   public async hasMore() {
+    // If there are prefetched results available - return `true` regardless of
+    // the actual state of `hasMoreRows` flag (because we actually have some data)
+    if (this.prefetchedResults.length > 0) {
+      return true;
+    }
+    // We end up here if no more prefetched results available (checked above)
+    if (this.returnOnlyPrefetchedResults) {
+      return false;
+    }
+
     return this.hasMoreRows;
   }
 }

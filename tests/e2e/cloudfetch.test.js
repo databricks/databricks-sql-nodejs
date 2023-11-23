@@ -41,7 +41,7 @@ describe('CloudFetch', () => {
         LEFT JOIN (SELECT 1) AS t2
       `,
       {
-        maxRows: 100000,
+        maxRows: null, // disable DirectResults
         useCloudFetch: true, // tell server that we would like to use CloudFetch
       },
     );
