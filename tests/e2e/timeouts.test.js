@@ -25,7 +25,7 @@ async function openSession(socketTimeout, customConfig) {
   });
 }
 
-describe('Data fetching', () => {
+describe('Timeouts', () => {
   const socketTimeout = 1; // minimum value to make sure any request will time out
 
   it('should use default socket timeout', async () => {
