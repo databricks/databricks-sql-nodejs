@@ -4,6 +4,7 @@ const config = require('./utils/config');
 const logger = require('./utils/logger')(config.logger);
 const { DBSQLClient } = require('../..');
 const ArrowResultHandler = require('../../dist/result/ArrowResultHandler').default;
+const ResultSlicer = require('../../dist/result/ResultSlicer').default;
 
 const fixtures = require('../fixtures/compatibility');
 const { expected: expectedColumn } = require('../fixtures/compatibility/column');
@@ -81,7 +82,8 @@ describe('Arrow support', () => {
         expect(result).to.deep.equal(expectedColumn);
 
         const resultHandler = await operation.getResultHandler();
-        expect(resultHandler).to.be.not.instanceof(ArrowResultHandler);
+        expect(resultHandler).to.be.instanceof(ResultSlicer);
+        expect(resultHandler.source).to.be.not.instanceof(ArrowResultHandler);
 
         await operation.close();
       },
@@ -100,7 +102,8 @@ describe('Arrow support', () => {
         expect(fixArrowResult(result)).to.deep.equal(expectedArrow);
 
         const resultHandler = await operation.getResultHandler();
-        expect(resultHandler).to.be.instanceof(ArrowResultHandler);
+        expect(resultHandler).to.be.instanceof(ResultSlicer);
+        expect(resultHandler.source).to.be.instanceof(ArrowResultHandler);
 
         await operation.close();
       },
@@ -120,7 +123,8 @@ describe('Arrow support', () => {
         expect(fixArrowResult(result)).to.deep.equal(expectedArrowNativeTypes);
 
         const resultHandler = await operation.getResultHandler();
-        expect(resultHandler).to.be.instanceof(ArrowResultHandler);
+        expect(resultHandler).to.be.instanceof(ResultSlicer);
+        expect(resultHandler.source).to.be.instanceof(ArrowResultHandler);
 
         await operation.close();
       },
@@ -145,7 +149,8 @@ describe('Arrow support', () => {
 
     // We use some internals here to check that server returned response with multiple batches
     const resultHandler = await operation.getResultHandler();
-    expect(resultHandler).to.be.instanceof(ArrowResultHandler);
+    expect(resultHandler).to.be.instanceof(ResultSlicer);
+    expect(resultHandler.source).to.be.instanceof(ArrowResultHandler);
 
     sinon.spy(operation._data, 'fetchNext');
 

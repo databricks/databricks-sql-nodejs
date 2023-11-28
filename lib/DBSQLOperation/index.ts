@@ -23,6 +23,7 @@ import RowSetProvider from '../result/RowSetProvider';
 import JsonResultHandler from '../result/JsonResultHandler';
 import ArrowResultHandler from '../result/ArrowResultHandler';
 import CloudFetchResultHandler from '../result/CloudFetchResultHandler';
+import ResultSlicer from '../result/ResultSlicer';
 import { definedOrError } from '../utils';
 import HiveDriverError from '../errors/HiveDriverError';
 import IClientContext from '../contracts/IClientContext';
@@ -68,7 +69,7 @@ export default class DBSQLOperation implements IOperation {
 
   private hasResultSet: boolean = false;
 
-  private resultHandler?: IResultsProvider<Array<any>>;
+  private resultHandler?: ResultSlicer<any>;
 
   constructor({ handle, directResults, context }: DBSQLOperationConstructorOptions) {
     this.operationHandle = handle;
@@ -107,9 +108,17 @@ export default class DBSQLOperation implements IOperation {
    */
   public async fetchAll(options?: FetchOptions): Promise<Array<object>> {
     const data: Array<Array<object>> = [];
+
+    const fetchChunkOptions = {
+      ...options,
+      // Tell slicer to return raw chunks. We're going to process all of them anyway,
+      // so no need to additionally buffer and slice chunks returned by server
+      disableBuffering: true,
+    };
+
     do {
       // eslint-disable-next-line no-await-in-loop
-      const chunk = await this.fetchChunk(options);
+      const chunk = await this.fetchChunk(fetchChunkOptions);
       data.push(chunk);
     } while (await this.hasMoreRows()); // eslint-disable-line no-await-in-loop
     this.context.getLogger().log(LogLevel.debug, `Fetched all data from operation with id: ${this.getId()}`);
@@ -138,7 +147,10 @@ export default class DBSQLOperation implements IOperation {
     const resultHandler = await this.getResultHandler();
     await this.failIfClosed();
 
-    const result = resultHandler.fetchNext({ limit: options?.maxRows || defaultMaxRows });
+    const result = resultHandler.fetchNext({
+      limit: options?.maxRows || defaultMaxRows,
+      disableBuffering: options?.disableBuffering,
+    });
     await this.failIfClosed();
 
     this.context
@@ -335,24 +347,28 @@ export default class DBSQLOperation implements IOperation {
     return this.metadata;
   }
 
-  private async getResultHandler(): Promise<IResultsProvider<Array<any>>> {
+  private async getResultHandler(): Promise<ResultSlicer<any>> {
     const metadata = await this.fetchMetadata();
     const resultFormat = definedOrError(metadata.resultFormat);
 
     if (!this.resultHandler) {
+      let resultSource: IResultsProvider<Array<any>> | undefined;
+
       switch (resultFormat) {
         case TSparkRowSetType.COLUMN_BASED_SET:
-          this.resultHandler = new JsonResultHandler(this.context, this._data, metadata.schema);
+          resultSource = new JsonResultHandler(this.context, this._data, metadata.schema);
           break;
         case TSparkRowSetType.ARROW_BASED_SET:
-          this.resultHandler = new ArrowResultHandler(this.context, this._data, metadata.schema, metadata.arrowSchema);
+          resultSource = new ArrowResultHandler(this.context, this._data, metadata.schema, metadata.arrowSchema);
           break;
         case TSparkRowSetType.URL_BASED_SET:
-          this.resultHandler = new CloudFetchResultHandler(this.context, this._data, metadata.schema);
+          resultSource = new CloudFetchResultHandler(this.context, this._data, metadata.schema);
           break;
-        default:
-          this.resultHandler = undefined;
-          break;
+        // no default
+      }
+
+      if (resultSource) {
+        this.resultHandler = new ResultSlicer(this.context, resultSource);
       }
     }
 
