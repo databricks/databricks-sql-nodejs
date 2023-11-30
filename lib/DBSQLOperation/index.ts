@@ -148,6 +148,24 @@ export default class DBSQLOperation implements IOperation {
     const resultHandler = await this.getResultHandler();
     await this.failIfClosed();
 
+    // All the library code is Promise-based, however, since Promises are microtasks,
+    // enqueueing a lot of promises may block macrotasks execution for a while.
+    // Usually, there are no much microtasks scheduled, however, when fetching query
+    // results (especially CloudFetch ones) it's quite easy to block event loop for
+    // long enough to break a lot of things. For example, with CloudFetch, after first
+    // set of files are downloaded and being processed immediately one by one, event
+    // loop easily gets blocked for enough time to break connection pool. `http.Agent`
+    // stops receiving socket events, and marks all sockets invalid on the next attempt
+    // to use them. See these similar issues that helped to debug this particular case -
+    // https://github.com/nodejs/node/issues/47130 and https://github.com/node-fetch/node-fetch/issues/1735
+    // This simple fix allows to clean up a microtasks queue and allow Node to process
+    // macrotasks as well, allowing the normal operation of other code. Also, this
+    // fix is added to `fetchChunk` method because, unlike other methods, `fetchChunk` is
+    // a potential source of issues described above
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, 0);
+    });
+
     const result = resultHandler.fetchNext({
       limit: options?.maxRows || defaultMaxRows,
       disableBuffering: options?.disableBuffering,
