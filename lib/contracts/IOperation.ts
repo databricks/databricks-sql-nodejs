@@ -14,6 +14,9 @@ export interface FinishedOptions extends WaitUntilReadyOptions {
 
 export interface FetchOptions extends WaitUntilReadyOptions {
   maxRows?: number;
+  // Disables internal buffer used to ensure a consistent chunks size.
+  // When set to `true`, returned chunks size may vary (and may differ from `maxRows`)
+  disableBuffering?: boolean;
 }
 
 export interface GetSchemaOptions extends WaitUntilReadyOptions {

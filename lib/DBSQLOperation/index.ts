@@ -23,6 +23,7 @@ import RowSetProvider from '../result/RowSetProvider';
 import JsonResultHandler from '../result/JsonResultHandler';
 import ArrowResultHandler from '../result/ArrowResultHandler';
 import CloudFetchResultHandler from '../result/CloudFetchResultHandler';
+import ResultSlicer from '../result/ResultSlicer';
 import { definedOrError } from '../utils';
 import HiveDriverError from '../errors/HiveDriverError';
 import IClientContext from '../contracts/IClientContext';
@@ -66,7 +67,7 @@ export default class DBSQLOperation implements IOperation {
   // to `getOperationStatus()` may fail with irrelevant errors, e.g. HTTP 404
   private operationStatus?: TGetOperationStatusResp;
 
-  private resultHandler?: IResultsProvider<Array<any>>;
+  private resultHandler?: ResultSlicer<any>;
 
   constructor({ handle, directResults, context }: DBSQLOperationConstructorOptions) {
     this.operationHandle = handle;
@@ -104,9 +105,17 @@ export default class DBSQLOperation implements IOperation {
    */
   public async fetchAll(options?: FetchOptions): Promise<Array<object>> {
     const data: Array<Array<object>> = [];
+
+    const fetchChunkOptions = {
+      ...options,
+      // Tell slicer to return raw chunks. We're going to process all of them anyway,
+      // so no need to additionally buffer and slice chunks returned by server
+      disableBuffering: true,
+    };
+
     do {
       // eslint-disable-next-line no-await-in-loop
-      const chunk = await this.fetchChunk(options);
+      const chunk = await this.fetchChunk(fetchChunkOptions);
       data.push(chunk);
     } while (await this.hasMoreRows()); // eslint-disable-line no-await-in-loop
     this.context.getLogger().log(LogLevel.debug, `Fetched all data from operation with id: ${this.getId()}`);
@@ -135,7 +144,28 @@ export default class DBSQLOperation implements IOperation {
     const resultHandler = await this.getResultHandler();
     await this.failIfClosed();
 
-    const result = resultHandler.fetchNext({ limit: options?.maxRows || defaultMaxRows });
+    // All the library code is Promise-based, however, since Promises are microtasks,
+    // enqueueing a lot of promises may block macrotasks execution for a while.
+    // Usually, there are no much microtasks scheduled, however, when fetching query
+    // results (especially CloudFetch ones) it's quite easy to block event loop for
+    // long enough to break a lot of things. For example, with CloudFetch, after first
+    // set of files are downloaded and being processed immediately one by one, event
+    // loop easily gets blocked for enough time to break connection pool. `http.Agent`
+    // stops receiving socket events, and marks all sockets invalid on the next attempt
+    // to use them. See these similar issues that helped to debug this particular case -
+    // https://github.com/nodejs/node/issues/47130 and https://github.com/node-fetch/node-fetch/issues/1735
+    // This simple fix allows to clean up a microtasks queue and allow Node to process
+    // macrotasks as well, allowing the normal operation of other code. Also, this
+    // fix is added to `fetchChunk` method because, unlike other methods, `fetchChunk` is
+    // a potential source of issues described above
+    await new Promise<void>((resolve) => {
+      setTimeout(resolve, 0);
+    });
+
+    const result = resultHandler.fetchNext({
+      limit: options?.maxRows || defaultMaxRows,
+      disableBuffering: options?.disableBuffering,
+    });
     await this.failIfClosed();
 
     this.context
@@ -332,24 +362,28 @@ export default class DBSQLOperation implements IOperation {
     return this.metadata;
   }
 
-  private async getResultHandler(): Promise<IResultsProvider<Array<any>>> {
+  private async getResultHandler(): Promise<ResultSlicer<any>> {
     const metadata = await this.fetchMetadata();
     const resultFormat = definedOrError(metadata.resultFormat);
 
     if (!this.resultHandler) {
+      let resultSource: IResultsProvider<Array<any>> | undefined;
+
       switch (resultFormat) {
         case TSparkRowSetType.COLUMN_BASED_SET:
-          this.resultHandler = new JsonResultHandler(this.context, this._data, metadata.schema);
+          resultSource = new JsonResultHandler(this.context, this._data, metadata.schema);
           break;
         case TSparkRowSetType.ARROW_BASED_SET:
-          this.resultHandler = new ArrowResultHandler(this.context, this._data, metadata.schema, metadata.arrowSchema);
+          resultSource = new ArrowResultHandler(this.context, this._data, metadata.schema, metadata.arrowSchema);
           break;
         case TSparkRowSetType.URL_BASED_SET:
-          this.resultHandler = new CloudFetchResultHandler(this.context, this._data, metadata.schema);
+          resultSource = new CloudFetchResultHandler(this.context, this._data, metadata.schema);
           break;
-        default:
-          this.resultHandler = undefined;
-          break;
+        // no default
+      }
+
+      if (resultSource) {
+        this.resultHandler = new ResultSlicer(this.context, resultSource);
       }
     }
 
