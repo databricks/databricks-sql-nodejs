@@ -48,9 +48,12 @@ export default class HttpConnection implements IConnectionProvider {
 
   private getAgentDefaultOptions(): http.AgentOptions {
     const clientConfig = this.context.getConfig();
+
+    const cloudFetchExtraSocketsCount = clientConfig.useCloudFetch ? clientConfig.cloudFetchConcurrentDownloads : 0;
+
     return {
       keepAlive: true,
-      maxSockets: 5,
+      maxSockets: 5 + cloudFetchExtraSocketsCount,
       keepAliveMsecs: 10000,
       timeout: this.options.socketTimeout ?? clientConfig.socketTimeout,
     };
