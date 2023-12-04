@@ -23,6 +23,7 @@ import RowSetProvider from '../result/RowSetProvider';
 import JsonResultHandler from '../result/JsonResultHandler';
 import ArrowResultHandler from '../result/ArrowResultHandler';
 import CloudFetchResultHandler from '../result/CloudFetchResultHandler';
+import ArrowResultConverter from '../result/ArrowResultConverter';
 import ResultSlicer from '../result/ResultSlicer';
 import { definedOrError } from '../utils';
 import HiveDriverError from '../errors/HiveDriverError';
@@ -377,10 +378,18 @@ export default class DBSQLOperation implements IOperation {
           resultSource = new JsonResultHandler(this.context, this._data, metadata.schema);
           break;
         case TSparkRowSetType.ARROW_BASED_SET:
-          resultSource = new ArrowResultHandler(this.context, this._data, metadata.schema, metadata.arrowSchema);
+          resultSource = new ArrowResultConverter(
+            this.context,
+            new ArrowResultHandler(this.context, this._data, metadata.arrowSchema),
+            metadata.schema,
+          );
           break;
         case TSparkRowSetType.URL_BASED_SET:
-          resultSource = new CloudFetchResultHandler(this.context, this._data, metadata.schema);
+          resultSource = new ArrowResultConverter(
+            this.context,
+            new CloudFetchResultHandler(this.context, this._data),
+            metadata.schema,
+          );
           break;
         // no default
       }

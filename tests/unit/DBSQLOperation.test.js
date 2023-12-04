@@ -7,6 +7,7 @@ const StatusError = require('../../dist/errors/StatusError').default;
 const OperationStateError = require('../../dist/errors/OperationStateError').default;
 const HiveDriverError = require('../../dist/errors/HiveDriverError').default;
 const JsonResultHandler = require('../../dist/result/JsonResultHandler').default;
+const ArrowResultConverter = require('../../dist/result/ArrowResultConverter').default;
 const ArrowResultHandler = require('../../dist/result/ArrowResultHandler').default;
 const CloudFetchResultHandler = require('../../dist/result/CloudFetchResultHandler').default;
 const ResultSlicer = require('../../dist/result/ResultSlicer').default;
@@ -898,7 +899,8 @@ describe('DBSQLOperation', () => {
         const resultHandler = await operation.getResultHandler();
         expect(context.driver.getResultSetMetadata.called).to.be.true;
         expect(resultHandler).to.be.instanceOf(ResultSlicer);
-        expect(resultHandler.source).to.be.instanceOf(ArrowResultHandler);
+        expect(resultHandler.source).to.be.instanceOf(ArrowResultConverter);
+        expect(resultHandler.source.source).to.be.instanceOf(ArrowResultHandler);
       }
 
       cloudFetchHandler: {
@@ -909,7 +911,8 @@ describe('DBSQLOperation', () => {
         const resultHandler = await operation.getResultHandler();
         expect(context.driver.getResultSetMetadata.called).to.be.true;
         expect(resultHandler).to.be.instanceOf(ResultSlicer);
-        expect(resultHandler.source).to.be.instanceOf(CloudFetchResultHandler);
+        expect(resultHandler.source).to.be.instanceOf(ArrowResultConverter);
+        expect(resultHandler.source.source).to.be.instanceOf(CloudFetchResultHandler);
       }
     });
   });
