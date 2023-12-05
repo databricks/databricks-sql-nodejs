@@ -35,11 +35,9 @@ export default class CloudFetchResultHandler implements IResultsProvider<Array<B
     if (this.downloadedBatches.length === 0) {
       const clientConfig = this.context.getConfig();
       const links = this.pendingLinks.splice(0, clientConfig.cloudFetchConcurrentDownloads);
-      if (links.length > 0) {
-        const tasks = links.map((link) => this.downloadLink(link));
-        const batches = await Promise.all(tasks);
-        this.downloadedBatches.push(...batches);
-      }
+      const tasks = links.map((link) => this.downloadLink(link));
+      const batches = await Promise.all(tasks);
+      this.downloadedBatches.push(...batches);
     }
 
     return this.downloadedBatches.splice(0, 1);
