@@ -1,29 +1,33 @@
 import { Buffer } from 'buffer';
 import fetch, { RequestInfo, RequestInit } from 'node-fetch';
-import { TRowSet, TSparkArrowResultLink, TTableSchema } from '../../thrift/TCLIService_types';
+import { TRowSet, TSparkArrowResultLink } from '../../thrift/TCLIService_types';
 import IClientContext from '../contracts/IClientContext';
-import IResultsProvider from './IResultsProvider';
-import ArrowResultHandler from './ArrowResultHandler';
+import IResultsProvider, { ResultsProviderFetchNextOptions } from './IResultsProvider';
 
-export default class CloudFetchResultHandler extends ArrowResultHandler {
+export default class CloudFetchResultHandler implements IResultsProvider<Array<Buffer>> {
+  protected readonly context: IClientContext;
+
+  private readonly source: IResultsProvider<TRowSet | undefined>;
+
   private pendingLinks: Array<TSparkArrowResultLink> = [];
 
   private downloadedBatches: Array<Buffer> = [];
 
-  constructor(context: IClientContext, source: IResultsProvider<TRowSet | undefined>, schema?: TTableSchema) {
-    // Arrow schema returned in metadata is not needed for CloudFetch results:
-    // each batch already contains schema and could be decoded as is
-    super(context, source, schema, Buffer.alloc(0));
+  constructor(context: IClientContext, source: IResultsProvider<TRowSet | undefined>) {
+    this.context = context;
+    this.source = source;
   }
 
   public async hasMore() {
     if (this.pendingLinks.length > 0 || this.downloadedBatches.length > 0) {
       return true;
     }
-    return super.hasMore();
+    return this.source.hasMore();
   }
 
-  protected async getBatches(data?: TRowSet): Promise<Array<Buffer>> {
+  public async fetchNext(options: ResultsProviderFetchNextOptions) {
+    const data = await this.source.fetchNext(options);
+
     data?.resultLinks?.forEach((link) => {
       this.pendingLinks.push(link);
     });

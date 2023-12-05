@@ -2,27 +2,8 @@ const { expect, AssertionError } = require('chai');
 const sinon = require('sinon');
 const Int64 = require('node-int64');
 const CloudFetchResultHandler = require('../../../dist/result/CloudFetchResultHandler').default;
-const RowSetProviderMock = require('./fixtures/RowSetProviderMock');
+const ResultsProviderMock = require('./fixtures/ResultsProviderMock');
 const DBSQLClient = require('../../../dist/DBSQLClient').default;
-
-const sampleThriftSchema = {
-  columns: [
-    {
-      columnName: '1',
-      typeDesc: {
-        types: [
-          {
-            primitiveEntry: {
-              type: 3,
-              typeQualifiers: null,
-            },
-          },
-        ],
-      },
-      position: 1,
-    },
-  ],
-};
 
 const sampleArrowSchema = Buffer.from([
   255, 255, 255, 255, 208, 0, 0, 0, 16, 0, 0, 0, 0, 0, 10, 0, 14, 0, 6, 0, 13, 0, 8, 0, 10, 0, 0, 0, 0, 0, 4, 0, 16, 0,
@@ -97,14 +78,14 @@ const sampleExpiredRowSet = {
 
 describe('CloudFetchResultHandler', () => {
   it('should report pending data if there are any', async () => {
-    const rowSetProvider = new RowSetProviderMock();
+    const rowSetProvider = new ResultsProviderMock();
     const clientConfig = DBSQLClient.getDefaultConfig();
 
     const context = {
       getConfig: () => clientConfig,
     };
 
-    const result = new CloudFetchResultHandler(context, rowSetProvider, sampleThriftSchema);
+    const result = new CloudFetchResultHandler(context, rowSetProvider);
 
     case1: {
       result.pendingLinks = [];
@@ -129,12 +110,15 @@ describe('CloudFetchResultHandler', () => {
     const clientConfig = DBSQLClient.getDefaultConfig();
     clientConfig.cloudFetchConcurrentDownloads = 0; // this will prevent it from downloading batches
 
-    const rowSetProvider = new RowSetProviderMock();
+    const rowSets = [sampleRowSet1, sampleEmptyRowSet, sampleRowSet2];
+    const expectedLinksCount = rowSets.reduce((prev, item) => prev + (item.resultLinks?.length ?? 0), 0);
+
+    const rowSetProvider = new ResultsProviderMock(rowSets);
     const context = {
       getConfig: () => clientConfig,
     };
 
-    const result = new CloudFetchResultHandler(context, rowSetProvider, sampleThriftSchema);
+    const result = new CloudFetchResultHandler(context, rowSetProvider);
 
     sinon.stub(result, 'fetch').returns(
       Promise.resolve({
@@ -145,18 +129,13 @@ describe('CloudFetchResultHandler', () => {
       }),
     );
 
-    const rowSets = [sampleRowSet1, sampleEmptyRowSet, sampleRowSet2];
-    const expectedLinksCount = rowSets.reduce((prev, item) => prev + (item.resultLinks?.length ?? 0), 0);
+    do {
+      await result.fetchNext({ limit: 100000 });
+    } while (await rowSetProvider.hasMore());
 
-    const batches = [];
-    for (const rowSet of rowSets) {
-      const items = await result.getBatches(rowSet);
-      batches.push(...items);
-    }
-
-    expect(batches.length).to.be.equal(0);
-    expect(result.fetch.called).to.be.false;
     expect(result.pendingLinks.length).to.be.equal(expectedLinksCount);
+    expect(result.downloadedBatches.length).to.be.equal(0);
+    expect(result.fetch.called).to.be.false;
   });
 
   it('should download batches according to settings', async () => {
@@ -168,12 +147,12 @@ describe('CloudFetchResultHandler', () => {
       resultLinks: [...sampleRowSet1.resultLinks, ...sampleRowSet2.resultLinks],
     };
     const expectedLinksCount = rowSet.resultLinks.length;
-    const rowSetProvider = new RowSetProviderMock([rowSet]);
+    const rowSetProvider = new ResultsProviderMock([rowSet]);
     const context = {
       getConfig: () => clientConfig,
     };
 
-    const result = new CloudFetchResultHandler(context, rowSetProvider, sampleThriftSchema);
+    const result = new CloudFetchResultHandler(context, rowSetProvider);
 
     sinon.stub(result, 'fetch').returns(
       Promise.resolve({
@@ -225,12 +204,12 @@ describe('CloudFetchResultHandler', () => {
     const clientConfig = DBSQLClient.getDefaultConfig();
     clientConfig.cloudFetchConcurrentDownloads = 1;
 
-    const rowSetProvider = new RowSetProviderMock([sampleRowSet1]);
+    const rowSetProvider = new ResultsProviderMock([sampleRowSet1]);
     const context = {
       getConfig: () => clientConfig,
     };
 
-    const result = new CloudFetchResultHandler(context, rowSetProvider, sampleThriftSchema);
+    const result = new CloudFetchResultHandler(context, rowSetProvider);
 
     sinon.stub(result, 'fetch').returns(
       Promise.resolve({
@@ -254,14 +233,14 @@ describe('CloudFetchResultHandler', () => {
   });
 
   it('should handle expired links', async () => {
-    const rowSetProvider = new RowSetProviderMock([sampleExpiredRowSet]);
+    const rowSetProvider = new ResultsProviderMock([sampleExpiredRowSet]);
     const clientConfig = DBSQLClient.getDefaultConfig();
 
     const context = {
       getConfig: () => clientConfig,
     };
 
-    const result = new CloudFetchResultHandler(context, rowSetProvider, sampleThriftSchema);
+    const result = new CloudFetchResultHandler(context, rowSetProvider);
 
     sinon.stub(result, 'fetch').returns(
       Promise.resolve({
