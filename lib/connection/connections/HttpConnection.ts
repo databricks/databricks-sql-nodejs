@@ -1,7 +1,7 @@
 import thrift from 'thrift';
 import https from 'https';
 import http from 'http';
-import { HeadersInit } from 'node-fetch';
+import { HeadersInit, Response } from 'node-fetch';
 import { ProxyAgent } from 'proxy-agent';
 
 import IConnectionProvider from '../contracts/IConnectionProvider';
@@ -9,6 +9,8 @@ import IConnectionOptions, { ProxyOptions } from '../contracts/IConnectionOption
 import IClientContext from '../../contracts/IClientContext';
 
 import ThriftHttpConnection from './ThriftHttpConnection';
+import IRetryPolicy from '../contracts/IRetryPolicy';
+import HttpRetryPolicy from './HttpRetryPolicy';
 
 export default class HttpConnection implements IConnectionProvider {
   private readonly options: IConnectionOptions;
@@ -104,6 +106,7 @@ export default class HttpConnection implements IConnectionProvider {
           url: `${options.https ? 'https' : 'http'}://${options.host}:${options.port}${options.path ?? '/'}`,
           transport: thrift.TBufferedTransport,
           protocol: thrift.TBinaryProtocol,
+          getRetryPolicy: () => this.getRetryPolicy(),
         },
         {
           agent,
@@ -117,5 +120,9 @@ export default class HttpConnection implements IConnectionProvider {
     }
 
     return this.connection;
+  }
+
+  public async getRetryPolicy(): Promise<IRetryPolicy<Response>> {
+    return new HttpRetryPolicy(this.context);
   }
 }
