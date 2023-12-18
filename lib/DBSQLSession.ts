@@ -2,7 +2,6 @@ import * as fs from 'fs';
 import * as path from 'path';
 import { stringify, NIL, parse } from 'uuid';
 import fetch, { HeadersInit } from 'node-fetch';
-import { Thrift } from 'thrift';
 import {
   TSessionHandle,
   TStatus,
@@ -10,7 +9,6 @@ import {
   TSparkDirectResults,
   TSparkArrowTypes,
   TSparkParameter,
-  TProtocolVersion,
 } from '../thrift/TCLIService_types';
 import { Int64 } from './hive/Types';
 import IDBSQLSession, {
@@ -96,16 +94,6 @@ function getQueryParameters(
 
   if (!namedParametersProvided && !ordinalParametersProvided) {
     return [];
-  }
-
-  if (
-    !sessionHandle.serverProtocolVersion ||
-    sessionHandle.serverProtocolVersion < TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V8
-  ) {
-    throw new Thrift.TProtocolException(
-      Thrift.TProtocolExceptionType.BAD_VERSION,
-      'Parameterized operations are not supported by this server. Support will begin with server version DBR 14.1',
-    );
   }
 
   const result: Array<TSparkParameter> = [];

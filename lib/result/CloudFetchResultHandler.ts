@@ -11,7 +11,7 @@ export default class CloudFetchResultHandler implements IResultsProvider<Array<B
 
   private pendingLinks: Array<TSparkArrowResultLink> = [];
 
-  private downloadedBatches: Array<Buffer> = [];
+  private downloadTasks: Array<Promise<Buffer>> = [];
 
   constructor(context: IClientContext, source: IResultsProvider<TRowSet | undefined>) {
     this.context = context;
@@ -19,7 +19,7 @@ export default class CloudFetchResultHandler implements IResultsProvider<Array<B
   }
 
   public async hasMore() {
-    if (this.pendingLinks.length > 0 || this.downloadedBatches.length > 0) {
+    if (this.pendingLinks.length > 0 || this.downloadTasks.length > 0) {
       return true;
     }
     return this.source.hasMore();
@@ -32,15 +32,17 @@ export default class CloudFetchResultHandler implements IResultsProvider<Array<B
       this.pendingLinks.push(link);
     });
 
-    if (this.downloadedBatches.length === 0) {
-      const clientConfig = this.context.getConfig();
-      const links = this.pendingLinks.splice(0, clientConfig.cloudFetchConcurrentDownloads);
+    const clientConfig = this.context.getConfig();
+    const freeTaskSlotsCount = clientConfig.cloudFetchConcurrentDownloads - this.downloadTasks.length;
+
+    if (freeTaskSlotsCount > 0) {
+      const links = this.pendingLinks.splice(0, freeTaskSlotsCount);
       const tasks = links.map((link) => this.downloadLink(link));
-      const batches = await Promise.all(tasks);
-      this.downloadedBatches.push(...batches);
+      this.downloadTasks.push(...tasks);
     }
 
-    return this.downloadedBatches.splice(0, 1);
+    const batch = await this.downloadTasks.shift();
+    return batch ? [batch] : [];
   }
 
   private async downloadLink(link: TSparkArrowResultLink): Promise<Buffer> {

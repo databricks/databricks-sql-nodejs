@@ -89,19 +89,19 @@ describe('CloudFetchResultHandler', () => {
 
     case1: {
       result.pendingLinks = [];
-      result.downloadedBatches = [];
+      result.downloadTasks = [];
       expect(await result.hasMore()).to.be.false;
     }
 
     case2: {
       result.pendingLinks = [{}]; // just anything here
-      result.downloadedBatches = [];
+      result.downloadTasks = [];
       expect(await result.hasMore()).to.be.true;
     }
 
     case3: {
       result.pendingLinks = [];
-      result.downloadedBatches = [{}]; // just anything here
+      result.downloadTasks = [{}]; // just anything here
       expect(await result.hasMore()).to.be.true;
     }
   });
@@ -134,19 +134,19 @@ describe('CloudFetchResultHandler', () => {
     } while (await rowSetProvider.hasMore());
 
     expect(result.pendingLinks.length).to.be.equal(expectedLinksCount);
-    expect(result.downloadedBatches.length).to.be.equal(0);
+    expect(result.downloadTasks.length).to.be.equal(0);
     expect(result.fetch.called).to.be.false;
   });
 
   it('should download batches according to settings', async () => {
     const clientConfig = DBSQLClient.getDefaultConfig();
-    clientConfig.cloudFetchConcurrentDownloads = 2;
+    clientConfig.cloudFetchConcurrentDownloads = 3;
 
     const rowSet = {
       startRowOffset: 0,
       resultLinks: [...sampleRowSet1.resultLinks, ...sampleRowSet2.resultLinks],
     };
-    const expectedLinksCount = rowSet.resultLinks.length;
+    const expectedLinksCount = rowSet.resultLinks.length; // 5
     const rowSetProvider = new ResultsProviderMock([rowSet]);
     const context = {
       getConfig: () => clientConfig,
@@ -166,24 +166,28 @@ describe('CloudFetchResultHandler', () => {
     expect(await rowSetProvider.hasMore()).to.be.true;
 
     initialFetch: {
+      // `cloudFetchConcurrentDownloads` out of `expectedLinksCount` links should be scheduled immediately
+      // first one should be `await`-ed and returned from `fetchNext`
       const items = await result.fetchNext({ limit: 10000 });
       expect(items.length).to.be.gt(0);
       expect(await rowSetProvider.hasMore()).to.be.false;
 
       expect(result.fetch.callCount).to.be.equal(clientConfig.cloudFetchConcurrentDownloads);
       expect(result.pendingLinks.length).to.be.equal(expectedLinksCount - clientConfig.cloudFetchConcurrentDownloads);
-      expect(result.downloadedBatches.length).to.be.equal(clientConfig.cloudFetchConcurrentDownloads - 1);
+      expect(result.downloadTasks.length).to.be.equal(clientConfig.cloudFetchConcurrentDownloads - 1);
     }
 
     secondFetch: {
-      // It should return previously fetched batch, not performing additional network requests
+      // It should return previously fetched batch, and schedule one more
       const items = await result.fetchNext({ limit: 10000 });
       expect(items.length).to.be.gt(0);
       expect(await rowSetProvider.hasMore()).to.be.false;
 
-      expect(result.fetch.callCount).to.be.equal(clientConfig.cloudFetchConcurrentDownloads); // no new fetches
-      expect(result.pendingLinks.length).to.be.equal(expectedLinksCount - clientConfig.cloudFetchConcurrentDownloads);
-      expect(result.downloadedBatches.length).to.be.equal(clientConfig.cloudFetchConcurrentDownloads - 2);
+      expect(result.fetch.callCount).to.be.equal(clientConfig.cloudFetchConcurrentDownloads + 1);
+      expect(result.pendingLinks.length).to.be.equal(
+        expectedLinksCount - clientConfig.cloudFetchConcurrentDownloads - 1,
+      );
+      expect(result.downloadTasks.length).to.be.equal(clientConfig.cloudFetchConcurrentDownloads - 1);
     }
 
     thirdFetch: {
@@ -192,11 +196,11 @@ describe('CloudFetchResultHandler', () => {
       expect(items.length).to.be.gt(0);
       expect(await rowSetProvider.hasMore()).to.be.false;
 
-      expect(result.fetch.callCount).to.be.equal(clientConfig.cloudFetchConcurrentDownloads * 2);
+      expect(result.fetch.callCount).to.be.equal(clientConfig.cloudFetchConcurrentDownloads + 2);
       expect(result.pendingLinks.length).to.be.equal(
-        expectedLinksCount - clientConfig.cloudFetchConcurrentDownloads * 2,
+        expectedLinksCount - clientConfig.cloudFetchConcurrentDownloads - 2,
       );
-      expect(result.downloadedBatches.length).to.be.equal(clientConfig.cloudFetchConcurrentDownloads - 1);
+      expect(result.downloadTasks.length).to.be.equal(clientConfig.cloudFetchConcurrentDownloads - 1);
     }
   });
 
@@ -250,6 +254,10 @@ describe('CloudFetchResultHandler', () => {
         arrayBuffer: async () => Buffer.concat([sampleArrowSchema, sampleArrowBatch]),
       }),
     );
+
+    // There are two link in the batch - first one is valid and second one is expired
+    // The first fetch has to be successful, and the second one should fail
+    await result.fetchNext({ limit: 10000 });
 
     try {
       await result.fetchNext({ limit: 10000 });

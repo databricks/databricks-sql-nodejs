@@ -64,7 +64,7 @@ describe('CloudFetch', () => {
     // result handler should download 5 of them and schedule the rest
     expect(await cfResultHandler.hasMore()).to.be.true;
     expect(cfResultHandler.pendingLinks.length).to.be.equal(0);
-    expect(cfResultHandler.downloadedBatches.length).to.be.equal(0);
+    expect(cfResultHandler.downloadTasks.length).to.be.equal(0);
 
     sinon.spy(operation._data, 'fetchNext');
 
@@ -76,7 +76,7 @@ describe('CloudFetch', () => {
     expect(await cfResultHandler.hasMore()).to.be.true;
     // expected batches minus first 5 already fetched
     expect(cfResultHandler.pendingLinks.length).to.be.equal(resultLinksCount - cloudFetchConcurrentDownloads);
-    expect(cfResultHandler.downloadedBatches.length).to.be.equal(cloudFetchConcurrentDownloads - 1);
+    expect(cfResultHandler.downloadTasks.length).to.be.equal(cloudFetchConcurrentDownloads - 1);
 
     let fetchedRowCount = chunk.length;
     while (await operation.hasMoreRows()) {
