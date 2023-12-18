@@ -42,7 +42,7 @@ describe('CloudFetch', () => {
         LEFT JOIN (SELECT 1) AS t2
       `,
       {
-        maxRows: 100000,
+        maxRows: null, // disable DirectResults
         useCloudFetch: true, // tell server that we would like to use CloudFetch
       },
     );
@@ -62,7 +62,7 @@ describe('CloudFetch', () => {
     // With the count of rows we queried, there should be at least one row set,
     // containing 8 result links. After fetching the first chunk,
     // result handler should download 5 of them and schedule the rest
-    expect(await cfResultHandler.hasMore()).to.be.false;
+    expect(await cfResultHandler.hasMore()).to.be.true;
     expect(cfResultHandler.pendingLinks.length).to.be.equal(0);
     expect(cfResultHandler.downloadTasks.length).to.be.equal(0);
 

@@ -129,7 +129,7 @@ describe('DBSQLOperation', () => {
       const operation = new DBSQLOperation({ handle, context });
 
       expect(operation.state).to.equal(TOperationState.INITIALIZED_STATE);
-      expect(operation.hasResultSet).to.be.true;
+      expect(operation.operationHandle.hasResultSet).to.be.true;
     });
 
     it('should pick up state from directResults', async () => {
@@ -149,7 +149,7 @@ describe('DBSQLOperation', () => {
       });
 
       expect(operation.state).to.equal(TOperationState.FINISHED_STATE);
-      expect(operation.hasResultSet).to.be.true;
+      expect(operation.operationHandle.hasResultSet).to.be.true;
     });
 
     it('should fetch status and update internal state', async () => {
@@ -165,14 +165,14 @@ describe('DBSQLOperation', () => {
       const operation = new DBSQLOperation({ handle, context });
 
       expect(operation.state).to.equal(TOperationState.INITIALIZED_STATE);
-      expect(operation.hasResultSet).to.be.false;
+      expect(operation.operationHandle.hasResultSet).to.be.false;
 
       const status = await operation.status();
 
       expect(context.driver.getOperationStatus.called).to.be.true;
       expect(status.operationState).to.equal(TOperationState.FINISHED_STATE);
       expect(operation.state).to.equal(TOperationState.FINISHED_STATE);
-      expect(operation.hasResultSet).to.be.true;
+      expect(operation.operationHandle.hasResultSet).to.be.true;
     });
 
     it('should request progress', async () => {
@@ -204,7 +204,7 @@ describe('DBSQLOperation', () => {
       const operation = new DBSQLOperation({ handle, context });
 
       expect(operation.state).to.equal(TOperationState.INITIALIZED_STATE);
-      expect(operation.hasResultSet).to.be.false;
+      expect(operation.operationHandle.hasResultSet).to.be.false;
 
       // First call - should fetch data and cache
       context.driver.getOperationStatusResp = {
@@ -216,7 +216,7 @@ describe('DBSQLOperation', () => {
       expect(context.driver.getOperationStatus.callCount).to.equal(1);
       expect(status1.operationState).to.equal(TOperationState.FINISHED_STATE);
       expect(operation.state).to.equal(TOperationState.FINISHED_STATE);
-      expect(operation.hasResultSet).to.be.true;
+      expect(operation.operationHandle.hasResultSet).to.be.true;
 
       // Second call - should return cached data
       context.driver.getOperationStatusResp = {
@@ -228,7 +228,7 @@ describe('DBSQLOperation', () => {
       expect(context.driver.getOperationStatus.callCount).to.equal(1);
       expect(status2.operationState).to.equal(TOperationState.FINISHED_STATE);
       expect(operation.state).to.equal(TOperationState.FINISHED_STATE);
-      expect(operation.hasResultSet).to.be.true;
+      expect(operation.operationHandle.hasResultSet).to.be.true;
     });
 
     it('should fetch status if directResults status is not finished', async () => {
@@ -254,14 +254,14 @@ describe('DBSQLOperation', () => {
       });
 
       expect(operation.state).to.equal(TOperationState.RUNNING_STATE); // from directResults
-      expect(operation.hasResultSet).to.be.false;
+      expect(operation.operationHandle.hasResultSet).to.be.false;
 
       const status = await operation.status(false);
 
       expect(context.driver.getOperationStatus.called).to.be.true;
       expect(status.operationState).to.equal(TOperationState.FINISHED_STATE);
       expect(operation.state).to.equal(TOperationState.FINISHED_STATE);
-      expect(operation.hasResultSet).to.be.true;
+      expect(operation.operationHandle.hasResultSet).to.be.true;
     });
 
     it('should not fetch status if directResults status is finished', async () => {
@@ -287,14 +287,14 @@ describe('DBSQLOperation', () => {
       });
 
       expect(operation.state).to.equal(TOperationState.FINISHED_STATE); // from directResults
-      expect(operation.hasResultSet).to.be.false;
+      expect(operation.operationHandle.hasResultSet).to.be.false;
 
       const status = await operation.status(false);
 
       expect(context.driver.getOperationStatus.called).to.be.false;
       expect(status.operationState).to.equal(TOperationState.FINISHED_STATE);
       expect(operation.state).to.equal(TOperationState.FINISHED_STATE);
-      expect(operation.hasResultSet).to.be.false;
+      expect(operation.operationHandle.hasResultSet).to.be.false;
     });
 
     it('should throw an error in case of a status error', async () => {
@@ -1025,6 +1025,7 @@ describe('DBSQLOperation', () => {
       handle.hasResultSet = true;
 
       context.driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
+      context.driver.getOperationStatusResp.hasResultSet = true;
       sinon.spy(context.driver, 'getResultSetMetadata');
       sinon.spy(context.driver, 'fetchResults');
 
@@ -1175,7 +1176,7 @@ describe('DBSQLOperation', () => {
   });
 
   describe('hasMoreRows', () => {
-    it('should return False until first chunk of data fetched', async () => {
+    it('should return initial value prior to first fetch', async () => {
       const context = new ClientContextMock();
 
       const handle = new OperationHandleMock();
@@ -1183,12 +1184,15 @@ describe('DBSQLOperation', () => {
 
       context.driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
       context.driver.getOperationStatusResp.hasResultSet = true;
-      context.driver.fetchResultsResp.hasMoreRows = true;
+      context.driver.fetchResultsResp.hasMoreRows = false;
+      context.driver.fetchResultsResp.results = undefined;
       const operation = new DBSQLOperation({ handle, context });
 
-      expect(await operation.hasMoreRows()).to.be.false;
-      await operation.fetchChunk({ disableBuffering: true });
       expect(await operation.hasMoreRows()).to.be.true;
+      expect(operation._data.hasMoreRowsFlag).to.be.undefined;
+      await operation.fetchChunk({ disableBuffering: true });
+      expect(await operation.hasMoreRows()).to.be.false;
+      expect(operation._data.hasMoreRowsFlag).to.be.false;
     });
 
     it('should return False if operation was closed', async () => {
@@ -1202,7 +1206,7 @@ describe('DBSQLOperation', () => {
       context.driver.fetchResultsResp.hasMoreRows = true;
       const operation = new DBSQLOperation({ handle, context });
 
-      expect(await operation.hasMoreRows()).to.be.false;
+      expect(await operation.hasMoreRows()).to.be.true;
       await operation.fetchChunk({ disableBuffering: true });
       expect(await operation.hasMoreRows()).to.be.true;
       await operation.close();
@@ -1220,7 +1224,7 @@ describe('DBSQLOperation', () => {
       context.driver.fetchResultsResp.hasMoreRows = true;
       const operation = new DBSQLOperation({ handle, context });
 
-      expect(await operation.hasMoreRows()).to.be.false;
+      expect(await operation.hasMoreRows()).to.be.true;
       await operation.fetchChunk({ disableBuffering: true });
       expect(await operation.hasMoreRows()).to.be.true;
       await operation.cancel();
@@ -1238,9 +1242,11 @@ describe('DBSQLOperation', () => {
       context.driver.fetchResultsResp.hasMoreRows = true;
       const operation = new DBSQLOperation({ handle, context });
 
-      expect(await operation.hasMoreRows()).to.be.false;
+      expect(await operation.hasMoreRows()).to.be.true;
+      expect(operation._data.hasMoreRowsFlag).to.be.undefined;
       await operation.fetchChunk({ disableBuffering: true });
       expect(await operation.hasMoreRows()).to.be.true;
+      expect(operation._data.hasMoreRowsFlag).to.be.true;
     });
 
     it('should return True if hasMoreRows flag is False but there is actual data', async () => {
@@ -1254,9 +1260,11 @@ describe('DBSQLOperation', () => {
       context.driver.fetchResultsResp.hasMoreRows = false;
       const operation = new DBSQLOperation({ handle, context });
 
-      expect(await operation.hasMoreRows()).to.be.false;
+      expect(await operation.hasMoreRows()).to.be.true;
+      expect(operation._data.hasMoreRowsFlag).to.be.undefined;
       await operation.fetchChunk({ disableBuffering: true });
       expect(await operation.hasMoreRows()).to.be.true;
+      expect(operation._data.hasMoreRowsFlag).to.be.true;
     });
 
     it('should return True if hasMoreRows flag is unset but there is actual data', async () => {
@@ -1270,9 +1278,11 @@ describe('DBSQLOperation', () => {
       context.driver.fetchResultsResp.hasMoreRows = undefined;
       const operation = new DBSQLOperation({ handle, context });
 
-      expect(await operation.hasMoreRows()).to.be.false;
+      expect(await operation.hasMoreRows()).to.be.true;
+      expect(operation._data.hasMoreRowsFlag).to.be.undefined;
       await operation.fetchChunk({ disableBuffering: true });
       expect(await operation.hasMoreRows()).to.be.true;
+      expect(operation._data.hasMoreRowsFlag).to.be.true;
     });
 
     it('should return False if hasMoreRows flag is False and there is no data', async () => {
@@ -1287,9 +1297,11 @@ describe('DBSQLOperation', () => {
       context.driver.fetchResultsResp.results = undefined;
       const operation = new DBSQLOperation({ handle, context });
 
-      expect(await operation.hasMoreRows()).to.be.false;
+      expect(await operation.hasMoreRows()).to.be.true;
+      expect(operation._data.hasMoreRowsFlag).to.be.undefined;
       await operation.fetchChunk({ disableBuffering: true });
       expect(await operation.hasMoreRows()).to.be.false;
+      expect(operation._data.hasMoreRowsFlag).to.be.false;
     });
   });
 });

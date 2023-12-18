@@ -47,7 +47,16 @@ export default class RowSetProvider implements IResultsProvider<TRowSet | undefi
 
   private readonly returnOnlyPrefetchedResults: boolean;
 
-  public hasMoreRows: boolean = false;
+  private hasMoreRowsFlag?: boolean = undefined;
+
+  private get hasMoreRows(): boolean {
+    // `hasMoreRowsFlag` is populated only after fetching the first row set.
+    // Prior to that, we use a `operationHandle.hasResultSet` flag which
+    // is set if there are any data at all. Also, we have to choose appropriate
+    // flag in a getter because both `hasMoreRowsFlag` and `operationHandle.hasResultSet`
+    // may change between this getter calls
+    return this.hasMoreRowsFlag ?? this.operationHandle.hasResultSet;
+  }
 
   constructor(
     context: IClientContext,
@@ -68,15 +77,7 @@ export default class RowSetProvider implements IResultsProvider<TRowSet | undefi
   private processFetchResponse(response: TFetchResultsResp): TRowSet | undefined {
     Status.assert(response.status);
     this.fetchOrientation = TFetchOrientation.FETCH_NEXT;
-
-    if (this.prefetchedResults.length > 0) {
-      this.hasMoreRows = true;
-    } else if (this.returnOnlyPrefetchedResults) {
-      this.hasMoreRows = false;
-    } else {
-      this.hasMoreRows = checkIfOperationHasMoreRows(response);
-    }
-
+    this.hasMoreRowsFlag = checkIfOperationHasMoreRows(response);
     return response.results;
   }
 
@@ -84,6 +85,16 @@ export default class RowSetProvider implements IResultsProvider<TRowSet | undefi
     const prefetchedResponse = this.prefetchedResults.shift();
     if (prefetchedResponse) {
       return this.processFetchResponse(prefetchedResponse);
+    }
+
+    // We end up here if no more prefetched results available (checked above)
+    if (this.returnOnlyPrefetchedResults) {
+      return undefined;
+    }
+
+    // Don't fetch next chunk if there are no more data available
+    if (!this.hasMoreRows) {
+      return undefined;
     }
 
     const driver = await this.context.getDriver();
@@ -98,6 +109,16 @@ export default class RowSetProvider implements IResultsProvider<TRowSet | undefi
   }
 
   public async hasMore() {
+    // If there are prefetched results available - return `true` regardless of
+    // the actual state of `hasMoreRows` flag (because we actually have some data)
+    if (this.prefetchedResults.length > 0) {
+      return true;
+    }
+    // We end up here if no more prefetched results available (checked above)
+    if (this.returnOnlyPrefetchedResults) {
+      return false;
+    }
+
     return this.hasMoreRows;
   }
 }
