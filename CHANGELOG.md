@@ -1,5 +1,15 @@
 # Release History
 
+## 1.7.0
+
+- Fixed behavior of `maxRows` option of `IOperation.fetchChunk()`. Now it will return chunks
+  of requested size (databricks/databricks-sql-nodejs#200)
+- Improved CloudFetch memory usage and overall performance (databricks/databricks-sql-nodejs#204,
+  databricks/databricks-sql-nodejs#207, databricks/databricks-sql-nodejs#209)
+- Remove protocol version check when using query parameters (databricks/databricks-sql-nodejs#213)
+- Fix `IOperation.hasMoreRows()` behavior to avoid fetching data beyond the end of dataset.
+  Also, now it will work properly prior to fetching first chunk (databricks/databricks-sql-nodejs#205)
+
 ## 1.6.1
 
 - Make default logger singleton (databricks/databricks-sql-nodejs#199)
