@@ -68,8 +68,6 @@ export default class DBSQLOperation implements IOperation {
   // to `getOperationStatus()` may fail with irrelevant errors, e.g. HTTP 404
   private operationStatus?: TGetOperationStatusResp;
 
-  private hasResultSet: boolean = false;
-
   private resultHandler?: ResultSlicer<any>;
 
   constructor({ handle, directResults, context }: DBSQLOperationConstructorOptions) {
@@ -78,7 +76,6 @@ export default class DBSQLOperation implements IOperation {
 
     const useOnlyPrefetchedResults = Boolean(directResults?.closeOperation);
 
-    this.hasResultSet = this.operationHandle.hasResultSet;
     if (directResults?.operationStatus) {
       this.processOperationStatusResponse(directResults.operationStatus);
     }
@@ -139,7 +136,7 @@ export default class DBSQLOperation implements IOperation {
   public async fetchChunk(options?: FetchOptions): Promise<Array<object>> {
     await this.failIfClosed();
 
-    if (!this.hasResultSet) {
+    if (!this.operationHandle.hasResultSet) {
       return [];
     }
 
@@ -271,7 +268,7 @@ export default class DBSQLOperation implements IOperation {
   public async getSchema(options?: GetSchemaOptions): Promise<TTableSchema | null> {
     await this.failIfClosed();
 
-    if (!this.hasResultSet) {
+    if (!this.operationHandle.hasResultSet) {
       return null;
     }
 
@@ -412,7 +409,7 @@ export default class DBSQLOperation implements IOperation {
     this.state = response.operationState ?? this.state;
 
     if (typeof response.hasResultSet === 'boolean') {
-      this.hasResultSet = response.hasResultSet;
+      this.operationHandle.hasResultSet = response.hasResultSet;
     }
 
     const isInProgress = [

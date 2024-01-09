@@ -19,9 +19,8 @@ const openSession = async () => {
   });
 };
 
-// TODO: Temporarily disable those tests until we figure out issues with E2E test env
 describe('Query parameters', () => {
-  it.skip('should use named parameters', async () => {
+  it('should use named parameters', async () => {
     const session = await openSession();
     const operation = await session.executeStatement(
       `
@@ -72,7 +71,7 @@ describe('Query parameters', () => {
     ]);
   });
 
-  it.skip('should accept primitives as values for named parameters', async () => {
+  it('should accept primitives as values for named parameters', async () => {
     const session = await openSession();
     const operation = await session.executeStatement(
       `
@@ -117,7 +116,7 @@ describe('Query parameters', () => {
     ]);
   });
 
-  it.skip('should use ordinal parameters', async () => {
+  it('should use ordinal parameters', async () => {
     const session = await openSession();
     const operation = await session.executeStatement(
       `
@@ -168,7 +167,7 @@ describe('Query parameters', () => {
     ]);
   });
 
-  it.skip('should accept primitives as values for ordinal parameters', async () => {
+  it('should accept primitives as values for ordinal parameters', async () => {
     const session = await openSession();
     const operation = await session.executeStatement(
       `
