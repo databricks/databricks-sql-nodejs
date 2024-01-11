@@ -1,4 +1,4 @@
-import { Buffer } from 'buffer';
+import LZ4 from 'lz4';
 import fetch, { RequestInfo, RequestInit } from 'node-fetch';
 import { TRowSet, TSparkArrowResultLink } from '../../thrift/TCLIService_types';
 import IClientContext from '../contracts/IClientContext';
@@ -9,13 +9,16 @@ export default class CloudFetchResultHandler implements IResultsProvider<Array<B
 
   private readonly source: IResultsProvider<TRowSet | undefined>;
 
+  private readonly isLZ4Compressed: boolean;
+
   private pendingLinks: Array<TSparkArrowResultLink> = [];
 
   private downloadTasks: Array<Promise<Buffer>> = [];
 
-  constructor(context: IClientContext, source: IResultsProvider<TRowSet | undefined>) {
+  constructor(context: IClientContext, source: IResultsProvider<TRowSet | undefined>, isLZ4Compressed?: boolean) {
     this.context = context;
     this.source = source;
+    this.isLZ4Compressed = isLZ4Compressed ?? false;
   }
 
   public async hasMore() {
@@ -42,7 +45,12 @@ export default class CloudFetchResultHandler implements IResultsProvider<Array<B
     }
 
     const batch = await this.downloadTasks.shift();
-    return batch ? [batch] : [];
+    const batches = batch ? [batch] : [];
+
+    if (this.isLZ4Compressed) {
+      return batches.map((buffer) => LZ4.decode(buffer));
+    }
+    return batches;
   }
 
   private async downloadLink(link: TSparkArrowResultLink): Promise<Buffer> {

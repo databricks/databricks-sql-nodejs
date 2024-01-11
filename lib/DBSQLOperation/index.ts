@@ -377,14 +377,14 @@ export default class DBSQLOperation implements IOperation {
         case TSparkRowSetType.ARROW_BASED_SET:
           resultSource = new ArrowResultConverter(
             this.context,
-            new ArrowResultHandler(this.context, this._data, metadata.arrowSchema),
+            new ArrowResultHandler(this.context, this._data, metadata.arrowSchema, metadata.lz4Compressed),
             metadata.schema,
           );
           break;
         case TSparkRowSetType.URL_BASED_SET:
           resultSource = new ArrowResultConverter(
             this.context,
-            new CloudFetchResultHandler(this.context, this._data),
+            new CloudFetchResultHandler(this.context, this._data, metadata.lz4Compressed),
             metadata.schema,
           );
           break;

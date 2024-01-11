@@ -184,6 +184,7 @@ export default class DBSQLSession implements IDBSQLSession {
       ...getArrowOptions(clientConfig),
       canDownloadResult: options.useCloudFetch ?? clientConfig.useCloudFetch,
       parameters: getQueryParameters(this.sessionHandle, options.namedParameters, options.ordinalParameters),
+      canDecompressLZ4Result: clientConfig.useResultsCompression,
     });
     const response = await this.handleResponse(operationPromise);
     const operation = this.createOperation(response);
