@@ -32,7 +32,10 @@ async function openSession(customConfig) {
 describe('CloudFetch', () => {
   it('should fetch data', async () => {
     const cloudFetchConcurrentDownloads = 5;
-    const session = await openSession({ cloudFetchConcurrentDownloads });
+    const session = await openSession({
+      cloudFetchConcurrentDownloads,
+      useResultsCompression: false,
+    });
 
     const queriedRowsCount = 10000000; // result has to be quite big to enable CloudFetch
     const operation = await session.executeStatement(

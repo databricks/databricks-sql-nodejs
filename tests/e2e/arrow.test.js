@@ -90,6 +90,7 @@ describe('Arrow support', () => {
       },
       {
         arrowEnabled: false,
+        useResultsCompression: false,
       },
     ),
   );
@@ -112,6 +113,7 @@ describe('Arrow support', () => {
       {
         arrowEnabled: true,
         useArrowNativeTypes: false,
+        useResultsCompression: false,
       },
     ),
   );
@@ -134,6 +136,7 @@ describe('Arrow support', () => {
       {
         arrowEnabled: true,
         useArrowNativeTypes: true,
+        useResultsCompression: false,
       },
     ),
   );
@@ -143,6 +146,7 @@ describe('Arrow support', () => {
 
     const session = await openSession({
       arrowEnabled: true,
+      useResultsCompression: false,
     });
     const operation = await session.executeStatement(`
       SELECT *
