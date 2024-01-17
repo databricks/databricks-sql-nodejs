@@ -1,20 +1,30 @@
 const { expect, AssertionError } = require('chai');
+const { Response } = require('node-fetch');
 const { Thrift } = require('thrift');
 const HiveDriverError = require('../../../../dist/errors/HiveDriverError').default;
 const BaseCommand = require('../../../../dist/hive/Commands/BaseCommand').default;
+const HttpRetryPolicy = require('../../../../dist/connection/connections/HttpRetryPolicy').default;
 const DBSQLClient = require('../../../../dist/DBSQLClient').default;
 
 class ThriftClientMock {
-  constructor(methodHandler) {
+  constructor(context, methodHandler) {
+    this.context = context;
     this.methodHandler = methodHandler;
   }
 
   CustomMethod(request, callback) {
     try {
-      const response = this.methodHandler();
-      return callback(undefined, response !== undefined ? response : ThriftClientMock.defaultResponse);
+      const retryPolicy = new HttpRetryPolicy(this.context);
+      retryPolicy
+        .invokeWithRetry(this.methodHandler)
+        .then((response) => {
+          callback(undefined, response?.body ?? ThriftClientMock.defaultResponse);
+        })
+        .catch((error) => {
+          callback(error);
+        });
     } catch (error) {
-      return callback(error);
+      callback(error);
     }
   }
 }
@@ -101,11 +111,11 @@ describe('BaseCommand', () => {
 
         let methodCallCount = 0;
         const command = new CustomCommand(
-          new ThriftClientMock(() => {
+          new ThriftClientMock(context, () => {
             methodCallCount += 1;
-            const error = new Thrift.TApplicationException();
-            error.statusCode = statusCode;
-            throw error;
+            return new Response(undefined, {
+              status: statusCode,
+            });
           }),
           context,
         );
@@ -138,11 +148,11 @@ describe('BaseCommand', () => {
 
         let methodCallCount = 0;
         const command = new CustomCommand(
-          new ThriftClientMock(() => {
+          new ThriftClientMock(context, () => {
             methodCallCount += 1;
-            const error = new Thrift.TApplicationException();
-            error.statusCode = statusCode;
-            throw error;
+            return new Response(undefined, {
+              status: statusCode,
+            });
           }),
           context,
         );
@@ -178,14 +188,19 @@ describe('BaseCommand', () => {
 
         let methodCallCount = 0;
         const command = new CustomCommand(
-          new ThriftClientMock(() => {
+          new ThriftClientMock(context, () => {
             methodCallCount += 1;
             if (methodCallCount <= 3) {
-              const error = new Thrift.TApplicationException();
-              error.statusCode = statusCode;
-              throw error;
+              return new Response(undefined, {
+                status: statusCode,
+              });
             }
-            return ThriftClientMock.defaultResponse;
+
+            const response = new Response(undefined, {
+              status: 200,
+            });
+            response.body = ThriftClientMock.defaultResponse;
+            return response;
           }),
           context,
         );
@@ -207,7 +222,7 @@ describe('BaseCommand', () => {
     };
 
     const command = new CustomCommand(
-      new ThriftClientMock(() => {
+      new ThriftClientMock(context, () => {
         const error = new Thrift.TApplicationException(undefined, errorMessage);
         error.statusCode = 500;
         throw error;
@@ -237,7 +252,7 @@ describe('BaseCommand', () => {
     };
 
     const command = new CustomCommand(
-      new ThriftClientMock(() => {
+      new ThriftClientMock(context, () => {
         throw new Thrift.TApplicationException(undefined, errorMessage);
       }),
       context,
@@ -265,7 +280,7 @@ describe('BaseCommand', () => {
     };
 
     const command = new CustomCommand(
-      new ThriftClientMock(() => {
+      new ThriftClientMock(context, () => {
         throw new Error(errorMessage);
       }),
       context,

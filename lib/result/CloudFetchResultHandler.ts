@@ -70,10 +70,9 @@ export default class CloudFetchResultHandler implements IResultsProvider<Array<B
   private async fetch(url: RequestInfo, init?: RequestInit) {
     const connectionProvider = await this.context.getConnectionProvider();
     const agent = await connectionProvider.getAgent();
+    const retryPolicy = await connectionProvider.getRetryPolicy();
 
-    return fetch(url, {
-      agent,
-      ...init,
-    });
+    const requestConfig: RequestInit = { agent, ...init };
+    return retryPolicy.invokeWithRetry(() => fetch(url, requestConfig));
   }
 }

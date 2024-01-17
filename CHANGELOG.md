@@ -1,5 +1,10 @@
 # Release History
 
+## 1.7.1
+
+- Fix "Premature close" error which happened due to socket limit when intensively using library
+  (databricks/databricks-sql-nodejs#217)
+
 ## 1.7.0
 
 - Fixed behavior of `maxRows` option of `IOperation.fetchChunk()`. Now it will return chunks
