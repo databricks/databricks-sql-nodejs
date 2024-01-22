@@ -1,3 +1,5 @@
+/* eslint-disable import/prefer-default-export */
+
 // `Array.at` / `TypedArray.at` is supported only since Nodejs@16.6.0
 // These methods are massively used by `apache-arrow@13`, but we have
 // to use this version because older ones contain some other nasty bugs
@@ -21,7 +23,7 @@ function toLength(value: unknown): number {
 }
 
 // https://tc39.es/ecma262/multipage/indexed-collections.html#sec-array.prototype.at
-function at<T>(this: Array<T>, index: number): T | undefined {
+export function at<T>(this: Array<T>, index: number): T | undefined {
   const length = toLength(this.length);
   const relativeIndex = toIntegerOrInfinity(index);
   const absoluteIndex = relativeIndex >= 0 ? relativeIndex : length + relativeIndex;
