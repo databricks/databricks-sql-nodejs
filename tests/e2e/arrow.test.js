@@ -48,10 +48,10 @@ async function deleteTable(session, tableName) {
 async function initializeTable(session, tableName) {
   await deleteTable(session, tableName);
 
-  const createTable = fixtures.createTableSql.replaceAll('${table_name}', tableName);
+  const createTable = fixtures.createTableSql.replace(/\$\{table_name\}/g, tableName);
   await execute(session, createTable);
 
-  const insertData = fixtures.insertDataSql.replaceAll('${table_name}', tableName);
+  const insertData = fixtures.insertDataSql.replace(/\$\{table_name\}/g, tableName);
   await execute(session, insertData);
 }
 
