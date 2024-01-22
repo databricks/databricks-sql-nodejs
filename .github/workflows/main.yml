@@ -32,20 +32,27 @@ jobs:
 
   unit-test:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # only LTS versions starting from the lowest we support
+        node-version: ['14', '16', '18', '20']
     env:
       cache-name: cache-node-modules
 
     steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
       - uses: actions/checkout@v3
       - name: Cache node modules
         uses: actions/cache@v3
         with:
           path: ~/.npm
-          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('**/package-lock.json') }}
+          key: ${{ runner.os }}-${{ matrix.node-version }}-build-${{ env.cache-name }}-${{ hashFiles('**/package-lock.json') }}
           restore-keys: |
-            ${{ runner.os }}-build-${{ env.cache-name }}-
-            ${{ runner.os }}-build-
-            ${{ runner.os }}-
+            ${{ runner.os }}-${{ matrix.node-version }}-build-${{ env.cache-name }}-
+            ${{ runner.os }}-${{ matrix.node-version }}-build-
+            ${{ runner.os }}-${{ matrix.node-version }}-
       - name: Run unit tests
         run: |
           npm ci
