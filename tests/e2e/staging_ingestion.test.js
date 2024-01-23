@@ -1,10 +1,9 @@
-const { expect } = require('chai');
+const { expect, AssertionError } = require('chai');
 const config = require('./utils/config');
 const { DBSQLClient } = require('../..');
 const fs = require('fs');
 
-// TODO: Temporarily disable those tests until we figure out issues with E2E test env
-describe.skip('Staging Test', () => {
+describe('Staging Test', () => {
   it('put staging data and receive it', async () => {
     const client = new DBSQLClient();
     await client.connect({
@@ -52,6 +51,18 @@ describe.skip('Staging Test', () => {
     await session.executeStatement(`REMOVE '/Volumes/${config.database[0]}/${config.database[1]}/e2etests/file1.csv'`, {
       stagingAllowedLocalPath: ['tests/e2e/staging'],
     });
+
+    try {
+      await session.executeStatement(
+        `GET '/Volumes/${config.database[0]}/${config.database[1]}/e2etests/file1.csv' TO 'tests/e2e/staging/file'`,
+        { stagingAllowedLocalPath: ['tests/e2e/staging'] },
+      );
+    } catch (error) {
+      if (error instanceof AssertionError) {
+        throw error;
+      }
+      expect(error.message).to.contain('404'); // File should not exist after deleting
+    }
   });
 
   it('delete non-existent data', async () => {
@@ -69,14 +80,8 @@ describe.skip('Staging Test', () => {
       initialSchema: config.database[1],
     });
     await session.executeStatement(
-      `PUT '${tempPath}' INTO '/Volumes/${config.database[0]}/${config.database[1]}/e2etests/file1.csv' OVERWRITE`,
+      `REMOVE '/Volumes/${config.database[0]}/${config.database[1]}/e2etests/non_existing.csv'`,
       { stagingAllowedLocalPath: ['tests/e2e/staging'] },
     );
-    await session.executeStatement(
-      `GET '/Volumes/${config.database[0]}/${config.database[1]}/e2etests/file1.csv' TO 'tests/e2e/staging/file'`,
-      { stagingAllowedLocalPath: ['tests/e2e/staging'] },
-    );
-    let result = fs.readFileSync('tests/e2e/staging/file');
-    expect(result.toString() === 'Hello World!').to.be.true;
   });
 });
