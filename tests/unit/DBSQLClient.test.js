@@ -359,6 +359,20 @@ describe('DBSQLClient.initAuthProvider', () => {
     expect(provider.manager).to.be.instanceOf(AzureOAuthManager);
   });
 
+  it('should use Databricks InHouse OAuth method (Azure)', () => {
+    const client = new DBSQLClient();
+
+    const provider = client.initAuthProvider({
+      authType: 'databricks-oauth',
+      // host is used when creating OAuth manager, so make it look like a real Azure instance
+      host: 'example.databricks.azure.us',
+      useDatabricksOAuthInAzure: true
+    });
+
+    expect(provider).to.be.instanceOf(DatabricksOAuth);
+    expect(provider.manager).to.be.instanceOf(AWSOAuthManager);
+  });
+
   it('should throw error when OAuth not supported for host', () => {
     const client = new DBSQLClient();
 

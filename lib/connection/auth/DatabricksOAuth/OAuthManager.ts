@@ -13,6 +13,7 @@ export interface OAuthManagerOptions {
   clientId?: string;
   azureTenantId?: string;
   clientSecret?: string;
+  useDatabricksOAuthInAzure?: boolean;
   context: IClientContext;
 }
 
@@ -36,6 +37,10 @@ export default abstract class OAuthManager {
   constructor(options: OAuthManagerOptions) {
     this.options = options;
     this.context = options.context;
+  }
+
+  protected canUse(): boolean {
+    return true;
   }
 
   protected abstract getOIDCConfigUrl(): string;
@@ -195,7 +200,10 @@ export default abstract class OAuthManager {
     for (const OAuthManagerClass of managers) {
       for (const domain of OAuthManagerClass.domains) {
         if (host.endsWith(domain)) {
-          return new OAuthManagerClass(options);
+          const manager: OAuthManager = new OAuthManagerClass(options);
+          if (manager.canUse()) {
+            return manager;
+          }
         }
       }
     }
@@ -204,12 +212,20 @@ export default abstract class OAuthManager {
   }
 }
 
+  // Databricks InHouse OAuth Manager
 export class AWSOAuthManager extends OAuthManager {
-  public static domains = ['.cloud.databricks.com', '.dev.databricks.com'];
+  public static azureDomains = ['.azuredatabricks.net', '.databricks.azure.us'];
+
+  public static domains = ['.cloud.databricks.com', '.dev.databricks.com'].concat(this.azureDomains);
 
   public static defaultClientId = 'databricks-sql-connector';
 
   public static defaultCallbackPorts = [8030];
+
+  protected canUse(): boolean {
+    const isAzureDomain = AWSOAuthManager.azureDomains.some((domain) => this.options.host.endsWith(domain));
+    return !isAzureDomain || !!this.options.useDatabricksOAuthInAzure;
+  }
 
   protected getOIDCConfigUrl(): string {
     return `${getDatabricksOIDCUrl(this.options.host)}/.well-known/oauth-authorization-server`;
@@ -230,6 +246,9 @@ export class AWSOAuthManager extends OAuthManager {
 
 export class AzureOAuthManager extends OAuthManager {
   public static domains = ['.azuredatabricks.net', '.databricks.azure.cn', '.databricks.azure.us'];
+
+  public static canBeUsed = (options: OAuthManagerOptions) =>
+    this.domains.some((domain) => options.host.endsWith(domain));
 
   public static defaultClientId = '96eecda7-19ea-49cc-abb5-240097d554f5';
 

@@ -19,6 +19,7 @@ type AuthOptions =
       azureTenantId?: string;
       oauthClientId?: string;
       oauthClientSecret?: string;
+      useDatabricksOAuthInAzure?: boolean;
     }
   | {
       authType: 'custom';
