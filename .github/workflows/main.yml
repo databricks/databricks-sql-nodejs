@@ -32,30 +32,39 @@ jobs:
 
   unit-test:
     runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        # only LTS versions starting from the lowest we support
+        # TODO: Include Nodejs@14
+        node-version: ['16', '18', '20']
     env:
       cache-name: cache-node-modules
+      NYC_REPORT_DIR: coverage_unit_node${{ matrix.node-version }}
 
     steps:
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node-version }}
       - uses: actions/checkout@v3
       - name: Cache node modules
         uses: actions/cache@v3
         with:
           path: ~/.npm
-          key: ${{ runner.os }}-build-${{ env.cache-name }}-${{ hashFiles('**/package-lock.json') }}
+          key: ${{ runner.os }}-${{ matrix.node-version }}-build-${{ env.cache-name }}-${{ hashFiles('**/package-lock.json') }}
           restore-keys: |
-            ${{ runner.os }}-build-${{ env.cache-name }}-
-            ${{ runner.os }}-build-
-            ${{ runner.os }}-
+            ${{ runner.os }}-${{ matrix.node-version }}-build-${{ env.cache-name }}-
+            ${{ runner.os }}-${{ matrix.node-version }}-build-
+            ${{ runner.os }}-${{ matrix.node-version }}-
       - name: Run unit tests
         run: |
           npm ci
           npm run test
-      - run: tar -cvf coverage_unit.tar coverage_unit
+      - run: tar -cvf ${{ env.NYC_REPORT_DIR }}.tar ${{ env.NYC_REPORT_DIR }}
       - name: Store coverage report
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: coverage_unit
-          path: coverage_unit.tar
+          name: ${{ env.NYC_REPORT_DIR }}
+          path: ${{ env.NYC_REPORT_DIR }}.tar
           retention-days: 1
 
   e2e-test:
@@ -67,6 +76,7 @@ jobs:
       E2E_ACCESS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
       E2E_TABLE_SUFFIX: ${{github.sha}}
       cache-name: cache-node-modules
+      NYC_REPORT_DIR: coverage_e2e
 
     steps:
       - uses: actions/checkout@v3
@@ -83,12 +93,12 @@ jobs:
         run: |
           npm ci
           NODE_OPTIONS="--max-old-space-size=4096" npm run e2e
-      - run: tar -cvf coverage_e2e.tar coverage_e2e
+      - run: tar -cvf ${{ env.NYC_REPORT_DIR }}.tar ${{ env.NYC_REPORT_DIR }}
       - name: Store coverage report
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
-          name: coverage_e2e
-          path: coverage_e2e.tar
+          name: ${{ env.NYC_REPORT_DIR }}
+          path: ${{ env.NYC_REPORT_DIR }}.tar
           retention-days: 1
 
   coverage:
@@ -108,14 +118,15 @@ jobs:
             ${{ runner.os }}-build-${{ env.cache-name }}-
             ${{ runner.os }}-build-
             ${{ runner.os }}-
-      - uses: actions/download-artifact@v3
+      - uses: actions/download-artifact@v4
         with:
-          name: coverage_unit
-      - uses: actions/download-artifact@v3
-        with:
-          name: coverage_e2e
-      - run: tar -xvf coverage_unit.tar && rm coverage_unit.tar
-      - run: tar -xvf coverage_e2e.tar && rm coverage_e2e.tar
+          pattern: coverage_*
+          merge-multiple: true
+      - name: Unpack coverage reports
+        run: |
+          ls -1 coverage_*.tar | xargs -I '{}' -- tar -xvf '{}'
+          rm coverage_*.tar
+      - run: ls -la
       - name: Coverage
         uses: codecov/codecov-action@v3
         with:
