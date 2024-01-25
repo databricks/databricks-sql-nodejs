@@ -216,9 +216,7 @@ export default abstract class OAuthManager {
 export class DatabricksOAuthManager extends OAuthManager {
   public static azureDomains = ['.azuredatabricks.net', '.databricks.azure.us'];
 
-  public static domains = ['.cloud.databricks.com', '.dev.databricks.com', '.gcp.databricks.com'].concat(
-    this.azureDomains,
-  );
+  public static domains = ['.cloud.databricks.com', '.dev.databricks.com'].concat(this.azureDomains);
 
   public static defaultClientId = 'databricks-sql-connector';
 
