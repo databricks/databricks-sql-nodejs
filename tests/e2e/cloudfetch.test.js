@@ -89,4 +89,38 @@ describe('CloudFetch', () => {
 
     expect(fetchedRowCount).to.be.equal(queriedRowsCount);
   });
+
+  it('should handle LZ4 compressed data', async () => {
+    const cloudFetchConcurrentDownloads = 5;
+    const session = await openSession({
+      cloudFetchConcurrentDownloads,
+      useResultsCompression: true,
+    });
+
+    const queriedRowsCount = 10000000; // result has to be quite big to enable CloudFetch
+    const operation = await session.executeStatement(
+      `
+        SELECT *
+        FROM range(0, ${queriedRowsCount}) AS t1
+        LEFT JOIN (SELECT 1) AS t2
+      `,
+      {
+        maxRows: null, // disable DirectResults
+        useCloudFetch: true, // tell server that we would like to use CloudFetch
+      },
+    );
+
+    // We're going to examine some internals of operation, so explicitly wait for completion
+    await operation.finished();
+
+    // Check if we're actually getting data via CloudFetch
+    const resultHandler = await operation.getResultHandler();
+    expect(resultHandler).to.be.instanceof(ResultSlicer);
+    expect(resultHandler.source).to.be.instanceof(ArrowResultConverter);
+    expect(resultHandler.source.source).to.be.instanceOf(CloudFetchResultHandler);
+    expect(resultHandler.source.source.isLZ4Compressed).to.be.true;
+
+    const chunk = await operation.fetchChunk({ maxRows: 100000, disableBuffering: true });
+    expect(chunk.length).to.be.gt(0);
+  });
 });
