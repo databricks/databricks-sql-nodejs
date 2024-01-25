@@ -35,8 +35,7 @@ jobs:
     strategy:
       matrix:
         # only LTS versions starting from the lowest we support
-        # TODO: Include Nodejs@14
-        node-version: ['16', '18', '20']
+        node-version: ['14', '16', '18', '20']
     env:
       cache-name: cache-node-modules
       NYC_REPORT_DIR: coverage_unit_node${{ matrix.node-version }}
