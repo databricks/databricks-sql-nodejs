@@ -3,7 +3,7 @@ const sinon = require('sinon');
 const openidClientLib = require('openid-client');
 const { DBSQLLogger, LogLevel } = require('../../../../../dist');
 const {
-  AWSOAuthManager,
+  DatabricksOAuthManager,
   AzureOAuthManager,
 } = require('../../../../../dist/connection/auth/DatabricksOAuth/OAuthManager');
 const OAuthToken = require('../../../../../dist/connection/auth/DatabricksOAuth/OAuthToken').default;
@@ -110,7 +110,7 @@ class OAuthClientMock {
   }
 }
 
-[AWSOAuthManager, AzureOAuthManager].forEach((OAuthManagerClass) => {
+[DatabricksOAuthManager, AzureOAuthManager].forEach((OAuthManagerClass) => {
   function prepareTestInstances(options) {
     const oauthClient = new OAuthClientMock();
     sinon.stub(oauthClient, 'grant').callThrough();

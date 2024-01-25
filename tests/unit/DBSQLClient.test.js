@@ -5,9 +5,13 @@ const DBSQLSession = require('../../dist/DBSQLSession').default;
 
 const PlainHttpAuthentication = require('../../dist/connection/auth/PlainHttpAuthentication').default;
 const DatabricksOAuth = require('../../dist/connection/auth/DatabricksOAuth').default;
-const { AWSOAuthManager, AzureOAuthManager } = require('../../dist/connection/auth/DatabricksOAuth/OAuthManager');
+const {
+  DatabricksOAuthManager,
+  AzureOAuthManager,
+} = require('../../dist/connection/auth/DatabricksOAuth/OAuthManager');
 
 const HttpConnectionModule = require('../../dist/connection/connections/HttpConnection');
+
 const { default: HttpConnection } = HttpConnectionModule;
 
 class AuthProviderMock {
@@ -343,7 +347,7 @@ describe('DBSQLClient.initAuthProvider', () => {
     });
 
     expect(provider).to.be.instanceOf(DatabricksOAuth);
-    expect(provider.manager).to.be.instanceOf(AWSOAuthManager);
+    expect(provider.manager).to.be.instanceOf(DatabricksOAuthManager);
   });
 
   it('should use Databricks OAuth method (Azure)', () => {
@@ -366,11 +370,11 @@ describe('DBSQLClient.initAuthProvider', () => {
       authType: 'databricks-oauth',
       // host is used when creating OAuth manager, so make it look like a real Azure instance
       host: 'example.databricks.azure.us',
-      useDatabricksOAuthInAzure: true
+      useDatabricksOAuthInAzure: true,
     });
 
     expect(provider).to.be.instanceOf(DatabricksOAuth);
-    expect(provider.manager).to.be.instanceOf(AWSOAuthManager);
+    expect(provider.manager).to.be.instanceOf(DatabricksOAuthManager);
   });
 
   it('should throw error when OAuth not supported for host', () => {

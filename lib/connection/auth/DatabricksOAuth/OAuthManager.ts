@@ -195,7 +195,7 @@ export default abstract class OAuthManager {
     const host = options.host.toLowerCase().replace('https://', '').split('/')[0];
 
     // eslint-disable-next-line @typescript-eslint/no-use-before-define
-    const managers = [AWSOAuthManager, AzureOAuthManager];
+    const managers = [DatabricksOAuthManager, AzureOAuthManager];
 
     for (const OAuthManagerClass of managers) {
       for (const domain of OAuthManagerClass.domains) {
@@ -212,8 +212,8 @@ export default abstract class OAuthManager {
   }
 }
 
-  // Databricks InHouse OAuth Manager
-export class AWSOAuthManager extends OAuthManager {
+// Databricks InHouse OAuth Manager
+export class DatabricksOAuthManager extends OAuthManager {
   public static azureDomains = ['.azuredatabricks.net', '.databricks.azure.us'];
 
   public static domains = ['.cloud.databricks.com', '.dev.databricks.com'].concat(this.azureDomains);
@@ -223,7 +223,7 @@ export class AWSOAuthManager extends OAuthManager {
   public static defaultCallbackPorts = [8030];
 
   protected canUse(): boolean {
-    const isAzureDomain = AWSOAuthManager.azureDomains.some((domain) => this.options.host.endsWith(domain));
+    const isAzureDomain = DatabricksOAuthManager.azureDomains.some((domain) => this.options.host.endsWith(domain));
     return !isAzureDomain || !!this.options.useDatabricksOAuthInAzure;
   }
 
@@ -236,11 +236,11 @@ export class AWSOAuthManager extends OAuthManager {
   }
 
   protected getClientId(): string {
-    return this.options.clientId ?? AWSOAuthManager.defaultClientId;
+    return this.options.clientId ?? DatabricksOAuthManager.defaultClientId;
   }
 
   protected getCallbackPorts(): Array<number> {
-    return this.options.callbackPorts ?? AWSOAuthManager.defaultCallbackPorts;
+    return this.options.callbackPorts ?? DatabricksOAuthManager.defaultCallbackPorts;
   }
 }
 
