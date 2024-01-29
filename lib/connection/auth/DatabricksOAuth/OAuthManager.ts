@@ -39,10 +39,6 @@ export default abstract class OAuthManager {
     this.context = options.context;
   }
 
-  protected canUse(): boolean {
-    return true;
-  }
-
   protected abstract getOIDCConfigUrl(): string;
 
   protected abstract getAuthorizationUrl(): string;
@@ -194,18 +190,24 @@ export default abstract class OAuthManager {
     // normalize
     const host = options.host.toLowerCase().replace('https://', '').split('/')[0];
 
-    // eslint-disable-next-line @typescript-eslint/no-use-before-define
-    const managers = [DatabricksOAuthManager, AzureOAuthManager];
+    const awsDomains = ['.cloud.databricks.com', '.dev.databricks.com'];
+    const isAWSDomain = awsDomains.some((domain) => host.endsWith(domain));
 
-    for (const OAuthManagerClass of managers) {
-      for (const domain of OAuthManagerClass.domains) {
-        if (host.endsWith(domain)) {
-          const manager: OAuthManager = new OAuthManagerClass(options);
-          if (manager.canUse()) {
-            return manager;
-          }
-        }
+    if (isAWSDomain) {
+      // eslint-disable-next-line @typescript-eslint/no-use-before-define
+      return new DatabricksOAuthManager(options);
+    }
+
+    const azureDomains = ['.azuredatabricks.net', '.databricks.azure.cn', '.databricks.azure.us'];
+    const isAzureDomain = azureDomains.some((domain) => host.endsWith(domain));
+
+    if (isAzureDomain) {
+      if (options.useDatabricksOAuthInAzure) {
+        // eslint-disable-next-line @typescript-eslint/no-use-before-define
+        return new DatabricksOAuthManager(options);
       }
+      // eslint-disable-next-line @typescript-eslint/no-use-before-define
+      return new AzureOAuthManager(options);
     }
 
     throw new Error(`OAuth is not supported for ${options.host}`);
@@ -214,18 +216,9 @@ export default abstract class OAuthManager {
 
 // Databricks InHouse OAuth Manager
 export class DatabricksOAuthManager extends OAuthManager {
-  public static azureDomains = ['.azuredatabricks.net', '.databricks.azure.us'];
-
-  public static domains = ['.cloud.databricks.com', '.dev.databricks.com'].concat(this.azureDomains);
-
   public static defaultClientId = 'databricks-sql-connector';
 
   public static defaultCallbackPorts = [8030];
-
-  protected canUse(): boolean {
-    const isAzureDomain = DatabricksOAuthManager.azureDomains.some((domain) => this.options.host.endsWith(domain));
-    return !isAzureDomain || !!this.options.useDatabricksOAuthInAzure;
-  }
 
   protected getOIDCConfigUrl(): string {
     return `${getDatabricksOIDCUrl(this.options.host)}/.well-known/oauth-authorization-server`;
@@ -245,8 +238,6 @@ export class DatabricksOAuthManager extends OAuthManager {
 }
 
 export class AzureOAuthManager extends OAuthManager {
-  public static domains = ['.azuredatabricks.net', '.databricks.azure.cn', '.databricks.azure.us'];
-
   public static defaultClientId = '96eecda7-19ea-49cc-abb5-240097d554f5';
 
   public static defaultCallbackPorts = [8030];
