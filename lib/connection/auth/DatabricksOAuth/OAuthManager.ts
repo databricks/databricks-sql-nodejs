@@ -192,20 +192,23 @@ export default abstract class OAuthManager {
 
     const awsDomains = ['.cloud.databricks.com', '.dev.databricks.com'];
     const isAWSDomain = awsDomains.some((domain) => host.endsWith(domain));
-
     if (isAWSDomain) {
       // eslint-disable-next-line @typescript-eslint/no-use-before-define
       return new DatabricksOAuthManager(options);
     }
 
-    const azureDomains = ['.azuredatabricks.net', '.databricks.azure.cn', '.databricks.azure.us'];
-    const isAzureDomain = azureDomains.some((domain) => host.endsWith(domain));
-
-    if (isAzureDomain) {
-      if (options.useDatabricksOAuthInAzure) {
+    if (options.useDatabricksOAuthInAzure) {
+      const domains = ['.azuredatabricks.net'];
+      const isSupportedDomain = domains.some((domain) => host.endsWith(domain));
+      if (isSupportedDomain) {
         // eslint-disable-next-line @typescript-eslint/no-use-before-define
         return new DatabricksOAuthManager(options);
       }
+    }
+
+    const azureDomains = ['.azuredatabricks.net', '.databricks.azure.us', '.databricks.azure.cn'];
+    const isAzureDomain = azureDomains.some((domain) => host.endsWith(domain));
+    if (isAzureDomain) {
       // eslint-disable-next-line @typescript-eslint/no-use-before-define
       return new AzureOAuthManager(options);
     }
