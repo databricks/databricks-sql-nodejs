@@ -34,7 +34,7 @@ describe('CloudFetch', () => {
     const cloudFetchConcurrentDownloads = 5;
     const session = await openSession({
       cloudFetchConcurrentDownloads,
-      useResultsCompression: false,
+      useLZ4Compression: false,
     });
 
     const queriedRowsCount = 10000000; // result has to be quite big to enable CloudFetch
@@ -94,7 +94,7 @@ describe('CloudFetch', () => {
     const cloudFetchConcurrentDownloads = 5;
     const session = await openSession({
       cloudFetchConcurrentDownloads,
-      useResultsCompression: true,
+      useLZ4Compression: true,
     });
 
     const queriedRowsCount = 10000000; // result has to be quite big to enable CloudFetch

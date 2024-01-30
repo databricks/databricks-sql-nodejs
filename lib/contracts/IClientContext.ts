@@ -16,7 +16,7 @@ export interface ClientConfig {
   useCloudFetch: boolean;
   cloudFetchConcurrentDownloads: number;
 
-  useResultsCompression: boolean;
+  useLZ4Compression: boolean;
 }
 
 export default interface IClientContext {
