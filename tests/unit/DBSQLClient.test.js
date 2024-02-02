@@ -363,6 +363,19 @@ describe('DBSQLClient.initAuthProvider', () => {
     expect(provider.manager).to.be.instanceOf(AzureOAuthManager);
   });
 
+  it('should use Databricks OAuth method (GCP)', () => {
+    const client = new DBSQLClient();
+
+    const provider = client.initAuthProvider({
+      authType: 'databricks-oauth',
+      // host is used when creating OAuth manager, so make it look like a real AWS instance
+      host: 'example.gcp.databricks.com',
+    });
+
+    expect(provider).to.be.instanceOf(DatabricksOAuth);
+    expect(provider.manager).to.be.instanceOf(DatabricksOAuthManager);
+  });
+
   it('should use Databricks InHouse OAuth method (Azure)', () => {
     const client = new DBSQLClient();
 

@@ -197,6 +197,13 @@ export default abstract class OAuthManager {
       return new DatabricksOAuthManager(options);
     }
 
+    const gcpDomains = ['.gcp.databricks.com'];
+    const isGCPDomain = gcpDomains.some((domain) => host.endsWith(domain));
+    if (isGCPDomain) {
+      // eslint-disable-next-line @typescript-eslint/no-use-before-define
+      return new DatabricksOAuthManager(options);
+    }
+
     if (options.useDatabricksOAuthInAzure) {
       const azureDomains = ['.azuredatabricks.net'];
       const isAzureDomain = azureDomains.some((domain) => host.endsWith(domain));
