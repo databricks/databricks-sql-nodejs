@@ -53,9 +53,7 @@ export default abstract class OAuthManager {
 
   protected abstract getCallbackPorts(): Array<number>;
 
-  protected getScopes(requestedScopes: OAuthScopes): OAuthScopes {
-    return requestedScopes;
-  }
+  protected abstract getScopes(requestedScopes: OAuthScopes): OAuthScopes;
 
   protected async getClient(): Promise<BaseClient> {
     // Obtain http agent each time when we need an OAuth client
@@ -172,11 +170,10 @@ export default abstract class OAuthManager {
     return new OAuthToken(accessToken, refreshToken, mappedScopes);
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   private async getTokenM2M(scopes: OAuthScopes): Promise<OAuthToken> {
     const client = await this.getClient();
 
-    const mappedScopes = [OAuthScope.AllAPIs]; // this is the only allowed scope for M2M flow
+    const mappedScopes = this.getScopes(scopes);
 
     // M2M flow doesn't really support token refreshing, and refresh should not be available
     // in response. Each time access token expires, client can just acquire a new one using
@@ -262,6 +259,14 @@ export class DatabricksOAuthManager extends OAuthManager {
   protected getCallbackPorts(): Array<number> {
     return this.options.callbackPorts ?? DatabricksOAuthManager.defaultCallbackPorts;
   }
+
+  protected getScopes(requestedScopes: OAuthScopes): OAuthScopes {
+    if (this.options.flow === OAuthFlow.M2M) {
+      // this is the only allowed scope for M2M flow
+      return [OAuthScope.allAPIs];
+    }
+    return requestedScopes;
+  }
 }
 
 export class AzureOAuthManager extends OAuthManager {
@@ -290,7 +295,18 @@ export class AzureOAuthManager extends OAuthManager {
   protected getScopes(requestedScopes: OAuthScopes): OAuthScopes {
     // There is no corresponding scopes in Azure, instead, access control will be delegated to Databricks
     const tenantId = this.options.azureTenantId ?? AzureOAuthManager.datatricksAzureApp;
-    const azureScopes = [`${tenantId}/user_impersonation`];
+
+    const azureScopes = [];
+
+    switch (this.options.flow) {
+      case OAuthFlow.U2M:
+        azureScopes.push(`${tenantId}/user_impersonation`);
+        break;
+      case OAuthFlow.M2M:
+        azureScopes.push(`${tenantId}/.default`);
+        break;
+      // no default
+    }
 
     if (requestedScopes.includes(OAuthScope.offlineAccess)) {
       azureScopes.push(OAuthScope.offlineAccess);
