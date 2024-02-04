@@ -4,7 +4,7 @@ import HiveDriverError from '../../../errors/HiveDriverError';
 import { LogLevel } from '../../../contracts/IDBSQLLogger';
 import OAuthToken from './OAuthToken';
 import AuthorizationCode from './AuthorizationCode';
-import { OAuthScope, OAuthScopes } from './OAuthScope';
+import { OAuthScope, OAuthScopes, scopeDelimiter } from './OAuthScope';
 import IClientContext from '../../../contracts/IClientContext';
 
 export enum OAuthFlow {
@@ -119,11 +119,11 @@ export default abstract class OAuthManager {
     if (!accessToken || !refreshToken) {
       throw new Error('Failed to refresh token: invalid response');
     }
-    return new OAuthToken(accessToken, refreshToken);
+    return new OAuthToken(accessToken, refreshToken, token.scopes);
   }
 
-  private async refreshAccessTokenM2M(): Promise<OAuthToken> {
-    return this.getTokenM2M();
+  private async refreshAccessTokenM2M(token: OAuthToken): Promise<OAuthToken> {
+    return this.getTokenM2M(token.scopes ?? []);
   }
 
   public async refreshAccessToken(token: OAuthToken): Promise<OAuthToken> {
@@ -141,7 +141,7 @@ export default abstract class OAuthManager {
       case OAuthFlow.U2M:
         return this.refreshAccessTokenU2M(token);
       case OAuthFlow.M2M:
-        return this.refreshAccessTokenM2M();
+        return this.refreshAccessTokenM2M(token);
       // no default
     }
   }
@@ -169,11 +169,14 @@ export default abstract class OAuthManager {
     if (!accessToken) {
       throw new Error('Failed to fetch access token');
     }
-    return new OAuthToken(accessToken, refreshToken);
+    return new OAuthToken(accessToken, refreshToken, mappedScopes);
   }
 
-  private async getTokenM2M(): Promise<OAuthToken> {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  private async getTokenM2M(scopes: OAuthScopes): Promise<OAuthToken> {
     const client = await this.getClient();
+
+    const mappedScopes = [OAuthScope.AllAPIs]; // this is the only allowed scope for M2M flow
 
     // M2M flow doesn't really support token refreshing, and refresh should not be available
     // in response. Each time access token expires, client can just acquire a new one using
@@ -181,13 +184,13 @@ export default abstract class OAuthManager {
     // to use refresh token for M2M flow anywhere later
     const { access_token: accessToken } = await client.grant({
       grant_type: 'client_credentials',
-      scope: 'all-apis', // this is the only allowed scope for M2M flow
+      scope: mappedScopes.join(scopeDelimiter),
     });
 
     if (!accessToken) {
       throw new Error('Failed to fetch access token');
     }
-    return new OAuthToken(accessToken);
+    return new OAuthToken(accessToken, undefined, mappedScopes);
   }
 
   public async getToken(scopes: OAuthScopes): Promise<OAuthToken> {
@@ -195,7 +198,7 @@ export default abstract class OAuthManager {
       case OAuthFlow.U2M:
         return this.getTokenU2M(scopes);
       case OAuthFlow.M2M:
-        return this.getTokenM2M();
+        return this.getTokenM2M(scopes);
       // no default
     }
   }

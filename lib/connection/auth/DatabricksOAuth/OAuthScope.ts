@@ -1,6 +1,7 @@
 export enum OAuthScope {
   offlineAccess = 'offline_access',
   SQL = 'sql',
+  AllAPIs = 'all-apis',
 }
 
 export type OAuthScopes = Array<string>;

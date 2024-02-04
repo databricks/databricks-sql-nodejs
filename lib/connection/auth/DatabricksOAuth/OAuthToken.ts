@@ -1,13 +1,18 @@
+import { OAuthScopes } from './OAuthScope';
+
 export default class OAuthToken {
   private readonly _accessToken: string;
 
   private readonly _refreshToken?: string;
 
+  private readonly _scopes?: OAuthScopes;
+
   private _expirationTime?: number;
 
-  constructor(accessToken: string, refreshToken?: string) {
+  constructor(accessToken: string, refreshToken?: string, scopes?: OAuthScopes) {
     this._accessToken = accessToken;
     this._refreshToken = refreshToken;
+    this._scopes = scopes;
   }
 
   get accessToken(): string {
@@ -16,6 +21,10 @@ export default class OAuthToken {
 
   get refreshToken(): string | undefined {
     return this._refreshToken;
+  }
+
+  get scopes(): OAuthScopes | undefined {
+    return this._scopes;
   }
 
   get expirationTime(): number {
