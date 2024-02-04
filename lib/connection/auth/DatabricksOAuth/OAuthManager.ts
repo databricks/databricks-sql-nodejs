@@ -7,7 +7,13 @@ import AuthorizationCode from './AuthorizationCode';
 import { OAuthScope, OAuthScopes } from './OAuthScope';
 import IClientContext from '../../../contracts/IClientContext';
 
+export enum OAuthFlow {
+  U2M = 'U2M',
+  M2M = 'M2M',
+}
+
 export interface OAuthManagerOptions {
+  flow: OAuthFlow;
   host: string;
   callbackPorts?: Array<number>;
   clientId?: string;
@@ -117,13 +123,7 @@ export default abstract class OAuthManager {
   }
 
   private async refreshAccessTokenM2M(): Promise<OAuthToken> {
-    const { access_token: accessToken, refresh_token: refreshToken } = await this.getTokenM2M();
-
-    if (!accessToken) {
-      throw new Error('Failed to fetch access token');
-    }
-
-    return new OAuthToken(accessToken, refreshToken);
+    return this.getTokenM2M();
   }
 
   public async refreshAccessToken(token: OAuthToken): Promise<OAuthToken> {
@@ -137,10 +137,16 @@ export default abstract class OAuthManager {
       throw error;
     }
 
-    return this.options.clientSecret === undefined ? this.refreshAccessTokenU2M(token) : this.refreshAccessTokenM2M();
+    switch (this.options.flow) {
+      case OAuthFlow.U2M:
+        return this.refreshAccessTokenU2M(token);
+      case OAuthFlow.M2M:
+        return this.refreshAccessTokenM2M();
+      // no default
+    }
   }
 
-  private async getTokenU2M(scopes: OAuthScopes) {
+  private async getTokenU2M(scopes: OAuthScopes): Promise<OAuthToken> {
     const client = await this.getClient();
 
     const authCode = new AuthorizationCode({
@@ -153,15 +159,20 @@ export default abstract class OAuthManager {
 
     const { code, verifier, redirectUri } = await authCode.fetch(mappedScopes);
 
-    return client.grant({
+    const { access_token: accessToken, refresh_token: refreshToken } = await client.grant({
       grant_type: 'authorization_code',
       code,
       code_verifier: verifier,
       redirect_uri: redirectUri,
     });
+
+    if (!accessToken) {
+      throw new Error('Failed to fetch access token');
+    }
+    return new OAuthToken(accessToken, refreshToken);
   }
 
-  private async getTokenM2M() {
+  private async getTokenM2M(): Promise<OAuthToken> {
     const client = await this.getClient();
 
     // M2M flow doesn't really support token refreshing, and refresh should not be available
@@ -172,18 +183,21 @@ export default abstract class OAuthManager {
       grant_type: 'client_credentials',
       scope: 'all-apis', // this is the only allowed scope for M2M flow
     });
-    return { access_token: accessToken, refresh_token: undefined };
-  }
-
-  public async getToken(scopes: OAuthScopes): Promise<OAuthToken> {
-    const { access_token: accessToken, refresh_token: refreshToken } =
-      this.options.clientSecret === undefined ? await this.getTokenU2M(scopes) : await this.getTokenM2M();
 
     if (!accessToken) {
       throw new Error('Failed to fetch access token');
     }
+    return new OAuthToken(accessToken);
+  }
 
-    return new OAuthToken(accessToken, refreshToken);
+  public async getToken(scopes: OAuthScopes): Promise<OAuthToken> {
+    switch (this.options.flow) {
+      case OAuthFlow.U2M:
+        return this.getTokenU2M(scopes);
+      case OAuthFlow.M2M:
+        return this.getTokenM2M();
+      // no default
+    }
   }
 
   public static getManager(options: OAuthManagerOptions): OAuthManager {

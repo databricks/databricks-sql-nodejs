@@ -5,6 +5,7 @@ const { DBSQLLogger, LogLevel } = require('../../../../../dist');
 const {
   DatabricksOAuthManager,
   AzureOAuthManager,
+  OAuthFlow,
 } = require('../../../../../dist/connection/auth/DatabricksOAuth/OAuthManager');
 const OAuthToken = require('../../../../../dist/connection/auth/DatabricksOAuth/OAuthToken').default;
 const AuthorizationCodeModule = require('../../../../../dist/connection/auth/DatabricksOAuth/AuthorizationCode');
@@ -156,7 +157,7 @@ class OAuthClientMock {
 
     describe('U2M flow', () => {
       it('should get access token', async () => {
-        const { oauthManager, oauthClient } = prepareTestInstances();
+        const { oauthManager, oauthClient } = prepareTestInstances({ flow: OAuthFlow.U2M });
 
         const token = await oauthManager.getToken(['offline_access']);
         expect(oauthClient.grant.called).to.be.true;
@@ -166,7 +167,7 @@ class OAuthClientMock {
       });
 
       it('should throw an error if cannot get access token', async () => {
-        const { oauthManager, oauthClient } = prepareTestInstances();
+        const { oauthManager, oauthClient } = prepareTestInstances({ flow: OAuthFlow.U2M });
 
         // Make it return empty tokens
         oauthClient.accessToken = undefined;
@@ -185,7 +186,7 @@ class OAuthClientMock {
       });
 
       it('should re-throw unhandled errors when getting access token', async () => {
-        const { oauthManager, oauthClient } = prepareTestInstances();
+        const { oauthManager, oauthClient } = prepareTestInstances({ flow: OAuthFlow.U2M });
 
         const testError = new Error('Test');
         oauthClient.grantError = testError;
@@ -203,7 +204,7 @@ class OAuthClientMock {
       });
 
       it('should not refresh valid token', async () => {
-        const { oauthManager, oauthClient } = prepareTestInstances();
+        const { oauthManager, oauthClient } = prepareTestInstances({ flow: OAuthFlow.U2M });
 
         const token = new OAuthToken(createValidAccessToken(), oauthClient.refreshToken);
         expect(token.hasExpired).to.be.false;
@@ -216,7 +217,7 @@ class OAuthClientMock {
       });
 
       it('should throw an error if no refresh token is available', async () => {
-        const { oauthManager, oauthClient } = prepareTestInstances();
+        const { oauthManager, oauthClient } = prepareTestInstances({ flow: OAuthFlow.U2M });
 
         try {
           const token = new OAuthToken(createExpiredAccessToken());
@@ -234,7 +235,7 @@ class OAuthClientMock {
       });
 
       it('should throw an error for invalid token', async () => {
-        const { oauthManager, oauthClient } = prepareTestInstances();
+        const { oauthManager, oauthClient } = prepareTestInstances({ flow: OAuthFlow.U2M });
 
         try {
           const token = new OAuthToken('invalid_access_token', 'invalid_refresh_token');
@@ -251,7 +252,7 @@ class OAuthClientMock {
       });
 
       it('should refresh expired token', async () => {
-        const { oauthManager, oauthClient } = prepareTestInstances();
+        const { oauthManager, oauthClient } = prepareTestInstances({ flow: OAuthFlow.U2M });
 
         oauthClient.accessToken = createExpiredAccessToken();
         const token = await oauthManager.getToken([]);
@@ -265,7 +266,7 @@ class OAuthClientMock {
       });
 
       it('should throw an error if cannot refresh token', async () => {
-        const { oauthManager, oauthClient } = prepareTestInstances();
+        const { oauthManager, oauthClient } = prepareTestInstances({ flow: OAuthFlow.U2M });
 
         oauthClient.refresh.restore();
         sinon.stub(oauthClient, 'refresh').returns({});
@@ -289,7 +290,7 @@ class OAuthClientMock {
     describe('M2M flow', () => {
       it('should get access token', async () => {
         const { oauthManager, oauthClient } = prepareTestInstances({
-          // setup for M2M flow
+          flow: OAuthFlow.M2M,
           clientId: 'test_client_id',
           clientSecret: 'test_client_secret',
         });
@@ -303,7 +304,7 @@ class OAuthClientMock {
 
       it('should throw an error if cannot get access token', async () => {
         const { oauthManager, oauthClient } = prepareTestInstances({
-          // setup for M2M flow
+          flow: OAuthFlow.M2M,
           clientId: 'test_client_id',
           clientSecret: 'test_client_secret',
         });
@@ -326,7 +327,7 @@ class OAuthClientMock {
 
       it('should re-throw unhandled errors when getting access token', async () => {
         const { oauthManager, oauthClient } = prepareTestInstances({
-          // setup for M2M flow
+          flow: OAuthFlow.M2M,
           clientId: 'test_client_id',
           clientSecret: 'test_client_secret',
         });
@@ -348,7 +349,7 @@ class OAuthClientMock {
 
       it('should not refresh valid token', async () => {
         const { oauthManager, oauthClient } = prepareTestInstances({
-          // setup for M2M flow
+          flow: OAuthFlow.M2M,
           clientId: 'test_client_id',
           clientSecret: 'test_client_secret',
         });
@@ -366,7 +367,7 @@ class OAuthClientMock {
 
       it('should refresh expired token', async () => {
         const { oauthManager, oauthClient } = prepareTestInstances({
-          // setup for M2M flow
+          flow: OAuthFlow.M2M,
           clientId: 'test_client_id',
           clientSecret: 'test_client_secret',
         });
@@ -386,7 +387,7 @@ class OAuthClientMock {
 
       it('should throw an error if cannot refresh token', async () => {
         const { oauthManager, oauthClient } = prepareTestInstances({
-          // setup for M2M flow
+          flow: OAuthFlow.M2M,
           clientId: 'test_client_id',
           clientSecret: 'test_client_secret',
         });

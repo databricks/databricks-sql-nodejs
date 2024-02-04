@@ -17,7 +17,7 @@ import Status from './dto/Status';
 import HiveDriverError from './errors/HiveDriverError';
 import { buildUserAgentString, definedOrError } from './utils';
 import PlainHttpAuthentication from './connection/auth/PlainHttpAuthentication';
-import DatabricksOAuth from './connection/auth/DatabricksOAuth';
+import DatabricksOAuth, { OAuthFlow } from './connection/auth/DatabricksOAuth';
 import IDBSQLLogger, { LogLevel } from './contracts/IDBSQLLogger';
 import DBSQLLogger from './DBSQLLogger';
 import CloseableCollection from './utils/CloseableCollection';
@@ -125,6 +125,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
         });
       case 'databricks-oauth':
         return new DatabricksOAuth({
+          flow: options.oauthClientSecret === undefined ? OAuthFlow.U2M : OAuthFlow.M2M,
           host: options.host,
           persistence: options.persistence,
           azureTenantId: options.azureTenantId,
