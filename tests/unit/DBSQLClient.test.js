@@ -344,6 +344,7 @@ describe('DBSQLClient.initAuthProvider', () => {
       authType: 'databricks-oauth',
       // host is used when creating OAuth manager, so make it look like a real AWS instance
       host: 'example.dev.databricks.com',
+      oauthClientSecret: 'test-secret',
     });
 
     expect(provider).to.be.instanceOf(DatabricksOAuth);
