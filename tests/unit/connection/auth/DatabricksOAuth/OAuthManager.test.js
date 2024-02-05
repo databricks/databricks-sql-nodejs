@@ -5,8 +5,10 @@ const { DBSQLLogger, LogLevel } = require('../../../../../dist');
 const {
   DatabricksOAuthManager,
   AzureOAuthManager,
+  OAuthFlow,
 } = require('../../../../../dist/connection/auth/DatabricksOAuth/OAuthManager');
 const OAuthToken = require('../../../../../dist/connection/auth/DatabricksOAuth/OAuthToken').default;
+const { OAuthScope, scopeDelimiter } = require('../../../../../dist/connection/auth/DatabricksOAuth/OAuthScope');
 const AuthorizationCodeModule = require('../../../../../dist/connection/auth/DatabricksOAuth/AuthorizationCode');
 
 const { createValidAccessToken, createExpiredAccessToken } = require('./utils');
@@ -16,9 +18,13 @@ const logger = new DBSQLLogger({ level: LogLevel.error });
 class AuthorizationCodeMock {
   constructor() {
     this.fetchResult = undefined;
+    this.expectedScope = undefined;
   }
 
-  async fetch() {
+  async fetch(scopes) {
+    if (this.expectedScope) {
+      expect(scopes.join(scopeDelimiter)).to.be.equal(this.expectedScope);
+    }
     return this.fetchResult;
   }
 }
@@ -34,6 +40,7 @@ class OAuthClientMock {
     this.clientOptions = {};
     this.expectedClientId = undefined;
     this.expectedClientSecret = undefined;
+    this.expectedScope = undefined;
 
     this.grantError = undefined;
     this.refreshError = undefined;
@@ -60,6 +67,9 @@ class OAuthClientMock {
     expect(params.code).to.be.equal(AuthorizationCodeMock.validCode.code);
     expect(params.code_verifier).to.be.equal(AuthorizationCodeMock.validCode.verifier);
     expect(params.redirect_uri).to.be.equal(AuthorizationCodeMock.validCode.redirectUri);
+    if (this.expectedScope) {
+      expect(params.scope).to.be.equal(this.expectedScope);
+    }
 
     return {
       access_token: this.accessToken,
@@ -75,7 +85,9 @@ class OAuthClientMock {
     }
 
     expect(params.grant_type).to.be.equal('client_credentials');
-    expect(params.scope).to.be.equal('all-apis');
+    if (this.expectedScope) {
+      expect(params.scope).to.be.equal(this.expectedScope);
+    }
 
     return {
       access_token: this.accessToken,
@@ -155,10 +167,23 @@ class OAuthClientMock {
     });
 
     describe('U2M flow', () => {
-      it('should get access token', async () => {
-        const { oauthManager, oauthClient } = prepareTestInstances();
+      function getExpectedScope(scopes) {
+        switch (OAuthManagerClass) {
+          case DatabricksOAuthManager:
+            return [...scopes].join(scopeDelimiter);
+          case AzureOAuthManager:
+            const tenantId = AzureOAuthManager.datatricksAzureApp;
+            return [`${tenantId}/user_impersonation`, ...scopes].join(scopeDelimiter);
+        }
+        return undefined;
+      }
 
-        const token = await oauthManager.getToken(['offline_access']);
+      it('should get access token', async () => {
+        const { oauthManager, oauthClient, authCode } = prepareTestInstances({ flow: OAuthFlow.U2M });
+        const requestedScopes = [OAuthScope.offlineAccess];
+        authCode.expectedScope = getExpectedScope(requestedScopes);
+
+        const token = await oauthManager.getToken(requestedScopes);
         expect(oauthClient.grant.called).to.be.true;
         expect(token).to.be.instanceOf(OAuthToken);
         expect(token.accessToken).to.be.equal(oauthClient.accessToken);
@@ -166,14 +191,16 @@ class OAuthClientMock {
       });
 
       it('should throw an error if cannot get access token', async () => {
-        const { oauthManager, oauthClient } = prepareTestInstances();
+        const { oauthManager, oauthClient, authCode } = prepareTestInstances({ flow: OAuthFlow.U2M });
+        const requestedScopes = [OAuthScope.offlineAccess];
+        authCode.expectedScope = getExpectedScope(requestedScopes);
 
         // Make it return empty tokens
         oauthClient.accessToken = undefined;
         oauthClient.refreshToken = undefined;
 
         try {
-          await oauthManager.getToken([]);
+          await oauthManager.getToken(requestedScopes);
           expect.fail('It should throw an error');
         } catch (error) {
           if (error instanceof AssertionError) {
@@ -185,13 +212,15 @@ class OAuthClientMock {
       });
 
       it('should re-throw unhandled errors when getting access token', async () => {
-        const { oauthManager, oauthClient } = prepareTestInstances();
+        const { oauthManager, oauthClient, authCode } = prepareTestInstances({ flow: OAuthFlow.U2M });
+        const requestedScopes = [];
+        authCode.expectedScope = getExpectedScope(requestedScopes);
 
         const testError = new Error('Test');
         oauthClient.grantError = testError;
 
         try {
-          await oauthManager.getToken([]);
+          await oauthManager.getToken(requestedScopes);
           expect.fail('It should throw an error');
         } catch (error) {
           if (error instanceof AssertionError) {
@@ -203,7 +232,8 @@ class OAuthClientMock {
       });
 
       it('should not refresh valid token', async () => {
-        const { oauthManager, oauthClient } = prepareTestInstances();
+        const { oauthManager, oauthClient, authCode } = prepareTestInstances({ flow: OAuthFlow.U2M });
+        authCode.expectedScope = getExpectedScope([]);
 
         const token = new OAuthToken(createValidAccessToken(), oauthClient.refreshToken);
         expect(token.hasExpired).to.be.false;
@@ -216,7 +246,8 @@ class OAuthClientMock {
       });
 
       it('should throw an error if no refresh token is available', async () => {
-        const { oauthManager, oauthClient } = prepareTestInstances();
+        const { oauthManager, oauthClient, authCode } = prepareTestInstances({ flow: OAuthFlow.U2M });
+        authCode.expectedScope = getExpectedScope([]);
 
         try {
           const token = new OAuthToken(createExpiredAccessToken());
@@ -234,7 +265,8 @@ class OAuthClientMock {
       });
 
       it('should throw an error for invalid token', async () => {
-        const { oauthManager, oauthClient } = prepareTestInstances();
+        const { oauthManager, oauthClient, authCode } = prepareTestInstances({ flow: OAuthFlow.U2M });
+        authCode.expectedScope = getExpectedScope([]);
 
         try {
           const token = new OAuthToken('invalid_access_token', 'invalid_refresh_token');
@@ -251,10 +283,12 @@ class OAuthClientMock {
       });
 
       it('should refresh expired token', async () => {
-        const { oauthManager, oauthClient } = prepareTestInstances();
+        const { oauthManager, oauthClient, authCode } = prepareTestInstances({ flow: OAuthFlow.U2M });
+        const requestedScopes = [OAuthScope.offlineAccess];
+        authCode.expectedScope = getExpectedScope(requestedScopes);
 
         oauthClient.accessToken = createExpiredAccessToken();
-        const token = await oauthManager.getToken([]);
+        const token = await oauthManager.getToken(requestedScopes);
         expect(token.hasExpired).to.be.true;
 
         const newToken = await oauthManager.refreshAccessToken(token);
@@ -265,7 +299,8 @@ class OAuthClientMock {
       });
 
       it('should throw an error if cannot refresh token', async () => {
-        const { oauthManager, oauthClient } = prepareTestInstances();
+        const { oauthManager, oauthClient, authCode } = prepareTestInstances({ flow: OAuthFlow.U2M });
+        authCode.expectedScope = getExpectedScope([]);
 
         oauthClient.refresh.restore();
         sinon.stub(oauthClient, 'refresh').returns({});
@@ -287,14 +322,27 @@ class OAuthClientMock {
     });
 
     describe('M2M flow', () => {
+      function getExpectedScope(scopes) {
+        switch (OAuthManagerClass) {
+          case DatabricksOAuthManager:
+            return [OAuthScope.allAPIs].join(scopeDelimiter);
+          case AzureOAuthManager:
+            const tenantId = AzureOAuthManager.datatricksAzureApp;
+            return [`${tenantId}/.default`, ...scopes].join(scopeDelimiter);
+        }
+        return undefined;
+      }
+
       it('should get access token', async () => {
         const { oauthManager, oauthClient } = prepareTestInstances({
-          // setup for M2M flow
+          flow: OAuthFlow.M2M,
           clientId: 'test_client_id',
           clientSecret: 'test_client_secret',
         });
+        const requestedScopes = [OAuthScope.offlineAccess];
+        oauthClient.expectedScope = getExpectedScope(requestedScopes);
 
-        const token = await oauthManager.getToken([]);
+        const token = await oauthManager.getToken(requestedScopes);
         expect(oauthClient.grant.called).to.be.true;
         expect(token).to.be.instanceOf(OAuthToken);
         expect(token.accessToken).to.be.equal(oauthClient.accessToken);
@@ -303,17 +351,19 @@ class OAuthClientMock {
 
       it('should throw an error if cannot get access token', async () => {
         const { oauthManager, oauthClient } = prepareTestInstances({
-          // setup for M2M flow
+          flow: OAuthFlow.M2M,
           clientId: 'test_client_id',
           clientSecret: 'test_client_secret',
         });
+        const requestedScopes = [OAuthScope.offlineAccess];
+        oauthClient.expectedScope = getExpectedScope(requestedScopes);
 
         // Make it return empty tokens
         oauthClient.accessToken = undefined;
         oauthClient.refreshToken = undefined;
 
         try {
-          await oauthManager.getToken([]);
+          await oauthManager.getToken(requestedScopes);
           expect.fail('It should throw an error');
         } catch (error) {
           if (error instanceof AssertionError) {
@@ -326,16 +376,18 @@ class OAuthClientMock {
 
       it('should re-throw unhandled errors when getting access token', async () => {
         const { oauthManager, oauthClient } = prepareTestInstances({
-          // setup for M2M flow
+          flow: OAuthFlow.M2M,
           clientId: 'test_client_id',
           clientSecret: 'test_client_secret',
         });
+        const requestedScopes = [];
+        oauthClient.expectedScope = getExpectedScope(requestedScopes);
 
         const testError = new Error('Test');
         oauthClient.grantError = testError;
 
         try {
-          await oauthManager.getToken([]);
+          await oauthManager.getToken(requestedScopes);
           expect.fail('It should throw an error');
         } catch (error) {
           if (error instanceof AssertionError) {
@@ -348,10 +400,11 @@ class OAuthClientMock {
 
       it('should not refresh valid token', async () => {
         const { oauthManager, oauthClient } = prepareTestInstances({
-          // setup for M2M flow
+          flow: OAuthFlow.M2M,
           clientId: 'test_client_id',
           clientSecret: 'test_client_secret',
         });
+        oauthClient.expectedScope = getExpectedScope([]);
 
         const token = new OAuthToken(createValidAccessToken());
         expect(token.hasExpired).to.be.false;
@@ -366,13 +419,15 @@ class OAuthClientMock {
 
       it('should refresh expired token', async () => {
         const { oauthManager, oauthClient } = prepareTestInstances({
-          // setup for M2M flow
+          flow: OAuthFlow.M2M,
           clientId: 'test_client_id',
           clientSecret: 'test_client_secret',
         });
+        const requestedScopes = [OAuthScope.offlineAccess];
+        oauthClient.expectedScope = getExpectedScope(requestedScopes);
 
         oauthClient.accessToken = createExpiredAccessToken();
-        const token = await oauthManager.getToken([]);
+        const token = await oauthManager.getToken(requestedScopes);
         expect(token.hasExpired).to.be.true;
 
         oauthClient.accessToken = createValidAccessToken();
@@ -386,13 +441,15 @@ class OAuthClientMock {
 
       it('should throw an error if cannot refresh token', async () => {
         const { oauthManager, oauthClient } = prepareTestInstances({
-          // setup for M2M flow
+          flow: OAuthFlow.M2M,
           clientId: 'test_client_id',
           clientSecret: 'test_client_secret',
         });
+        const requestedScopes = [OAuthScope.offlineAccess];
+        oauthClient.expectedScope = getExpectedScope(requestedScopes);
 
         oauthClient.accessToken = createExpiredAccessToken();
-        const token = await oauthManager.getToken([]);
+        const token = await oauthManager.getToken(requestedScopes);
         expect(token.hasExpired).to.be.true;
 
         oauthClient.grant.restore();

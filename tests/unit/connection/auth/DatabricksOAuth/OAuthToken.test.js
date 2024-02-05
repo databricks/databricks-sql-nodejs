@@ -7,6 +7,7 @@ describe('OAuthToken', () => {
   it('should be properly initialized', () => {
     const accessToken = 'access';
     const refreshToken = 'refresh';
+    const scopes = ['test'];
 
     const token1 = new OAuthToken(accessToken);
     expect(token1.accessToken).to.be.equal(accessToken);
@@ -14,6 +15,11 @@ describe('OAuthToken', () => {
     const token2 = new OAuthToken(accessToken, refreshToken);
     expect(token2.accessToken).to.be.equal(accessToken);
     expect(token2.refreshToken).to.be.equal(refreshToken);
+
+    const token3 = new OAuthToken(accessToken, refreshToken, scopes);
+    expect(token3.accessToken).to.be.equal(accessToken);
+    expect(token3.refreshToken).to.be.equal(refreshToken);
+    expect(token3.scopes).to.deep.equal(scopes);
   });
 
   it('should return valid expiration time', () => {
