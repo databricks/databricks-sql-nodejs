@@ -205,19 +205,19 @@ export default abstract class OAuthManager {
     }
 
     if (options.useDatabricksOAuthInAzure) {
-      const domains = ['.azuredatabricks.net'];
-      const isSupportedDomain = domains.some((domain) => host.endsWith(domain));
-      if (isSupportedDomain) {
+      const azureDomains = ['.azuredatabricks.net'];
+      const isAzureDomain = azureDomains.some((domain) => host.endsWith(domain));
+      if (isAzureDomain) {
         // eslint-disable-next-line @typescript-eslint/no-use-before-define
         return new DatabricksOAuthManager(options);
       }
-    }
-
-    const azureDomains = ['.azuredatabricks.net', '.databricks.azure.us', '.databricks.azure.cn'];
-    const isAzureDomain = azureDomains.some((domain) => host.endsWith(domain));
-    if (isAzureDomain) {
-      // eslint-disable-next-line @typescript-eslint/no-use-before-define
-      return new AzureOAuthManager(options);
+    } else {
+      const azureDomains = ['.azuredatabricks.net', '.databricks.azure.us', '.databricks.azure.cn'];
+      const isAzureDomain = azureDomains.some((domain) => host.endsWith(domain));
+      if (isAzureDomain) {
+        // eslint-disable-next-line @typescript-eslint/no-use-before-define
+        return new AzureOAuthManager(options);
+      }
     }
 
     throw new Error(`OAuth is not supported for ${options.host}`);
