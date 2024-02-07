@@ -1,5 +1,46 @@
 # Release History
 
+## 1.8.0
+
+### Highlights
+
+- Retry failed CloudFetch requests (databricks/databricks-sql-nodejs#211)
+- Fixed compatibility issues with Node@14 (databricks/databricks-sql-nodejs#219)
+- Support Databricks OAuth on Azure (databricks/databricks-sql-nodejs#223)
+- Support Databricks OAuth on GCP (databricks/databricks-sql-nodejs#224)
+- Support LZ4 compression for Arrow and CloudFetch results (databricks/databricks-sql-nodejs#216)
+- Fix OAuth M2M flow on Azure (databricks/databricks-sql-nodejs#228)
+
+### OAuth on Azure
+
+Some Azure instances now support Databricks native OAuth flow (in addition to AAD OAuth). For a backward
+compatibility, library will continue using AAD Oauth flow by default. To use Databricks native OAuth,
+pass `useDatabricksOAuthInAzure: true` to `client.connect()`:
+
+```ts
+client.connect({
+  // other options - host, port, etc.
+  authType: 'databricks-oauth',
+  useDatabricksOAuthInAzure: true,
+  // other OAuth options if needed
+});
+```
+
+Also, we fixed issue with AAD OAuth when wrong scopes were passed for M2M flow.
+
+### OAuth on GCP
+
+We enabled OAuth support on GCP instances. Since it uses Databricks native OAuth,
+all the options are the same as for OAuth on AWS instances.
+
+### CloudFetch improvements
+
+Now library will automatically attempt to retry failed CloudFetch requests. Currently, the retry strategy is quite basic,
+but it is going to be improved in the future.
+
+Also, we implemented a support for LZ4-compressed results (Arrow- and CloudFetch-based). It is enabled by default,
+and compression will be used if server supports it.
+
 ## 1.7.1
 
 - Fix "Premature close" error which happened due to socket limit when intensively using library
