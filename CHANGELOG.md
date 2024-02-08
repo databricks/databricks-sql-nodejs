@@ -14,7 +14,7 @@
 ### OAuth on Azure
 
 Some Azure instances now support Databricks native OAuth flow (in addition to AAD OAuth). For a backward
-compatibility, library will continue using AAD Oauth flow by default. To use Databricks native OAuth,
+compatibility, library will continue using AAD OAuth flow by default. To use Databricks native OAuth,
 pass `useDatabricksOAuthInAzure: true` to `client.connect()`:
 
 ```ts
@@ -35,8 +35,8 @@ all the options are the same as for OAuth on AWS instances.
 
 ### CloudFetch improvements
 
-Now library will automatically attempt to retry failed CloudFetch requests. Currently, the retry strategy is quite basic,
-but it is going to be improved in the future.
+Now library will automatically attempt to retry failed CloudFetch requests. Currently, the retry strategy
+is quite basic, but it is going to be improved in the future.
 
 Also, we implemented a support for LZ4-compressed results (Arrow- and CloudFetch-based). It is enabled by default,
 and compression will be used if server supports it.
