@@ -6,10 +6,11 @@
 
 import { EventEmitter } from 'events';
 import { TBinaryProtocol, TBufferedTransport, Thrift, TProtocol, TProtocolConstructor, TTransport } from 'thrift';
-import fetch, { RequestInit, HeadersInit, Response, FetchError } from 'node-fetch';
+import fetch, { RequestInit, HeadersInit, Request, Response, FetchError } from 'node-fetch';
 // @ts-expect-error TS7016: Could not find a declaration file for module
 import InputBufferUnderrunError from 'thrift/lib/nodejs/lib/thrift/input_buffer_underrun_error';
 import IRetryPolicy from '../contracts/IRetryPolicy';
+import { HttpTransactionDetails } from '../contracts/IConnectionProvider';
 
 export class THTTPException extends Thrift.TApplicationException {
   public readonly statusCode: unknown;
@@ -32,7 +33,7 @@ interface ThriftHttpConnectionOptions {
   url: string;
   transport?: TTransportType;
   protocol?: TProtocolConstructor;
-  getRetryPolicy(): Promise<IRetryPolicy<Response>>;
+  getRetryPolicy(): Promise<IRetryPolicy<HttpTransactionDetails>>;
 }
 
 // This type describes a shape of internals of Thrift client object.
@@ -58,7 +59,7 @@ export default class ThriftHttpConnection extends EventEmitter {
   // This field is used by Thrift internally, so name and type are important
   private readonly protocol: TProtocolConstructor;
 
-  private readonly getRetryPolicy: () => Promise<IRetryPolicy<Response>>;
+  private readonly getRetryPolicy: () => Promise<IRetryPolicy<HttpTransactionDetails>>;
 
   // thrift.createClient sets this field internally
   public client?: ThriftClient;
@@ -94,10 +95,13 @@ export default class ThriftHttpConnection extends EventEmitter {
 
     this.getRetryPolicy()
       .then((retryPolicy) => {
-        const makeRequest = () => fetch(this.url, requestConfig);
+        const makeRequest = () => {
+          const request = new Request(this.url, requestConfig);
+          return fetch(request).then((response) => ({ request, response }));
+        };
         return retryPolicy.invokeWithRetry(makeRequest);
       })
-      .then((response) => {
+      .then(({ response }) => {
         if (response.status !== 200) {
           throw new THTTPException(response);
         }

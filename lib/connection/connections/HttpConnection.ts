@@ -1,10 +1,10 @@
 import thrift from 'thrift';
 import https from 'https';
 import http from 'http';
-import { HeadersInit, Response } from 'node-fetch';
+import { HeadersInit } from 'node-fetch';
 import { ProxyAgent } from 'proxy-agent';
 
-import IConnectionProvider from '../contracts/IConnectionProvider';
+import IConnectionProvider, { HttpTransactionDetails } from '../contracts/IConnectionProvider';
 import IConnectionOptions, { ProxyOptions } from '../contracts/IConnectionOptions';
 import IClientContext from '../../contracts/IClientContext';
 
@@ -120,7 +120,7 @@ export default class HttpConnection implements IConnectionProvider {
     return this.connection;
   }
 
-  public async getRetryPolicy(): Promise<IRetryPolicy<Response>> {
+  public async getRetryPolicy(): Promise<IRetryPolicy<HttpTransactionDetails>> {
     return new HttpRetryPolicy(this.context);
   }
 }

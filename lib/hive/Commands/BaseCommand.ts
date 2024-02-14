@@ -19,7 +19,15 @@ export default abstract class BaseCommand {
       return await this.invokeCommand<Response>(request, command);
     } catch (error) {
       if (error instanceof RetryError) {
-        const statusCode = error.payload instanceof Response ? error.payload.status : undefined;
+        let statusCode: number | undefined;
+        if (
+          error.payload &&
+          typeof error.payload === 'object' &&
+          'response' in error.payload &&
+          error.payload.response instanceof Response
+        ) {
+          statusCode = error.payload.response.status;
+        }
 
         switch (error.errorCode) {
           case RetryErrorCode.AttemptsExceeded:

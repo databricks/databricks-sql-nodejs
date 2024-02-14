@@ -1,5 +1,5 @@
 const { expect, AssertionError } = require('chai');
-const { Response } = require('node-fetch');
+const { Request, Response } = require('node-fetch');
 const { Thrift } = require('thrift');
 const HiveDriverError = require('../../../../dist/errors/HiveDriverError').default;
 const BaseCommand = require('../../../../dist/hive/Commands/BaseCommand').default;
@@ -113,9 +113,11 @@ describe('BaseCommand', () => {
         const command = new CustomCommand(
           new ThriftClientMock(context, () => {
             methodCallCount += 1;
-            return new Response(undefined, {
+            const request = new Request('http://localhost/', { method: 'POST' });
+            const response = new Response(undefined, {
               status: statusCode,
             });
+            return { request, response };
           }),
           context,
         );
@@ -150,9 +152,11 @@ describe('BaseCommand', () => {
         const command = new CustomCommand(
           new ThriftClientMock(context, () => {
             methodCallCount += 1;
-            return new Response(undefined, {
+            const request = new Request('http://localhost/', { method: 'POST' });
+            const response = new Response(undefined, {
               status: statusCode,
             });
+            return { request, response };
           }),
           context,
         );
@@ -189,18 +193,21 @@ describe('BaseCommand', () => {
         let methodCallCount = 0;
         const command = new CustomCommand(
           new ThriftClientMock(context, () => {
+            const request = new Request('http://localhost/', { method: 'POST' });
+
             methodCallCount += 1;
             if (methodCallCount <= 3) {
-              return new Response(undefined, {
+              const response = new Response(undefined, {
                 status: statusCode,
               });
+              return { request, response };
             }
 
             const response = new Response(undefined, {
               status: 200,
             });
             response.body = ThriftClientMock.defaultResponse;
-            return response;
+            return { request, response };
           }),
           context,
         );

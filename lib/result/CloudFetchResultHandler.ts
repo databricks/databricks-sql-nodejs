@@ -1,5 +1,5 @@
 import LZ4 from 'lz4';
-import fetch, { RequestInfo, RequestInit } from 'node-fetch';
+import fetch, { RequestInfo, RequestInit, Request } from 'node-fetch';
 import { TRowSet, TSparkArrowResultLink } from '../../thrift/TCLIService_types';
 import IClientContext from '../contracts/IClientContext';
 import IResultsProvider, { ResultsProviderFetchNextOptions } from './IResultsProvider';
@@ -73,6 +73,10 @@ export default class CloudFetchResultHandler implements IResultsProvider<Array<B
     const retryPolicy = await connectionProvider.getRetryPolicy();
 
     const requestConfig: RequestInit = { agent, ...init };
-    return retryPolicy.invokeWithRetry(() => fetch(url, requestConfig));
+    const result = await retryPolicy.invokeWithRetry(() => {
+      const request = new Request(url, requestConfig);
+      return fetch(request).then((response) => ({ request, response }));
+    });
+    return result.response;
   }
 }
