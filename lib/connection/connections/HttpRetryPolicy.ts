@@ -24,38 +24,28 @@ export default class HttpRetryPolicy implements IRetryPolicy<Response> {
 
   public async shouldRetry(response: Response): Promise<ShouldRetryResult> {
     if (!response.ok) {
-      switch (response.status) {
-        // On these status codes it's safe to retry the request. However,
-        // both error codes mean that server is overwhelmed or even down.
-        // Therefore, we need to add some delay between attempts so
-        // server can recover and more likely handle next request
-        case 429: // Too Many Requests
-        case 503: // Service Unavailable
-          const clientConfig = this.context.getConfig();
+      if (this.canRetry(response)) {
+        const clientConfig = this.context.getConfig();
 
-          // Don't retry if overall retry timeout exceeded
-          const timeoutExceeded = Date.now() - this.startTime >= clientConfig.retriesTimeout;
-          if (timeoutExceeded) {
-            throw new RetryError(RetryErrorCode.TimeoutExceeded, response);
-          }
+        // Don't retry if overall retry timeout exceeded
+        const timeoutExceeded = Date.now() - this.startTime >= clientConfig.retriesTimeout;
+        if (timeoutExceeded) {
+          throw new RetryError(RetryErrorCode.TimeoutExceeded, response);
+        }
 
-          this.attempt += 1;
+        this.attempt += 1;
 
-          // Don't retry if max attempts count reached
-          const attemptsExceeded = this.attempt >= clientConfig.retryMaxAttempts;
-          if (attemptsExceeded) {
-            throw new RetryError(RetryErrorCode.AttemptsExceeded, response);
-          }
+        // Don't retry if max attempts count reached
+        const attemptsExceeded = this.attempt >= clientConfig.retryMaxAttempts;
+        if (attemptsExceeded) {
+          throw new RetryError(RetryErrorCode.AttemptsExceeded, response);
+        }
 
-          // Try to use retry delay from `Retry-After` header if available and valid, otherwise fall back to backoff
-          const retryAfter =
-            this.getRetryAfterHeader(response, clientConfig) ?? this.getBackoffDelay(this.attempt, clientConfig);
+        // Try to use retry delay from `Retry-After` header if available and valid, otherwise fall back to backoff
+        const retryAfter =
+          this.getRetryAfterHeader(response, clientConfig) ?? this.getBackoffDelay(this.attempt, clientConfig);
 
-          return { shouldRetry: true, retryAfter };
-
-        // TODO: Here we should handle other error types (see PECO-730)
-
-        // no default
+        return { shouldRetry: true, retryAfter };
       }
     }
 
@@ -71,6 +61,20 @@ export default class HttpRetryPolicy implements IRetryPolicy<Response> {
       }
       await delay(status.retryAfter); // eslint-disable-line no-await-in-loop
     }
+  }
+
+  protected canRetry(response: Response): boolean {
+    const statusCode = response.status;
+
+    const result =
+      // Retry on all codes below 100
+      statusCode < 100 ||
+      // ...and on `429 Too Many Requests`
+      statusCode === 429 ||
+      // ...and on all `5xx` codes except for `501 Not Implemented`
+      (statusCode >= 500 && statusCode !== 501);
+
+    return result;
   }
 
   protected getRetryAfterHeader(response: Response, config: ClientConfig): number | undefined {
