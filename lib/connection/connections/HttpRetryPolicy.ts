@@ -22,15 +22,15 @@ export default class HttpRetryPolicy implements IRetryPolicy<HttpTransactionDeta
     this.attempt = 0;
   }
 
-  public async shouldRetry(context: HttpTransactionDetails): Promise<ShouldRetryResult> {
-    if (!context.response.ok) {
-      if (this.canRetry(context)) {
+  public async shouldRetry(details: HttpTransactionDetails): Promise<ShouldRetryResult> {
+    if (!details.response.ok) {
+      if (this.canRetry(details)) {
         const clientConfig = this.context.getConfig();
 
         // Don't retry if overall retry timeout exceeded
         const timeoutExceeded = Date.now() - this.startTime >= clientConfig.retriesTimeout;
         if (timeoutExceeded) {
-          throw new RetryError(RetryErrorCode.TimeoutExceeded, context);
+          throw new RetryError(RetryErrorCode.TimeoutExceeded, details);
         }
 
         this.attempt += 1;
@@ -38,12 +38,12 @@ export default class HttpRetryPolicy implements IRetryPolicy<HttpTransactionDeta
         // Don't retry if max attempts count reached
         const attemptsExceeded = this.attempt >= clientConfig.retryMaxAttempts;
         if (attemptsExceeded) {
-          throw new RetryError(RetryErrorCode.AttemptsExceeded, context);
+          throw new RetryError(RetryErrorCode.AttemptsExceeded, details);
         }
 
         // Try to use retry delay from `Retry-After` header if available and valid, otherwise fall back to backoff
         const retryAfter =
-          this.getRetryAfterHeader(context, clientConfig) ?? this.getBackoffDelay(this.attempt, clientConfig);
+          this.getRetryAfterHeader(details, clientConfig) ?? this.getBackoffDelay(this.attempt, clientConfig);
 
         return { shouldRetry: true, retryAfter };
       }
@@ -54,16 +54,21 @@ export default class HttpRetryPolicy implements IRetryPolicy<HttpTransactionDeta
 
   public async invokeWithRetry(operation: RetryableOperation<HttpTransactionDetails>): Promise<HttpTransactionDetails> {
     for (;;) {
-      const context = await operation(); // eslint-disable-line no-await-in-loop
-      const status = await this.shouldRetry(context); // eslint-disable-line no-await-in-loop
+      const details = await operation(); // eslint-disable-line no-await-in-loop
+      const status = await this.shouldRetry(details); // eslint-disable-line no-await-in-loop
       if (!status.shouldRetry) {
-        return context;
+        return details;
       }
       await delay(status.retryAfter); // eslint-disable-line no-await-in-loop
     }
   }
 
-  protected canRetry({ response }: HttpTransactionDetails): boolean {
+  protected canRetry({ request, response }: HttpTransactionDetails): boolean {
+    // `GET` requests are idempotent and can be retried without other precautions
+    if (request.method.toUpperCase() === 'GET') {
+      return true;
+    }
+
     const statusCode = response.status;
 
     const result =
