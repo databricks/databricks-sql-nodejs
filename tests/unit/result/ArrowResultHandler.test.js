@@ -1,6 +1,5 @@
 const { expect } = require('chai');
-const fs = require('fs');
-const path = require('path');
+const LZ4 = require('lz4');
 const ArrowResultHandler = require('../../../dist/result/ArrowResultHandler').default;
 const ResultsProviderMock = require('./fixtures/ResultsProviderMock');
 
@@ -30,6 +29,14 @@ const sampleRowSet1 = {
   arrowBatches: [sampleArrowBatch],
 };
 
+const sampleRowSet1LZ4Compressed = {
+  startRowOffset: 0,
+  arrowBatches: sampleRowSet1.arrowBatches.map((item) => ({
+    ...item,
+    batch: LZ4.encode(item.batch),
+  })),
+};
+
 const sampleRowSet2 = {
   startRowOffset: 0,
   arrowBatches: undefined,
@@ -51,6 +58,32 @@ const sampleRowSet4 = {
 };
 
 describe('ArrowResultHandler', () => {
+  it('should return data', async () => {
+    const context = {};
+    const rowSetProvider = new ResultsProviderMock([sampleRowSet1]);
+    const result = new ArrowResultHandler(context, rowSetProvider, sampleArrowSchema);
+
+    const batches = await result.fetchNext({ limit: 10000 });
+    expect(await rowSetProvider.hasMore()).to.be.false;
+    expect(await result.hasMore()).to.be.false;
+
+    const expectedBatches = sampleRowSet1.arrowBatches.map(({ batch }) => batch);
+    expect(batches).to.deep.eq([sampleArrowSchema, ...expectedBatches]);
+  });
+
+  it('should handle LZ4 compressed data', async () => {
+    const context = {};
+    const rowSetProvider = new ResultsProviderMock([sampleRowSet1LZ4Compressed]);
+    const result = new ArrowResultHandler(context, rowSetProvider, sampleArrowSchema, true);
+
+    const batches = await result.fetchNext({ limit: 10000 });
+    expect(await rowSetProvider.hasMore()).to.be.false;
+    expect(await result.hasMore()).to.be.false;
+
+    const expectedBatches = sampleRowSet1.arrowBatches.map(({ batch }) => batch);
+    expect(batches).to.deep.eq([sampleArrowSchema, ...expectedBatches]);
+  });
+
   it('should not buffer any data', async () => {
     const context = {};
     const rowSetProvider = new ResultsProviderMock([sampleRowSet1]);

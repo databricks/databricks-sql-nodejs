@@ -4,7 +4,7 @@ import IOperation, {
   FinishedOptions,
   GetSchemaOptions,
   WaitUntilReadyOptions,
-} from '../contracts/IOperation';
+} from './contracts/IOperation';
 import {
   TGetOperationStatusResp,
   TOperationHandle,
@@ -14,20 +14,20 @@ import {
   TSparkRowSetType,
   TCloseOperationResp,
   TOperationState,
-} from '../../thrift/TCLIService_types';
-import Status from '../dto/Status';
-import { LogLevel } from '../contracts/IDBSQLLogger';
-import OperationStateError, { OperationStateErrorCode } from '../errors/OperationStateError';
-import IResultsProvider from '../result/IResultsProvider';
-import RowSetProvider from '../result/RowSetProvider';
-import JsonResultHandler from '../result/JsonResultHandler';
-import ArrowResultHandler from '../result/ArrowResultHandler';
-import CloudFetchResultHandler from '../result/CloudFetchResultHandler';
-import ArrowResultConverter from '../result/ArrowResultConverter';
-import ResultSlicer from '../result/ResultSlicer';
-import { definedOrError } from '../utils';
-import HiveDriverError from '../errors/HiveDriverError';
-import IClientContext from '../contracts/IClientContext';
+} from '../thrift/TCLIService_types';
+import Status from './dto/Status';
+import { LogLevel } from './contracts/IDBSQLLogger';
+import OperationStateError, { OperationStateErrorCode } from './errors/OperationStateError';
+import IResultsProvider from './result/IResultsProvider';
+import RowSetProvider from './result/RowSetProvider';
+import JsonResultHandler from './result/JsonResultHandler';
+import ArrowResultHandler from './result/ArrowResultHandler';
+import CloudFetchResultHandler from './result/CloudFetchResultHandler';
+import ArrowResultConverter from './result/ArrowResultConverter';
+import ResultSlicer from './result/ResultSlicer';
+import { definedOrError } from './utils';
+import HiveDriverError from './errors/HiveDriverError';
+import IClientContext from './contracts/IClientContext';
 
 const defaultMaxRows = 100000;
 
@@ -377,14 +377,14 @@ export default class DBSQLOperation implements IOperation {
         case TSparkRowSetType.ARROW_BASED_SET:
           resultSource = new ArrowResultConverter(
             this.context,
-            new ArrowResultHandler(this.context, this._data, metadata.arrowSchema),
+            new ArrowResultHandler(this.context, this._data, metadata.arrowSchema, metadata.lz4Compressed),
             metadata.schema,
           );
           break;
         case TSparkRowSetType.URL_BASED_SET:
           resultSource = new ArrowResultConverter(
             this.context,
-            new CloudFetchResultHandler(this.context, this._data),
+            new CloudFetchResultHandler(this.context, this._data, metadata.lz4Compressed),
             metadata.schema,
           );
           break;

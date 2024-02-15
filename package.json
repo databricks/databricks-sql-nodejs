@@ -1,6 +1,6 @@
 {
   "name": "@databricks/sql",
-  "version": "1.7.1",
+  "version": "1.8.1",
   "description": "Driver for connection to Databricks SQL via Thrift API.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -47,6 +47,7 @@
   ],
   "license": "Apache 2.0",
   "devDependencies": {
+    "@types/lz4": "^0.6.4",
     "@types/node": "^18.11.9",
     "@types/node-fetch": "^2.6.4",
     "@types/node-int64": "^0.4.29",
@@ -73,6 +74,7 @@
   "dependencies": {
     "apache-arrow": "^13.0.0",
     "commander": "^9.3.0",
+    "lz4": "^0.6.5",
     "node-fetch": "^2.6.12",
     "node-int64": "^0.4.0",
     "open": "^8.4.2",

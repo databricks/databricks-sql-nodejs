@@ -90,6 +90,7 @@ describe('Arrow support', () => {
       },
       {
         arrowEnabled: false,
+        useLZ4Compression: false,
       },
     ),
   );
@@ -112,6 +113,7 @@ describe('Arrow support', () => {
       {
         arrowEnabled: true,
         useArrowNativeTypes: false,
+        useLZ4Compression: false,
       },
     ),
   );
@@ -134,6 +136,7 @@ describe('Arrow support', () => {
       {
         arrowEnabled: true,
         useArrowNativeTypes: true,
+        useLZ4Compression: false,
       },
     ),
   );
@@ -143,6 +146,7 @@ describe('Arrow support', () => {
 
     const session = await openSession({
       arrowEnabled: true,
+      useLZ4Compression: false,
     });
     const operation = await session.executeStatement(`
       SELECT *
@@ -168,4 +172,28 @@ describe('Arrow support', () => {
 
     expect(result.length).to.be.eq(rowsCount);
   });
+
+  it(
+    'should handle LZ4 compressed data',
+    createTest(
+      async (session) => {
+        const operation = await session.executeStatement(`SELECT * FROM ${tableName}`);
+        const result = await operation.fetchAll();
+        expect(fixArrowResult(result)).to.deep.equal(expectedArrow);
+
+        const resultHandler = await operation.getResultHandler();
+        expect(resultHandler).to.be.instanceof(ResultSlicer);
+        expect(resultHandler.source).to.be.instanceof(ArrowResultConverter);
+        expect(resultHandler.source.source).to.be.instanceof(ArrowResultHandler);
+        expect(resultHandler.source.source.isLZ4Compressed).to.be.true;
+
+        await operation.close();
+      },
+      {
+        arrowEnabled: true,
+        useArrowNativeTypes: false,
+        useLZ4Compression: true,
+      },
+    ),
+  );
 });

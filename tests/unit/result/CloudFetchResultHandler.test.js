@@ -1,6 +1,7 @@
 const { expect, AssertionError } = require('chai');
 const sinon = require('sinon');
 const Int64 = require('node-int64');
+const LZ4 = require('lz4');
 const CloudFetchResultHandler = require('../../../dist/result/CloudFetchResultHandler').default;
 const ResultsProviderMock = require('./fixtures/ResultsProviderMock');
 const DBSQLClient = require('../../../dist/DBSQLClient').default;
@@ -202,6 +203,36 @@ describe('CloudFetchResultHandler', () => {
       );
       expect(result.downloadTasks.length).to.be.equal(clientConfig.cloudFetchConcurrentDownloads - 1);
     }
+  });
+
+  it('should handle LZ4 compressed data', async () => {
+    const clientConfig = DBSQLClient.getDefaultConfig();
+
+    const rowSetProvider = new ResultsProviderMock([sampleRowSet1]);
+    const context = {
+      getConfig: () => clientConfig,
+    };
+
+    const result = new CloudFetchResultHandler(context, rowSetProvider, true);
+
+    const expectedBatch = Buffer.concat([sampleArrowSchema, sampleArrowBatch]);
+
+    sinon.stub(result, 'fetch').returns(
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        arrayBuffer: async () => LZ4.encode(expectedBatch),
+      }),
+    );
+
+    expect(await rowSetProvider.hasMore()).to.be.true;
+
+    const items = await result.fetchNext({ limit: 10000 });
+    expect(await rowSetProvider.hasMore()).to.be.false;
+
+    expect(result.fetch.called).to.be.true;
+    expect(items).to.deep.eq([expectedBatch]);
   });
 
   it('should handle HTTP errors', async () => {

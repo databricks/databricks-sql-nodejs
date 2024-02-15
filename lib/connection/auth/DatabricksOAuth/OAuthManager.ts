@@ -4,15 +4,22 @@ import HiveDriverError from '../../../errors/HiveDriverError';
 import { LogLevel } from '../../../contracts/IDBSQLLogger';
 import OAuthToken from './OAuthToken';
 import AuthorizationCode from './AuthorizationCode';
-import { OAuthScope, OAuthScopes } from './OAuthScope';
+import { OAuthScope, OAuthScopes, scopeDelimiter } from './OAuthScope';
 import IClientContext from '../../../contracts/IClientContext';
 
+export enum OAuthFlow {
+  U2M = 'U2M',
+  M2M = 'M2M',
+}
+
 export interface OAuthManagerOptions {
+  flow: OAuthFlow;
   host: string;
   callbackPorts?: Array<number>;
   clientId?: string;
   azureTenantId?: string;
   clientSecret?: string;
+  useDatabricksOAuthInAzure?: boolean;
   context: IClientContext;
 }
 
@@ -46,9 +53,7 @@ export default abstract class OAuthManager {
 
   protected abstract getCallbackPorts(): Array<number>;
 
-  protected getScopes(requestedScopes: OAuthScopes): OAuthScopes {
-    return requestedScopes;
-  }
+  protected abstract getScopes(requestedScopes: OAuthScopes): OAuthScopes;
 
   protected async getClient(): Promise<BaseClient> {
     // Obtain http agent each time when we need an OAuth client
@@ -112,17 +117,11 @@ export default abstract class OAuthManager {
     if (!accessToken || !refreshToken) {
       throw new Error('Failed to refresh token: invalid response');
     }
-    return new OAuthToken(accessToken, refreshToken);
+    return new OAuthToken(accessToken, refreshToken, token.scopes);
   }
 
-  private async refreshAccessTokenM2M(): Promise<OAuthToken> {
-    const { access_token: accessToken, refresh_token: refreshToken } = await this.getTokenM2M();
-
-    if (!accessToken) {
-      throw new Error('Failed to fetch access token');
-    }
-
-    return new OAuthToken(accessToken, refreshToken);
+  private async refreshAccessTokenM2M(token: OAuthToken): Promise<OAuthToken> {
+    return this.getTokenM2M(token.scopes ?? []);
   }
 
   public async refreshAccessToken(token: OAuthToken): Promise<OAuthToken> {
@@ -136,10 +135,16 @@ export default abstract class OAuthManager {
       throw error;
     }
 
-    return this.options.clientSecret === undefined ? this.refreshAccessTokenU2M(token) : this.refreshAccessTokenM2M();
+    switch (this.options.flow) {
+      case OAuthFlow.U2M:
+        return this.refreshAccessTokenU2M(token);
+      case OAuthFlow.M2M:
+        return this.refreshAccessTokenM2M(token);
+      // no default
+    }
   }
 
-  private async getTokenU2M(scopes: OAuthScopes) {
+  private async getTokenU2M(scopes: OAuthScopes): Promise<OAuthToken> {
     const client = await this.getClient();
 
     const authCode = new AuthorizationCode({
@@ -152,16 +157,23 @@ export default abstract class OAuthManager {
 
     const { code, verifier, redirectUri } = await authCode.fetch(mappedScopes);
 
-    return client.grant({
+    const { access_token: accessToken, refresh_token: refreshToken } = await client.grant({
       grant_type: 'authorization_code',
       code,
       code_verifier: verifier,
       redirect_uri: redirectUri,
     });
+
+    if (!accessToken) {
+      throw new Error('Failed to fetch access token');
+    }
+    return new OAuthToken(accessToken, refreshToken, mappedScopes);
   }
 
-  private async getTokenM2M() {
+  private async getTokenM2M(scopes: OAuthScopes): Promise<OAuthToken> {
     const client = await this.getClient();
+
+    const mappedScopes = this.getScopes(scopes);
 
     // M2M flow doesn't really support token refreshing, and refresh should not be available
     // in response. Each time access token expires, client can just acquire a new one using
@@ -169,34 +181,56 @@ export default abstract class OAuthManager {
     // to use refresh token for M2M flow anywhere later
     const { access_token: accessToken } = await client.grant({
       grant_type: 'client_credentials',
-      scope: 'all-apis', // this is the only allowed scope for M2M flow
+      scope: mappedScopes.join(scopeDelimiter),
     });
-    return { access_token: accessToken, refresh_token: undefined };
-  }
-
-  public async getToken(scopes: OAuthScopes): Promise<OAuthToken> {
-    const { access_token: accessToken, refresh_token: refreshToken } =
-      this.options.clientSecret === undefined ? await this.getTokenU2M(scopes) : await this.getTokenM2M();
 
     if (!accessToken) {
       throw new Error('Failed to fetch access token');
     }
+    return new OAuthToken(accessToken, undefined, mappedScopes);
+  }
 
-    return new OAuthToken(accessToken, refreshToken);
+  public async getToken(scopes: OAuthScopes): Promise<OAuthToken> {
+    switch (this.options.flow) {
+      case OAuthFlow.U2M:
+        return this.getTokenU2M(scopes);
+      case OAuthFlow.M2M:
+        return this.getTokenM2M(scopes);
+      // no default
+    }
   }
 
   public static getManager(options: OAuthManagerOptions): OAuthManager {
     // normalize
     const host = options.host.toLowerCase().replace('https://', '').split('/')[0];
 
-    // eslint-disable-next-line @typescript-eslint/no-use-before-define
-    const managers = [AWSOAuthManager, AzureOAuthManager];
+    const awsDomains = ['.cloud.databricks.com', '.dev.databricks.com'];
+    const isAWSDomain = awsDomains.some((domain) => host.endsWith(domain));
+    if (isAWSDomain) {
+      // eslint-disable-next-line @typescript-eslint/no-use-before-define
+      return new DatabricksOAuthManager(options);
+    }
 
-    for (const OAuthManagerClass of managers) {
-      for (const domain of OAuthManagerClass.domains) {
-        if (host.endsWith(domain)) {
-          return new OAuthManagerClass(options);
-        }
+    const gcpDomains = ['.gcp.databricks.com'];
+    const isGCPDomain = gcpDomains.some((domain) => host.endsWith(domain));
+    if (isGCPDomain) {
+      // eslint-disable-next-line @typescript-eslint/no-use-before-define
+      return new DatabricksOAuthManager(options);
+    }
+
+    if (options.useDatabricksOAuthInAzure) {
+      const azureDomains = ['.azuredatabricks.net'];
+      const isAzureDomain = azureDomains.some((domain) => host.endsWith(domain));
+      if (isAzureDomain) {
+        // eslint-disable-next-line @typescript-eslint/no-use-before-define
+        return new DatabricksOAuthManager(options);
+      }
+    } else {
+      const azureDomains = ['.azuredatabricks.net', '.databricks.azure.us', '.databricks.azure.cn'];
+      const isAzureDomain = azureDomains.some((domain) => host.endsWith(domain));
+      if (isAzureDomain) {
+        // eslint-disable-next-line @typescript-eslint/no-use-before-define
+        return new AzureOAuthManager(options);
       }
     }
 
@@ -204,9 +238,8 @@ export default abstract class OAuthManager {
   }
 }
 
-export class AWSOAuthManager extends OAuthManager {
-  public static domains = ['.cloud.databricks.com', '.dev.databricks.com'];
-
+// Databricks InHouse OAuth Manager
+export class DatabricksOAuthManager extends OAuthManager {
   public static defaultClientId = 'databricks-sql-connector';
 
   public static defaultCallbackPorts = [8030];
@@ -220,17 +253,23 @@ export class AWSOAuthManager extends OAuthManager {
   }
 
   protected getClientId(): string {
-    return this.options.clientId ?? AWSOAuthManager.defaultClientId;
+    return this.options.clientId ?? DatabricksOAuthManager.defaultClientId;
   }
 
   protected getCallbackPorts(): Array<number> {
-    return this.options.callbackPorts ?? AWSOAuthManager.defaultCallbackPorts;
+    return this.options.callbackPorts ?? DatabricksOAuthManager.defaultCallbackPorts;
+  }
+
+  protected getScopes(requestedScopes: OAuthScopes): OAuthScopes {
+    if (this.options.flow === OAuthFlow.M2M) {
+      // this is the only allowed scope for M2M flow
+      return [OAuthScope.allAPIs];
+    }
+    return requestedScopes;
   }
 }
 
 export class AzureOAuthManager extends OAuthManager {
-  public static domains = ['.azuredatabricks.net', '.databricks.azure.cn', '.databricks.azure.us'];
-
   public static defaultClientId = '96eecda7-19ea-49cc-abb5-240097d554f5';
 
   public static defaultCallbackPorts = [8030];
@@ -256,7 +295,18 @@ export class AzureOAuthManager extends OAuthManager {
   protected getScopes(requestedScopes: OAuthScopes): OAuthScopes {
     // There is no corresponding scopes in Azure, instead, access control will be delegated to Databricks
     const tenantId = this.options.azureTenantId ?? AzureOAuthManager.datatricksAzureApp;
-    const azureScopes = [`${tenantId}/user_impersonation`];
+
+    const azureScopes = [];
+
+    switch (this.options.flow) {
+      case OAuthFlow.U2M:
+        azureScopes.push(`${tenantId}/user_impersonation`);
+        break;
+      case OAuthFlow.M2M:
+        azureScopes.push(`${tenantId}/.default`);
+        break;
+      // no default
+    }
 
     if (requestedScopes.includes(OAuthScope.offlineAccess)) {
       azureScopes.push(OAuthScope.offlineAccess);
