@@ -1,5 +1,14 @@
 # Release History
 
+## 1.8.1
+
+Security fixes:
+
+> An issue in all published versions of the NPM package ip allows an attacker to execute arbitrary code and
+> obtain sensitive information via the isPublic() function. This can lead to potential Server-Side Request
+> Forgery (SSRF) attacks. The core issue is the function's failure to accurately distinguish between
+> public and private IP addresses.
+
 ## 1.8.0
 
 ### Highlights
