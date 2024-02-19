@@ -23,30 +23,28 @@ export default class HttpRetryPolicy implements IRetryPolicy<HttpTransactionDeta
   }
 
   public async shouldRetry(details: HttpTransactionDetails): Promise<ShouldRetryResult> {
-    if (!details.response.ok) {
-      if (this.canRetry(details)) {
-        const clientConfig = this.context.getConfig();
+    if (this.isRetryable(details)) {
+      const clientConfig = this.context.getConfig();
 
-        // Don't retry if overall retry timeout exceeded
-        const timeoutExceeded = Date.now() - this.startTime >= clientConfig.retriesTimeout;
-        if (timeoutExceeded) {
-          throw new RetryError(RetryErrorCode.TimeoutExceeded, details);
-        }
-
-        this.attempt += 1;
-
-        // Don't retry if max attempts count reached
-        const attemptsExceeded = this.attempt >= clientConfig.retryMaxAttempts;
-        if (attemptsExceeded) {
-          throw new RetryError(RetryErrorCode.AttemptsExceeded, details);
-        }
-
-        // Try to use retry delay from `Retry-After` header if available and valid, otherwise fall back to backoff
-        const retryAfter =
-          this.getRetryAfterHeader(details, clientConfig) ?? this.getBackoffDelay(this.attempt, clientConfig);
-
-        return { shouldRetry: true, retryAfter };
+      // Don't retry if overall retry timeout exceeded
+      const timeoutExceeded = Date.now() - this.startTime >= clientConfig.retriesTimeout;
+      if (timeoutExceeded) {
+        throw new RetryError(RetryErrorCode.TimeoutExceeded, details);
       }
+
+      this.attempt += 1;
+
+      // Don't retry if max attempts count reached
+      const attemptsExceeded = this.attempt >= clientConfig.retryMaxAttempts;
+      if (attemptsExceeded) {
+        throw new RetryError(RetryErrorCode.AttemptsExceeded, details);
+      }
+
+      // Try to use retry delay from `Retry-After` header if available and valid, otherwise fall back to backoff
+      const retryAfter =
+        this.getRetryAfterHeader(details, clientConfig) ?? this.getBackoffDelay(this.attempt, clientConfig);
+
+      return { shouldRetry: true, retryAfter };
     }
 
     return { shouldRetry: false };
@@ -63,12 +61,7 @@ export default class HttpRetryPolicy implements IRetryPolicy<HttpTransactionDeta
     }
   }
 
-  protected canRetry({ request, response }: HttpTransactionDetails): boolean {
-    // `GET` requests are idempotent and can be retried without other precautions
-    if (request.method.toUpperCase() === 'GET') {
-      return true;
-    }
-
+  protected isRetryable({ response }: HttpTransactionDetails): boolean {
     const statusCode = response.status;
 
     const result =
