@@ -42,7 +42,7 @@ describe('JsonResultHandler', () => {
     const context = {};
     const rowSetProvider = new ResultsProviderMock(data);
 
-    const result = new JsonResultHandler(context, rowSetProvider, schema);
+    const result = new JsonResultHandler(context, rowSetProvider, { schema });
     expect(await rowSetProvider.hasMore()).to.be.true;
     expect(await result.hasMore()).to.be.true;
 
@@ -135,7 +135,7 @@ describe('JsonResultHandler', () => {
     const context = {};
     const rowSetProvider = new ResultsProviderMock(data);
 
-    const result = new JsonResultHandler(context, rowSetProvider, schema);
+    const result = new JsonResultHandler(context, rowSetProvider, { schema });
 
     expect(await result.fetchNext({ limit: 10000 })).to.be.deep.eq([
       {
@@ -208,7 +208,7 @@ describe('JsonResultHandler', () => {
     const context = {};
     const rowSetProvider = new ResultsProviderMock(data);
 
-    const result = new JsonResultHandler(context, rowSetProvider, schema);
+    const result = new JsonResultHandler(context, rowSetProvider, { schema });
 
     expect(await result.fetchNext({ limit: 10000 })).to.be.deep.eq([
       {
@@ -230,7 +230,7 @@ describe('JsonResultHandler', () => {
     const context = {};
     const rowSetProvider = new ResultsProviderMock();
 
-    const result = new JsonResultHandler(context, rowSetProvider, null);
+    const result = new JsonResultHandler(context, rowSetProvider, { schema: null });
     const buf = Buffer.from([0x55, 0xaa, 0xc3]);
 
     [
@@ -345,7 +345,7 @@ describe('JsonResultHandler', () => {
     const context = {};
     const rowSetProvider = new ResultsProviderMock(data);
 
-    const result = new JsonResultHandler(context, rowSetProvider, schema);
+    const result = new JsonResultHandler(context, rowSetProvider, { schema });
 
     expect(await result.fetchNext({ limit: 10000 })).to.be.deep.eq([
       {
@@ -377,7 +377,7 @@ describe('JsonResultHandler', () => {
     const context = {};
     const rowSetProvider = new ResultsProviderMock();
 
-    const result = new JsonResultHandler(context, rowSetProvider, schema);
+    const result = new JsonResultHandler(context, rowSetProvider, { schema });
     expect(await result.fetchNext({ limit: 10000 })).to.be.deep.eq([]);
   });
 
@@ -395,7 +395,7 @@ describe('JsonResultHandler', () => {
     const context = {};
     const rowSetProvider = new ResultsProviderMock(data);
 
-    const result = new JsonResultHandler(context, rowSetProvider);
+    const result = new JsonResultHandler(context, rowSetProvider, {});
 
     expect(await result.fetchNext({ limit: 10000 })).to.be.deep.eq([]);
   });
@@ -431,7 +431,7 @@ describe('JsonResultHandler', () => {
     const context = {};
     const rowSetProvider = new ResultsProviderMock(data);
 
-    const result = new JsonResultHandler(context, rowSetProvider, schema);
+    const result = new JsonResultHandler(context, rowSetProvider, { schema });
 
     expect(await result.fetchNext({ limit: 10000 })).to.be.deep.eq([
       {

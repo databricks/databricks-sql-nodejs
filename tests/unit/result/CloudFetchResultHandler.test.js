@@ -86,7 +86,7 @@ describe('CloudFetchResultHandler', () => {
       getConfig: () => clientConfig,
     };
 
-    const result = new CloudFetchResultHandler(context, rowSetProvider);
+    const result = new CloudFetchResultHandler(context, rowSetProvider, {});
 
     case1: {
       result.pendingLinks = [];
@@ -119,7 +119,7 @@ describe('CloudFetchResultHandler', () => {
       getConfig: () => clientConfig,
     };
 
-    const result = new CloudFetchResultHandler(context, rowSetProvider);
+    const result = new CloudFetchResultHandler(context, rowSetProvider, {});
 
     sinon.stub(result, 'fetch').returns(
       Promise.resolve({
@@ -153,7 +153,7 @@ describe('CloudFetchResultHandler', () => {
       getConfig: () => clientConfig,
     };
 
-    const result = new CloudFetchResultHandler(context, rowSetProvider);
+    const result = new CloudFetchResultHandler(context, rowSetProvider, {});
 
     sinon.stub(result, 'fetch').returns(
       Promise.resolve({
@@ -213,7 +213,7 @@ describe('CloudFetchResultHandler', () => {
       getConfig: () => clientConfig,
     };
 
-    const result = new CloudFetchResultHandler(context, rowSetProvider, true);
+    const result = new CloudFetchResultHandler(context, rowSetProvider, { lz4Compressed: true });
 
     const expectedBatch = Buffer.concat([sampleArrowSchema, sampleArrowBatch]);
 
@@ -244,7 +244,7 @@ describe('CloudFetchResultHandler', () => {
       getConfig: () => clientConfig,
     };
 
-    const result = new CloudFetchResultHandler(context, rowSetProvider);
+    const result = new CloudFetchResultHandler(context, rowSetProvider, {});
 
     sinon.stub(result, 'fetch').returns(
       Promise.resolve({
@@ -275,7 +275,7 @@ describe('CloudFetchResultHandler', () => {
       getConfig: () => clientConfig,
     };
 
-    const result = new CloudFetchResultHandler(context, rowSetProvider);
+    const result = new CloudFetchResultHandler(context, rowSetProvider, {});
 
     sinon.stub(result, 'fetch').returns(
       Promise.resolve({

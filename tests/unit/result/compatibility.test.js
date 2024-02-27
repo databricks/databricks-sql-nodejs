@@ -14,7 +14,7 @@ describe('Result handlers compatibility tests', () => {
   it('colum-based data', async () => {
     const context = {};
     const rowSetProvider = new ResultsProviderMock(fixtureColumn.rowSets);
-    const result = new JsonResultHandler(context, rowSetProvider, fixtureColumn.schema);
+    const result = new JsonResultHandler(context, rowSetProvider, { schema: fixtureColumn.schema });
     const rows = await result.fetchNext({ limit: 10000 });
     expect(rows).to.deep.equal(fixtureColumn.expected);
   });
@@ -24,8 +24,8 @@ describe('Result handlers compatibility tests', () => {
     const rowSetProvider = new ResultsProviderMock(fixtureArrow.rowSets);
     const result = new ArrowResultConverter(
       context,
-      new ArrowResultHandler(context, rowSetProvider, fixtureArrow.arrowSchema),
-      fixtureArrow.schema,
+      new ArrowResultHandler(context, rowSetProvider, { arrowSchema: fixtureArrow.arrowSchema }),
+      { schema: fixtureArrow.schema },
     );
     const rows = await result.fetchNext({ limit: 10000 });
     expect(fixArrowResult(rows)).to.deep.equal(fixtureArrow.expected);
@@ -36,8 +36,8 @@ describe('Result handlers compatibility tests', () => {
     const rowSetProvider = new ResultsProviderMock(fixtureArrowNT.rowSets);
     const result = new ArrowResultConverter(
       context,
-      new ArrowResultHandler(context, rowSetProvider, fixtureArrowNT.arrowSchema),
-      fixtureArrowNT.schema,
+      new ArrowResultHandler(context, rowSetProvider, { arrowSchema: fixtureArrowNT.arrowSchema }),
+      { schema: fixtureArrowNT.schema },
     );
     const rows = await result.fetchNext({ limit: 10000 });
     expect(fixArrowResult(rows)).to.deep.equal(fixtureArrowNT.expected);
