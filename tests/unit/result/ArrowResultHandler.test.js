@@ -127,6 +127,33 @@ describe('ArrowResultHandler', () => {
     }
   });
 
+  it('should infer arrow schema from thrift schema', async () => {
+    const context = {};
+    const rowSetProvider = new ResultsProviderMock([sampleRowSet2]);
+
+    const sampleThriftSchema = {
+      columns: [
+        {
+          columnName: '1',
+          typeDesc: {
+            types: [
+              {
+                primitiveEntry: {
+                  type: 3,
+                  typeQualifiers: null,
+                },
+              },
+            ],
+          },
+          position: 1,
+        },
+      ],
+    };
+
+    const result = new ArrowResultHandler(context, rowSetProvider, { schema: sampleThriftSchema });
+    expect(result.arrowSchema).to.not.be.undefined;
+  });
+
   it('should return empty array if no schema available', async () => {
     const context = {};
     const rowSetProvider = new ResultsProviderMock([sampleRowSet2]);

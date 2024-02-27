@@ -2,6 +2,7 @@ import LZ4 from 'lz4';
 import { TGetResultSetMetadataResp, TRowSet } from '../../thrift/TCLIService_types';
 import IClientContext from '../contracts/IClientContext';
 import IResultsProvider, { ResultsProviderFetchNextOptions } from './IResultsProvider';
+import { hiveSchemaToArrowSchema } from './utils';
 
 export default class ArrowResultHandler implements IResultsProvider<Array<Buffer>> {
   protected readonly context: IClientContext;
@@ -15,11 +16,13 @@ export default class ArrowResultHandler implements IResultsProvider<Array<Buffer
   constructor(
     context: IClientContext,
     source: IResultsProvider<TRowSet | undefined>,
-    { arrowSchema, lz4Compressed }: TGetResultSetMetadataResp,
+    { schema, arrowSchema, lz4Compressed }: TGetResultSetMetadataResp,
   ) {
     this.context = context;
     this.source = source;
-    this.arrowSchema = arrowSchema;
+    // Arrow schema is not available in old DBR versions, which also don't support native Arrow types,
+    // so it's possible to infer Arrow schema from Hive schema ignoring `useArrowNativeTypes` option
+    this.arrowSchema = arrowSchema ?? hiveSchemaToArrowSchema(schema);
     this.isLZ4Compressed = lz4Compressed ?? false;
   }
 

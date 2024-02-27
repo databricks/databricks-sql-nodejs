@@ -1,5 +1,23 @@
 import Int64 from 'node-int64';
+import {
+  Schema,
+  Field,
+  DataType,
+  Bool as ArrowBool,
+  Int8 as ArrowInt8,
+  Int16 as ArrowInt16,
+  Int32 as ArrowInt32,
+  Int64 as ArrowInt64,
+  Float32 as ArrowFloat32,
+  Float64 as ArrowFloat64,
+  Utf8 as ArrowString,
+  Date_ as ArrowDate,
+  Binary as ArrowBinary,
+  DateUnit,
+  RecordBatchWriter,
+} from 'apache-arrow';
 import { TTableSchema, TColumnDesc, TPrimitiveTypeEntry, TTypeId } from '../../thrift/TCLIService_types';
+import HiveDriverError from '../errors/HiveDriverError';
 
 export function getSchemaColumns(schema?: TTableSchema): Array<TColumnDesc> {
   if (!schema) {
@@ -72,4 +90,53 @@ export function convertThriftValue(typeDescriptor: TPrimitiveTypeEntry | undefin
     default:
       return value;
   }
+}
+
+// This type map corresponds to Arrow without native types support (most complex types are serialized as strings)
+const hiveTypeToArrowType: Record<TTypeId, DataType | null> = {
+  [TTypeId.BOOLEAN_TYPE]: new ArrowBool(),
+  [TTypeId.TINYINT_TYPE]: new ArrowInt8(),
+  [TTypeId.SMALLINT_TYPE]: new ArrowInt16(),
+  [TTypeId.INT_TYPE]: new ArrowInt32(),
+  [TTypeId.BIGINT_TYPE]: new ArrowInt64(),
+  [TTypeId.FLOAT_TYPE]: new ArrowFloat32(),
+  [TTypeId.DOUBLE_TYPE]: new ArrowFloat64(),
+  [TTypeId.STRING_TYPE]: new ArrowString(),
+  [TTypeId.TIMESTAMP_TYPE]: new ArrowString(),
+  [TTypeId.BINARY_TYPE]: new ArrowBinary(),
+  [TTypeId.ARRAY_TYPE]: new ArrowString(),
+  [TTypeId.MAP_TYPE]: new ArrowString(),
+  [TTypeId.STRUCT_TYPE]: new ArrowString(),
+  [TTypeId.UNION_TYPE]: new ArrowString(),
+  [TTypeId.USER_DEFINED_TYPE]: new ArrowString(),
+  [TTypeId.DECIMAL_TYPE]: new ArrowString(),
+  [TTypeId.NULL_TYPE]: null,
+  [TTypeId.DATE_TYPE]: new ArrowDate(DateUnit.DAY),
+  [TTypeId.VARCHAR_TYPE]: new ArrowString(),
+  [TTypeId.CHAR_TYPE]: new ArrowString(),
+  [TTypeId.INTERVAL_YEAR_MONTH_TYPE]: new ArrowString(),
+  [TTypeId.INTERVAL_DAY_TIME_TYPE]: new ArrowString(),
+};
+
+export function hiveSchemaToArrowSchema(schema?: TTableSchema): Buffer | undefined {
+  if (!schema) {
+    return undefined;
+  }
+
+  const columns = getSchemaColumns(schema);
+
+  const arrowFields = columns.map((column) => {
+    const hiveType = column.typeDesc.types[0].primitiveEntry?.type ?? undefined;
+    const arrowType = hiveType !== undefined ? hiveTypeToArrowType[hiveType] : undefined;
+    if (!arrowType) {
+      throw new HiveDriverError(`Unsupported column type: ${hiveType ? TTypeId[hiveType] : 'undefined'}`);
+    }
+    return new Field(column.columnName, arrowType, true);
+  });
+
+  const arrowSchema = new Schema(arrowFields);
+  const writer = new RecordBatchWriter();
+  writer.reset(undefined, arrowSchema);
+  writer.finish();
+  return Buffer.from(writer.toUint8Array(true));
 }
