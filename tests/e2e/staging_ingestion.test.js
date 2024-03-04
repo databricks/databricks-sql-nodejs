@@ -87,6 +87,7 @@ describe('Staging Test', () => {
       await session.executeStatement(`GET '${stagingFileName}' TO '${localFile}'`, {
         stagingAllowedLocalPath: [localPath],
       });
+      expect.fail('It should throw HTTP 404 error');
     } catch (error) {
       if (error instanceof StagingError) {
         // File should not exist after deleting
@@ -116,6 +117,8 @@ describe('Staging Test', () => {
 
     try {
       await session.executeStatement(`REMOVE '${stagingFileName}'`, { stagingAllowedLocalPath: [localPath] });
+      // In some cases, `REMOVE` may silently succeed for non-existing files (see comment in relevant
+      // part of `DBSQLSession` code). But if it fails - it has to be an HTTP 404 error
     } catch (error) {
       if (error instanceof StagingError) {
         expect(error.message).to.contain('404');
