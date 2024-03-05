@@ -1,10 +1,32 @@
 const { expect } = require('chai');
+const fs = require('fs');
+const path = require('path');
+const os = require('os');
+const uuid = require('uuid');
 const config = require('./utils/config');
 const { DBSQLClient } = require('../..');
-const fs = require('fs');
+const StagingError = require('../../dist/errors/StagingError').default;
 
-// TODO: Temporarily disable those tests until we figure out issues with E2E test env
-describe.skip('Staging Test', () => {
+describe('Staging Test', () => {
+  const catalog = config.database[0];
+  const schema = config.database[1];
+  const volume = config.volume;
+
+  const localPath = fs.mkdtempSync(path.join(os.tmpdir(), 'databricks-sql-tests-'));
+
+  before(() => {
+    expect(catalog).to.not.be.undefined;
+    expect(schema).to.not.be.undefined;
+    expect(volume).to.not.be.undefined;
+  });
+
+  after(() => {
+    fs.rmSync(localPath, {
+      recursive: true,
+      force: true,
+    });
+  });
+
   it('put staging data and receive it', async () => {
     const client = new DBSQLClient();
     await client.connect({
@@ -12,23 +34,28 @@ describe.skip('Staging Test', () => {
       path: config.path,
       token: config.token,
     });
-    let tempPath = 'tests/e2e/staging/data';
-    fs.writeFileSync(tempPath, 'Hello World!');
 
     const session = await client.openSession({
-      initialCatalog: config.database[0],
-      initialSchema: config.database[1],
+      initialCatalog: catalog,
+      initialSchema: schema,
     });
-    await session.executeStatement(
-      `PUT '${tempPath}' INTO '/Volumes/${config.database[0]}/${config.database[1]}/e2etests/file1.csv' OVERWRITE`,
-      { stagingAllowedLocalPath: ['tests/e2e/staging'] },
-    );
-    await session.executeStatement(
-      `GET '/Volumes/${config.database[0]}/${config.database[1]}/e2etests/file1.csv' TO 'tests/e2e/staging/file'`,
-      { stagingAllowedLocalPath: ['tests/e2e/staging'] },
-    );
-    let result = fs.readFileSync('tests/e2e/staging/file');
-    expect(result.toString() === 'Hello World!').to.be.true;
+
+    const expectedData = 'Hello World!';
+    const stagingFileName = `/Volumes/${catalog}/${schema}/${volume}/${uuid.v4()}.csv`;
+    const localFile = path.join(localPath, `${uuid.v4()}.csv`);
+
+    fs.writeFileSync(localFile, expectedData);
+    await session.executeStatement(`PUT '${localFile}' INTO '${stagingFileName}' OVERWRITE`, {
+      stagingAllowedLocalPath: [localPath],
+    });
+    fs.rmSync(localFile);
+
+    await session.executeStatement(`GET '${stagingFileName}' TO '${localFile}'`, {
+      stagingAllowedLocalPath: [localPath],
+    });
+    const result = fs.readFileSync(localFile);
+    fs.rmSync(localFile);
+    expect(result.toString() === expectedData).to.be.true;
   });
 
   it('put staging data and remove it', async () => {
@@ -38,20 +65,39 @@ describe.skip('Staging Test', () => {
       path: config.path,
       token: config.token,
     });
-    let tempPath = 'tests/e2e/staging/data';
-    fs.writeFileSync(tempPath, (data = 'Hello World!'));
 
-    let session = await client.openSession({
-      initialCatalog: config.database[0],
-      initialSchema: config.database[1],
+    const session = await client.openSession({
+      initialCatalog: catalog,
+      initialSchema: schema,
     });
-    await session.executeStatement(
-      `PUT '${tempPath}' INTO '/Volumes/${config.database[0]}/${config.database[1]}/e2etests/file1.csv' OVERWRITE`,
-      { stagingAllowedLocalPath: ['tests/e2e/staging'] },
-    );
-    await session.executeStatement(`REMOVE '/Volumes/${config.database[0]}/${config.database[1]}/e2etests/file1.csv'`, {
-      stagingAllowedLocalPath: ['tests/e2e/staging'],
+
+    const expectedData = 'Hello World!';
+    const stagingFileName = `/Volumes/${catalog}/${schema}/${volume}/${uuid.v4()}.csv`;
+    const localFile = path.join(localPath, `${uuid.v4()}.csv`);
+
+    fs.writeFileSync(localFile, expectedData);
+    await session.executeStatement(`PUT '${localFile}' INTO '${stagingFileName}' OVERWRITE`, {
+      stagingAllowedLocalPath: [localPath],
     });
+    fs.rmSync(localFile);
+
+    await session.executeStatement(`REMOVE '${stagingFileName}'`, { stagingAllowedLocalPath: [localPath] });
+
+    try {
+      await session.executeStatement(`GET '${stagingFileName}' TO '${localFile}'`, {
+        stagingAllowedLocalPath: [localPath],
+      });
+      expect.fail('It should throw HTTP 404 error');
+    } catch (error) {
+      if (error instanceof StagingError) {
+        // File should not exist after deleting
+        expect(error.message).to.contain('404');
+      } else {
+        throw error;
+      }
+    } finally {
+      fs.rmSync(localFile, { force: true });
+    }
   });
 
   it('delete non-existent data', async () => {
@@ -61,22 +107,24 @@ describe.skip('Staging Test', () => {
       path: config.path,
       token: config.token,
     });
-    let tempPath = 'tests/e2e/staging/data';
-    fs.writeFileSync(tempPath, (data = 'Hello World!'));
 
-    let session = await client.openSession({
-      initialCatalog: config.database[0],
-      initialSchema: config.database[1],
+    const session = await client.openSession({
+      initialCatalog: catalog,
+      initialSchema: schema,
     });
-    await session.executeStatement(
-      `PUT '${tempPath}' INTO '/Volumes/${config.database[0]}/${config.database[1]}/e2etests/file1.csv' OVERWRITE`,
-      { stagingAllowedLocalPath: ['tests/e2e/staging'] },
-    );
-    await session.executeStatement(
-      `GET '/Volumes/${config.database[0]}/${config.database[1]}/e2etests/file1.csv' TO 'tests/e2e/staging/file'`,
-      { stagingAllowedLocalPath: ['tests/e2e/staging'] },
-    );
-    let result = fs.readFileSync('tests/e2e/staging/file');
-    expect(result.toString() === 'Hello World!').to.be.true;
+
+    const stagingFileName = `/Volumes/${catalog}/${schema}/${volume}/${uuid.v4()}.csv`;
+
+    try {
+      await session.executeStatement(`REMOVE '${stagingFileName}'`, { stagingAllowedLocalPath: [localPath] });
+      // In some cases, `REMOVE` may silently succeed for non-existing files (see comment in relevant
+      // part of `DBSQLSession` code). But if it fails - it has to be an HTTP 404 error
+    } catch (error) {
+      if (error instanceof StagingError) {
+        expect(error.message).to.contain('404');
+      } else {
+        throw error;
+      }
+    }
   });
 });
