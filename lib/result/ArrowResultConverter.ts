@@ -13,7 +13,7 @@ import {
   RecordBatchReader,
   util as arrowUtils,
 } from 'apache-arrow';
-import { TTableSchema, TColumnDesc } from '../../thrift/TCLIService_types';
+import { TGetResultSetMetadataResp, TColumnDesc } from '../../thrift/TCLIService_types';
 import IClientContext from '../contracts/IClientContext';
 import IResultsProvider, { ResultsProviderFetchNextOptions } from './IResultsProvider';
 import { getSchemaColumns, convertThriftValue } from './utils';
@@ -34,7 +34,7 @@ export default class ArrowResultConverter implements IResultsProvider<Array<any>
 
   private pendingRecordBatch?: RecordBatch<TypeMap>;
 
-  constructor(context: IClientContext, source: IResultsProvider<Array<Buffer>>, schema?: TTableSchema) {
+  constructor(context: IClientContext, source: IResultsProvider<Array<Buffer>>, { schema }: TGetResultSetMetadataResp) {
     this.context = context;
     this.source = source;
     this.schema = getSchemaColumns(schema);

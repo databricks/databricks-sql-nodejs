@@ -111,7 +111,7 @@ describe('CloudFetchResultHandler', () => {
     const context = new ClientContextMock({ cloudFetchConcurrentDownloads: 1 });
     const rowSetProvider = new ResultsProviderMock();
 
-    const result = new CloudFetchResultHandler(context, rowSetProvider);
+    const result = new CloudFetchResultHandler(context, rowSetProvider, {});
 
     case1: {
       result.pendingLinks = [];
@@ -140,7 +140,7 @@ describe('CloudFetchResultHandler', () => {
 
     const rowSetProvider = new ResultsProviderMock(rowSets);
 
-    const result = new CloudFetchResultHandler(context, rowSetProvider);
+    const result = new CloudFetchResultHandler(context, rowSetProvider, {});
 
     context.fetchHandler.returns(
       Promise.resolve({
@@ -171,7 +171,7 @@ describe('CloudFetchResultHandler', () => {
     const expectedLinksCount = rowSet.resultLinks.length; // 5
     const rowSetProvider = new ResultsProviderMock([rowSet]);
 
-    const result = new CloudFetchResultHandler(context, rowSetProvider);
+    const result = new CloudFetchResultHandler(context, rowSetProvider, {});
 
     context.fetchHandler.returns(
       Promise.resolve({
@@ -234,7 +234,7 @@ describe('CloudFetchResultHandler', () => {
 
     const rowSetProvider = new ResultsProviderMock([sampleRowSet1]);
 
-    const result = new CloudFetchResultHandler(context, rowSetProvider, true);
+    const result = new CloudFetchResultHandler(context, rowSetProvider, { lz4Compressed: true });
 
     const expectedBatch = Buffer.concat([sampleArrowSchema, sampleArrowBatch]);
 
@@ -263,7 +263,7 @@ describe('CloudFetchResultHandler', () => {
 
     const rowSetProvider = new ResultsProviderMock([sampleRowSet1]);
 
-    const result = new CloudFetchResultHandler(context, rowSetProvider);
+    const result = new CloudFetchResultHandler(context, rowSetProvider, {});
 
     context.fetchHandler.returns(
       Promise.resolve({
@@ -292,7 +292,7 @@ describe('CloudFetchResultHandler', () => {
     const context = new ClientContextMock();
     const rowSetProvider = new ResultsProviderMock([sampleExpiredRowSet]);
 
-    const result = new CloudFetchResultHandler(context, rowSetProvider);
+    const result = new CloudFetchResultHandler(context, rowSetProvider, {});
 
     context.fetchHandler.returns(
       Promise.resolve({

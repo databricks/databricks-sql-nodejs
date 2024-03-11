@@ -1,5 +1,5 @@
 import { ColumnCode } from '../hive/Types';
-import { TRowSet, TTableSchema, TColumn, TColumnDesc } from '../../thrift/TCLIService_types';
+import { TGetResultSetMetadataResp, TRowSet, TColumn, TColumnDesc } from '../../thrift/TCLIService_types';
 import IClientContext from '../contracts/IClientContext';
 import IResultsProvider, { ResultsProviderFetchNextOptions } from './IResultsProvider';
 import { getSchemaColumns, convertThriftValue } from './utils';
@@ -11,7 +11,11 @@ export default class JsonResultHandler implements IResultsProvider<Array<any>> {
 
   private readonly schema: Array<TColumnDesc>;
 
-  constructor(context: IClientContext, source: IResultsProvider<TRowSet | undefined>, schema?: TTableSchema) {
+  constructor(
+    context: IClientContext,
+    source: IResultsProvider<TRowSet | undefined>,
+    { schema }: TGetResultSetMetadataResp,
+  ) {
     this.context = context;
     this.source = source;
     this.schema = getSchemaColumns(schema);

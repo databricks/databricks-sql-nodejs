@@ -52,11 +52,13 @@ export default class ResultSlicer<T> implements IResultsProvider<Array<T>> {
     // Fetch items from source results provider until we reach a requested count
     while (resultsCount < options.limit) {
       // eslint-disable-next-line no-await-in-loop
-      const chunk = await this.source.fetchNext(options);
-      if (chunk.length === 0) {
+      const hasMore = await this.source.hasMore();
+      if (!hasMore) {
         break;
       }
 
+      // eslint-disable-next-line no-await-in-loop
+      const chunk = await this.source.fetchNext(options);
       result.push(chunk);
       resultsCount += chunk.length;
     }
