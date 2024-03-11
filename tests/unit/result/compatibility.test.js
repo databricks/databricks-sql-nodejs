@@ -2,6 +2,7 @@ const { expect } = require('chai');
 const ArrowResultHandler = require('../../../dist/result/ArrowResultHandler').default;
 const ArrowResultConverter = require('../../../dist/result/ArrowResultConverter').default;
 const JsonResultHandler = require('../../../dist/result/JsonResultHandler').default;
+const ResultSlicer = require('../../../dist/result/ResultSlicer').default;
 
 const { fixArrowResult } = require('../../fixtures/compatibility');
 const fixtureColumn = require('../../fixtures/compatibility/column');
@@ -14,7 +15,10 @@ describe('Result handlers compatibility tests', () => {
   it('colum-based data', async () => {
     const context = {};
     const rowSetProvider = new ResultsProviderMock(fixtureColumn.rowSets);
-    const result = new JsonResultHandler(context, rowSetProvider, fixtureColumn.schema);
+    const result = new ResultSlicer(
+      context,
+      new JsonResultHandler(context, rowSetProvider, { schema: fixtureColumn.schema }),
+    );
     const rows = await result.fetchNext({ limit: 10000 });
     expect(rows).to.deep.equal(fixtureColumn.expected);
   });
@@ -22,10 +26,13 @@ describe('Result handlers compatibility tests', () => {
   it('arrow-based data without native types', async () => {
     const context = {};
     const rowSetProvider = new ResultsProviderMock(fixtureArrow.rowSets);
-    const result = new ArrowResultConverter(
+    const result = new ResultSlicer(
       context,
-      new ArrowResultHandler(context, rowSetProvider, fixtureArrow.arrowSchema),
-      fixtureArrow.schema,
+      new ArrowResultConverter(
+        context,
+        new ArrowResultHandler(context, rowSetProvider, { arrowSchema: fixtureArrow.arrowSchema }),
+        { schema: fixtureArrow.schema },
+      ),
     );
     const rows = await result.fetchNext({ limit: 10000 });
     expect(fixArrowResult(rows)).to.deep.equal(fixtureArrow.expected);
@@ -34,12 +41,30 @@ describe('Result handlers compatibility tests', () => {
   it('arrow-based data with native types', async () => {
     const context = {};
     const rowSetProvider = new ResultsProviderMock(fixtureArrowNT.rowSets);
-    const result = new ArrowResultConverter(
+    const result = new ResultSlicer(
       context,
-      new ArrowResultHandler(context, rowSetProvider, fixtureArrowNT.arrowSchema),
-      fixtureArrowNT.schema,
+      new ArrowResultConverter(
+        context,
+        new ArrowResultHandler(context, rowSetProvider, { arrowSchema: fixtureArrowNT.arrowSchema }),
+        { schema: fixtureArrowNT.schema },
+      ),
     );
     const rows = await result.fetchNext({ limit: 10000 });
     expect(fixArrowResult(rows)).to.deep.equal(fixtureArrowNT.expected);
+  });
+
+  it('should infer arrow schema from thrift schema', async () => {
+    const context = {};
+    const rowSetProvider = new ResultsProviderMock(fixtureArrow.rowSets);
+    const result = new ResultSlicer(
+      context,
+      new ArrowResultConverter(
+        context,
+        new ArrowResultHandler(context, rowSetProvider, { schema: fixtureArrow.schema }),
+        { schema: fixtureArrow.schema },
+      ),
+    );
+    const rows = await result.fetchNext({ limit: 10000 });
+    expect(fixArrowResult(rows)).to.deep.equal(fixtureArrow.expected);
   });
 });

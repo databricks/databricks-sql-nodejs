@@ -61,7 +61,7 @@ describe('ArrowResultHandler', () => {
   it('should return data', async () => {
     const context = {};
     const rowSetProvider = new ResultsProviderMock([sampleRowSet1]);
-    const result = new ArrowResultHandler(context, rowSetProvider, sampleArrowSchema);
+    const result = new ArrowResultHandler(context, rowSetProvider, { arrowSchema: sampleArrowSchema });
 
     const batches = await result.fetchNext({ limit: 10000 });
     expect(await rowSetProvider.hasMore()).to.be.false;
@@ -74,7 +74,10 @@ describe('ArrowResultHandler', () => {
   it('should handle LZ4 compressed data', async () => {
     const context = {};
     const rowSetProvider = new ResultsProviderMock([sampleRowSet1LZ4Compressed]);
-    const result = new ArrowResultHandler(context, rowSetProvider, sampleArrowSchema, true);
+    const result = new ArrowResultHandler(context, rowSetProvider, {
+      arrowSchema: sampleArrowSchema,
+      lz4Compressed: true,
+    });
 
     const batches = await result.fetchNext({ limit: 10000 });
     expect(await rowSetProvider.hasMore()).to.be.false;
@@ -87,7 +90,7 @@ describe('ArrowResultHandler', () => {
   it('should not buffer any data', async () => {
     const context = {};
     const rowSetProvider = new ResultsProviderMock([sampleRowSet1]);
-    const result = new ArrowResultHandler(context, rowSetProvider, sampleArrowSchema);
+    const result = new ArrowResultHandler(context, rowSetProvider, { arrowSchema: sampleArrowSchema });
     expect(await rowSetProvider.hasMore()).to.be.true;
     expect(await result.hasMore()).to.be.true;
 
@@ -100,34 +103,61 @@ describe('ArrowResultHandler', () => {
     const context = {};
     case1: {
       const rowSetProvider = new ResultsProviderMock();
-      const result = new ArrowResultHandler(context, rowSetProvider, sampleArrowSchema);
+      const result = new ArrowResultHandler(context, rowSetProvider, { arrowSchema: sampleArrowSchema });
       expect(await result.fetchNext({ limit: 10000 })).to.be.deep.eq([]);
       expect(await result.hasMore()).to.be.false;
     }
     case2: {
       const rowSetProvider = new ResultsProviderMock([sampleRowSet2]);
-      const result = new ArrowResultHandler(context, rowSetProvider, sampleArrowSchema);
+      const result = new ArrowResultHandler(context, rowSetProvider, { arrowSchema: sampleArrowSchema });
       expect(await result.fetchNext({ limit: 10000 })).to.be.deep.eq([]);
       expect(await result.hasMore()).to.be.false;
     }
     case3: {
       const rowSetProvider = new ResultsProviderMock([sampleRowSet3]);
-      const result = new ArrowResultHandler(context, rowSetProvider, sampleArrowSchema);
+      const result = new ArrowResultHandler(context, rowSetProvider, { arrowSchema: sampleArrowSchema });
       expect(await result.fetchNext({ limit: 10000 })).to.be.deep.eq([]);
       expect(await result.hasMore()).to.be.false;
     }
     case4: {
       const rowSetProvider = new ResultsProviderMock([sampleRowSet4]);
-      const result = new ArrowResultHandler(context, rowSetProvider, sampleArrowSchema);
+      const result = new ArrowResultHandler(context, rowSetProvider, { arrowSchema: sampleArrowSchema });
       expect(await result.fetchNext({ limit: 10000 })).to.be.deep.eq([]);
       expect(await result.hasMore()).to.be.false;
     }
   });
 
+  it('should infer arrow schema from thrift schema', async () => {
+    const context = {};
+    const rowSetProvider = new ResultsProviderMock([sampleRowSet2]);
+
+    const sampleThriftSchema = {
+      columns: [
+        {
+          columnName: '1',
+          typeDesc: {
+            types: [
+              {
+                primitiveEntry: {
+                  type: 3,
+                  typeQualifiers: null,
+                },
+              },
+            ],
+          },
+          position: 1,
+        },
+      ],
+    };
+
+    const result = new ArrowResultHandler(context, rowSetProvider, { schema: sampleThriftSchema });
+    expect(result.arrowSchema).to.not.be.undefined;
+  });
+
   it('should return empty array if no schema available', async () => {
     const context = {};
     const rowSetProvider = new ResultsProviderMock([sampleRowSet2]);
-    const result = new ArrowResultHandler(context, rowSetProvider);
+    const result = new ArrowResultHandler(context, rowSetProvider, {});
     expect(await result.fetchNext({ limit: 10000 })).to.be.deep.eq([]);
     expect(await result.hasMore()).to.be.false;
   });

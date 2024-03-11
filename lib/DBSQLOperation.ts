@@ -372,20 +372,20 @@ export default class DBSQLOperation implements IOperation {
 
       switch (resultFormat) {
         case TSparkRowSetType.COLUMN_BASED_SET:
-          resultSource = new JsonResultHandler(this.context, this._data, metadata.schema);
+          resultSource = new JsonResultHandler(this.context, this._data, metadata);
           break;
         case TSparkRowSetType.ARROW_BASED_SET:
           resultSource = new ArrowResultConverter(
             this.context,
-            new ArrowResultHandler(this.context, this._data, metadata.arrowSchema, metadata.lz4Compressed),
-            metadata.schema,
+            new ArrowResultHandler(this.context, this._data, metadata),
+            metadata,
           );
           break;
         case TSparkRowSetType.URL_BASED_SET:
           resultSource = new ArrowResultConverter(
             this.context,
-            new CloudFetchResultHandler(this.context, this._data, metadata.lz4Compressed),
-            metadata.schema,
+            new CloudFetchResultHandler(this.context, this._data, metadata),
+            metadata,
           );
           break;
         // no default

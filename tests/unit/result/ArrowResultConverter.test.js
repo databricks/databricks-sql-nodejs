@@ -57,14 +57,14 @@ describe('ArrowResultHandler', () => {
   it('should convert data', async () => {
     const context = {};
     const rowSetProvider = new ResultsProviderMock([sampleArrowBatch]);
-    const result = new ArrowResultConverter(context, rowSetProvider, sampleThriftSchema);
+    const result = new ArrowResultConverter(context, rowSetProvider, { schema: sampleThriftSchema });
     expect(await result.fetchNext({ limit: 10000 })).to.be.deep.eq([{ 1: 1 }]);
   });
 
   it('should return empty array if no data to process', async () => {
     const context = {};
     const rowSetProvider = new ResultsProviderMock([], []);
-    const result = new ArrowResultConverter(context, rowSetProvider, sampleThriftSchema);
+    const result = new ArrowResultConverter(context, rowSetProvider, { schema: sampleThriftSchema });
     expect(await result.fetchNext({ limit: 10000 })).to.be.deep.eq([]);
     expect(await result.hasMore()).to.be.false;
   });
@@ -72,7 +72,7 @@ describe('ArrowResultHandler', () => {
   it('should return empty array if no schema available', async () => {
     const context = {};
     const rowSetProvider = new ResultsProviderMock([sampleArrowBatch]);
-    const result = new ArrowResultConverter(context, rowSetProvider);
+    const result = new ArrowResultConverter(context, rowSetProvider, {});
     expect(await result.hasMore()).to.be.false;
     expect(await result.fetchNext({ limit: 10000 })).to.be.deep.eq([]);
   });
@@ -80,7 +80,7 @@ describe('ArrowResultHandler', () => {
   it('should detect nulls', async () => {
     const context = {};
     const rowSetProvider = new ResultsProviderMock([arrowBatchAllNulls]);
-    const result = new ArrowResultConverter(context, rowSetProvider, thriftSchemaAllNulls);
+    const result = new ArrowResultConverter(context, rowSetProvider, { schema: thriftSchemaAllNulls });
     expect(await result.fetchNext({ limit: 10000 })).to.be.deep.eq([
       {
         boolean_field: null,
