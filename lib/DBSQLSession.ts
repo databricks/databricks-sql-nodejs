@@ -280,6 +280,10 @@ export default class DBSQLSession implements IDBSQLSession {
     const agent = await connectionProvider.getAgent();
 
     const response = await fetch(presignedUrl, { method: 'DELETE', headers, agent });
+    // Looks that AWS and Azure have a different behavior of HTTP `DELETE` for non-existing files
+    // AWS assumes that - since file already doesn't exist - the goal is achieved, and returns HTTP 200
+    // Azure, on the other hand, is somewhat stricter and check if file exists before deleting it. And if
+    // file doesn't exist - Azure returns HTTP 404
     if (!response.ok) {
       throw new StagingError(`HTTP error ${response.status} ${response.statusText}`);
     }
