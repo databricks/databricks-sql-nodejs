@@ -1,6 +1,6 @@
 import IRetryPolicy, { ShouldRetryResult, RetryableOperation } from '../contracts/IRetryPolicy';
 import { HttpTransactionDetails } from '../contracts/IConnectionProvider';
-import IClientContext, { ClientConfig } from '../../contracts/IClientContext';
+import IClientContext from '../../contracts/IClientContext';
 import RetryError, { RetryErrorCode } from '../../errors/RetryError';
 
 function delay(milliseconds: number): Promise<void> {
@@ -40,9 +40,13 @@ export default class HttpRetryPolicy implements IRetryPolicy<HttpTransactionDeta
         throw new RetryError(RetryErrorCode.AttemptsExceeded, details);
       }
 
-      // Try to use retry delay from `Retry-After` header if available and valid, otherwise fall back to backoff
-      const retryAfter =
-        this.getRetryAfterHeader(details, clientConfig) ?? this.getBackoffDelay(this.attempt, clientConfig);
+      // If possible, use `Retry-After` header as a floor for a backoff algorithm
+      const retryAfterHeader = this.getRetryAfterHeader(details, clientConfig.retryDelayMin);
+      const retryAfter = this.getBackoffDelay(
+        this.attempt,
+        retryAfterHeader ?? clientConfig.retryDelayMin,
+        clientConfig.retryDelayMax,
+      );
 
       return { shouldRetry: true, retryAfter };
     }
@@ -75,7 +79,7 @@ export default class HttpRetryPolicy implements IRetryPolicy<HttpTransactionDeta
     return result;
   }
 
-  protected getRetryAfterHeader({ response }: HttpTransactionDetails, config: ClientConfig): number | undefined {
+  protected getRetryAfterHeader({ response }: HttpTransactionDetails, delayMin: number): number | undefined {
     // `Retry-After` header may contain a date after which to retry, or delay seconds. We support only delay seconds.
     // Value from `Retry-After` header is used when:
     // 1. it's available and is non-empty
@@ -85,14 +89,14 @@ export default class HttpRetryPolicy implements IRetryPolicy<HttpTransactionDeta
     if (header !== '') {
       const value = Number(header);
       if (Number.isFinite(value) && value > 0) {
-        return Math.max(config.retryDelayMin, value);
+        return Math.max(delayMin, value);
       }
     }
     return undefined;
   }
 
-  protected getBackoffDelay(attempt: number, config: ClientConfig): number {
-    const value = 2 ** attempt * config.retryDelayMin;
-    return Math.min(value, config.retryDelayMax);
+  protected getBackoffDelay(attempt: number, delayMin: number, delayMax: number): number {
+    const value = 2 ** attempt * delayMin;
+    return Math.min(value, delayMax);
   }
 }

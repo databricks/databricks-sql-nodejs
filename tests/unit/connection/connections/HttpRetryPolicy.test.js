@@ -22,19 +22,19 @@ class ClientContextMock {
 describe('HttpRetryPolicy', () => {
   it('should properly compute backoff delay', async () => {
     const context = new ClientContextMock({ retryDelayMin: 3, retryDelayMax: 20 });
-    const clientConfig = context.getConfig();
+    const { retryDelayMin, retryDelayMax } = context.getConfig();
     const policy = new HttpRetryPolicy(context);
 
-    expect(policy.getBackoffDelay(0, clientConfig)).to.equal(3);
-    expect(policy.getBackoffDelay(1, clientConfig)).to.equal(6);
-    expect(policy.getBackoffDelay(2, clientConfig)).to.equal(12);
-    expect(policy.getBackoffDelay(3, clientConfig)).to.equal(clientConfig.retryDelayMax);
-    expect(policy.getBackoffDelay(4, clientConfig)).to.equal(clientConfig.retryDelayMax);
+    expect(policy.getBackoffDelay(0, retryDelayMin, retryDelayMax)).to.equal(3);
+    expect(policy.getBackoffDelay(1, retryDelayMin, retryDelayMax)).to.equal(6);
+    expect(policy.getBackoffDelay(2, retryDelayMin, retryDelayMax)).to.equal(12);
+    expect(policy.getBackoffDelay(3, retryDelayMin, retryDelayMax)).to.equal(retryDelayMax);
+    expect(policy.getBackoffDelay(4, retryDelayMin, retryDelayMax)).to.equal(retryDelayMax);
   });
 
   it('should extract delay from `Retry-After` header', async () => {
     const context = new ClientContextMock({ retryDelayMin: 3, retryDelayMax: 20 });
-    const clientConfig = context.getConfig();
+    const { retryDelayMin } = context.getConfig();
     const policy = new HttpRetryPolicy(context);
 
     function createMock(headers) {
@@ -45,22 +45,20 @@ describe('HttpRetryPolicy', () => {
     }
 
     // Missing `Retry-After` header
-    expect(policy.getRetryAfterHeader(createMock({}), clientConfig)).to.be.undefined;
+    expect(policy.getRetryAfterHeader(createMock({}), retryDelayMin)).to.be.undefined;
 
     // Valid `Retry-After`, several header name variants
-    expect(policy.getRetryAfterHeader(createMock({ 'Retry-After': '10' }), clientConfig)).to.equal(10);
-    expect(policy.getRetryAfterHeader(createMock({ 'retry-after': '10' }), clientConfig)).to.equal(10);
-    expect(policy.getRetryAfterHeader(createMock({ 'RETRY-AFTER': '10' }), clientConfig)).to.equal(10);
+    expect(policy.getRetryAfterHeader(createMock({ 'Retry-After': '10' }), retryDelayMin)).to.equal(10);
+    expect(policy.getRetryAfterHeader(createMock({ 'retry-after': '10' }), retryDelayMin)).to.equal(10);
+    expect(policy.getRetryAfterHeader(createMock({ 'RETRY-AFTER': '10' }), retryDelayMin)).to.equal(10);
 
     // Invalid header values (non-numeric, negative)
-    expect(policy.getRetryAfterHeader(createMock({ 'Retry-After': 'test' }), clientConfig)).to.be.undefined;
-    expect(policy.getRetryAfterHeader(createMock({ 'Retry-After': '-10' }), clientConfig)).to.be.undefined;
+    expect(policy.getRetryAfterHeader(createMock({ 'Retry-After': 'test' }), retryDelayMin)).to.be.undefined;
+    expect(policy.getRetryAfterHeader(createMock({ 'Retry-After': '-10' }), retryDelayMin)).to.be.undefined;
 
     // It should not be smaller than min value, but can be greater than max value
-    expect(policy.getRetryAfterHeader(createMock({ 'Retry-After': '1' }), clientConfig)).to.equal(
-      clientConfig.retryDelayMin,
-    );
-    expect(policy.getRetryAfterHeader(createMock({ 'Retry-After': '200' }), clientConfig)).to.equal(200);
+    expect(policy.getRetryAfterHeader(createMock({ 'Retry-After': '1' }), retryDelayMin)).to.equal(retryDelayMin);
+    expect(policy.getRetryAfterHeader(createMock({ 'Retry-After': '200' }), retryDelayMin)).to.equal(200);
   });
 
   it('should check if HTTP transaction is safe to retry', async () => {
@@ -118,8 +116,8 @@ describe('HttpRetryPolicy', () => {
       expect(result.shouldRetry).to.be.false;
     });
 
-    it('should use delay from `Retry-After` header', async () => {
-      const context = new ClientContextMock({ retryDelayMin: 3, retryDelayMax: 20 });
+    it('should use `Retry-After` header as a base for backoff', async () => {
+      const context = new ClientContextMock({ retryDelayMin: 3, retryDelayMax: 100, retryMaxAttempts: 10 });
       const policy = new HttpRetryPolicy(context);
 
       function createMock(headers) {
@@ -129,9 +127,18 @@ describe('HttpRetryPolicy', () => {
         };
       }
 
-      const result = await policy.shouldRetry(createMock({ 'Retry-After': '200' }));
-      expect(result.shouldRetry).to.be.true;
-      expect(result.retryAfter).to.equal(200);
+      const result1 = await policy.shouldRetry(createMock({ 'Retry-After': '5' }));
+      expect(result1.shouldRetry).to.be.true;
+      expect(result1.retryAfter).to.equal(10);
+
+      const result2 = await policy.shouldRetry(createMock({ 'Retry-After': '8' }));
+      expect(result2.shouldRetry).to.be.true;
+      expect(result2.retryAfter).to.equal(32);
+
+      policy.attempt = 4;
+      const result3 = await policy.shouldRetry(createMock({ 'Retry-After': '10' }));
+      expect(result3.shouldRetry).to.be.true;
+      expect(result3.retryAfter).to.equal(100);
     });
 
     it('should use backoff when `Retry-After` header is missing', async () => {
