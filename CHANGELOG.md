@@ -1,5 +1,9 @@
 # Release History
 
+## 1.8.2
+
+Improved results handling when running queries against older DBR versions (databricks/databricks-sql-nodejs#232)
+
 ## 1.8.1
 
 Security fixes:
