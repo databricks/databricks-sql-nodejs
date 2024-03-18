@@ -6,10 +6,12 @@
 
 import { EventEmitter } from 'events';
 import { TBinaryProtocol, TBufferedTransport, Thrift, TProtocol, TProtocolConstructor, TTransport } from 'thrift';
-import fetch, { RequestInit, HeadersInit, Response, FetchError } from 'node-fetch';
+import fetch, { RequestInit, HeadersInit, Request, Response, FetchError } from 'node-fetch';
 // @ts-expect-error TS7016: Could not find a declaration file for module
 import InputBufferUnderrunError from 'thrift/lib/nodejs/lib/thrift/input_buffer_underrun_error';
 import IRetryPolicy from '../contracts/IRetryPolicy';
+import { HttpTransactionDetails } from '../contracts/IConnectionProvider';
+import NullRetryPolicy from './NullRetryPolicy';
 
 export class THTTPException extends Thrift.TApplicationException {
   public readonly statusCode: unknown;
@@ -32,7 +34,7 @@ interface ThriftHttpConnectionOptions {
   url: string;
   transport?: TTransportType;
   protocol?: TProtocolConstructor;
-  getRetryPolicy(): Promise<IRetryPolicy<Response>>;
+  getRetryPolicy(): Promise<IRetryPolicy<HttpTransactionDetails>>;
 }
 
 // This type describes a shape of internals of Thrift client object.
@@ -47,18 +49,36 @@ type ThriftClient = {
   [key: string]: (input: TProtocol, mtype: Thrift.MessageType, seqId: number) => void;
 };
 
+const retryableThriftMethods = new Set([
+  'GetOperationStatus',
+  'CancelOperation',
+  'CloseOperation',
+  'GetResultSetMetadata',
+  'CloseSession',
+  'GetInfo',
+  'GetTypeInfo',
+  'GetCatalogs',
+  'GetSchemas',
+  'GetTables',
+  'GetTableTypes',
+  'GetColumns',
+  'GetFunctions',
+  'GetPrimaryKeys',
+  'GetCrossReference',
+]);
+
 export default class ThriftHttpConnection extends EventEmitter {
   private readonly url: string;
 
   private config: RequestInit;
+
+  private options: ThriftHttpConnectionOptions;
 
   // This field is used by Thrift internally, so name and type are important
   private readonly transport: TTransportType;
 
   // This field is used by Thrift internally, so name and type are important
   private readonly protocol: TProtocolConstructor;
-
-  private readonly getRetryPolicy: () => Promise<IRetryPolicy<Response>>;
 
   // thrift.createClient sets this field internally
   public client?: ThriftClient;
@@ -67,9 +87,18 @@ export default class ThriftHttpConnection extends EventEmitter {
     super();
     this.url = options.url;
     this.config = config;
+    this.options = options;
     this.transport = options.transport ?? TBufferedTransport;
     this.protocol = options.protocol ?? TBinaryProtocol;
-    this.getRetryPolicy = options.getRetryPolicy;
+  }
+
+  protected async getRetryPolicy(thriftMethodName?: string): Promise<IRetryPolicy<HttpTransactionDetails>> {
+    // Allow retry behavior only for Thrift operations that are for sure safe to retry
+    if (thriftMethodName && retryableThriftMethods.has(thriftMethodName)) {
+      return this.options.getRetryPolicy();
+    }
+    // Don't retry everything that is not explicitly allowed to retry
+    return new NullRetryPolicy();
   }
 
   public setHeaders(headers: HeadersInit) {
@@ -92,12 +121,16 @@ export default class ThriftHttpConnection extends EventEmitter {
       body: data,
     };
 
-    this.getRetryPolicy()
+    this.getThriftMethodName(data)
+      .then((thriftMethod) => this.getRetryPolicy(thriftMethod))
       .then((retryPolicy) => {
-        const makeRequest = () => fetch(this.url, requestConfig);
+        const makeRequest = () => {
+          const request = new Request(this.url, requestConfig);
+          return fetch(request).then((response) => ({ request, response }));
+        };
         return retryPolicy.invokeWithRetry(makeRequest);
       })
-      .then((response) => {
+      .then(({ response }) => {
         if (response.status !== 200) {
           throw new THTTPException(response);
         }
@@ -129,6 +162,23 @@ export default class ThriftHttpConnection extends EventEmitter {
           defaultErrorHandler(error);
         }
       });
+  }
+
+  private getThriftMethodName(thriftMessage: Buffer): Promise<string | undefined> {
+    return new Promise((resolve) => {
+      try {
+        const receiver = this.transport.receiver((transportWithData) => {
+          const Protocol = this.protocol;
+          const proto = new Protocol(transportWithData);
+          const header = proto.readMessageBegin();
+          resolve(header.fname);
+        }, 0 /* `seqId` could be any because it's ignored */);
+
+        receiver(thriftMessage);
+      } catch {
+        resolve(undefined);
+      }
+    });
   }
 
   private handleThriftResponse(transportWithData: TTransport) {

@@ -10,7 +10,7 @@ export type ShouldRetryResult =
 export type RetryableOperation<R> = () => Promise<R>;
 
 export default interface IRetryPolicy<R> {
-  shouldRetry(response: R): Promise<ShouldRetryResult>;
+  shouldRetry(details: R): Promise<ShouldRetryResult>;
 
   invokeWithRetry(operation: RetryableOperation<R>): Promise<R>;
 }

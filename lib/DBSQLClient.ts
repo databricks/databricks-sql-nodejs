@@ -77,10 +77,10 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
       useArrowNativeTypes: true,
       socketTimeout: 15 * 60 * 1000, // 15 minutes
 
-      retryMaxAttempts: 30,
-      retriesTimeout: 900 * 1000,
-      retryDelayMin: 1 * 1000,
-      retryDelayMax: 60 * 1000,
+      retryMaxAttempts: 5,
+      retriesTimeout: 15 * 60 * 1000, // 15 minutes
+      retryDelayMin: 1 * 1000, // 1 second
+      retryDelayMax: 60 * 1000, // 60 seconds (1 minute)
 
       useCloudFetch: false,
       cloudFetchConcurrentDownloads: 10,

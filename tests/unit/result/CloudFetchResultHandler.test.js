@@ -77,14 +77,39 @@ const sampleExpiredRowSet = {
   ],
 };
 
+class ClientContextMock {
+  constructor(configOverrides) {
+    this.configOverrides = configOverrides;
+    this.fetchHandler = sinon.stub();
+
+    this.connectionProvider = {
+      getAgent: () => Promise.resolve(undefined),
+      getRetryPolicy: sinon.stub().returns(
+        Promise.resolve({
+          shouldRetry: sinon.stub().returns(Promise.resolve({ shouldRetry: false })),
+          invokeWithRetry: sinon.stub().callsFake(() => this.fetchHandler().then((response) => ({ response }))),
+        }),
+      ),
+    };
+  }
+
+  getConfig() {
+    const defaultConfig = DBSQLClient.getDefaultConfig();
+    return {
+      ...defaultConfig,
+      ...this.configOverrides,
+    };
+  }
+
+  getConnectionProvider() {
+    return Promise.resolve(this.connectionProvider);
+  }
+}
+
 describe('CloudFetchResultHandler', () => {
   it('should report pending data if there are any', async () => {
+    const context = new ClientContextMock({ cloudFetchConcurrentDownloads: 1 });
     const rowSetProvider = new ResultsProviderMock();
-    const clientConfig = DBSQLClient.getDefaultConfig();
-
-    const context = {
-      getConfig: () => clientConfig,
-    };
 
     const result = new CloudFetchResultHandler(context, rowSetProvider, {});
 
@@ -108,20 +133,16 @@ describe('CloudFetchResultHandler', () => {
   });
 
   it('should extract links from row sets', async () => {
-    const clientConfig = DBSQLClient.getDefaultConfig();
-    clientConfig.cloudFetchConcurrentDownloads = 0; // this will prevent it from downloading batches
+    const context = new ClientContextMock({ cloudFetchConcurrentDownloads: 0 });
 
     const rowSets = [sampleRowSet1, sampleEmptyRowSet, sampleRowSet2];
     const expectedLinksCount = rowSets.reduce((prev, item) => prev + (item.resultLinks?.length ?? 0), 0);
 
     const rowSetProvider = new ResultsProviderMock(rowSets);
-    const context = {
-      getConfig: () => clientConfig,
-    };
 
     const result = new CloudFetchResultHandler(context, rowSetProvider, {});
 
-    sinon.stub(result, 'fetch').returns(
+    context.fetchHandler.returns(
       Promise.resolve({
         ok: true,
         status: 200,
@@ -136,12 +157,12 @@ describe('CloudFetchResultHandler', () => {
 
     expect(result.pendingLinks.length).to.be.equal(expectedLinksCount);
     expect(result.downloadTasks.length).to.be.equal(0);
-    expect(result.fetch.called).to.be.false;
+    expect(context.fetchHandler.called).to.be.false;
   });
 
   it('should download batches according to settings', async () => {
-    const clientConfig = DBSQLClient.getDefaultConfig();
-    clientConfig.cloudFetchConcurrentDownloads = 3;
+    const context = new ClientContextMock({ cloudFetchConcurrentDownloads: 3 });
+    const clientConfig = context.getConfig();
 
     const rowSet = {
       startRowOffset: 0,
@@ -149,13 +170,10 @@ describe('CloudFetchResultHandler', () => {
     };
     const expectedLinksCount = rowSet.resultLinks.length; // 5
     const rowSetProvider = new ResultsProviderMock([rowSet]);
-    const context = {
-      getConfig: () => clientConfig,
-    };
 
     const result = new CloudFetchResultHandler(context, rowSetProvider, {});
 
-    sinon.stub(result, 'fetch').returns(
+    context.fetchHandler.returns(
       Promise.resolve({
         ok: true,
         status: 200,
@@ -173,7 +191,9 @@ describe('CloudFetchResultHandler', () => {
       expect(items.length).to.be.gt(0);
       expect(await rowSetProvider.hasMore()).to.be.false;
 
-      expect(result.fetch.callCount).to.be.equal(clientConfig.cloudFetchConcurrentDownloads);
+      // it should use retry policy for all requests
+      expect(context.connectionProvider.getRetryPolicy.called).to.be.true;
+      expect(context.fetchHandler.callCount).to.be.equal(clientConfig.cloudFetchConcurrentDownloads);
       expect(result.pendingLinks.length).to.be.equal(expectedLinksCount - clientConfig.cloudFetchConcurrentDownloads);
       expect(result.downloadTasks.length).to.be.equal(clientConfig.cloudFetchConcurrentDownloads - 1);
     }
@@ -184,7 +204,9 @@ describe('CloudFetchResultHandler', () => {
       expect(items.length).to.be.gt(0);
       expect(await rowSetProvider.hasMore()).to.be.false;
 
-      expect(result.fetch.callCount).to.be.equal(clientConfig.cloudFetchConcurrentDownloads + 1);
+      // it should use retry policy for all requests
+      expect(context.connectionProvider.getRetryPolicy.called).to.be.true;
+      expect(context.fetchHandler.callCount).to.be.equal(clientConfig.cloudFetchConcurrentDownloads + 1);
       expect(result.pendingLinks.length).to.be.equal(
         expectedLinksCount - clientConfig.cloudFetchConcurrentDownloads - 1,
       );
@@ -197,7 +219,9 @@ describe('CloudFetchResultHandler', () => {
       expect(items.length).to.be.gt(0);
       expect(await rowSetProvider.hasMore()).to.be.false;
 
-      expect(result.fetch.callCount).to.be.equal(clientConfig.cloudFetchConcurrentDownloads + 2);
+      // it should use retry policy for all requests
+      expect(context.connectionProvider.getRetryPolicy.called).to.be.true;
+      expect(context.fetchHandler.callCount).to.be.equal(clientConfig.cloudFetchConcurrentDownloads + 2);
       expect(result.pendingLinks.length).to.be.equal(
         expectedLinksCount - clientConfig.cloudFetchConcurrentDownloads - 2,
       );
@@ -206,18 +230,15 @@ describe('CloudFetchResultHandler', () => {
   });
 
   it('should handle LZ4 compressed data', async () => {
-    const clientConfig = DBSQLClient.getDefaultConfig();
+    const context = new ClientContextMock();
 
     const rowSetProvider = new ResultsProviderMock([sampleRowSet1]);
-    const context = {
-      getConfig: () => clientConfig,
-    };
 
     const result = new CloudFetchResultHandler(context, rowSetProvider, { lz4Compressed: true });
 
     const expectedBatch = Buffer.concat([sampleArrowSchema, sampleArrowBatch]);
 
-    sinon.stub(result, 'fetch').returns(
+    context.fetchHandler.returns(
       Promise.resolve({
         ok: true,
         status: 200,
@@ -231,22 +252,20 @@ describe('CloudFetchResultHandler', () => {
     const items = await result.fetchNext({ limit: 10000 });
     expect(await rowSetProvider.hasMore()).to.be.false;
 
-    expect(result.fetch.called).to.be.true;
+    // it should use retry policy for all requests
+    expect(context.connectionProvider.getRetryPolicy.called).to.be.true;
+    expect(context.fetchHandler.called).to.be.true;
     expect(items).to.deep.eq([expectedBatch]);
   });
 
   it('should handle HTTP errors', async () => {
-    const clientConfig = DBSQLClient.getDefaultConfig();
-    clientConfig.cloudFetchConcurrentDownloads = 1;
+    const context = new ClientContextMock({ cloudFetchConcurrentDownloads: 1 });
 
     const rowSetProvider = new ResultsProviderMock([sampleRowSet1]);
-    const context = {
-      getConfig: () => clientConfig,
-    };
 
     const result = new CloudFetchResultHandler(context, rowSetProvider, {});
 
-    sinon.stub(result, 'fetch').returns(
+    context.fetchHandler.returns(
       Promise.resolve({
         ok: false,
         status: 500,
@@ -263,21 +282,19 @@ describe('CloudFetchResultHandler', () => {
         throw error;
       }
       expect(error.message).to.contain('Internal Server Error');
-      expect(result.fetch.callCount).to.be.equal(1);
+      // it should use retry policy for all requests
+      expect(context.connectionProvider.getRetryPolicy.called).to.be.true;
+      expect(context.fetchHandler.callCount).to.be.equal(1);
     }
   });
 
   it('should handle expired links', async () => {
+    const context = new ClientContextMock();
     const rowSetProvider = new ResultsProviderMock([sampleExpiredRowSet]);
-    const clientConfig = DBSQLClient.getDefaultConfig();
-
-    const context = {
-      getConfig: () => clientConfig,
-    };
 
     const result = new CloudFetchResultHandler(context, rowSetProvider, {});
 
-    sinon.stub(result, 'fetch').returns(
+    context.fetchHandler.returns(
       Promise.resolve({
         ok: true,
         status: 200,
@@ -298,8 +315,10 @@ describe('CloudFetchResultHandler', () => {
         throw error;
       }
       expect(error.message).to.contain('CloudFetch link has expired');
+      // it should use retry policy for all requests
+      expect(context.connectionProvider.getRetryPolicy.called).to.be.true;
       // Row set contains a one valid and one expired link; only valid link should be requested
-      expect(result.fetch.callCount).to.be.equal(1);
+      expect(context.fetchHandler.callCount).to.be.equal(1);
     }
   });
 });
