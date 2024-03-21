@@ -16,7 +16,7 @@ import {
 import { TGetResultSetMetadataResp, TColumnDesc } from '../../thrift/TCLIService_types';
 import IClientContext from '../contracts/IClientContext';
 import IResultsProvider, { ResultsProviderFetchNextOptions } from './IResultsProvider';
-import { getSchemaColumns, convertThriftValue } from './utils';
+import { ArrowBatch, getSchemaColumns, convertThriftValue } from './utils';
 
 const { isArrowBigNumSymbol, bigNumToBigInt } = arrowUtils;
 
@@ -26,7 +26,7 @@ type ArrowSchemaField = Field<DataType<Type, TypeMap>>;
 export default class ArrowResultConverter implements IResultsProvider<Array<any>> {
   protected readonly context: IClientContext;
 
-  private readonly source: IResultsProvider<Array<Buffer>>;
+  private readonly source: IResultsProvider<ArrowBatch>;
 
   private readonly schema: Array<TColumnDesc>;
 
@@ -34,7 +34,7 @@ export default class ArrowResultConverter implements IResultsProvider<Array<any>
 
   private pendingRecordBatch?: RecordBatch<TypeMap>;
 
-  constructor(context: IClientContext, source: IResultsProvider<Array<Buffer>>, { schema }: TGetResultSetMetadataResp) {
+  constructor(context: IClientContext, source: IResultsProvider<ArrowBatch>, { schema }: TGetResultSetMetadataResp) {
     this.context = context;
     this.source = source;
     this.schema = getSchemaColumns(schema);
@@ -73,7 +73,7 @@ export default class ArrowResultConverter implements IResultsProvider<Array<any>
       }
 
       // eslint-disable-next-line no-await-in-loop
-      const batches = await this.source.fetchNext(options);
+      const { batches } = await this.source.fetchNext(options);
       if (batches.length === 0) {
         this.reader = undefined;
         break;

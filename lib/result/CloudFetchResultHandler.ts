@@ -3,8 +3,9 @@ import fetch, { RequestInfo, RequestInit, Request } from 'node-fetch';
 import { TGetResultSetMetadataResp, TRowSet, TSparkArrowResultLink } from '../../thrift/TCLIService_types';
 import IClientContext from '../contracts/IClientContext';
 import IResultsProvider, { ResultsProviderFetchNextOptions } from './IResultsProvider';
+import { ArrowBatch } from './utils';
 
-export default class CloudFetchResultHandler implements IResultsProvider<Array<Buffer>> {
+export default class CloudFetchResultHandler implements IResultsProvider<ArrowBatch> {
   protected readonly context: IClientContext;
 
   private readonly source: IResultsProvider<TRowSet | undefined>;
@@ -13,7 +14,7 @@ export default class CloudFetchResultHandler implements IResultsProvider<Array<B
 
   private pendingLinks: Array<TSparkArrowResultLink> = [];
 
-  private downloadTasks: Array<Promise<Buffer>> = [];
+  private downloadTasks: Array<Promise<ArrowBatch>> = [];
 
   constructor(
     context: IClientContext,
@@ -49,15 +50,20 @@ export default class CloudFetchResultHandler implements IResultsProvider<Array<B
     }
 
     const batch = await this.downloadTasks.shift();
-    const batches = batch ? [batch] : [];
+    if (!batch) {
+      return {
+        batches: [],
+        rowCount: 0,
+      };
+    }
 
     if (this.isLZ4Compressed) {
-      return batches.map((buffer) => LZ4.decode(buffer));
+      batch.batches = batch.batches.map((buffer) => LZ4.decode(buffer));
     }
-    return batches;
+    return batch;
   }
 
-  private async downloadLink(link: TSparkArrowResultLink): Promise<Buffer> {
+  private async downloadLink(link: TSparkArrowResultLink): Promise<ArrowBatch> {
     if (Date.now() >= link.expiryTime.toNumber()) {
       throw new Error('CloudFetch link has expired');
     }
@@ -68,7 +74,10 @@ export default class CloudFetchResultHandler implements IResultsProvider<Array<B
     }
 
     const result = await response.arrayBuffer();
-    return Buffer.from(result);
+    return {
+      batches: [Buffer.from(result)],
+      rowCount: link.rowCount.toNumber(true),
+    };
   }
 
   private async fetch(url: RequestInfo, init?: RequestInit) {

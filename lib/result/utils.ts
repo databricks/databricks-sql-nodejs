@@ -19,6 +19,11 @@ import {
 import { TTableSchema, TColumnDesc, TPrimitiveTypeEntry, TTypeId } from '../../thrift/TCLIService_types';
 import HiveDriverError from '../errors/HiveDriverError';
 
+export interface ArrowBatch {
+  batches: Array<Buffer>;
+  rowCount: number;
+}
+
 export function getSchemaColumns(schema?: TTableSchema): Array<TColumnDesc> {
   if (!schema) {
     return [];

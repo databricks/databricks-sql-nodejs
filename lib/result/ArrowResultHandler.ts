@@ -2,9 +2,9 @@ import LZ4 from 'lz4';
 import { TGetResultSetMetadataResp, TRowSet } from '../../thrift/TCLIService_types';
 import IClientContext from '../contracts/IClientContext';
 import IResultsProvider, { ResultsProviderFetchNextOptions } from './IResultsProvider';
-import { hiveSchemaToArrowSchema } from './utils';
+import { ArrowBatch, hiveSchemaToArrowSchema } from './utils';
 
-export default class ArrowResultHandler implements IResultsProvider<Array<Buffer>> {
+export default class ArrowResultHandler implements IResultsProvider<ArrowBatch> {
   protected readonly context: IClientContext;
 
   private readonly source: IResultsProvider<TRowSet | undefined>;
@@ -35,22 +35,33 @@ export default class ArrowResultHandler implements IResultsProvider<Array<Buffer
 
   public async fetchNext(options: ResultsProviderFetchNextOptions) {
     if (!this.arrowSchema) {
-      return [];
+      return {
+        batches: [],
+        rowCount: 0,
+      };
     }
 
     const rowSet = await this.source.fetchNext(options);
 
     const batches: Array<Buffer> = [];
-    rowSet?.arrowBatches?.forEach(({ batch }) => {
+    let totalRowCount = 0;
+    rowSet?.arrowBatches?.forEach(({ batch, rowCount }) => {
       if (batch) {
         batches.push(this.isLZ4Compressed ? LZ4.decode(batch) : batch);
+        totalRowCount += rowCount.toNumber(true);
       }
     });
 
     if (batches.length === 0) {
-      return [];
+      return {
+        batches: [],
+        rowCount: 0,
+      };
     }
 
-    return [this.arrowSchema, ...batches];
+    return {
+      batches: [this.arrowSchema, ...batches],
+      rowCount: totalRowCount,
+    };
   }
 }
