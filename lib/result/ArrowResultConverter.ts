@@ -30,9 +30,14 @@ export default class ArrowResultConverter implements IResultsProvider<Array<any>
 
   private readonly schema: Array<TColumnDesc>;
 
-  private reader?: IterableIterator<RecordBatch<TypeMap>>;
+  private recordBatchReader?: IterableIterator<RecordBatch<TypeMap>>;
 
-  private pendingRecordBatch?: RecordBatch<TypeMap>;
+  // This is the next (!!) record batch to be read. It is unset only in two cases:
+  // - prior to the first call to `fetchNext`
+  // - when no more data available
+  // This field is primarily used by a `hasMore`, so it can tell if next `fetchNext` will
+  // actually return a non-empty result
+  private prefetchedRecordBatch?: RecordBatch<TypeMap>;
 
   constructor(context: IClientContext, source: IResultsProvider<ArrowBatch>, { schema }: TGetResultSetMetadataResp) {
     this.context = context;
@@ -44,7 +49,7 @@ export default class ArrowResultConverter implements IResultsProvider<Array<any>
     if (this.schema.length === 0) {
       return false;
     }
-    if (this.pendingRecordBatch) {
+    if (this.prefetchedRecordBatch) {
       return true;
     }
     return this.source.hasMore();
@@ -55,47 +60,67 @@ export default class ArrowResultConverter implements IResultsProvider<Array<any>
       return [];
     }
 
-    // eslint-disable-next-line no-constant-condition
-    while (true) {
-      // It's not possible to know if iterator has more items until trying
-      // to get the next item. But we need to know if iterator is empty right
-      // after getting the next item. Therefore, after creating the iterator,
-      // we get one item more and store it in `pendingRecordBatch`. Next time,
-      // we use that stored item, and prefetch the next one. Prefetched item
-      // is therefore the next item we are going to return, so it can be used
-      // to know if we actually can return anything next time
-      const recordBatch = this.pendingRecordBatch;
-      this.pendingRecordBatch = this.prefetch();
+    // It's not possible to know if iterator has more items until trying to get the next item.
+    // So each time we read one batch ahead and store it, but process the batch prefetched on
+    // a previous `fetchNext` call. Because we actually already have the next item - it's easy
+    // to tell if the subsequent `fetchNext` will be able to read anything, and `hasMore` logic
+    // becomes trivial
 
-      if (recordBatch) {
-        const table = new Table(recordBatch);
-        return this.getRows(table.schema, table.toArray());
-      }
+    // This prefetch handles a first call to `fetchNext`, when all the internal fields are not initialized yet.
+    // On subsequent calls to `fetchNext` it will do nothing
+    await this.prefetch(options);
 
-      // eslint-disable-next-line no-await-in-loop
-      const { batches } = await this.source.fetchNext(options);
-      if (batches.length === 0) {
-        this.reader = undefined;
-        break;
-      }
+    if (this.prefetchedRecordBatch) {
+      // Here we consume a record batch fetched during previous call to `fetchNext`, and prefetch the next batch
+      const previousRecordBatch = this.prefetchedRecordBatch;
+      this.prefetchedRecordBatch = undefined;
+      await this.prefetch(options);
 
-      const reader = RecordBatchReader.from<TypeMap>(batches);
-      this.reader = reader[Symbol.iterator]();
-      this.pendingRecordBatch = this.prefetch();
+      const table = new Table(previousRecordBatch);
+      return this.getRows(table.schema, table.toArray());
     }
 
     return [];
   }
 
-  private prefetch(): RecordBatch<TypeMap> | undefined {
-    const item = this.reader?.next() ?? { done: true, value: undefined };
+  // This method tries to read one more record batch and store it in `prefetchedRecordBatch` field.
+  // If `prefetchedRecordBatch` is already non-empty - the method does nothing.
+  // This method pulls the next item from source if needed, initializes a record batch reader and
+  // gets the next item from it - until either reaches end of data or finds a non-empty record batch
+  private async prefetch(options: ResultsProviderFetchNextOptions) {
+    // This loop will be executed until a next non-empty record batch is retrieved
+    // Another implicit loop condition (end of data) is checked in the loop body
+    while (!this.prefetchedRecordBatch) {
+      // First, try to fetch next item from source and initialize record batch reader.
+      // If source has no more data - exit prematurely
+      if (!this.recordBatchReader) {
+        const sourceHasMore = await this.source.hasMore(); // eslint-disable-line no-await-in-loop
+        if (!sourceHasMore) {
+          return;
+        }
 
-    if (item.done || item.value === undefined) {
-      this.reader = undefined;
-      return undefined;
+        const arrowBatch = await this.source.fetchNext(options); // eslint-disable-line no-await-in-loop
+        if (arrowBatch.batches.length > 0 && arrowBatch.rowCount > 0) {
+          const reader = RecordBatchReader.from<TypeMap>(arrowBatch.batches);
+          this.recordBatchReader = reader[Symbol.iterator]();
+        }
+      }
+
+      // Try to get a next item from current record batch reader. The reader may be unavailable at this point -
+      // in this case we fall back to a "done" state, and the `while` loop will do one more iteration attempting
+      // to create a new reader. Eventually it will either succeed or reach end of source. This scenario also
+      // handles readers which are already empty
+      const item = this.recordBatchReader?.next() ?? { done: true, value: undefined };
+      if (item.done || item.value === undefined) {
+        this.recordBatchReader = undefined;
+      } else {
+        // Skip empty batches
+        // eslint-disable-next-line no-lonely-if
+        if (item.value.numRows > 0) {
+          this.prefetchedRecordBatch = item.value;
+        }
+      }
     }
-
-    return item.value;
   }
 
   private getRows(schema: ArrowSchema, rows: Array<StructRow | MapRow>): Array<any> {
