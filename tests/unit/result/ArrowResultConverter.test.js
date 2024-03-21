@@ -1,6 +1,7 @@
 const { expect } = require('chai');
 const fs = require('fs');
 const path = require('path');
+const Int64 = require('node-int64');
 const ArrowResultConverter = require('../../../dist/result/ArrowResultConverter').default;
 const ResultsProviderMock = require('./fixtures/ResultsProviderMock');
 
@@ -53,17 +54,30 @@ const arrowBatchAllNulls = [
   fs.readFileSync(path.join(__dirname, 'fixtures/dataAllNulls.arrow')),
 ];
 
-describe('ArrowResultHandler', () => {
+const emptyItem = {
+  batches: [],
+  rowCount: 0,
+};
+
+describe('ArrowResultConverter', () => {
   it('should convert data', async () => {
     const context = {};
-    const rowSetProvider = new ResultsProviderMock([sampleArrowBatch]);
+    const rowSetProvider = new ResultsProviderMock(
+      [
+        {
+          batches: sampleArrowBatch,
+          rowCount: 1,
+        },
+      ],
+      emptyItem,
+    );
     const result = new ArrowResultConverter(context, rowSetProvider, { schema: sampleThriftSchema });
     expect(await result.fetchNext({ limit: 10000 })).to.be.deep.eq([{ 1: 1 }]);
   });
 
   it('should return empty array if no data to process', async () => {
     const context = {};
-    const rowSetProvider = new ResultsProviderMock([], []);
+    const rowSetProvider = new ResultsProviderMock([], emptyItem);
     const result = new ArrowResultConverter(context, rowSetProvider, { schema: sampleThriftSchema });
     expect(await result.fetchNext({ limit: 10000 })).to.be.deep.eq([]);
     expect(await result.hasMore()).to.be.false;
@@ -71,7 +85,15 @@ describe('ArrowResultHandler', () => {
 
   it('should return empty array if no schema available', async () => {
     const context = {};
-    const rowSetProvider = new ResultsProviderMock([sampleArrowBatch]);
+    const rowSetProvider = new ResultsProviderMock(
+      [
+        {
+          batches: sampleArrowBatch,
+          rowCount: 1,
+        },
+      ],
+      emptyItem,
+    );
     const result = new ArrowResultConverter(context, rowSetProvider, {});
     expect(await result.hasMore()).to.be.false;
     expect(await result.fetchNext({ limit: 10000 })).to.be.deep.eq([]);
@@ -79,7 +101,15 @@ describe('ArrowResultHandler', () => {
 
   it('should detect nulls', async () => {
     const context = {};
-    const rowSetProvider = new ResultsProviderMock([arrowBatchAllNulls]);
+    const rowSetProvider = new ResultsProviderMock(
+      [
+        {
+          batches: arrowBatchAllNulls,
+          rowCount: 1,
+        },
+      ],
+      emptyItem,
+    );
     const result = new ArrowResultConverter(context, rowSetProvider, { schema: thriftSchemaAllNulls });
     expect(await result.fetchNext({ limit: 10000 })).to.be.deep.eq([
       {

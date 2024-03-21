@@ -32,47 +32,54 @@ const sampleRowSet1 = {
     {
       fileLink: 'http://example.com/result/1',
       expiryTime: new Int64(defaultLinkExpiryTime),
+      rowCount: new Int64(1),
     },
     {
       fileLink: 'http://example.com/result/2',
       expiryTime: new Int64(defaultLinkExpiryTime),
+      rowCount: new Int64(1),
     },
   ],
 };
 
 const sampleRowSet2 = {
-  startRowOffset: 0,
+  startRowOffset: new Int64(0),
   resultLinks: [
     {
       fileLink: 'http://example.com/result/3',
       expiryTime: new Int64(defaultLinkExpiryTime),
+      rowCount: new Int64(1),
     },
     {
       fileLink: 'http://example.com/result/4',
       expiryTime: new Int64(defaultLinkExpiryTime),
+      rowCount: new Int64(1),
     },
     {
       fileLink: 'http://example.com/result/5',
       expiryTime: new Int64(defaultLinkExpiryTime),
+      rowCount: new Int64(1),
     },
   ],
 };
 
 const sampleEmptyRowSet = {
-  startRowOffset: 0,
+  startRowOffset: new Int64(0),
   resultLinks: undefined,
 };
 
 const sampleExpiredRowSet = {
-  startRowOffset: 0,
+  startRowOffset: new Int64(0),
   resultLinks: [
     {
       fileLink: 'http://example.com/result/6',
       expiryTime: new Int64(defaultLinkExpiryTime),
+      rowCount: new Int64(1),
     },
     {
       fileLink: 'http://example.com/result/7',
       expiryTime: new Int64(Date.now() - 24 * 60 * 60 * 1000), // 24hr in past
+      rowCount: new Int64(1),
     },
   ],
 };
@@ -165,7 +172,7 @@ describe('CloudFetchResultHandler', () => {
     const clientConfig = context.getConfig();
 
     const rowSet = {
-      startRowOffset: 0,
+      startRowOffset: new Int64(0),
       resultLinks: [...sampleRowSet1.resultLinks, ...sampleRowSet2.resultLinks],
     };
     const expectedLinksCount = rowSet.resultLinks.length; // 5
@@ -187,8 +194,8 @@ describe('CloudFetchResultHandler', () => {
     initialFetch: {
       // `cloudFetchConcurrentDownloads` out of `expectedLinksCount` links should be scheduled immediately
       // first one should be `await`-ed and returned from `fetchNext`
-      const items = await result.fetchNext({ limit: 10000 });
-      expect(items.length).to.be.gt(0);
+      const { batches } = await result.fetchNext({ limit: 10000 });
+      expect(batches.length).to.be.gt(0);
       expect(await rowSetProvider.hasMore()).to.be.false;
 
       // it should use retry policy for all requests
@@ -200,8 +207,8 @@ describe('CloudFetchResultHandler', () => {
 
     secondFetch: {
       // It should return previously fetched batch, and schedule one more
-      const items = await result.fetchNext({ limit: 10000 });
-      expect(items.length).to.be.gt(0);
+      const { batches } = await result.fetchNext({ limit: 10000 });
+      expect(batches.length).to.be.gt(0);
       expect(await rowSetProvider.hasMore()).to.be.false;
 
       // it should use retry policy for all requests
@@ -215,8 +222,8 @@ describe('CloudFetchResultHandler', () => {
 
     thirdFetch: {
       // Now buffer should be empty, and it should fetch next batches
-      const items = await result.fetchNext({ limit: 10000 });
-      expect(items.length).to.be.gt(0);
+      const { batches } = await result.fetchNext({ limit: 10000 });
+      expect(batches.length).to.be.gt(0);
       expect(await rowSetProvider.hasMore()).to.be.false;
 
       // it should use retry policy for all requests
@@ -249,13 +256,13 @@ describe('CloudFetchResultHandler', () => {
 
     expect(await rowSetProvider.hasMore()).to.be.true;
 
-    const items = await result.fetchNext({ limit: 10000 });
+    const { batches } = await result.fetchNext({ limit: 10000 });
     expect(await rowSetProvider.hasMore()).to.be.false;
 
     // it should use retry policy for all requests
     expect(context.connectionProvider.getRetryPolicy.called).to.be.true;
     expect(context.fetchHandler.called).to.be.true;
-    expect(items).to.deep.eq([expectedBatch]);
+    expect(batches).to.deep.eq([expectedBatch]);
   });
 
   it('should handle HTTP errors', async () => {
