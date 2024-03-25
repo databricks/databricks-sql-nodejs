@@ -1,28 +1,32 @@
 const { expect } = require('chai');
 const fs = require('fs');
 const path = require('path');
-const Int64 = require('node-int64');
+const { tableFromArrays, tableToIPC, Table } = require('apache-arrow');
 const ArrowResultConverter = require('../../../dist/result/ArrowResultConverter').default;
 const ResultsProviderMock = require('./fixtures/ResultsProviderMock');
 
-const sampleThriftSchema = {
-  columns: [
-    {
-      columnName: '1',
-      typeDesc: {
-        types: [
-          {
-            primitiveEntry: {
-              type: 3,
-              typeQualifiers: null,
+function createSampleThriftSchema(columnName) {
+  return {
+    columns: [
+      {
+        columnName,
+        typeDesc: {
+          types: [
+            {
+              primitiveEntry: {
+                type: 3,
+                typeQualifiers: null,
+              },
             },
-          },
-        ],
+          ],
+        },
+        position: 1,
       },
-      position: 1,
-    },
-  ],
-};
+    ],
+  };
+}
+
+const sampleThriftSchema = createSampleThriftSchema('1');
 
 const sampleArrowSchema = Buffer.from([
   255, 255, 255, 255, 208, 0, 0, 0, 16, 0, 0, 0, 0, 0, 10, 0, 14, 0, 6, 0, 13, 0, 8, 0, 10, 0, 0, 0, 0, 0, 4, 0, 16, 0,
@@ -58,6 +62,18 @@ const emptyItem = {
   batches: [],
   rowCount: 0,
 };
+
+function createSampleRecordBatch(start, count) {
+  const table = tableFromArrays({
+    id: Float64Array.from({ length: count }, (unused, index) => index + start),
+  });
+  return table.batches[0];
+}
+
+function createSampleArrowBatch(...recordBatches) {
+  const table = new Table(recordBatches);
+  return tableToIPC(table);
+}
 
 describe('ArrowResultConverter', () => {
   it('should convert data', async () => {
@@ -139,5 +155,43 @@ describe('ArrowResultConverter', () => {
         array_field: null,
       },
     ]);
+  });
+
+  it('should respect row count in batch', async () => {
+    const context = {};
+
+    const rowSetProvider = new ResultsProviderMock(
+      [
+        // First Arrow batch: contains two record batches of 5 and 5 record,
+        // but declared count of rows is 8. It means that result should
+        // contain all 5 records from the first record batch, but only 3 records
+        // from the second record batch
+        {
+          batches: [createSampleArrowBatch(createSampleRecordBatch(10, 5), createSampleRecordBatch(20, 5))],
+          rowCount: 8,
+        },
+        // Second Arrow batch: contains one record batch of 5 records.
+        // Declared count of rows is 2, and only 2 rows from this batch
+        // should be returned in result
+        {
+          batches: [createSampleArrowBatch(createSampleRecordBatch(30, 5))],
+          rowCount: 2,
+        },
+      ],
+      emptyItem,
+    );
+    const result = new ArrowResultConverter(context, rowSetProvider, { schema: createSampleThriftSchema('id') });
+
+    const rows1 = await result.fetchNext({ limit: 10000 });
+    expect(rows1).to.deep.equal([{ id: 10 }, { id: 11 }, { id: 12 }, { id: 13 }, { id: 14 }]);
+    expect(await result.hasMore()).to.be.true;
+
+    const rows2 = await result.fetchNext({ limit: 10000 });
+    expect(rows2).to.deep.equal([{ id: 20 }, { id: 21 }, { id: 22 }]);
+    expect(await result.hasMore()).to.be.true;
+
+    const rows3 = await result.fetchNext({ limit: 10000 });
+    expect(rows3).to.deep.equal([{ id: 30 }, { id: 31 }]);
+    expect(await result.hasMore()).to.be.false;
   });
 });

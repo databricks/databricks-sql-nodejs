@@ -236,6 +236,33 @@ describe('CloudFetchResultHandler', () => {
     }
   });
 
+  it('should return a proper row count in a batch', async () => {
+    const context = new ClientContextMock();
+
+    const rowSetProvider = new ResultsProviderMock([sampleRowSet1]);
+
+    const result = new CloudFetchResultHandler(context, rowSetProvider, { lz4Compressed: false });
+
+    context.fetchHandler.returns(
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        arrayBuffer: async () => Buffer.alloc(0),
+      }),
+    );
+
+    expect(await rowSetProvider.hasMore()).to.be.true;
+
+    const { rowCount } = await result.fetchNext({ limit: 10000 });
+    expect(await rowSetProvider.hasMore()).to.be.false;
+
+    // it should use retry policy for all requests
+    expect(context.connectionProvider.getRetryPolicy.called).to.be.true;
+    expect(context.fetchHandler.called).to.be.true;
+    expect(rowCount).to.equal(1);
+  });
+
   it('should handle LZ4 compressed data', async () => {
     const context = new ClientContextMock();
 

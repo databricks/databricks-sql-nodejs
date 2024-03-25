@@ -134,6 +134,35 @@ describe('ArrowResultHandler', () => {
     }
   });
 
+  it('should return a proper row count in a batch', async () => {
+    const context = {};
+    const rowSetProvider = new ResultsProviderMock([
+      {
+        ...sampleRowSet1,
+        arrowBatches: [
+          {
+            batch: Buffer.alloc(0),
+            rowCount: new Int64(2),
+          },
+          {
+            batch: Buffer.alloc(0),
+            rowCount: new Int64(0),
+          },
+          {
+            batch: Buffer.alloc(0),
+            rowCount: new Int64(3),
+          },
+        ],
+      },
+    ]);
+    const result = new ArrowResultHandler(context, rowSetProvider, { arrowSchema: sampleArrowSchema });
+
+    const { rowCount } = await result.fetchNext({ limit: 10000 });
+    expect(await rowSetProvider.hasMore()).to.be.false;
+    expect(await result.hasMore()).to.be.false;
+    expect(rowCount).to.equal(5);
+  });
+
   it('should infer arrow schema from thrift schema', async () => {
     const context = {};
     const rowSetProvider = new ResultsProviderMock([sampleRowSet2]);
