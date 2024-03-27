@@ -1,5 +1,10 @@
 # Release History
 
+## 1.8.3
+
+- Improved retry behavior (databricks/databricks-sql-nodejs#230)
+- Fix: in some cases library returned too many results (databricks/databricks-sql-nodejs#239)
+
 ## 1.8.2
 
 Improved results handling when running queries against older DBR versions (databricks/databricks-sql-nodejs#232)
