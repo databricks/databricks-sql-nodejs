@@ -50,6 +50,17 @@ describe('Proxy', () => {
     const proxy = new HttpProxyMock(`https://${config.host}`, 9090);
     try {
       const client = new DBSQLClient();
+
+      // Our proxy mock is HTTP -> HTTPS, but DBSQLClient is hard-coded to use HTTPS.
+      // Here we override default behavior to make DBSQLClient work with HTTP proxy
+      const originalGetConnectionOptions = client.getConnectionOptions;
+      client.getConnectionOptions = (...args) => {
+        const result = originalGetConnectionOptions.apply(client, args);
+        result.https = false;
+        result.port = 80;
+        return result;
+      };
+
       const clientConfig = client.getConfig();
       sinon.stub(client, 'getConfig').returns(clientConfig);
 

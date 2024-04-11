@@ -82,14 +82,11 @@ export default class HttpConnection implements IConnectionProvider {
       : '';
     const proxyUrl = `${proxyOptions.protocol}://${proxyAuth}${proxyOptions.host}:${proxyOptions.port}`;
 
-    const proxyProtocol = `${proxyOptions.protocol}:`;
-
     return new ProxyAgent({
       ...this.getAgentDefaultOptions(),
       getProxyForUrl: () => proxyUrl,
       httpsAgent: this.createHttpsAgent(),
       httpAgent: this.createHttpAgent(),
-      protocol: proxyProtocol,
     });
   }
 
