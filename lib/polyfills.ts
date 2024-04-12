@@ -46,5 +46,8 @@ const ArrayConstructors = [
 ];
 
 ArrayConstructors.forEach((ArrayConstructor) => {
-  ArrayConstructor.prototype.at = ArrayConstructor.prototype.at ?? at;
+  if (!Object.prototype.hasOwnProperty.call(ArrayConstructor, "at")) {
+    ArrayConstructor.prototype.at = at;
+  }
 });
+
