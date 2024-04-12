@@ -46,5 +46,8 @@ const ArrayConstructors = [
 ];
 
 ArrayConstructors.forEach((ArrayConstructor) => {
-  ArrayConstructor.prototype.at = ArrayConstructor.prototype.at ?? at;
+    if (!ArrayConstructor.prototype.at) {
+        var _a;
+        ArrayConstructor.prototype.at = (_a = ArrayConstructor.prototype.at) !== null && _a !== void 0 ? _a : at;
+    }
 });
