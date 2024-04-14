@@ -74,7 +74,6 @@
   "dependencies": {
     "apache-arrow": "^13.0.0",
     "commander": "^9.3.0",
-    "lz4": "^0.6.5",
     "node-fetch": "^2.6.12",
     "node-int64": "^0.4.0",
     "open": "^8.4.2",
@@ -83,5 +82,8 @@
     "thrift": "^0.16.0",
     "uuid": "^9.0.0",
     "winston": "^3.8.2"
+  },
+  "optionalDependencies": {
+    "lz4": "^0.6.5"
   }
 }

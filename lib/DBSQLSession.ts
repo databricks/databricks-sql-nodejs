@@ -27,7 +27,7 @@ import IOperation from './contracts/IOperation';
 import DBSQLOperation from './DBSQLOperation';
 import Status from './dto/Status';
 import InfoValue from './dto/InfoValue';
-import { definedOrError } from './utils';
+import { definedOrError, LZ4 } from './utils';
 import CloseableCollection from './utils/CloseableCollection';
 import { LogLevel } from './contracts/IDBSQLLogger';
 import HiveDriverError from './errors/HiveDriverError';
@@ -184,7 +184,7 @@ export default class DBSQLSession implements IDBSQLSession {
       ...getArrowOptions(clientConfig),
       canDownloadResult: options.useCloudFetch ?? clientConfig.useCloudFetch,
       parameters: getQueryParameters(this.sessionHandle, options.namedParameters, options.ordinalParameters),
-      canDecompressLZ4Result: clientConfig.useLZ4Compression,
+      canDecompressLZ4Result: clientConfig.useLZ4Compression && Boolean(LZ4),
     });
     const response = await this.handleResponse(operationPromise);
     const operation = this.createOperation(response);

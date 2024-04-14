@@ -1,9 +1,10 @@
-import LZ4 from 'lz4';
 import fetch, { RequestInfo, RequestInit, Request } from 'node-fetch';
 import { TGetResultSetMetadataResp, TRowSet, TSparkArrowResultLink } from '../../thrift/TCLIService_types';
+import HiveDriverError from '../errors/HiveDriverError';
 import IClientContext from '../contracts/IClientContext';
 import IResultsProvider, { ResultsProviderFetchNextOptions } from './IResultsProvider';
 import { ArrowBatch } from './utils';
+import { LZ4 } from '../utils';
 
 export default class CloudFetchResultHandler implements IResultsProvider<ArrowBatch> {
   protected readonly context: IClientContext;
@@ -24,6 +25,10 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
     this.context = context;
     this.source = source;
     this.isLZ4Compressed = lz4Compressed ?? false;
+
+    if (this.isLZ4Compressed && !LZ4) {
+      throw new HiveDriverError('Cannot handle LZ4 compressed result: module `lz4` not installed');
+    }
   }
 
   public async hasMore() {
@@ -58,7 +63,7 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
     }
 
     if (this.isLZ4Compressed) {
-      batch.batches = batch.batches.map((buffer) => LZ4.decode(buffer));
+      batch.batches = batch.batches.map((buffer) => LZ4!.decode(buffer));
     }
     return batch;
   }
