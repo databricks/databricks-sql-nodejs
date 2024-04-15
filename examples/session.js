@@ -2,8 +2,6 @@ const { DBSQLClient } = require('../');
 
 const client = new DBSQLClient();
 
-const utils = DBSQLClient.utils;
-
 const host = '****.databricks.com';
 const path = '/sql/2.0/warehouses/****';
 const token = 'dapi********************************';
