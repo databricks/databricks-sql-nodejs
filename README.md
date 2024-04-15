@@ -1,4 +1,4 @@
-# Databricks SQL Driver for NodeJS
+# Databricks SQL Driver for Node.js
 
 ![http://www.apache.org/licenses/LICENSE-2.0.txt](http://img.shields.io/:license-Apache%202-brightgreen.svg)
 [![npm](https://img.shields.io/npm/v/@databricks/sql?color=blue&style=flat)](https://www.npmjs.com/package/@databricks/sql)
@@ -7,11 +7,7 @@
 
 ## Description
 
-The Databricks SQL Driver for NodeJS is a Javascript driver for applications that connect to Databricks clusters and SQL warehouses. This project is a fork of [Hive Driver](https://github.com/lenchv/hive-driver) which connects via Thrift API.
-
-## Documentation
-
-For detailed documentation and usage examples, read the [Getting Started](docs/readme.md) guide.
+The Databricks SQL Driver for Node.js is a Javascript driver for applications that connect to Databricks clusters and SQL warehouses. This project is a fork of [Hive Driver](https://github.com/lenchv/hive-driver) which connects via Thrift API.
 
 ## Requirements
 
@@ -63,7 +59,7 @@ You can run all unit tests, or specify a specific test to run:
 
 ```bash
 npm test
-npm test <path/to/file.test.js>
+npm test -- <path/to/file.test.js>
 ```
 
 ### e2e tests
@@ -83,7 +79,7 @@ Then run
 
 ```bash
 npm run e2e
-npm run e2e <path/to/file.test.js>
+npm run e2e -- <path/to/file.test.js>
 ```
 
 ## Contributing
