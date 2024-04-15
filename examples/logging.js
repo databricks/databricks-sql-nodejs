@@ -1,4 +1,3 @@
-const { LOADIPHLPAPI } = require('dns');
 const { DBSQLClient, DBSQLLogger, LogLevel } = require('../');
 
 // This logger will emit logs to console and log.txt
