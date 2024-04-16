@@ -114,17 +114,25 @@ describe('Staging Test', () => {
     });
 
     const stagingFileName = `/Volumes/${catalog}/${schema}/${volume}/${uuid.v4()}.csv`;
+    const localFile = path.join(localPath, `${uuid.v4()}.csv`);
 
+    // File should not exist before removing
     try {
-      await session.executeStatement(`REMOVE '${stagingFileName}'`, { stagingAllowedLocalPath: [localPath] });
-      // In some cases, `REMOVE` may silently succeed for non-existing files (see comment in relevant
-      // part of `DBSQLSession` code). But if it fails - it has to be an HTTP 404 error
+      await session.executeStatement(`GET '${stagingFileName}' TO '${localFile}'`, {
+        stagingAllowedLocalPath: [localPath],
+      });
+      expect.fail('It should throw HTTP 404 error');
     } catch (error) {
       if (error instanceof StagingError) {
         expect(error.message).to.contain('404');
       } else {
         throw error;
       }
+    } finally {
+      fs.rmSync(localFile, { force: true });
     }
+
+    // Try to remove the file - it should succeed and not throw any errors
+    await session.executeStatement(`REMOVE '${stagingFileName}'`, { stagingAllowedLocalPath: [localPath] });
   });
 });
