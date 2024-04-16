@@ -1,6 +1,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { pipeline } from 'stream';
+import stream from 'node:stream';
+import util from 'node:util';
 import { stringify, NIL, parse } from 'uuid';
 import fetch, { HeadersInit } from 'node-fetch';
 import {
@@ -36,6 +37,9 @@ import StagingError from './errors/StagingError';
 import { DBSQLParameter, DBSQLParameterValue } from './DBSQLParameter';
 import ParameterError from './errors/ParameterError';
 import IClientContext, { ClientConfig } from './contracts/IClientContext';
+
+// Explicitly promisify a callback-style `pipeline` because `node:stream/promises` is not available in Node 14
+const pipeline = util.promisify(stream.pipeline);
 
 const defaultMaxRows = 100000;
 
@@ -273,22 +277,9 @@ export default class DBSQLSession implements IDBSQLSession {
       throw new StagingError(`HTTP error ${response.status} ${response.statusText}`);
     }
 
-    return new Promise((resolve, reject) => {
-      try {
-        const fileStream = fs.createWriteStream(localFile);
-        // `pipeline` will do all the dirty job for us, including error handling and closing all the streams properly
-        // Also, we use callback-style `pipeline` because Promise-style one is not available in Node 14
-        pipeline(response.body, fileStream, (error) => {
-          if (error) {
-            reject(error);
-          } else {
-            resolve();
-          }
-        });
-      } catch (error) {
-        reject(error);
-      }
-    });
+    const fileStream = fs.createWriteStream(localFile);
+    // `pipeline` will do all the dirty job for us, including error handling and closing all the streams properly
+    return pipeline(response.body, fileStream);
   }
 
   private async handleStagingRemove(presignedUrl: string, headers: HeadersInit): Promise<void> {
