@@ -113,6 +113,11 @@ export type CrossReferenceRequest = {
 
 export default interface IDBSQLSession {
   /**
+   * Session identifier
+   */
+  readonly id: string;
+
+  /**
    * Returns general information about the data source
    *
    * @param infoType one of the values TCLIService_types.TGetInfoType
