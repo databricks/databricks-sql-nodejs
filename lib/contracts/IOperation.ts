@@ -37,6 +37,11 @@ export interface IOperationRowsIterator extends AsyncIterableIterator<object> {
 
 export default interface IOperation {
   /**
+   * Operation identifier
+   */
+  readonly id: string;
+
+  /**
    * Fetch a portion of data
    */
   fetchChunk(options?: FetchOptions): Promise<Array<object>>;
