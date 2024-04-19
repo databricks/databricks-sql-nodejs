@@ -4,6 +4,9 @@ import IOperation, {
   FinishedOptions,
   GetSchemaOptions,
   WaitUntilReadyOptions,
+  IteratorOptions,
+  IOperationChunksIterator,
+  IOperationRowsIterator,
 } from './contracts/IOperation';
 import {
   TGetOperationStatusResp,
@@ -26,6 +29,7 @@ import CloudFetchResultHandler from './result/CloudFetchResultHandler';
 import ArrowResultConverter from './result/ArrowResultConverter';
 import ResultSlicer from './result/ResultSlicer';
 import { definedOrError } from './utils';
+import { OperationChunksIterator, OperationRowsIterator } from './utils/OperationIterator';
 import HiveDriverError from './errors/HiveDriverError';
 import IClientContext from './contracts/IClientContext';
 
@@ -89,6 +93,14 @@ export default class DBSQLOperation implements IOperation {
     );
     this.closeOperation = directResults?.closeOperation;
     this.context.getLogger().log(LogLevel.debug, `Operation created with id: ${this.getId()}`);
+  }
+
+  iterateChunks(options?: IteratorOptions): IOperationChunksIterator {
+    return new OperationChunksIterator(this, options);
+  }
+
+  iterateRows(options?: IteratorOptions): IOperationRowsIterator {
+    return new OperationRowsIterator(this, options);
   }
 
   public getId() {
