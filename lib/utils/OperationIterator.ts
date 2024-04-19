@@ -54,6 +54,15 @@ export class OperationRowsIterator extends OperationIterator<object> implements 
 
   private index: number = 0;
 
+  constructor(operation: IOperation, options?: IteratorOptions) {
+    super(operation, {
+      ...options,
+      // Tell slicer to return raw chunks. We're going to process rows one by one anyway,
+      // so no need to additionally buffer and slice chunks returned by server
+      disableBuffering: true,
+    });
+  }
+
   protected async getNext(): Promise<IteratorResult<object>> {
     if (this.index < this.chunk.length) {
       const value = this.chunk[this.index];
