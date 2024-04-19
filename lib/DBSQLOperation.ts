@@ -1,4 +1,4 @@
-import { stringify, NIL, parse } from 'uuid';
+import { stringify, NIL } from 'uuid';
 import IOperation, {
   FetchOptions,
   FinishedOptions,
@@ -88,11 +88,12 @@ export default class DBSQLOperation implements IOperation {
       useOnlyPrefetchedResults,
     );
     this.closeOperation = directResults?.closeOperation;
-    this.context.getLogger().log(LogLevel.debug, `Operation created with id: ${this.getId()}`);
+    this.context.getLogger().log(LogLevel.debug, `Operation created with id: ${this.id}`);
   }
 
-  public getId() {
-    return stringify(this.operationHandle?.operationId?.guid || parse(NIL));
+  public get id() {
+    const operationId = this.operationHandle?.operationId?.guid;
+    return operationId ? stringify(operationId) : NIL;
   }
 
   /**
@@ -119,7 +120,7 @@ export default class DBSQLOperation implements IOperation {
       const chunk = await this.fetchChunk(fetchChunkOptions);
       data.push(chunk);
     } while (await this.hasMoreRows()); // eslint-disable-line no-await-in-loop
-    this.context.getLogger().log(LogLevel.debug, `Fetched all data from operation with id: ${this.getId()}`);
+    this.context.getLogger().log(LogLevel.debug, `Fetched all data from operation with id: ${this.id}`);
 
     return data.flat();
   }
@@ -173,7 +174,7 @@ export default class DBSQLOperation implements IOperation {
       .getLogger()
       .log(
         LogLevel.debug,
-        `Fetched chunk of size: ${options?.maxRows || defaultMaxRows} from operation with id: ${this.getId()}`,
+        `Fetched chunk of size: ${options?.maxRows || defaultMaxRows} from operation with id: ${this.id}`,
       );
     return result;
   }
@@ -185,7 +186,7 @@ export default class DBSQLOperation implements IOperation {
    */
   public async status(progress: boolean = false): Promise<TGetOperationStatusResp> {
     await this.failIfClosed();
-    this.context.getLogger().log(LogLevel.debug, `Fetching status for operation with id: ${this.getId()}`);
+    this.context.getLogger().log(LogLevel.debug, `Fetching status for operation with id: ${this.id}`);
 
     if (this.operationStatus) {
       return this.operationStatus;
@@ -209,7 +210,7 @@ export default class DBSQLOperation implements IOperation {
       return Status.success();
     }
 
-    this.context.getLogger().log(LogLevel.debug, `Cancelling operation with id: ${this.getId()}`);
+    this.context.getLogger().log(LogLevel.debug, `Cancelling operation with id: ${this.id}`);
 
     const driver = await this.context.getDriver();
     const response = await driver.cancelOperation({
@@ -233,7 +234,7 @@ export default class DBSQLOperation implements IOperation {
       return Status.success();
     }
 
-    this.context.getLogger().log(LogLevel.debug, `Closing operation with id: ${this.getId()}`);
+    this.context.getLogger().log(LogLevel.debug, `Closing operation with id: ${this.id}`);
 
     const driver = await this.context.getDriver();
     const response =
@@ -274,7 +275,7 @@ export default class DBSQLOperation implements IOperation {
 
     await this.waitUntilReady(options);
 
-    this.context.getLogger().log(LogLevel.debug, `Fetching schema for operation with id: ${this.getId()}`);
+    this.context.getLogger().log(LogLevel.debug, `Fetching schema for operation with id: ${this.id}`);
     const metadata = await this.fetchMetadata();
     return metadata.schema ?? null;
   }

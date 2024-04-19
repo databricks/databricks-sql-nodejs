@@ -1,6 +1,8 @@
 import * as fs from 'fs';
 import * as path from 'path';
-import { stringify, NIL, parse } from 'uuid';
+import stream from 'node:stream';
+import util from 'node:util';
+import { stringify, NIL } from 'uuid';
 import fetch, { HeadersInit } from 'node-fetch';
 import {
   TSessionHandle,
@@ -35,6 +37,9 @@ import StagingError from './errors/StagingError';
 import { DBSQLParameter, DBSQLParameterValue } from './DBSQLParameter';
 import ParameterError from './errors/ParameterError';
 import IClientContext, { ClientConfig } from './contracts/IClientContext';
+
+// Explicitly promisify a callback-style `pipeline` because `node:stream/promises` is not available in Node 14
+const pipeline = util.promisify(stream.pipeline);
 
 const defaultMaxRows = 100000;
 
@@ -135,11 +140,12 @@ export default class DBSQLSession implements IDBSQLSession {
   constructor({ handle, context }: DBSQLSessionConstructorOptions) {
     this.sessionHandle = handle;
     this.context = context;
-    this.context.getLogger().log(LogLevel.debug, `Session created with id: ${this.getId()}`);
+    this.context.getLogger().log(LogLevel.debug, `Session created with id: ${this.id}`);
   }
 
-  public getId() {
-    return stringify(this.sessionHandle?.sessionId?.guid || parse(NIL));
+  public get id() {
+    const sessionId = this.sessionHandle?.sessionId?.guid;
+    return sessionId ? stringify(sessionId) : NIL;
   }
 
   /**
@@ -271,8 +277,10 @@ export default class DBSQLSession implements IDBSQLSession {
     if (!response.ok) {
       throw new StagingError(`HTTP error ${response.status} ${response.statusText}`);
     }
-    const buffer = await response.arrayBuffer();
-    fs.writeFileSync(localFile, Buffer.from(buffer));
+
+    const fileStream = fs.createWriteStream(localFile);
+    // `pipeline` will do all the dirty job for us, including error handling and closing all the streams properly
+    return pipeline(response.body, fileStream);
   }
 
   private async handleStagingRemove(presignedUrl: string, headers: HeadersInit): Promise<void> {
@@ -280,11 +288,14 @@ export default class DBSQLSession implements IDBSQLSession {
     const agent = await connectionProvider.getAgent();
 
     const response = await fetch(presignedUrl, { method: 'DELETE', headers, agent });
-    // Looks that AWS and Azure have a different behavior of HTTP `DELETE` for non-existing files
-    // AWS assumes that - since file already doesn't exist - the goal is achieved, and returns HTTP 200
+    // Looks that AWS and Azure have a different behavior of HTTP `DELETE` for non-existing files.
+    // AWS assumes that - since file already doesn't exist - the goal is achieved, and returns HTTP 200.
     // Azure, on the other hand, is somewhat stricter and check if file exists before deleting it. And if
-    // file doesn't exist - Azure returns HTTP 404
-    if (!response.ok) {
+    // file doesn't exist - Azure returns HTTP 404.
+    //
+    // For us, it's totally okay if file didn't exist before removing. So when we get an HTTP 404 -
+    // just ignore it and report success. This way we can have a uniform library behavior for all clouds
+    if (!response.ok && response.status !== 404) {
       throw new StagingError(`HTTP error ${response.status} ${response.statusText}`);
     }
   }
@@ -301,8 +312,19 @@ export default class DBSQLSession implements IDBSQLSession {
     const connectionProvider = await this.context.getConnectionProvider();
     const agent = await connectionProvider.getAgent();
 
-    const data = fs.readFileSync(localFile);
-    const response = await fetch(presignedUrl, { method: 'PUT', headers, agent, body: data });
+    const fileStream = fs.createReadStream(localFile);
+    const fileInfo = fs.statSync(localFile, { bigint: true });
+
+    const response = await fetch(presignedUrl, {
+      method: 'PUT',
+      headers: {
+        ...headers,
+        // This header is required by server
+        'Content-Length': fileInfo.size.toString(),
+      },
+      agent,
+      body: fileStream,
+    });
     if (!response.ok) {
       throw new StagingError(`HTTP error ${response.status} ${response.statusText}`);
     }
@@ -510,7 +532,7 @@ export default class DBSQLSession implements IDBSQLSession {
     this.onClose?.();
     this.isOpen = false;
 
-    this.context.getLogger().log(LogLevel.debug, `Session closed with id: ${this.getId()}`);
+    this.context.getLogger().log(LogLevel.debug, `Session closed with id: ${this.id}`);
     return new Status(response.status);
   }
 
