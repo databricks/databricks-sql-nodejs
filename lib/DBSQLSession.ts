@@ -2,7 +2,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import stream from 'node:stream';
 import util from 'node:util';
-import { stringify, NIL, parse } from 'uuid';
+import { stringify, NIL } from 'uuid';
 import fetch, { HeadersInit } from 'node-fetch';
 import {
   TSessionHandle,
@@ -140,11 +140,12 @@ export default class DBSQLSession implements IDBSQLSession {
   constructor({ handle, context }: DBSQLSessionConstructorOptions) {
     this.sessionHandle = handle;
     this.context = context;
-    this.context.getLogger().log(LogLevel.debug, `Session created with id: ${this.getId()}`);
+    this.context.getLogger().log(LogLevel.debug, `Session created with id: ${this.id}`);
   }
 
-  public getId() {
-    return stringify(this.sessionHandle?.sessionId?.guid || parse(NIL));
+  public get id() {
+    const sessionId = this.sessionHandle?.sessionId?.guid;
+    return sessionId ? stringify(sessionId) : NIL;
   }
 
   /**
@@ -531,7 +532,7 @@ export default class DBSQLSession implements IDBSQLSession {
     this.onClose?.();
     this.isOpen = false;
 
-    this.context.getLogger().log(LogLevel.debug, `Session closed with id: ${this.getId()}`);
+    this.context.getLogger().log(LogLevel.debug, `Session closed with id: ${this.id}`);
     return new Status(response.status);
   }
 
