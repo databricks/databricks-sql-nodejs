@@ -15,7 +15,14 @@
         "@typescript-eslint/no-throw-literal": "off",
         "no-restricted-syntax": "off",
         "no-case-declarations": "off",
-        "max-classes-per-file": "off"
+        "max-classes-per-file": "off",
+        "import/no-extraneous-dependencies": [
+          "error",
+          {
+            "devDependencies": true,
+            "optionalDependencies": true
+          }
+        ]
       }
     }
   ]
