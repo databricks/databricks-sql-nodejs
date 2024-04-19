@@ -1,5 +1,14 @@
 # Release History
 
+## 1.8.4
+
+- Fix: proxy agent unintentionally overwrites protocol in URL (databricks/databricks-sql-nodejs#241)
+- Improve `Array.at`/`TypedArray.at` polyfill (databricks/databricks-sql-nodejs#242 by @barelyhuman)
+- UC Volume ingestion: stream files instead of loading them into memory (databricks/databricks-sql-nodejs#247)
+- UC Volume ingestion: improve behavior on SQL `REMOVE` (databricks/databricks-sql-nodejs#249)
+- Expose session and query ID (databricks/databricks-sql-nodejs#250)
+- Make `lz4` module optional so package manager can skip it when cannot install (databricks/databricks-sql-nodejs#246)
+
 ## 1.8.3
 
 - Improved retry behavior (databricks/databricks-sql-nodejs#230)
