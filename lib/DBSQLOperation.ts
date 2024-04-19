@@ -95,11 +95,11 @@ export default class DBSQLOperation implements IOperation {
     this.context.getLogger().log(LogLevel.debug, `Operation created with id: ${this.getId()}`);
   }
 
-  iterateChunks(options?: IteratorOptions): IOperationChunksIterator {
+  public iterateChunks(options?: IteratorOptions): IOperationChunksIterator {
     return new OperationChunksIterator(this, options);
   }
 
-  iterateRows(options?: IteratorOptions): IOperationRowsIterator {
+  public iterateRows(options?: IteratorOptions): IOperationRowsIterator {
     return new OperationRowsIterator(this, options);
   }
 
