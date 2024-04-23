@@ -1,4 +1,5 @@
 import thrift from 'thrift';
+import Int64 from 'node-int64';
 
 import { EventEmitter } from 'events';
 import TCLIService from '../thrift/TCLIService';
@@ -7,7 +8,6 @@ import IDBSQLClient, { ClientOptions, ConnectionOptions, OpenSessionRequest } fr
 import IDriver from './contracts/IDriver';
 import IClientContext, { ClientConfig } from './contracts/IClientContext';
 import HiveDriver from './hive/HiveDriver';
-import { Int64 } from './hive/Types';
 import DBSQLSession from './DBSQLSession';
 import IDBSQLSession from './contracts/IDBSQLSession';
 import IAuthentication from './connection/contracts/IAuthentication';

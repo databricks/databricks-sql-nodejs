@@ -3,6 +3,7 @@ import * as path from 'path';
 import stream from 'node:stream';
 import util from 'node:util';
 import { stringify, NIL } from 'uuid';
+import Int64 from 'node-int64';
 import fetch, { HeadersInit } from 'node-fetch';
 import {
   TSessionHandle,
@@ -12,7 +13,6 @@ import {
   TSparkArrowTypes,
   TSparkParameter,
 } from '../thrift/TCLIService_types';
-import { Int64 } from './hive/Types';
 import IDBSQLSession, {
   ExecuteStatementOptions,
   TypeInfoRequest,
