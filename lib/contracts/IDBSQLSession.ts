@@ -5,6 +5,11 @@ import InfoValue from '../dto/InfoValue';
 import { DBSQLParameter, DBSQLParameterValue } from '../DBSQLParameter';
 
 export type ExecuteStatementOptions = {
+  /**
+   * The number of seconds after which the query will time out on the server.
+   * Effective only with Compute clusters. For SQL Warehouses, `STATEMENT_TIMEOUT`
+   * configuration should be used
+   */
   queryTimeout?: number | bigint | Int64;
   /**
    * @deprecated This option is no longer supported and will be removed in future releases
