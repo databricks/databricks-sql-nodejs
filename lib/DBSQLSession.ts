@@ -49,14 +49,29 @@ interface OperationResponseShape {
   directResults?: TSparkDirectResults;
 }
 
-function getDirectResultsOptions(maxRows: number | null = defaultMaxRows) {
+export function numberToInt64(value: number | bigint | Int64): Int64 {
+  if (value instanceof Int64) {
+    return value;
+  }
+
+  if (typeof value === 'bigint') {
+    const buffer = new ArrayBuffer(BigInt64Array.BYTES_PER_ELEMENT);
+    const view = new DataView(buffer);
+    view.setBigInt64(0, value, false); // `false` to use big-endian order
+    return new Int64(Buffer.from(buffer));
+  }
+
+  return new Int64(value);
+}
+
+function getDirectResultsOptions(maxRows: number | bigint | Int64 | null = defaultMaxRows) {
   if (maxRows === null) {
     return {};
   }
 
   return {
     getDirectResults: {
-      maxRows: new Int64(maxRows),
+      maxRows: numberToInt64(maxRows),
     },
   };
 }
@@ -184,7 +199,7 @@ export default class DBSQLSession implements IDBSQLSession {
     const operationPromise = driver.executeStatement({
       sessionHandle: this.sessionHandle,
       statement,
-      queryTimeout: options.queryTimeout,
+      queryTimeout: options.queryTimeout ? numberToInt64(options.queryTimeout) : undefined,
       runAsync: true,
       ...getDirectResultsOptions(options.maxRows),
       ...getArrowOptions(clientConfig),
