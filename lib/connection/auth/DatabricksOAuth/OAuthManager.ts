@@ -1,6 +1,6 @@
 import http from 'http';
 import { Issuer, BaseClient, custom } from 'openid-client';
-import HiveDriverError from '../../../errors/HiveDriverError';
+import AuthenticationError from '../../../errors/AuthenticationError';
 import { LogLevel } from '../../../contracts/IDBSQLLogger';
 import OAuthToken from './OAuthToken';
 import AuthorizationCode from './AuthorizationCode';
@@ -104,7 +104,7 @@ export default abstract class OAuthManager {
     if (!token.refreshToken) {
       const message = `OAuth access token expired on ${token.expirationTime}.`;
       this.context.getLogger().log(LogLevel.error, message);
-      throw new HiveDriverError(message);
+      throw new AuthenticationError(message);
     }
 
     // Try to refresh using the refresh token
@@ -115,7 +115,7 @@ export default abstract class OAuthManager {
     const client = await this.getClient();
     const { access_token: accessToken, refresh_token: refreshToken } = await client.refresh(token.refreshToken);
     if (!accessToken || !refreshToken) {
-      throw new Error('Failed to refresh token: invalid response');
+      throw new AuthenticationError('Failed to refresh token: invalid response');
     }
     return new OAuthToken(accessToken, refreshToken, token.scopes);
   }
@@ -165,7 +165,7 @@ export default abstract class OAuthManager {
     });
 
     if (!accessToken) {
-      throw new Error('Failed to fetch access token');
+      throw new AuthenticationError('Failed to fetch access token');
     }
     return new OAuthToken(accessToken, refreshToken, mappedScopes);
   }
@@ -185,7 +185,7 @@ export default abstract class OAuthManager {
     });
 
     if (!accessToken) {
-      throw new Error('Failed to fetch access token');
+      throw new AuthenticationError('Failed to fetch access token');
     }
     return new OAuthToken(accessToken, undefined, mappedScopes);
   }
@@ -234,7 +234,7 @@ export default abstract class OAuthManager {
       }
     }
 
-    throw new Error(`OAuth is not supported for ${options.host}`);
+    throw new AuthenticationError(`OAuth is not supported for ${options.host}`);
   }
 }
 
