@@ -73,6 +73,9 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
 
   private static getDefaultConfig(): ClientConfig {
     return {
+      directResultsDefaultMaxRows: 100000,
+      fetchChunkDefaultMaxRows: 100000,
+
       arrowEnabled: true,
       useArrowNativeTypes: true,
       socketTimeout: 15 * 60 * 1000, // 15 minutes

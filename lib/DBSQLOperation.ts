@@ -29,8 +29,6 @@ import { definedOrError } from './utils';
 import HiveDriverError from './errors/HiveDriverError';
 import IClientContext from './contracts/IClientContext';
 
-const defaultMaxRows = 100000;
-
 interface DBSQLOperationConstructorOptions {
   handle: TOperationHandle;
   directResults?: TSparkDirectResults;
@@ -164,8 +162,10 @@ export default class DBSQLOperation implements IOperation {
       setTimeout(resolve, 0);
     });
 
+    const defaultMaxRows = this.context.getConfig().fetchChunkDefaultMaxRows;
+
     const result = resultHandler.fetchNext({
-      limit: options?.maxRows || defaultMaxRows,
+      limit: options?.maxRows ?? defaultMaxRows,
       disableBuffering: options?.disableBuffering,
     });
     await this.failIfClosed();
@@ -174,7 +174,7 @@ export default class DBSQLOperation implements IOperation {
       .getLogger()
       .log(
         LogLevel.debug,
-        `Fetched chunk of size: ${options?.maxRows || defaultMaxRows} from operation with id: ${this.id}`,
+        `Fetched chunk of size: ${options?.maxRows ?? defaultMaxRows} from operation with id: ${this.id}`,
       );
     return result;
   }

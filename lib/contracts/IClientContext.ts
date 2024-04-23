@@ -4,6 +4,9 @@ import IConnectionProvider from '../connection/contracts/IConnectionProvider';
 import TCLIService from '../../thrift/TCLIService';
 
 export interface ClientConfig {
+  directResultsDefaultMaxRows: number;
+  fetchChunkDefaultMaxRows: number;
+
   arrowEnabled?: boolean;
   useArrowNativeTypes?: boolean;
   socketTimeout: number;
