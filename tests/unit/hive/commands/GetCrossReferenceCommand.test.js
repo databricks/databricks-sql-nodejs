@@ -1,7 +1,7 @@
 const { expect } = require('chai');
 const sinon = require('sinon');
 const TCLIService_types = require('../../../../thrift/TCLIService_types');
-const GetCrossReferenceCommand = require('../../../../dist/hive/Commands/GetCrossReferenceCommand').default;
+const GetCrossReferenceCommand = require('../../../../lib/hive/Commands/GetCrossReferenceCommand').default;
 
 const requestMock = {
   sessionHandle: {

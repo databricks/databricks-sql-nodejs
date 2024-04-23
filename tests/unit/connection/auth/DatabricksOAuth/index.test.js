@@ -1,8 +1,8 @@
 const { expect, AssertionError } = require('chai');
 const sinon = require('sinon');
-const DatabricksOAuth = require('../../../../../dist/connection/auth/DatabricksOAuth/index').default;
-const OAuthToken = require('../../../../../dist/connection/auth/DatabricksOAuth/OAuthToken').default;
-const OAuthManager = require('../../../../../dist/connection/auth/DatabricksOAuth/OAuthManager').default;
+const DatabricksOAuth = require('../../../../../lib/connection/auth/DatabricksOAuth/index').default;
+const OAuthToken = require('../../../../../lib/connection/auth/DatabricksOAuth/OAuthToken').default;
+const OAuthManager = require('../../../../../lib/connection/auth/DatabricksOAuth/OAuthManager').default;
 
 const { createValidAccessToken, createExpiredAccessToken } = require('./utils');
 

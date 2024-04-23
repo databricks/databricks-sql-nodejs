@@ -1,7 +1,7 @@
 const { expect } = require('chai');
 const sinon = require('sinon');
 const TCLIService_types = require('../../../../thrift/TCLIService_types');
-const GetOperationStatusCommand = require('../../../../dist/hive/Commands/GetOperationStatusCommand').default;
+const GetOperationStatusCommand = require('../../../../lib/hive/Commands/GetOperationStatusCommand').default;
 
 const requestMock = {
   operationHandle: {

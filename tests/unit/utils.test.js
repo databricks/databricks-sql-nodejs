@@ -1,7 +1,7 @@
 const { expect, AssertionError } = require('chai');
 
-const { buildUserAgentString, definedOrError, formatProgress, ProgressUpdateTransformer } = require('../../dist/utils');
-const CloseableCollection = require('../../dist/utils/CloseableCollection').default;
+const { buildUserAgentString, definedOrError, formatProgress, ProgressUpdateTransformer } = require('../../lib/utils');
+const CloseableCollection = require('../../lib/utils/CloseableCollection').default;
 
 describe('buildUserAgentString', () => {
   // It should follow https://www.rfc-editor.org/rfc/rfc7231#section-5.5.3 and

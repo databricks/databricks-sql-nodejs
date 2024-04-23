@@ -1,7 +1,7 @@
 const { expect } = require('chai');
 const sinon = require('sinon');
 const TCLIService_types = require('../../../../thrift/TCLIService_types');
-const OpenSessionCommand = require('../../../../dist/hive/Commands/OpenSessionCommand').default;
+const OpenSessionCommand = require('../../../../lib/hive/Commands/OpenSessionCommand').default;
 
 const CLIENT_PROTOCOL = 8;
 

@@ -1,7 +1,7 @@
 const { expect } = require('chai');
 const sinon = require('sinon');
 const TCLIService_types = require('../../../../thrift/TCLIService_types');
-const GetTypeInfoCommand = require('../../../../dist/hive/Commands/GetTypeInfoCommand').default;
+const GetTypeInfoCommand = require('../../../../lib/hive/Commands/GetTypeInfoCommand').default;
 
 const requestMock = {
   sessionHandle: {

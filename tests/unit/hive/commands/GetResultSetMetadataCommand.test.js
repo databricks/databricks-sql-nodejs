@@ -1,7 +1,7 @@
 const { expect } = require('chai');
 const sinon = require('sinon');
 const TCLIService_types = require('../../../../thrift/TCLIService_types');
-const GetResultSetMetadataCommand = require('../../../../dist/hive/Commands/GetResultSetMetadataCommand').default;
+const GetResultSetMetadataCommand = require('../../../../lib/hive/Commands/GetResultSetMetadataCommand').default;
 
 const requestMock = {
   operationHandle: {

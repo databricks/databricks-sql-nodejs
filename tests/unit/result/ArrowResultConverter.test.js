@@ -2,7 +2,7 @@ const { expect } = require('chai');
 const fs = require('fs');
 const path = require('path');
 const { tableFromArrays, tableToIPC, Table } = require('apache-arrow');
-const ArrowResultConverter = require('../../../dist/result/ArrowResultConverter').default;
+const ArrowResultConverter = require('../../../lib/result/ArrowResultConverter').default;
 const ResultsProviderMock = require('./fixtures/ResultsProviderMock');
 
 function createSampleThriftSchema(columnName) {

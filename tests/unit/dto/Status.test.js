@@ -1,6 +1,6 @@
 const { expect } = require('chai');
-const { TCLIService_types } = require('../../../').thrift;
-const Status = require('../../../dist/dto/Status').default;
+const { TCLIService_types } = require('../../../lib').thrift;
+const Status = require('../../../lib/dto/Status').default;
 
 describe('StatusFactory', () => {
   it('should be success', () => {
