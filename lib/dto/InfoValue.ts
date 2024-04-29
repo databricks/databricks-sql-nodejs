@@ -1,5 +1,5 @@
+import Int64 from 'node-int64';
 import { TGetInfoValue } from '../../thrift/TCLIService_types';
-import { Int64 } from '../hive/Types';
 
 type InfoResultType = string | number | Buffer | Int64 | null;
 

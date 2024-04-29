@@ -1,8 +1,7 @@
-import { ColumnCode } from '../hive/Types';
 import { TGetResultSetMetadataResp, TRowSet, TColumn, TColumnDesc } from '../../thrift/TCLIService_types';
 import IClientContext from '../contracts/IClientContext';
 import IResultsProvider, { ResultsProviderFetchNextOptions } from './IResultsProvider';
-import { getSchemaColumns, convertThriftValue } from './utils';
+import { getSchemaColumns, convertThriftValue, getColumnValue } from './utils';
 
 export default class JsonResultHandler implements IResultsProvider<Array<any>> {
   private readonly context: IClientContext;
@@ -59,7 +58,7 @@ export default class JsonResultHandler implements IResultsProvider<Array<any>> {
 
   private getSchemaValues(descriptor: TColumnDesc, column?: TColumn): Array<any> {
     const typeDescriptor = descriptor.typeDesc.types[0]?.primitiveEntry;
-    const columnValue = this.getColumnValue(column);
+    const columnValue = getColumnValue(column);
 
     if (!columnValue) {
       return [];
@@ -78,21 +77,5 @@ export default class JsonResultHandler implements IResultsProvider<Array<any>> {
     const ofs = 2 ** (i % 8);
 
     return (byte & ofs) !== 0;
-  }
-
-  private getColumnValue(column?: TColumn) {
-    if (!column) {
-      return undefined;
-    }
-    return (
-      column[ColumnCode.binaryVal] ||
-      column[ColumnCode.boolVal] ||
-      column[ColumnCode.byteVal] ||
-      column[ColumnCode.doubleVal] ||
-      column[ColumnCode.i16Val] ||
-      column[ColumnCode.i32Val] ||
-      column[ColumnCode.i64Val] ||
-      column[ColumnCode.stringVal]
-    );
   }
 }

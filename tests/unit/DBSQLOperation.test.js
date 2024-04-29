@@ -2,6 +2,7 @@ const { expect, AssertionError } = require('chai');
 const sinon = require('sinon');
 const { DBSQLLogger, LogLevel } = require('../../lib');
 const { TStatusCode, TOperationState, TTypeId, TSparkRowSetType } = require('../../thrift/TCLIService_types');
+const DBSQLClient = require('../../lib/DBSQLClient').default;
 const DBSQLOperation = require('../../lib/DBSQLOperation').default;
 const StatusError = require('../../lib/errors/StatusError').default;
 const OperationStateError = require('../../lib/errors/OperationStateError').default;
@@ -107,6 +108,10 @@ class ClientContextMock {
     // Create logger that won't emit
     this.logger = new DBSQLLogger({ level: LogLevel.error });
     this.driver = new DriverMock();
+  }
+
+  getConfig() {
+    return DBSQLClient.getDefaultConfig();
   }
 
   getLogger() {

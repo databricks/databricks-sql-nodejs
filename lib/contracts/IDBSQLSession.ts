@@ -1,16 +1,21 @@
+import Int64 from 'node-int64';
 import IOperation from './IOperation';
 import Status from '../dto/Status';
 import InfoValue from '../dto/InfoValue';
-import { Int64 } from '../hive/Types';
 import { DBSQLParameter, DBSQLParameterValue } from '../DBSQLParameter';
 
 export type ExecuteStatementOptions = {
-  queryTimeout?: Int64;
+  /**
+   * The number of seconds after which the query will time out on the server.
+   * Effective only with Compute clusters. For SQL Warehouses, `STATEMENT_TIMEOUT`
+   * configuration should be used
+   */
+  queryTimeout?: number | bigint | Int64;
   /**
    * @deprecated This option is no longer supported and will be removed in future releases
    */
   runAsync?: boolean;
-  maxRows?: number | null;
+  maxRows?: number | bigint | Int64 | null;
   useCloudFetch?: boolean;
   stagingAllowedLocalPath?: string | string[];
   namedParameters?: Record<string, DBSQLParameter | DBSQLParameterValue>;
@@ -22,7 +27,7 @@ export type TypeInfoRequest = {
    * @deprecated This option is no longer supported and will be removed in future releases
    */
   runAsync?: boolean;
-  maxRows?: number | null;
+  maxRows?: number | bigint | Int64 | null;
 };
 
 export type CatalogsRequest = {
@@ -30,7 +35,7 @@ export type CatalogsRequest = {
    * @deprecated This option is no longer supported and will be removed in future releases
    */
   runAsync?: boolean;
-  maxRows?: number | null;
+  maxRows?: number | bigint | Int64 | null;
 };
 
 export type SchemasRequest = {
@@ -40,7 +45,7 @@ export type SchemasRequest = {
    * @deprecated This option is no longer supported and will be removed in future releases
    */
   runAsync?: boolean;
-  maxRows?: number | null;
+  maxRows?: number | bigint | Int64 | null;
 };
 
 export type TablesRequest = {
@@ -52,7 +57,7 @@ export type TablesRequest = {
    * @deprecated This option is no longer supported and will be removed in future releases
    */
   runAsync?: boolean;
-  maxRows?: number | null;
+  maxRows?: number | bigint | Int64 | null;
 };
 
 export type TableTypesRequest = {
@@ -60,7 +65,7 @@ export type TableTypesRequest = {
    * @deprecated This option is no longer supported and will be removed in future releases
    */
   runAsync?: boolean;
-  maxRows?: number | null;
+  maxRows?: number | bigint | Int64 | null;
 };
 
 export type ColumnsRequest = {
@@ -72,7 +77,7 @@ export type ColumnsRequest = {
    * @deprecated This option is no longer supported and will be removed in future releases
    */
   runAsync?: boolean;
-  maxRows?: number | null;
+  maxRows?: number | bigint | Int64 | null;
 };
 
 export type FunctionsRequest = {
@@ -83,7 +88,7 @@ export type FunctionsRequest = {
    * @deprecated This option is no longer supported and will be removed in future releases
    */
   runAsync?: boolean;
-  maxRows?: number | null;
+  maxRows?: number | bigint | Int64 | null;
 };
 
 export type PrimaryKeysRequest = {
@@ -94,7 +99,7 @@ export type PrimaryKeysRequest = {
    * @deprecated This option is no longer supported and will be removed in future releases
    */
   runAsync?: boolean;
-  maxRows?: number | null;
+  maxRows?: number | bigint | Int64 | null;
 };
 
 export type CrossReferenceRequest = {
@@ -108,7 +113,7 @@ export type CrossReferenceRequest = {
    * @deprecated This option is no longer supported and will be removed in future releases
    */
   runAsync?: boolean;
-  maxRows?: number | null;
+  maxRows?: number | bigint | Int64 | null;
 };
 
 export default interface IDBSQLSession {
