@@ -1,6 +1,6 @@
 const { expect, AssertionError } = require('chai');
 const sinon = require('sinon');
-const NullRetryPolicy = require('../../../../dist/connection/connections/NullRetryPolicy').default;
+const NullRetryPolicy = require('../../../../lib/connection/connections/NullRetryPolicy').default;
 
 describe('NullRetryPolicy', () => {
   it('should never allow retries', async () => {

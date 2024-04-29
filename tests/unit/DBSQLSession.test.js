@@ -1,12 +1,12 @@
 const { expect, AssertionError } = require('chai');
-const { DBSQLLogger, LogLevel } = require('../../dist');
+const { DBSQLLogger, LogLevel } = require('../../lib');
 const sinon = require('sinon');
-const DBSQLSession = require('../../dist/DBSQLSession').default;
-const InfoValue = require('../../dist/dto/InfoValue').default;
-const Status = require('../../dist/dto/Status').default;
-const DBSQLOperation = require('../../dist/DBSQLOperation').default;
-const HiveDriver = require('../../dist/hive/HiveDriver').default;
-const DBSQLClient = require('../../dist/DBSQLClient').default;
+const DBSQLSession = require('../../lib/DBSQLSession').default;
+const InfoValue = require('../../lib/dto/InfoValue').default;
+const Status = require('../../lib/dto/Status').default;
+const DBSQLOperation = require('../../lib/DBSQLOperation').default;
+const HiveDriver = require('../../lib/hive/HiveDriver').default;
+const DBSQLClient = require('../../lib/DBSQLClient').default;
 
 // Create logger that won't emit
 //

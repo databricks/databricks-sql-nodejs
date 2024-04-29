@@ -1,7 +1,7 @@
 const { expect } = require('chai');
 const sinon = require('sinon');
 const TCLIService_types = require('../../../../thrift/TCLIService_types');
-const CancelOperationCommand = require('../../../../dist/hive/Commands/CancelOperationCommand').default;
+const CancelOperationCommand = require('../../../../lib/hive/Commands/CancelOperationCommand').default;
 
 const requestMock = {
   operationHandle: {

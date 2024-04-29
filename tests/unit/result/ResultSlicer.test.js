@@ -1,6 +1,6 @@
 const { expect } = require('chai');
 const sinon = require('sinon');
-const ResultSlicer = require('../../../dist/result/ResultSlicer').default;
+const ResultSlicer = require('../../../lib/result/ResultSlicer').default;
 const ResultsProviderMock = require('./fixtures/ResultsProviderMock');
 
 describe('ResultSlicer', () => {

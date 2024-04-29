@@ -1,5 +1,5 @@
 const { expect } = require('chai');
-const PlainHttpAuthentication = require('../../../../dist/connection/auth/PlainHttpAuthentication').default;
+const PlainHttpAuthentication = require('../../../../lib/connection/auth/PlainHttpAuthentication').default;
 
 describe('PlainHttpAuthentication', () => {
   it('username and password must be anonymous if nothing passed', () => {

@@ -3,7 +3,7 @@ const sinon = require('sinon');
 const httpProxy = require('http-proxy');
 const https = require('https');
 const config = require('./utils/config');
-const { DBSQLClient } = require('../..');
+const { DBSQLClient } = require('../../lib');
 
 class HttpProxyMock {
   constructor(target, port) {

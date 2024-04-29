@@ -1,7 +1,7 @@
 const { expect } = require('chai');
 const Int64 = require('node-int64');
 const LZ4 = require('lz4');
-const ArrowResultHandler = require('../../../dist/result/ArrowResultHandler').default;
+const ArrowResultHandler = require('../../../lib/result/ArrowResultHandler').default;
 const ResultsProviderMock = require('./fixtures/ResultsProviderMock');
 
 const sampleArrowSchema = Buffer.from([

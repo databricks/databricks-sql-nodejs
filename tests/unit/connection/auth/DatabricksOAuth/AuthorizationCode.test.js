@@ -2,8 +2,8 @@ const { expect, AssertionError } = require('chai');
 const { EventEmitter } = require('events');
 const sinon = require('sinon');
 const http = require('http');
-const { DBSQLLogger, LogLevel } = require('../../../../../dist');
-const AuthorizationCode = require('../../../../../dist/connection/auth/DatabricksOAuth/AuthorizationCode').default;
+const { DBSQLLogger, LogLevel } = require('../../../../../lib');
+const AuthorizationCode = require('../../../../../lib/connection/auth/DatabricksOAuth/AuthorizationCode').default;
 
 const logger = new DBSQLLogger({ level: LogLevel.error });
 

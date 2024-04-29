@@ -1,8 +1,8 @@
 const { expect, AssertionError } = require('chai');
 const Int64 = require('node-int64');
 const config = require('./utils/config');
-const { DBSQLClient, DBSQLParameter, DBSQLParameterType } = require('../..');
-const ParameterError = require('../../dist/errors/ParameterError').default;
+const { DBSQLClient, DBSQLParameter, DBSQLParameterType } = require('../../lib');
+const ParameterError = require('../../lib/errors/ParameterError').default;
 
 const openSession = async () => {
   const client = new DBSQLClient();
