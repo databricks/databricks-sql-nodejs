@@ -1,6 +1,6 @@
 const { expect } = require('chai');
-const JsonResultHandler = require('../../../dist/result/JsonResultHandler').default;
-const { TCLIService_types } = require('../../../').thrift;
+const JsonResultHandler = require('../../../lib/result/JsonResultHandler').default;
+const { TCLIService_types } = require('../../../lib').thrift;
 const Int64 = require('node-int64');
 const ResultsProviderMock = require('./fixtures/ResultsProviderMock');
 

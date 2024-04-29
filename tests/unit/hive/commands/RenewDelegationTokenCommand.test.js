@@ -1,7 +1,7 @@
 const { expect } = require('chai');
 const sinon = require('sinon');
 const TCLIService_types = require('../../../../thrift/TCLIService_types');
-const RenewDelegationTokenCommand = require('../../../../dist/hive/Commands/RenewDelegationTokenCommand').default;
+const RenewDelegationTokenCommand = require('../../../../lib/hive/Commands/RenewDelegationTokenCommand').default;
 
 const requestMock = {
   sessionHandle: {

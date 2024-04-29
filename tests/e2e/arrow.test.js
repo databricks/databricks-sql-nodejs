@@ -2,10 +2,10 @@ const { expect } = require('chai');
 const sinon = require('sinon');
 const config = require('./utils/config');
 const logger = require('./utils/logger')(config.logger);
-const { DBSQLClient } = require('../..');
-const ArrowResultHandler = require('../../dist/result/ArrowResultHandler').default;
-const ArrowResultConverter = require('../../dist/result/ArrowResultConverter').default;
-const ResultSlicer = require('../../dist/result/ResultSlicer').default;
+const { DBSQLClient } = require('../../lib');
+const ArrowResultHandler = require('../../lib/result/ArrowResultHandler').default;
+const ArrowResultConverter = require('../../lib/result/ArrowResultConverter').default;
+const ResultSlicer = require('../../lib/result/ResultSlicer').default;
 
 const fixtures = require('../fixtures/compatibility');
 const { expected: expectedColumn } = require('../fixtures/compatibility/column');

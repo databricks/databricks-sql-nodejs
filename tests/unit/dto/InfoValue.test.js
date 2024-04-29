@@ -1,5 +1,5 @@
 const { expect } = require('chai');
-const InfoValue = require('../../../dist/dto/InfoValue').default;
+const InfoValue = require('../../../lib/dto/InfoValue').default;
 const NodeInt64 = require('node-int64');
 
 const createInfoValueMock = (value) =>

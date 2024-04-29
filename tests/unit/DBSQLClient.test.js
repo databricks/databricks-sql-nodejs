@@ -1,16 +1,13 @@
 const { expect, AssertionError } = require('chai');
 const sinon = require('sinon');
-const DBSQLClient = require('../../dist/DBSQLClient').default;
-const DBSQLSession = require('../../dist/DBSQLSession').default;
+const DBSQLClient = require('../../lib/DBSQLClient').default;
+const DBSQLSession = require('../../lib/DBSQLSession').default;
 
-const PlainHttpAuthentication = require('../../dist/connection/auth/PlainHttpAuthentication').default;
-const DatabricksOAuth = require('../../dist/connection/auth/DatabricksOAuth').default;
-const {
-  DatabricksOAuthManager,
-  AzureOAuthManager,
-} = require('../../dist/connection/auth/DatabricksOAuth/OAuthManager');
+const PlainHttpAuthentication = require('../../lib/connection/auth/PlainHttpAuthentication').default;
+const DatabricksOAuth = require('../../lib/connection/auth/DatabricksOAuth').default;
+const { DatabricksOAuthManager, AzureOAuthManager } = require('../../lib/connection/auth/DatabricksOAuth/OAuthManager');
 
-const HttpConnectionModule = require('../../dist/connection/connections/HttpConnection');
+const HttpConnectionModule = require('../../lib/connection/connections/HttpConnection');
 
 const { default: HttpConnection } = HttpConnectionModule;
 

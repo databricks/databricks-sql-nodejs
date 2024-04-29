@@ -4,8 +4,8 @@ const path = require('path');
 const os = require('os');
 const uuid = require('uuid');
 const config = require('./utils/config');
-const { DBSQLClient } = require('../..');
-const StagingError = require('../../dist/errors/StagingError').default;
+const { DBSQLClient } = require('../../lib');
+const StagingError = require('../../lib/errors/StagingError').default;
 
 describe('Staging Test', () => {
   const catalog = config.database[0];

@@ -2,7 +2,7 @@ const { expect } = require('chai');
 
 const Int64 = require('node-int64');
 const { TSparkParameterValue, TSparkParameter } = require('../../thrift/TCLIService_types');
-const { DBSQLParameter, DBSQLParameterType } = require('../../dist/DBSQLParameter');
+const { DBSQLParameter, DBSQLParameterType } = require('../../lib/DBSQLParameter');
 
 describe('DBSQLParameter', () => {
   it('should infer types correctly', () => {

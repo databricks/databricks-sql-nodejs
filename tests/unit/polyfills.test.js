@@ -1,5 +1,5 @@
 const { expect } = require('chai');
-const { at } = require('../../dist/polyfills');
+const { at } = require('../../lib/polyfills');
 
 const defaultArrayMock = {
   0: 'a',

@@ -1,8 +1,8 @@
 const http = require('http');
 const { expect } = require('chai');
-const HttpConnection = require('../../../../dist/connection/connections/HttpConnection').default;
-const ThriftHttpConnection = require('../../../../dist/connection/connections/ThriftHttpConnection').default;
-const DBSQLClient = require('../../../../dist/DBSQLClient').default;
+const HttpConnection = require('../../../../lib/connection/connections/HttpConnection').default;
+const ThriftHttpConnection = require('../../../../lib/connection/connections/ThriftHttpConnection').default;
+const DBSQLClient = require('../../../../lib/DBSQLClient').default;
 
 describe('HttpConnection.connect', () => {
   it('should create Thrift connection', async () => {

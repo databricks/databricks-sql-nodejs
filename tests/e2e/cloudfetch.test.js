@@ -1,10 +1,10 @@
 const { expect } = require('chai');
 const sinon = require('sinon');
 const config = require('./utils/config');
-const { DBSQLClient } = require('../..');
-const CloudFetchResultHandler = require('../../dist/result/CloudFetchResultHandler').default;
-const ArrowResultConverter = require('../../dist/result/ArrowResultConverter').default;
-const ResultSlicer = require('../../dist/result/ResultSlicer').default;
+const { DBSQLClient } = require('../../lib');
+const CloudFetchResultHandler = require('../../lib/result/CloudFetchResultHandler').default;
+const ArrowResultConverter = require('../../lib/result/ArrowResultConverter').default;
+const ResultSlicer = require('../../lib/result/ResultSlicer').default;
 
 async function openSession(customConfig) {
   const client = new DBSQLClient();

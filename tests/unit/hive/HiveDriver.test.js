@@ -1,7 +1,7 @@
 const { expect } = require('chai');
 const sinon = require('sinon');
-const { TCLIService_types } = require('../../../').thrift;
-const HiveDriver = require('../../../dist/hive/HiveDriver').default;
+const { TCLIService_types } = require('../../../lib').thrift;
+const HiveDriver = require('../../../lib/hive/HiveDriver').default;
 
 const toTitleCase = (str) => str[0].toUpperCase() + str.slice(1);
 
