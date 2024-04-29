@@ -1,12 +1,14 @@
-const { expect } = require('chai');
-const sinon = require('sinon');
-const config = require('./utils/config');
-const { DBSQLClient } = require('../../lib');
-const CloudFetchResultHandler = require('../../lib/result/CloudFetchResultHandler').default;
-const ArrowResultConverter = require('../../lib/result/ArrowResultConverter').default;
-const ResultSlicer = require('../../lib/result/ResultSlicer').default;
+import { expect } from 'chai';
+import sinon from 'sinon';
+import { DBSQLClient } from '../../lib';
+import { ClientConfig } from '../../lib/contracts/IClientContext';
+import CloudFetchResultHandler from '../../lib/result/CloudFetchResultHandler';
+import ArrowResultConverter from '../../lib/result/ArrowResultConverter';
+import ResultSlicer from '../../lib/result/ResultSlicer';
 
-async function openSession(customConfig) {
+import config from './utils/config';
+
+async function openSession(customConfig: Partial<ClientConfig> = {}) {
   const client = new DBSQLClient();
 
   const clientConfig = client.getConfig();
@@ -22,8 +24,8 @@ async function openSession(customConfig) {
   });
 
   return connection.openSession({
-    initialCatalog: config.database[0],
-    initialSchema: config.database[1],
+    initialCatalog: config.catalog,
+    initialSchema: config.schema,
   });
 }
 
@@ -54,6 +56,7 @@ describe('CloudFetch', () => {
     await operation.finished();
 
     // Check if we're actually getting data via CloudFetch
+    // @ts-expect-error TS2339: Property getResultHandler does not exist on type IOperation
     const resultHandler = await operation.getResultHandler();
     expect(resultHandler).to.be.instanceof(ResultSlicer);
     expect(resultHandler.source).to.be.instanceof(ArrowResultConverter);
@@ -69,10 +72,12 @@ describe('CloudFetch', () => {
     expect(cfResultHandler.pendingLinks.length).to.be.equal(0);
     expect(cfResultHandler.downloadTasks.length).to.be.equal(0);
 
+    // @ts-expect-error TS2339: Property _data does not exist on type IOperation
     sinon.spy(operation._data, 'fetchNext');
 
     const chunk = await operation.fetchChunk({ maxRows: 100000, disableBuffering: true });
     // Count links returned from server
+    // @ts-expect-error TS2339: Property _data does not exist on type IOperation
     const resultSet = await operation._data.fetchNext.firstCall.returnValue;
     const resultLinksCount = resultSet?.resultLinks?.length ?? 0;
 
@@ -82,9 +87,11 @@ describe('CloudFetch', () => {
     expect(cfResultHandler.downloadTasks.length).to.be.equal(cloudFetchConcurrentDownloads - 1);
 
     let fetchedRowCount = chunk.length;
+    // eslint-disable-next-line no-await-in-loop
     while (await operation.hasMoreRows()) {
-      const chunk = await operation.fetchChunk({ maxRows: 100000, disableBuffering: true });
-      fetchedRowCount += chunk.length;
+      // eslint-disable-next-line no-await-in-loop
+      const ch = await operation.fetchChunk({ maxRows: 100000, disableBuffering: true });
+      fetchedRowCount += ch.length;
     }
 
     expect(fetchedRowCount).to.be.equal(queriedRowsCount);
@@ -114,6 +121,7 @@ describe('CloudFetch', () => {
     await operation.finished();
 
     // Check if we're actually getting data via CloudFetch
+    // @ts-expect-error TS2339: Property getResultHandler does not exist on type IOperation
     const resultHandler = await operation.getResultHandler();
     expect(resultHandler).to.be.instanceof(ResultSlicer);
     expect(resultHandler.source).to.be.instanceof(ArrowResultConverter);

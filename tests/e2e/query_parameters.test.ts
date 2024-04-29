@@ -1,8 +1,9 @@
-const { expect, AssertionError } = require('chai');
-const Int64 = require('node-int64');
-const config = require('./utils/config');
-const { DBSQLClient, DBSQLParameter, DBSQLParameterType } = require('../../lib');
-const ParameterError = require('../../lib/errors/ParameterError').default;
+import { expect, AssertionError } from 'chai';
+import Int64 from 'node-int64';
+import { DBSQLClient, DBSQLParameter, DBSQLParameterType } from '../../lib';
+import ParameterError from '../../lib/errors/ParameterError';
+
+import config from './utils/config';
 
 const openSession = async () => {
   const client = new DBSQLClient();
@@ -14,8 +15,8 @@ const openSession = async () => {
   });
 
   return connection.openSession({
-    initialCatalog: config.database[0],
-    initialSchema: config.database[1],
+    initialCatalog: config.catalog,
+    initialSchema: config.schema,
   });
 };
 
