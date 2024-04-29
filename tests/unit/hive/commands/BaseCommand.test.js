@@ -1,10 +1,10 @@
 const { expect, AssertionError } = require('chai');
 const { Request, Response } = require('node-fetch');
 const { Thrift } = require('thrift');
-const HiveDriverError = require('../../../../dist/errors/HiveDriverError').default;
-const BaseCommand = require('../../../../dist/hive/Commands/BaseCommand').default;
-const HttpRetryPolicy = require('../../../../dist/connection/connections/HttpRetryPolicy').default;
-const DBSQLClient = require('../../../../dist/DBSQLClient').default;
+const HiveDriverError = require('../../../../lib/errors/HiveDriverError').default;
+const BaseCommand = require('../../../../lib/hive/Commands/BaseCommand').default;
+const HttpRetryPolicy = require('../../../../lib/connection/connections/HttpRetryPolicy').default;
+const DBSQLClient = require('../../../../lib/DBSQLClient').default;
 
 class ThriftClientMock {
   constructor(context, methodHandler) {

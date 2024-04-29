@@ -3,6 +3,7 @@ import * as path from 'path';
 import stream from 'node:stream';
 import util from 'node:util';
 import { stringify, NIL } from 'uuid';
+import Int64 from 'node-int64';
 import fetch, { HeadersInit } from 'node-fetch';
 import {
   TSessionHandle,
@@ -12,7 +13,6 @@ import {
   TSparkArrowTypes,
   TSparkParameter,
 } from '../thrift/TCLIService_types';
-import { Int64 } from './hive/Types';
 import IDBSQLSession, {
   ExecuteStatementOptions,
   TypeInfoRequest,
@@ -41,22 +41,35 @@ import IClientContext, { ClientConfig } from './contracts/IClientContext';
 // Explicitly promisify a callback-style `pipeline` because `node:stream/promises` is not available in Node 14
 const pipeline = util.promisify(stream.pipeline);
 
-const defaultMaxRows = 100000;
-
 interface OperationResponseShape {
   status: TStatus;
   operationHandle?: TOperationHandle;
   directResults?: TSparkDirectResults;
 }
 
-function getDirectResultsOptions(maxRows: number | null = defaultMaxRows) {
+export function numberToInt64(value: number | bigint | Int64): Int64 {
+  if (value instanceof Int64) {
+    return value;
+  }
+
+  if (typeof value === 'bigint') {
+    const buffer = new ArrayBuffer(BigInt64Array.BYTES_PER_ELEMENT);
+    const view = new DataView(buffer);
+    view.setBigInt64(0, value, false); // `false` to use big-endian order
+    return new Int64(Buffer.from(buffer));
+  }
+
+  return new Int64(value);
+}
+
+function getDirectResultsOptions(maxRows: number | bigint | Int64 | null | undefined, config: ClientConfig) {
   if (maxRows === null) {
     return {};
   }
 
   return {
     getDirectResults: {
-      maxRows: new Int64(maxRows),
+      maxRows: numberToInt64(maxRows ?? config.directResultsDefaultMaxRows),
     },
   };
 }
@@ -86,7 +99,6 @@ function getArrowOptions(config: ClientConfig): {
 }
 
 function getQueryParameters(
-  sessionHandle: TSessionHandle,
   namedParameters?: Record<string, DBSQLParameter | DBSQLParameterValue>,
   ordinalParameters?: Array<DBSQLParameter | DBSQLParameterValue>,
 ): Array<TSparkParameter> {
@@ -184,12 +196,12 @@ export default class DBSQLSession implements IDBSQLSession {
     const operationPromise = driver.executeStatement({
       sessionHandle: this.sessionHandle,
       statement,
-      queryTimeout: options.queryTimeout,
+      queryTimeout: options.queryTimeout ? numberToInt64(options.queryTimeout) : undefined,
       runAsync: true,
-      ...getDirectResultsOptions(options.maxRows),
+      ...getDirectResultsOptions(options.maxRows, clientConfig),
       ...getArrowOptions(clientConfig),
       canDownloadResult: options.useCloudFetch ?? clientConfig.useCloudFetch,
-      parameters: getQueryParameters(this.sessionHandle, options.namedParameters, options.ordinalParameters),
+      parameters: getQueryParameters(options.namedParameters, options.ordinalParameters),
       canDecompressLZ4Result: clientConfig.useLZ4Compression && Boolean(LZ4),
     });
     const response = await this.handleResponse(operationPromise);
@@ -339,10 +351,11 @@ export default class DBSQLSession implements IDBSQLSession {
   public async getTypeInfo(request: TypeInfoRequest = {}): Promise<IOperation> {
     await this.failIfClosed();
     const driver = await this.context.getDriver();
+    const clientConfig = this.context.getConfig();
     const operationPromise = driver.getTypeInfo({
       sessionHandle: this.sessionHandle,
       runAsync: true,
-      ...getDirectResultsOptions(request.maxRows),
+      ...getDirectResultsOptions(request.maxRows, clientConfig),
     });
     const response = await this.handleResponse(operationPromise);
     return this.createOperation(response);
@@ -357,10 +370,11 @@ export default class DBSQLSession implements IDBSQLSession {
   public async getCatalogs(request: CatalogsRequest = {}): Promise<IOperation> {
     await this.failIfClosed();
     const driver = await this.context.getDriver();
+    const clientConfig = this.context.getConfig();
     const operationPromise = driver.getCatalogs({
       sessionHandle: this.sessionHandle,
       runAsync: true,
-      ...getDirectResultsOptions(request.maxRows),
+      ...getDirectResultsOptions(request.maxRows, clientConfig),
     });
     const response = await this.handleResponse(operationPromise);
     return this.createOperation(response);
@@ -375,12 +389,13 @@ export default class DBSQLSession implements IDBSQLSession {
   public async getSchemas(request: SchemasRequest = {}): Promise<IOperation> {
     await this.failIfClosed();
     const driver = await this.context.getDriver();
+    const clientConfig = this.context.getConfig();
     const operationPromise = driver.getSchemas({
       sessionHandle: this.sessionHandle,
       catalogName: request.catalogName,
       schemaName: request.schemaName,
       runAsync: true,
-      ...getDirectResultsOptions(request.maxRows),
+      ...getDirectResultsOptions(request.maxRows, clientConfig),
     });
     const response = await this.handleResponse(operationPromise);
     return this.createOperation(response);
@@ -395,6 +410,7 @@ export default class DBSQLSession implements IDBSQLSession {
   public async getTables(request: TablesRequest = {}): Promise<IOperation> {
     await this.failIfClosed();
     const driver = await this.context.getDriver();
+    const clientConfig = this.context.getConfig();
     const operationPromise = driver.getTables({
       sessionHandle: this.sessionHandle,
       catalogName: request.catalogName,
@@ -402,7 +418,7 @@ export default class DBSQLSession implements IDBSQLSession {
       tableName: request.tableName,
       tableTypes: request.tableTypes,
       runAsync: true,
-      ...getDirectResultsOptions(request.maxRows),
+      ...getDirectResultsOptions(request.maxRows, clientConfig),
     });
     const response = await this.handleResponse(operationPromise);
     return this.createOperation(response);
@@ -417,10 +433,11 @@ export default class DBSQLSession implements IDBSQLSession {
   public async getTableTypes(request: TableTypesRequest = {}): Promise<IOperation> {
     await this.failIfClosed();
     const driver = await this.context.getDriver();
+    const clientConfig = this.context.getConfig();
     const operationPromise = driver.getTableTypes({
       sessionHandle: this.sessionHandle,
       runAsync: true,
-      ...getDirectResultsOptions(request.maxRows),
+      ...getDirectResultsOptions(request.maxRows, clientConfig),
     });
     const response = await this.handleResponse(operationPromise);
     return this.createOperation(response);
@@ -435,6 +452,7 @@ export default class DBSQLSession implements IDBSQLSession {
   public async getColumns(request: ColumnsRequest = {}): Promise<IOperation> {
     await this.failIfClosed();
     const driver = await this.context.getDriver();
+    const clientConfig = this.context.getConfig();
     const operationPromise = driver.getColumns({
       sessionHandle: this.sessionHandle,
       catalogName: request.catalogName,
@@ -442,7 +460,7 @@ export default class DBSQLSession implements IDBSQLSession {
       tableName: request.tableName,
       columnName: request.columnName,
       runAsync: true,
-      ...getDirectResultsOptions(request.maxRows),
+      ...getDirectResultsOptions(request.maxRows, clientConfig),
     });
     const response = await this.handleResponse(operationPromise);
     return this.createOperation(response);
@@ -457,13 +475,14 @@ export default class DBSQLSession implements IDBSQLSession {
   public async getFunctions(request: FunctionsRequest): Promise<IOperation> {
     await this.failIfClosed();
     const driver = await this.context.getDriver();
+    const clientConfig = this.context.getConfig();
     const operationPromise = driver.getFunctions({
       sessionHandle: this.sessionHandle,
       catalogName: request.catalogName,
       schemaName: request.schemaName,
       functionName: request.functionName,
       runAsync: true,
-      ...getDirectResultsOptions(request.maxRows),
+      ...getDirectResultsOptions(request.maxRows, clientConfig),
     });
     const response = await this.handleResponse(operationPromise);
     return this.createOperation(response);
@@ -472,13 +491,14 @@ export default class DBSQLSession implements IDBSQLSession {
   public async getPrimaryKeys(request: PrimaryKeysRequest): Promise<IOperation> {
     await this.failIfClosed();
     const driver = await this.context.getDriver();
+    const clientConfig = this.context.getConfig();
     const operationPromise = driver.getPrimaryKeys({
       sessionHandle: this.sessionHandle,
       catalogName: request.catalogName,
       schemaName: request.schemaName,
       tableName: request.tableName,
       runAsync: true,
-      ...getDirectResultsOptions(request.maxRows),
+      ...getDirectResultsOptions(request.maxRows, clientConfig),
     });
     const response = await this.handleResponse(operationPromise);
     return this.createOperation(response);
@@ -493,6 +513,7 @@ export default class DBSQLSession implements IDBSQLSession {
   public async getCrossReference(request: CrossReferenceRequest): Promise<IOperation> {
     await this.failIfClosed();
     const driver = await this.context.getDriver();
+    const clientConfig = this.context.getConfig();
     const operationPromise = driver.getCrossReference({
       sessionHandle: this.sessionHandle,
       parentCatalogName: request.parentCatalogName,
@@ -502,7 +523,7 @@ export default class DBSQLSession implements IDBSQLSession {
       foreignSchemaName: request.foreignSchemaName,
       foreignTableName: request.foreignTableName,
       runAsync: true,
-      ...getDirectResultsOptions(request.maxRows),
+      ...getDirectResultsOptions(request.maxRows, clientConfig),
     });
     const response = await this.handleResponse(operationPromise);
     return this.createOperation(response);

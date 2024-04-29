@@ -16,7 +16,7 @@ import {
   DateUnit,
   RecordBatchWriter,
 } from 'apache-arrow';
-import { TTableSchema, TColumnDesc, TPrimitiveTypeEntry, TTypeId } from '../../thrift/TCLIService_types';
+import { TTableSchema, TColumnDesc, TPrimitiveTypeEntry, TTypeId, TColumn } from '../../thrift/TCLIService_types';
 import HiveDriverError from '../errors/HiveDriverError';
 
 export interface ArrowBatch {
@@ -144,4 +144,20 @@ export function hiveSchemaToArrowSchema(schema?: TTableSchema): Buffer | undefin
   writer.reset(undefined, arrowSchema);
   writer.finish();
   return Buffer.from(writer.toUint8Array(true));
+}
+
+export function getColumnValue(column?: TColumn) {
+  if (!column) {
+    return undefined;
+  }
+  return (
+    column.binaryVal ??
+    column.boolVal ??
+    column.byteVal ??
+    column.doubleVal ??
+    column.i16Val ??
+    column.i32Val ??
+    column.i64Val ??
+    column.stringVal
+  );
 }

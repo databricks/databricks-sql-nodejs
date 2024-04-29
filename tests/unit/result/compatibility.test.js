@@ -1,7 +1,7 @@
 const { expect } = require('chai');
-const ArrowResultHandler = require('../../../dist/result/ArrowResultHandler').default;
-const ArrowResultConverter = require('../../../dist/result/ArrowResultConverter').default;
-const JsonResultHandler = require('../../../dist/result/JsonResultHandler').default;
+const ArrowResultHandler = require('../../../lib/result/ArrowResultHandler').default;
+const ArrowResultConverter = require('../../../lib/result/ArrowResultConverter').default;
+const JsonResultHandler = require('../../../lib/result/JsonResultHandler').default;
 
 const { fixArrowResult } = require('../../fixtures/compatibility');
 const fixtureColumn = require('../../fixtures/compatibility/column');

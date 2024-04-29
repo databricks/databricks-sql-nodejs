@@ -1,7 +1,7 @@
 const { expect } = require('chai');
 const Int64 = require('node-int64');
-const { TCLIService_types } = require('../../../').thrift;
-const { getSchemaColumns, convertThriftValue } = require('../../../dist/result/utils');
+const { TCLIService_types } = require('../../../lib').thrift;
+const { getSchemaColumns, convertThriftValue } = require('../../../lib/result/utils');
 
 const { TTypeId } = TCLIService_types;
 

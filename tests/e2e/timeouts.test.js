@@ -1,7 +1,7 @@
 const { expect, AssertionError } = require('chai');
 const sinon = require('sinon');
 const config = require('./utils/config');
-const { DBSQLClient } = require('../..');
+const { DBSQLClient } = require('../../lib');
 
 async function openSession(socketTimeout, customConfig) {
   const client = new DBSQLClient();

@@ -1,5 +1,5 @@
 const { expect } = require('chai');
-const OAuthToken = require('../../../../../dist/connection/auth/DatabricksOAuth/OAuthToken').default;
+const OAuthToken = require('../../../../../lib/connection/auth/DatabricksOAuth/OAuthToken').default;
 
 const { createAccessToken } = require('./utils');
 

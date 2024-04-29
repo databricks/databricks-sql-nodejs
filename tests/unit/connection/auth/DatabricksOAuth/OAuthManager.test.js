@@ -1,15 +1,15 @@
 const { expect, AssertionError } = require('chai');
 const sinon = require('sinon');
 const openidClientLib = require('openid-client');
-const { DBSQLLogger, LogLevel } = require('../../../../../dist');
+const { DBSQLLogger, LogLevel } = require('../../../../../lib');
 const {
   DatabricksOAuthManager,
   AzureOAuthManager,
   OAuthFlow,
-} = require('../../../../../dist/connection/auth/DatabricksOAuth/OAuthManager');
-const OAuthToken = require('../../../../../dist/connection/auth/DatabricksOAuth/OAuthToken').default;
-const { OAuthScope, scopeDelimiter } = require('../../../../../dist/connection/auth/DatabricksOAuth/OAuthScope');
-const AuthorizationCodeModule = require('../../../../../dist/connection/auth/DatabricksOAuth/AuthorizationCode');
+} = require('../../../../../lib/connection/auth/DatabricksOAuth/OAuthManager');
+const OAuthToken = require('../../../../../lib/connection/auth/DatabricksOAuth/OAuthToken').default;
+const { OAuthScope, scopeDelimiter } = require('../../../../../lib/connection/auth/DatabricksOAuth/OAuthScope');
+const AuthorizationCodeModule = require('../../../../../lib/connection/auth/DatabricksOAuth/AuthorizationCode');
 
 const { createValidAccessToken, createExpiredAccessToken } = require('./utils');
 

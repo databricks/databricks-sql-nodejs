@@ -1,5 +1,5 @@
 const { expect, AssertionError } = require('chai');
-const CloseableCollection = require('../../../dist/utils/CloseableCollection').default;
+const CloseableCollection = require('../../../lib/utils/CloseableCollection').default;
 
 describe('CloseableCollection', () => {
   it('should add item if not already added', () => {

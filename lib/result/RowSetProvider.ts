@@ -1,14 +1,14 @@
-import {
-  TColumn,
-  TFetchOrientation,
-  TFetchResultsResp,
-  TOperationHandle,
-  TRowSet,
-} from '../../thrift/TCLIService_types';
-import { ColumnCode, FetchType, Int64 } from '../hive/Types';
+import Int64 from 'node-int64';
+import { TFetchOrientation, TFetchResultsResp, TOperationHandle, TRowSet } from '../../thrift/TCLIService_types';
 import Status from '../dto/Status';
 import IClientContext from '../contracts/IClientContext';
 import IResultsProvider, { ResultsProviderFetchNextOptions } from './IResultsProvider';
+import { getColumnValue } from './utils';
+
+export enum FetchType {
+  Data = 0,
+  Logs = 1,
+}
 
 function checkIfOperationHasMoreRows(response: TFetchResultsResp): boolean {
   if (response.hasMoreRows) {
@@ -17,23 +17,8 @@ function checkIfOperationHasMoreRows(response: TFetchResultsResp): boolean {
 
   const columns = response.results?.columns || [];
 
-  if (columns.length === 0) {
-    return false;
-  }
-
-  const column: TColumn = columns[0];
-
-  const columnValue =
-    column[ColumnCode.binaryVal] ||
-    column[ColumnCode.boolVal] ||
-    column[ColumnCode.byteVal] ||
-    column[ColumnCode.doubleVal] ||
-    column[ColumnCode.i16Val] ||
-    column[ColumnCode.i32Val] ||
-    column[ColumnCode.i64Val] ||
-    column[ColumnCode.stringVal];
-
-  return (columnValue?.values?.length || 0) > 0;
+  const columnValue = getColumnValue(columns[0]);
+  return (columnValue?.values?.length ?? 0) > 0;
 }
 
 export default class RowSetProvider implements IResultsProvider<TRowSet | undefined> {

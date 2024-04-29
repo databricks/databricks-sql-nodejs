@@ -1,16 +1,17 @@
 const { expect, AssertionError } = require('chai');
 const sinon = require('sinon');
-const { DBSQLLogger, LogLevel } = require('../../dist');
+const { DBSQLLogger, LogLevel } = require('../../lib');
 const { TStatusCode, TOperationState, TTypeId, TSparkRowSetType } = require('../../thrift/TCLIService_types');
-const DBSQLOperation = require('../../dist/DBSQLOperation').default;
-const StatusError = require('../../dist/errors/StatusError').default;
-const OperationStateError = require('../../dist/errors/OperationStateError').default;
-const HiveDriverError = require('../../dist/errors/HiveDriverError').default;
-const JsonResultHandler = require('../../dist/result/JsonResultHandler').default;
-const ArrowResultConverter = require('../../dist/result/ArrowResultConverter').default;
-const ArrowResultHandler = require('../../dist/result/ArrowResultHandler').default;
-const CloudFetchResultHandler = require('../../dist/result/CloudFetchResultHandler').default;
-const ResultSlicer = require('../../dist/result/ResultSlicer').default;
+const DBSQLClient = require('../../lib/DBSQLClient').default;
+const DBSQLOperation = require('../../lib/DBSQLOperation').default;
+const StatusError = require('../../lib/errors/StatusError').default;
+const OperationStateError = require('../../lib/errors/OperationStateError').default;
+const HiveDriverError = require('../../lib/errors/HiveDriverError').default;
+const JsonResultHandler = require('../../lib/result/JsonResultHandler').default;
+const ArrowResultConverter = require('../../lib/result/ArrowResultConverter').default;
+const ArrowResultHandler = require('../../lib/result/ArrowResultHandler').default;
+const CloudFetchResultHandler = require('../../lib/result/CloudFetchResultHandler').default;
+const ResultSlicer = require('../../lib/result/ResultSlicer').default;
 
 class OperationHandleMock {
   constructor(hasResultSet = true) {
@@ -107,6 +108,10 @@ class ClientContextMock {
     // Create logger that won't emit
     this.logger = new DBSQLLogger({ level: LogLevel.error });
     this.driver = new DriverMock();
+  }
+
+  getConfig() {
+    return DBSQLClient.getDefaultConfig();
   }
 
   getLogger() {

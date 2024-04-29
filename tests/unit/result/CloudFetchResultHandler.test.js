@@ -2,9 +2,9 @@ const { expect, AssertionError } = require('chai');
 const sinon = require('sinon');
 const Int64 = require('node-int64');
 const LZ4 = require('lz4');
-const CloudFetchResultHandler = require('../../../dist/result/CloudFetchResultHandler').default;
+const CloudFetchResultHandler = require('../../../lib/result/CloudFetchResultHandler').default;
 const ResultsProviderMock = require('./fixtures/ResultsProviderMock');
-const DBSQLClient = require('../../../dist/DBSQLClient').default;
+const DBSQLClient = require('../../../lib/DBSQLClient').default;
 
 const sampleArrowSchema = Buffer.from([
   255, 255, 255, 255, 208, 0, 0, 0, 16, 0, 0, 0, 0, 0, 10, 0, 14, 0, 6, 0, 13, 0, 8, 0, 10, 0, 0, 0, 0, 0, 4, 0, 16, 0,

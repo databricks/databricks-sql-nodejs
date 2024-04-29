@@ -1,9 +1,9 @@
 const { expect, AssertionError } = require('chai');
 const sinon = require('sinon');
 const { Request, Response } = require('node-fetch');
-const HttpRetryPolicy = require('../../../../dist/connection/connections/HttpRetryPolicy').default;
-const { default: RetryError, RetryErrorCode } = require('../../../../dist/errors/RetryError');
-const DBSQLClient = require('../../../../dist/DBSQLClient').default;
+const HttpRetryPolicy = require('../../../../lib/connection/connections/HttpRetryPolicy').default;
+const { default: RetryError, RetryErrorCode } = require('../../../../lib/errors/RetryError');
+const DBSQLClient = require('../../../../lib/DBSQLClient').default;
 
 class ClientContextMock {
   constructor(configOverrides) {

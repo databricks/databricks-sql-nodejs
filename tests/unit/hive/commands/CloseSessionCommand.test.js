@@ -1,7 +1,7 @@
 const { expect } = require('chai');
 const sinon = require('sinon');
 const TCLIService_types = require('../../../../thrift/TCLIService_types');
-const CloseSessionCommand = require('../../../../dist/hive/Commands/CloseSessionCommand').default;
+const CloseSessionCommand = require('../../../../lib/hive/Commands/CloseSessionCommand').default;
 
 const responseMock = {
   status: { statusCode: 0 },

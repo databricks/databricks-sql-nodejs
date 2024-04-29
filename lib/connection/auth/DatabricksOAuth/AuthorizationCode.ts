@@ -4,6 +4,7 @@ import open from 'open';
 import { LogLevel } from '../../../contracts/IDBSQLLogger';
 import { OAuthScopes, scopeDelimiter } from './OAuthScope';
 import IClientContext from '../../../contracts/IClientContext';
+import AuthenticationError from '../../../errors/AuthenticationError';
 
 export interface AuthorizationCodeOptions {
   client: BaseClient;
@@ -113,9 +114,9 @@ export default class AuthorizationCode {
     if (!receivedParams || !receivedParams.code) {
       if (receivedParams?.error) {
         const errorMessage = `OAuth error: ${receivedParams.error} ${receivedParams.error_description}`;
-        throw new Error(errorMessage);
+        throw new AuthenticationError(errorMessage);
       }
-      throw new Error(`No path parameters were returned to the callback at ${redirectUri}`);
+      throw new AuthenticationError(`No path parameters were returned to the callback at ${redirectUri}`);
     }
 
     return { code: receivedParams.code, verifier: verifierString, redirectUri };
@@ -152,7 +153,7 @@ export default class AuthorizationCode {
       }
     }
 
-    throw new Error('Failed to start server: all ports are in use');
+    throw new AuthenticationError('Failed to start server: all ports are in use');
   }
 
   private renderCallbackResponse(): string {

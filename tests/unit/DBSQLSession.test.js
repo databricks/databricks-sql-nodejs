@@ -1,12 +1,13 @@
 const { expect, AssertionError } = require('chai');
-const { DBSQLLogger, LogLevel } = require('../../dist');
+const { DBSQLLogger, LogLevel } = require('../../lib');
 const sinon = require('sinon');
-const DBSQLSession = require('../../dist/DBSQLSession').default;
-const InfoValue = require('../../dist/dto/InfoValue').default;
-const Status = require('../../dist/dto/Status').default;
-const DBSQLOperation = require('../../dist/DBSQLOperation').default;
-const HiveDriver = require('../../dist/hive/HiveDriver').default;
-const DBSQLClient = require('../../dist/DBSQLClient').default;
+const Int64 = require('node-int64');
+const { default: DBSQLSession, numberToInt64 } = require('../../lib/DBSQLSession');
+const InfoValue = require('../../lib/dto/InfoValue').default;
+const Status = require('../../lib/dto/Status').default;
+const DBSQLOperation = require('../../lib/DBSQLOperation').default;
+const HiveDriver = require('../../lib/hive/HiveDriver').default;
+const DBSQLClient = require('../../lib/DBSQLClient').default;
 
 // Create logger that won't emit
 //
@@ -62,6 +63,30 @@ async function expectFailure(fn) {
 }
 
 describe('DBSQLSession', () => {
+  describe('numberToInt64', () => {
+    it('should convert regular number to Int64', () => {
+      const num = Math.random() * 1000000;
+      const value = numberToInt64(num);
+      expect(value.equals(new Int64(num))).to.be.true;
+    });
+
+    it('should return Int64 values as is', () => {
+      const num = new Int64(Math.random() * 1000000);
+      const value = numberToInt64(num);
+      expect(value).to.equal(num);
+    });
+
+    it('should convert BigInt to Int64', () => {
+      // This case is especially important, because Int64 has no native methods to convert
+      // between Int64 and BigInt. This conversion involves some byte operations, and it's
+      // important to make sure we don't mess up with things like byte order
+
+      const num = BigInt(Math.round(Math.random() * 10000)) * BigInt(Math.round(Math.random() * 10000));
+      const value = numberToInt64(num);
+      expect(value.toString()).equal(num.toString());
+    });
+  });
+
   describe('getInfo', () => {
     it('should run operation', async () => {
       const session = createSession();
