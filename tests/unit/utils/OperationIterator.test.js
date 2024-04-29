@@ -1,5 +1,5 @@
 const { expect } = require('chai');
-const { OperationChunksIterator, OperationRowsIterator } = require('../../../dist/utils/OperationIterator');
+const { OperationChunksIterator, OperationRowsIterator } = require('../../../lib/utils/OperationIterator');
 
 class OperationMock {
   // `chunks` should be an array of chunks

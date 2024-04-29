@@ -5,7 +5,7 @@ const {
   definedOrError,
   formatProgress,
   ProgressUpdateTransformer,
-} = require('../../../dist/utils');
+} = require('../../../lib/utils');
 
 describe('buildUserAgentString', () => {
   // It should follow https://www.rfc-editor.org/rfc/rfc7231#section-5.5.3 and
