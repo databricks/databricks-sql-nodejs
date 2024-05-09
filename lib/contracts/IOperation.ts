@@ -23,6 +23,18 @@ export interface GetSchemaOptions extends WaitUntilReadyOptions {
   // no other options
 }
 
+export interface IteratorOptions extends FetchOptions {
+  autoClose?: boolean; // defaults to `false`
+}
+
+export interface IOperationChunksIterator extends AsyncIterableIterator<Array<object>> {
+  readonly operation: IOperation;
+}
+
+export interface IOperationRowsIterator extends AsyncIterableIterator<object> {
+  readonly operation: IOperation;
+}
+
 export default interface IOperation {
   /**
    * Operation identifier
@@ -70,4 +82,8 @@ export default interface IOperation {
    * Fetch schema
    */
   getSchema(options?: GetSchemaOptions): Promise<TTableSchema | null>;
+
+  iterateChunks(options?: IteratorOptions): IOperationChunksIterator;
+
+  iterateRows(options?: IteratorOptions): IOperationRowsIterator;
 }
