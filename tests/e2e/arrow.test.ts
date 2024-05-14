@@ -1,19 +1,22 @@
-const { expect } = require('chai');
-const sinon = require('sinon');
-const config = require('./utils/config');
-const logger = require('./utils/logger')(config.logger);
-const { DBSQLClient } = require('../../lib');
-const ArrowResultHandler = require('../../lib/result/ArrowResultHandler').default;
-const ArrowResultConverter = require('../../lib/result/ArrowResultConverter').default;
-const ResultSlicer = require('../../lib/result/ResultSlicer').default;
+import { expect } from 'chai';
+import sinon from 'sinon';
+import { DBSQLClient } from '../../lib';
+import { ClientConfig } from '../../lib/contracts/IClientContext';
+import IDBSQLSession from '../../lib/contracts/IDBSQLSession';
+import ArrowResultHandler from '../../lib/result/ArrowResultHandler';
+import ArrowResultConverter from '../../lib/result/ArrowResultConverter';
+import ResultSlicer from '../../lib/result/ResultSlicer';
+
+import config from './utils/config';
 
 const fixtures = require('../fixtures/compatibility');
 const { expected: expectedColumn } = require('../fixtures/compatibility/column');
 const { expected: expectedArrow } = require('../fixtures/compatibility/arrow');
 const { expected: expectedArrowNativeTypes } = require('../fixtures/compatibility/arrow_native_types');
+
 const { fixArrowResult } = fixtures;
 
-async function openSession(customConfig) {
+async function openSession(customConfig: Partial<ClientConfig> = {}) {
   const client = new DBSQLClient();
 
   const clientConfig = client.getConfig();
@@ -29,23 +32,23 @@ async function openSession(customConfig) {
   });
 
   return connection.openSession({
-    initialCatalog: config.database[0],
-    initialSchema: config.database[1],
+    initialCatalog: config.catalog,
+    initialSchema: config.schema,
   });
 }
 
-async function execute(session, statement) {
+async function execute(session: IDBSQLSession, statement: string) {
   const operation = await session.executeStatement(statement);
   const result = await operation.fetchAll();
   await operation.close();
   return result;
 }
 
-async function deleteTable(session, tableName) {
+async function deleteTable(session: IDBSQLSession, tableName: string) {
   await execute(session, `DROP TABLE IF EXISTS ${tableName}`);
 }
 
-async function initializeTable(session, tableName) {
+async function initializeTable(session: IDBSQLSession, tableName: string) {
   await deleteTable(session, tableName);
 
   const createTable = fixtures.createTableSql.replace(/\$\{table_name\}/g, tableName);
@@ -58,15 +61,15 @@ async function initializeTable(session, tableName) {
 describe('Arrow support', () => {
   const tableName = `dbsql_nodejs_sdk_e2e_arrow_${config.tableSuffix}`;
 
-  function createTest(testBody, customConfig) {
+  function createTest(
+    testBody: (session: IDBSQLSession) => void | Promise<void>,
+    customConfig: Partial<ClientConfig> = {},
+  ) {
     return async () => {
       const session = await openSession(customConfig);
       try {
         await initializeTable(session, tableName);
         await testBody(session);
-      } catch (error) {
-        logger(error);
-        throw error;
       } finally {
         await deleteTable(session, tableName);
         await session.close();
@@ -82,6 +85,7 @@ describe('Arrow support', () => {
         const result = await operation.fetchAll();
         expect(result).to.deep.equal(expectedColumn);
 
+        // @ts-expect-error TS2339: Property getResultHandler does not exist on type IOperation
         const resultHandler = await operation.getResultHandler();
         expect(resultHandler).to.be.instanceof(ResultSlicer);
         expect(resultHandler.source).to.be.not.instanceof(ArrowResultConverter);
@@ -103,6 +107,7 @@ describe('Arrow support', () => {
         const result = await operation.fetchAll();
         expect(fixArrowResult(result)).to.deep.equal(expectedArrow);
 
+        // @ts-expect-error TS2339: Property getResultHandler does not exist on type IOperation
         const resultHandler = await operation.getResultHandler();
         expect(resultHandler).to.be.instanceof(ResultSlicer);
         expect(resultHandler.source).to.be.instanceof(ArrowResultConverter);
@@ -126,6 +131,7 @@ describe('Arrow support', () => {
         const result = await operation.fetchAll();
         expect(fixArrowResult(result)).to.deep.equal(expectedArrowNativeTypes);
 
+        // @ts-expect-error TS2339: Property getResultHandler does not exist on type IOperation
         const resultHandler = await operation.getResultHandler();
         expect(resultHandler).to.be.instanceof(ResultSlicer);
         expect(resultHandler.source).to.be.instanceof(ArrowResultConverter);
@@ -155,16 +161,20 @@ describe('Arrow support', () => {
     `);
 
     // We use some internals here to check that server returned response with multiple batches
+    // @ts-expect-error TS2339: Property getResultHandler does not exist on type IOperation
     const resultHandler = await operation.getResultHandler();
     expect(resultHandler).to.be.instanceof(ResultSlicer);
     expect(resultHandler.source).to.be.instanceof(ArrowResultConverter);
     expect(resultHandler.source.source).to.be.instanceof(ArrowResultHandler);
 
+    // @ts-expect-error TS2339: Property _data does not exist on type IOperation
     sinon.spy(operation._data, 'fetchNext');
 
     const result = await resultHandler.fetchNext({ limit: rowsCount });
 
+    // @ts-expect-error TS2339: Property _data does not exist on type IOperation
     expect(operation._data.fetchNext.callCount).to.be.eq(1);
+    // @ts-expect-error TS2339: Property _data does not exist on type IOperation
     const rawData = await operation._data.fetchNext.firstCall.returnValue;
     // We don't know exact count of batches returned, it depends on server's configuration,
     // but with much enough rows there should be more than one result batch
@@ -181,6 +191,7 @@ describe('Arrow support', () => {
         const result = await operation.fetchAll();
         expect(fixArrowResult(result)).to.deep.equal(expectedArrow);
 
+        // @ts-expect-error TS2339: Property getResultHandler does not exist on type IOperation
         const resultHandler = await operation.getResultHandler();
         expect(resultHandler).to.be.instanceof(ResultSlicer);
         expect(resultHandler.source).to.be.instanceof(ArrowResultConverter);

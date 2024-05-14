@@ -1,9 +1,11 @@
-const { expect } = require('chai');
-const sinon = require('sinon');
-const config = require('./utils/config');
-const { DBSQLClient } = require('../../lib');
+import { expect } from 'chai';
+import sinon from 'sinon';
+import { DBSQLClient } from '../../lib';
+import { ClientConfig } from '../../lib/contracts/IClientContext';
 
-async function openSession(customConfig) {
+import config from './utils/config';
+
+async function openSession(customConfig: Partial<ClientConfig>) {
   const client = new DBSQLClient();
 
   const clientConfig = client.getConfig();
@@ -19,12 +21,12 @@ async function openSession(customConfig) {
   });
 
   return connection.openSession({
-    initialCatalog: config.database[0],
-    initialSchema: config.database[1],
+    initialCatalog: config.catalog,
+    initialSchema: config.schema,
   });
 }
 
-function arrayChunks(arr, chunkSize) {
+function arrayChunks<T>(arr: Array<T>, chunkSize: number): Array<Array<T>> {
   const result = [];
 
   while (arr.length > 0) {
@@ -38,6 +40,7 @@ function arrayChunks(arr, chunkSize) {
 describe('Iterators', () => {
   it('should iterate over all chunks', async () => {
     const session = await openSession({ arrowEnabled: false });
+    // @ts-expect-error TS2339: Property context does not exist on type IDBSQLSession
     sinon.spy(session.context.driver, 'fetchResults');
     try {
       const expectedRowsCount = 10;
@@ -65,6 +68,7 @@ describe('Iterators', () => {
 
   it('should iterate over all rows', async () => {
     const session = await openSession({ arrowEnabled: false });
+    // @ts-expect-error TS2339: Property context does not exist on type IDBSQLSession
     sinon.spy(session.context.driver, 'fetchResults');
     try {
       const expectedRowsCount = 10;

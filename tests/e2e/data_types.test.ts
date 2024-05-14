@@ -1,10 +1,12 @@
-const { expect } = require('chai');
-const sinon = require('sinon');
-const config = require('./utils/config');
-const logger = require('./utils/logger')(config.logger);
-const { DBSQLClient } = require('../../lib');
+import { expect } from 'chai';
+import sinon from 'sinon';
+import { DBSQLClient } from '../../lib';
+import { ClientConfig } from '../../lib/contracts/IClientContext';
+import IDBSQLSession from '../../lib/contracts/IDBSQLSession';
 
-async function openSession(customConfig) {
+import config from './utils/config';
+
+async function openSession(customConfig: Partial<ClientConfig> = {}) {
   const client = new DBSQLClient();
 
   const clientConfig = client.getConfig();
@@ -20,21 +22,21 @@ async function openSession(customConfig) {
   });
 
   return connection.openSession({
-    initialCatalog: config.database[0],
-    initialSchema: config.database[1],
+    initialCatalog: config.catalog,
+    initialSchema: config.schema,
   });
 }
 
-const execute = async (session, statement) => {
+const execute = async (session: IDBSQLSession, statement: string) => {
   const operation = await session.executeStatement(statement);
   const result = await operation.fetchAll();
   await operation.close();
   return result;
 };
 
-function removeTrailingMetadata(columns) {
+function removeTrailingMetadata(columns: Array<any>) {
   const result = [];
-  for (let i = 0; i < columns.length; i++) {
+  for (let i = 0; i < columns.length; i += 1) {
     const col = columns[i];
     if (col.col_name === '') {
       break;
@@ -187,9 +189,6 @@ describe('Data types', () => {
           dat: '2014-01-17',
         },
       ]);
-    } catch (error) {
-      logger(error);
-      throw error;
     } finally {
       await execute(session, `DROP TABLE IF EXISTS ${table}`);
       await session.close();
@@ -231,9 +230,6 @@ describe('Data types', () => {
           month_interval: '0-1',
         },
       ]);
-    } catch (error) {
-      logger(error);
-      throw error;
     } finally {
       await execute(session, `DROP TABLE IF EXISTS ${table}`);
       await session.close();
@@ -356,9 +352,6 @@ describe('Data types', () => {
           },
         },
       ]);
-    } catch (error) {
-      logger(error);
-      throw error;
     } finally {
       await execute(session, `DROP TABLE IF EXISTS ${table}`);
       await execute(session, `DROP TABLE IF EXISTS ${helperTable}`);

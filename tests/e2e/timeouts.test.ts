@@ -1,9 +1,11 @@
-const { expect, AssertionError } = require('chai');
-const sinon = require('sinon');
-const config = require('./utils/config');
-const { DBSQLClient } = require('../../lib');
+import { expect, AssertionError } from 'chai';
+import sinon from 'sinon';
+import { DBSQLClient } from '../../lib';
+import { ClientConfig } from '../../lib/contracts/IClientContext';
 
-async function openSession(socketTimeout, customConfig) {
+import config from './utils/config';
+
+async function openSession(socketTimeout: number | undefined, customConfig: Partial<ClientConfig> = {}) {
   const client = new DBSQLClient();
 
   const clientConfig = client.getConfig();
@@ -20,8 +22,8 @@ async function openSession(socketTimeout, customConfig) {
   });
 
   return connection.openSession({
-    initialCatalog: config.database[0],
-    initialSchema: config.database[1],
+    initialCatalog: config.catalog,
+    initialSchema: config.schema,
   });
 }
 
@@ -33,7 +35,7 @@ describe('Timeouts', () => {
       await openSession(undefined, { socketTimeout });
       expect.fail('It should throw an error');
     } catch (error) {
-      if (error instanceof AssertionError) {
+      if (error instanceof AssertionError || !(error instanceof Error)) {
         throw error;
       }
       expect(error.message).to.be.eq('Request timed out');
@@ -45,7 +47,7 @@ describe('Timeouts', () => {
       await openSession(socketTimeout);
       expect.fail('It should throw an error');
     } catch (error) {
-      if (error instanceof AssertionError) {
+      if (error instanceof AssertionError || !(error instanceof Error)) {
         throw error;
       }
       expect(error.message).to.be.eq('Request timed out');
