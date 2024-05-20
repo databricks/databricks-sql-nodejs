@@ -10,7 +10,7 @@ export interface ResultSlicerFetchNextOptions extends ResultsProviderFetchNextOp
 export default class ResultSlicer<T> implements IResultsProvider<Array<T>> {
   private readonly context: IClientContext;
 
-  private readonly source: IResultsProvider<Array<T>>;
+  public readonly source: IResultsProvider<Array<T>>;
 
   private remainingResults: Array<T> = [];
 

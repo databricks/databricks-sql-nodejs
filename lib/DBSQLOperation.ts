@@ -48,23 +48,23 @@ async function delay(ms?: number): Promise<void> {
 }
 
 export default class DBSQLOperation implements IOperation {
-  private readonly context: IClientContext;
+  protected readonly context: IClientContext;
 
-  private readonly operationHandle: TOperationHandle;
+  protected readonly operationHandle: TOperationHandle;
+
+  protected readonly _data: RowSetProvider;
+
+  protected readonly closeOperation?: TCloseOperationResp;
+
+  protected closed: boolean = false;
+
+  protected cancelled: boolean = false;
+
+  protected metadata?: TGetResultSetMetadataResp;
+
+  protected state: number = TOperationState.INITIALIZED_STATE;
 
   public onClose?: () => void;
-
-  private readonly _data: RowSetProvider;
-
-  private readonly closeOperation?: TCloseOperationResp;
-
-  private closed: boolean = false;
-
-  private cancelled: boolean = false;
-
-  private metadata?: TGetResultSetMetadataResp;
-
-  private state: number = TOperationState.INITIALIZED_STATE;
 
   // Once operation is finished or fails - cache status response, because subsequent calls
   // to `getOperationStatus()` may fail with irrelevant errors, e.g. HTTP 404
@@ -376,7 +376,7 @@ export default class DBSQLOperation implements IOperation {
     return this.metadata;
   }
 
-  private async getResultHandler(): Promise<ResultSlicer<any>> {
+  protected async getResultHandler(): Promise<ResultSlicer<any>> {
     const metadata = await this.fetchMetadata();
     const resultFormat = definedOrError(metadata.resultFormat);
 

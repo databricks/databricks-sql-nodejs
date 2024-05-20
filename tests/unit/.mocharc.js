@@ -1,6 +1,6 @@
 'use strict';
 
-const allSpecs = 'tests/unit/**/*.test.js';
+const allSpecs = 'tests/unit/**/*.test.ts';
 
 const argvSpecs = process.argv.slice(4);
 

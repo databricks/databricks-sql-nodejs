@@ -7,7 +7,7 @@ import IClientContext from '../../../contracts/IClientContext';
 
 export { OAuthFlow };
 
-interface DatabricksOAuthOptions extends OAuthManagerOptions {
+export interface DatabricksOAuthOptions extends OAuthManagerOptions {
   scopes?: OAuthScopes;
   persistence?: OAuthPersistence;
   headers?: HeadersInit;
@@ -16,16 +16,16 @@ interface DatabricksOAuthOptions extends OAuthManagerOptions {
 export default class DatabricksOAuth implements IAuthentication {
   private readonly context: IClientContext;
 
-  private readonly options: DatabricksOAuthOptions;
+  protected readonly options: DatabricksOAuthOptions;
 
-  private readonly manager: OAuthManager;
+  protected readonly manager: OAuthManager;
 
   private readonly defaultPersistence = new OAuthPersistenceCache();
 
   constructor(options: DatabricksOAuthOptions) {
     this.context = options.context;
     this.options = options;
-    this.manager = OAuthManager.getManager(this.options);
+    this.manager = this.createManager(this.options);
   }
 
   public async authenticate(): Promise<HeadersInit> {
@@ -45,5 +45,9 @@ export default class DatabricksOAuth implements IAuthentication {
       ...headers,
       Authorization: `Bearer ${token.accessToken}`,
     };
+  }
+
+  protected createManager(options: OAuthManagerOptions): OAuthManager {
+    return OAuthManager.getManager(options);
   }
 }

@@ -143,87 +143,45 @@ declare class Client {
 
   constructor(output: thrift.TTransport, pClass: { new(trans: thrift.TTransport): thrift.TProtocol });
 
-  OpenSession(req: TOpenSessionReq): TOpenSessionResp;
-
   OpenSession(req: TOpenSessionReq, callback?: (error: void, response: TOpenSessionResp)=>void): void;
-
-  CloseSession(req: TCloseSessionReq): TCloseSessionResp;
 
   CloseSession(req: TCloseSessionReq, callback?: (error: void, response: TCloseSessionResp)=>void): void;
 
-  GetInfo(req: TGetInfoReq): TGetInfoResp;
-
   GetInfo(req: TGetInfoReq, callback?: (error: void, response: TGetInfoResp)=>void): void;
-
-  ExecuteStatement(req: TExecuteStatementReq): TExecuteStatementResp;
 
   ExecuteStatement(req: TExecuteStatementReq, callback?: (error: void, response: TExecuteStatementResp)=>void): void;
 
-  GetTypeInfo(req: TGetTypeInfoReq): TGetTypeInfoResp;
-
   GetTypeInfo(req: TGetTypeInfoReq, callback?: (error: void, response: TGetTypeInfoResp)=>void): void;
-
-  GetCatalogs(req: TGetCatalogsReq): TGetCatalogsResp;
 
   GetCatalogs(req: TGetCatalogsReq, callback?: (error: void, response: TGetCatalogsResp)=>void): void;
 
-  GetSchemas(req: TGetSchemasReq): TGetSchemasResp;
-
   GetSchemas(req: TGetSchemasReq, callback?: (error: void, response: TGetSchemasResp)=>void): void;
-
-  GetTables(req: TGetTablesReq): TGetTablesResp;
 
   GetTables(req: TGetTablesReq, callback?: (error: void, response: TGetTablesResp)=>void): void;
 
-  GetTableTypes(req: TGetTableTypesReq): TGetTableTypesResp;
-
   GetTableTypes(req: TGetTableTypesReq, callback?: (error: void, response: TGetTableTypesResp)=>void): void;
-
-  GetColumns(req: TGetColumnsReq): TGetColumnsResp;
 
   GetColumns(req: TGetColumnsReq, callback?: (error: void, response: TGetColumnsResp)=>void): void;
 
-  GetFunctions(req: TGetFunctionsReq): TGetFunctionsResp;
-
   GetFunctions(req: TGetFunctionsReq, callback?: (error: void, response: TGetFunctionsResp)=>void): void;
-
-  GetPrimaryKeys(req: TGetPrimaryKeysReq): TGetPrimaryKeysResp;
 
   GetPrimaryKeys(req: TGetPrimaryKeysReq, callback?: (error: void, response: TGetPrimaryKeysResp)=>void): void;
 
-  GetCrossReference(req: TGetCrossReferenceReq): TGetCrossReferenceResp;
-
   GetCrossReference(req: TGetCrossReferenceReq, callback?: (error: void, response: TGetCrossReferenceResp)=>void): void;
-
-  GetOperationStatus(req: TGetOperationStatusReq): TGetOperationStatusResp;
 
   GetOperationStatus(req: TGetOperationStatusReq, callback?: (error: void, response: TGetOperationStatusResp)=>void): void;
 
-  CancelOperation(req: TCancelOperationReq): TCancelOperationResp;
-
   CancelOperation(req: TCancelOperationReq, callback?: (error: void, response: TCancelOperationResp)=>void): void;
-
-  CloseOperation(req: TCloseOperationReq): TCloseOperationResp;
 
   CloseOperation(req: TCloseOperationReq, callback?: (error: void, response: TCloseOperationResp)=>void): void;
 
-  GetResultSetMetadata(req: TGetResultSetMetadataReq): TGetResultSetMetadataResp;
-
   GetResultSetMetadata(req: TGetResultSetMetadataReq, callback?: (error: void, response: TGetResultSetMetadataResp)=>void): void;
-
-  FetchResults(req: TFetchResultsReq): TFetchResultsResp;
 
   FetchResults(req: TFetchResultsReq, callback?: (error: void, response: TFetchResultsResp)=>void): void;
 
-  GetDelegationToken(req: TGetDelegationTokenReq): TGetDelegationTokenResp;
-
   GetDelegationToken(req: TGetDelegationTokenReq, callback?: (error: void, response: TGetDelegationTokenResp)=>void): void;
 
-  CancelDelegationToken(req: TCancelDelegationTokenReq): TCancelDelegationTokenResp;
-
   CancelDelegationToken(req: TCancelDelegationTokenReq, callback?: (error: void, response: TCancelDelegationTokenResp)=>void): void;
-
-  RenewDelegationToken(req: TRenewDelegationTokenReq): TRenewDelegationTokenResp;
 
   RenewDelegationToken(req: TRenewDelegationTokenReq, callback?: (error: void, response: TRenewDelegationTokenResp)=>void): void;
 }

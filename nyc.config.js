@@ -5,5 +5,5 @@ module.exports = {
   reporter: ['lcov'],
   all: true,
   include: ['lib/**'],
-  exclude: ['thrift/**', 'tests/**'],
+  exclude: ['lib/index.ts', 'thrift/**', 'tests/**'],
 };

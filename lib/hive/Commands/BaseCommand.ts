@@ -1,15 +1,14 @@
 import { Response } from 'node-fetch';
-import TCLIService from '../../../thrift/TCLIService';
 import HiveDriverError from '../../errors/HiveDriverError';
 import RetryError, { RetryErrorCode } from '../../errors/RetryError';
 import IClientContext from '../../contracts/IClientContext';
 
-export default abstract class BaseCommand {
-  protected client: TCLIService.Client;
+export default abstract class BaseCommand<ClientType> {
+  protected client: ClientType;
 
   protected context: IClientContext;
 
-  constructor(client: TCLIService.Client, context: IClientContext) {
+  constructor(client: ClientType, context: IClientContext) {
     this.client = client;
     this.context = context;
   }

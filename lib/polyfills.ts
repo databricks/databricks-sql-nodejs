@@ -23,7 +23,7 @@ function toLength(value: unknown): number {
 }
 
 // https://tc39.es/ecma262/multipage/indexed-collections.html#sec-array.prototype.at
-export function at<T>(this: Array<T>, index: number): T | undefined {
+export function at<T>(this: ArrayLike<T>, index: unknown): T | undefined {
   const length = toLength(this.length);
   const relativeIndex = toIntegerOrInfinity(index);
   const absoluteIndex = relativeIndex >= 0 ? relativeIndex : length + relativeIndex;

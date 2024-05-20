@@ -1,7 +1,10 @@
 import BaseCommand from './BaseCommand';
 import { TCancelOperationReq, TCancelOperationResp } from '../../../thrift/TCLIService_types';
+import TCLIService from '../../../thrift/TCLIService';
 
-export default class CancelOperationCommand extends BaseCommand {
+type Client = Pick<TCLIService.Client, 'CancelOperation'>;
+
+export default class CancelOperationCommand extends BaseCommand<Client> {
   execute(data: TCancelOperationReq): Promise<TCancelOperationResp> {
     const request = new TCancelOperationReq(data);
 

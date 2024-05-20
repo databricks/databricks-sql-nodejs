@@ -1,7 +1,10 @@
 import BaseCommand from './BaseCommand';
 import { TGetColumnsReq, TGetColumnsResp } from '../../../thrift/TCLIService_types';
+import TCLIService from '../../../thrift/TCLIService';
 
-export default class GetColumnsCommand extends BaseCommand {
+type Client = Pick<TCLIService.Client, 'GetColumns'>;
+
+export default class GetColumnsCommand extends BaseCommand<Client> {
   execute(data: TGetColumnsReq): Promise<TGetColumnsResp> {
     const request = new TGetColumnsReq(data);
 

@@ -1,7 +1,10 @@
 import BaseCommand from './BaseCommand';
 import { TGetTableTypesReq, TGetTableTypesResp } from '../../../thrift/TCLIService_types';
+import TCLIService from '../../../thrift/TCLIService';
 
-export default class GetTableTypesCommand extends BaseCommand {
+type Client = Pick<TCLIService.Client, 'GetTableTypes'>;
+
+export default class GetTableTypesCommand extends BaseCommand<Client> {
   execute(data: TGetTableTypesReq): Promise<TGetTableTypesResp> {
     const request = new TGetTableTypesReq(data);
 

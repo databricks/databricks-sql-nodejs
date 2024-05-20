@@ -10,7 +10,7 @@ export interface HttpTransactionDetails {
 export default interface IConnectionProvider {
   getThriftConnection(): Promise<any>;
 
-  getAgent(): Promise<http.Agent>;
+  getAgent(): Promise<http.Agent | undefined>;
 
   setHeaders(headers: HeadersInit): void;
 

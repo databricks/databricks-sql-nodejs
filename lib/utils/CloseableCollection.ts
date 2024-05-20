@@ -5,7 +5,7 @@ export interface ICloseable {
 }
 
 export default class CloseableCollection<T extends ICloseable> {
-  private items = new Set<T>();
+  protected items = new Set<T>();
 
   public add(item: T) {
     item.onClose = () => {

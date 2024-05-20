@@ -1,7 +1,7 @@
 import IDBSQLLogger from './IDBSQLLogger';
 import IDriver from './IDriver';
 import IConnectionProvider from '../connection/contracts/IConnectionProvider';
-import TCLIService from '../../thrift/TCLIService';
+import IThriftClient from './IThriftClient';
 
 export interface ClientConfig {
   directResultsDefaultMaxRows: number;
@@ -29,7 +29,7 @@ export default interface IClientContext {
 
   getConnectionProvider(): Promise<IConnectionProvider>;
 
-  getClient(): Promise<TCLIService.Client>;
+  getClient(): Promise<IThriftClient>;
 
   getDriver(): Promise<IDriver>;
 }

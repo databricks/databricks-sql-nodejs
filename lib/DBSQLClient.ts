@@ -7,6 +7,7 @@ import { TProtocolVersion } from '../thrift/TCLIService_types';
 import IDBSQLClient, { ClientOptions, ConnectionOptions, OpenSessionRequest } from './contracts/IDBSQLClient';
 import IDriver from './contracts/IDriver';
 import IClientContext, { ClientConfig } from './contracts/IClientContext';
+import IThriftClient from './contracts/IThriftClient';
 import HiveDriver from './hive/HiveDriver';
 import DBSQLSession from './DBSQLSession';
 import IDBSQLSession from './contracts/IDBSQLSession';
@@ -43,16 +44,18 @@ function getInitialNamespaceOptions(catalogName?: string, schemaName?: string) {
   };
 }
 
+export type ThriftLibrary = Pick<typeof thrift, 'createClient'>;
+
 export default class DBSQLClient extends EventEmitter implements IDBSQLClient, IClientContext {
   private static defaultLogger?: IDBSQLLogger;
 
   private readonly config: ClientConfig;
 
-  private connectionProvider?: IConnectionProvider;
+  protected connectionProvider?: IConnectionProvider;
 
-  private authProvider?: IAuthentication;
+  protected authProvider?: IAuthentication;
 
-  private client?: TCLIService.Client;
+  protected client?: IThriftClient;
 
   private readonly driver = new HiveDriver({
     context: this,
@@ -60,9 +63,9 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
 
   private readonly logger: IDBSQLLogger;
 
-  private readonly thrift = thrift;
+  protected thrift: ThriftLibrary = thrift;
 
-  private sessions = new CloseableCollection<DBSQLSession>();
+  protected sessions = new CloseableCollection<DBSQLSession>();
 
   private static getDefaultLogger(): IDBSQLLogger {
     if (!this.defaultLogger) {
@@ -99,7 +102,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
     this.logger.log(LogLevel.info, 'Created DBSQLClient');
   }
 
-  private getConnectionOptions(options: ConnectionOptions): IConnectionOptions {
+  protected getConnectionOptions(options: ConnectionOptions): IConnectionOptions {
     return {
       host: options.host,
       port: options.port || 443,
@@ -113,7 +116,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
     };
   }
 
-  private initAuthProvider(options: ConnectionOptions, authProvider?: IAuthentication): IAuthentication {
+  protected createAuthProvider(options: ConnectionOptions, authProvider?: IAuthentication): IAuthentication {
     if (authProvider) {
       return authProvider;
     }
@@ -143,6 +146,10 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
     }
   }
 
+  protected createConnectionProvider(options: ConnectionOptions): IConnectionProvider {
+    return new HttpConnection(this.getConnectionOptions(options), this);
+  }
+
   /**
    * Connects DBSQLClient to endpoint
    * @public
@@ -153,9 +160,9 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
    * const session = client.connect({host, path, token});
    */
   public async connect(options: ConnectionOptions, authProvider?: IAuthentication): Promise<IDBSQLClient> {
-    this.authProvider = this.initAuthProvider(options, authProvider);
+    this.authProvider = this.createAuthProvider(options, authProvider);
 
-    this.connectionProvider = new HttpConnection(this.getConnectionOptions(options), this);
+    this.connectionProvider = this.createConnectionProvider(options);
 
     const thriftConnection = await this.connectionProvider.getThriftConnection();
 
@@ -238,7 +245,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
     return this.connectionProvider;
   }
 
-  public async getClient(): Promise<TCLIService.Client> {
+  public async getClient(): Promise<IThriftClient> {
     const connectionProvider = await this.getConnectionProvider();
 
     if (!this.client) {

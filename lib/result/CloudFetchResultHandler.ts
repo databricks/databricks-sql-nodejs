@@ -9,13 +9,13 @@ import { LZ4 } from '../utils';
 export default class CloudFetchResultHandler implements IResultsProvider<ArrowBatch> {
   protected readonly context: IClientContext;
 
-  private readonly source: IResultsProvider<TRowSet | undefined>;
+  public readonly source: IResultsProvider<TRowSet | undefined>;
 
   private readonly isLZ4Compressed: boolean;
 
-  private pendingLinks: Array<TSparkArrowResultLink> = [];
+  protected pendingLinks: Array<TSparkArrowResultLink> = [];
 
-  private downloadTasks: Array<Promise<ArrowBatch>> = [];
+  protected downloadTasks: Array<Promise<ArrowBatch>> = [];
 
   constructor(
     context: IClientContext,

@@ -6,50 +6,26 @@ import { OAuthScopes, scopeDelimiter } from './OAuthScope';
 import IClientContext from '../../../contracts/IClientContext';
 import AuthenticationError from '../../../errors/AuthenticationError';
 
+export type DefaultOpenAuthUrlFunction = (authUrl: string) => Promise<void>;
+
+export type CustomOpenAuthUrlFunction = (
+  authUrl: string,
+  defaultOpenAuthUrl: DefaultOpenAuthUrlFunction,
+) => Promise<void>;
+
 export interface AuthorizationCodeOptions {
   client: BaseClient;
   ports: Array<number>;
   context: IClientContext;
+  openAuthUrl?: CustomOpenAuthUrlFunction;
 }
 
-async function startServer(
-  host: string,
-  port: number,
-  requestHandler: (req: IncomingMessage, res: ServerResponse) => void,
-): Promise<Server> {
-  const server = http.createServer(requestHandler);
-
-  return new Promise((resolve, reject) => {
-    const errorListener = (error: Error) => {
-      server.off('error', errorListener);
-      reject(error);
-    };
-
-    server.on('error', errorListener);
-    server.listen(port, host, () => {
-      server.off('error', errorListener);
-      resolve(server);
-    });
-  });
+async function defaultOpenAuthUrl(authUrl: string) {
+  await open(authUrl);
 }
 
-async function stopServer(server: Server): Promise<void> {
-  if (!server.listening) {
-    return;
-  }
-
-  return new Promise((resolve, reject) => {
-    const errorListener = (error: Error) => {
-      server.off('error', errorListener);
-      reject(error);
-    };
-
-    server.on('error', errorListener);
-    server.close(() => {
-      server.off('error', errorListener);
-      resolve();
-    });
-  });
+async function openAuthUrl(authUrl: string, defaultOpenUrl: DefaultOpenAuthUrlFunction) {
+  return defaultOpenUrl(authUrl);
 }
 
 export interface AuthorizationCodeFetchResult {
@@ -65,16 +41,12 @@ export default class AuthorizationCode {
 
   private readonly host: string = 'localhost';
 
-  private readonly ports: Array<number>;
+  private readonly options: AuthorizationCodeOptions;
 
   constructor(options: AuthorizationCodeOptions) {
     this.client = options.client;
-    this.ports = options.ports;
     this.context = options.context;
-  }
-
-  private async openUrl(url: string) {
-    return open(url);
+    this.options = options;
   }
 
   public async fetch(scopes: OAuthScopes): Promise<AuthorizationCodeFetchResult> {
@@ -84,7 +56,7 @@ export default class AuthorizationCode {
 
     let receivedParams: CallbackParamsType | undefined;
 
-    const server = await this.startServer((req, res) => {
+    const server = await this.createServer((req, res) => {
       const params = this.client.callbackParams(req);
       if (params.state === state) {
         receivedParams = params;
@@ -108,7 +80,8 @@ export default class AuthorizationCode {
       redirect_uri: redirectUri,
     });
 
-    await this.openUrl(authUrl);
+    const openUrl = this.options.openAuthUrl ?? openAuthUrl;
+    await openUrl(authUrl, defaultOpenAuthUrl);
     await server.stopped();
 
     if (!receivedParams || !receivedParams.code) {
@@ -122,11 +95,11 @@ export default class AuthorizationCode {
     return { code: receivedParams.code, verifier: verifierString, redirectUri };
   }
 
-  private async startServer(requestHandler: (req: IncomingMessage, res: ServerResponse) => void) {
-    for (const port of this.ports) {
+  private async createServer(requestHandler: (req: IncomingMessage, res: ServerResponse) => void) {
+    for (const port of this.options.ports) {
       const host = this.host; // eslint-disable-line prefer-destructuring
       try {
-        const server = await startServer(host, port, requestHandler); // eslint-disable-line no-await-in-loop
+        const server = await this.startServer(host, port, requestHandler); // eslint-disable-line no-await-in-loop
         this.context.getLogger().log(LogLevel.info, `Listening for OAuth authorization callback at ${host}:${port}`);
 
         let resolveStopped: () => void;
@@ -140,7 +113,7 @@ export default class AuthorizationCode {
           host,
           port,
           server,
-          stop: () => stopServer(server).then(resolveStopped).catch(rejectStopped),
+          stop: () => this.stopServer(server).then(resolveStopped).catch(rejectStopped),
           stopped: () => stoppedPromise,
         };
       } catch (error) {
@@ -154,6 +127,50 @@ export default class AuthorizationCode {
     }
 
     throw new AuthenticationError('Failed to start server: all ports are in use');
+  }
+
+  protected createHttpServer(requestHandler: (req: IncomingMessage, res: ServerResponse) => void) {
+    return http.createServer(requestHandler);
+  }
+
+  private async startServer(
+    host: string,
+    port: number,
+    requestHandler: (req: IncomingMessage, res: ServerResponse) => void,
+  ): Promise<Server> {
+    const server = this.createHttpServer(requestHandler);
+
+    return new Promise((resolve, reject) => {
+      const errorListener = (error: Error) => {
+        server.off('error', errorListener);
+        reject(error);
+      };
+
+      server.on('error', errorListener);
+      server.listen(port, host, () => {
+        server.off('error', errorListener);
+        resolve(server);
+      });
+    });
+  }
+
+  private async stopServer(server: Server): Promise<void> {
+    if (!server.listening) {
+      return;
+    }
+
+    return new Promise((resolve, reject) => {
+      const errorListener = (error: Error) => {
+        server.off('error', errorListener);
+        reject(error);
+      };
+
+      server.on('error', errorListener);
+      server.close(() => {
+        server.off('error', errorListener);
+        resolve();
+      });
+    });
   }
 
   private renderCallbackResponse(): string {

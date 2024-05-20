@@ -8,9 +8,9 @@ import { LZ4 } from '../utils';
 export default class ArrowResultHandler implements IResultsProvider<ArrowBatch> {
   protected readonly context: IClientContext;
 
-  private readonly source: IResultsProvider<TRowSet | undefined>;
+  public readonly source: IResultsProvider<TRowSet | undefined>;
 
-  private readonly arrowSchema?: Buffer;
+  protected readonly arrowSchema?: Buffer;
 
   private readonly isLZ4Compressed: boolean;
 
