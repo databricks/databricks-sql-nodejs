@@ -12,15 +12,6 @@ const sessionHandleStub: TSessionHandle = {
   sessionId: { guid: Buffer.alloc(16), secret: Buffer.alloc(16) },
 };
 
-class DBSQLSessionTest extends DBSQLSession {
-  public inspectInternals() {
-    return {
-      isOpen: this.isOpen,
-      operations: this.operations,
-    };
-  }
-}
-
 async function expectFailure(fn: () => Promise<unknown>) {
   try {
     await fn();
@@ -59,7 +50,7 @@ describe('DBSQLSession', () => {
 
   describe('getInfo', () => {
     it('should run operation', async () => {
-      const session = new DBSQLSessionTest({ handle: sessionHandleStub, context: new ClientContextStub() });
+      const session = new DBSQLSession({ handle: sessionHandleStub, context: new ClientContextStub() });
       const result = await session.getInfo(1);
       expect(result).instanceOf(InfoValue);
     });
@@ -67,26 +58,26 @@ describe('DBSQLSession', () => {
 
   describe('executeStatement', () => {
     it('should execute statement', async () => {
-      const session = new DBSQLSessionTest({ handle: sessionHandleStub, context: new ClientContextStub() });
+      const session = new DBSQLSession({ handle: sessionHandleStub, context: new ClientContextStub() });
       const result = await session.executeStatement('SELECT * FROM table');
       expect(result).instanceOf(DBSQLOperation);
     });
 
     it('should use direct results', async () => {
-      const session = new DBSQLSessionTest({ handle: sessionHandleStub, context: new ClientContextStub() });
+      const session = new DBSQLSession({ handle: sessionHandleStub, context: new ClientContextStub() });
       const result = await session.executeStatement('SELECT * FROM table', { maxRows: 10 });
       expect(result).instanceOf(DBSQLOperation);
     });
 
     it('should disable direct results', async () => {
-      const session = new DBSQLSessionTest({ handle: sessionHandleStub, context: new ClientContextStub() });
+      const session = new DBSQLSession({ handle: sessionHandleStub, context: new ClientContextStub() });
       const result = await session.executeStatement('SELECT * FROM table', { maxRows: null });
       expect(result).instanceOf(DBSQLOperation);
     });
 
     describe('Arrow support', () => {
       it('should not use Arrow if disabled in options', async () => {
-        const session = new DBSQLSessionTest({
+        const session = new DBSQLSession({
           handle: sessionHandleStub,
           context: new ClientContextStub({ arrowEnabled: false }),
         });
@@ -96,7 +87,7 @@ describe('DBSQLSession', () => {
 
       it('should apply defaults for Arrow options', async () => {
         case1: {
-          const session = new DBSQLSessionTest({
+          const session = new DBSQLSession({
             handle: sessionHandleStub,
             context: new ClientContextStub({ arrowEnabled: true }),
           });
@@ -105,7 +96,7 @@ describe('DBSQLSession', () => {
         }
 
         case2: {
-          const session = new DBSQLSessionTest({
+          const session = new DBSQLSession({
             handle: sessionHandleStub,
             context: new ClientContextStub({ arrowEnabled: true, useArrowNativeTypes: false }),
           });
@@ -118,19 +109,19 @@ describe('DBSQLSession', () => {
 
   describe('getTypeInfo', () => {
     it('should run operation', async () => {
-      const session = new DBSQLSessionTest({ handle: sessionHandleStub, context: new ClientContextStub() });
+      const session = new DBSQLSession({ handle: sessionHandleStub, context: new ClientContextStub() });
       const result = await session.getTypeInfo();
       expect(result).instanceOf(DBSQLOperation);
     });
 
     it('should use direct results', async () => {
-      const session = new DBSQLSessionTest({ handle: sessionHandleStub, context: new ClientContextStub() });
+      const session = new DBSQLSession({ handle: sessionHandleStub, context: new ClientContextStub() });
       const result = await session.getTypeInfo({ maxRows: 10 });
       expect(result).instanceOf(DBSQLOperation);
     });
 
     it('should disable direct results', async () => {
-      const session = new DBSQLSessionTest({ handle: sessionHandleStub, context: new ClientContextStub() });
+      const session = new DBSQLSession({ handle: sessionHandleStub, context: new ClientContextStub() });
       const result = await session.getTypeInfo({ maxRows: null });
       expect(result).instanceOf(DBSQLOperation);
     });
@@ -138,19 +129,19 @@ describe('DBSQLSession', () => {
 
   describe('getCatalogs', () => {
     it('should run operation', async () => {
-      const session = new DBSQLSessionTest({ handle: sessionHandleStub, context: new ClientContextStub() });
+      const session = new DBSQLSession({ handle: sessionHandleStub, context: new ClientContextStub() });
       const result = await session.getCatalogs();
       expect(result).instanceOf(DBSQLOperation);
     });
 
     it('should use direct results', async () => {
-      const session = new DBSQLSessionTest({ handle: sessionHandleStub, context: new ClientContextStub() });
+      const session = new DBSQLSession({ handle: sessionHandleStub, context: new ClientContextStub() });
       const result = await session.getCatalogs({ maxRows: 10 });
       expect(result).instanceOf(DBSQLOperation);
     });
 
     it('should disable direct results', async () => {
-      const session = new DBSQLSessionTest({ handle: sessionHandleStub, context: new ClientContextStub() });
+      const session = new DBSQLSession({ handle: sessionHandleStub, context: new ClientContextStub() });
       const result = await session.getCatalogs({ maxRows: null });
       expect(result).instanceOf(DBSQLOperation);
     });
@@ -158,13 +149,13 @@ describe('DBSQLSession', () => {
 
   describe('getSchemas', () => {
     it('should run operation', async () => {
-      const session = new DBSQLSessionTest({ handle: sessionHandleStub, context: new ClientContextStub() });
+      const session = new DBSQLSession({ handle: sessionHandleStub, context: new ClientContextStub() });
       const result = await session.getSchemas();
       expect(result).instanceOf(DBSQLOperation);
     });
 
     it('should use filters', async () => {
-      const session = new DBSQLSessionTest({ handle: sessionHandleStub, context: new ClientContextStub() });
+      const session = new DBSQLSession({ handle: sessionHandleStub, context: new ClientContextStub() });
       const result = await session.getSchemas({
         catalogName: 'catalog',
         schemaName: 'schema',
@@ -173,13 +164,13 @@ describe('DBSQLSession', () => {
     });
 
     it('should use direct results', async () => {
-      const session = new DBSQLSessionTest({ handle: sessionHandleStub, context: new ClientContextStub() });
+      const session = new DBSQLSession({ handle: sessionHandleStub, context: new ClientContextStub() });
       const result = await session.getSchemas({ maxRows: 10 });
       expect(result).instanceOf(DBSQLOperation);
     });
 
     it('should disable direct results', async () => {
-      const session = new DBSQLSessionTest({ handle: sessionHandleStub, context: new ClientContextStub() });
+      const session = new DBSQLSession({ handle: sessionHandleStub, context: new ClientContextStub() });
       const result = await session.getSchemas({ maxRows: null });
       expect(result).instanceOf(DBSQLOperation);
     });
@@ -187,13 +178,13 @@ describe('DBSQLSession', () => {
 
   describe('getTables', () => {
     it('should run operation', async () => {
-      const session = new DBSQLSessionTest({ handle: sessionHandleStub, context: new ClientContextStub() });
+      const session = new DBSQLSession({ handle: sessionHandleStub, context: new ClientContextStub() });
       const result = await session.getTables();
       expect(result).instanceOf(DBSQLOperation);
     });
 
     it('should use filters', async () => {
-      const session = new DBSQLSessionTest({ handle: sessionHandleStub, context: new ClientContextStub() });
+      const session = new DBSQLSession({ handle: sessionHandleStub, context: new ClientContextStub() });
       const result = await session.getTables({
         catalogName: 'catalog',
         schemaName: 'default',
@@ -204,13 +195,13 @@ describe('DBSQLSession', () => {
     });
 
     it('should use direct results', async () => {
-      const session = new DBSQLSessionTest({ handle: sessionHandleStub, context: new ClientContextStub() });
+      const session = new DBSQLSession({ handle: sessionHandleStub, context: new ClientContextStub() });
       const result = await session.getTables({ maxRows: 10 });
       expect(result).instanceOf(DBSQLOperation);
     });
 
     it('should disable direct results', async () => {
-      const session = new DBSQLSessionTest({ handle: sessionHandleStub, context: new ClientContextStub() });
+      const session = new DBSQLSession({ handle: sessionHandleStub, context: new ClientContextStub() });
       const result = await session.getTables({ maxRows: null });
       expect(result).instanceOf(DBSQLOperation);
     });
@@ -218,19 +209,19 @@ describe('DBSQLSession', () => {
 
   describe('getTableTypes', () => {
     it('should run operation', async () => {
-      const session = new DBSQLSessionTest({ handle: sessionHandleStub, context: new ClientContextStub() });
+      const session = new DBSQLSession({ handle: sessionHandleStub, context: new ClientContextStub() });
       const result = await session.getTableTypes();
       expect(result).instanceOf(DBSQLOperation);
     });
 
     it('should use direct results', async () => {
-      const session = new DBSQLSessionTest({ handle: sessionHandleStub, context: new ClientContextStub() });
+      const session = new DBSQLSession({ handle: sessionHandleStub, context: new ClientContextStub() });
       const result = await session.getTableTypes({ maxRows: 10 });
       expect(result).instanceOf(DBSQLOperation);
     });
 
     it('should disable direct results', async () => {
-      const session = new DBSQLSessionTest({ handle: sessionHandleStub, context: new ClientContextStub() });
+      const session = new DBSQLSession({ handle: sessionHandleStub, context: new ClientContextStub() });
       const result = await session.getTableTypes({ maxRows: null });
       expect(result).instanceOf(DBSQLOperation);
     });
@@ -238,13 +229,13 @@ describe('DBSQLSession', () => {
 
   describe('getColumns', () => {
     it('should run operation', async () => {
-      const session = new DBSQLSessionTest({ handle: sessionHandleStub, context: new ClientContextStub() });
+      const session = new DBSQLSession({ handle: sessionHandleStub, context: new ClientContextStub() });
       const result = await session.getColumns();
       expect(result).instanceOf(DBSQLOperation);
     });
 
     it('should use filters', async () => {
-      const session = new DBSQLSessionTest({ handle: sessionHandleStub, context: new ClientContextStub() });
+      const session = new DBSQLSession({ handle: sessionHandleStub, context: new ClientContextStub() });
       const result = await session.getColumns({
         catalogName: 'catalog',
         schemaName: 'schema',
@@ -255,13 +246,13 @@ describe('DBSQLSession', () => {
     });
 
     it('should use direct results', async () => {
-      const session = new DBSQLSessionTest({ handle: sessionHandleStub, context: new ClientContextStub() });
+      const session = new DBSQLSession({ handle: sessionHandleStub, context: new ClientContextStub() });
       const result = await session.getColumns({ maxRows: 10 });
       expect(result).instanceOf(DBSQLOperation);
     });
 
     it('should disable direct results', async () => {
-      const session = new DBSQLSessionTest({ handle: sessionHandleStub, context: new ClientContextStub() });
+      const session = new DBSQLSession({ handle: sessionHandleStub, context: new ClientContextStub() });
       const result = await session.getColumns({ maxRows: null });
       expect(result).instanceOf(DBSQLOperation);
     });
@@ -269,7 +260,7 @@ describe('DBSQLSession', () => {
 
   describe('getFunctions', () => {
     it('should run operation', async () => {
-      const session = new DBSQLSessionTest({ handle: sessionHandleStub, context: new ClientContextStub() });
+      const session = new DBSQLSession({ handle: sessionHandleStub, context: new ClientContextStub() });
       const result = await session.getFunctions({
         catalogName: 'catalog',
         schemaName: 'schema',
@@ -279,7 +270,7 @@ describe('DBSQLSession', () => {
     });
 
     it('should use direct results', async () => {
-      const session = new DBSQLSessionTest({ handle: sessionHandleStub, context: new ClientContextStub() });
+      const session = new DBSQLSession({ handle: sessionHandleStub, context: new ClientContextStub() });
       const result = await session.getFunctions({
         catalogName: 'catalog',
         schemaName: 'schema',
@@ -290,7 +281,7 @@ describe('DBSQLSession', () => {
     });
 
     it('should disable direct results', async () => {
-      const session = new DBSQLSessionTest({ handle: sessionHandleStub, context: new ClientContextStub() });
+      const session = new DBSQLSession({ handle: sessionHandleStub, context: new ClientContextStub() });
       const result = await session.getFunctions({
         catalogName: 'catalog',
         schemaName: 'schema',
@@ -303,7 +294,7 @@ describe('DBSQLSession', () => {
 
   describe('getPrimaryKeys', () => {
     it('should run operation', async () => {
-      const session = new DBSQLSessionTest({ handle: sessionHandleStub, context: new ClientContextStub() });
+      const session = new DBSQLSession({ handle: sessionHandleStub, context: new ClientContextStub() });
       const result = await session.getPrimaryKeys({
         catalogName: 'catalog',
         schemaName: 'schema',
@@ -313,7 +304,7 @@ describe('DBSQLSession', () => {
     });
 
     it('should use direct results', async () => {
-      const session = new DBSQLSessionTest({ handle: sessionHandleStub, context: new ClientContextStub() });
+      const session = new DBSQLSession({ handle: sessionHandleStub, context: new ClientContextStub() });
       const result = await session.getPrimaryKeys({
         catalogName: 'catalog',
         schemaName: 'schema',
@@ -324,7 +315,7 @@ describe('DBSQLSession', () => {
     });
 
     it('should disable direct results', async () => {
-      const session = new DBSQLSessionTest({ handle: sessionHandleStub, context: new ClientContextStub() });
+      const session = new DBSQLSession({ handle: sessionHandleStub, context: new ClientContextStub() });
       const result = await session.getPrimaryKeys({
         catalogName: 'catalog',
         schemaName: 'schema',
@@ -337,7 +328,7 @@ describe('DBSQLSession', () => {
 
   describe('getCrossReference', () => {
     it('should run operation', async () => {
-      const session = new DBSQLSessionTest({ handle: sessionHandleStub, context: new ClientContextStub() });
+      const session = new DBSQLSession({ handle: sessionHandleStub, context: new ClientContextStub() });
       const result = await session.getCrossReference({
         parentCatalogName: 'parentCatalogName',
         parentSchemaName: 'parentSchemaName',
@@ -350,7 +341,7 @@ describe('DBSQLSession', () => {
     });
 
     it('should use direct results', async () => {
-      const session = new DBSQLSessionTest({ handle: sessionHandleStub, context: new ClientContextStub() });
+      const session = new DBSQLSession({ handle: sessionHandleStub, context: new ClientContextStub() });
       const result = await session.getCrossReference({
         parentCatalogName: 'parentCatalogName',
         parentSchemaName: 'parentSchemaName',
@@ -364,7 +355,7 @@ describe('DBSQLSession', () => {
     });
 
     it('should disable direct results', async () => {
-      const session = new DBSQLSessionTest({ handle: sessionHandleStub, context: new ClientContextStub() });
+      const session = new DBSQLSession({ handle: sessionHandleStub, context: new ClientContextStub() });
       const result = await session.getCrossReference({
         parentCatalogName: 'parentCatalogName',
         parentSchemaName: 'parentSchemaName',
@@ -383,12 +374,12 @@ describe('DBSQLSession', () => {
       const context = new ClientContextStub();
       const driver = sinon.spy(context.driver);
 
-      const session = new DBSQLSessionTest({ handle: sessionHandleStub, context });
-      expect(session.inspectInternals().isOpen).to.be.true;
+      const session = new DBSQLSession({ handle: sessionHandleStub, context });
+      expect(session['isOpen']).to.be.true;
 
       const result = await session.close();
       expect(result).instanceOf(Status);
-      expect(session.inspectInternals().isOpen).to.be.false;
+      expect(session['isOpen']).to.be.false;
       expect(driver.closeSession.callCount).to.eq(1);
     });
 
@@ -396,50 +387,46 @@ describe('DBSQLSession', () => {
       const context = new ClientContextStub();
       const driver = sinon.spy(context.driver);
 
-      const session = new DBSQLSessionTest({ handle: sessionHandleStub, context });
-      expect(session.inspectInternals().isOpen).to.be.true;
+      const session = new DBSQLSession({ handle: sessionHandleStub, context });
+      expect(session['isOpen']).to.be.true;
 
       const result = await session.close();
       expect(result).instanceOf(Status);
-      expect(session.inspectInternals().isOpen).to.be.false;
+      expect(session['isOpen']).to.be.false;
       expect(driver.closeSession.callCount).to.eq(1);
 
       const result2 = await session.close();
       expect(result2).instanceOf(Status);
-      expect(session.inspectInternals().isOpen).to.be.false;
+      expect(session['isOpen']).to.be.false;
       expect(driver.closeSession.callCount).to.eq(1); // second time it should not be called
     });
 
     it('should close operations that belong to it', async () => {
-      const session = new DBSQLSessionTest({ handle: sessionHandleStub, context: new ClientContextStub() });
+      const session = new DBSQLSession({ handle: sessionHandleStub, context: new ClientContextStub() });
       const operation = await session.executeStatement('SELECT * FROM table');
       if (!(operation instanceof DBSQLOperation)) {
         expect.fail('Assertion error: operation is not a DBSQLOperation');
       }
 
       expect(operation.onClose).to.be.not.undefined;
-      // @ts-expect-error TS2445: Property closed is protected and only accessible within class DBSQLOperation and its subclasses
-      expect(operation.closed).to.be.false;
-      // @ts-expect-error TS2445: Property items is protected and only accessible within class CloseableCollection and its subclasses
-      expect(session.inspectInternals().operations.items.size).to.eq(1);
+      expect(operation['closed']).to.be.false;
+      expect(session['operations']['items'].size).to.eq(1);
 
-      sinon.spy(session.inspectInternals().operations, 'closeAll');
+      sinon.spy(session['operations'], 'closeAll');
       sinon.spy(operation, 'close');
 
       await session.close();
       expect((operation.close as SinonSpy).called).to.be.true;
-      expect((session.inspectInternals().operations.closeAll as SinonSpy).called).to.be.true;
+      expect((session['operations'].closeAll as SinonSpy).called).to.be.true;
       expect(operation.onClose).to.be.undefined;
-      // @ts-expect-error TS2445: Property closed is protected and only accessible within class DBSQLOperation and its subclasses
-      expect(operation.closed).to.be.true;
-      // @ts-expect-error TS2445: Property items is protected and only accessible within class CloseableCollection and its subclasses
-      expect(session.inspectInternals().operations.items.size).to.eq(0);
+      expect(operation['closed']).to.be.true;
+      expect(session['operations']['items'].size).to.eq(0);
     });
 
     it('should reject all methods once closed', async () => {
-      const session = new DBSQLSessionTest({ handle: sessionHandleStub, context: new ClientContextStub() });
+      const session = new DBSQLSession({ handle: sessionHandleStub, context: new ClientContextStub() });
       await session.close();
-      expect(session.inspectInternals().isOpen).to.be.false;
+      expect(session['isOpen']).to.be.false;
 
       await expectFailure(() => session.getInfo(1));
       await expectFailure(() => session.executeStatement('SELECT * FROM table'));

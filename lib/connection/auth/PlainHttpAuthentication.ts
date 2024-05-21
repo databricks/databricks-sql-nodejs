@@ -10,13 +10,13 @@ interface PlainHttpAuthenticationOptions {
 }
 
 export default class PlainHttpAuthentication implements IAuthentication {
-  protected readonly context: IClientContext;
+  private readonly context: IClientContext;
 
-  protected readonly username: string;
+  private readonly username: string;
 
-  protected readonly password: string;
+  private readonly password: string;
 
-  protected readonly headers: HeadersInit;
+  private readonly headers: HeadersInit;
 
   constructor(options: PlainHttpAuthenticationOptions) {
     this.context = options.context;

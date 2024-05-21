@@ -7,14 +7,6 @@ import { TRowSet, TSparkArrowBatch, TStatusCode, TTableSchema } from '../../../t
 
 import ClientContextStub from '../.stubs/ClientContextStub';
 
-class ArrowResultHandlerTest extends ArrowResultHandler {
-  public inspectInternals() {
-    return {
-      arrowSchema: this.arrowSchema,
-    };
-  }
-}
-
 const sampleArrowSchema = Buffer.from([
   255, 255, 255, 255, 208, 0, 0, 0, 16, 0, 0, 0, 0, 0, 10, 0, 14, 0, 6, 0, 13, 0, 8, 0, 10, 0, 0, 0, 0, 0, 4, 0, 16, 0,
   0, 0, 0, 1, 10, 0, 12, 0, 0, 0, 8, 0, 4, 0, 10, 0, 0, 0, 8, 0, 0, 0, 8, 0, 0, 0, 0, 0, 0, 0, 1, 0, 0, 0, 24, 0, 0, 0,
@@ -77,7 +69,7 @@ const sampleRowSet4: TRowSet = {
 describe('ArrowResultHandler', () => {
   it('should return data', async () => {
     const rowSetProvider = new ResultsProviderStub([sampleRowSet1], undefined);
-    const result = new ArrowResultHandlerTest(new ClientContextStub(), rowSetProvider, {
+    const result = new ArrowResultHandler(new ClientContextStub(), rowSetProvider, {
       arrowSchema: sampleArrowSchema,
       status: { statusCode: TStatusCode.SUCCESS_STATUS },
     });
@@ -92,7 +84,7 @@ describe('ArrowResultHandler', () => {
 
   it('should handle LZ4 compressed data', async () => {
     const rowSetProvider = new ResultsProviderStub([sampleRowSet1LZ4Compressed], undefined);
-    const result = new ArrowResultHandlerTest(new ClientContextStub(), rowSetProvider, {
+    const result = new ArrowResultHandler(new ClientContextStub(), rowSetProvider, {
       status: { statusCode: TStatusCode.SUCCESS_STATUS },
       arrowSchema: sampleArrowSchema,
       lz4Compressed: true,
@@ -108,7 +100,7 @@ describe('ArrowResultHandler', () => {
 
   it('should not buffer any data', async () => {
     const rowSetProvider = new ResultsProviderStub([sampleRowSet1], undefined);
-    const result = new ArrowResultHandlerTest(new ClientContextStub(), rowSetProvider, {
+    const result = new ArrowResultHandler(new ClientContextStub(), rowSetProvider, {
       arrowSchema: sampleArrowSchema,
       status: { statusCode: TStatusCode.SUCCESS_STATUS },
     });
@@ -128,7 +120,7 @@ describe('ArrowResultHandler', () => {
 
     case1: {
       const rowSetProvider = new ResultsProviderStub([], undefined);
-      const result = new ArrowResultHandlerTest(new ClientContextStub(), rowSetProvider, {
+      const result = new ArrowResultHandler(new ClientContextStub(), rowSetProvider, {
         arrowSchema: sampleArrowSchema,
         status: { statusCode: TStatusCode.SUCCESS_STATUS },
       });
@@ -137,7 +129,7 @@ describe('ArrowResultHandler', () => {
     }
     case2: {
       const rowSetProvider = new ResultsProviderStub([sampleRowSet2], undefined);
-      const result = new ArrowResultHandlerTest(new ClientContextStub(), rowSetProvider, {
+      const result = new ArrowResultHandler(new ClientContextStub(), rowSetProvider, {
         arrowSchema: sampleArrowSchema,
         status: { statusCode: TStatusCode.SUCCESS_STATUS },
       });
@@ -146,7 +138,7 @@ describe('ArrowResultHandler', () => {
     }
     case3: {
       const rowSetProvider = new ResultsProviderStub([sampleRowSet3], undefined);
-      const result = new ArrowResultHandlerTest(new ClientContextStub(), rowSetProvider, {
+      const result = new ArrowResultHandler(new ClientContextStub(), rowSetProvider, {
         arrowSchema: sampleArrowSchema,
         status: { statusCode: TStatusCode.SUCCESS_STATUS },
       });
@@ -155,7 +147,7 @@ describe('ArrowResultHandler', () => {
     }
     case4: {
       const rowSetProvider = new ResultsProviderStub([sampleRowSet4], undefined);
-      const result = new ArrowResultHandlerTest(new ClientContextStub(), rowSetProvider, {
+      const result = new ArrowResultHandler(new ClientContextStub(), rowSetProvider, {
         arrowSchema: sampleArrowSchema,
         status: { statusCode: TStatusCode.SUCCESS_STATUS },
       });
@@ -187,7 +179,7 @@ describe('ArrowResultHandler', () => {
       ],
       undefined,
     );
-    const result = new ArrowResultHandlerTest(new ClientContextStub(), rowSetProvider, {
+    const result = new ArrowResultHandler(new ClientContextStub(), rowSetProvider, {
       arrowSchema: sampleArrowSchema,
       status: { statusCode: TStatusCode.SUCCESS_STATUS },
     });
@@ -219,16 +211,16 @@ describe('ArrowResultHandler', () => {
       ],
     };
 
-    const result = new ArrowResultHandlerTest(new ClientContextStub(), rowSetProvider, {
+    const result = new ArrowResultHandler(new ClientContextStub(), rowSetProvider, {
       schema: sampleThriftSchema,
       status: { statusCode: TStatusCode.SUCCESS_STATUS },
     });
-    expect(result.inspectInternals().arrowSchema).to.not.be.undefined;
+    expect(result['arrowSchema']).to.not.be.undefined;
   });
 
   it('should return empty array if no schema available', async () => {
     const rowSetProvider = new ResultsProviderStub([sampleRowSet2], undefined);
-    const result = new ArrowResultHandlerTest(new ClientContextStub(), rowSetProvider, {
+    const result = new ArrowResultHandler(new ClientContextStub(), rowSetProvider, {
       status: { statusCode: TStatusCode.SUCCESS_STATUS },
     });
     expect(await result.fetchNext({ limit: 10000 })).to.be.deep.eq({

@@ -16,16 +16,15 @@ export interface DatabricksOAuthOptions extends OAuthManagerOptions {
 export default class DatabricksOAuth implements IAuthentication {
   private readonly context: IClientContext;
 
-  protected readonly options: DatabricksOAuthOptions;
+  private readonly options: DatabricksOAuthOptions;
 
-  protected readonly manager: OAuthManager;
+  private manager?: OAuthManager;
 
   private readonly defaultPersistence = new OAuthPersistenceCache();
 
   constructor(options: DatabricksOAuthOptions) {
     this.context = options.context;
     this.options = options;
-    this.manager = this.createManager(this.options);
   }
 
   public async authenticate(): Promise<HeadersInit> {
@@ -35,10 +34,10 @@ export default class DatabricksOAuth implements IAuthentication {
 
     let token = await persistence.read(host);
     if (!token) {
-      token = await this.manager.getToken(scopes ?? defaultOAuthScopes);
+      token = await this.getManager().getToken(scopes ?? defaultOAuthScopes);
     }
 
-    token = await this.manager.refreshAccessToken(token);
+    token = await this.getManager().refreshAccessToken(token);
     await persistence.persist(host, token);
 
     return {
@@ -47,7 +46,10 @@ export default class DatabricksOAuth implements IAuthentication {
     };
   }
 
-  protected createManager(options: OAuthManagerOptions): OAuthManager {
-    return OAuthManager.getManager(options);
+  private getManager(): OAuthManager {
+    if (!this.manager) {
+      this.manager = OAuthManager.getManager(this.options);
+    }
+    return this.manager;
   }
 }

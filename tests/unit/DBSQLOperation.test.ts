@@ -21,6 +21,7 @@ import CloudFetchResultHandler from '../../lib/result/CloudFetchResultHandler';
 import ResultSlicer from '../../lib/result/ResultSlicer';
 
 import ClientContextStub from './.stubs/ClientContextStub';
+import { Type } from 'apache-arrow';
 
 function operationHandleStub(overrides: Partial<TOperationHandle>): TOperationHandle {
   return {
@@ -42,33 +43,19 @@ async function expectFailure(fn: () => Promise<unknown>) {
   }
 }
 
-class DBSQLOperationTest extends DBSQLOperation {
-  public getResultHandler = super.getResultHandler;
-
-  public inspectInternals() {
-    return {
-      state: this.state,
-      operationHandle: this.operationHandle,
-      _data: this._data,
-      closed: this.closed,
-      cancelled: this.cancelled,
-    };
-  }
-}
-
 describe('DBSQLOperation', () => {
   describe('status', () => {
     it('should pick up state from operation handle', async () => {
       const context = new ClientContextStub();
-      const operation = new DBSQLOperationTest({ handle: operationHandleStub({ hasResultSet: true }), context });
+      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
 
-      expect(operation.inspectInternals().state).to.equal(TOperationState.INITIALIZED_STATE);
-      expect(operation.inspectInternals().operationHandle.hasResultSet).to.be.true;
+      expect(operation['state']).to.equal(TOperationState.INITIALIZED_STATE);
+      expect(operation['operationHandle'].hasResultSet).to.be.true;
     });
 
     it('should pick up state from directResults', async () => {
       const context = new ClientContextStub();
-      const operation = new DBSQLOperationTest({
+      const operation = new DBSQLOperation({
         handle: operationHandleStub({ hasResultSet: true }),
         context,
         directResults: {
@@ -80,8 +67,8 @@ describe('DBSQLOperation', () => {
         },
       });
 
-      expect(operation.inspectInternals().state).to.equal(TOperationState.FINISHED_STATE);
-      expect(operation.inspectInternals().operationHandle.hasResultSet).to.be.true;
+      expect(operation['state']).to.equal(TOperationState.FINISHED_STATE);
+      expect(operation['operationHandle'].hasResultSet).to.be.true;
     });
 
     it('should fetch status and update internal state', async () => {
@@ -90,17 +77,17 @@ describe('DBSQLOperation', () => {
       driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
       driver.getOperationStatusResp.hasResultSet = true;
 
-      const operation = new DBSQLOperationTest({ handle: operationHandleStub({ hasResultSet: false }), context });
+      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: false }), context });
 
-      expect(operation.inspectInternals().state).to.equal(TOperationState.INITIALIZED_STATE);
-      expect(operation.inspectInternals().operationHandle.hasResultSet).to.be.false;
+      expect(operation['state']).to.equal(TOperationState.INITIALIZED_STATE);
+      expect(operation['operationHandle'].hasResultSet).to.be.false;
 
       const status = await operation.status();
 
       expect(driver.getOperationStatus.called).to.be.true;
       expect(status.operationState).to.equal(TOperationState.FINISHED_STATE);
-      expect(operation.inspectInternals().state).to.equal(TOperationState.FINISHED_STATE);
-      expect(operation.inspectInternals().operationHandle.hasResultSet).to.be.true;
+      expect(operation['state']).to.equal(TOperationState.FINISHED_STATE);
+      expect(operation['operationHandle'].hasResultSet).to.be.true;
     });
 
     it('should request progress', async () => {
@@ -108,7 +95,7 @@ describe('DBSQLOperation', () => {
       const driver = sinon.spy(context.driver);
       driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
 
-      const operation = new DBSQLOperationTest({ handle: operationHandleStub({ hasResultSet: false }), context });
+      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: false }), context });
       await operation.status(true);
 
       expect(driver.getOperationStatus.called).to.be.true;
@@ -121,10 +108,10 @@ describe('DBSQLOperation', () => {
       const driver = sinon.spy(context.driver);
       driver.getOperationStatusResp.hasResultSet = true;
 
-      const operation = new DBSQLOperationTest({ handle: operationHandleStub({ hasResultSet: false }), context });
+      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: false }), context });
 
-      expect(operation.inspectInternals().state).to.equal(TOperationState.INITIALIZED_STATE);
-      expect(operation.inspectInternals().operationHandle.hasResultSet).to.be.false;
+      expect(operation['state']).to.equal(TOperationState.INITIALIZED_STATE);
+      expect(operation['operationHandle'].hasResultSet).to.be.false;
 
       // First call - should fetch data and cache
       driver.getOperationStatusResp = {
@@ -135,8 +122,8 @@ describe('DBSQLOperation', () => {
 
       expect(driver.getOperationStatus.callCount).to.equal(1);
       expect(status1.operationState).to.equal(TOperationState.FINISHED_STATE);
-      expect(operation.inspectInternals().state).to.equal(TOperationState.FINISHED_STATE);
-      expect(operation.inspectInternals().operationHandle.hasResultSet).to.be.true;
+      expect(operation['state']).to.equal(TOperationState.FINISHED_STATE);
+      expect(operation['operationHandle'].hasResultSet).to.be.true;
 
       // Second call - should return cached data
       driver.getOperationStatusResp = {
@@ -147,8 +134,8 @@ describe('DBSQLOperation', () => {
 
       expect(driver.getOperationStatus.callCount).to.equal(1);
       expect(status2.operationState).to.equal(TOperationState.FINISHED_STATE);
-      expect(operation.inspectInternals().state).to.equal(TOperationState.FINISHED_STATE);
-      expect(operation.inspectInternals().operationHandle.hasResultSet).to.be.true;
+      expect(operation['state']).to.equal(TOperationState.FINISHED_STATE);
+      expect(operation['operationHandle'].hasResultSet).to.be.true;
     });
 
     it('should fetch status if directResults status is not finished', async () => {
@@ -157,7 +144,7 @@ describe('DBSQLOperation', () => {
       driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
       driver.getOperationStatusResp.hasResultSet = true;
 
-      const operation = new DBSQLOperationTest({
+      const operation = new DBSQLOperation({
         handle: operationHandleStub({ hasResultSet: false }),
         context,
         directResults: {
@@ -169,15 +156,15 @@ describe('DBSQLOperation', () => {
         },
       });
 
-      expect(operation.inspectInternals().state).to.equal(TOperationState.RUNNING_STATE); // from directResults
-      expect(operation.inspectInternals().operationHandle.hasResultSet).to.be.false;
+      expect(operation['state']).to.equal(TOperationState.RUNNING_STATE); // from directResults
+      expect(operation['operationHandle'].hasResultSet).to.be.false;
 
       const status = await operation.status(false);
 
       expect(driver.getOperationStatus.called).to.be.true;
       expect(status.operationState).to.equal(TOperationState.FINISHED_STATE);
-      expect(operation.inspectInternals().state).to.equal(TOperationState.FINISHED_STATE);
-      expect(operation.inspectInternals().operationHandle.hasResultSet).to.be.true;
+      expect(operation['state']).to.equal(TOperationState.FINISHED_STATE);
+      expect(operation['operationHandle'].hasResultSet).to.be.true;
     });
 
     it('should not fetch status if directResults status is finished', async () => {
@@ -186,7 +173,7 @@ describe('DBSQLOperation', () => {
       driver.getOperationStatusResp.operationState = TOperationState.RUNNING_STATE;
       driver.getOperationStatusResp.hasResultSet = true;
 
-      const operation = new DBSQLOperationTest({
+      const operation = new DBSQLOperation({
         handle: operationHandleStub({ hasResultSet: false }),
         context,
         directResults: {
@@ -198,21 +185,21 @@ describe('DBSQLOperation', () => {
         },
       });
 
-      expect(operation.inspectInternals().state).to.equal(TOperationState.FINISHED_STATE); // from directResults
-      expect(operation.inspectInternals().operationHandle.hasResultSet).to.be.false;
+      expect(operation['state']).to.equal(TOperationState.FINISHED_STATE); // from directResults
+      expect(operation['operationHandle'].hasResultSet).to.be.false;
 
       const status = await operation.status(false);
 
       expect(driver.getOperationStatus.called).to.be.false;
       expect(status.operationState).to.equal(TOperationState.FINISHED_STATE);
-      expect(operation.inspectInternals().state).to.equal(TOperationState.FINISHED_STATE);
-      expect(operation.inspectInternals().operationHandle.hasResultSet).to.be.false;
+      expect(operation['state']).to.equal(TOperationState.FINISHED_STATE);
+      expect(operation['operationHandle'].hasResultSet).to.be.false;
     });
 
     it('should throw an error in case of a status error', async () => {
       const context = new ClientContextStub();
       context.driver.getOperationStatusResp.status.statusCode = TStatusCode.ERROR_STATUS;
-      const operation = new DBSQLOperationTest({ handle: operationHandleStub({ hasResultSet: true }), context });
+      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
 
       try {
         await operation.status(false);
@@ -230,63 +217,63 @@ describe('DBSQLOperation', () => {
     it('should cancel operation and update state', async () => {
       const context = new ClientContextStub();
       const driver = sinon.spy(context.driver);
-      const operation = new DBSQLOperationTest({ handle: operationHandleStub({ hasResultSet: true }), context });
+      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
 
-      expect(operation.inspectInternals().cancelled).to.be.false;
-      expect(operation.inspectInternals().closed).to.be.false;
+      expect(operation['cancelled']).to.be.false;
+      expect(operation['closed']).to.be.false;
 
       await operation.cancel();
 
       expect(driver.cancelOperation.called).to.be.true;
-      expect(operation.inspectInternals().cancelled).to.be.true;
-      expect(operation.inspectInternals().closed).to.be.false;
+      expect(operation['cancelled']).to.be.true;
+      expect(operation['closed']).to.be.false;
     });
 
     it('should return immediately if already cancelled', async () => {
       const context = new ClientContextStub();
       const driver = sinon.spy(context.driver);
-      const operation = new DBSQLOperationTest({ handle: operationHandleStub({ hasResultSet: true }), context });
+      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
 
-      expect(operation.inspectInternals().cancelled).to.be.false;
-      expect(operation.inspectInternals().closed).to.be.false;
-
-      await operation.cancel();
-      expect(driver.cancelOperation.callCount).to.be.equal(1);
-      expect(operation.inspectInternals().cancelled).to.be.true;
-      expect(operation.inspectInternals().closed).to.be.false;
+      expect(operation['cancelled']).to.be.false;
+      expect(operation['closed']).to.be.false;
 
       await operation.cancel();
       expect(driver.cancelOperation.callCount).to.be.equal(1);
-      expect(operation.inspectInternals().cancelled).to.be.true;
-      expect(operation.inspectInternals().closed).to.be.false;
+      expect(operation['cancelled']).to.be.true;
+      expect(operation['closed']).to.be.false;
+
+      await operation.cancel();
+      expect(driver.cancelOperation.callCount).to.be.equal(1);
+      expect(operation['cancelled']).to.be.true;
+      expect(operation['closed']).to.be.false;
     });
 
     it('should return immediately if already closed', async () => {
       const context = new ClientContextStub();
       const driver = sinon.spy(context.driver);
-      const operation = new DBSQLOperationTest({ handle: operationHandleStub({ hasResultSet: true }), context });
+      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
 
-      expect(operation.inspectInternals().cancelled).to.be.false;
-      expect(operation.inspectInternals().closed).to.be.false;
+      expect(operation['cancelled']).to.be.false;
+      expect(operation['closed']).to.be.false;
 
       await operation.close();
       expect(driver.closeOperation.callCount).to.be.equal(1);
-      expect(operation.inspectInternals().cancelled).to.be.false;
-      expect(operation.inspectInternals().closed).to.be.true;
+      expect(operation['cancelled']).to.be.false;
+      expect(operation['closed']).to.be.true;
 
       await operation.cancel();
       expect(driver.cancelOperation.callCount).to.be.equal(0);
-      expect(operation.inspectInternals().cancelled).to.be.false;
-      expect(operation.inspectInternals().closed).to.be.true;
+      expect(operation['cancelled']).to.be.false;
+      expect(operation['closed']).to.be.true;
     });
 
     it('should throw an error in case of a status error and keep state', async () => {
       const context = new ClientContextStub();
       context.driver.cancelOperationResp.status.statusCode = TStatusCode.ERROR_STATUS;
-      const operation = new DBSQLOperationTest({ handle: operationHandleStub({ hasResultSet: true }), context });
+      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
 
-      expect(operation.inspectInternals().cancelled).to.be.false;
-      expect(operation.inspectInternals().closed).to.be.false;
+      expect(operation['cancelled']).to.be.false;
+      expect(operation['closed']).to.be.false;
 
       try {
         await operation.cancel();
@@ -296,17 +283,17 @@ describe('DBSQLOperation', () => {
           throw e;
         }
         expect(e).to.be.instanceOf(StatusError);
-        expect(operation.inspectInternals().cancelled).to.be.false;
-        expect(operation.inspectInternals().closed).to.be.false;
+        expect(operation['cancelled']).to.be.false;
+        expect(operation['closed']).to.be.false;
       }
     });
 
     it('should reject all methods once cancelled', async () => {
       const context = new ClientContextStub();
-      const operation = new DBSQLOperationTest({ handle: operationHandleStub({ hasResultSet: true }), context });
+      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
 
       await operation.cancel();
-      expect(operation.inspectInternals().cancelled).to.be.true;
+      expect(operation['cancelled']).to.be.true;
 
       await expectFailure(() => operation.fetchAll());
       await expectFailure(() => operation.fetchChunk({ disableBuffering: true }));
@@ -320,61 +307,61 @@ describe('DBSQLOperation', () => {
     it('should close operation and update state', async () => {
       const context = new ClientContextStub();
       const driver = sinon.spy(context.driver);
-      const operation = new DBSQLOperationTest({ handle: operationHandleStub({ hasResultSet: true }), context });
+      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
 
-      expect(operation.inspectInternals().cancelled).to.be.false;
-      expect(operation.inspectInternals().closed).to.be.false;
+      expect(operation['cancelled']).to.be.false;
+      expect(operation['closed']).to.be.false;
 
       await operation.close();
 
       expect(driver.closeOperation.called).to.be.true;
-      expect(operation.inspectInternals().cancelled).to.be.false;
-      expect(operation.inspectInternals().closed).to.be.true;
+      expect(operation['cancelled']).to.be.false;
+      expect(operation['closed']).to.be.true;
     });
 
     it('should return immediately if already closed', async () => {
       const context = new ClientContextStub();
       const driver = sinon.spy(context.driver);
-      const operation = new DBSQLOperationTest({ handle: operationHandleStub({ hasResultSet: true }), context });
+      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
 
-      expect(operation.inspectInternals().cancelled).to.be.false;
-      expect(operation.inspectInternals().closed).to.be.false;
-
-      await operation.close();
-      expect(driver.closeOperation.callCount).to.be.equal(1);
-      expect(operation.inspectInternals().cancelled).to.be.false;
-      expect(operation.inspectInternals().closed).to.be.true;
+      expect(operation['cancelled']).to.be.false;
+      expect(operation['closed']).to.be.false;
 
       await operation.close();
       expect(driver.closeOperation.callCount).to.be.equal(1);
-      expect(operation.inspectInternals().cancelled).to.be.false;
-      expect(operation.inspectInternals().closed).to.be.true;
+      expect(operation['cancelled']).to.be.false;
+      expect(operation['closed']).to.be.true;
+
+      await operation.close();
+      expect(driver.closeOperation.callCount).to.be.equal(1);
+      expect(operation['cancelled']).to.be.false;
+      expect(operation['closed']).to.be.true;
     });
 
     it('should return immediately if already cancelled', async () => {
       const context = new ClientContextStub();
       const driver = sinon.spy(context.driver);
-      const operation = new DBSQLOperationTest({ handle: operationHandleStub({ hasResultSet: true }), context });
+      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
 
-      expect(operation.inspectInternals().cancelled).to.be.false;
-      expect(operation.inspectInternals().closed).to.be.false;
+      expect(operation['cancelled']).to.be.false;
+      expect(operation['closed']).to.be.false;
 
       await operation.cancel();
       expect(driver.cancelOperation.callCount).to.be.equal(1);
-      expect(operation.inspectInternals().cancelled).to.be.true;
-      expect(operation.inspectInternals().closed).to.be.false;
+      expect(operation['cancelled']).to.be.true;
+      expect(operation['closed']).to.be.false;
 
       await operation.close();
       expect(driver.closeOperation.callCount).to.be.equal(0);
-      expect(operation.inspectInternals().cancelled).to.be.true;
-      expect(operation.inspectInternals().closed).to.be.false;
+      expect(operation['cancelled']).to.be.true;
+      expect(operation['closed']).to.be.false;
     });
 
     it('should initialize from directResults', async () => {
       const context = new ClientContextStub();
       const driver = sinon.spy(context.driver);
 
-      const operation = new DBSQLOperationTest({
+      const operation = new DBSQLOperation({
         handle: operationHandleStub({ hasResultSet: true }),
         context,
         directResults: {
@@ -384,24 +371,24 @@ describe('DBSQLOperation', () => {
         },
       });
 
-      expect(operation.inspectInternals().cancelled).to.be.false;
-      expect(operation.inspectInternals().closed).to.be.false;
+      expect(operation['cancelled']).to.be.false;
+      expect(operation['closed']).to.be.false;
 
       await operation.close();
 
       expect(driver.closeOperation.called).to.be.false;
-      expect(operation.inspectInternals().cancelled).to.be.false;
-      expect(operation.inspectInternals().closed).to.be.true;
+      expect(operation['cancelled']).to.be.false;
+      expect(operation['closed']).to.be.true;
       expect(driver.closeOperation.callCount).to.be.equal(0);
     });
 
     it('should throw an error in case of a status error and keep state', async () => {
       const context = new ClientContextStub();
       context.driver.closeOperationResp.status.statusCode = TStatusCode.ERROR_STATUS;
-      const operation = new DBSQLOperationTest({ handle: operationHandleStub({ hasResultSet: true }), context });
+      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
 
-      expect(operation.inspectInternals().cancelled).to.be.false;
-      expect(operation.inspectInternals().closed).to.be.false;
+      expect(operation['cancelled']).to.be.false;
+      expect(operation['closed']).to.be.false;
 
       try {
         await operation.close();
@@ -411,17 +398,17 @@ describe('DBSQLOperation', () => {
           throw e;
         }
         expect(e).to.be.instanceOf(StatusError);
-        expect(operation.inspectInternals().cancelled).to.be.false;
-        expect(operation.inspectInternals().closed).to.be.false;
+        expect(operation['cancelled']).to.be.false;
+        expect(operation['closed']).to.be.false;
       }
     });
 
     it('should reject all methods once closed', async () => {
       const context = new ClientContextStub();
-      const operation = new DBSQLOperationTest({ handle: operationHandleStub({ hasResultSet: true }), context });
+      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
 
       await operation.close();
-      expect(operation.inspectInternals().closed).to.be.true;
+      expect(operation['closed']).to.be.true;
 
       await expectFailure(() => operation.fetchAll());
       await expectFailure(() => operation.fetchChunk({ disableBuffering: true }));
@@ -450,14 +437,14 @@ describe('DBSQLOperation', () => {
               return getOperationStatusStub.wrappedMethod.apply(context.driver, args);
             });
 
-          const operation = new DBSQLOperationTest({ handle: operationHandleStub({ hasResultSet: true }), context });
+          const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
 
-          expect(operation.inspectInternals().state).to.equal(TOperationState.INITIALIZED_STATE);
+          expect(operation['state']).to.equal(TOperationState.INITIALIZED_STATE);
 
           await operation.finished();
 
           expect(getOperationStatusStub.callCount).to.be.equal(attemptsUntilFinished);
-          expect(operation.inspectInternals().state).to.equal(TOperationState.FINISHED_STATE);
+          expect(operation['state']).to.equal(TOperationState.FINISHED_STATE);
         });
       },
     );
@@ -476,7 +463,7 @@ describe('DBSQLOperation', () => {
           return getOperationStatusStub.wrappedMethod.apply(context.driver, args);
         });
 
-      const operation = new DBSQLOperationTest({ handle: operationHandleStub({ hasResultSet: true }), context });
+      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
       await operation.finished({ progress: true });
 
       expect(getOperationStatusStub.called).to.be.true;
@@ -500,7 +487,7 @@ describe('DBSQLOperation', () => {
           return getOperationStatusStub.wrappedMethod.apply(context.driver, args);
         });
 
-      const operation = new DBSQLOperationTest({ handle: operationHandleStub({ hasResultSet: true }), context });
+      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
 
       const callback = sinon.stub();
 
@@ -516,7 +503,7 @@ describe('DBSQLOperation', () => {
       driver.getOperationStatusResp.status.statusCode = TStatusCode.SUCCESS_STATUS;
       driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
 
-      const operation = new DBSQLOperationTest({
+      const operation = new DBSQLOperation({
         handle: operationHandleStub({ hasResultSet: true }),
         context,
         directResults: {
@@ -539,7 +526,7 @@ describe('DBSQLOperation', () => {
 
       context.driver.getOperationStatusResp.status.statusCode = TStatusCode.ERROR_STATUS;
       context.driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
-      const operation = new DBSQLOperationTest({ handle: operationHandleStub({ hasResultSet: true }), context });
+      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
 
       try {
         await operation.finished();
@@ -564,7 +551,7 @@ describe('DBSQLOperation', () => {
 
         context.driver.getOperationStatusResp.status.statusCode = TStatusCode.SUCCESS_STATUS;
         context.driver.getOperationStatusResp.operationState = operationState;
-        const operation = new DBSQLOperationTest({ handle: operationHandleStub({ hasResultSet: true }), context });
+        const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
 
         try {
           await operation.finished();
@@ -586,7 +573,7 @@ describe('DBSQLOperation', () => {
       context.driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
       context.driver.getOperationStatusResp.hasResultSet = false;
 
-      const operation = new DBSQLOperationTest({ handle: operationHandleStub({ hasResultSet: false }), context });
+      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: false }), context });
 
       const schema = await operation.getSchema();
 
@@ -610,13 +597,13 @@ describe('DBSQLOperation', () => {
 
       context.driver.getResultSetMetadataResp.schema = { columns: [] };
 
-      const operation = new DBSQLOperationTest({ handle: operationHandleStub({ hasResultSet: true }), context });
+      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
 
       const schema = await operation.getSchema();
 
       expect(getOperationStatusStub.called).to.be.true;
       expect(schema).to.deep.equal(context.driver.getResultSetMetadataResp.schema);
-      expect(operation.inspectInternals().state).to.equal(TOperationState.FINISHED_STATE);
+      expect(operation['state']).to.equal(TOperationState.FINISHED_STATE);
     });
 
     it('should request progress', async () => {
@@ -633,7 +620,7 @@ describe('DBSQLOperation', () => {
           return getOperationStatusStub.wrappedMethod.apply(context.driver, args);
         });
 
-      const operation = new DBSQLOperationTest({ handle: operationHandleStub({ hasResultSet: true }), context });
+      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
       await operation.getSchema({ progress: true });
 
       expect(getOperationStatusStub.called).to.be.true;
@@ -657,7 +644,7 @@ describe('DBSQLOperation', () => {
           return getOperationStatusStub.wrappedMethod.apply(context.driver, args);
         });
 
-      const operation = new DBSQLOperationTest({ handle: operationHandleStub({ hasResultSet: true }), context });
+      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
 
       const callback = sinon.stub();
 
@@ -673,7 +660,7 @@ describe('DBSQLOperation', () => {
       driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
       driver.getOperationStatusResp.hasResultSet = true;
 
-      const operation = new DBSQLOperationTest({ handle: operationHandleStub({ hasResultSet: true }), context });
+      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
 
       const schema = await operation.getSchema();
       expect(schema).to.deep.equal(driver.getResultSetMetadataResp.schema);
@@ -686,7 +673,7 @@ describe('DBSQLOperation', () => {
       driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
       driver.getOperationStatusResp.hasResultSet = true;
 
-      const operation = new DBSQLOperationTest({ handle: operationHandleStub({ hasResultSet: true }), context });
+      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
 
       const schema1 = await operation.getSchema();
       expect(schema1).to.deep.equal(context.driver.getResultSetMetadataResp.schema);
@@ -723,7 +710,7 @@ describe('DBSQLOperation', () => {
           },
         },
       };
-      const operation = new DBSQLOperationTest({
+      const operation = new DBSQLOperation({
         handle: operationHandleStub({ hasResultSet: true }),
         context,
         directResults,
@@ -741,7 +728,7 @@ describe('DBSQLOperation', () => {
       context.driver.getOperationStatusResp.hasResultSet = true;
       context.driver.getResultSetMetadataResp.status.statusCode = TStatusCode.ERROR_STATUS;
 
-      const operation = new DBSQLOperationTest({ handle: operationHandleStub({ hasResultSet: true }), context });
+      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
 
       try {
         await operation.getSchema();
@@ -764,39 +751,41 @@ describe('DBSQLOperation', () => {
         driver.getResultSetMetadataResp.resultFormat = TSparkRowSetType.COLUMN_BASED_SET;
         driver.getResultSetMetadata.resetHistory();
 
-        const operation = new DBSQLOperationTest({ handle: operationHandleStub({ hasResultSet: true }), context });
-        const resultHandler = await operation.getResultHandler();
+        const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
+        const resultHandler = await operation['getResultHandler']();
         expect(driver.getResultSetMetadata.called).to.be.true;
         expect(resultHandler).to.be.instanceOf(ResultSlicer);
-        expect(resultHandler.source).to.be.instanceOf(JsonResultHandler);
+        expect(resultHandler['source']).to.be.instanceOf(JsonResultHandler);
       }
 
       arrowHandler: {
         driver.getResultSetMetadataResp.resultFormat = TSparkRowSetType.ARROW_BASED_SET;
         driver.getResultSetMetadata.resetHistory();
 
-        const operation = new DBSQLOperationTest({ handle: operationHandleStub({ hasResultSet: true }), context });
-        const resultHandler = await operation.getResultHandler();
+        const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
+        const resultHandler = await operation['getResultHandler']();
         expect(driver.getResultSetMetadata.called).to.be.true;
         expect(resultHandler).to.be.instanceOf(ResultSlicer);
-        expect(resultHandler.source).to.be.instanceOf(ArrowResultConverter);
-        if (resultHandler.source instanceof ArrowResultConverter) {
-          expect(resultHandler.source.source).to.be.instanceOf(ArrowResultHandler);
+        expect(resultHandler['source']).to.be.instanceOf(ArrowResultConverter);
+        if (!(resultHandler['source'] instanceof ArrowResultConverter)) {
+          throw new Error('Expected `resultHandler.source` to be `ArrowResultConverter`');
         }
+        expect(resultHandler['source']['source']).to.be.instanceOf(ArrowResultHandler);
       }
 
       cloudFetchHandler: {
         driver.getResultSetMetadataResp.resultFormat = TSparkRowSetType.URL_BASED_SET;
         driver.getResultSetMetadata.resetHistory();
 
-        const operation = new DBSQLOperationTest({ handle: operationHandleStub({ hasResultSet: true }), context });
-        const resultHandler = await operation.getResultHandler();
+        const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
+        const resultHandler = await operation['getResultHandler']();
         expect(driver.getResultSetMetadata.called).to.be.true;
         expect(resultHandler).to.be.instanceOf(ResultSlicer);
-        expect(resultHandler.source).to.be.instanceOf(ArrowResultConverter);
-        if (resultHandler.source instanceof ArrowResultConverter) {
-          expect(resultHandler.source.source).to.be.instanceOf(CloudFetchResultHandler);
+        expect(resultHandler['source']).to.be.instanceOf(ArrowResultConverter);
+        if (!(resultHandler['source'] instanceof ArrowResultConverter)) {
+          throw new Error('Expected `resultHandler.source` to be `ArrowResultConverter`');
         }
+        expect(resultHandler['source']['source']).to.be.instanceOf(CloudFetchResultHandler);
       }
     });
   });
@@ -806,7 +795,7 @@ describe('DBSQLOperation', () => {
       const context = new ClientContextStub();
       const driver = sinon.spy(context.driver);
 
-      const operation = new DBSQLOperationTest({ handle: operationHandleStub({ hasResultSet: false }), context });
+      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: false }), context });
 
       const results = await operation.fetchChunk({ disableBuffering: true });
 
@@ -833,13 +822,13 @@ describe('DBSQLOperation', () => {
       context.driver.fetchResultsResp.hasMoreRows = false;
       context.driver.fetchResultsResp.results!.columns = [];
 
-      const operation = new DBSQLOperationTest({ handle: operationHandleStub({ hasResultSet: true }), context });
+      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
 
       const results = await operation.fetchChunk({ disableBuffering: true });
 
       expect(getOperationStatusStub.called).to.be.true;
       expect(results).to.deep.equal([]);
-      expect(operation.inspectInternals().state).to.equal(TOperationState.FINISHED_STATE);
+      expect(operation['state']).to.equal(TOperationState.FINISHED_STATE);
     });
 
     it('should request progress', async () => {
@@ -860,7 +849,7 @@ describe('DBSQLOperation', () => {
       context.driver.fetchResultsResp.hasMoreRows = false;
       context.driver.fetchResultsResp.results!.columns = [];
 
-      const operation = new DBSQLOperationTest({ handle: operationHandleStub({ hasResultSet: true }), context });
+      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
       await operation.fetchChunk({ progress: true, disableBuffering: true });
 
       expect(getOperationStatusStub.called).to.be.true;
@@ -888,7 +877,7 @@ describe('DBSQLOperation', () => {
       context.driver.fetchResultsResp.hasMoreRows = false;
       context.driver.fetchResultsResp.results!.columns = [];
 
-      const operation = new DBSQLOperationTest({ handle: operationHandleStub({ hasResultSet: true }), context });
+      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
 
       const callback = sinon.stub();
 
@@ -904,7 +893,7 @@ describe('DBSQLOperation', () => {
       driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
       driver.getOperationStatusResp.hasResultSet = true;
 
-      const operation = new DBSQLOperationTest({ handle: operationHandleStub({ hasResultSet: true }), context });
+      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
 
       const results = await operation.fetchChunk({ disableBuffering: true });
 
@@ -918,7 +907,7 @@ describe('DBSQLOperation', () => {
       const driver = sinon.spy(context.driver);
       driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
 
-      const operation = new DBSQLOperationTest({
+      const operation = new DBSQLOperation({
         handle: operationHandleStub({ hasResultSet: true }),
         context,
         directResults: {
@@ -954,7 +943,7 @@ describe('DBSQLOperation', () => {
       driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
       driver.getOperationStatusResp.hasResultSet = true;
 
-      const operation = new DBSQLOperationTest({
+      const operation = new DBSQLOperation({
         handle: operationHandleStub({ hasResultSet: true }),
         context,
         directResults: {
@@ -997,7 +986,7 @@ describe('DBSQLOperation', () => {
       context.driver.getResultSetMetadataResp.resultFormat = TSparkRowSetType.ROW_BASED_SET;
       context.driver.getResultSetMetadataResp.schema = { columns: [] };
 
-      const operation = new DBSQLOperationTest({ handle: operationHandleStub({ hasResultSet: true }), context });
+      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
 
       try {
         await operation.fetchChunk({ disableBuffering: true });
@@ -1014,7 +1003,7 @@ describe('DBSQLOperation', () => {
   describe('fetchAll', () => {
     it('should fetch data while available and return it all', async () => {
       const context = new ClientContextStub();
-      const operation = new DBSQLOperationTest({ handle: operationHandleStub({ hasResultSet: true }), context });
+      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
 
       const originalData = [1, 2, 3, 4, 5, 6, 7, 8, 9, 0];
 
@@ -1031,7 +1020,7 @@ describe('DBSQLOperation', () => {
       // Warning: this check is implementation-specific
       // `fetchAll` should wait for operation to complete. In current implementation
       // it does so by calling `fetchChunk` at least once, which internally does
-      // all the job. But since here we mock `fetchChunk` it won't really wait,
+      // all the job. But since here we stub `fetchChunk` it won't really wait,
       // therefore here we ensure it was called at least once
       expect(fetchChunkStub.callCount).to.be.gte(1);
 
@@ -1049,15 +1038,13 @@ describe('DBSQLOperation', () => {
       context.driver.getOperationStatusResp.hasResultSet = true;
       context.driver.fetchResultsResp.hasMoreRows = false;
       context.driver.fetchResultsResp.results = undefined;
-      const operation = new DBSQLOperationTest({ handle: operationHandleStub({ hasResultSet: true }), context });
+      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
 
       expect(await operation.hasMoreRows()).to.be.true;
-      // @ts-expect-error TS2341: Property hasMoreRowsFlag is private and only accessible within class RowSetProvider
-      expect(operation.inspectInternals()._data.hasMoreRowsFlag).to.be.undefined;
+      expect(operation['_data']['hasMoreRowsFlag']).to.be.undefined;
       await operation.fetchChunk({ disableBuffering: true });
       expect(await operation.hasMoreRows()).to.be.false;
-      // @ts-expect-error TS2341: Property hasMoreRowsFlag is private and only accessible within class RowSetProvider
-      expect(operation.inspectInternals()._data.hasMoreRowsFlag).to.be.false;
+      expect(operation['_data']['hasMoreRowsFlag']).to.be.false;
     });
 
     it('should return False if operation was closed', async () => {
@@ -1066,7 +1053,7 @@ describe('DBSQLOperation', () => {
       context.driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
       context.driver.getOperationStatusResp.hasResultSet = true;
       context.driver.fetchResultsResp.hasMoreRows = true;
-      const operation = new DBSQLOperationTest({ handle: operationHandleStub({ hasResultSet: true }), context });
+      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
 
       expect(await operation.hasMoreRows()).to.be.true;
       await operation.fetchChunk({ disableBuffering: true });
@@ -1081,7 +1068,7 @@ describe('DBSQLOperation', () => {
       context.driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
       context.driver.getOperationStatusResp.hasResultSet = true;
       context.driver.fetchResultsResp.hasMoreRows = true;
-      const operation = new DBSQLOperationTest({ handle: operationHandleStub({ hasResultSet: true }), context });
+      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
 
       expect(await operation.hasMoreRows()).to.be.true;
       await operation.fetchChunk({ disableBuffering: true });
@@ -1096,15 +1083,13 @@ describe('DBSQLOperation', () => {
       context.driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
       context.driver.getOperationStatusResp.hasResultSet = true;
       context.driver.fetchResultsResp.hasMoreRows = true;
-      const operation = new DBSQLOperationTest({ handle: operationHandleStub({ hasResultSet: true }), context });
+      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
 
       expect(await operation.hasMoreRows()).to.be.true;
-      // @ts-expect-error TS2341: Property hasMoreRowsFlag is private and only accessible within class RowSetProvider
-      expect(operation.inspectInternals()._data.hasMoreRowsFlag).to.be.undefined;
+      expect(operation['_data']['hasMoreRowsFlag']).to.be.undefined;
       await operation.fetchChunk({ disableBuffering: true });
       expect(await operation.hasMoreRows()).to.be.true;
-      // @ts-expect-error TS2341: Property hasMoreRowsFlag is private and only accessible within class RowSetProvider
-      expect(operation.inspectInternals()._data.hasMoreRowsFlag).to.be.true;
+      expect(operation['_data']['hasMoreRowsFlag']).to.be.true;
     });
 
     it('should return True if hasMoreRows flag is False but there is actual data', async () => {
@@ -1113,15 +1098,13 @@ describe('DBSQLOperation', () => {
       context.driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
       context.driver.getOperationStatusResp.hasResultSet = true;
       context.driver.fetchResultsResp.hasMoreRows = false;
-      const operation = new DBSQLOperationTest({ handle: operationHandleStub({ hasResultSet: true }), context });
+      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
 
       expect(await operation.hasMoreRows()).to.be.true;
-      // @ts-expect-error TS2341: Property hasMoreRowsFlag is private and only accessible within class RowSetProvider
-      expect(operation.inspectInternals()._data.hasMoreRowsFlag).to.be.undefined;
+      expect(operation['_data']['hasMoreRowsFlag']).to.be.undefined;
       await operation.fetchChunk({ disableBuffering: true });
       expect(await operation.hasMoreRows()).to.be.true;
-      // @ts-expect-error TS2341: Property hasMoreRowsFlag is private and only accessible within class RowSetProvider
-      expect(operation.inspectInternals()._data.hasMoreRowsFlag).to.be.true;
+      expect(operation['_data']['hasMoreRowsFlag']).to.be.true;
     });
 
     it('should return True if hasMoreRows flag is unset but there is actual data', async () => {
@@ -1130,15 +1113,13 @@ describe('DBSQLOperation', () => {
       context.driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
       context.driver.getOperationStatusResp.hasResultSet = true;
       context.driver.fetchResultsResp.hasMoreRows = undefined;
-      const operation = new DBSQLOperationTest({ handle: operationHandleStub({ hasResultSet: true }), context });
+      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
 
       expect(await operation.hasMoreRows()).to.be.true;
-      // @ts-expect-error TS2341: Property hasMoreRowsFlag is private and only accessible within class RowSetProvider
-      expect(operation.inspectInternals()._data.hasMoreRowsFlag).to.be.undefined;
+      expect(operation['_data']['hasMoreRowsFlag']).to.be.undefined;
       await operation.fetchChunk({ disableBuffering: true });
       expect(await operation.hasMoreRows()).to.be.true;
-      // @ts-expect-error TS2341: Property hasMoreRowsFlag is private and only accessible within class RowSetProvider
-      expect(operation.inspectInternals()._data.hasMoreRowsFlag).to.be.true;
+      expect(operation['_data']['hasMoreRowsFlag']).to.be.true;
     });
 
     it('should return False if hasMoreRows flag is False and there is no data', async () => {
@@ -1148,15 +1129,13 @@ describe('DBSQLOperation', () => {
       context.driver.getOperationStatusResp.hasResultSet = true;
       context.driver.fetchResultsResp.hasMoreRows = false;
       context.driver.fetchResultsResp.results = undefined;
-      const operation = new DBSQLOperationTest({ handle: operationHandleStub({ hasResultSet: true }), context });
+      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
 
       expect(await operation.hasMoreRows()).to.be.true;
-      // @ts-expect-error TS2341: Property hasMoreRowsFlag is private and only accessible within class RowSetProvider
-      expect(operation.inspectInternals()._data.hasMoreRowsFlag).to.be.undefined;
+      expect(operation['_data']['hasMoreRowsFlag']).to.be.undefined;
       await operation.fetchChunk({ disableBuffering: true });
       expect(await operation.hasMoreRows()).to.be.false;
-      // @ts-expect-error TS2341: Property hasMoreRowsFlag is private and only accessible within class RowSetProvider
-      expect(operation.inspectInternals()._data.hasMoreRowsFlag).to.be.false;
+      expect(operation['_data']['hasMoreRowsFlag']).to.be.false;
     });
   });
 });

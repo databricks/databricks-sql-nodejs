@@ -143,9 +143,9 @@ export default class DBSQLSession implements IDBSQLSession {
 
   private readonly sessionHandle: TSessionHandle;
 
-  protected isOpen = true;
+  private isOpen = true;
 
-  protected operations = new CloseableCollection<DBSQLOperation>();
+  private operations = new CloseableCollection<DBSQLOperation>();
 
   public onClose?: () => void;
 

@@ -10,11 +10,11 @@ function delay(milliseconds: number): Promise<void> {
 }
 
 export default class HttpRetryPolicy implements IRetryPolicy<HttpTransactionDetails> {
-  protected context: IClientContext;
+  private context: IClientContext;
 
-  protected startTime: number; // in milliseconds
+  private startTime: number; // in milliseconds
 
-  protected attempt: number;
+  private attempt: number;
 
   constructor(context: IClientContext) {
     this.context = context;

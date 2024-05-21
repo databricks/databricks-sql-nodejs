@@ -92,7 +92,7 @@ class OpenIDClientStub implements BaseClient {
       case 'none':
         return this.grantU2M(params);
     }
-    throw new Error(`OAuthClientMock: unrecognized auth method: ${this.clientOptions.token_endpoint_auth_method}`);
+    throw new Error(`OAuthClientStub: unrecognized auth method: ${this.clientOptions.token_endpoint_auth_method}`);
   }
 
   async refresh(refreshToken: string) {

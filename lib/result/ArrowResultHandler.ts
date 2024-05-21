@@ -6,11 +6,11 @@ import { ArrowBatch, hiveSchemaToArrowSchema } from './utils';
 import { LZ4 } from '../utils';
 
 export default class ArrowResultHandler implements IResultsProvider<ArrowBatch> {
-  protected readonly context: IClientContext;
+  private readonly context: IClientContext;
 
-  public readonly source: IResultsProvider<TRowSet | undefined>;
+  private readonly source: IResultsProvider<TRowSet | undefined>;
 
-  protected readonly arrowSchema?: Buffer;
+  private readonly arrowSchema?: Buffer;
 
   private readonly isLZ4Compressed: boolean;
 

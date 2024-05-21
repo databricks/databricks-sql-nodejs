@@ -5,17 +5,9 @@ import ThriftHttpConnection from '../../../../lib/connection/connections/ThriftH
 
 import ClientContextStub from '../../.stubs/ClientContextStub';
 
-class HttpConnectionTest extends HttpConnection {
-  public inspectInternals() {
-    return {
-      headers: this.headers,
-    };
-  }
-}
-
 describe('HttpConnection.connect', () => {
   it('should create Thrift connection', async () => {
-    const connection = new HttpConnectionTest(
+    const connection = new HttpConnection(
       {
         host: 'localhost',
         port: 10001,
@@ -35,7 +27,7 @@ describe('HttpConnection.connect', () => {
   });
 
   it('should set SSL certificates and disable rejectUnauthorized', async () => {
-    const connection = new HttpConnectionTest(
+    const connection = new HttpConnection(
       {
         host: 'localhost',
         port: 10001,
@@ -57,7 +49,7 @@ describe('HttpConnection.connect', () => {
   });
 
   it('should initialize http agents', async () => {
-    const connection = new HttpConnectionTest(
+    const connection = new HttpConnection(
       {
         host: 'localhost',
         port: 10001,
@@ -78,7 +70,7 @@ describe('HttpConnection.connect', () => {
       b: 'test header B',
     };
 
-    const connection = new HttpConnectionTest(
+    const connection = new HttpConnection(
       {
         host: 'localhost',
         port: 10001,
@@ -93,7 +85,7 @@ describe('HttpConnection.connect', () => {
       c: 'test header C',
     };
     connection.setHeaders(extraHeaders);
-    expect(connection.inspectInternals().headers).to.deep.equal(extraHeaders);
+    expect(connection['headers']).to.deep.equal(extraHeaders);
 
     const thriftConnection = await connection.getThriftConnection();
 
@@ -109,7 +101,7 @@ describe('HttpConnection.connect', () => {
       b: 'test header B',
     };
 
-    const connection = new HttpConnectionTest(
+    const connection = new HttpConnection(
       {
         host: 'localhost',
         port: 10001,
@@ -121,7 +113,7 @@ describe('HttpConnection.connect', () => {
 
     const thriftConnection = await connection.getThriftConnection();
 
-    expect(connection.inspectInternals().headers).to.deep.equal({});
+    expect(connection['headers']).to.deep.equal({});
     expect(thriftConnection.config.headers).to.deep.equal(initialHeaders);
 
     const extraHeaders = {
@@ -129,7 +121,7 @@ describe('HttpConnection.connect', () => {
       c: 'test header C',
     };
     connection.setHeaders(extraHeaders);
-    expect(connection.inspectInternals().headers).to.deep.equal(extraHeaders);
+    expect(connection['headers']).to.deep.equal(extraHeaders);
     expect(thriftConnection.config.headers).to.deep.equal({
       ...initialHeaders,
       ...extraHeaders,

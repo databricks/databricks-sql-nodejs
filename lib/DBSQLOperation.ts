@@ -48,21 +48,21 @@ async function delay(ms?: number): Promise<void> {
 }
 
 export default class DBSQLOperation implements IOperation {
-  protected readonly context: IClientContext;
+  private readonly context: IClientContext;
 
-  protected readonly operationHandle: TOperationHandle;
+  private readonly operationHandle: TOperationHandle;
 
-  protected readonly _data: RowSetProvider;
+  private readonly _data: RowSetProvider;
 
-  protected readonly closeOperation?: TCloseOperationResp;
+  private readonly closeOperation?: TCloseOperationResp;
 
-  protected closed: boolean = false;
+  private closed: boolean = false;
 
-  protected cancelled: boolean = false;
+  private cancelled: boolean = false;
 
-  protected metadata?: TGetResultSetMetadataResp;
+  private metadata?: TGetResultSetMetadataResp;
 
-  protected state: number = TOperationState.INITIALIZED_STATE;
+  private state: TOperationState = TOperationState.INITIALIZED_STATE;
 
   public onClose?: () => void;
 
@@ -376,7 +376,7 @@ export default class DBSQLOperation implements IOperation {
     return this.metadata;
   }
 
-  protected async getResultHandler(): Promise<ResultSlicer<any>> {
+  private async getResultHandler(): Promise<ResultSlicer<any>> {
     const metadata = await this.fetchMetadata();
     const resultFormat = definedOrError(metadata.resultFormat);
 

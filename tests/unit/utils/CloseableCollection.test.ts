@@ -1,18 +1,10 @@
 import { expect, AssertionError } from 'chai';
 import CloseableCollection, { ICloseable } from '../../../lib/utils/CloseableCollection';
 
-class CloseableCollectionTest extends CloseableCollection<ICloseable> {
-  public inspectInternals() {
-    return {
-      items: this.items,
-    };
-  }
-}
-
 describe('CloseableCollection', () => {
   it('should add item if not already added', () => {
-    const collection = new CloseableCollectionTest();
-    expect(collection.inspectInternals().items.size).to.be.eq(0);
+    const collection = new CloseableCollection<ICloseable>();
+    expect(collection['items'].size).to.be.eq(0);
 
     const item: ICloseable = {
       close: () => Promise.resolve(),
@@ -20,12 +12,12 @@ describe('CloseableCollection', () => {
 
     collection.add(item);
     expect(item.onClose).to.be.not.undefined;
-    expect(collection.inspectInternals().items.size).to.be.eq(1);
+    expect(collection['items'].size).to.be.eq(1);
   });
 
   it('should add item if it is already added', () => {
-    const collection = new CloseableCollectionTest();
-    expect(collection.inspectInternals().items.size).to.be.eq(0);
+    const collection = new CloseableCollection<ICloseable>();
+    expect(collection['items'].size).to.be.eq(0);
 
     const item: ICloseable = {
       close: () => Promise.resolve(),
@@ -33,16 +25,16 @@ describe('CloseableCollection', () => {
 
     collection.add(item);
     expect(item.onClose).to.be.not.undefined;
-    expect(collection.inspectInternals().items.size).to.be.eq(1);
+    expect(collection['items'].size).to.be.eq(1);
 
     collection.add(item);
     expect(item.onClose).to.be.not.undefined;
-    expect(collection.inspectInternals().items.size).to.be.eq(1);
+    expect(collection['items'].size).to.be.eq(1);
   });
 
   it('should delete item if already added', () => {
-    const collection = new CloseableCollectionTest();
-    expect(collection.inspectInternals().items.size).to.be.eq(0);
+    const collection = new CloseableCollection<ICloseable>();
+    expect(collection['items'].size).to.be.eq(0);
 
     const item: ICloseable = {
       close: () => Promise.resolve(),
@@ -50,16 +42,16 @@ describe('CloseableCollection', () => {
 
     collection.add(item);
     expect(item.onClose).to.be.not.undefined;
-    expect(collection.inspectInternals().items.size).to.be.eq(1);
+    expect(collection['items'].size).to.be.eq(1);
 
     collection.delete(item);
     expect(item.onClose).to.be.undefined;
-    expect(collection.inspectInternals().items.size).to.be.eq(0);
+    expect(collection['items'].size).to.be.eq(0);
   });
 
   it('should delete item if not added', () => {
-    const collection = new CloseableCollectionTest();
-    expect(collection.inspectInternals().items.size).to.be.eq(0);
+    const collection = new CloseableCollection<ICloseable>();
+    expect(collection['items'].size).to.be.eq(0);
 
     const item: ICloseable = {
       close: () => Promise.resolve(),
@@ -67,7 +59,7 @@ describe('CloseableCollection', () => {
 
     collection.add(item);
     expect(item.onClose).to.be.not.undefined;
-    expect(collection.inspectInternals().items.size).to.be.eq(1);
+    expect(collection['items'].size).to.be.eq(1);
 
     const otherItem: ICloseable = {
       onClose: () => {},
@@ -76,12 +68,12 @@ describe('CloseableCollection', () => {
     collection.delete(otherItem);
     // if item is not in collection - it should be just skipped
     expect(otherItem.onClose).to.be.not.undefined;
-    expect(collection.inspectInternals().items.size).to.be.eq(1);
+    expect(collection['items'].size).to.be.eq(1);
   });
 
   it('should delete item if it was closed', async () => {
-    const collection = new CloseableCollectionTest();
-    expect(collection.inspectInternals().items.size).to.be.eq(0);
+    const collection = new CloseableCollection<ICloseable>();
+    expect(collection['items'].size).to.be.eq(0);
 
     const item: ICloseable = {
       close() {
@@ -92,16 +84,16 @@ describe('CloseableCollection', () => {
 
     collection.add(item);
     expect(item.onClose).to.be.not.undefined;
-    expect(collection.inspectInternals().items.size).to.be.eq(1);
+    expect(collection['items'].size).to.be.eq(1);
 
     await item.close();
     expect(item.onClose).to.be.undefined;
-    expect(collection.inspectInternals().items.size).to.be.eq(0);
+    expect(collection['items'].size).to.be.eq(0);
   });
 
   it('should close all and delete all items', async () => {
-    const collection = new CloseableCollectionTest();
-    expect(collection.inspectInternals().items.size).to.be.eq(0);
+    const collection = new CloseableCollection<ICloseable>();
+    expect(collection['items'].size).to.be.eq(0);
 
     const item1: ICloseable = {
       close() {
@@ -121,17 +113,17 @@ describe('CloseableCollection', () => {
     collection.add(item2);
     expect(item1.onClose).to.be.not.undefined;
     expect(item2.onClose).to.be.not.undefined;
-    expect(collection.inspectInternals().items.size).to.be.eq(2);
+    expect(collection['items'].size).to.be.eq(2);
 
     await collection.closeAll();
     expect(item1.onClose).to.be.undefined;
     expect(item2.onClose).to.be.undefined;
-    expect(collection.inspectInternals().items.size).to.be.eq(0);
+    expect(collection['items'].size).to.be.eq(0);
   });
 
   it('should close all and delete only first successfully closed items', async () => {
-    const collection = new CloseableCollectionTest();
-    expect(collection.inspectInternals().items.size).to.be.eq(0);
+    const collection = new CloseableCollection<ICloseable>();
+    expect(collection['items'].size).to.be.eq(0);
 
     const errorMessage = 'Error from item 2';
 
@@ -162,7 +154,7 @@ describe('CloseableCollection', () => {
     expect(item1.onClose).to.be.not.undefined;
     expect(item2.onClose).to.be.not.undefined;
     expect(item3.onClose).to.be.not.undefined;
-    expect(collection.inspectInternals().items.size).to.be.eq(3);
+    expect(collection['items'].size).to.be.eq(3);
 
     try {
       await collection.closeAll();
@@ -175,7 +167,7 @@ describe('CloseableCollection', () => {
       expect(item1.onClose).to.be.undefined;
       expect(item2.onClose).to.be.not.undefined;
       expect(item3.onClose).to.be.not.undefined;
-      expect(collection.inspectInternals().items.size).to.be.eq(2);
+      expect(collection['items'].size).to.be.eq(2);
     }
   });
 });

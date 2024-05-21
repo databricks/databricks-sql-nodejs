@@ -15,7 +15,7 @@ class TCustomReq {}
 
 class TCustomResp {}
 
-class ThriftClientMock {
+class ThriftClientStub {
   static defaultResponse = {
     status: { statusCode: 0 },
   };
@@ -47,7 +47,7 @@ class ThriftClientMock {
   }
 }
 
-class CustomCommand extends BaseCommand<ThriftClientMock> {
+class CustomCommand extends BaseCommand<ThriftClientStub> {
   public async execute(request: TCustomReq): Promise<TCustomResp> {
     return this.executeCommand<TCustomResp>(request, this.client.CustomMethod);
   }
@@ -60,7 +60,7 @@ describe('BaseCommand', () => {
     // Here we have a special test condition - when invalid Thrift client is passed to
     // a command. Normally TS should catch this (and therefore we have a type cast here),
     // but there is an additional check in the code, which we need to verify as well
-    const command = new CustomCommand({} as ThriftClientMock, context);
+    const command = new CustomCommand({} as ThriftClientStub, context);
 
     try {
       await command.execute({});
@@ -79,7 +79,7 @@ describe('BaseCommand', () => {
 
     const context = new ClientContextStub();
 
-    const thriftClient = new ThriftClientMock(context, async () => {
+    const thriftClient = new ThriftClientStub(context, async () => {
       throw new Error('Not implemented');
     });
     sinon.stub(thriftClient, 'CustomMethod').callsFake(() => {
@@ -112,7 +112,7 @@ describe('BaseCommand', () => {
 
         let methodCallCount = 0;
         const command = new CustomCommand(
-          new ThriftClientMock(context, async () => {
+          new ThriftClientStub(context, async () => {
             methodCallCount += 1;
             const request = new Request('http://localhost/', { method: 'POST' });
             const response = new Response(undefined, {
@@ -147,7 +147,7 @@ describe('BaseCommand', () => {
 
         let methodCallCount = 0;
         const command = new CustomCommand(
-          new ThriftClientMock(context, async () => {
+          new ThriftClientStub(context, async () => {
             methodCallCount += 1;
             const request = new Request('http://localhost/', { method: 'POST' });
             const response = new Response(undefined, {
@@ -185,7 +185,7 @@ describe('BaseCommand', () => {
 
         let methodCallCount = 0;
         const command = new CustomCommand(
-          new ThriftClientMock(context, async () => {
+          new ThriftClientStub(context, async () => {
             const request = new Request('http://localhost/', { method: 'POST' });
 
             methodCallCount += 1;
@@ -196,7 +196,7 @@ describe('BaseCommand', () => {
               return { request, response };
             }
 
-            const response = new Response(JSON.stringify(ThriftClientMock.defaultResponse), {
+            const response = new Response(JSON.stringify(ThriftClientStub.defaultResponse), {
               status: 200,
             });
             return { request, response };
@@ -205,7 +205,7 @@ describe('BaseCommand', () => {
         );
 
         const response = await command.execute({});
-        expect(response).to.deep.equal(ThriftClientMock.defaultResponse);
+        expect(response).to.deep.equal(ThriftClientStub.defaultResponse);
         expect(methodCallCount).to.equal(4); // 3 failed attempts + 1 succeeded
       });
     });
@@ -215,7 +215,7 @@ describe('BaseCommand', () => {
     const context = new ClientContextStub();
 
     const command = new CustomCommand(
-      new ThriftClientMock(context, async () => {
+      new ThriftClientStub(context, async () => {
         throw new THTTPException(
           new Response(undefined, {
             status: 500,
@@ -243,7 +243,7 @@ describe('BaseCommand', () => {
     const context = new ClientContextStub();
 
     const command = new CustomCommand(
-      new ThriftClientMock(context, async () => {
+      new ThriftClientStub(context, async () => {
         throw new Thrift.TApplicationException(undefined, errorMessage);
       }),
       context,
@@ -267,7 +267,7 @@ describe('BaseCommand', () => {
     const context = new ClientContextStub();
 
     const command = new CustomCommand(
-      new ThriftClientMock(context, async () => {
+      new ThriftClientStub(context, async () => {
         throw new Error(errorMessage);
       }),
       context,

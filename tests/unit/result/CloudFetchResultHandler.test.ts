@@ -129,69 +129,43 @@ class ClientContextStub extends BaseClientContextStub {
   }
 }
 
-interface CloudFetchResultHandlerInternals {
-  pendingLinks: Array<TSparkArrowResultLink>;
-
-  downloadTasks: Array<Promise<ArrowBatch>>;
-}
-
-class CloudFetchResultHandlerTest extends CloudFetchResultHandler {
-  public inspectInternals() {
-    return {
-      pendingLinks: this.pendingLinks,
-      downloadTasks: this.downloadTasks,
-    };
-  }
-
-  public updateInternals(values: Partial<CloudFetchResultHandlerInternals>) {
-    this.pendingLinks = values.pendingLinks ?? super.pendingLinks;
-    this.downloadTasks = values.downloadTasks ?? super.downloadTasks;
-  }
-}
-
 describe('CloudFetchResultHandler', () => {
   it('should report pending data if there are any', async () => {
     const context = new ClientContextStub({ cloudFetchConcurrentDownloads: 1 });
     const rowSetProvider = new ResultsProviderStub([], undefined);
 
-    const result = new CloudFetchResultHandlerTest(context, rowSetProvider, {
+    const result = new CloudFetchResultHandler(context, rowSetProvider, {
       status: { statusCode: TStatusCode.SUCCESS_STATUS },
     });
 
     case1: {
-      result.updateInternals({
-        pendingLinks: [],
-        downloadTasks: [],
-      });
+      result['pendingLinks'] = [];
+      result['downloadTasks'] = [];
       expect(await result.hasMore()).to.be.false;
     }
 
     case2: {
-      result.updateInternals({
-        pendingLinks: [
-          {
-            fileLink: '',
-            expiryTime: new Int64(0),
-            startRowOffset: new Int64(0),
-            rowCount: new Int64(0),
-            bytesNum: new Int64(0),
-          },
-        ],
-        downloadTasks: [],
-      });
+      result['pendingLinks'] = [
+        {
+          fileLink: '',
+          expiryTime: new Int64(0),
+          startRowOffset: new Int64(0),
+          rowCount: new Int64(0),
+          bytesNum: new Int64(0),
+        },
+      ];
+      result['downloadTasks'] = [];
       expect(await result.hasMore()).to.be.true;
     }
 
     case3: {
-      result.updateInternals({
-        pendingLinks: [],
-        downloadTasks: [
-          Promise.resolve({
-            batches: [],
-            rowCount: 0,
-          }),
-        ],
-      });
+      result['pendingLinks'] = [];
+      result['downloadTasks'] = [
+        Promise.resolve({
+          batches: [],
+          rowCount: 0,
+        }),
+      ];
       expect(await result.hasMore()).to.be.true;
     }
   });
@@ -204,7 +178,7 @@ describe('CloudFetchResultHandler', () => {
 
     const rowSetProvider = new ResultsProviderStub(rowSets, undefined);
 
-    const result = new CloudFetchResultHandlerTest(context, rowSetProvider, {
+    const result = new CloudFetchResultHandler(context, rowSetProvider, {
       status: { statusCode: TStatusCode.SUCCESS_STATUS },
     });
 
@@ -217,8 +191,8 @@ describe('CloudFetchResultHandler', () => {
       await result.fetchNext({ limit: 100000 });
     } while (await rowSetProvider.hasMore());
 
-    expect(result.inspectInternals().pendingLinks.length).to.be.equal(expectedLinksCount);
-    expect(result.inspectInternals().downloadTasks.length).to.be.equal(0);
+    expect(result['pendingLinks'].length).to.be.equal(expectedLinksCount);
+    expect(result['downloadTasks'].length).to.be.equal(0);
     expect(context.invokeWithRetryStub.called).to.be.false;
   });
 
@@ -234,7 +208,7 @@ describe('CloudFetchResultHandler', () => {
     const expectedLinksCount = rowSet.resultLinks?.length ?? 0; // 5
     const rowSetProvider = new ResultsProviderStub([rowSet], undefined);
 
-    const result = new CloudFetchResultHandlerTest(context, rowSetProvider, {
+    const result = new CloudFetchResultHandler(context, rowSetProvider, {
       status: { statusCode: TStatusCode.SUCCESS_STATUS },
     });
 
@@ -255,12 +229,10 @@ describe('CloudFetchResultHandler', () => {
       // it should use retry policy for all requests
       expect((context.connectionProvider.getRetryPolicy as SinonStub).called).to.be.true;
       expect(context.invokeWithRetryStub.callCount).to.be.equal(clientConfig.cloudFetchConcurrentDownloads);
-      expect(result.inspectInternals().pendingLinks.length).to.be.equal(
+      expect(result['pendingLinks'].length).to.be.equal(
         expectedLinksCount - clientConfig.cloudFetchConcurrentDownloads,
       );
-      expect(result.inspectInternals().downloadTasks.length).to.be.equal(
-        clientConfig.cloudFetchConcurrentDownloads - 1,
-      );
+      expect(result['downloadTasks'].length).to.be.equal(clientConfig.cloudFetchConcurrentDownloads - 1);
     }
 
     secondFetch: {
@@ -272,12 +244,10 @@ describe('CloudFetchResultHandler', () => {
       // it should use retry policy for all requests
       expect((context.connectionProvider.getRetryPolicy as SinonStub).called).to.be.true;
       expect(context.invokeWithRetryStub.callCount).to.be.equal(clientConfig.cloudFetchConcurrentDownloads + 1);
-      expect(result.inspectInternals().pendingLinks.length).to.be.equal(
+      expect(result['pendingLinks'].length).to.be.equal(
         expectedLinksCount - clientConfig.cloudFetchConcurrentDownloads - 1,
       );
-      expect(result.inspectInternals().downloadTasks.length).to.be.equal(
-        clientConfig.cloudFetchConcurrentDownloads - 1,
-      );
+      expect(result['downloadTasks'].length).to.be.equal(clientConfig.cloudFetchConcurrentDownloads - 1);
     }
 
     thirdFetch: {
@@ -289,12 +259,10 @@ describe('CloudFetchResultHandler', () => {
       // it should use retry policy for all requests
       expect((context.connectionProvider.getRetryPolicy as SinonStub).called).to.be.true;
       expect(context.invokeWithRetryStub.callCount).to.be.equal(clientConfig.cloudFetchConcurrentDownloads + 2);
-      expect(result.inspectInternals().pendingLinks.length).to.be.equal(
+      expect(result['pendingLinks'].length).to.be.equal(
         expectedLinksCount - clientConfig.cloudFetchConcurrentDownloads - 2,
       );
-      expect(result.inspectInternals().downloadTasks.length).to.be.equal(
-        clientConfig.cloudFetchConcurrentDownloads - 1,
-      );
+      expect(result['downloadTasks'].length).to.be.equal(clientConfig.cloudFetchConcurrentDownloads - 1);
     }
   });
 
@@ -303,7 +271,7 @@ describe('CloudFetchResultHandler', () => {
 
     const rowSetProvider = new ResultsProviderStub([sampleRowSet1], undefined);
 
-    const result = new CloudFetchResultHandlerTest(context, rowSetProvider, {
+    const result = new CloudFetchResultHandler(context, rowSetProvider, {
       lz4Compressed: false,
       status: { statusCode: TStatusCode.SUCCESS_STATUS },
     });
@@ -329,7 +297,7 @@ describe('CloudFetchResultHandler', () => {
 
     const rowSetProvider = new ResultsProviderStub([sampleRowSet1], undefined);
 
-    const result = new CloudFetchResultHandlerTest(context, rowSetProvider, {
+    const result = new CloudFetchResultHandler(context, rowSetProvider, {
       lz4Compressed: true,
       status: { statusCode: TStatusCode.SUCCESS_STATUS },
     });
@@ -357,7 +325,7 @@ describe('CloudFetchResultHandler', () => {
 
     const rowSetProvider = new ResultsProviderStub([sampleRowSet1], undefined);
 
-    const result = new CloudFetchResultHandlerTest(context, rowSetProvider, {
+    const result = new CloudFetchResultHandler(context, rowSetProvider, {
       status: { statusCode: TStatusCode.SUCCESS_STATUS },
     });
 
@@ -384,7 +352,7 @@ describe('CloudFetchResultHandler', () => {
     const context = new ClientContextStub();
     const rowSetProvider = new ResultsProviderStub([sampleExpiredRowSet], undefined);
 
-    const result = new CloudFetchResultHandlerTest(context, rowSetProvider, {
+    const result = new CloudFetchResultHandler(context, rowSetProvider, {
       status: { statusCode: TStatusCode.SUCCESS_STATUS },
     });
 

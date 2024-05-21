@@ -51,11 +51,11 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
 
   private readonly config: ClientConfig;
 
-  protected connectionProvider?: IConnectionProvider;
+  private connectionProvider?: IConnectionProvider;
 
-  protected authProvider?: IAuthentication;
+  private authProvider?: IAuthentication;
 
-  protected client?: IThriftClient;
+  private client?: IThriftClient;
 
   private readonly driver = new HiveDriver({
     context: this,
@@ -63,9 +63,9 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
 
   private readonly logger: IDBSQLLogger;
 
-  protected thrift: ThriftLibrary = thrift;
+  private thrift: ThriftLibrary = thrift;
 
-  protected sessions = new CloseableCollection<DBSQLSession>();
+  private readonly sessions = new CloseableCollection<DBSQLSession>();
 
   private static getDefaultLogger(): IDBSQLLogger {
     if (!this.defaultLogger) {
@@ -102,7 +102,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
     this.logger.log(LogLevel.info, 'Created DBSQLClient');
   }
 
-  protected getConnectionOptions(options: ConnectionOptions): IConnectionOptions {
+  private getConnectionOptions(options: ConnectionOptions): IConnectionOptions {
     return {
       host: options.host,
       port: options.port || 443,
@@ -116,7 +116,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
     };
   }
 
-  protected createAuthProvider(options: ConnectionOptions, authProvider?: IAuthentication): IAuthentication {
+  private createAuthProvider(options: ConnectionOptions, authProvider?: IAuthentication): IAuthentication {
     if (authProvider) {
       return authProvider;
     }
@@ -146,7 +146,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
     }
   }
 
-  protected createConnectionProvider(options: ConnectionOptions): IConnectionProvider {
+  private createConnectionProvider(options: ConnectionOptions): IConnectionProvider {
     return new HttpConnection(this.getConnectionOptions(options), this);
   }
 

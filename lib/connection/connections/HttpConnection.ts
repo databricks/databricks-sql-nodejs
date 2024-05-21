@@ -17,7 +17,7 @@ export default class HttpConnection implements IConnectionProvider {
 
   private readonly context: IClientContext;
 
-  protected headers: HeadersInit = {};
+  private headers: HeadersInit = {};
 
   private connection?: ThriftHttpConnection;
 

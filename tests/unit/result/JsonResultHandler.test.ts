@@ -30,10 +30,6 @@ const getColumnSchema = (columnName: string, type: TTypeId | undefined, position
   };
 };
 
-class JsonResultHandlerTest extends JsonResultHandler {
-  public isNull = super.isNull;
-}
-
 describe('JsonResultHandler', () => {
   it('should not buffer any data', async () => {
     const schema: TTableSchema = {
@@ -49,7 +45,7 @@ describe('JsonResultHandler', () => {
 
     const rowSetProvider = new ResultsProviderStub(data, undefined);
 
-    const result = new JsonResultHandlerTest(new ClientContextStub(), rowSetProvider, {
+    const result = new JsonResultHandler(new ClientContextStub(), rowSetProvider, {
       schema,
       status: { statusCode: TStatusCode.SUCCESS_STATUS },
     });
@@ -150,7 +146,7 @@ describe('JsonResultHandler', () => {
 
     const rowSetProvider = new ResultsProviderStub(data, undefined);
 
-    const result = new JsonResultHandlerTest(new ClientContextStub(), rowSetProvider, {
+    const result = new JsonResultHandler(new ClientContextStub(), rowSetProvider, {
       schema,
       status: { statusCode: TStatusCode.SUCCESS_STATUS },
     });
@@ -230,7 +226,7 @@ describe('JsonResultHandler', () => {
 
     const rowSetProvider = new ResultsProviderStub(data, undefined);
 
-    const result = new JsonResultHandlerTest(new ClientContextStub(), rowSetProvider, {
+    const result = new JsonResultHandler(new ClientContextStub(), rowSetProvider, {
       schema,
       status: { statusCode: TStatusCode.SUCCESS_STATUS },
     });
@@ -254,7 +250,7 @@ describe('JsonResultHandler', () => {
   it('should detect nulls', () => {
     const rowSetProvider = new ResultsProviderStub([], undefined);
 
-    const result = new JsonResultHandlerTest(new ClientContextStub(), rowSetProvider, {
+    const result = new JsonResultHandler(new ClientContextStub(), rowSetProvider, {
       schema: undefined,
       status: { statusCode: TStatusCode.SUCCESS_STATUS },
     });
@@ -286,7 +282,7 @@ describe('JsonResultHandler', () => {
       true,
       true, // 0xC3
     ].forEach((value, i) => {
-      expect(result.isNull(buf, i)).to.be.eq(value);
+      expect(result['isNull'](buf, i)).to.be.eq(value);
     });
   });
 
@@ -373,7 +369,7 @@ describe('JsonResultHandler', () => {
 
     const rowSetProvider = new ResultsProviderStub(data, undefined);
 
-    const result = new JsonResultHandlerTest(new ClientContextStub(), rowSetProvider, {
+    const result = new JsonResultHandler(new ClientContextStub(), rowSetProvider, {
       schema,
       status: { statusCode: TStatusCode.SUCCESS_STATUS },
     });
@@ -407,7 +403,7 @@ describe('JsonResultHandler', () => {
 
     const rowSetProvider = new ResultsProviderStub([], undefined);
 
-    const result = new JsonResultHandlerTest(new ClientContextStub(), rowSetProvider, {
+    const result = new JsonResultHandler(new ClientContextStub(), rowSetProvider, {
       schema,
       status: { statusCode: TStatusCode.SUCCESS_STATUS },
     });
@@ -429,7 +425,7 @@ describe('JsonResultHandler', () => {
 
     const rowSetProvider = new ResultsProviderStub(data, undefined);
 
-    const result = new JsonResultHandlerTest(new ClientContextStub(), rowSetProvider, {
+    const result = new JsonResultHandler(new ClientContextStub(), rowSetProvider, {
       schema: undefined,
       status: { statusCode: TStatusCode.SUCCESS_STATUS },
     });
@@ -472,7 +468,7 @@ describe('JsonResultHandler', () => {
 
     const rowSetProvider = new ResultsProviderStub(data, undefined);
 
-    const result = new JsonResultHandlerTest(new ClientContextStub(), rowSetProvider, {
+    const result = new JsonResultHandler(new ClientContextStub(), rowSetProvider, {
       schema,
       status: { statusCode: TStatusCode.SUCCESS_STATUS },
     });

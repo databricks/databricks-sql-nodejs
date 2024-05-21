@@ -76,35 +76,35 @@ class OpenIDClientStub implements BaseClient {
   [key: string]: unknown;
 }
 
-class AuthorizationCodeTest extends AuthorizationCode {
-  public httpServer = new OAuthCallbackServerStub();
-
-  public createHttpServer(requestHandler: (req: IncomingMessage, res: ServerResponse) => void) {
-    this.httpServer.requestHandler = requestHandler;
-    return this.httpServer;
-  }
-}
-
 function prepareTestInstances(options: Partial<AuthorizationCodeOptions>) {
   const oauthClient = new OpenIDClientStub();
 
+  const httpServer = new OAuthCallbackServerStub();
+
   const openAuthUrl = sinon.stub<[string], Promise<void>>();
 
-  const authCode = sinon.spy(
-    new AuthorizationCodeTest({
-      client: oauthClient,
-      context: new ClientContextStub(),
-      ports: [],
-      ...options,
-      openAuthUrl,
-    }),
-  );
+  const authCode = new AuthorizationCode({
+    client: oauthClient,
+    context: new ClientContextStub(),
+    ports: [],
+    ...options,
+    openAuthUrl,
+  });
+
+  const authCodeSpy = sinon.spy(authCode);
+
+  const createHttpServer = sinon.spy((requestHandler: (req: IncomingMessage, res: ServerResponse) => void) => {
+    httpServer.requestHandler = requestHandler;
+    return httpServer;
+  });
+
+  authCode['createHttpServer'] = createHttpServer;
 
   openAuthUrl.callsFake(async (authUrl) => {
     const params = JSON.parse(authUrl);
     const req = new IncomingMessageStub(params);
     const resp = new ServerResponseStub(req);
-    authCode.httpServer.requestHandler(req, resp);
+    httpServer.requestHandler(req, resp);
   });
 
   function reloadUrl() {
@@ -114,17 +114,17 @@ function prepareTestInstances(options: Partial<AuthorizationCodeOptions>) {
     }, 10);
   }
 
-  return { oauthClient, authCode, openAuthUrl, reloadUrl };
+  return { oauthClient, authCode: authCodeSpy, httpServer, openAuthUrl, reloadUrl, createHttpServer };
 }
 
 describe('AuthorizationCode', () => {
   it('should fetch authorization code', async () => {
-    const { authCode, oauthClient, openAuthUrl } = prepareTestInstances({
+    const { authCode, oauthClient, openAuthUrl, createHttpServer } = prepareTestInstances({
       ports: [80, 8000],
     });
 
     const result = await authCode.fetch([]);
-    expect(authCode.createHttpServer.callCount).to.be.equal(2);
+    expect(createHttpServer.callCount).to.be.equal(2);
     expect(openAuthUrl.callCount).to.be.equal(1);
 
     expect(result.code).to.be.equal(oauthClient.code);
@@ -133,7 +133,7 @@ describe('AuthorizationCode', () => {
   });
 
   it('should throw error if cannot start server on any port', async () => {
-    const { authCode, openAuthUrl } = prepareTestInstances({
+    const { authCode, openAuthUrl, createHttpServer } = prepareTestInstances({
       ports: [80, 443],
     });
 
@@ -144,7 +144,7 @@ describe('AuthorizationCode', () => {
       if (error instanceof AssertionError || !(error instanceof Error)) {
         throw error;
       }
-      expect(authCode.createHttpServer.callCount).to.be.equal(2);
+      expect(createHttpServer.callCount).to.be.equal(2);
       expect(openAuthUrl.callCount).to.be.equal(0);
 
       expect(error.message).to.contain('all ports are in use');
@@ -152,12 +152,12 @@ describe('AuthorizationCode', () => {
   });
 
   it('should re-throw unhandled server start errors', async () => {
-    const { authCode, openAuthUrl } = prepareTestInstances({
+    const { authCode, openAuthUrl, httpServer, createHttpServer } = prepareTestInstances({
       ports: [80],
     });
 
     const testError = new Error('Test');
-    authCode.httpServer.listenError = testError;
+    httpServer.listenError = testError;
 
     try {
       await authCode.fetch([]);
@@ -166,7 +166,7 @@ describe('AuthorizationCode', () => {
       if (error instanceof AssertionError || !(error instanceof Error)) {
         throw error;
       }
-      expect(authCode.createHttpServer.callCount).to.be.equal(1);
+      expect(createHttpServer.callCount).to.be.equal(1);
       expect(openAuthUrl.callCount).to.be.equal(0);
 
       expect(error).to.be.equal(testError);
@@ -174,12 +174,12 @@ describe('AuthorizationCode', () => {
   });
 
   it('should re-throw unhandled server stop errors', async () => {
-    const { authCode, openAuthUrl } = prepareTestInstances({
+    const { authCode, openAuthUrl, httpServer, createHttpServer } = prepareTestInstances({
       ports: [8000],
     });
 
     const testError = new Error('Test');
-    authCode.httpServer.closeError = testError;
+    httpServer.closeError = testError;
 
     try {
       await authCode.fetch([]);
@@ -188,7 +188,7 @@ describe('AuthorizationCode', () => {
       if (error instanceof AssertionError || !(error instanceof Error)) {
         throw error;
       }
-      expect(authCode.createHttpServer.callCount).to.be.equal(1);
+      expect(createHttpServer.callCount).to.be.equal(1);
       expect(openAuthUrl.callCount).to.be.equal(1);
 
       expect(error).to.be.equal(testError);
@@ -196,7 +196,7 @@ describe('AuthorizationCode', () => {
   });
 
   it('should throw an error if no code was returned', async () => {
-    const { authCode, oauthClient, openAuthUrl } = prepareTestInstances({
+    const { authCode, oauthClient, openAuthUrl, createHttpServer } = prepareTestInstances({
       ports: [8000],
     });
 
@@ -213,7 +213,7 @@ describe('AuthorizationCode', () => {
       if (error instanceof AssertionError || !(error instanceof Error)) {
         throw error;
       }
-      expect(authCode.createHttpServer.callCount).to.be.equal(1);
+      expect(createHttpServer.callCount).to.be.equal(1);
       expect(openAuthUrl.callCount).to.be.equal(1);
 
       expect(error.message).to.contain('No path parameters were returned to the callback');
@@ -221,7 +221,7 @@ describe('AuthorizationCode', () => {
   });
 
   it('should use error details from callback params', async () => {
-    const { authCode, oauthClient, openAuthUrl } = prepareTestInstances({
+    const { authCode, oauthClient, openAuthUrl, createHttpServer } = prepareTestInstances({
       ports: [8000],
     });
 
@@ -242,7 +242,7 @@ describe('AuthorizationCode', () => {
       if (error instanceof AssertionError || !(error instanceof Error)) {
         throw error;
       }
-      expect(authCode.createHttpServer.callCount).to.be.equal(1);
+      expect(createHttpServer.callCount).to.be.equal(1);
       expect(openAuthUrl.callCount).to.be.equal(1);
 
       expect(error.message).to.contain('Test error');
@@ -250,7 +250,7 @@ describe('AuthorizationCode', () => {
   });
 
   it('should serve 404 for unrecognized requests', async () => {
-    const { authCode, oauthClient, reloadUrl, openAuthUrl } = prepareTestInstances({
+    const { authCode, oauthClient, reloadUrl, openAuthUrl, createHttpServer } = prepareTestInstances({
       ports: [8000],
     });
 
@@ -268,26 +268,26 @@ describe('AuthorizationCode', () => {
 
     await authCode.fetch([]);
 
-    expect(authCode.createHttpServer.callCount).to.be.equal(1);
+    expect(createHttpServer.callCount).to.be.equal(1);
     expect(openAuthUrl.callCount).to.be.equal(2);
   });
 
   it('should not attempt to stop server if not running', async () => {
-    const { authCode, oauthClient, openAuthUrl } = prepareTestInstances({
+    const { authCode, oauthClient, openAuthUrl, httpServer, createHttpServer } = prepareTestInstances({
       ports: [8000],
     });
 
     const promise = authCode.fetch([]);
 
-    authCode.httpServer.listening = false;
-    authCode.httpServer.closeError = new Error('Test');
+    httpServer.listening = false;
+    httpServer.closeError = new Error('Test');
 
     const result = await promise;
     // We set up server to throw an error on close. If nothing happened - it means
     // that `authCode` never tried to stop it
     expect(result.code).to.be.equal(oauthClient.code);
 
-    expect(authCode.createHttpServer.callCount).to.be.equal(1);
+    expect(createHttpServer.callCount).to.be.equal(1);
     expect(openAuthUrl.callCount).to.be.equal(1);
   });
 });

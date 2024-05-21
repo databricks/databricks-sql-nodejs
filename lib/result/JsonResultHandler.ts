@@ -6,7 +6,7 @@ import { getSchemaColumns, convertThriftValue, getColumnValue } from './utils';
 export default class JsonResultHandler implements IResultsProvider<Array<any>> {
   private readonly context: IClientContext;
 
-  public readonly source: IResultsProvider<TRowSet | undefined>;
+  private readonly source: IResultsProvider<TRowSet | undefined>;
 
   private readonly schema: Array<TColumnDesc>;
 
@@ -72,7 +72,7 @@ export default class JsonResultHandler implements IResultsProvider<Array<any>> {
     });
   }
 
-  protected isNull(nulls: Buffer, i: number): boolean {
+  private isNull(nulls: Buffer, i: number): boolean {
     const byte = nulls[Math.floor(i / 8)];
     const ofs = 2 ** (i % 8);
 

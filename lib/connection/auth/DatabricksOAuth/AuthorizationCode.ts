@@ -129,7 +129,7 @@ export default class AuthorizationCode {
     throw new AuthenticationError('Failed to start server: all ports are in use');
   }
 
-  protected createHttpServer(requestHandler: (req: IncomingMessage, res: ServerResponse) => void) {
+  private createHttpServer(requestHandler: (req: IncomingMessage, res: ServerResponse) => void) {
     return http.createServer(requestHandler);
   }
 

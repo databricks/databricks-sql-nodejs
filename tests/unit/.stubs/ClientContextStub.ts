@@ -26,8 +26,7 @@ export default class ClientContextStub implements IClientContext {
   }
 
   public getConfig(): ClientConfig {
-    // @ts-expect-error TS2341: Property getDefaultConfig is private and only accessible within class DBSQLClient
-    const defaultConfig = DBSQLClient.getDefaultConfig();
+    const defaultConfig = DBSQLClient['getDefaultConfig']();
     return {
       ...defaultConfig,
       ...this.configOverrides,
