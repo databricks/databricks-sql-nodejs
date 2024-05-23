@@ -1,8 +1,8 @@
 import BaseCommand from './BaseCommand';
 import { TGetOperationStatusReq, TGetOperationStatusResp } from '../../../thrift/TCLIService_types';
-import TCLIService from '../../../thrift/TCLIService';
+import IThriftClient from '../../contracts/IThriftClient';
 
-type Client = Pick<TCLIService.Client, 'GetOperationStatus'>;
+type Client = Pick<IThriftClient, 'GetOperationStatus'>;
 
 export default class GetOperationStatusCommand extends BaseCommand<Client> {
   execute(data: TGetOperationStatusReq): Promise<TGetOperationStatusResp> {

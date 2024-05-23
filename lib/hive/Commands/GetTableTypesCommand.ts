@@ -1,8 +1,8 @@
 import BaseCommand from './BaseCommand';
 import { TGetTableTypesReq, TGetTableTypesResp } from '../../../thrift/TCLIService_types';
-import TCLIService from '../../../thrift/TCLIService';
+import IThriftClient from '../../contracts/IThriftClient';
 
-type Client = Pick<TCLIService.Client, 'GetTableTypes'>;
+type Client = Pick<IThriftClient, 'GetTableTypes'>;
 
 export default class GetTableTypesCommand extends BaseCommand<Client> {
   execute(data: TGetTableTypesReq): Promise<TGetTableTypesResp> {

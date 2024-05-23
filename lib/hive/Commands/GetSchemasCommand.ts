@@ -1,8 +1,8 @@
 import BaseCommand from './BaseCommand';
 import { TGetSchemasReq, TGetSchemasResp } from '../../../thrift/TCLIService_types';
-import TCLIService from '../../../thrift/TCLIService';
+import IThriftClient from '../../contracts/IThriftClient';
 
-type Client = Pick<TCLIService.Client, 'GetSchemas'>;
+type Client = Pick<IThriftClient, 'GetSchemas'>;
 
 export default class GetSchemasCommand extends BaseCommand<Client> {
   execute(data: TGetSchemasReq): Promise<TGetSchemasResp> {

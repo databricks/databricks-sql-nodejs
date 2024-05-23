@@ -1,8 +1,8 @@
 import BaseCommand from './BaseCommand';
 import { TCloseOperationReq, TCloseOperationResp } from '../../../thrift/TCLIService_types';
-import TCLIService from '../../../thrift/TCLIService';
+import IThriftClient from '../../contracts/IThriftClient';
 
-type Client = Pick<TCLIService.Client, 'CloseOperation'>;
+type Client = Pick<IThriftClient, 'CloseOperation'>;
 
 export default class CloseOperationCommand extends BaseCommand<Client> {
   execute(data: TCloseOperationReq): Promise<TCloseOperationResp> {

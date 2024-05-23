@@ -1,8 +1,8 @@
 import BaseCommand from './BaseCommand';
 import { TExecuteStatementReq, TExecuteStatementResp } from '../../../thrift/TCLIService_types';
-import TCLIService from '../../../thrift/TCLIService';
+import IThriftClient from '../../contracts/IThriftClient';
 
-type Client = Pick<TCLIService.Client, 'ExecuteStatement'>;
+type Client = Pick<IThriftClient, 'ExecuteStatement'>;
 
 export default class ExecuteStatementCommand extends BaseCommand<Client> {
   execute(executeStatementRequest: TExecuteStatementReq): Promise<TExecuteStatementResp> {

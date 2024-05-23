@@ -1,8 +1,8 @@
 import BaseCommand from './BaseCommand';
 import { TGetCrossReferenceReq, TGetCrossReferenceResp } from '../../../thrift/TCLIService_types';
-import TCLIService from '../../../thrift/TCLIService';
+import IThriftClient from '../../contracts/IThriftClient';
 
-type Client = Pick<TCLIService.Client, 'GetCrossReference'>;
+type Client = Pick<IThriftClient, 'GetCrossReference'>;
 
 export default class GetCrossReferenceCommand extends BaseCommand<Client> {
   execute(data: TGetCrossReferenceReq): Promise<TGetCrossReferenceResp> {

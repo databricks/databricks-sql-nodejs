@@ -1,8 +1,8 @@
 import BaseCommand from './BaseCommand';
 import { TGetResultSetMetadataReq, TGetResultSetMetadataResp } from '../../../thrift/TCLIService_types';
-import TCLIService from '../../../thrift/TCLIService';
+import IThriftClient from '../../contracts/IThriftClient';
 
-type Client = Pick<TCLIService.Client, 'GetResultSetMetadata'>;
+type Client = Pick<IThriftClient, 'GetResultSetMetadata'>;
 
 export default class GetResultSetMetadataCommand extends BaseCommand<Client> {
   execute(getResultSetMetadataRequest: TGetResultSetMetadataReq): Promise<TGetResultSetMetadataResp> {

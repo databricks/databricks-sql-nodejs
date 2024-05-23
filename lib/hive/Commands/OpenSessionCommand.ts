@@ -1,8 +1,8 @@
 import BaseCommand from './BaseCommand';
 import { TOpenSessionReq, TOpenSessionResp } from '../../../thrift/TCLIService_types';
-import TCLIService from '../../../thrift/TCLIService';
+import IThriftClient from '../../contracts/IThriftClient';
 
-type Client = Pick<TCLIService.Client, 'OpenSession'>;
+type Client = Pick<IThriftClient, 'OpenSession'>;
 
 /**
  * For auth mechanism GSSAPI the host and service should be provided when session is opened.

@@ -1,8 +1,8 @@
 import BaseCommand from './BaseCommand';
 import { TGetPrimaryKeysReq, TGetPrimaryKeysResp } from '../../../thrift/TCLIService_types';
-import TCLIService from '../../../thrift/TCLIService';
+import IThriftClient from '../../contracts/IThriftClient';
 
-type Client = Pick<TCLIService.Client, 'GetPrimaryKeys'>;
+type Client = Pick<IThriftClient, 'GetPrimaryKeys'>;
 
 export default class GetPrimaryKeysCommand extends BaseCommand<Client> {
   execute(data: TGetPrimaryKeysReq): Promise<TGetPrimaryKeysResp> {

@@ -145,9 +145,9 @@ export default class DBSQLSession implements IDBSQLSession {
 
   private isOpen = true;
 
-  private operations = new CloseableCollection<DBSQLOperation>();
-
   public onClose?: () => void;
+
+  private operations = new CloseableCollection<DBSQLOperation>();
 
   constructor({ handle, context }: DBSQLSessionConstructorOptions) {
     this.sessionHandle = handle;

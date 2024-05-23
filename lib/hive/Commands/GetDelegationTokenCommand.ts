@@ -1,8 +1,8 @@
 import BaseCommand from './BaseCommand';
 import { TGetDelegationTokenReq, TGetDelegationTokenResp } from '../../../thrift/TCLIService_types';
-import TCLIService from '../../../thrift/TCLIService';
+import IThriftClient from '../../contracts/IThriftClient';
 
-type Client = Pick<TCLIService.Client, 'GetDelegationToken'>;
+type Client = Pick<IThriftClient, 'GetDelegationToken'>;
 
 export default class GetDelegationTokenCommand extends BaseCommand<Client> {
   execute(data: TGetDelegationTokenReq): Promise<TGetDelegationTokenResp> {

@@ -1,8 +1,8 @@
 import BaseCommand from './BaseCommand';
 import { TFetchResultsReq, TFetchResultsResp } from '../../../thrift/TCLIService_types';
-import TCLIService from '../../../thrift/TCLIService';
+import IThriftClient from '../../contracts/IThriftClient';
 
-type Client = Pick<TCLIService.Client, 'FetchResults'>;
+type Client = Pick<IThriftClient, 'FetchResults'>;
 
 /**
  * TFetchResultsReq.fetchType - 0 represents Query output. 1 represents Log

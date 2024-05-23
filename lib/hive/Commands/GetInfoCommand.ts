@@ -1,8 +1,8 @@
 import BaseCommand from './BaseCommand';
 import { TGetInfoReq, TGetInfoResp } from '../../../thrift/TCLIService_types';
-import TCLIService from '../../../thrift/TCLIService';
+import IThriftClient from '../../contracts/IThriftClient';
 
-type Client = Pick<TCLIService.Client, 'GetInfo'>;
+type Client = Pick<IThriftClient, 'GetInfo'>;
 
 export default class GetInfoCommand extends BaseCommand<Client> {
   execute(data: TGetInfoReq): Promise<TGetInfoResp> {

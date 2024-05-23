@@ -52,6 +52,8 @@ export default class DBSQLOperation implements IOperation {
 
   private readonly operationHandle: TOperationHandle;
 
+  public onClose?: () => void;
+
   private readonly _data: RowSetProvider;
 
   private readonly closeOperation?: TCloseOperationResp;
@@ -63,8 +65,6 @@ export default class DBSQLOperation implements IOperation {
   private metadata?: TGetResultSetMetadataResp;
 
   private state: TOperationState = TOperationState.INITIALIZED_STATE;
-
-  public onClose?: () => void;
 
   // Once operation is finished or fails - cache status response, because subsequent calls
   // to `getOperationStatus()` may fail with irrelevant errors, e.g. HTTP 404

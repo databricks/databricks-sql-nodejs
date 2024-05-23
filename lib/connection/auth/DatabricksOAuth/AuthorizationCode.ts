@@ -6,26 +6,19 @@ import { OAuthScopes, scopeDelimiter } from './OAuthScope';
 import IClientContext from '../../../contracts/IClientContext';
 import AuthenticationError from '../../../errors/AuthenticationError';
 
-export type DefaultOpenAuthUrlFunction = (authUrl: string) => Promise<void>;
+export type DefaultOpenAuthUrlCallback = (authUrl: string) => Promise<void>;
 
-export type CustomOpenAuthUrlFunction = (
-  authUrl: string,
-  defaultOpenAuthUrl: DefaultOpenAuthUrlFunction,
-) => Promise<void>;
+export type OpenAuthUrlCallback = (authUrl: string, defaultOpenAuthUrl: DefaultOpenAuthUrlCallback) => Promise<void>;
 
 export interface AuthorizationCodeOptions {
   client: BaseClient;
   ports: Array<number>;
   context: IClientContext;
-  openAuthUrl?: CustomOpenAuthUrlFunction;
+  openAuthUrl?: OpenAuthUrlCallback;
 }
 
-async function defaultOpenAuthUrl(authUrl: string) {
+async function defaultOpenAuthUrl(authUrl: string): Promise<void> {
   await open(authUrl);
-}
-
-async function openAuthUrl(authUrl: string, defaultOpenUrl: DefaultOpenAuthUrlFunction) {
-  return defaultOpenUrl(authUrl);
 }
 
 export interface AuthorizationCodeFetchResult {
@@ -80,8 +73,8 @@ export default class AuthorizationCode {
       redirect_uri: redirectUri,
     });
 
-    const openUrl = this.options.openAuthUrl ?? openAuthUrl;
-    await openUrl(authUrl, defaultOpenAuthUrl);
+    const openAuthUrl = this.options.openAuthUrl ?? defaultOpenAuthUrl;
+    await openAuthUrl(authUrl, defaultOpenAuthUrl);
     await server.stopped();
 
     if (!receivedParams || !receivedParams.code) {
