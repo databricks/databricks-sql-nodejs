@@ -1,5 +1,8 @@
 import BaseCommand from './BaseCommand';
 import { TOpenSessionReq, TOpenSessionResp } from '../../../thrift/TCLIService_types';
+import IThriftClient from '../../contracts/IThriftClient';
+
+type Client = Pick<IThriftClient, 'OpenSession'>;
 
 /**
  * For auth mechanism GSSAPI the host and service should be provided when session is opened.
@@ -10,7 +13,7 @@ import { TOpenSessionReq, TOpenSessionResp } from '../../../thrift/TCLIService_t
  *   [key: string]: any;
  * }
  */
-export default class OpenSessionCommand extends BaseCommand {
+export default class OpenSessionCommand extends BaseCommand<Client> {
   execute(openSessionRequest: TOpenSessionReq): Promise<TOpenSessionResp> {
     const request = new TOpenSessionReq(openSessionRequest);
 

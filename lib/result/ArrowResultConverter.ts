@@ -24,7 +24,7 @@ type ArrowSchema = Schema<TypeMap>;
 type ArrowSchemaField = Field<DataType<Type, TypeMap>>;
 
 export default class ArrowResultConverter implements IResultsProvider<Array<any>> {
-  protected readonly context: IClientContext;
+  private readonly context: IClientContext;
 
   private readonly source: IResultsProvider<ArrowBatch>;
 

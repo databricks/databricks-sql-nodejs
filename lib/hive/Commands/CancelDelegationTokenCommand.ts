@@ -1,7 +1,10 @@
 import BaseCommand from './BaseCommand';
 import { TCancelDelegationTokenReq, TCancelDelegationTokenResp } from '../../../thrift/TCLIService_types';
+import IThriftClient from '../../contracts/IThriftClient';
 
-export default class CancelDelegationTokenCommand extends BaseCommand {
+type Client = Pick<IThriftClient, 'CancelDelegationToken'>;
+
+export default class CancelDelegationTokenCommand extends BaseCommand<Client> {
   execute(data: TCancelDelegationTokenReq): Promise<TCancelDelegationTokenResp> {
     const request = new TCancelDelegationTokenReq(data);
 

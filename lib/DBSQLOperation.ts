@@ -64,7 +64,7 @@ export default class DBSQLOperation implements IOperation {
 
   private metadata?: TGetResultSetMetadataResp;
 
-  private state: number = TOperationState.INITIALIZED_STATE;
+  private state: TOperationState = TOperationState.INITIALIZED_STATE;
 
   // Once operation is finished or fails - cache status response, because subsequent calls
   // to `getOperationStatus()` may fail with irrelevant errors, e.g. HTTP 404

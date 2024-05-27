@@ -7,7 +7,7 @@ import { ArrowBatch } from './utils';
 import { LZ4 } from '../utils';
 
 export default class CloudFetchResultHandler implements IResultsProvider<ArrowBatch> {
-  protected readonly context: IClientContext;
+  private readonly context: IClientContext;
 
   private readonly source: IResultsProvider<TRowSet | undefined>;
 

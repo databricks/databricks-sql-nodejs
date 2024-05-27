@@ -36,7 +36,7 @@ export default class HttpConnection implements IConnectionProvider {
     });
   }
 
-  public async getAgent(): Promise<http.Agent> {
+  public async getAgent(): Promise<http.Agent | undefined> {
     if (!this.agent) {
       if (this.options.proxy !== undefined) {
         this.agent = this.createProxyAgent(this.options.proxy);
