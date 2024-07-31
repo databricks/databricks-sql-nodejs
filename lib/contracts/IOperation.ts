@@ -1,3 +1,4 @@
+import { Readable, ReadableOptions } from 'node:stream';
 import { TGetOperationStatusResp, TTableSchema } from '../../thrift/TCLIService_types';
 import Status from '../dto/Status';
 
@@ -33,6 +34,12 @@ export interface IOperationChunksIterator extends AsyncIterableIterator<Array<ob
 
 export interface IOperationRowsIterator extends AsyncIterableIterator<object> {
   readonly operation: IOperation;
+}
+
+export interface NodeStreamOptions {
+  mode?: 'chunks' | 'rows'; // defaults to 'chunks'
+  iteratorOptions?: IteratorOptions;
+  streamOptions?: ReadableOptions;
 }
 
 export default interface IOperation {
@@ -86,4 +93,6 @@ export default interface IOperation {
   iterateChunks(options?: IteratorOptions): IOperationChunksIterator;
 
   iterateRows(options?: IteratorOptions): IOperationRowsIterator;
+
+  toNodeStream(options?: NodeStreamOptions): Readable;
 }
