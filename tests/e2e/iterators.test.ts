@@ -88,4 +88,64 @@ describe('Iterators', () => {
       await session.close();
     }
   });
+
+  it('should get all chunks via Nodejs stream', async () => {
+    const session = await openSession({ arrowEnabled: false });
+    // @ts-expect-error TS2339: Property context does not exist on type IDBSQLSession
+    sinon.spy(session.context.driver, 'fetchResults');
+    try {
+      const expectedRowsCount = 10;
+
+      // set `maxRows` to null to disable direct results so all the data are fetched through `driver.fetchResults`
+      const operation = await session.executeStatement(`SELECT * FROM range(0, ${expectedRowsCount})`, {
+        maxRows: null,
+      });
+
+      const expectedRows = Array.from({ length: expectedRowsCount }, (_, id) => ({ id }));
+      const chunkSize = 4;
+      const expectedChunks = arrayChunks(expectedRows, chunkSize);
+
+      const stream = operation.toNodeStream({
+        mode: 'chunks',
+        iteratorOptions: { maxRows: chunkSize },
+      });
+
+      let index = 0;
+      for await (const chunk of stream) {
+        expect(chunk).to.deep.equal(expectedChunks[index]);
+        index += 1;
+      }
+
+      expect(index).to.equal(expectedChunks.length);
+    } finally {
+      await session.close();
+    }
+  });
+
+  it('should get all rows via Nodejs stream', async () => {
+    const session = await openSession({ arrowEnabled: false });
+    // @ts-expect-error TS2339: Property context does not exist on type IDBSQLSession
+    sinon.spy(session.context.driver, 'fetchResults');
+    try {
+      const expectedRowsCount = 10;
+
+      const operation = await session.executeStatement(`SELECT * FROM range(0, ${expectedRowsCount})`);
+
+      const expectedRows = Array.from({ length: expectedRowsCount }, (_, id) => ({ id }));
+
+      const stream = operation.toNodeStream({
+        mode: 'rows',
+      });
+
+      let index = 0;
+      for await (const row of stream) {
+        expect(row).to.deep.equal(expectedRows[index]);
+        index += 1;
+      }
+
+      expect(index).to.equal(expectedRows.length);
+    } finally {
+      await session.close();
+    }
+  });
 });
