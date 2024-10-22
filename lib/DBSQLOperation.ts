@@ -1,4 +1,5 @@
 import { stringify, NIL } from 'uuid';
+import { Readable } from 'node:stream';
 import IOperation, {
   FetchOptions,
   FinishedOptions,
@@ -7,6 +8,7 @@ import IOperation, {
   IteratorOptions,
   IOperationChunksIterator,
   IOperationRowsIterator,
+  NodeStreamOptions,
 } from './contracts/IOperation';
 import {
   TGetOperationStatusResp,
@@ -99,6 +101,23 @@ export default class DBSQLOperation implements IOperation {
 
   public iterateRows(options?: IteratorOptions): IOperationRowsIterator {
     return new OperationRowsIterator(this, options);
+  }
+
+  public toNodeStream(options?: NodeStreamOptions): Readable {
+    let iterable: IOperationChunksIterator | IOperationRowsIterator | undefined;
+
+    switch (options?.mode ?? 'chunks') {
+      case 'chunks':
+        iterable = this.iterateChunks(options?.iteratorOptions);
+        break;
+      case 'rows':
+        iterable = this.iterateRows(options?.iteratorOptions);
+        break;
+      default:
+        throw new Error(`IOperation.toNodeStream: unsupported mode ${options?.mode}`);
+    }
+
+    return Readable.from(iterable, options?.streamOptions);
   }
 
   public get id() {

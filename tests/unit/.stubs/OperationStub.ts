@@ -2,9 +2,11 @@ import IOperation, {
   IOperationChunksIterator,
   IOperationRowsIterator,
   IteratorOptions,
+  NodeStreamOptions,
 } from '../../../lib/contracts/IOperation';
 import Status from '../../../lib/dto/Status';
 import { OperationChunksIterator, OperationRowsIterator } from '../../../lib/utils/OperationIterator';
+import { Readable } from 'node:stream';
 
 export default class OperationStub implements IOperation {
   public readonly id: string = '';
@@ -58,5 +60,9 @@ export default class OperationStub implements IOperation {
 
   public iterateRows(options?: IteratorOptions): IOperationRowsIterator {
     return new OperationRowsIterator(this, options);
+  }
+
+  public toNodeStream(options?: NodeStreamOptions): Readable {
+    throw new Error('Not implemented');
   }
 }
