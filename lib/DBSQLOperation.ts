@@ -103,10 +103,10 @@ export default class DBSQLOperation implements IOperation {
     return new OperationRowsIterator(this, options);
   }
 
-  toNodeStream(options?: NodeStreamOptions): Readable {
+  public toNodeStream(options?: NodeStreamOptions): Readable {
     let iterable: IOperationChunksIterator | IOperationRowsIterator | undefined;
 
-    switch (options?.mode) {
+    switch (options?.mode ?? 'chunks') {
       case 'chunks':
         iterable = this.iterateChunks(options?.iteratorOptions);
         break;
