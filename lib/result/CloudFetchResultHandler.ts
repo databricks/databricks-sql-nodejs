@@ -73,7 +73,7 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
       throw new Error('CloudFetch link has expired');
     }
 
-    const response = await this.fetch(link.fileLink);
+    const response = await this.fetch(link.fileLink, { headers: link.httpHeaders });
     if (!response.ok) {
       throw new Error(`CloudFetch HTTP error ${response.status} ${response.statusText}`);
     }
