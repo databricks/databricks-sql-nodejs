@@ -49,12 +49,11 @@ function convertJSON(value: any, defaultValue: any): any {
 }
 
 function convertBigInt(value: any): any {
-  if (typeof value === 'bigint') {
-    return Number(value);
-  }
   if (value instanceof Int64) {
-    return value.toNumber();
+    return BigInt(value.toString());
   }
+
+  // Do not convert a BigInt away from the BigInt type
   return value;
 }
 
