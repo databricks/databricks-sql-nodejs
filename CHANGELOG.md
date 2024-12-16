@@ -1,5 +1,14 @@
 # Release History
 
+## 1.9.0
+
+- Support iterable interface for IOperation (databricks/databricks-sql-nodejs#252)
+- Allow any number type (number, bigint, Int64) for `maxRows` and `queryTimeout` (databricks/databricks-sql-nodejs#255)
+- Support streaming query results via Node.js streams (databricks/databricks-sql-nodejs#262)
+- Add custom auth headers into cloud fetch request (databricks/databricks-sql-nodejs#267)
+- Support OAuth on databricks.azure.cn (databricks/databricks-sql-nodejs#271)
+- Fix: Fix the type check in polyfills.ts (databricks/databricks-sql-nodejs#254)
+
 ## 1.8.4
 
 - Fix: proxy agent unintentionally overwrites protocol in URL (databricks/databricks-sql-nodejs#241)
