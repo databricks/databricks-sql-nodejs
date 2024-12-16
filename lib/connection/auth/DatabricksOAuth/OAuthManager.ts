@@ -219,7 +219,7 @@ export default abstract class OAuthManager {
     }
 
     if (options.useDatabricksOAuthInAzure) {
-      const azureDomains = ['.azuredatabricks.net'];
+      const azureDomains = ['.azuredatabricks.net', '.databricks.azure.cn'];
       const isAzureDomain = azureDomains.some((domain) => host.endsWith(domain));
       if (isAzureDomain) {
         // eslint-disable-next-line @typescript-eslint/no-use-before-define
