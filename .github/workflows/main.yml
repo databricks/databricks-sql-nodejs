@@ -45,11 +45,6 @@ jobs:
         with:
           node-version: ${{ matrix.node-version }}
       - uses: actions/checkout@v3
-      - name: Set up Python 3.10 for Node 14
-        if: ${{ matrix.node-version == '14' }}
-        uses: actions/setup-python@v4
-        with:
-          python-version: '3.10'
       - name: Cache node modules
         uses: actions/cache@v3
         with:
