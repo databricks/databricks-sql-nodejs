@@ -17,16 +17,16 @@ const progressUpdateResponseStub: TProgressUpdateResp = {
 describe('buildUserAgentString', () => {
   // It should follow https://www.rfc-editor.org/rfc/rfc7231#section-5.5.3 and
   // https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/User-Agent
+  //   UserAgent ::= <ProductName> '/' <ProductVersion> '(' <Comment> ')'
+  // where:
+  //   <ProductName> is "NodejsDatabricksSqlConnector"
+  //   <ProductVersion> is three period-separated digits (optionally with a suffix)
+  //   <Comment> is "Node.js <NodeJsVersion>; <OSPlatform> <OSVersion>"
   //
-  // UserAgent ::= <ProductName> '/' <ProductVersion> '(' <Comment> ')'
-  // ProductName ::= 'NodejsDatabricksSqlConnector'
-  // <Comment> ::= [ <ClientId> ';' ] 'Node.js' <NodeJsVersion> ';' <OSPlatform> <OSVersion>
-  //
-  // Examples:
-  // - with <ClientId> provided: NodejsDatabricksSqlConnector/0.1.8-beta.1 (Client ID; Node.js 16.13.1; Darwin 21.5.0)
-  // - without <ClientId> provided: NodejsDatabricksSqlConnector/0.1.8-beta.1 (Node.js 16.13.1; Darwin 21.5.0)
+  // Example:
+  // - NodejsDatabricksSqlConnector/0.1.8-beta.1 (Node.js 16.13.1; Darwin 21.5.0)
 
-  function checkUserAgentString(ua: string, clientId?: string) {
+  function checkUserAgentString(ua: string) {
     // Prefix: 'NodejsDatabricksSqlConnector/'
     // Version: three period-separated digits and optional suffix
     const re =
@@ -36,20 +36,16 @@ describe('buildUserAgentString', () => {
 
     const { comment } = match?.groups ?? {};
 
-    expect(comment.split(';').length).to.be.gte(2); // at least Node and OS version should be there
+    const parts = comment.split(';').map((s) => s.trim());
+    expect(parts.length).to.be.gte(2); // at least Node and OS version should be there
 
-    if (clientId) {
-      expect(comment.trim()).to.satisfy((s: string) => s.startsWith(`${clientId};`));
-    }
+    // First part should start with "Node.js" followed by a version number.
+    expect(parts[0]).to.match(/^Node\.js\s+\d+\.\d+\.\d+/);
+    // Second part should represent the OS platform (a word) and OS version.
+    expect(parts[1]).to.match(/^\w+/);
   }
 
-  it('matches pattern with clientId', () => {
-    const clientId = 'Some Client ID';
-    const ua = buildUserAgentString(clientId);
-    checkUserAgentString(ua, clientId);
-  });
-
-  it('matches pattern without clientId', () => {
+  it('matches pattern', () => {
     const ua = buildUserAgentString();
     checkUserAgentString(ua);
   });
