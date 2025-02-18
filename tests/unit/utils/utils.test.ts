@@ -36,7 +36,8 @@ describe('buildUserAgentString', () => {
 
     const { comment } = match?.groups ?? {};
 
-    expect(comment.split(';').length).to.be.gte(2); // at least Node and OS version should be there
+    const parts = comment.split(';').map((s) => s.trim());
+    expect(parts.length).to.be.gte(2); // at least Node and OS version should be there
 
     if (userAgentHeader) {
       expect(comment.trim()).to.satisfy((s: string) => s.startsWith(`${userAgentHeader};`));
