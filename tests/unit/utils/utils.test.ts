@@ -20,13 +20,13 @@ describe('buildUserAgentString', () => {
   //
   // UserAgent ::= <ProductName> '/' <ProductVersion> '(' <Comment> ')'
   // ProductName ::= 'NodejsDatabricksSqlConnector'
-  // <Comment> ::= [ <ClientId> ';' ] 'Node.js' <NodeJsVersion> ';' <OSPlatform> <OSVersion>
+  // <Comment> ::= [ <userAgentHeader> ';' ] 'Node.js' <NodeJsVersion> ';' <OSPlatform> <OSVersion>
   //
   // Examples:
-  // - with <ClientId> provided: NodejsDatabricksSqlConnector/0.1.8-beta.1 (Client ID; Node.js 16.13.1; Darwin 21.5.0)
-  // - without <ClientId> provided: NodejsDatabricksSqlConnector/0.1.8-beta.1 (Node.js 16.13.1; Darwin 21.5.0)
+  // - with <userAgentHeader> provided: NodejsDatabricksSqlConnector/0.1.8-beta.1 (Client ID; Node.js 16.13.1; Darwin 21.5.0)
+  // - without <userAgentHeader> provided: NodejsDatabricksSqlConnector/0.1.8-beta.1 (Node.js 16.13.1; Darwin 21.5.0)
 
-  function checkUserAgentString(ua: string, clientId?: string) {
+  function checkUserAgentString(ua: string, userAgentHeader?: string) {
     // Prefix: 'NodejsDatabricksSqlConnector/'
     // Version: three period-separated digits and optional suffix
     const re =
@@ -38,18 +38,18 @@ describe('buildUserAgentString', () => {
 
     expect(comment.split(';').length).to.be.gte(2); // at least Node and OS version should be there
 
-    if (clientId) {
-      expect(comment.trim()).to.satisfy((s: string) => s.startsWith(`${clientId};`));
+    if (userAgentHeader) {
+      expect(comment.trim()).to.satisfy((s: string) => s.startsWith(`${userAgentHeader};`));
     }
   }
 
-  it('matches pattern with clientId', () => {
-    const clientId = 'Some Client ID';
-    const ua = buildUserAgentString(clientId);
-    checkUserAgentString(ua, clientId);
+  it('matches pattern with userAgentHeader', () => {
+    const userAgentHeader = 'Some Client ID';
+    const ua = buildUserAgentString(userAgentHeader);
+    checkUserAgentString(ua, userAgentHeader);
   });
 
-  it('matches pattern without clientId', () => {
+  it('matches pattern without userAgentHeader', () => {
     const ua = buildUserAgentString();
     checkUserAgentString(ua);
   });

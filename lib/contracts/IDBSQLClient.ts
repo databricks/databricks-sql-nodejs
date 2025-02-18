@@ -30,7 +30,7 @@ export type ConnectionOptions = {
   host: string;
   port?: number;
   path: string;
-  clientId?: string;
+  userAgentHeader?: string;
   socketTimeout?: number;
   proxy?: ProxyOptions;
 } & AuthOptions;
