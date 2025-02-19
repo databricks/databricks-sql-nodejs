@@ -19,14 +19,16 @@ describe('buildUserAgentString', () => {
   // https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/User-Agent
   //
   // UserAgent ::= <ProductName> '/' <ProductVersion> '(' <Comment> ')'
+  // where:
   // ProductName ::= 'NodejsDatabricksSqlConnector'
-  // <Comment> ::= [ <userAgentHeader> ';' ] 'Node.js' <NodeJsVersion> ';' <OSPlatform> <OSVersion>
+  // ProductVersion ::= three period-separated digits
+  // <Comment> ::= [ <userAgentEntry> ';' ] 'Node.js' <NodeJsVersion> ';' <OSPlatform> <OSVersion>
   //
   // Examples:
-  // - with <userAgentHeader> provided: NodejsDatabricksSqlConnector/0.1.8-beta.1 (Client ID; Node.js 16.13.1; Darwin 21.5.0)
-  // - without <userAgentHeader> provided: NodejsDatabricksSqlConnector/0.1.8-beta.1 (Node.js 16.13.1; Darwin 21.5.0)
+  // - with <userAgentEntry> provided: NodejsDatabricksSqlConnector/0.1.8-beta.1 (<userAgentEntry>; Node.js 16.13.1; Darwin 21.5.0)
+  // - without <userAgentEntry> provided: NodejsDatabricksSqlConnector/0.1.8-beta.1 (Node.js 16.13.1; Darwin 21.5.0)
 
-  function checkUserAgentString(ua: string, userAgentHeader?: string) {
+  function checkUserAgentString(ua: string, userAgentEntry?: string) {
     // Prefix: 'NodejsDatabricksSqlConnector/'
     // Version: three period-separated digits and optional suffix
     const re =
@@ -39,18 +41,18 @@ describe('buildUserAgentString', () => {
     const parts = comment.split(';').map((s) => s.trim());
     expect(parts.length).to.be.gte(2); // at least Node and OS version should be there
 
-    if (userAgentHeader) {
-      expect(comment.trim()).to.satisfy((s: string) => s.startsWith(`${userAgentHeader};`));
+    if (userAgentEntry) {
+      expect(comment.trim()).to.satisfy((s: string) => s.startsWith(`${userAgentEntry};`));
     }
   }
 
-  it('matches pattern with userAgentHeader', () => {
-    const userAgentHeader = 'Some Client ID';
-    const ua = buildUserAgentString(userAgentHeader);
-    checkUserAgentString(ua, userAgentHeader);
+  it('matches pattern with userAgentEntry', () => {
+    const userAgentEntry = 'Some user agent';
+    const ua = buildUserAgentString(userAgentEntry);
+    checkUserAgentString(ua, userAgentEntry);
   });
 
-  it('matches pattern without userAgentHeader', () => {
+  it('matches pattern without userAgentEntry', () => {
     const ua = buildUserAgentString();
     checkUserAgentString(ua);
   });
