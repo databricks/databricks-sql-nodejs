@@ -15,7 +15,7 @@ async function initClient({ host, endpointId, token }) {
         host,
         path: `/sql/2.0/warehouses/${endpointId}`,
         token,
-        clientId: 'REPL',
+        userAgentEntry: 'REPL',
     });
 }
 

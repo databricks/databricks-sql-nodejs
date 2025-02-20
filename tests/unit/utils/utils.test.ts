@@ -17,16 +17,18 @@ const progressUpdateResponseStub: TProgressUpdateResp = {
 describe('buildUserAgentString', () => {
   // It should follow https://www.rfc-editor.org/rfc/rfc7231#section-5.5.3 and
   // https://developer.mozilla.org/en-US/docs/Web/HTTP/Headers/User-Agent
-  //   UserAgent ::= <ProductName> '/' <ProductVersion> '(' <Comment> ')'
-  // where:
-  //   <ProductName> is "NodejsDatabricksSqlConnector"
-  //   <ProductVersion> is three period-separated digits (optionally with a suffix)
-  //   <Comment> is "Node.js <NodeJsVersion>; <OSPlatform> <OSVersion>"
   //
-  // Example:
-  // - NodejsDatabricksSqlConnector/0.1.8-beta.1 (Node.js 16.13.1; Darwin 21.5.0)
+  // UserAgent ::= <ProductName> '/' <ProductVersion> '(' <Comment> ')'
+  // where:
+  // ProductName ::= 'NodejsDatabricksSqlConnector'
+  // ProductVersion ::= three period-separated digits
+  // <Comment> ::= [ <userAgentEntry> ';' ] 'Node.js' <NodeJsVersion> ';' <OSPlatform> <OSVersion>
+  //
+  // Examples:
+  // - with <userAgentEntry> provided: NodejsDatabricksSqlConnector/0.1.8-beta.1 (<userAgentEntry>; Node.js 16.13.1; Darwin 21.5.0)
+  // - without <userAgentEntry> provided: NodejsDatabricksSqlConnector/0.1.8-beta.1 (Node.js 16.13.1; Darwin 21.5.0)
 
-  function checkUserAgentString(ua: string) {
+  function checkUserAgentString(ua: string, userAgentEntry?: string) {
     // Prefix: 'NodejsDatabricksSqlConnector/'
     // Version: three period-separated digits and optional suffix
     const re =
@@ -39,13 +41,18 @@ describe('buildUserAgentString', () => {
     const parts = comment.split(';').map((s) => s.trim());
     expect(parts.length).to.be.gte(2); // at least Node and OS version should be there
 
-    // First part should start with "Node.js" followed by a version number.
-    expect(parts[0]).to.match(/^Node\.js\s+\d+\.\d+\.\d+/);
-    // Second part should represent the OS platform (a word) and OS version.
-    expect(parts[1]).to.match(/^\w+/);
+    if (userAgentEntry) {
+      expect(comment.trim()).to.satisfy((s: string) => s.startsWith(`${userAgentEntry};`));
+    }
   }
 
-  it('matches pattern', () => {
+  it('matches pattern with userAgentEntry', () => {
+    const userAgentEntry = 'Some user agent';
+    const ua = buildUserAgentString(userAgentEntry);
+    checkUserAgentString(ua, userAgentEntry);
+  });
+
+  it('matches pattern without userAgentEntry', () => {
     const ua = buildUserAgentString();
     checkUserAgentString(ua);
   });

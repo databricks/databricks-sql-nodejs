@@ -11,7 +11,7 @@ function getOperatingSystemVersion(): string {
   return `${os.type()} ${os.release()}`;
 }
 
-export default function buildUserAgentString(): string {
-  const extra = [getNodeVersion(), getOperatingSystemVersion()].filter(Boolean);
+export default function buildUserAgentString(userAgentEntry?: string): string {
+  const extra = [userAgentEntry, getNodeVersion(), getOperatingSystemVersion()].filter(Boolean);
   return `${productName}/${packageVersion} (${extra.join('; ')})`;
 }
