@@ -79,6 +79,25 @@ describe('DBSQLClient.connect', () => {
 
     expect(thriftConnectionStub.on.called).to.be.true;
   });
+
+  it('should log a warning when deprecated clientId is passed', async () => {
+    const client = new DBSQLClient();
+    const logSpy = sinon.spy((client as any).logger, 'log');
+
+    const optionsWithDeprecated = {
+      ...connectOptions,
+      clientId: 'clientId',
+    };
+
+    await client.connect(optionsWithDeprecated as any);
+
+    const warningRegex = /Warning: The "clientId" option is deprecated\. Please use "userAgentEntry" instead\./;
+    const callFound = logSpy.getCalls().some((call) => warningRegex.test(call.args[1]));
+
+    expect(callFound).to.be.true;
+
+    logSpy.restore();
+  });
 });
 
 describe('DBSQLClient.openSession', () => {
