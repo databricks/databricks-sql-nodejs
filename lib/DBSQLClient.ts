@@ -160,6 +160,14 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
    * const session = client.connect({host, path, token});
    */
   public async connect(options: ConnectionOptions, authProvider?: IAuthentication): Promise<IDBSQLClient> {
+    const deprecatedClientId = (options as any).clientId;
+    if (deprecatedClientId !== undefined) {
+      this.logger.log(
+        LogLevel.warn,
+        'Warning: The "clientId" option is deprecated. Please use "userAgentEntry" instead.',
+      );
+    }
+
     this.authProvider = this.createAuthProvider(options, authProvider);
 
     this.connectionProvider = this.createConnectionProvider(options);
