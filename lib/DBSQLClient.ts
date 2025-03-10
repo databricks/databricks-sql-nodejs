@@ -166,6 +166,9 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
         LogLevel.warn,
         'Warning: The "clientId" option is deprecated. Please use "userAgentEntry" instead.',
       );
+      if (!options.userAgentEntry) {
+        options.userAgentEntry = deprecatedClientId;
+      }
     }
 
     this.authProvider = this.createAuthProvider(options, authProvider);

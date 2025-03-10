@@ -56,6 +56,12 @@ describe('buildUserAgentString', () => {
     const ua = buildUserAgentString();
     checkUserAgentString(ua);
   });
+
+  it('should redact internal token in userAgentEntry', () => {
+    const userAgentEntry = 'dkea-internal-token';
+    const userAgentString = buildUserAgentString(userAgentEntry);
+    expect(userAgentString).to.include('<REDACTED>');
+  });
 });
 
 describe('formatProgress', () => {
