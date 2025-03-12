@@ -1,5 +1,9 @@
 # Release History
 
+## 1.10.0
+
+- Rename `clientId` parameter to `userAgentEntry` in connect call to standardize across sql drivers (databricks/databricks-sql-nodejs#281)
+
 ## 1.9.0
 
 - Support iterable interface for IOperation (databricks/databricks-sql-nodejs#252)
