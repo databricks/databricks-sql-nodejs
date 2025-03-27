@@ -140,16 +140,16 @@ describe('HttpConnection.connect', () => {
     const testCases: TestCase[] = [
       {
         input: { host: 'xyz.com/', path: '/sql/v1' },
-        expected: 'https://xyz.com:443/sql/v1'
+        expected: 'https://xyz.com:443/sql/v1',
       },
       {
         input: { host: 'xyz.com', path: '/sql/v1' },
-        expected: 'https://xyz.com:443/sql/v1'
+        expected: 'https://xyz.com:443/sql/v1',
       },
       {
         input: { host: 'xyz.com/', path: undefined },
-        expected: 'https://xyz.com:443/'
-      }
+        expected: 'https://xyz.com:443/',
+      },
     ];
 
     for (const testCase of testCases) {
