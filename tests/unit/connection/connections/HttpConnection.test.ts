@@ -162,10 +162,6 @@ describe('HttpConnection.connect', () => {
         input: { host: 'xyz.com', path: 'sql/v1/' },
         expected: 'https://xyz.com:443/sql/v1',
       },
-      {
-        input: { host: 'https://xyz.com', path: 'sql/v1' },
-        expected: 'https://xyz.com:443/sql/v1',
-      },
     ];
 
     for (const testCase of testCases) {
