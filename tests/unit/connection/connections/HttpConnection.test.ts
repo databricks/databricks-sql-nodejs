@@ -2,7 +2,7 @@ import http from 'http';
 import { expect } from 'chai';
 import HttpConnection from '../../../../lib/connection/connections/HttpConnection';
 import ThriftHttpConnection from '../../../../lib/connection/connections/ThriftHttpConnection';
-
+import IConnectionOptions from '../../../../lib/connection/contracts/IConnectionOptions';
 import ClientContextStub from '../../.stubs/ClientContextStub';
 
 describe('HttpConnection.connect', () => {
@@ -126,5 +126,47 @@ describe('HttpConnection.connect', () => {
       ...initialHeaders,
       ...extraHeaders,
     });
+  });
+
+  it('should handle trailing slashes in host and path correctly', async () => {
+    interface TestCase {
+      input: {
+        host: string;
+        path?: string;
+      };
+      expected: string;
+    }
+
+    const testCases: TestCase[] = [
+      {
+        input: { host: 'xyz.com/', path: '/sql/v1/' },
+        expected: 'https://xyz.com:443/sql/v1'
+      },
+      {
+        input: { host: 'xyz.com', path: 'sql/v1' },
+        expected: 'https://xyz.com:443/sql/v1'
+      },
+      {
+        input: { host: 'xyz.com/', path: 'sql/v1' },
+        expected: 'https://xyz.com:443/sql/v1'
+      },
+      {
+        input: { host: 'xyz.com', path: undefined },
+        expected: 'https://xyz.com:443/'
+      }
+    ];
+
+    for (const testCase of testCases) {
+      const options: IConnectionOptions = {
+        host: testCase.input.host,
+        port: 443,
+        path: testCase.input.path,
+        https: true,
+      };
+
+      const connection = new HttpConnection(options, new ClientContextStub());
+      const thriftConnection = await connection.getThriftConnection();
+      expect(thriftConnection.url).to.be.equal(testCase.expected);
+    }
   });
 });

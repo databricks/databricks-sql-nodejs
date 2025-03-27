@@ -98,7 +98,7 @@ export default class HttpConnection implements IConnectionProvider {
 
       this.connection = new ThriftHttpConnection(
         {
-          url: `${options.https ? 'https' : 'http'}://${options.host}:${options.port}${options.path ?? '/'}`,
+          url: `${options.https ? 'https' : 'http'}://${options.host.replace(/\/$/, '')}:${options.port}${options.path ? ('/' + options.path.replace(/\/$/, '')) : '/'}`,
           transport: thrift.TBufferedTransport,
           protocol: thrift.TBinaryProtocol,
           getRetryPolicy: () => this.getRetryPolicy(),
