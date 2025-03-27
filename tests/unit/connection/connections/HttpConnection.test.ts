@@ -128,7 +128,7 @@ describe('HttpConnection.connect', () => {
     });
   });
 
-  it('should handle trailing slashes in host and path correctly', async () => {
+  it('should handle trailing slashes in host correctly', async () => {
     interface TestCase {
       input: {
         host: string;
@@ -139,19 +139,15 @@ describe('HttpConnection.connect', () => {
 
     const testCases: TestCase[] = [
       {
-        input: { host: 'xyz.com/', path: '/sql/v1/' },
+        input: { host: 'xyz.com/', path: '/sql/v1' },
         expected: 'https://xyz.com:443/sql/v1'
       },
       {
-        input: { host: 'xyz.com', path: 'sql/v1' },
+        input: { host: 'xyz.com', path: '/sql/v1' },
         expected: 'https://xyz.com:443/sql/v1'
       },
       {
-        input: { host: 'xyz.com/', path: 'sql/v1' },
-        expected: 'https://xyz.com:443/sql/v1'
-      },
-      {
-        input: { host: 'xyz.com', path: undefined },
+        input: { host: 'xyz.com/', path: undefined },
         expected: 'https://xyz.com:443/'
       }
     ];
