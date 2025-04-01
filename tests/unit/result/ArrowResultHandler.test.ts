@@ -66,10 +66,6 @@ const sampleRowSet4: TRowSet = {
   ],
 };
 
-declare global {
-  var LZ4: typeof import('lz4') | undefined; // Declare LZ4 on globalThis with proper type
-}
-
 describe('ArrowResultHandler', () => {
   it('should return data', async () => {
     const rowSetProvider = new ResultsProviderStub([sampleRowSet1], undefined);
