@@ -88,7 +88,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
       retryDelayMin: 1 * 1000, // 1 second
       retryDelayMax: 60 * 1000, // 60 seconds (1 minute)
 
-      useCloudFetch: false,
+      useCloudFetch: true, // enabling cloud fetch by default.
       cloudFetchConcurrentDownloads: 10,
 
       useLZ4Compression: true,
