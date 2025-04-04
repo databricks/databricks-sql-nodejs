@@ -17,6 +17,7 @@ export type ExecuteStatementOptions = {
   runAsync?: boolean;
   maxRows?: number | bigint | Int64 | null;
   useCloudFetch?: boolean;
+  useLZ4Compression?: boolean;
   stagingAllowedLocalPath?: string | string[];
   namedParameters?: Record<string, DBSQLParameter | DBSQLParameterValue>;
   ordinalParameters?: Array<DBSQLParameter | DBSQLParameterValue>;

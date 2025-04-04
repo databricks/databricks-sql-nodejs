@@ -379,4 +379,24 @@ describe('CloudFetchResultHandler', () => {
       expect(context.invokeWithRetryStub.callCount).to.be.equal(1);
     }
   });
+
+  it('should handle data without LZ4 compression', async () => {
+    const context = new ClientContextStub();
+    const rowSetProvider = new ResultsProviderStub([sampleRowSet1], undefined);
+
+    const result = new CloudFetchResultHandler(context, rowSetProvider, {
+      lz4Compressed: false,
+      status: { statusCode: TStatusCode.SUCCESS_STATUS },
+    });
+
+    context.invokeWithRetryStub.callsFake(async () => ({
+      request: new Request('localhost'),
+      response: new Response(sampleArrowBatch, { status: 200 }), // Return only the batch
+    }));
+
+    const { batches } = await result.fetchNext({ limit: 10000 });
+
+    // Ensure the batches array matches the expected structure
+    expect(batches).to.deep.eq([sampleArrowBatch]);
+  });
 });
