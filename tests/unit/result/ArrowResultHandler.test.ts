@@ -229,4 +229,17 @@ describe('ArrowResultHandler', () => {
     });
     expect(await result.hasMore()).to.be.false;
   });
+
+  it('should handle data without LZ4 compression', async () => {
+    const rowSetProvider = new ResultsProviderStub([sampleRowSet1], undefined);
+    const result = new ArrowResultHandler(new ClientContextStub(), rowSetProvider, {
+      status: { statusCode: TStatusCode.SUCCESS_STATUS },
+      arrowSchema: sampleArrowSchema,
+      lz4Compressed: false,
+    });
+
+    const { batches } = await result.fetchNext({ limit: 10000 });
+    const expectedBatches = sampleRowSet1.arrowBatches?.map(({ batch }) => batch) ?? []; // Ensure iterable
+    expect(batches).to.deep.eq([sampleArrowSchema, ...expectedBatches]);
+  });
 });
