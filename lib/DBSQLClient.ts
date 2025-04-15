@@ -74,7 +74,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
     return this.defaultLogger;
   }
 
-  private static getDefaultConfig(): ClientConfig {
+  private static getDefaultConfig(options?: ClientOptions): ClientConfig {
     return {
       directResultsDefaultMaxRows: 100000,
       fetchChunkDefaultMaxRows: 100000,
@@ -92,12 +92,15 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
       cloudFetchConcurrentDownloads: 10,
 
       useLZ4Compression: true,
+
+      useAsSparkThriftServerClient: options?.useAsSparkThriftServerClient ?? false,
+      resultFormat: options?.resultFormat,
     };
   }
 
   constructor(options?: ClientOptions) {
     super();
-    this.config = DBSQLClient.getDefaultConfig();
+    this.config = DBSQLClient.getDefaultConfig(options);
     this.logger = options?.logger ?? DBSQLClient.getDefaultLogger();
     this.logger.log(LogLevel.info, 'Created DBSQLClient');
   }
@@ -218,7 +221,8 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
    */
   public async openSession(request: OpenSessionRequest = {}): Promise<IDBSQLSession> {
     const response = await this.driver.openSession({
-      client_protocol_i64: new Int64(TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V8),
+      client_protocol_i64: new Int64(request.protocol ?? TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V8),
+      client_protocol: request.protocol ?? TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V8,
       ...getInitialNamespaceOptions(request.initialCatalog, request.initialSchema),
       canUseMultipleCatalogs: true,
     });

@@ -397,7 +397,7 @@ export default class DBSQLOperation implements IOperation {
 
   private async getResultHandler(): Promise<ResultSlicer<any>> {
     const metadata = await this.fetchMetadata();
-    const resultFormat = definedOrError(metadata.resultFormat);
+    const resultFormat = this.context.getConfig().resultFormat || definedOrError(metadata.resultFormat);
 
     if (!this.resultHandler) {
       let resultSource: IResultsProvider<Array<any>> | undefined;

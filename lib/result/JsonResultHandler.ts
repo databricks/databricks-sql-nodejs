@@ -41,7 +41,7 @@ export default class JsonResultHandler implements IResultsProvider<Array<any>> {
   private getRows(columns: Array<TColumn>, descriptors: Array<TColumnDesc>): Array<any> {
     return descriptors.reduce(
       (rows, descriptor) =>
-        this.getSchemaValues(descriptor, columns[descriptor.position - 1]).reduce((result, value, i) => {
+        this.getSchemaValues(descriptor, this.getColumn(columns, descriptor)).reduce((result, value, i) => {
           if (!result[i]) {
             result[i] = {};
           }
@@ -54,6 +54,14 @@ export default class JsonResultHandler implements IResultsProvider<Array<any>> {
         }, rows),
       [],
     );
+  }
+
+  private getColumn(columns: TColumn[], descriptor: TColumnDesc): TColumn {
+    if (this.context.getConfig().useAsSparkThriftServerClient) {
+      return columns[descriptor.position];
+    }
+
+    return columns[descriptor.position - 1]
   }
 
   private getSchemaValues(descriptor: TColumnDesc, column?: TColumn): Array<any> {

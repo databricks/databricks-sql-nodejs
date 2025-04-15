@@ -10,3 +10,4 @@ coverage_unit
 dist
 *.DS_Store
 lib/version.ts
+.npmrc
