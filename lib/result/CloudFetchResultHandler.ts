@@ -54,18 +54,30 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
       this.downloadTasks.push(...tasks);
     }
 
-    const batch = await this.downloadTasks.shift();
-    if (!batch) {
+    // Process multiple batches in parallel
+    const batches = await Promise.all(this.downloadTasks.splice(0, clientConfig.cloudFetchConcurrentDownloads));
+
+    if (batches.length === 0) {
       return {
         batches: [],
         rowCount: 0,
       };
     }
 
-    if (this.isLZ4Compressed) {
-      batch.batches = batch.batches.map((buffer) => LZ4!.decode(buffer));
-    }
-    return batch;
+    // Combine all batches
+    const combinedBatches = batches.reduce(
+      (acc, batch) => {
+        if (this.isLZ4Compressed) {
+          batch.batches = batch.batches.map((buffer) => LZ4!.decode(buffer));
+        }
+        acc.batches.push(...batch.batches);
+        acc.rowCount += batch.rowCount;
+        return acc;
+      },
+      { batches: [] as Buffer[], rowCount: 0 },
+    );
+
+    return combinedBatches;
   }
 
   private async downloadLink(link: TSparkArrowResultLink): Promise<ArrowBatch> {
