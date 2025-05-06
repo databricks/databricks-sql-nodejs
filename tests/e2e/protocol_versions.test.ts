@@ -34,61 +34,65 @@ describe('Protocol Versions E2E Tests', function () {
   // These tests might take longer than the default timeout
   this.timeout(60000);
 
-  // Use for...of to iterate through all protocol versions
-  for (const { version, desc } of protocolVersions) {
-    describe(`Protocol ${desc}`, function () {
+  // Instead of using a loop with functions inside, we'll create a function that returns
+  // a test suite for each protocol version
+  protocolVersions.forEach(({ version, desc }) => {
+    describe(`Protocol ${desc}`, () => {
       let client: DBSQLClient;
       let session: IDBSQLSession;
 
-      before(async function () {
-        try {
-          client = new DBSQLClient();
+      before(function(this: Mocha.Context) {
+        return (async () => {
+          try {
+            client = new DBSQLClient();
 
-          // Connect to the Databricks SQL service
-          await client.connect({
-            host: config.host,
-            path: config.path,
-            token: config.token,
-          });
-
-          // Get access to the driver
-          const getDriverOriginal = client.getDriver.bind(client);
-
-          // Stub getDriver to return a proxied version of the driver with overridden openSession
-          sinon.stub(client, 'getDriver').callsFake(async () => {
-            const driver = await getDriverOriginal();
-
-            // Create a proxy for the driver to intercept openSession calls
-            const driverProxy = new Proxy(driver, {
-              get(target, prop) {
-                if (prop === 'openSession') {
-                  return async (request: any) => {
-                    // Modify the request to use our specific protocol version
-                    const modifiedRequest = {
-                      ...request,
-                      client_protocol_i64: new Int64(version),
-                    };
-                    return target.openSession(modifiedRequest);
-                  };
-                }
-                return target[prop as keyof IDriver];
-              },
+            // Connect to the Databricks SQL service
+            await client.connect({
+              host: config.host,
+              path: config.path,
+              token: config.token,
             });
 
-            return driverProxy;
-          });
+            // Get access to the driver
+            const getDriverOriginal = client.getDriver.bind(client);
 
-          session = await client.openSession({
-            initialCatalog: config.catalog,
-            initialSchema: config.schema,
-          });
-        } catch (error) {
-          console.log(`Failed to open session with protocol version ${desc}: ${error}`);
-          this.skip();
-        }
+            // Stub getDriver to return a proxied version of the driver with overridden openSession
+            sinon.stub(client, 'getDriver').callsFake(async () => {
+              const driver = await getDriverOriginal();
+
+              // Create a proxy for the driver to intercept openSession calls
+              const driverProxy = new Proxy(driver, {
+                get(target, prop) {
+                  if (prop === 'openSession') {
+                    return async (request: any) => {
+                      // Modify the request to use our specific protocol version
+                      const modifiedRequest = {
+                        ...request,
+                        client_protocol_i64: new Int64(version),
+                      };
+                      return target.openSession(modifiedRequest);
+                    };
+                  }
+                  return target[prop as keyof IDriver];
+                },
+              });
+
+              return driverProxy;
+            });
+
+            session = await client.openSession({
+              initialCatalog: config.catalog,
+              initialSchema: config.schema,
+            });
+          } catch (error) {
+            // eslint-disable-next-line no-console
+            console.log(`Failed to open session with protocol version ${desc}: ${error}`);
+            this.skip();
+          }
+        })();
       });
 
-      after(async function () {
+      after(async () => {
         if (session) {
           await session.close();
         }
@@ -99,7 +103,7 @@ describe('Protocol Versions E2E Tests', function () {
         sinon.restore();
       });
 
-      it('should handle various data types', async function () {
+      it('should handle various data types', async () => {
         // Query testing multiple data types supported by Databricks
         const query = `
           SELECT 
@@ -277,7 +281,7 @@ describe('Protocol Versions E2E Tests', function () {
         expect(row.null_val).to.be.null;
       });
 
-      it('should get catalogs', async function () {
+      it('should get catalogs', async () => {
         const operation = await session.getCatalogs();
         const catalogs = await operation.fetchAll();
         await operation.close();
@@ -287,7 +291,7 @@ describe('Protocol Versions E2E Tests', function () {
         expect(catalogs[0]).to.have.property('TABLE_CAT');
       });
 
-      it('should get schemas', async function () {
+      it('should get schemas', async () => {
         const operation = await session.getSchemas({ catalogName: config.catalog });
         const schemas = await operation.fetchAll();
         await operation.close();
@@ -297,7 +301,7 @@ describe('Protocol Versions E2E Tests', function () {
         expect(schemas[0]).to.have.property('TABLE_SCHEM');
       });
 
-      it('should get table types', async function () {
+      it('should get table types', async () => {
         const operation = await session.getTableTypes();
         const tableTypes = await operation.fetchAll();
         await operation.close();
@@ -307,7 +311,7 @@ describe('Protocol Versions E2E Tests', function () {
         expect(tableTypes[0]).to.have.property('TABLE_TYPE');
       });
 
-      it('should get tables', async function () {
+      it('should get tables', async () => {
         const operation = await session.getTables({
           catalogName: config.catalog,
           schemaName: config.schema,
@@ -322,35 +326,38 @@ describe('Protocol Versions E2E Tests', function () {
         }
       });
 
-      it('should get columns from current schema', async function () {
-        // First get a table name from the current schema
-        const tablesOp = await session.getTables({
-          catalogName: config.catalog,
-          schemaName: config.schema,
-        });
-        const tables = await tablesOp.fetchAll();
-        await tablesOp.close();
+      it('should get columns from current schema', function(this: Mocha.Context) {
+        return (async () => {
+          // First get a table name from the current schema
+          const tablesOp = await session.getTables({
+            catalogName: config.catalog,
+            schemaName: config.schema,
+          });
+          const tables = await tablesOp.fetchAll();
+          await tablesOp.close();
 
-        if (tables.length === 0) {
-          console.log('No tables found in the schema, skipping column test');
-          this.skip();
-          return;
-        }
+          if (tables.length === 0) {
+            // eslint-disable-next-line no-console
+            console.log('No tables found in the schema, skipping column test');
+            this.skip();
+            return;
+          }
 
-        const tableName = (tables[0] as any).TABLE_NAME;
+          const tableName = (tables[0] as any).TABLE_NAME;
 
-        const operation = await session.getColumns({
-          catalogName: config.catalog,
-          schemaName: config.schema,
-          tableName,
-        });
-        const columns = await operation.fetchAll();
-        await operation.close();
+          const operation = await session.getColumns({
+            catalogName: config.catalog,
+            schemaName: config.schema,
+            tableName,
+          });
+          const columns = await operation.fetchAll();
+          await operation.close();
 
-        expect(columns).to.be.an('array');
-        expect(columns.length).to.be.at.least(1);
-        expect(columns[0]).to.have.property('COLUMN_NAME');
+          expect(columns).to.be.an('array');
+          expect(columns.length).to.be.at.least(1);
+          expect(columns[0]).to.have.property('COLUMN_NAME');
+        })();
       });
     });
-  }
+  });
 });
