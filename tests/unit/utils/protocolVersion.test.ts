@@ -22,11 +22,11 @@ describe('Protocol Version Utility - Parameterized Tests', () => {
     TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V5,
     TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V6,
     TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V7,
-    TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V8
+    TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V8,
   ];
 
   // Test each protocol version against each feature function
-  protocolVersions.forEach(version => {
+  protocolVersions.forEach((version) => {
     describe(`with protocol version ${version}`, () => {
       it('supportsCloudFetch', () => {
         const expected = version >= MIN_VERSION_CLOUD_FETCH;
@@ -71,4 +71,4 @@ describe('Protocol Version Utility - Parameterized Tests', () => {
       });
     });
   });
-}); 
+});

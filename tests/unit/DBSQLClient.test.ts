@@ -166,18 +166,22 @@ describe('DBSQLClient.openSession', () => {
     {
       const session = await client.openSession();
       expect(session).instanceOf(DBSQLSession);
-      expect((session as DBSQLSession)['serverProtocolVersion']).to.equal(TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V8);
+      expect((session as DBSQLSession)['serverProtocolVersion']).to.equal(
+        TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V8,
+      );
     }
 
     {
       thriftClient.openSessionResp = {
         ...thriftClient.openSessionResp,
-        serverProtocolVersion: TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V7
+        serverProtocolVersion: TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V7,
       };
-      
+
       const session = await client.openSession();
       expect(session).instanceOf(DBSQLSession);
-      expect((session as DBSQLSession)['serverProtocolVersion']).to.equal(TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V7);
+      expect((session as DBSQLSession)['serverProtocolVersion']).to.equal(
+        TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V7,
+      );
     }
   });
 
@@ -190,21 +194,21 @@ describe('DBSQLClient.openSession', () => {
     {
       thriftClient.openSessionResp = {
         ...thriftClient.openSessionResp,
-        serverProtocolVersion: TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V6
+        serverProtocolVersion: TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V6,
       };
-      
+
       const session = await client.openSession();
       expect(session).instanceOf(DBSQLSession);
-      
+
       // Spy on driver.getTypeInfo to check if runAsync is set
       const driver = await client.getDriver();
       const getTypeInfoSpy = sinon.spy(driver, 'getTypeInfo');
-      
+
       await session.getTypeInfo();
-      
+
       expect(getTypeInfoSpy.calledOnce).to.be.true;
       expect(getTypeInfoSpy.firstCall.args[0].runAsync).to.be.true;
-      
+
       getTypeInfoSpy.restore();
     }
 
@@ -212,21 +216,21 @@ describe('DBSQLClient.openSession', () => {
     {
       thriftClient.openSessionResp = {
         ...thriftClient.openSessionResp,
-        serverProtocolVersion: TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V5
+        serverProtocolVersion: TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V5,
       };
-      
+
       const session = await client.openSession();
       expect(session).instanceOf(DBSQLSession);
-      
+
       // Spy on driver.getTypeInfo to check if runAsync is undefined
       const driver = await client.getDriver();
       const getTypeInfoSpy = sinon.spy(driver, 'getTypeInfo');
-      
+
       await session.getTypeInfo();
-      
+
       expect(getTypeInfoSpy.calledOnce).to.be.true;
       expect(getTypeInfoSpy.firstCall.args[0].runAsync).to.be.undefined;
-      
+
       getTypeInfoSpy.restore();
     }
   });

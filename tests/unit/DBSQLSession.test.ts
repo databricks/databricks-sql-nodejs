@@ -123,32 +123,32 @@ describe('DBSQLSession', () => {
           const context = new ClientContextStub();
           const driver = sinon.spy(context.driver);
           const statement = 'SELECT * FROM table';
-          const options = { 
+          const options = {
             maxRows: 10,
             queryTimeout: 100,
             namedParameters: { param1: 'value1' },
             useCloudFetch: true,
-            useLZ4Compression: true
+            useLZ4Compression: true,
           };
-          
-          const session = new DBSQLSession({ 
-            handle: sessionHandleStub, 
+
+          const session = new DBSQLSession({
+            handle: sessionHandleStub,
             context,
-            serverProtocolVersion: version
+            serverProtocolVersion: version,
           });
 
           await session.executeStatement(statement, options);
-          
+
           expect(driver.executeStatement.callCount).to.eq(1);
           const req = driver.executeStatement.firstCall.args[0];
-          
+
           // Basic fields that should always be present
           expect(req.sessionHandle.sessionId.guid).to.deep.equal(sessionHandleStub.sessionId.guid);
           expect(req.sessionHandle.sessionId.secret).to.deep.equal(sessionHandleStub.sessionId.secret);
           expect(req.statement).to.equal(statement);
           expect(req.runAsync).to.be.true;
           expect(req.queryTimeout).to.deep.equal(numberToInt64(options.queryTimeout));
-          
+
           // Fields that depend on protocol version
           if (version >= TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V8) {
             expect(req.parameters).to.exist;
@@ -156,13 +156,13 @@ describe('DBSQLSession', () => {
           } else {
             expect(req.parameters).to.not.exist;
           }
-          
+
           if (version >= TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V6) {
             expect(req.canDecompressLZ4Result).to.be.true;
           } else {
             expect(req.canDecompressLZ4Result).to.not.exist;
           }
-          
+
           if (version >= TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V5) {
             expect(req.canReadArrowResult).to.be.true;
             expect(req.useArrowNativeTypes).to.not.be.undefined;

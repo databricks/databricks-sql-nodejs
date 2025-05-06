@@ -76,7 +76,10 @@ function getDirectResultsOptions(maxRows: number | bigint | Int64 | null | undef
   };
 }
 
-function getArrowOptions(config: ClientConfig, serverProtocolVersion: TProtocolVersion | undefined | null): {
+function getArrowOptions(
+  config: ClientConfig,
+  serverProtocolVersion: TProtocolVersion | undefined | null,
+): {
   canReadArrowResult: boolean;
   useArrowNativeTypes?: TSparkArrowTypes;
 } {
@@ -204,25 +207,25 @@ export default class DBSQLSession implements IDBSQLSession {
     await this.failIfClosed();
     const driver = await this.context.getDriver();
     const clientConfig = this.context.getConfig();
-    
+
     const request = new TExecuteStatementReq({
       sessionHandle: this.sessionHandle,
       statement,
-      queryTimeout: options.queryTimeout?numberToInt64(options.queryTimeout):undefined,
+      queryTimeout: options.queryTimeout ? numberToInt64(options.queryTimeout) : undefined,
       runAsync: true,
       ...getDirectResultsOptions(options.maxRows, clientConfig),
       ...getArrowOptions(clientConfig, this.serverProtocolVersion),
     });
 
-    if(ProtocolVersion.supportsParameterizedQueries(this.serverProtocolVersion)) {
+    if (ProtocolVersion.supportsParameterizedQueries(this.serverProtocolVersion)) {
       request.parameters = getQueryParameters(options.namedParameters, options.ordinalParameters);
     }
 
-    if(ProtocolVersion.supportsArrowCompression(this.serverProtocolVersion)) {
+    if (ProtocolVersion.supportsArrowCompression(this.serverProtocolVersion)) {
       request.canDecompressLZ4Result = (options.useLZ4Compression ?? clientConfig.useLZ4Compression) && Boolean(LZ4);
     }
 
-    if(ProtocolVersion.supportsCloudFetch(this.serverProtocolVersion)) {
+    if (ProtocolVersion.supportsCloudFetch(this.serverProtocolVersion)) {
       request.canDownloadResult = options.useCloudFetch ?? clientConfig.useCloudFetch;
     }
 
@@ -375,10 +378,10 @@ export default class DBSQLSession implements IDBSQLSession {
     await this.failIfClosed();
     const driver = await this.context.getDriver();
     const clientConfig = this.context.getConfig();
-    
+
     // Set runAsync only if supported by protocol version
     const runAsync = ProtocolVersion.supportsAsyncMetadataOperations(this.serverProtocolVersion) ? true : undefined;
-    
+
     const operationPromise = driver.getTypeInfo({
       sessionHandle: this.sessionHandle,
       runAsync,
@@ -398,10 +401,10 @@ export default class DBSQLSession implements IDBSQLSession {
     await this.failIfClosed();
     const driver = await this.context.getDriver();
     const clientConfig = this.context.getConfig();
-    
+
     // Set runAsync only if supported by protocol version
     const runAsync = ProtocolVersion.supportsAsyncMetadataOperations(this.serverProtocolVersion) ? true : undefined;
-    
+
     const operationPromise = driver.getCatalogs({
       sessionHandle: this.sessionHandle,
       runAsync,
@@ -421,10 +424,10 @@ export default class DBSQLSession implements IDBSQLSession {
     await this.failIfClosed();
     const driver = await this.context.getDriver();
     const clientConfig = this.context.getConfig();
-    
+
     // Set runAsync only if supported by protocol version
     const runAsync = ProtocolVersion.supportsAsyncMetadataOperations(this.serverProtocolVersion) ? true : undefined;
-    
+
     const operationPromise = driver.getSchemas({
       sessionHandle: this.sessionHandle,
       catalogName: request.catalogName,
@@ -446,10 +449,10 @@ export default class DBSQLSession implements IDBSQLSession {
     await this.failIfClosed();
     const driver = await this.context.getDriver();
     const clientConfig = this.context.getConfig();
-    
+
     // Set runAsync only if supported by protocol version
     const runAsync = ProtocolVersion.supportsAsyncMetadataOperations(this.serverProtocolVersion) ? true : undefined;
-    
+
     const operationPromise = driver.getTables({
       sessionHandle: this.sessionHandle,
       catalogName: request.catalogName,
@@ -473,10 +476,10 @@ export default class DBSQLSession implements IDBSQLSession {
     await this.failIfClosed();
     const driver = await this.context.getDriver();
     const clientConfig = this.context.getConfig();
-    
+
     // Set runAsync only if supported by protocol version
     const runAsync = ProtocolVersion.supportsAsyncMetadataOperations(this.serverProtocolVersion) ? true : undefined;
-    
+
     const operationPromise = driver.getTableTypes({
       sessionHandle: this.sessionHandle,
       runAsync,
@@ -496,10 +499,10 @@ export default class DBSQLSession implements IDBSQLSession {
     await this.failIfClosed();
     const driver = await this.context.getDriver();
     const clientConfig = this.context.getConfig();
-    
+
     // Set runAsync only if supported by protocol version
     const runAsync = ProtocolVersion.supportsAsyncMetadataOperations(this.serverProtocolVersion) ? true : undefined;
-    
+
     const operationPromise = driver.getColumns({
       sessionHandle: this.sessionHandle,
       catalogName: request.catalogName,
@@ -523,10 +526,10 @@ export default class DBSQLSession implements IDBSQLSession {
     await this.failIfClosed();
     const driver = await this.context.getDriver();
     const clientConfig = this.context.getConfig();
-    
+
     // Set runAsync only if supported by protocol version
     const runAsync = ProtocolVersion.supportsAsyncMetadataOperations(this.serverProtocolVersion) ? true : undefined;
-    
+
     const operationPromise = driver.getFunctions({
       sessionHandle: this.sessionHandle,
       catalogName: request.catalogName,
@@ -543,10 +546,10 @@ export default class DBSQLSession implements IDBSQLSession {
     await this.failIfClosed();
     const driver = await this.context.getDriver();
     const clientConfig = this.context.getConfig();
-    
+
     // Set runAsync only if supported by protocol version
     const runAsync = ProtocolVersion.supportsAsyncMetadataOperations(this.serverProtocolVersion) ? true : undefined;
-    
+
     const operationPromise = driver.getPrimaryKeys({
       sessionHandle: this.sessionHandle,
       catalogName: request.catalogName,
@@ -569,10 +572,10 @@ export default class DBSQLSession implements IDBSQLSession {
     await this.failIfClosed();
     const driver = await this.context.getDriver();
     const clientConfig = this.context.getConfig();
-    
+
     // Set runAsync only if supported by protocol version
     const runAsync = ProtocolVersion.supportsAsyncMetadataOperations(this.serverProtocolVersion) ? true : undefined;
-    
+
     const operationPromise = driver.getCrossReference({
       sessionHandle: this.sessionHandle,
       parentCatalogName: request.parentCatalogName,

@@ -3,7 +3,7 @@ import { TProtocolVersion } from '../../thrift/TCLIService_types';
 /**
  * Protocol version information from Thrift TCLIService
  * Each version adds certain features to the Spark/Hive API
- * 
+ *
  * Databricks only supports SPARK_CLI_SERVICE_PROTOCOL_V1 (0xA501) or higher
  */
 
@@ -15,12 +15,12 @@ import { TProtocolVersion } from '../../thrift/TCLIService_types';
  */
 export function isFeatureSupported(
   serverProtocolVersion: TProtocolVersion | undefined | null,
-  requiredVersion: TProtocolVersion
+  requiredVersion: TProtocolVersion,
 ): boolean {
   if (serverProtocolVersion === undefined || serverProtocolVersion === null) {
     return false;
   }
-  
+
   return serverProtocolVersion >= requiredVersion;
 }
 
@@ -30,9 +30,7 @@ export function isFeatureSupported(
  * @param serverProtocolVersion The protocol version from server
  * @returns boolean indicating if parameterized queries are supported
  */
-export function supportsParameterizedQueries(
-  serverProtocolVersion: TProtocolVersion | undefined | null
-): boolean {
+export function supportsParameterizedQueries(serverProtocolVersion: TProtocolVersion | undefined | null): boolean {
   return isFeatureSupported(serverProtocolVersion, TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V8);
 }
 
@@ -42,9 +40,7 @@ export function supportsParameterizedQueries(
  * @param serverProtocolVersion The protocol version from server
  * @returns boolean indicating if async metadata operations are supported
  */
-export function supportsAsyncMetadataOperations(
-  serverProtocolVersion: TProtocolVersion | undefined | null
-): boolean {
+export function supportsAsyncMetadataOperations(serverProtocolVersion: TProtocolVersion | undefined | null): boolean {
   return isFeatureSupported(serverProtocolVersion, TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V6);
 }
 
@@ -54,9 +50,7 @@ export function supportsAsyncMetadataOperations(
  * @param serverProtocolVersion The protocol version from server
  * @returns boolean indicating if result persistence mode is supported
  */
-export function supportsResultPersistenceMode(
-  serverProtocolVersion: TProtocolVersion | undefined | null
-): boolean {
+export function supportsResultPersistenceMode(serverProtocolVersion: TProtocolVersion | undefined | null): boolean {
   return isFeatureSupported(serverProtocolVersion, TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V7);
 }
 
@@ -66,9 +60,7 @@ export function supportsResultPersistenceMode(
  * @param serverProtocolVersion The protocol version from server
  * @returns boolean indicating if compressed Arrow batches are supported
  */
-export function supportsArrowCompression(
-  serverProtocolVersion: TProtocolVersion | undefined | null
-): boolean {
+export function supportsArrowCompression(serverProtocolVersion: TProtocolVersion | undefined | null): boolean {
   return isFeatureSupported(serverProtocolVersion, TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V6);
 }
 
@@ -78,9 +70,7 @@ export function supportsArrowCompression(
  * @param serverProtocolVersion The protocol version from server
  * @returns boolean indicating if Arrow metadata is supported
  */
-export function supportsArrowMetadata(
-  serverProtocolVersion: TProtocolVersion | undefined | null
-): boolean {
+export function supportsArrowMetadata(serverProtocolVersion: TProtocolVersion | undefined | null): boolean {
   return isFeatureSupported(serverProtocolVersion, TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V5);
 }
 
@@ -90,9 +80,7 @@ export function supportsArrowMetadata(
  * @param serverProtocolVersion The protocol version from server
  * @returns boolean indicating if multiple catalogs are supported
  */
-export function supportsMultipleCatalogs(
-  serverProtocolVersion: TProtocolVersion | undefined | null
-): boolean {
+export function supportsMultipleCatalogs(serverProtocolVersion: TProtocolVersion | undefined | null): boolean {
   return isFeatureSupported(serverProtocolVersion, TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V4);
 }
 
@@ -102,8 +90,6 @@ export function supportsMultipleCatalogs(
  * @param serverProtocolVersion The protocol version from server
  * @returns boolean indicating if cloud fetching is supported
  */
-export function supportsCloudFetch(
-  serverProtocolVersion: TProtocolVersion | undefined | null
-): boolean {
+export function supportsCloudFetch(serverProtocolVersion: TProtocolVersion | undefined | null): boolean {
   return isFeatureSupported(serverProtocolVersion, TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V3);
 }
