@@ -16,6 +16,7 @@ import IThriftClient from '../../lib/contracts/IThriftClient';
 import IAuthentication from '../../lib/connection/contracts/IAuthentication';
 import AuthProviderStub from './.stubs/AuthProviderStub';
 import ConnectionProviderStub from './.stubs/ConnectionProviderStub';
+import { TProtocolVersion } from '../../thrift/TCLIService_types';
 
 const connectOptions = {
   host: '127.0.0.1',
@@ -153,6 +154,80 @@ describe('DBSQLClient.openSession', () => {
         throw error;
       }
       expect(error.message).to.be.eq('DBSQLClient: not connected');
+    }
+  });
+
+  it('should correctly pass server protocol version to session', async () => {
+    const client = new DBSQLClient();
+    const thriftClient = new ThriftClientStub();
+    sinon.stub(client, 'getClient').returns(Promise.resolve(thriftClient));
+
+    // Test with default protocol version (SPARK_CLI_SERVICE_PROTOCOL_V8)
+    {
+      const session = await client.openSession();
+      expect(session).instanceOf(DBSQLSession);
+      expect((session as DBSQLSession)['serverProtocolVersion']).to.equal(TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V8);
+    }
+
+    {
+      thriftClient.openSessionResp = {
+        ...thriftClient.openSessionResp,
+        serverProtocolVersion: TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V7
+      };
+      
+      const session = await client.openSession();
+      expect(session).instanceOf(DBSQLSession);
+      expect((session as DBSQLSession)['serverProtocolVersion']).to.equal(TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V7);
+    }
+  });
+
+  it('should affect session behavior based on protocol version', async () => {
+    const client = new DBSQLClient();
+    const thriftClient = new ThriftClientStub();
+    sinon.stub(client, 'getClient').returns(Promise.resolve(thriftClient));
+
+    // With protocol version V6 - should support async metadata operations
+    {
+      thriftClient.openSessionResp = {
+        ...thriftClient.openSessionResp,
+        serverProtocolVersion: TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V6
+      };
+      
+      const session = await client.openSession();
+      expect(session).instanceOf(DBSQLSession);
+      
+      // Spy on driver.getTypeInfo to check if runAsync is set
+      const driver = await client.getDriver();
+      const getTypeInfoSpy = sinon.spy(driver, 'getTypeInfo');
+      
+      await session.getTypeInfo();
+      
+      expect(getTypeInfoSpy.calledOnce).to.be.true;
+      expect(getTypeInfoSpy.firstCall.args[0].runAsync).to.be.true;
+      
+      getTypeInfoSpy.restore();
+    }
+
+    // With protocol version V5 - should NOT support async metadata operations
+    {
+      thriftClient.openSessionResp = {
+        ...thriftClient.openSessionResp,
+        serverProtocolVersion: TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V5
+      };
+      
+      const session = await client.openSession();
+      expect(session).instanceOf(DBSQLSession);
+      
+      // Spy on driver.getTypeInfo to check if runAsync is undefined
+      const driver = await client.getDriver();
+      const getTypeInfoSpy = sinon.spy(driver, 'getTypeInfo');
+      
+      await session.getTypeInfo();
+      
+      expect(getTypeInfoSpy.calledOnce).to.be.true;
+      expect(getTypeInfoSpy.firstCall.args[0].runAsync).to.be.undefined;
+      
+      getTypeInfoSpy.restore();
     }
   });
 });

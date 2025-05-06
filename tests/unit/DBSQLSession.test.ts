@@ -5,7 +5,7 @@ import DBSQLSession, { numberToInt64 } from '../../lib/DBSQLSession';
 import InfoValue from '../../lib/dto/InfoValue';
 import Status from '../../lib/dto/Status';
 import DBSQLOperation from '../../lib/DBSQLOperation';
-import { TSessionHandle } from '../../thrift/TCLIService_types';
+import { TSessionHandle, TProtocolVersion } from '../../thrift/TCLIService_types';
 import ClientContextStub from './.stubs/ClientContextStub';
 
 const sessionHandleStub: TSessionHandle = {
@@ -104,6 +104,81 @@ describe('DBSQLSession', () => {
           expect(result).instanceOf(DBSQLOperation);
         }
       });
+    });
+
+    describe('executeStatement with different protocol versions', () => {
+      const protocolVersions = [
+        { version: TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V1, desc: 'V1: no special features' },
+        { version: TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V2, desc: 'V2: no special features' },
+        { version: TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V3, desc: 'V3: cloud fetch' },
+        { version: TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V4, desc: 'V4: multiple catalogs' },
+        { version: TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V5, desc: 'V5: arrow metadata' },
+        { version: TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V6, desc: 'V6: async metadata, arrow compression' },
+        { version: TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V7, desc: 'V7: result persistence mode' },
+        { version: TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V8, desc: 'V8: parameterized queries' },
+      ];
+
+      for (const { version, desc } of protocolVersions) {
+        it(`should properly format request with protocol version ${desc}`, async () => {
+          const context = new ClientContextStub();
+          const driver = sinon.spy(context.driver);
+          const statement = 'SELECT * FROM table';
+          const options = { 
+            maxRows: 10,
+            queryTimeout: 100,
+            namedParameters: { param1: 'value1' },
+            useCloudFetch: true,
+            useLZ4Compression: true
+          };
+          
+          const session = new DBSQLSession({ 
+            handle: sessionHandleStub, 
+            context,
+            serverProtocolVersion: version
+          });
+
+          await session.executeStatement(statement, options);
+          
+          expect(driver.executeStatement.callCount).to.eq(1);
+          const req = driver.executeStatement.firstCall.args[0];
+          
+          // Basic fields that should always be present
+          expect(req.sessionHandle.sessionId.guid).to.deep.equal(sessionHandleStub.sessionId.guid);
+          expect(req.sessionHandle.sessionId.secret).to.deep.equal(sessionHandleStub.sessionId.secret);
+          expect(req.statement).to.equal(statement);
+          expect(req.runAsync).to.be.true;
+          expect(req.queryTimeout).to.deep.equal(numberToInt64(options.queryTimeout));
+          
+          // Fields that depend on protocol version
+          if (version >= TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V8) {
+            expect(req.parameters).to.exist;
+            expect(req.parameters?.length).to.equal(1);
+          } else {
+            expect(req.parameters).to.not.exist;
+          }
+          
+          if (version >= TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V6) {
+            expect(req.canDecompressLZ4Result).to.be.true;
+          } else {
+            expect(req.canDecompressLZ4Result).to.not.exist;
+          }
+          
+          if (version >= TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V5) {
+            expect(req.canReadArrowResult).to.be.true;
+            expect(req.useArrowNativeTypes).to.not.be.undefined;
+          } else if (version >= TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V3) {
+            // V3 and V4 have canDownloadResult but not arrow-related fields
+            expect(req.canReadArrowResult).to.be.false;
+            expect(req.useArrowNativeTypes).to.not.exist;
+            expect(req.canDownloadResult).to.be.true;
+          } else {
+            // V1 and V2 don't have arrow or download features
+            expect(req.canReadArrowResult).to.be.false;
+            expect(req.useArrowNativeTypes).to.not.exist;
+            expect(req.canDownloadResult).to.not.exist;
+          }
+        });
+      }
     });
   });
 
