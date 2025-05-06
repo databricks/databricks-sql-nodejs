@@ -41,7 +41,7 @@ describe('Protocol Versions E2E Tests', function () {
       let client: DBSQLClient;
       let session: IDBSQLSession;
 
-      before(function(this: Mocha.Context) {
+      before(function (this: Mocha.Context) {
         return (async () => {
           try {
             client = new DBSQLClient();
@@ -326,7 +326,7 @@ describe('Protocol Versions E2E Tests', function () {
         }
       });
 
-      it('should get columns from current schema', function(this: Mocha.Context) {
+      it('should get columns from current schema', function (this: Mocha.Context) {
         return (async () => {
           // First get a table name from the current schema
           const tablesOp = await session.getTables({
