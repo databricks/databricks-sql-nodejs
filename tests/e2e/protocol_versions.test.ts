@@ -41,17 +41,6 @@ describe('Protocol Versions E2E Tests', function () {
       let session: IDBSQLSession;
 
       before(async function () {
-        // Skip certain versions if they're known to not be supported
-        if (
-          [TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V1, TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V2].includes(
-            version,
-          )
-        ) {
-          console.log(`Skipping test for ${desc} - no special features`);
-          this.skip();
-          return;
-        }
-
         try {
           client = new DBSQLClient();
 
