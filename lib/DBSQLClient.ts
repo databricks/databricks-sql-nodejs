@@ -227,6 +227,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
     const session = new DBSQLSession({
       handle: definedOrError(response.sessionHandle),
       context: this,
+      serverProtocolVersion: response.serverProtocolVersion,
     });
     this.sessions.add(session);
     return session;

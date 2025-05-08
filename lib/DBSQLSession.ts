@@ -12,6 +12,8 @@ import {
   TSparkDirectResults,
   TSparkArrowTypes,
   TSparkParameter,
+  TProtocolVersion,
+  TExecuteStatementReq,
 } from '../thrift/TCLIService_types';
 import IDBSQLSession, {
   ExecuteStatementOptions,
@@ -29,7 +31,7 @@ import IOperation from './contracts/IOperation';
 import DBSQLOperation from './DBSQLOperation';
 import Status from './dto/Status';
 import InfoValue from './dto/InfoValue';
-import { definedOrError, LZ4 } from './utils';
+import { definedOrError, LZ4, ProtocolVersion } from './utils';
 import CloseableCollection from './utils/CloseableCollection';
 import { LogLevel } from './contracts/IDBSQLLogger';
 import HiveDriverError from './errors/HiveDriverError';
@@ -74,13 +76,16 @@ function getDirectResultsOptions(maxRows: number | bigint | Int64 | null | undef
   };
 }
 
-function getArrowOptions(config: ClientConfig): {
+function getArrowOptions(
+  config: ClientConfig,
+  serverProtocolVersion: TProtocolVersion | undefined | null,
+): {
   canReadArrowResult: boolean;
   useArrowNativeTypes?: TSparkArrowTypes;
 } {
   const { arrowEnabled = true, useArrowNativeTypes = true } = config;
 
-  if (!arrowEnabled) {
+  if (!arrowEnabled || !ProtocolVersion.supportsArrowMetadata(serverProtocolVersion)) {
     return {
       canReadArrowResult: false,
     };
@@ -136,6 +141,7 @@ function getQueryParameters(
 interface DBSQLSessionConstructorOptions {
   handle: TSessionHandle;
   context: IClientContext;
+  serverProtocolVersion?: TProtocolVersion;
 }
 
 export default class DBSQLSession implements IDBSQLSession {
@@ -145,14 +151,28 @@ export default class DBSQLSession implements IDBSQLSession {
 
   private isOpen = true;
 
+  private serverProtocolVersion?: TProtocolVersion;
+
   public onClose?: () => void;
 
   private operations = new CloseableCollection<DBSQLOperation>();
 
-  constructor({ handle, context }: DBSQLSessionConstructorOptions) {
+  /**
+   * Helper method to determine if runAsync should be set for metadata operations
+   * @private
+   * @returns true if supported by protocol version, undefined otherwise
+   */
+  private getRunAsyncForMetadataOperations(): boolean | undefined {
+    return ProtocolVersion.supportsAsyncMetadataOperations(this.serverProtocolVersion) ? true : undefined;
+  }
+
+  constructor({ handle, context, serverProtocolVersion }: DBSQLSessionConstructorOptions) {
     this.sessionHandle = handle;
     this.context = context;
+    // Get the server protocol version from the provided parameter (from TOpenSessionResp)
+    this.serverProtocolVersion = serverProtocolVersion;
     this.context.getLogger().log(LogLevel.debug, `Session created with id: ${this.id}`);
+    this.context.getLogger().log(LogLevel.debug, `Server protocol version: ${this.serverProtocolVersion}`);
   }
 
   public get id() {
@@ -193,17 +213,29 @@ export default class DBSQLSession implements IDBSQLSession {
     await this.failIfClosed();
     const driver = await this.context.getDriver();
     const clientConfig = this.context.getConfig();
-    const operationPromise = driver.executeStatement({
+
+    const request = new TExecuteStatementReq({
       sessionHandle: this.sessionHandle,
       statement,
       queryTimeout: options.queryTimeout ? numberToInt64(options.queryTimeout) : undefined,
       runAsync: true,
       ...getDirectResultsOptions(options.maxRows, clientConfig),
-      ...getArrowOptions(clientConfig),
-      canDownloadResult: options.useCloudFetch ?? clientConfig.useCloudFetch,
-      parameters: getQueryParameters(options.namedParameters, options.ordinalParameters),
-      canDecompressLZ4Result: (options.useLZ4Compression ?? clientConfig.useLZ4Compression) && Boolean(LZ4),
+      ...getArrowOptions(clientConfig, this.serverProtocolVersion),
     });
+
+    if (ProtocolVersion.supportsParameterizedQueries(this.serverProtocolVersion)) {
+      request.parameters = getQueryParameters(options.namedParameters, options.ordinalParameters);
+    }
+
+    if (ProtocolVersion.supportsArrowCompression(this.serverProtocolVersion)) {
+      request.canDecompressLZ4Result = (options.useLZ4Compression ?? clientConfig.useLZ4Compression) && Boolean(LZ4);
+    }
+
+    if (ProtocolVersion.supportsCloudFetch(this.serverProtocolVersion)) {
+      request.canDownloadResult = options.useCloudFetch ?? clientConfig.useCloudFetch;
+    }
+
+    const operationPromise = driver.executeStatement(request);
     const response = await this.handleResponse(operationPromise);
     const operation = this.createOperation(response);
 
@@ -352,9 +384,10 @@ export default class DBSQLSession implements IDBSQLSession {
     await this.failIfClosed();
     const driver = await this.context.getDriver();
     const clientConfig = this.context.getConfig();
+
     const operationPromise = driver.getTypeInfo({
       sessionHandle: this.sessionHandle,
-      runAsync: true,
+      runAsync: this.getRunAsyncForMetadataOperations(),
       ...getDirectResultsOptions(request.maxRows, clientConfig),
     });
     const response = await this.handleResponse(operationPromise);
@@ -371,9 +404,10 @@ export default class DBSQLSession implements IDBSQLSession {
     await this.failIfClosed();
     const driver = await this.context.getDriver();
     const clientConfig = this.context.getConfig();
+
     const operationPromise = driver.getCatalogs({
       sessionHandle: this.sessionHandle,
-      runAsync: true,
+      runAsync: this.getRunAsyncForMetadataOperations(),
       ...getDirectResultsOptions(request.maxRows, clientConfig),
     });
     const response = await this.handleResponse(operationPromise);
@@ -390,11 +424,12 @@ export default class DBSQLSession implements IDBSQLSession {
     await this.failIfClosed();
     const driver = await this.context.getDriver();
     const clientConfig = this.context.getConfig();
+
     const operationPromise = driver.getSchemas({
       sessionHandle: this.sessionHandle,
       catalogName: request.catalogName,
       schemaName: request.schemaName,
-      runAsync: true,
+      runAsync: this.getRunAsyncForMetadataOperations(),
       ...getDirectResultsOptions(request.maxRows, clientConfig),
     });
     const response = await this.handleResponse(operationPromise);
@@ -411,13 +446,14 @@ export default class DBSQLSession implements IDBSQLSession {
     await this.failIfClosed();
     const driver = await this.context.getDriver();
     const clientConfig = this.context.getConfig();
+
     const operationPromise = driver.getTables({
       sessionHandle: this.sessionHandle,
       catalogName: request.catalogName,
       schemaName: request.schemaName,
       tableName: request.tableName,
       tableTypes: request.tableTypes,
-      runAsync: true,
+      runAsync: this.getRunAsyncForMetadataOperations(),
       ...getDirectResultsOptions(request.maxRows, clientConfig),
     });
     const response = await this.handleResponse(operationPromise);
@@ -434,9 +470,10 @@ export default class DBSQLSession implements IDBSQLSession {
     await this.failIfClosed();
     const driver = await this.context.getDriver();
     const clientConfig = this.context.getConfig();
+
     const operationPromise = driver.getTableTypes({
       sessionHandle: this.sessionHandle,
-      runAsync: true,
+      runAsync: this.getRunAsyncForMetadataOperations(),
       ...getDirectResultsOptions(request.maxRows, clientConfig),
     });
     const response = await this.handleResponse(operationPromise);
@@ -453,13 +490,14 @@ export default class DBSQLSession implements IDBSQLSession {
     await this.failIfClosed();
     const driver = await this.context.getDriver();
     const clientConfig = this.context.getConfig();
+
     const operationPromise = driver.getColumns({
       sessionHandle: this.sessionHandle,
       catalogName: request.catalogName,
       schemaName: request.schemaName,
       tableName: request.tableName,
       columnName: request.columnName,
-      runAsync: true,
+      runAsync: this.getRunAsyncForMetadataOperations(),
       ...getDirectResultsOptions(request.maxRows, clientConfig),
     });
     const response = await this.handleResponse(operationPromise);
@@ -476,12 +514,13 @@ export default class DBSQLSession implements IDBSQLSession {
     await this.failIfClosed();
     const driver = await this.context.getDriver();
     const clientConfig = this.context.getConfig();
+
     const operationPromise = driver.getFunctions({
       sessionHandle: this.sessionHandle,
       catalogName: request.catalogName,
       schemaName: request.schemaName,
       functionName: request.functionName,
-      runAsync: true,
+      runAsync: this.getRunAsyncForMetadataOperations(),
       ...getDirectResultsOptions(request.maxRows, clientConfig),
     });
     const response = await this.handleResponse(operationPromise);
@@ -492,12 +531,13 @@ export default class DBSQLSession implements IDBSQLSession {
     await this.failIfClosed();
     const driver = await this.context.getDriver();
     const clientConfig = this.context.getConfig();
+
     const operationPromise = driver.getPrimaryKeys({
       sessionHandle: this.sessionHandle,
       catalogName: request.catalogName,
       schemaName: request.schemaName,
       tableName: request.tableName,
-      runAsync: true,
+      runAsync: this.getRunAsyncForMetadataOperations(),
       ...getDirectResultsOptions(request.maxRows, clientConfig),
     });
     const response = await this.handleResponse(operationPromise);
@@ -514,6 +554,7 @@ export default class DBSQLSession implements IDBSQLSession {
     await this.failIfClosed();
     const driver = await this.context.getDriver();
     const clientConfig = this.context.getConfig();
+
     const operationPromise = driver.getCrossReference({
       sessionHandle: this.sessionHandle,
       parentCatalogName: request.parentCatalogName,
@@ -522,7 +563,7 @@ export default class DBSQLSession implements IDBSQLSession {
       foreignCatalogName: request.foreignCatalogName,
       foreignSchemaName: request.foreignSchemaName,
       foreignTableName: request.foreignTableName,
-      runAsync: true,
+      runAsync: this.getRunAsyncForMetadataOperations(),
       ...getDirectResultsOptions(request.maxRows, clientConfig),
     });
     const response = await this.handleResponse(operationPromise);
