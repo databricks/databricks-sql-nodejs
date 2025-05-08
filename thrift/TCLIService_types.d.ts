@@ -76,17 +76,6 @@ declare enum TDBSqlArrowLayout {
   ARROW_STREAMING = 1,
 }
 
-declare enum TOperationIdempotencyType {
-  UNKNOWN = 0,
-  NON_IDEMPOTENT = 1,
-  IDEMPOTENT = 2,
-}
-
-declare enum TOperationTimeoutLevel {
-  CLUSTER = 0,
-  SESSION = 1,
-}
-
 declare enum TStatusCode {
   SUCCESS_STATUS = 0,
   SUCCESS_WITH_INFO_STATUS = 1,
@@ -169,39 +158,11 @@ declare enum TGetInfoType {
   CLI_MAX_IDENTIFIER_LEN = 10005,
 }
 
-declare enum TResultPersistenceMode {
-  ONLY_LARGE_RESULTS = 0,
-  ALL_QUERY_RESULTS = 1,
-  ALL_RESULTS = 2,
-}
-
-declare enum TDBSqlCloseOperationReason {
-  NONE = 0,
-  COMMAND_INACTIVITY_TIMEOUT = 1,
-  CLOSE_SESSION = 2,
-}
-
 declare enum TCacheLookupResult {
   CACHE_INELIGIBLE = 0,
   LOCAL_CACHE_HIT = 1,
   REMOTE_CACHE_HIT = 2,
   CACHE_MISS = 3,
-}
-
-declare enum TCloudFetchDisabledReason {
-  ARROW_SUPPORT = 0,
-  CLOUD_FETCH_SUPPORT = 1,
-  PROTOCOL_VERSION = 2,
-  REGION_SUPPORT = 3,
-  BLOCKLISTED_OPERATION = 4,
-  SMALL_RESULT_SIZE = 5,
-  CUSTOMER_STORAGE_SUPPORT = 6,
-  UNKNOWN = 7,
-  METADATA_OPERATION = 8,
-}
-
-declare enum TDBSqlManifestFileFormat {
-  THRIFT_GET_RESULT_SET_METADATA_RESP = 0,
 }
 
 declare enum TFetchOrientation {
@@ -211,13 +172,6 @@ declare enum TFetchOrientation {
   FETCH_ABSOLUTE = 3,
   FETCH_FIRST = 4,
   FETCH_LAST = 5,
-}
-
-declare enum TDBSqlFetchDisposition {
-  DISPOSITION_UNSPECIFIED = 0,
-  DISPOSITION_INLINE = 1,
-  DISPOSITION_EXTERNAL_LINKS = 2,
-  DISPOSITION_INTERNAL_DBFS = 3,
 }
 
 declare enum TJobExecutionStatus {
@@ -483,19 +437,6 @@ declare class TSparkArrowResultLink {
     constructor(args?: { fileLink: string; expiryTime: Int64; startRowOffset: Int64; rowCount: Int64; bytesNum: Int64; httpHeaders?: { [k: string]: string; }; });
 }
 
-declare class TDBSqlCloudResultFile {
-  public filePath?: string;
-  public startRowOffset?: Int64;
-  public rowCount?: Int64;
-  public uncompressedBytes?: Int64;
-  public compressedBytes?: Int64;
-  public fileLink?: string;
-  public linkExpiryTime?: Int64;
-  public httpHeaders?: { [k: string]: string; };
-
-    constructor(args?: { filePath?: string; startRowOffset?: Int64; rowCount?: Int64; uncompressedBytes?: Int64; compressedBytes?: Int64; fileLink?: string; linkExpiryTime?: Int64; httpHeaders?: { [k: string]: string; }; });
-}
-
 declare class TRowSet {
   public startRowOffset: Int64;
   public rows: TRow[];
@@ -506,68 +447,6 @@ declare class TRowSet {
   public resultLinks?: TSparkArrowResultLink[];
 
     constructor(args?: { startRowOffset: Int64; rows: TRow[]; columns?: TColumn[]; binaryColumns?: Buffer; columnCount?: number; arrowBatches?: TSparkArrowBatch[]; resultLinks?: TSparkArrowResultLink[]; });
-}
-
-declare class TDBSqlTempView {
-  public name?: string;
-  public sqlStatement?: string;
-  public properties?: { [k: string]: string; };
-  public viewSchema?: string;
-
-    constructor(args?: { name?: string; sqlStatement?: string; properties?: { [k: string]: string; }; viewSchema?: string; });
-}
-
-declare class TDBSqlSessionCapabilities {
-  public supportsMultipleCatalogs?: boolean;
-
-    constructor(args?: { supportsMultipleCatalogs?: boolean; });
-}
-
-declare class TExpressionInfo {
-  public className?: string;
-  public usage?: string;
-  public name?: string;
-  public extended?: string;
-  public db?: string;
-  public arguments?: string;
-  public examples?: string;
-  public note?: string;
-  public group?: string;
-  public since?: string;
-  public deprecated?: string;
-  public source?: string;
-
-    constructor(args?: { className?: string; usage?: string; name?: string; extended?: string; db?: string; arguments?: string; examples?: string; note?: string; group?: string; since?: string; deprecated?: string; source?: string; });
-}
-
-declare class TDBSqlConfValue {
-  public value?: string;
-
-    constructor(args?: { value?: string; });
-}
-
-declare class TSQLVariable {
-  public catalogName?: string;
-  public schemaName?: string;
-  public variableName?: string;
-  public defaultExpressionSQL?: string;
-  public variableDataType?: string;
-  public currentValue?: string;
-
-    constructor(args?: { catalogName?: string; schemaName?: string; variableName?: string; defaultExpressionSQL?: string; variableDataType?: string; currentValue?: string; });
-}
-
-declare class TDBSqlSessionConf {
-  public confs?: { [k: string]: string; };
-  public tempViews?: TDBSqlTempView[];
-  public currentDatabase?: string;
-  public currentCatalog?: string;
-  public sessionCapabilities?: TDBSqlSessionCapabilities;
-  public expressionsInfos?: TExpressionInfo[];
-  public internalConfs?: { [k: string]: TDBSqlConfValue; };
-  public tempVariables?: TSQLVariable[];
-
-    constructor(args?: { confs?: { [k: string]: string; }; tempViews?: TDBSqlTempView[]; currentDatabase?: string; currentCatalog?: string; sessionCapabilities?: TDBSqlSessionCapabilities; expressionsInfos?: TExpressionInfo[]; internalConfs?: { [k: string]: TDBSqlConfValue; }; tempVariables?: TSQLVariable[]; });
 }
 
 declare class TStatus {
@@ -718,12 +597,6 @@ declare class TExecuteStatementReq {
   public statementConf?: TStatementConf;
 
     constructor(args?: { sessionHandle: TSessionHandle; statement: string; confOverlay?: { [k: string]: string; }; runAsync?: boolean; getDirectResults?: TSparkGetDirectResults; queryTimeout?: Int64; canReadArrowResult?: boolean; canDownloadResult?: boolean; canDecompressLZ4Result?: boolean; maxBytesPerFile?: Int64; useArrowNativeTypes?: TSparkArrowTypes; resultRowLimit?: Int64; parameters?: TSparkParameter[]; maxBytesPerBatch?: Int64; statementConf?: TStatementConf; });
-}
-
-declare class TDBSqlStatement {
-  public statement?: string;
-
-    constructor(args?: { statement?: string; });
 }
 
 declare class TSparkParameterValue {
