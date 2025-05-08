@@ -52,7 +52,9 @@ ttypes.TProtocolVersion = {
   '42247' : 'SPARK_CLI_SERVICE_PROTOCOL_V7',
   'SPARK_CLI_SERVICE_PROTOCOL_V7' : 42247,
   '42248' : 'SPARK_CLI_SERVICE_PROTOCOL_V8',
-  'SPARK_CLI_SERVICE_PROTOCOL_V8' : 42248
+  'SPARK_CLI_SERVICE_PROTOCOL_V8' : 42248,
+  '42249' : 'SPARK_CLI_SERVICE_PROTOCOL_V9',
+  'SPARK_CLI_SERVICE_PROTOCOL_V9' : 42249
 };
 ttypes.TTypeId = {
   '0' : 'BOOLEAN_TYPE',
@@ -298,7 +300,9 @@ ttypes.TDBSqlCloseOperationReason = {
   '0' : 'NONE',
   'NONE' : 0,
   '1' : 'COMMAND_INACTIVITY_TIMEOUT',
-  'COMMAND_INACTIVITY_TIMEOUT' : 1
+  'COMMAND_INACTIVITY_TIMEOUT' : 1,
+  '2' : 'CLOSE_SESSION',
+  'CLOSE_SESSION' : 2
 };
 ttypes.TCacheLookupResult = {
   '0' : 'CACHE_INELIGIBLE',
@@ -326,7 +330,9 @@ ttypes.TCloudFetchDisabledReason = {
   '6' : 'CUSTOMER_STORAGE_SUPPORT',
   'CUSTOMER_STORAGE_SUPPORT' : 6,
   '7' : 'UNKNOWN',
-  'UNKNOWN' : 7
+  'UNKNOWN' : 7,
+  '8' : 'METADATA_OPERATION',
+  'METADATA_OPERATION' : 8
 };
 ttypes.TDBSqlManifestFileFormat = {
   '0' : 'THRIFT_GET_RESULT_SET_METADATA_RESP',
@@ -3289,7 +3295,6 @@ var TRowSet = module.exports.TRowSet = function(args) {
   this.columnCount = null;
   this.arrowBatches = null;
   this.resultLinks = null;
-  this.cloudFetchResults = null;
   if (args) {
     if (args.startRowOffset !== undefined && args.startRowOffset !== null) {
       this.startRowOffset = args.startRowOffset;
@@ -3315,9 +3320,6 @@ var TRowSet = module.exports.TRowSet = function(args) {
     }
     if (args.resultLinks !== undefined && args.resultLinks !== null) {
       this.resultLinks = Thrift.copyList(args.resultLinks, [ttypes.TSparkArrowResultLink]);
-    }
-    if (args.cloudFetchResults !== undefined && args.cloudFetchResults !== null) {
-      this.cloudFetchResults = Thrift.copyList(args.cloudFetchResults, [ttypes.TDBSqlCloudResultFile]);
     }
   }
 };
@@ -3417,22 +3419,6 @@ TRowSet.prototype.read = function(input) {
         input.skip(ftype);
       }
       break;
-      case 3329:
-      if (ftype == Thrift.Type.LIST) {
-        this.cloudFetchResults = [];
-        var _rtmp3107 = input.readListBegin();
-        var _size106 = _rtmp3107.size || 0;
-        for (var _i108 = 0; _i108 < _size106; ++_i108) {
-          var elem109 = null;
-          elem109 = new ttypes.TDBSqlCloudResultFile();
-          elem109.read(input);
-          this.cloudFetchResults.push(elem109);
-        }
-        input.readListEnd();
-      } else {
-        input.skip(ftype);
-      }
-      break;
       default:
         input.skip(ftype);
     }
@@ -3452,10 +3438,10 @@ TRowSet.prototype.write = function(output) {
   if (this.rows !== null && this.rows !== undefined) {
     output.writeFieldBegin('rows', Thrift.Type.LIST, 2);
     output.writeListBegin(Thrift.Type.STRUCT, this.rows.length);
-    for (var iter110 in this.rows) {
-      if (this.rows.hasOwnProperty(iter110)) {
-        iter110 = this.rows[iter110];
-        iter110.write(output);
+    for (var iter106 in this.rows) {
+      if (this.rows.hasOwnProperty(iter106)) {
+        iter106 = this.rows[iter106];
+        iter106.write(output);
       }
     }
     output.writeListEnd();
@@ -3464,10 +3450,10 @@ TRowSet.prototype.write = function(output) {
   if (this.columns !== null && this.columns !== undefined) {
     output.writeFieldBegin('columns', Thrift.Type.LIST, 3);
     output.writeListBegin(Thrift.Type.STRUCT, this.columns.length);
-    for (var iter111 in this.columns) {
-      if (this.columns.hasOwnProperty(iter111)) {
-        iter111 = this.columns[iter111];
-        iter111.write(output);
+    for (var iter107 in this.columns) {
+      if (this.columns.hasOwnProperty(iter107)) {
+        iter107 = this.columns[iter107];
+        iter107.write(output);
       }
     }
     output.writeListEnd();
@@ -3486,10 +3472,10 @@ TRowSet.prototype.write = function(output) {
   if (this.arrowBatches !== null && this.arrowBatches !== undefined) {
     output.writeFieldBegin('arrowBatches', Thrift.Type.LIST, 1281);
     output.writeListBegin(Thrift.Type.STRUCT, this.arrowBatches.length);
-    for (var iter112 in this.arrowBatches) {
-      if (this.arrowBatches.hasOwnProperty(iter112)) {
-        iter112 = this.arrowBatches[iter112];
-        iter112.write(output);
+    for (var iter108 in this.arrowBatches) {
+      if (this.arrowBatches.hasOwnProperty(iter108)) {
+        iter108 = this.arrowBatches[iter108];
+        iter108.write(output);
       }
     }
     output.writeListEnd();
@@ -3498,22 +3484,10 @@ TRowSet.prototype.write = function(output) {
   if (this.resultLinks !== null && this.resultLinks !== undefined) {
     output.writeFieldBegin('resultLinks', Thrift.Type.LIST, 1282);
     output.writeListBegin(Thrift.Type.STRUCT, this.resultLinks.length);
-    for (var iter113 in this.resultLinks) {
-      if (this.resultLinks.hasOwnProperty(iter113)) {
-        iter113 = this.resultLinks[iter113];
-        iter113.write(output);
-      }
-    }
-    output.writeListEnd();
-    output.writeFieldEnd();
-  }
-  if (this.cloudFetchResults !== null && this.cloudFetchResults !== undefined) {
-    output.writeFieldBegin('cloudFetchResults', Thrift.Type.LIST, 3329);
-    output.writeListBegin(Thrift.Type.STRUCT, this.cloudFetchResults.length);
-    for (var iter114 in this.cloudFetchResults) {
-      if (this.cloudFetchResults.hasOwnProperty(iter114)) {
-        iter114 = this.cloudFetchResults[iter114];
-        iter114.write(output);
+    for (var iter109 in this.resultLinks) {
+      if (this.resultLinks.hasOwnProperty(iter109)) {
+        iter109 = this.resultLinks[iter109];
+        iter109.write(output);
       }
     }
     output.writeListEnd();
@@ -3572,14 +3546,14 @@ TDBSqlTempView.prototype.read = function(input) {
       case 3:
       if (ftype == Thrift.Type.MAP) {
         this.properties = {};
-        var _rtmp3116 = input.readMapBegin();
-        var _size115 = _rtmp3116.size || 0;
-        for (var _i117 = 0; _i117 < _size115; ++_i117) {
-          var key118 = null;
-          var val119 = null;
-          key118 = input.readString();
-          val119 = input.readString();
-          this.properties[key118] = val119;
+        var _rtmp3111 = input.readMapBegin();
+        var _size110 = _rtmp3111.size || 0;
+        for (var _i112 = 0; _i112 < _size110; ++_i112) {
+          var key113 = null;
+          var val114 = null;
+          key113 = input.readString();
+          val114 = input.readString();
+          this.properties[key113] = val114;
         }
         input.readMapEnd();
       } else {
@@ -3617,11 +3591,11 @@ TDBSqlTempView.prototype.write = function(output) {
   if (this.properties !== null && this.properties !== undefined) {
     output.writeFieldBegin('properties', Thrift.Type.MAP, 3);
     output.writeMapBegin(Thrift.Type.STRING, Thrift.Type.STRING, Thrift.objectLength(this.properties));
-    for (var kiter120 in this.properties) {
-      if (this.properties.hasOwnProperty(kiter120)) {
-        var viter121 = this.properties[kiter120];
-        output.writeString(kiter120);
-        output.writeString(viter121);
+    for (var kiter115 in this.properties) {
+      if (this.properties.hasOwnProperty(kiter115)) {
+        var viter116 = this.properties[kiter115];
+        output.writeString(kiter115);
+        output.writeString(viter116);
       }
     }
     output.writeMapEnd();
@@ -3960,6 +3934,133 @@ TDBSqlConfValue.prototype.write = function(output) {
   return;
 };
 
+var TSQLVariable = module.exports.TSQLVariable = function(args) {
+  this.catalogName = null;
+  this.schemaName = null;
+  this.variableName = null;
+  this.defaultExpressionSQL = null;
+  this.variableDataType = null;
+  this.currentValue = null;
+  if (args) {
+    if (args.catalogName !== undefined && args.catalogName !== null) {
+      this.catalogName = args.catalogName;
+    }
+    if (args.schemaName !== undefined && args.schemaName !== null) {
+      this.schemaName = args.schemaName;
+    }
+    if (args.variableName !== undefined && args.variableName !== null) {
+      this.variableName = args.variableName;
+    }
+    if (args.defaultExpressionSQL !== undefined && args.defaultExpressionSQL !== null) {
+      this.defaultExpressionSQL = args.defaultExpressionSQL;
+    }
+    if (args.variableDataType !== undefined && args.variableDataType !== null) {
+      this.variableDataType = args.variableDataType;
+    }
+    if (args.currentValue !== undefined && args.currentValue !== null) {
+      this.currentValue = args.currentValue;
+    }
+  }
+};
+TSQLVariable.prototype = {};
+TSQLVariable.prototype.read = function(input) {
+  input.readStructBegin();
+  while (true) {
+    var ret = input.readFieldBegin();
+    var ftype = ret.ftype;
+    var fid = ret.fid;
+    if (ftype == Thrift.Type.STOP) {
+      break;
+    }
+    switch (fid) {
+      case 1:
+      if (ftype == Thrift.Type.STRING) {
+        this.catalogName = input.readString();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 2:
+      if (ftype == Thrift.Type.STRING) {
+        this.schemaName = input.readString();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 3:
+      if (ftype == Thrift.Type.STRING) {
+        this.variableName = input.readString();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 4:
+      if (ftype == Thrift.Type.STRING) {
+        this.defaultExpressionSQL = input.readString();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 5:
+      if (ftype == Thrift.Type.STRING) {
+        this.variableDataType = input.readString();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 6:
+      if (ftype == Thrift.Type.STRING) {
+        this.currentValue = input.readString();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      default:
+        input.skip(ftype);
+    }
+    input.readFieldEnd();
+  }
+  input.readStructEnd();
+  return;
+};
+
+TSQLVariable.prototype.write = function(output) {
+  output.writeStructBegin('TSQLVariable');
+  if (this.catalogName !== null && this.catalogName !== undefined) {
+    output.writeFieldBegin('catalogName', Thrift.Type.STRING, 1);
+    output.writeString(this.catalogName);
+    output.writeFieldEnd();
+  }
+  if (this.schemaName !== null && this.schemaName !== undefined) {
+    output.writeFieldBegin('schemaName', Thrift.Type.STRING, 2);
+    output.writeString(this.schemaName);
+    output.writeFieldEnd();
+  }
+  if (this.variableName !== null && this.variableName !== undefined) {
+    output.writeFieldBegin('variableName', Thrift.Type.STRING, 3);
+    output.writeString(this.variableName);
+    output.writeFieldEnd();
+  }
+  if (this.defaultExpressionSQL !== null && this.defaultExpressionSQL !== undefined) {
+    output.writeFieldBegin('defaultExpressionSQL', Thrift.Type.STRING, 4);
+    output.writeString(this.defaultExpressionSQL);
+    output.writeFieldEnd();
+  }
+  if (this.variableDataType !== null && this.variableDataType !== undefined) {
+    output.writeFieldBegin('variableDataType', Thrift.Type.STRING, 5);
+    output.writeString(this.variableDataType);
+    output.writeFieldEnd();
+  }
+  if (this.currentValue !== null && this.currentValue !== undefined) {
+    output.writeFieldBegin('currentValue', Thrift.Type.STRING, 6);
+    output.writeString(this.currentValue);
+    output.writeFieldEnd();
+  }
+  output.writeFieldStop();
+  output.writeStructEnd();
+  return;
+};
+
 var TDBSqlSessionConf = module.exports.TDBSqlSessionConf = function(args) {
   this.confs = null;
   this.tempViews = null;
@@ -3968,6 +4069,7 @@ var TDBSqlSessionConf = module.exports.TDBSqlSessionConf = function(args) {
   this.sessionCapabilities = null;
   this.expressionsInfos = null;
   this.internalConfs = null;
+  this.tempVariables = null;
   if (args) {
     if (args.confs !== undefined && args.confs !== null) {
       this.confs = Thrift.copyMap(args.confs, [null]);
@@ -3990,6 +4092,9 @@ var TDBSqlSessionConf = module.exports.TDBSqlSessionConf = function(args) {
     if (args.internalConfs !== undefined && args.internalConfs !== null) {
       this.internalConfs = Thrift.copyMap(args.internalConfs, [ttypes.TDBSqlConfValue]);
     }
+    if (args.tempVariables !== undefined && args.tempVariables !== null) {
+      this.tempVariables = Thrift.copyList(args.tempVariables, [ttypes.TSQLVariable]);
+    }
   }
 };
 TDBSqlSessionConf.prototype = {};
@@ -4006,14 +4111,14 @@ TDBSqlSessionConf.prototype.read = function(input) {
       case 1:
       if (ftype == Thrift.Type.MAP) {
         this.confs = {};
-        var _rtmp3123 = input.readMapBegin();
-        var _size122 = _rtmp3123.size || 0;
-        for (var _i124 = 0; _i124 < _size122; ++_i124) {
-          var key125 = null;
-          var val126 = null;
-          key125 = input.readString();
-          val126 = input.readString();
-          this.confs[key125] = val126;
+        var _rtmp3118 = input.readMapBegin();
+        var _size117 = _rtmp3118.size || 0;
+        for (var _i119 = 0; _i119 < _size117; ++_i119) {
+          var key120 = null;
+          var val121 = null;
+          key120 = input.readString();
+          val121 = input.readString();
+          this.confs[key120] = val121;
         }
         input.readMapEnd();
       } else {
@@ -4023,13 +4128,13 @@ TDBSqlSessionConf.prototype.read = function(input) {
       case 2:
       if (ftype == Thrift.Type.LIST) {
         this.tempViews = [];
-        var _rtmp3128 = input.readListBegin();
-        var _size127 = _rtmp3128.size || 0;
-        for (var _i129 = 0; _i129 < _size127; ++_i129) {
-          var elem130 = null;
-          elem130 = new ttypes.TDBSqlTempView();
-          elem130.read(input);
-          this.tempViews.push(elem130);
+        var _rtmp3123 = input.readListBegin();
+        var _size122 = _rtmp3123.size || 0;
+        for (var _i124 = 0; _i124 < _size122; ++_i124) {
+          var elem125 = null;
+          elem125 = new ttypes.TDBSqlTempView();
+          elem125.read(input);
+          this.tempViews.push(elem125);
         }
         input.readListEnd();
       } else {
@@ -4061,13 +4166,13 @@ TDBSqlSessionConf.prototype.read = function(input) {
       case 6:
       if (ftype == Thrift.Type.LIST) {
         this.expressionsInfos = [];
-        var _rtmp3132 = input.readListBegin();
-        var _size131 = _rtmp3132.size || 0;
-        for (var _i133 = 0; _i133 < _size131; ++_i133) {
-          var elem134 = null;
-          elem134 = new ttypes.TExpressionInfo();
-          elem134.read(input);
-          this.expressionsInfos.push(elem134);
+        var _rtmp3127 = input.readListBegin();
+        var _size126 = _rtmp3127.size || 0;
+        for (var _i128 = 0; _i128 < _size126; ++_i128) {
+          var elem129 = null;
+          elem129 = new ttypes.TExpressionInfo();
+          elem129.read(input);
+          this.expressionsInfos.push(elem129);
         }
         input.readListEnd();
       } else {
@@ -4077,17 +4182,33 @@ TDBSqlSessionConf.prototype.read = function(input) {
       case 7:
       if (ftype == Thrift.Type.MAP) {
         this.internalConfs = {};
-        var _rtmp3136 = input.readMapBegin();
-        var _size135 = _rtmp3136.size || 0;
-        for (var _i137 = 0; _i137 < _size135; ++_i137) {
-          var key138 = null;
-          var val139 = null;
-          key138 = input.readString();
-          val139 = new ttypes.TDBSqlConfValue();
-          val139.read(input);
-          this.internalConfs[key138] = val139;
+        var _rtmp3131 = input.readMapBegin();
+        var _size130 = _rtmp3131.size || 0;
+        for (var _i132 = 0; _i132 < _size130; ++_i132) {
+          var key133 = null;
+          var val134 = null;
+          key133 = input.readString();
+          val134 = new ttypes.TDBSqlConfValue();
+          val134.read(input);
+          this.internalConfs[key133] = val134;
         }
         input.readMapEnd();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 8:
+      if (ftype == Thrift.Type.LIST) {
+        this.tempVariables = [];
+        var _rtmp3136 = input.readListBegin();
+        var _size135 = _rtmp3136.size || 0;
+        for (var _i137 = 0; _i137 < _size135; ++_i137) {
+          var elem138 = null;
+          elem138 = new ttypes.TSQLVariable();
+          elem138.read(input);
+          this.tempVariables.push(elem138);
+        }
+        input.readListEnd();
       } else {
         input.skip(ftype);
       }
@@ -4106,11 +4227,11 @@ TDBSqlSessionConf.prototype.write = function(output) {
   if (this.confs !== null && this.confs !== undefined) {
     output.writeFieldBegin('confs', Thrift.Type.MAP, 1);
     output.writeMapBegin(Thrift.Type.STRING, Thrift.Type.STRING, Thrift.objectLength(this.confs));
-    for (var kiter140 in this.confs) {
-      if (this.confs.hasOwnProperty(kiter140)) {
-        var viter141 = this.confs[kiter140];
-        output.writeString(kiter140);
-        output.writeString(viter141);
+    for (var kiter139 in this.confs) {
+      if (this.confs.hasOwnProperty(kiter139)) {
+        var viter140 = this.confs[kiter139];
+        output.writeString(kiter139);
+        output.writeString(viter140);
       }
     }
     output.writeMapEnd();
@@ -4119,10 +4240,10 @@ TDBSqlSessionConf.prototype.write = function(output) {
   if (this.tempViews !== null && this.tempViews !== undefined) {
     output.writeFieldBegin('tempViews', Thrift.Type.LIST, 2);
     output.writeListBegin(Thrift.Type.STRUCT, this.tempViews.length);
-    for (var iter142 in this.tempViews) {
-      if (this.tempViews.hasOwnProperty(iter142)) {
-        iter142 = this.tempViews[iter142];
-        iter142.write(output);
+    for (var iter141 in this.tempViews) {
+      if (this.tempViews.hasOwnProperty(iter141)) {
+        iter141 = this.tempViews[iter141];
+        iter141.write(output);
       }
     }
     output.writeListEnd();
@@ -4146,10 +4267,10 @@ TDBSqlSessionConf.prototype.write = function(output) {
   if (this.expressionsInfos !== null && this.expressionsInfos !== undefined) {
     output.writeFieldBegin('expressionsInfos', Thrift.Type.LIST, 6);
     output.writeListBegin(Thrift.Type.STRUCT, this.expressionsInfos.length);
-    for (var iter143 in this.expressionsInfos) {
-      if (this.expressionsInfos.hasOwnProperty(iter143)) {
-        iter143 = this.expressionsInfos[iter143];
-        iter143.write(output);
+    for (var iter142 in this.expressionsInfos) {
+      if (this.expressionsInfos.hasOwnProperty(iter142)) {
+        iter142 = this.expressionsInfos[iter142];
+        iter142.write(output);
       }
     }
     output.writeListEnd();
@@ -4158,14 +4279,26 @@ TDBSqlSessionConf.prototype.write = function(output) {
   if (this.internalConfs !== null && this.internalConfs !== undefined) {
     output.writeFieldBegin('internalConfs', Thrift.Type.MAP, 7);
     output.writeMapBegin(Thrift.Type.STRING, Thrift.Type.STRUCT, Thrift.objectLength(this.internalConfs));
-    for (var kiter144 in this.internalConfs) {
-      if (this.internalConfs.hasOwnProperty(kiter144)) {
-        var viter145 = this.internalConfs[kiter144];
-        output.writeString(kiter144);
-        viter145.write(output);
+    for (var kiter143 in this.internalConfs) {
+      if (this.internalConfs.hasOwnProperty(kiter143)) {
+        var viter144 = this.internalConfs[kiter143];
+        output.writeString(kiter143);
+        viter144.write(output);
       }
     }
     output.writeMapEnd();
+    output.writeFieldEnd();
+  }
+  if (this.tempVariables !== null && this.tempVariables !== undefined) {
+    output.writeFieldBegin('tempVariables', Thrift.Type.LIST, 8);
+    output.writeListBegin(Thrift.Type.STRUCT, this.tempVariables.length);
+    for (var iter145 in this.tempVariables) {
+      if (this.tempVariables.hasOwnProperty(iter145)) {
+        iter145 = this.tempVariables[iter145];
+        iter145.write(output);
+      }
+    }
+    output.writeListEnd();
     output.writeFieldEnd();
   }
   output.writeFieldStop();
@@ -4181,7 +4314,6 @@ var TStatus = module.exports.TStatus = function(args) {
   this.errorMessage = null;
   this.displayMessage = null;
   this.errorDetailsJson = null;
-  this.responseValidation = null;
   if (args) {
     if (args.statusCode !== undefined && args.statusCode !== null) {
       this.statusCode = args.statusCode;
@@ -4205,9 +4337,6 @@ var TStatus = module.exports.TStatus = function(args) {
     }
     if (args.errorDetailsJson !== undefined && args.errorDetailsJson !== null) {
       this.errorDetailsJson = args.errorDetailsJson;
-    }
-    if (args.responseValidation !== undefined && args.responseValidation !== null) {
-      this.responseValidation = args.responseValidation;
     }
   }
 };
@@ -4279,13 +4408,6 @@ TStatus.prototype.read = function(input) {
         input.skip(ftype);
       }
       break;
-      case 3329:
-      if (ftype == Thrift.Type.STRING) {
-        this.responseValidation = input.readBinary();
-      } else {
-        input.skip(ftype);
-      }
-      break;
       default:
         input.skip(ftype);
     }
@@ -4337,11 +4459,6 @@ TStatus.prototype.write = function(output) {
   if (this.errorDetailsJson !== null && this.errorDetailsJson !== undefined) {
     output.writeFieldBegin('errorDetailsJson', Thrift.Type.STRING, 1281);
     output.writeString(this.errorDetailsJson);
-    output.writeFieldEnd();
-  }
-  if (this.responseValidation !== null && this.responseValidation !== undefined) {
-    output.writeFieldBegin('responseValidation', Thrift.Type.STRING, 3329);
-    output.writeBinary(this.responseValidation);
     output.writeFieldEnd();
   }
   output.writeFieldStop();
@@ -4415,7 +4532,6 @@ TNamespace.prototype.write = function(output) {
 var THandleIdentifier = module.exports.THandleIdentifier = function(args) {
   this.guid = null;
   this.secret = null;
-  this.executionVersion = null;
   if (args) {
     if (args.guid !== undefined && args.guid !== null) {
       this.guid = args.guid;
@@ -4426,9 +4542,6 @@ var THandleIdentifier = module.exports.THandleIdentifier = function(args) {
       this.secret = args.secret;
     } else {
       throw new Thrift.TProtocolException(Thrift.TProtocolExceptionType.UNKNOWN, 'Required field secret is unset!');
-    }
-    if (args.executionVersion !== undefined && args.executionVersion !== null) {
-      this.executionVersion = args.executionVersion;
     }
   }
 };
@@ -4457,13 +4570,6 @@ THandleIdentifier.prototype.read = function(input) {
         input.skip(ftype);
       }
       break;
-      case 3329:
-      if (ftype == Thrift.Type.I16) {
-        this.executionVersion = input.readI16();
-      } else {
-        input.skip(ftype);
-      }
-      break;
       default:
         input.skip(ftype);
     }
@@ -4485,11 +4591,6 @@ THandleIdentifier.prototype.write = function(output) {
     output.writeBinary(this.secret);
     output.writeFieldEnd();
   }
-  if (this.executionVersion !== null && this.executionVersion !== undefined) {
-    output.writeFieldBegin('executionVersion', Thrift.Type.I16, 3329);
-    output.writeI16(this.executionVersion);
-    output.writeFieldEnd();
-  }
   output.writeFieldStop();
   output.writeStructEnd();
   return;
@@ -4497,15 +4598,11 @@ THandleIdentifier.prototype.write = function(output) {
 
 var TSessionHandle = module.exports.TSessionHandle = function(args) {
   this.sessionId = null;
-  this.serverProtocolVersion = null;
   if (args) {
     if (args.sessionId !== undefined && args.sessionId !== null) {
       this.sessionId = new ttypes.THandleIdentifier(args.sessionId);
     } else {
       throw new Thrift.TProtocolException(Thrift.TProtocolExceptionType.UNKNOWN, 'Required field sessionId is unset!');
-    }
-    if (args.serverProtocolVersion !== undefined && args.serverProtocolVersion !== null) {
-      this.serverProtocolVersion = args.serverProtocolVersion;
     }
   }
 };
@@ -4528,13 +4625,9 @@ TSessionHandle.prototype.read = function(input) {
         input.skip(ftype);
       }
       break;
-      case 3329:
-      if (ftype == Thrift.Type.I32) {
-        this.serverProtocolVersion = input.readI32();
-      } else {
+      case 0:
         input.skip(ftype);
-      }
-      break;
+        break;
       default:
         input.skip(ftype);
     }
@@ -4549,11 +4642,6 @@ TSessionHandle.prototype.write = function(output) {
   if (this.sessionId !== null && this.sessionId !== undefined) {
     output.writeFieldBegin('sessionId', Thrift.Type.STRUCT, 1);
     this.sessionId.write(output);
-    output.writeFieldEnd();
-  }
-  if (this.serverProtocolVersion !== null && this.serverProtocolVersion !== undefined) {
-    output.writeFieldBegin('serverProtocolVersion', Thrift.Type.I32, 3329);
-    output.writeI32(this.serverProtocolVersion);
     output.writeFieldEnd();
   }
   output.writeFieldStop();
@@ -4673,7 +4761,6 @@ var TOpenSessionReq = module.exports.TOpenSessionReq = function(args) {
   this.connectionProperties = null;
   this.initialNamespace = null;
   this.canUseMultipleCatalogs = null;
-  this.sessionId = null;
   if (args) {
     if (args.client_protocol !== undefined && args.client_protocol !== null) {
       this.client_protocol = args.client_protocol;
@@ -4701,9 +4788,6 @@ var TOpenSessionReq = module.exports.TOpenSessionReq = function(args) {
     }
     if (args.canUseMultipleCatalogs !== undefined && args.canUseMultipleCatalogs !== null) {
       this.canUseMultipleCatalogs = args.canUseMultipleCatalogs;
-    }
-    if (args.sessionId !== undefined && args.sessionId !== null) {
-      this.sessionId = new ttypes.THandleIdentifier(args.sessionId);
     }
   }
 };
@@ -4810,14 +4894,6 @@ TOpenSessionReq.prototype.read = function(input) {
         input.skip(ftype);
       }
       break;
-      case 3329:
-      if (ftype == Thrift.Type.STRUCT) {
-        this.sessionId = new ttypes.THandleIdentifier();
-        this.sessionId.read(input);
-      } else {
-        input.skip(ftype);
-      }
-      break;
       default:
         input.skip(ftype);
     }
@@ -4895,11 +4971,6 @@ TOpenSessionReq.prototype.write = function(output) {
   if (this.canUseMultipleCatalogs !== null && this.canUseMultipleCatalogs !== undefined) {
     output.writeFieldBegin('canUseMultipleCatalogs', Thrift.Type.BOOL, 1285);
     output.writeBool(this.canUseMultipleCatalogs);
-    output.writeFieldEnd();
-  }
-  if (this.sessionId !== null && this.sessionId !== undefined) {
-    output.writeFieldBegin('sessionId', Thrift.Type.STRUCT, 3329);
-    this.sessionId.write(output);
     output.writeFieldEnd();
   }
   output.writeFieldStop();
@@ -5327,7 +5398,6 @@ TGetInfoValue.prototype.write = function(output) {
 var TGetInfoReq = module.exports.TGetInfoReq = function(args) {
   this.sessionHandle = null;
   this.infoType = null;
-  this.sessionConf = null;
   if (args) {
     if (args.sessionHandle !== undefined && args.sessionHandle !== null) {
       this.sessionHandle = new ttypes.TSessionHandle(args.sessionHandle);
@@ -5338,9 +5408,6 @@ var TGetInfoReq = module.exports.TGetInfoReq = function(args) {
       this.infoType = args.infoType;
     } else {
       throw new Thrift.TProtocolException(Thrift.TProtocolExceptionType.UNKNOWN, 'Required field infoType is unset!');
-    }
-    if (args.sessionConf !== undefined && args.sessionConf !== null) {
-      this.sessionConf = new ttypes.TDBSqlSessionConf(args.sessionConf);
     }
   }
 };
@@ -5370,14 +5437,6 @@ TGetInfoReq.prototype.read = function(input) {
         input.skip(ftype);
       }
       break;
-      case 3329:
-      if (ftype == Thrift.Type.STRUCT) {
-        this.sessionConf = new ttypes.TDBSqlSessionConf();
-        this.sessionConf.read(input);
-      } else {
-        input.skip(ftype);
-      }
-      break;
       default:
         input.skip(ftype);
     }
@@ -5397,11 +5456,6 @@ TGetInfoReq.prototype.write = function(output) {
   if (this.infoType !== null && this.infoType !== undefined) {
     output.writeFieldBegin('infoType', Thrift.Type.I32, 2);
     output.writeI32(this.infoType);
-    output.writeFieldEnd();
-  }
-  if (this.sessionConf !== null && this.sessionConf !== undefined) {
-    output.writeFieldBegin('sessionConf', Thrift.Type.STRUCT, 3329);
-    this.sessionConf.write(output);
     output.writeFieldEnd();
   }
   output.writeFieldStop();
@@ -5769,27 +5823,6 @@ var TExecuteStatementReq = module.exports.TExecuteStatementReq = function(args) 
   this.parameters = null;
   this.maxBytesPerBatch = null;
   this.statementConf = null;
-  this.operationId = null;
-  this.sessionConf = null;
-  this.rejectHighCostQueries = null;
-  this.estimatedCost = null;
-  this.executionVersion = null;
-  this.requestValidation = null;
-  this.resultPersistenceMode = null;
-  this.trimArrowBatchesToLimit = null;
-  this.fetchDisposition = null;
-  this.enforceResultPersistenceMode = null;
-  this.statementList = null;
-  this.persistResultManifest = null;
-  this.resultRetentionSeconds = null;
-  this.resultByteLimit = null;
-  this.resultDataFormat = null;
-  this.originatingClientIdentity = null;
-  this.preferSingleFileResult = null;
-  this.preferDriverOnlyUpload = null;
-  this.enforceEmbeddedSchemaCorrectness = false;
-  this.idempotencyToken = null;
-  this.throwErrorOnByteLimitTruncation = null;
   if (args) {
     if (args.sessionHandle !== undefined && args.sessionHandle !== null) {
       this.sessionHandle = new ttypes.TSessionHandle(args.sessionHandle);
@@ -5839,69 +5872,6 @@ var TExecuteStatementReq = module.exports.TExecuteStatementReq = function(args) 
     }
     if (args.statementConf !== undefined && args.statementConf !== null) {
       this.statementConf = new ttypes.TStatementConf(args.statementConf);
-    }
-    if (args.operationId !== undefined && args.operationId !== null) {
-      this.operationId = new ttypes.THandleIdentifier(args.operationId);
-    }
-    if (args.sessionConf !== undefined && args.sessionConf !== null) {
-      this.sessionConf = new ttypes.TDBSqlSessionConf(args.sessionConf);
-    }
-    if (args.rejectHighCostQueries !== undefined && args.rejectHighCostQueries !== null) {
-      this.rejectHighCostQueries = args.rejectHighCostQueries;
-    }
-    if (args.estimatedCost !== undefined && args.estimatedCost !== null) {
-      this.estimatedCost = args.estimatedCost;
-    }
-    if (args.executionVersion !== undefined && args.executionVersion !== null) {
-      this.executionVersion = args.executionVersion;
-    }
-    if (args.requestValidation !== undefined && args.requestValidation !== null) {
-      this.requestValidation = args.requestValidation;
-    }
-    if (args.resultPersistenceMode !== undefined && args.resultPersistenceMode !== null) {
-      this.resultPersistenceMode = args.resultPersistenceMode;
-    }
-    if (args.trimArrowBatchesToLimit !== undefined && args.trimArrowBatchesToLimit !== null) {
-      this.trimArrowBatchesToLimit = args.trimArrowBatchesToLimit;
-    }
-    if (args.fetchDisposition !== undefined && args.fetchDisposition !== null) {
-      this.fetchDisposition = args.fetchDisposition;
-    }
-    if (args.enforceResultPersistenceMode !== undefined && args.enforceResultPersistenceMode !== null) {
-      this.enforceResultPersistenceMode = args.enforceResultPersistenceMode;
-    }
-    if (args.statementList !== undefined && args.statementList !== null) {
-      this.statementList = Thrift.copyList(args.statementList, [null]);
-    }
-    if (args.persistResultManifest !== undefined && args.persistResultManifest !== null) {
-      this.persistResultManifest = args.persistResultManifest;
-    }
-    if (args.resultRetentionSeconds !== undefined && args.resultRetentionSeconds !== null) {
-      this.resultRetentionSeconds = args.resultRetentionSeconds;
-    }
-    if (args.resultByteLimit !== undefined && args.resultByteLimit !== null) {
-      this.resultByteLimit = args.resultByteLimit;
-    }
-    if (args.resultDataFormat !== undefined && args.resultDataFormat !== null) {
-      this.resultDataFormat = new ttypes.TDBSqlResultFormat(args.resultDataFormat);
-    }
-    if (args.originatingClientIdentity !== undefined && args.originatingClientIdentity !== null) {
-      this.originatingClientIdentity = args.originatingClientIdentity;
-    }
-    if (args.preferSingleFileResult !== undefined && args.preferSingleFileResult !== null) {
-      this.preferSingleFileResult = args.preferSingleFileResult;
-    }
-    if (args.preferDriverOnlyUpload !== undefined && args.preferDriverOnlyUpload !== null) {
-      this.preferDriverOnlyUpload = args.preferDriverOnlyUpload;
-    }
-    if (args.enforceEmbeddedSchemaCorrectness !== undefined && args.enforceEmbeddedSchemaCorrectness !== null) {
-      this.enforceEmbeddedSchemaCorrectness = args.enforceEmbeddedSchemaCorrectness;
-    }
-    if (args.idempotencyToken !== undefined && args.idempotencyToken !== null) {
-      this.idempotencyToken = args.idempotencyToken;
-    }
-    if (args.throwErrorOnByteLimitTruncation !== undefined && args.throwErrorOnByteLimitTruncation !== null) {
-      this.throwErrorOnByteLimitTruncation = args.throwErrorOnByteLimitTruncation;
     }
   }
 };
@@ -6044,165 +6014,6 @@ TExecuteStatementReq.prototype.read = function(input) {
         input.skip(ftype);
       }
       break;
-      case 3329:
-      if (ftype == Thrift.Type.STRUCT) {
-        this.operationId = new ttypes.THandleIdentifier();
-        this.operationId.read(input);
-      } else {
-        input.skip(ftype);
-      }
-      break;
-      case 3330:
-      if (ftype == Thrift.Type.STRUCT) {
-        this.sessionConf = new ttypes.TDBSqlSessionConf();
-        this.sessionConf.read(input);
-      } else {
-        input.skip(ftype);
-      }
-      break;
-      case 3331:
-      if (ftype == Thrift.Type.BOOL) {
-        this.rejectHighCostQueries = input.readBool();
-      } else {
-        input.skip(ftype);
-      }
-      break;
-      case 3332:
-      if (ftype == Thrift.Type.DOUBLE) {
-        this.estimatedCost = input.readDouble();
-      } else {
-        input.skip(ftype);
-      }
-      break;
-      case 3333:
-      if (ftype == Thrift.Type.I16) {
-        this.executionVersion = input.readI16();
-      } else {
-        input.skip(ftype);
-      }
-      break;
-      case 3334:
-      if (ftype == Thrift.Type.STRING) {
-        this.requestValidation = input.readBinary();
-      } else {
-        input.skip(ftype);
-      }
-      break;
-      case 3335:
-      if (ftype == Thrift.Type.I32) {
-        this.resultPersistenceMode = input.readI32();
-      } else {
-        input.skip(ftype);
-      }
-      break;
-      case 3336:
-      if (ftype == Thrift.Type.BOOL) {
-        this.trimArrowBatchesToLimit = input.readBool();
-      } else {
-        input.skip(ftype);
-      }
-      break;
-      case 3337:
-      if (ftype == Thrift.Type.I32) {
-        this.fetchDisposition = input.readI32();
-      } else {
-        input.skip(ftype);
-      }
-      break;
-      case 3344:
-      if (ftype == Thrift.Type.BOOL) {
-        this.enforceResultPersistenceMode = input.readBool();
-      } else {
-        input.skip(ftype);
-      }
-      break;
-      case 3345:
-      if (ftype == Thrift.Type.LIST) {
-        this.statementList = [];
-        var _rtmp3192 = input.readListBegin();
-        var _size191 = _rtmp3192.size || 0;
-        for (var _i193 = 0; _i193 < _size191; ++_i193) {
-          var elem194 = null;
-          elem194 = new ttypes.TDBSqlStatement();
-          elem194.read(input);
-          this.statementList.push(elem194);
-        }
-        input.readListEnd();
-      } else {
-        input.skip(ftype);
-      }
-      break;
-      case 3346:
-      if (ftype == Thrift.Type.BOOL) {
-        this.persistResultManifest = input.readBool();
-      } else {
-        input.skip(ftype);
-      }
-      break;
-      case 3347:
-      if (ftype == Thrift.Type.I64) {
-        this.resultRetentionSeconds = input.readI64();
-      } else {
-        input.skip(ftype);
-      }
-      break;
-      case 3348:
-      if (ftype == Thrift.Type.I64) {
-        this.resultByteLimit = input.readI64();
-      } else {
-        input.skip(ftype);
-      }
-      break;
-      case 3349:
-      if (ftype == Thrift.Type.STRUCT) {
-        this.resultDataFormat = new ttypes.TDBSqlResultFormat();
-        this.resultDataFormat.read(input);
-      } else {
-        input.skip(ftype);
-      }
-      break;
-      case 3350:
-      if (ftype == Thrift.Type.STRING) {
-        this.originatingClientIdentity = input.readString();
-      } else {
-        input.skip(ftype);
-      }
-      break;
-      case 3351:
-      if (ftype == Thrift.Type.BOOL) {
-        this.preferSingleFileResult = input.readBool();
-      } else {
-        input.skip(ftype);
-      }
-      break;
-      case 3352:
-      if (ftype == Thrift.Type.BOOL) {
-        this.preferDriverOnlyUpload = input.readBool();
-      } else {
-        input.skip(ftype);
-      }
-      break;
-      case 3353:
-      if (ftype == Thrift.Type.BOOL) {
-        this.enforceEmbeddedSchemaCorrectness = input.readBool();
-      } else {
-        input.skip(ftype);
-      }
-      break;
-      case 3360:
-      if (ftype == Thrift.Type.STRING) {
-        this.idempotencyToken = input.readString();
-      } else {
-        input.skip(ftype);
-      }
-      break;
-      case 3361:
-      if (ftype == Thrift.Type.BOOL) {
-        this.throwErrorOnByteLimitTruncation = input.readBool();
-      } else {
-        input.skip(ftype);
-      }
-      break;
       default:
         input.skip(ftype);
     }
@@ -6227,11 +6038,11 @@ TExecuteStatementReq.prototype.write = function(output) {
   if (this.confOverlay !== null && this.confOverlay !== undefined) {
     output.writeFieldBegin('confOverlay', Thrift.Type.MAP, 3);
     output.writeMapBegin(Thrift.Type.STRING, Thrift.Type.STRING, Thrift.objectLength(this.confOverlay));
-    for (var kiter195 in this.confOverlay) {
-      if (this.confOverlay.hasOwnProperty(kiter195)) {
-        var viter196 = this.confOverlay[kiter195];
-        output.writeString(kiter195);
-        output.writeString(viter196);
+    for (var kiter191 in this.confOverlay) {
+      if (this.confOverlay.hasOwnProperty(kiter191)) {
+        var viter192 = this.confOverlay[kiter191];
+        output.writeString(kiter191);
+        output.writeString(viter192);
       }
     }
     output.writeMapEnd();
@@ -6285,10 +6096,10 @@ TExecuteStatementReq.prototype.write = function(output) {
   if (this.parameters !== null && this.parameters !== undefined) {
     output.writeFieldBegin('parameters', Thrift.Type.LIST, 1288);
     output.writeListBegin(Thrift.Type.STRUCT, this.parameters.length);
-    for (var iter197 in this.parameters) {
-      if (this.parameters.hasOwnProperty(iter197)) {
-        iter197 = this.parameters[iter197];
-        iter197.write(output);
+    for (var iter193 in this.parameters) {
+      if (this.parameters.hasOwnProperty(iter193)) {
+        iter193 = this.parameters[iter193];
+        iter193.write(output);
       }
     }
     output.writeListEnd();
@@ -6302,118 +6113,6 @@ TExecuteStatementReq.prototype.write = function(output) {
   if (this.statementConf !== null && this.statementConf !== undefined) {
     output.writeFieldBegin('statementConf', Thrift.Type.STRUCT, 1296);
     this.statementConf.write(output);
-    output.writeFieldEnd();
-  }
-  if (this.operationId !== null && this.operationId !== undefined) {
-    output.writeFieldBegin('operationId', Thrift.Type.STRUCT, 3329);
-    this.operationId.write(output);
-    output.writeFieldEnd();
-  }
-  if (this.sessionConf !== null && this.sessionConf !== undefined) {
-    output.writeFieldBegin('sessionConf', Thrift.Type.STRUCT, 3330);
-    this.sessionConf.write(output);
-    output.writeFieldEnd();
-  }
-  if (this.rejectHighCostQueries !== null && this.rejectHighCostQueries !== undefined) {
-    output.writeFieldBegin('rejectHighCostQueries', Thrift.Type.BOOL, 3331);
-    output.writeBool(this.rejectHighCostQueries);
-    output.writeFieldEnd();
-  }
-  if (this.estimatedCost !== null && this.estimatedCost !== undefined) {
-    output.writeFieldBegin('estimatedCost', Thrift.Type.DOUBLE, 3332);
-    output.writeDouble(this.estimatedCost);
-    output.writeFieldEnd();
-  }
-  if (this.executionVersion !== null && this.executionVersion !== undefined) {
-    output.writeFieldBegin('executionVersion', Thrift.Type.I16, 3333);
-    output.writeI16(this.executionVersion);
-    output.writeFieldEnd();
-  }
-  if (this.requestValidation !== null && this.requestValidation !== undefined) {
-    output.writeFieldBegin('requestValidation', Thrift.Type.STRING, 3334);
-    output.writeBinary(this.requestValidation);
-    output.writeFieldEnd();
-  }
-  if (this.resultPersistenceMode !== null && this.resultPersistenceMode !== undefined) {
-    output.writeFieldBegin('resultPersistenceMode', Thrift.Type.I32, 3335);
-    output.writeI32(this.resultPersistenceMode);
-    output.writeFieldEnd();
-  }
-  if (this.trimArrowBatchesToLimit !== null && this.trimArrowBatchesToLimit !== undefined) {
-    output.writeFieldBegin('trimArrowBatchesToLimit', Thrift.Type.BOOL, 3336);
-    output.writeBool(this.trimArrowBatchesToLimit);
-    output.writeFieldEnd();
-  }
-  if (this.fetchDisposition !== null && this.fetchDisposition !== undefined) {
-    output.writeFieldBegin('fetchDisposition', Thrift.Type.I32, 3337);
-    output.writeI32(this.fetchDisposition);
-    output.writeFieldEnd();
-  }
-  if (this.enforceResultPersistenceMode !== null && this.enforceResultPersistenceMode !== undefined) {
-    output.writeFieldBegin('enforceResultPersistenceMode', Thrift.Type.BOOL, 3344);
-    output.writeBool(this.enforceResultPersistenceMode);
-    output.writeFieldEnd();
-  }
-  if (this.statementList !== null && this.statementList !== undefined) {
-    output.writeFieldBegin('statementList', Thrift.Type.LIST, 3345);
-    output.writeListBegin(Thrift.Type.STRUCT, this.statementList.length);
-    for (var iter198 in this.statementList) {
-      if (this.statementList.hasOwnProperty(iter198)) {
-        iter198 = this.statementList[iter198];
-        iter198.write(output);
-      }
-    }
-    output.writeListEnd();
-    output.writeFieldEnd();
-  }
-  if (this.persistResultManifest !== null && this.persistResultManifest !== undefined) {
-    output.writeFieldBegin('persistResultManifest', Thrift.Type.BOOL, 3346);
-    output.writeBool(this.persistResultManifest);
-    output.writeFieldEnd();
-  }
-  if (this.resultRetentionSeconds !== null && this.resultRetentionSeconds !== undefined) {
-    output.writeFieldBegin('resultRetentionSeconds', Thrift.Type.I64, 3347);
-    output.writeI64(this.resultRetentionSeconds);
-    output.writeFieldEnd();
-  }
-  if (this.resultByteLimit !== null && this.resultByteLimit !== undefined) {
-    output.writeFieldBegin('resultByteLimit', Thrift.Type.I64, 3348);
-    output.writeI64(this.resultByteLimit);
-    output.writeFieldEnd();
-  }
-  if (this.resultDataFormat !== null && this.resultDataFormat !== undefined) {
-    output.writeFieldBegin('resultDataFormat', Thrift.Type.STRUCT, 3349);
-    this.resultDataFormat.write(output);
-    output.writeFieldEnd();
-  }
-  if (this.originatingClientIdentity !== null && this.originatingClientIdentity !== undefined) {
-    output.writeFieldBegin('originatingClientIdentity', Thrift.Type.STRING, 3350);
-    output.writeString(this.originatingClientIdentity);
-    output.writeFieldEnd();
-  }
-  if (this.preferSingleFileResult !== null && this.preferSingleFileResult !== undefined) {
-    output.writeFieldBegin('preferSingleFileResult', Thrift.Type.BOOL, 3351);
-    output.writeBool(this.preferSingleFileResult);
-    output.writeFieldEnd();
-  }
-  if (this.preferDriverOnlyUpload !== null && this.preferDriverOnlyUpload !== undefined) {
-    output.writeFieldBegin('preferDriverOnlyUpload', Thrift.Type.BOOL, 3352);
-    output.writeBool(this.preferDriverOnlyUpload);
-    output.writeFieldEnd();
-  }
-  if (this.enforceEmbeddedSchemaCorrectness !== null && this.enforceEmbeddedSchemaCorrectness !== undefined) {
-    output.writeFieldBegin('enforceEmbeddedSchemaCorrectness', Thrift.Type.BOOL, 3353);
-    output.writeBool(this.enforceEmbeddedSchemaCorrectness);
-    output.writeFieldEnd();
-  }
-  if (this.idempotencyToken !== null && this.idempotencyToken !== undefined) {
-    output.writeFieldBegin('idempotencyToken', Thrift.Type.STRING, 3360);
-    output.writeString(this.idempotencyToken);
-    output.writeFieldEnd();
-  }
-  if (this.throwErrorOnByteLimitTruncation !== null && this.throwErrorOnByteLimitTruncation !== undefined) {
-    output.writeFieldBegin('throwErrorOnByteLimitTruncation', Thrift.Type.BOOL, 3361);
-    output.writeBool(this.throwErrorOnByteLimitTruncation);
     output.writeFieldEnd();
   }
   output.writeFieldStop();
@@ -6550,11 +6249,107 @@ TSparkParameterValue.prototype.write = function(output) {
   return;
 };
 
+var TSparkParameterValueArg = module.exports.TSparkParameterValueArg = function(args) {
+  this.type = null;
+  this.value = null;
+  this.arguments = null;
+  if (args) {
+    if (args.type !== undefined && args.type !== null) {
+      this.type = args.type;
+    }
+    if (args.value !== undefined && args.value !== null) {
+      this.value = args.value;
+    }
+    if (args.arguments !== undefined && args.arguments !== null) {
+      this.arguments = Thrift.copyList(args.arguments, [null]);
+    }
+  }
+};
+TSparkParameterValueArg.prototype = {};
+TSparkParameterValueArg.prototype.read = function(input) {
+  input.readStructBegin();
+  while (true) {
+    var ret = input.readFieldBegin();
+    var ftype = ret.ftype;
+    var fid = ret.fid;
+    if (ftype == Thrift.Type.STOP) {
+      break;
+    }
+    switch (fid) {
+      case 1:
+      if (ftype == Thrift.Type.STRING) {
+        this.type = input.readString();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 2:
+      if (ftype == Thrift.Type.STRING) {
+        this.value = input.readString();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      case 3:
+      if (ftype == Thrift.Type.LIST) {
+        this.arguments = [];
+        var _rtmp3195 = input.readListBegin();
+        var _size194 = _rtmp3195.size || 0;
+        for (var _i196 = 0; _i196 < _size194; ++_i196) {
+          var elem197 = null;
+          elem197 = new ttypes.TSparkParameterValueArg();
+          elem197.read(input);
+          this.arguments.push(elem197);
+        }
+        input.readListEnd();
+      } else {
+        input.skip(ftype);
+      }
+      break;
+      default:
+        input.skip(ftype);
+    }
+    input.readFieldEnd();
+  }
+  input.readStructEnd();
+  return;
+};
+
+TSparkParameterValueArg.prototype.write = function(output) {
+  output.writeStructBegin('TSparkParameterValueArg');
+  if (this.type !== null && this.type !== undefined) {
+    output.writeFieldBegin('type', Thrift.Type.STRING, 1);
+    output.writeString(this.type);
+    output.writeFieldEnd();
+  }
+  if (this.value !== null && this.value !== undefined) {
+    output.writeFieldBegin('value', Thrift.Type.STRING, 2);
+    output.writeString(this.value);
+    output.writeFieldEnd();
+  }
+  if (this.arguments !== null && this.arguments !== undefined) {
+    output.writeFieldBegin('arguments', Thrift.Type.LIST, 3);
+    output.writeListBegin(Thrift.Type.STRUCT, this.arguments.length);
+    for (var iter198 in this.arguments) {
+      if (this.arguments.hasOwnProperty(iter198)) {
+        iter198 = this.arguments[iter198];
+        iter198.write(output);
+      }
+    }
+    output.writeListEnd();
+    output.writeFieldEnd();
+  }
+  output.writeFieldStop();
+  output.writeStructEnd();
+  return;
+};
+
 var TSparkParameter = module.exports.TSparkParameter = function(args) {
   this.ordinal = null;
   this.name = null;
   this.type = null;
   this.value = null;
+  this.arguments = null;
   if (args) {
     if (args.ordinal !== undefined && args.ordinal !== null) {
       this.ordinal = args.ordinal;
@@ -6567,6 +6362,9 @@ var TSparkParameter = module.exports.TSparkParameter = function(args) {
     }
     if (args.value !== undefined && args.value !== null) {
       this.value = new ttypes.TSparkParameterValue(args.value);
+    }
+    if (args.arguments !== undefined && args.arguments !== null) {
+      this.arguments = Thrift.copyList(args.arguments, [ttypes.TSparkParameterValueArg]);
     }
   }
 };
@@ -6610,6 +6408,22 @@ TSparkParameter.prototype.read = function(input) {
         input.skip(ftype);
       }
       break;
+      case 5:
+      if (ftype == Thrift.Type.LIST) {
+        this.arguments = [];
+        var _rtmp3200 = input.readListBegin();
+        var _size199 = _rtmp3200.size || 0;
+        for (var _i201 = 0; _i201 < _size199; ++_i201) {
+          var elem202 = null;
+          elem202 = new ttypes.TSparkParameterValueArg();
+          elem202.read(input);
+          this.arguments.push(elem202);
+        }
+        input.readListEnd();
+      } else {
+        input.skip(ftype);
+      }
+      break;
       default:
         input.skip(ftype);
     }
@@ -6639,6 +6453,18 @@ TSparkParameter.prototype.write = function(output) {
   if (this.value !== null && this.value !== undefined) {
     output.writeFieldBegin('value', Thrift.Type.STRUCT, 4);
     this.value.write(output);
+    output.writeFieldEnd();
+  }
+  if (this.arguments !== null && this.arguments !== undefined) {
+    output.writeFieldBegin('arguments', Thrift.Type.LIST, 5);
+    output.writeListBegin(Thrift.Type.STRUCT, this.arguments.length);
+    for (var iter203 in this.arguments) {
+      if (this.arguments.hasOwnProperty(iter203)) {
+        iter203 = this.arguments[iter203];
+        iter203.write(output);
+      }
+    }
+    output.writeListEnd();
     output.writeFieldEnd();
   }
   output.writeFieldStop();
@@ -6746,15 +6572,6 @@ var TExecuteStatementResp = module.exports.TExecuteStatementResp = function(args
   this.status = null;
   this.operationHandle = null;
   this.directResults = null;
-  this.executionRejected = null;
-  this.maxClusterCapacity = null;
-  this.queryCost = null;
-  this.sessionConf = null;
-  this.currentClusterLoad = null;
-  this.idempotencyType = null;
-  this.remoteResultCacheEnabled = null;
-  this.isServerless = null;
-  this.operationHandles = null;
   if (args) {
     if (args.status !== undefined && args.status !== null) {
       this.status = new ttypes.TStatus(args.status);
@@ -6766,33 +6583,6 @@ var TExecuteStatementResp = module.exports.TExecuteStatementResp = function(args
     }
     if (args.directResults !== undefined && args.directResults !== null) {
       this.directResults = new ttypes.TSparkDirectResults(args.directResults);
-    }
-    if (args.executionRejected !== undefined && args.executionRejected !== null) {
-      this.executionRejected = args.executionRejected;
-    }
-    if (args.maxClusterCapacity !== undefined && args.maxClusterCapacity !== null) {
-      this.maxClusterCapacity = args.maxClusterCapacity;
-    }
-    if (args.queryCost !== undefined && args.queryCost !== null) {
-      this.queryCost = args.queryCost;
-    }
-    if (args.sessionConf !== undefined && args.sessionConf !== null) {
-      this.sessionConf = new ttypes.TDBSqlSessionConf(args.sessionConf);
-    }
-    if (args.currentClusterLoad !== undefined && args.currentClusterLoad !== null) {
-      this.currentClusterLoad = args.currentClusterLoad;
-    }
-    if (args.idempotencyType !== undefined && args.idempotencyType !== null) {
-      this.idempotencyType = args.idempotencyType;
-    }
-    if (args.remoteResultCacheEnabled !== undefined && args.remoteResultCacheEnabled !== null) {
-      this.remoteResultCacheEnabled = args.remoteResultCacheEnabled;
-    }
-    if (args.isServerless !== undefined && args.isServerless !== null) {
-      this.isServerless = args.isServerless;
-    }
-    if (args.operationHandles !== undefined && args.operationHandles !== null) {
-      this.operationHandles = Thrift.copyList(args.operationHandles, [ttypes.TOperationHandle]);
     }
   }
 };
@@ -6831,79 +6621,6 @@ TExecuteStatementResp.prototype.read = function(input) {
         input.skip(ftype);
       }
       break;
-      case 3329:
-      if (ftype == Thrift.Type.BOOL) {
-        this.executionRejected = input.readBool();
-      } else {
-        input.skip(ftype);
-      }
-      break;
-      case 3330:
-      if (ftype == Thrift.Type.DOUBLE) {
-        this.maxClusterCapacity = input.readDouble();
-      } else {
-        input.skip(ftype);
-      }
-      break;
-      case 3331:
-      if (ftype == Thrift.Type.DOUBLE) {
-        this.queryCost = input.readDouble();
-      } else {
-        input.skip(ftype);
-      }
-      break;
-      case 3332:
-      if (ftype == Thrift.Type.STRUCT) {
-        this.sessionConf = new ttypes.TDBSqlSessionConf();
-        this.sessionConf.read(input);
-      } else {
-        input.skip(ftype);
-      }
-      break;
-      case 3333:
-      if (ftype == Thrift.Type.DOUBLE) {
-        this.currentClusterLoad = input.readDouble();
-      } else {
-        input.skip(ftype);
-      }
-      break;
-      case 3334:
-      if (ftype == Thrift.Type.I32) {
-        this.idempotencyType = input.readI32();
-      } else {
-        input.skip(ftype);
-      }
-      break;
-      case 3335:
-      if (ftype == Thrift.Type.BOOL) {
-        this.remoteResultCacheEnabled = input.readBool();
-      } else {
-        input.skip(ftype);
-      }
-      break;
-      case 3336:
-      if (ftype == Thrift.Type.BOOL) {
-        this.isServerless = input.readBool();
-      } else {
-        input.skip(ftype);
-      }
-      break;
-      case 3337:
-      if (ftype == Thrift.Type.LIST) {
-        this.operationHandles = [];
-        var _rtmp3200 = input.readListBegin();
-        var _size199 = _rtmp3200.size || 0;
-        for (var _i201 = 0; _i201 < _size199; ++_i201) {
-          var elem202 = null;
-          elem202 = new ttypes.TOperationHandle();
-          elem202.read(input);
-          this.operationHandles.push(elem202);
-        }
-        input.readListEnd();
-      } else {
-        input.skip(ftype);
-      }
-      break;
       default:
         input.skip(ftype);
     }
@@ -6930,58 +6647,6 @@ TExecuteStatementResp.prototype.write = function(output) {
     this.directResults.write(output);
     output.writeFieldEnd();
   }
-  if (this.executionRejected !== null && this.executionRejected !== undefined) {
-    output.writeFieldBegin('executionRejected', Thrift.Type.BOOL, 3329);
-    output.writeBool(this.executionRejected);
-    output.writeFieldEnd();
-  }
-  if (this.maxClusterCapacity !== null && this.maxClusterCapacity !== undefined) {
-    output.writeFieldBegin('maxClusterCapacity', Thrift.Type.DOUBLE, 3330);
-    output.writeDouble(this.maxClusterCapacity);
-    output.writeFieldEnd();
-  }
-  if (this.queryCost !== null && this.queryCost !== undefined) {
-    output.writeFieldBegin('queryCost', Thrift.Type.DOUBLE, 3331);
-    output.writeDouble(this.queryCost);
-    output.writeFieldEnd();
-  }
-  if (this.sessionConf !== null && this.sessionConf !== undefined) {
-    output.writeFieldBegin('sessionConf', Thrift.Type.STRUCT, 3332);
-    this.sessionConf.write(output);
-    output.writeFieldEnd();
-  }
-  if (this.currentClusterLoad !== null && this.currentClusterLoad !== undefined) {
-    output.writeFieldBegin('currentClusterLoad', Thrift.Type.DOUBLE, 3333);
-    output.writeDouble(this.currentClusterLoad);
-    output.writeFieldEnd();
-  }
-  if (this.idempotencyType !== null && this.idempotencyType !== undefined) {
-    output.writeFieldBegin('idempotencyType', Thrift.Type.I32, 3334);
-    output.writeI32(this.idempotencyType);
-    output.writeFieldEnd();
-  }
-  if (this.remoteResultCacheEnabled !== null && this.remoteResultCacheEnabled !== undefined) {
-    output.writeFieldBegin('remoteResultCacheEnabled', Thrift.Type.BOOL, 3335);
-    output.writeBool(this.remoteResultCacheEnabled);
-    output.writeFieldEnd();
-  }
-  if (this.isServerless !== null && this.isServerless !== undefined) {
-    output.writeFieldBegin('isServerless', Thrift.Type.BOOL, 3336);
-    output.writeBool(this.isServerless);
-    output.writeFieldEnd();
-  }
-  if (this.operationHandles !== null && this.operationHandles !== undefined) {
-    output.writeFieldBegin('operationHandles', Thrift.Type.LIST, 3337);
-    output.writeListBegin(Thrift.Type.STRUCT, this.operationHandles.length);
-    for (var iter203 in this.operationHandles) {
-      if (this.operationHandles.hasOwnProperty(iter203)) {
-        iter203 = this.operationHandles[iter203];
-        iter203.write(output);
-      }
-    }
-    output.writeListEnd();
-    output.writeFieldEnd();
-  }
   output.writeFieldStop();
   output.writeStructEnd();
   return;
@@ -6991,8 +6656,6 @@ var TGetTypeInfoReq = module.exports.TGetTypeInfoReq = function(args) {
   this.sessionHandle = null;
   this.getDirectResults = null;
   this.runAsync = false;
-  this.operationId = null;
-  this.sessionConf = null;
   if (args) {
     if (args.sessionHandle !== undefined && args.sessionHandle !== null) {
       this.sessionHandle = new ttypes.TSessionHandle(args.sessionHandle);
@@ -7004,12 +6667,6 @@ var TGetTypeInfoReq = module.exports.TGetTypeInfoReq = function(args) {
     }
     if (args.runAsync !== undefined && args.runAsync !== null) {
       this.runAsync = args.runAsync;
-    }
-    if (args.operationId !== undefined && args.operationId !== null) {
-      this.operationId = new ttypes.THandleIdentifier(args.operationId);
-    }
-    if (args.sessionConf !== undefined && args.sessionConf !== null) {
-      this.sessionConf = new ttypes.TDBSqlSessionConf(args.sessionConf);
     }
   }
 };
@@ -7047,22 +6704,6 @@ TGetTypeInfoReq.prototype.read = function(input) {
         input.skip(ftype);
       }
       break;
-      case 3329:
-      if (ftype == Thrift.Type.STRUCT) {
-        this.operationId = new ttypes.THandleIdentifier();
-        this.operationId.read(input);
-      } else {
-        input.skip(ftype);
-      }
-      break;
-      case 3330:
-      if (ftype == Thrift.Type.STRUCT) {
-        this.sessionConf = new ttypes.TDBSqlSessionConf();
-        this.sessionConf.read(input);
-      } else {
-        input.skip(ftype);
-      }
-      break;
       default:
         input.skip(ftype);
     }
@@ -7087,16 +6728,6 @@ TGetTypeInfoReq.prototype.write = function(output) {
   if (this.runAsync !== null && this.runAsync !== undefined) {
     output.writeFieldBegin('runAsync', Thrift.Type.BOOL, 1282);
     output.writeBool(this.runAsync);
-    output.writeFieldEnd();
-  }
-  if (this.operationId !== null && this.operationId !== undefined) {
-    output.writeFieldBegin('operationId', Thrift.Type.STRUCT, 3329);
-    this.operationId.write(output);
-    output.writeFieldEnd();
-  }
-  if (this.sessionConf !== null && this.sessionConf !== undefined) {
-    output.writeFieldBegin('sessionConf', Thrift.Type.STRUCT, 3330);
-    this.sessionConf.write(output);
     output.writeFieldEnd();
   }
   output.writeFieldStop();
@@ -7192,8 +6823,6 @@ var TGetCatalogsReq = module.exports.TGetCatalogsReq = function(args) {
   this.sessionHandle = null;
   this.getDirectResults = null;
   this.runAsync = false;
-  this.operationId = null;
-  this.sessionConf = null;
   if (args) {
     if (args.sessionHandle !== undefined && args.sessionHandle !== null) {
       this.sessionHandle = new ttypes.TSessionHandle(args.sessionHandle);
@@ -7205,12 +6834,6 @@ var TGetCatalogsReq = module.exports.TGetCatalogsReq = function(args) {
     }
     if (args.runAsync !== undefined && args.runAsync !== null) {
       this.runAsync = args.runAsync;
-    }
-    if (args.operationId !== undefined && args.operationId !== null) {
-      this.operationId = new ttypes.THandleIdentifier(args.operationId);
-    }
-    if (args.sessionConf !== undefined && args.sessionConf !== null) {
-      this.sessionConf = new ttypes.TDBSqlSessionConf(args.sessionConf);
     }
   }
 };
@@ -7248,22 +6871,6 @@ TGetCatalogsReq.prototype.read = function(input) {
         input.skip(ftype);
       }
       break;
-      case 3329:
-      if (ftype == Thrift.Type.STRUCT) {
-        this.operationId = new ttypes.THandleIdentifier();
-        this.operationId.read(input);
-      } else {
-        input.skip(ftype);
-      }
-      break;
-      case 3330:
-      if (ftype == Thrift.Type.STRUCT) {
-        this.sessionConf = new ttypes.TDBSqlSessionConf();
-        this.sessionConf.read(input);
-      } else {
-        input.skip(ftype);
-      }
-      break;
       default:
         input.skip(ftype);
     }
@@ -7288,16 +6895,6 @@ TGetCatalogsReq.prototype.write = function(output) {
   if (this.runAsync !== null && this.runAsync !== undefined) {
     output.writeFieldBegin('runAsync', Thrift.Type.BOOL, 1282);
     output.writeBool(this.runAsync);
-    output.writeFieldEnd();
-  }
-  if (this.operationId !== null && this.operationId !== undefined) {
-    output.writeFieldBegin('operationId', Thrift.Type.STRUCT, 3329);
-    this.operationId.write(output);
-    output.writeFieldEnd();
-  }
-  if (this.sessionConf !== null && this.sessionConf !== undefined) {
-    output.writeFieldBegin('sessionConf', Thrift.Type.STRUCT, 3330);
-    this.sessionConf.write(output);
     output.writeFieldEnd();
   }
   output.writeFieldStop();
@@ -7395,8 +6992,6 @@ var TGetSchemasReq = module.exports.TGetSchemasReq = function(args) {
   this.schemaName = null;
   this.getDirectResults = null;
   this.runAsync = false;
-  this.operationId = null;
-  this.sessionConf = null;
   if (args) {
     if (args.sessionHandle !== undefined && args.sessionHandle !== null) {
       this.sessionHandle = new ttypes.TSessionHandle(args.sessionHandle);
@@ -7414,12 +7009,6 @@ var TGetSchemasReq = module.exports.TGetSchemasReq = function(args) {
     }
     if (args.runAsync !== undefined && args.runAsync !== null) {
       this.runAsync = args.runAsync;
-    }
-    if (args.operationId !== undefined && args.operationId !== null) {
-      this.operationId = new ttypes.THandleIdentifier(args.operationId);
-    }
-    if (args.sessionConf !== undefined && args.sessionConf !== null) {
-      this.sessionConf = new ttypes.TDBSqlSessionConf(args.sessionConf);
     }
   }
 };
@@ -7471,22 +7060,6 @@ TGetSchemasReq.prototype.read = function(input) {
         input.skip(ftype);
       }
       break;
-      case 3329:
-      if (ftype == Thrift.Type.STRUCT) {
-        this.operationId = new ttypes.THandleIdentifier();
-        this.operationId.read(input);
-      } else {
-        input.skip(ftype);
-      }
-      break;
-      case 3330:
-      if (ftype == Thrift.Type.STRUCT) {
-        this.sessionConf = new ttypes.TDBSqlSessionConf();
-        this.sessionConf.read(input);
-      } else {
-        input.skip(ftype);
-      }
-      break;
       default:
         input.skip(ftype);
     }
@@ -7521,16 +7094,6 @@ TGetSchemasReq.prototype.write = function(output) {
   if (this.runAsync !== null && this.runAsync !== undefined) {
     output.writeFieldBegin('runAsync', Thrift.Type.BOOL, 1282);
     output.writeBool(this.runAsync);
-    output.writeFieldEnd();
-  }
-  if (this.operationId !== null && this.operationId !== undefined) {
-    output.writeFieldBegin('operationId', Thrift.Type.STRUCT, 3329);
-    this.operationId.write(output);
-    output.writeFieldEnd();
-  }
-  if (this.sessionConf !== null && this.sessionConf !== undefined) {
-    output.writeFieldBegin('sessionConf', Thrift.Type.STRUCT, 3330);
-    this.sessionConf.write(output);
     output.writeFieldEnd();
   }
   output.writeFieldStop();
@@ -7630,8 +7193,6 @@ var TGetTablesReq = module.exports.TGetTablesReq = function(args) {
   this.tableTypes = null;
   this.getDirectResults = null;
   this.runAsync = false;
-  this.operationId = null;
-  this.sessionConf = null;
   if (args) {
     if (args.sessionHandle !== undefined && args.sessionHandle !== null) {
       this.sessionHandle = new ttypes.TSessionHandle(args.sessionHandle);
@@ -7655,12 +7216,6 @@ var TGetTablesReq = module.exports.TGetTablesReq = function(args) {
     }
     if (args.runAsync !== undefined && args.runAsync !== null) {
       this.runAsync = args.runAsync;
-    }
-    if (args.operationId !== undefined && args.operationId !== null) {
-      this.operationId = new ttypes.THandleIdentifier(args.operationId);
-    }
-    if (args.sessionConf !== undefined && args.sessionConf !== null) {
-      this.sessionConf = new ttypes.TDBSqlSessionConf(args.sessionConf);
     }
   }
 };
@@ -7734,22 +7289,6 @@ TGetTablesReq.prototype.read = function(input) {
         input.skip(ftype);
       }
       break;
-      case 3329:
-      if (ftype == Thrift.Type.STRUCT) {
-        this.operationId = new ttypes.THandleIdentifier();
-        this.operationId.read(input);
-      } else {
-        input.skip(ftype);
-      }
-      break;
-      case 3330:
-      if (ftype == Thrift.Type.STRUCT) {
-        this.sessionConf = new ttypes.TDBSqlSessionConf();
-        this.sessionConf.read(input);
-      } else {
-        input.skip(ftype);
-      }
-      break;
       default:
         input.skip(ftype);
     }
@@ -7801,16 +7340,6 @@ TGetTablesReq.prototype.write = function(output) {
   if (this.runAsync !== null && this.runAsync !== undefined) {
     output.writeFieldBegin('runAsync', Thrift.Type.BOOL, 1282);
     output.writeBool(this.runAsync);
-    output.writeFieldEnd();
-  }
-  if (this.operationId !== null && this.operationId !== undefined) {
-    output.writeFieldBegin('operationId', Thrift.Type.STRUCT, 3329);
-    this.operationId.write(output);
-    output.writeFieldEnd();
-  }
-  if (this.sessionConf !== null && this.sessionConf !== undefined) {
-    output.writeFieldBegin('sessionConf', Thrift.Type.STRUCT, 3330);
-    this.sessionConf.write(output);
     output.writeFieldEnd();
   }
   output.writeFieldStop();
@@ -7906,8 +7435,6 @@ var TGetTableTypesReq = module.exports.TGetTableTypesReq = function(args) {
   this.sessionHandle = null;
   this.getDirectResults = null;
   this.runAsync = false;
-  this.operationId = null;
-  this.sessionConf = null;
   if (args) {
     if (args.sessionHandle !== undefined && args.sessionHandle !== null) {
       this.sessionHandle = new ttypes.TSessionHandle(args.sessionHandle);
@@ -7919,12 +7446,6 @@ var TGetTableTypesReq = module.exports.TGetTableTypesReq = function(args) {
     }
     if (args.runAsync !== undefined && args.runAsync !== null) {
       this.runAsync = args.runAsync;
-    }
-    if (args.operationId !== undefined && args.operationId !== null) {
-      this.operationId = new ttypes.THandleIdentifier(args.operationId);
-    }
-    if (args.sessionConf !== undefined && args.sessionConf !== null) {
-      this.sessionConf = new ttypes.TDBSqlSessionConf(args.sessionConf);
     }
   }
 };
@@ -7962,22 +7483,6 @@ TGetTableTypesReq.prototype.read = function(input) {
         input.skip(ftype);
       }
       break;
-      case 3329:
-      if (ftype == Thrift.Type.STRUCT) {
-        this.operationId = new ttypes.THandleIdentifier();
-        this.operationId.read(input);
-      } else {
-        input.skip(ftype);
-      }
-      break;
-      case 3330:
-      if (ftype == Thrift.Type.STRUCT) {
-        this.sessionConf = new ttypes.TDBSqlSessionConf();
-        this.sessionConf.read(input);
-      } else {
-        input.skip(ftype);
-      }
-      break;
       default:
         input.skip(ftype);
     }
@@ -8002,16 +7507,6 @@ TGetTableTypesReq.prototype.write = function(output) {
   if (this.runAsync !== null && this.runAsync !== undefined) {
     output.writeFieldBegin('runAsync', Thrift.Type.BOOL, 1282);
     output.writeBool(this.runAsync);
-    output.writeFieldEnd();
-  }
-  if (this.operationId !== null && this.operationId !== undefined) {
-    output.writeFieldBegin('operationId', Thrift.Type.STRUCT, 3329);
-    this.operationId.write(output);
-    output.writeFieldEnd();
-  }
-  if (this.sessionConf !== null && this.sessionConf !== undefined) {
-    output.writeFieldBegin('sessionConf', Thrift.Type.STRUCT, 3330);
-    this.sessionConf.write(output);
     output.writeFieldEnd();
   }
   output.writeFieldStop();
@@ -8111,8 +7606,6 @@ var TGetColumnsReq = module.exports.TGetColumnsReq = function(args) {
   this.columnName = null;
   this.getDirectResults = null;
   this.runAsync = false;
-  this.operationId = null;
-  this.sessionConf = null;
   if (args) {
     if (args.sessionHandle !== undefined && args.sessionHandle !== null) {
       this.sessionHandle = new ttypes.TSessionHandle(args.sessionHandle);
@@ -8136,12 +7629,6 @@ var TGetColumnsReq = module.exports.TGetColumnsReq = function(args) {
     }
     if (args.runAsync !== undefined && args.runAsync !== null) {
       this.runAsync = args.runAsync;
-    }
-    if (args.operationId !== undefined && args.operationId !== null) {
-      this.operationId = new ttypes.THandleIdentifier(args.operationId);
-    }
-    if (args.sessionConf !== undefined && args.sessionConf !== null) {
-      this.sessionConf = new ttypes.TDBSqlSessionConf(args.sessionConf);
     }
   }
 };
@@ -8207,22 +7694,6 @@ TGetColumnsReq.prototype.read = function(input) {
         input.skip(ftype);
       }
       break;
-      case 3329:
-      if (ftype == Thrift.Type.STRUCT) {
-        this.operationId = new ttypes.THandleIdentifier();
-        this.operationId.read(input);
-      } else {
-        input.skip(ftype);
-      }
-      break;
-      case 3330:
-      if (ftype == Thrift.Type.STRUCT) {
-        this.sessionConf = new ttypes.TDBSqlSessionConf();
-        this.sessionConf.read(input);
-      } else {
-        input.skip(ftype);
-      }
-      break;
       default:
         input.skip(ftype);
     }
@@ -8267,16 +7738,6 @@ TGetColumnsReq.prototype.write = function(output) {
   if (this.runAsync !== null && this.runAsync !== undefined) {
     output.writeFieldBegin('runAsync', Thrift.Type.BOOL, 1282);
     output.writeBool(this.runAsync);
-    output.writeFieldEnd();
-  }
-  if (this.operationId !== null && this.operationId !== undefined) {
-    output.writeFieldBegin('operationId', Thrift.Type.STRUCT, 3329);
-    this.operationId.write(output);
-    output.writeFieldEnd();
-  }
-  if (this.sessionConf !== null && this.sessionConf !== undefined) {
-    output.writeFieldBegin('sessionConf', Thrift.Type.STRUCT, 3330);
-    this.sessionConf.write(output);
     output.writeFieldEnd();
   }
   output.writeFieldStop();
@@ -8375,8 +7836,6 @@ var TGetFunctionsReq = module.exports.TGetFunctionsReq = function(args) {
   this.functionName = null;
   this.getDirectResults = null;
   this.runAsync = false;
-  this.operationId = null;
-  this.sessionConf = null;
   if (args) {
     if (args.sessionHandle !== undefined && args.sessionHandle !== null) {
       this.sessionHandle = new ttypes.TSessionHandle(args.sessionHandle);
@@ -8399,12 +7858,6 @@ var TGetFunctionsReq = module.exports.TGetFunctionsReq = function(args) {
     }
     if (args.runAsync !== undefined && args.runAsync !== null) {
       this.runAsync = args.runAsync;
-    }
-    if (args.operationId !== undefined && args.operationId !== null) {
-      this.operationId = new ttypes.THandleIdentifier(args.operationId);
-    }
-    if (args.sessionConf !== undefined && args.sessionConf !== null) {
-      this.sessionConf = new ttypes.TDBSqlSessionConf(args.sessionConf);
     }
   }
 };
@@ -8463,22 +7916,6 @@ TGetFunctionsReq.prototype.read = function(input) {
         input.skip(ftype);
       }
       break;
-      case 3329:
-      if (ftype == Thrift.Type.STRUCT) {
-        this.operationId = new ttypes.THandleIdentifier();
-        this.operationId.read(input);
-      } else {
-        input.skip(ftype);
-      }
-      break;
-      case 3330:
-      if (ftype == Thrift.Type.STRUCT) {
-        this.sessionConf = new ttypes.TDBSqlSessionConf();
-        this.sessionConf.read(input);
-      } else {
-        input.skip(ftype);
-      }
-      break;
       default:
         input.skip(ftype);
     }
@@ -8518,16 +7955,6 @@ TGetFunctionsReq.prototype.write = function(output) {
   if (this.runAsync !== null && this.runAsync !== undefined) {
     output.writeFieldBegin('runAsync', Thrift.Type.BOOL, 1282);
     output.writeBool(this.runAsync);
-    output.writeFieldEnd();
-  }
-  if (this.operationId !== null && this.operationId !== undefined) {
-    output.writeFieldBegin('operationId', Thrift.Type.STRUCT, 3329);
-    this.operationId.write(output);
-    output.writeFieldEnd();
-  }
-  if (this.sessionConf !== null && this.sessionConf !== undefined) {
-    output.writeFieldBegin('sessionConf', Thrift.Type.STRUCT, 3330);
-    this.sessionConf.write(output);
     output.writeFieldEnd();
   }
   output.writeFieldStop();
@@ -8626,8 +8053,6 @@ var TGetPrimaryKeysReq = module.exports.TGetPrimaryKeysReq = function(args) {
   this.tableName = null;
   this.getDirectResults = null;
   this.runAsync = false;
-  this.operationId = null;
-  this.sessionConf = null;
   if (args) {
     if (args.sessionHandle !== undefined && args.sessionHandle !== null) {
       this.sessionHandle = new ttypes.TSessionHandle(args.sessionHandle);
@@ -8648,12 +8073,6 @@ var TGetPrimaryKeysReq = module.exports.TGetPrimaryKeysReq = function(args) {
     }
     if (args.runAsync !== undefined && args.runAsync !== null) {
       this.runAsync = args.runAsync;
-    }
-    if (args.operationId !== undefined && args.operationId !== null) {
-      this.operationId = new ttypes.THandleIdentifier(args.operationId);
-    }
-    if (args.sessionConf !== undefined && args.sessionConf !== null) {
-      this.sessionConf = new ttypes.TDBSqlSessionConf(args.sessionConf);
     }
   }
 };
@@ -8712,22 +8131,6 @@ TGetPrimaryKeysReq.prototype.read = function(input) {
         input.skip(ftype);
       }
       break;
-      case 3329:
-      if (ftype == Thrift.Type.STRUCT) {
-        this.operationId = new ttypes.THandleIdentifier();
-        this.operationId.read(input);
-      } else {
-        input.skip(ftype);
-      }
-      break;
-      case 3330:
-      if (ftype == Thrift.Type.STRUCT) {
-        this.sessionConf = new ttypes.TDBSqlSessionConf();
-        this.sessionConf.read(input);
-      } else {
-        input.skip(ftype);
-      }
-      break;
       default:
         input.skip(ftype);
     }
@@ -8767,16 +8170,6 @@ TGetPrimaryKeysReq.prototype.write = function(output) {
   if (this.runAsync !== null && this.runAsync !== undefined) {
     output.writeFieldBegin('runAsync', Thrift.Type.BOOL, 1282);
     output.writeBool(this.runAsync);
-    output.writeFieldEnd();
-  }
-  if (this.operationId !== null && this.operationId !== undefined) {
-    output.writeFieldBegin('operationId', Thrift.Type.STRUCT, 3329);
-    this.operationId.write(output);
-    output.writeFieldEnd();
-  }
-  if (this.sessionConf !== null && this.sessionConf !== undefined) {
-    output.writeFieldBegin('sessionConf', Thrift.Type.STRUCT, 3330);
-    this.sessionConf.write(output);
     output.writeFieldEnd();
   }
   output.writeFieldStop();
@@ -8878,8 +8271,6 @@ var TGetCrossReferenceReq = module.exports.TGetCrossReferenceReq = function(args
   this.foreignTableName = null;
   this.getDirectResults = null;
   this.runAsync = false;
-  this.operationId = null;
-  this.sessionConf = null;
   if (args) {
     if (args.sessionHandle !== undefined && args.sessionHandle !== null) {
       this.sessionHandle = new ttypes.TSessionHandle(args.sessionHandle);
@@ -8909,12 +8300,6 @@ var TGetCrossReferenceReq = module.exports.TGetCrossReferenceReq = function(args
     }
     if (args.runAsync !== undefined && args.runAsync !== null) {
       this.runAsync = args.runAsync;
-    }
-    if (args.operationId !== undefined && args.operationId !== null) {
-      this.operationId = new ttypes.THandleIdentifier(args.operationId);
-    }
-    if (args.sessionConf !== undefined && args.sessionConf !== null) {
-      this.sessionConf = new ttypes.TDBSqlSessionConf(args.sessionConf);
     }
   }
 };
@@ -8994,22 +8379,6 @@ TGetCrossReferenceReq.prototype.read = function(input) {
         input.skip(ftype);
       }
       break;
-      case 3329:
-      if (ftype == Thrift.Type.STRUCT) {
-        this.operationId = new ttypes.THandleIdentifier();
-        this.operationId.read(input);
-      } else {
-        input.skip(ftype);
-      }
-      break;
-      case 3330:
-      if (ftype == Thrift.Type.STRUCT) {
-        this.sessionConf = new ttypes.TDBSqlSessionConf();
-        this.sessionConf.read(input);
-      } else {
-        input.skip(ftype);
-      }
-      break;
       default:
         input.skip(ftype);
     }
@@ -9064,16 +8433,6 @@ TGetCrossReferenceReq.prototype.write = function(output) {
   if (this.runAsync !== null && this.runAsync !== undefined) {
     output.writeFieldBegin('runAsync', Thrift.Type.BOOL, 1282);
     output.writeBool(this.runAsync);
-    output.writeFieldEnd();
-  }
-  if (this.operationId !== null && this.operationId !== undefined) {
-    output.writeFieldBegin('operationId', Thrift.Type.STRUCT, 3329);
-    this.operationId.write(output);
-    output.writeFieldEnd();
-  }
-  if (this.sessionConf !== null && this.sessionConf !== undefined) {
-    output.writeFieldBegin('sessionConf', Thrift.Type.STRUCT, 3330);
-    this.sessionConf.write(output);
     output.writeFieldEnd();
   }
   output.writeFieldStop();
@@ -9246,10 +8605,6 @@ var TGetOperationStatusResp = module.exports.TGetOperationStatusResp = function(
   this.displayMessage = null;
   this.diagnosticInfo = null;
   this.errorDetailsJson = null;
-  this.responseValidation = null;
-  this.idempotencyType = null;
-  this.statementTimeout = null;
-  this.statementTimeoutLevel = null;
   if (args) {
     if (args.status !== undefined && args.status !== null) {
       this.status = new ttypes.TStatus(args.status);
@@ -9294,18 +8649,6 @@ var TGetOperationStatusResp = module.exports.TGetOperationStatusResp = function(
     }
     if (args.errorDetailsJson !== undefined && args.errorDetailsJson !== null) {
       this.errorDetailsJson = args.errorDetailsJson;
-    }
-    if (args.responseValidation !== undefined && args.responseValidation !== null) {
-      this.responseValidation = args.responseValidation;
-    }
-    if (args.idempotencyType !== undefined && args.idempotencyType !== null) {
-      this.idempotencyType = args.idempotencyType;
-    }
-    if (args.statementTimeout !== undefined && args.statementTimeout !== null) {
-      this.statementTimeout = args.statementTimeout;
-    }
-    if (args.statementTimeoutLevel !== undefined && args.statementTimeoutLevel !== null) {
-      this.statementTimeoutLevel = args.statementTimeoutLevel;
     }
   }
 };
@@ -9420,34 +8763,6 @@ TGetOperationStatusResp.prototype.read = function(input) {
         input.skip(ftype);
       }
       break;
-      case 3329:
-      if (ftype == Thrift.Type.STRING) {
-        this.responseValidation = input.readBinary();
-      } else {
-        input.skip(ftype);
-      }
-      break;
-      case 3330:
-      if (ftype == Thrift.Type.I32) {
-        this.idempotencyType = input.readI32();
-      } else {
-        input.skip(ftype);
-      }
-      break;
-      case 3331:
-      if (ftype == Thrift.Type.I64) {
-        this.statementTimeout = input.readI64();
-      } else {
-        input.skip(ftype);
-      }
-      break;
-      case 3332:
-      if (ftype == Thrift.Type.I32) {
-        this.statementTimeoutLevel = input.readI32();
-      } else {
-        input.skip(ftype);
-      }
-      break;
       default:
         input.skip(ftype);
     }
@@ -9529,26 +8844,6 @@ TGetOperationStatusResp.prototype.write = function(output) {
     output.writeString(this.errorDetailsJson);
     output.writeFieldEnd();
   }
-  if (this.responseValidation !== null && this.responseValidation !== undefined) {
-    output.writeFieldBegin('responseValidation', Thrift.Type.STRING, 3329);
-    output.writeBinary(this.responseValidation);
-    output.writeFieldEnd();
-  }
-  if (this.idempotencyType !== null && this.idempotencyType !== undefined) {
-    output.writeFieldBegin('idempotencyType', Thrift.Type.I32, 3330);
-    output.writeI32(this.idempotencyType);
-    output.writeFieldEnd();
-  }
-  if (this.statementTimeout !== null && this.statementTimeout !== undefined) {
-    output.writeFieldBegin('statementTimeout', Thrift.Type.I64, 3331);
-    output.writeI64(this.statementTimeout);
-    output.writeFieldEnd();
-  }
-  if (this.statementTimeoutLevel !== null && this.statementTimeoutLevel !== undefined) {
-    output.writeFieldBegin('statementTimeoutLevel', Thrift.Type.I32, 3332);
-    output.writeI32(this.statementTimeoutLevel);
-    output.writeFieldEnd();
-  }
   output.writeFieldStop();
   output.writeStructEnd();
   return;
@@ -9556,19 +8851,11 @@ TGetOperationStatusResp.prototype.write = function(output) {
 
 var TCancelOperationReq = module.exports.TCancelOperationReq = function(args) {
   this.operationHandle = null;
-  this.executionVersion = null;
-  this.replacedByNextAttempt = null;
   if (args) {
     if (args.operationHandle !== undefined && args.operationHandle !== null) {
       this.operationHandle = new ttypes.TOperationHandle(args.operationHandle);
     } else {
       throw new Thrift.TProtocolException(Thrift.TProtocolExceptionType.UNKNOWN, 'Required field operationHandle is unset!');
-    }
-    if (args.executionVersion !== undefined && args.executionVersion !== null) {
-      this.executionVersion = args.executionVersion;
-    }
-    if (args.replacedByNextAttempt !== undefined && args.replacedByNextAttempt !== null) {
-      this.replacedByNextAttempt = args.replacedByNextAttempt;
     }
   }
 };
@@ -9591,20 +8878,9 @@ TCancelOperationReq.prototype.read = function(input) {
         input.skip(ftype);
       }
       break;
-      case 3329:
-      if (ftype == Thrift.Type.I16) {
-        this.executionVersion = input.readI16();
-      } else {
+      case 0:
         input.skip(ftype);
-      }
-      break;
-      case 3330:
-      if (ftype == Thrift.Type.BOOL) {
-        this.replacedByNextAttempt = input.readBool();
-      } else {
-        input.skip(ftype);
-      }
-      break;
+        break;
       default:
         input.skip(ftype);
     }
@@ -9619,16 +8895,6 @@ TCancelOperationReq.prototype.write = function(output) {
   if (this.operationHandle !== null && this.operationHandle !== undefined) {
     output.writeFieldBegin('operationHandle', Thrift.Type.STRUCT, 1);
     this.operationHandle.write(output);
-    output.writeFieldEnd();
-  }
-  if (this.executionVersion !== null && this.executionVersion !== undefined) {
-    output.writeFieldBegin('executionVersion', Thrift.Type.I16, 3329);
-    output.writeI16(this.executionVersion);
-    output.writeFieldEnd();
-  }
-  if (this.replacedByNextAttempt !== null && this.replacedByNextAttempt !== undefined) {
-    output.writeFieldBegin('replacedByNextAttempt', Thrift.Type.BOOL, 3330);
-    output.writeBool(this.replacedByNextAttempt);
     output.writeFieldEnd();
   }
   output.writeFieldStop();
@@ -9691,15 +8957,11 @@ TCancelOperationResp.prototype.write = function(output) {
 
 var TCloseOperationReq = module.exports.TCloseOperationReq = function(args) {
   this.operationHandle = null;
-  this.closeReason = 0;
   if (args) {
     if (args.operationHandle !== undefined && args.operationHandle !== null) {
       this.operationHandle = new ttypes.TOperationHandle(args.operationHandle);
     } else {
       throw new Thrift.TProtocolException(Thrift.TProtocolExceptionType.UNKNOWN, 'Required field operationHandle is unset!');
-    }
-    if (args.closeReason !== undefined && args.closeReason !== null) {
-      this.closeReason = args.closeReason;
     }
   }
 };
@@ -9722,13 +8984,9 @@ TCloseOperationReq.prototype.read = function(input) {
         input.skip(ftype);
       }
       break;
-      case 3329:
-      if (ftype == Thrift.Type.I32) {
-        this.closeReason = input.readI32();
-      } else {
+      case 0:
         input.skip(ftype);
-      }
-      break;
+        break;
       default:
         input.skip(ftype);
     }
@@ -9743,11 +9001,6 @@ TCloseOperationReq.prototype.write = function(output) {
   if (this.operationHandle !== null && this.operationHandle !== undefined) {
     output.writeFieldBegin('operationHandle', Thrift.Type.STRUCT, 1);
     this.operationHandle.write(output);
-    output.writeFieldEnd();
-  }
-  if (this.closeReason !== null && this.closeReason !== undefined) {
-    output.writeFieldBegin('closeReason', Thrift.Type.I32, 3329);
-    output.writeI32(this.closeReason);
     output.writeFieldEnd();
   }
   output.writeFieldStop();
@@ -9810,15 +9063,11 @@ TCloseOperationResp.prototype.write = function(output) {
 
 var TGetResultSetMetadataReq = module.exports.TGetResultSetMetadataReq = function(args) {
   this.operationHandle = null;
-  this.includeCloudResultFiles = null;
   if (args) {
     if (args.operationHandle !== undefined && args.operationHandle !== null) {
       this.operationHandle = new ttypes.TOperationHandle(args.operationHandle);
     } else {
       throw new Thrift.TProtocolException(Thrift.TProtocolExceptionType.UNKNOWN, 'Required field operationHandle is unset!');
-    }
-    if (args.includeCloudResultFiles !== undefined && args.includeCloudResultFiles !== null) {
-      this.includeCloudResultFiles = args.includeCloudResultFiles;
     }
   }
 };
@@ -9841,13 +9090,9 @@ TGetResultSetMetadataReq.prototype.read = function(input) {
         input.skip(ftype);
       }
       break;
-      case 3329:
-      if (ftype == Thrift.Type.BOOL) {
-        this.includeCloudResultFiles = input.readBool();
-      } else {
+      case 0:
         input.skip(ftype);
-      }
-      break;
+        break;
       default:
         input.skip(ftype);
     }
@@ -9862,11 +9107,6 @@ TGetResultSetMetadataReq.prototype.write = function(output) {
   if (this.operationHandle !== null && this.operationHandle !== undefined) {
     output.writeFieldBegin('operationHandle', Thrift.Type.STRUCT, 1);
     this.operationHandle.write(output);
-    output.writeFieldEnd();
-  }
-  if (this.includeCloudResultFiles !== null && this.includeCloudResultFiles !== undefined) {
-    output.writeFieldBegin('includeCloudResultFiles', Thrift.Type.BOOL, 3329);
-    output.writeBool(this.includeCloudResultFiles);
     output.writeFieldEnd();
   }
   output.writeFieldStop();
@@ -9884,18 +9124,6 @@ var TGetResultSetMetadataResp = module.exports.TGetResultSetMetadataResp = funct
   this.uncompressedBytes = null;
   this.compressedBytes = null;
   this.isStagingOperation = null;
-  this.reasonForNoCloudFetch = null;
-  this.resultFiles = null;
-  this.manifestFile = null;
-  this.manifestFileFormat = null;
-  this.cacheLookupLatency = null;
-  this.remoteCacheMissReason = null;
-  this.fetchDisposition = null;
-  this.remoteResultCacheEnabled = null;
-  this.isServerless = null;
-  this.resultDataFormat = null;
-  this.truncatedByThriftLimit = null;
-  this.resultByteLimit = null;
   if (args) {
     if (args.status !== undefined && args.status !== null) {
       this.status = new ttypes.TStatus(args.status);
@@ -9925,42 +9153,6 @@ var TGetResultSetMetadataResp = module.exports.TGetResultSetMetadataResp = funct
     }
     if (args.isStagingOperation !== undefined && args.isStagingOperation !== null) {
       this.isStagingOperation = args.isStagingOperation;
-    }
-    if (args.reasonForNoCloudFetch !== undefined && args.reasonForNoCloudFetch !== null) {
-      this.reasonForNoCloudFetch = args.reasonForNoCloudFetch;
-    }
-    if (args.resultFiles !== undefined && args.resultFiles !== null) {
-      this.resultFiles = Thrift.copyList(args.resultFiles, [ttypes.TDBSqlCloudResultFile]);
-    }
-    if (args.manifestFile !== undefined && args.manifestFile !== null) {
-      this.manifestFile = args.manifestFile;
-    }
-    if (args.manifestFileFormat !== undefined && args.manifestFileFormat !== null) {
-      this.manifestFileFormat = args.manifestFileFormat;
-    }
-    if (args.cacheLookupLatency !== undefined && args.cacheLookupLatency !== null) {
-      this.cacheLookupLatency = args.cacheLookupLatency;
-    }
-    if (args.remoteCacheMissReason !== undefined && args.remoteCacheMissReason !== null) {
-      this.remoteCacheMissReason = args.remoteCacheMissReason;
-    }
-    if (args.fetchDisposition !== undefined && args.fetchDisposition !== null) {
-      this.fetchDisposition = args.fetchDisposition;
-    }
-    if (args.remoteResultCacheEnabled !== undefined && args.remoteResultCacheEnabled !== null) {
-      this.remoteResultCacheEnabled = args.remoteResultCacheEnabled;
-    }
-    if (args.isServerless !== undefined && args.isServerless !== null) {
-      this.isServerless = args.isServerless;
-    }
-    if (args.resultDataFormat !== undefined && args.resultDataFormat !== null) {
-      this.resultDataFormat = new ttypes.TDBSqlResultFormat(args.resultDataFormat);
-    }
-    if (args.truncatedByThriftLimit !== undefined && args.truncatedByThriftLimit !== null) {
-      this.truncatedByThriftLimit = args.truncatedByThriftLimit;
-    }
-    if (args.resultByteLimit !== undefined && args.resultByteLimit !== null) {
-      this.resultByteLimit = args.resultByteLimit;
     }
   }
 };
@@ -10040,100 +9232,6 @@ TGetResultSetMetadataResp.prototype.read = function(input) {
         input.skip(ftype);
       }
       break;
-      case 3329:
-      if (ftype == Thrift.Type.I32) {
-        this.reasonForNoCloudFetch = input.readI32();
-      } else {
-        input.skip(ftype);
-      }
-      break;
-      case 3330:
-      if (ftype == Thrift.Type.LIST) {
-        this.resultFiles = [];
-        var _rtmp3210 = input.readListBegin();
-        var _size209 = _rtmp3210.size || 0;
-        for (var _i211 = 0; _i211 < _size209; ++_i211) {
-          var elem212 = null;
-          elem212 = new ttypes.TDBSqlCloudResultFile();
-          elem212.read(input);
-          this.resultFiles.push(elem212);
-        }
-        input.readListEnd();
-      } else {
-        input.skip(ftype);
-      }
-      break;
-      case 3331:
-      if (ftype == Thrift.Type.STRING) {
-        this.manifestFile = input.readString();
-      } else {
-        input.skip(ftype);
-      }
-      break;
-      case 3332:
-      if (ftype == Thrift.Type.I32) {
-        this.manifestFileFormat = input.readI32();
-      } else {
-        input.skip(ftype);
-      }
-      break;
-      case 3333:
-      if (ftype == Thrift.Type.I64) {
-        this.cacheLookupLatency = input.readI64();
-      } else {
-        input.skip(ftype);
-      }
-      break;
-      case 3334:
-      if (ftype == Thrift.Type.STRING) {
-        this.remoteCacheMissReason = input.readString();
-      } else {
-        input.skip(ftype);
-      }
-      break;
-      case 3335:
-      if (ftype == Thrift.Type.I32) {
-        this.fetchDisposition = input.readI32();
-      } else {
-        input.skip(ftype);
-      }
-      break;
-      case 3336:
-      if (ftype == Thrift.Type.BOOL) {
-        this.remoteResultCacheEnabled = input.readBool();
-      } else {
-        input.skip(ftype);
-      }
-      break;
-      case 3337:
-      if (ftype == Thrift.Type.BOOL) {
-        this.isServerless = input.readBool();
-      } else {
-        input.skip(ftype);
-      }
-      break;
-      case 3344:
-      if (ftype == Thrift.Type.STRUCT) {
-        this.resultDataFormat = new ttypes.TDBSqlResultFormat();
-        this.resultDataFormat.read(input);
-      } else {
-        input.skip(ftype);
-      }
-      break;
-      case 3345:
-      if (ftype == Thrift.Type.BOOL) {
-        this.truncatedByThriftLimit = input.readBool();
-      } else {
-        input.skip(ftype);
-      }
-      break;
-      case 3346:
-      if (ftype == Thrift.Type.I64) {
-        this.resultByteLimit = input.readI64();
-      } else {
-        input.skip(ftype);
-      }
-      break;
       default:
         input.skip(ftype);
     }
@@ -10188,73 +9286,6 @@ TGetResultSetMetadataResp.prototype.write = function(output) {
   if (this.isStagingOperation !== null && this.isStagingOperation !== undefined) {
     output.writeFieldBegin('isStagingOperation', Thrift.Type.BOOL, 1287);
     output.writeBool(this.isStagingOperation);
-    output.writeFieldEnd();
-  }
-  if (this.reasonForNoCloudFetch !== null && this.reasonForNoCloudFetch !== undefined) {
-    output.writeFieldBegin('reasonForNoCloudFetch', Thrift.Type.I32, 3329);
-    output.writeI32(this.reasonForNoCloudFetch);
-    output.writeFieldEnd();
-  }
-  if (this.resultFiles !== null && this.resultFiles !== undefined) {
-    output.writeFieldBegin('resultFiles', Thrift.Type.LIST, 3330);
-    output.writeListBegin(Thrift.Type.STRUCT, this.resultFiles.length);
-    for (var iter213 in this.resultFiles) {
-      if (this.resultFiles.hasOwnProperty(iter213)) {
-        iter213 = this.resultFiles[iter213];
-        iter213.write(output);
-      }
-    }
-    output.writeListEnd();
-    output.writeFieldEnd();
-  }
-  if (this.manifestFile !== null && this.manifestFile !== undefined) {
-    output.writeFieldBegin('manifestFile', Thrift.Type.STRING, 3331);
-    output.writeString(this.manifestFile);
-    output.writeFieldEnd();
-  }
-  if (this.manifestFileFormat !== null && this.manifestFileFormat !== undefined) {
-    output.writeFieldBegin('manifestFileFormat', Thrift.Type.I32, 3332);
-    output.writeI32(this.manifestFileFormat);
-    output.writeFieldEnd();
-  }
-  if (this.cacheLookupLatency !== null && this.cacheLookupLatency !== undefined) {
-    output.writeFieldBegin('cacheLookupLatency', Thrift.Type.I64, 3333);
-    output.writeI64(this.cacheLookupLatency);
-    output.writeFieldEnd();
-  }
-  if (this.remoteCacheMissReason !== null && this.remoteCacheMissReason !== undefined) {
-    output.writeFieldBegin('remoteCacheMissReason', Thrift.Type.STRING, 3334);
-    output.writeString(this.remoteCacheMissReason);
-    output.writeFieldEnd();
-  }
-  if (this.fetchDisposition !== null && this.fetchDisposition !== undefined) {
-    output.writeFieldBegin('fetchDisposition', Thrift.Type.I32, 3335);
-    output.writeI32(this.fetchDisposition);
-    output.writeFieldEnd();
-  }
-  if (this.remoteResultCacheEnabled !== null && this.remoteResultCacheEnabled !== undefined) {
-    output.writeFieldBegin('remoteResultCacheEnabled', Thrift.Type.BOOL, 3336);
-    output.writeBool(this.remoteResultCacheEnabled);
-    output.writeFieldEnd();
-  }
-  if (this.isServerless !== null && this.isServerless !== undefined) {
-    output.writeFieldBegin('isServerless', Thrift.Type.BOOL, 3337);
-    output.writeBool(this.isServerless);
-    output.writeFieldEnd();
-  }
-  if (this.resultDataFormat !== null && this.resultDataFormat !== undefined) {
-    output.writeFieldBegin('resultDataFormat', Thrift.Type.STRUCT, 3344);
-    this.resultDataFormat.write(output);
-    output.writeFieldEnd();
-  }
-  if (this.truncatedByThriftLimit !== null && this.truncatedByThriftLimit !== undefined) {
-    output.writeFieldBegin('truncatedByThriftLimit', Thrift.Type.BOOL, 3345);
-    output.writeBool(this.truncatedByThriftLimit);
-    output.writeFieldEnd();
-  }
-  if (this.resultByteLimit !== null && this.resultByteLimit !== undefined) {
-    output.writeFieldBegin('resultByteLimit', Thrift.Type.I64, 3346);
-    output.writeI64(this.resultByteLimit);
     output.writeFieldEnd();
   }
   output.writeFieldStop();
@@ -10417,7 +9448,6 @@ var TFetchResultsResp = module.exports.TFetchResultsResp = function(args) {
   this.hasMoreRows = null;
   this.results = null;
   this.resultSetMetadata = null;
-  this.responseValidation = null;
   if (args) {
     if (args.status !== undefined && args.status !== null) {
       this.status = new ttypes.TStatus(args.status);
@@ -10432,9 +9462,6 @@ var TFetchResultsResp = module.exports.TFetchResultsResp = function(args) {
     }
     if (args.resultSetMetadata !== undefined && args.resultSetMetadata !== null) {
       this.resultSetMetadata = new ttypes.TGetResultSetMetadataResp(args.resultSetMetadata);
-    }
-    if (args.responseValidation !== undefined && args.responseValidation !== null) {
-      this.responseValidation = args.responseValidation;
     }
   }
 };
@@ -10480,13 +9507,6 @@ TFetchResultsResp.prototype.read = function(input) {
         input.skip(ftype);
       }
       break;
-      case 3329:
-      if (ftype == Thrift.Type.STRING) {
-        this.responseValidation = input.readBinary();
-      } else {
-        input.skip(ftype);
-      }
-      break;
       default:
         input.skip(ftype);
     }
@@ -10518,11 +9538,6 @@ TFetchResultsResp.prototype.write = function(output) {
     this.resultSetMetadata.write(output);
     output.writeFieldEnd();
   }
-  if (this.responseValidation !== null && this.responseValidation !== undefined) {
-    output.writeFieldBegin('responseValidation', Thrift.Type.STRING, 3329);
-    output.writeBinary(this.responseValidation);
-    output.writeFieldEnd();
-  }
   output.writeFieldStop();
   output.writeStructEnd();
   return;
@@ -10532,7 +9547,6 @@ var TGetDelegationTokenReq = module.exports.TGetDelegationTokenReq = function(ar
   this.sessionHandle = null;
   this.owner = null;
   this.renewer = null;
-  this.sessionConf = null;
   if (args) {
     if (args.sessionHandle !== undefined && args.sessionHandle !== null) {
       this.sessionHandle = new ttypes.TSessionHandle(args.sessionHandle);
@@ -10548,9 +9562,6 @@ var TGetDelegationTokenReq = module.exports.TGetDelegationTokenReq = function(ar
       this.renewer = args.renewer;
     } else {
       throw new Thrift.TProtocolException(Thrift.TProtocolExceptionType.UNKNOWN, 'Required field renewer is unset!');
-    }
-    if (args.sessionConf !== undefined && args.sessionConf !== null) {
-      this.sessionConf = new ttypes.TDBSqlSessionConf(args.sessionConf);
     }
   }
 };
@@ -10587,14 +9598,6 @@ TGetDelegationTokenReq.prototype.read = function(input) {
         input.skip(ftype);
       }
       break;
-      case 3329:
-      if (ftype == Thrift.Type.STRUCT) {
-        this.sessionConf = new ttypes.TDBSqlSessionConf();
-        this.sessionConf.read(input);
-      } else {
-        input.skip(ftype);
-      }
-      break;
       default:
         input.skip(ftype);
     }
@@ -10619,11 +9622,6 @@ TGetDelegationTokenReq.prototype.write = function(output) {
   if (this.renewer !== null && this.renewer !== undefined) {
     output.writeFieldBegin('renewer', Thrift.Type.STRING, 3);
     output.writeString(this.renewer);
-    output.writeFieldEnd();
-  }
-  if (this.sessionConf !== null && this.sessionConf !== undefined) {
-    output.writeFieldBegin('sessionConf', Thrift.Type.STRUCT, 3329);
-    this.sessionConf.write(output);
     output.writeFieldEnd();
   }
   output.writeFieldStop();
@@ -10700,7 +9698,6 @@ TGetDelegationTokenResp.prototype.write = function(output) {
 var TCancelDelegationTokenReq = module.exports.TCancelDelegationTokenReq = function(args) {
   this.sessionHandle = null;
   this.delegationToken = null;
-  this.sessionConf = null;
   if (args) {
     if (args.sessionHandle !== undefined && args.sessionHandle !== null) {
       this.sessionHandle = new ttypes.TSessionHandle(args.sessionHandle);
@@ -10711,9 +9708,6 @@ var TCancelDelegationTokenReq = module.exports.TCancelDelegationTokenReq = funct
       this.delegationToken = args.delegationToken;
     } else {
       throw new Thrift.TProtocolException(Thrift.TProtocolExceptionType.UNKNOWN, 'Required field delegationToken is unset!');
-    }
-    if (args.sessionConf !== undefined && args.sessionConf !== null) {
-      this.sessionConf = new ttypes.TDBSqlSessionConf(args.sessionConf);
     }
   }
 };
@@ -10743,14 +9737,6 @@ TCancelDelegationTokenReq.prototype.read = function(input) {
         input.skip(ftype);
       }
       break;
-      case 3329:
-      if (ftype == Thrift.Type.STRUCT) {
-        this.sessionConf = new ttypes.TDBSqlSessionConf();
-        this.sessionConf.read(input);
-      } else {
-        input.skip(ftype);
-      }
-      break;
       default:
         input.skip(ftype);
     }
@@ -10770,11 +9756,6 @@ TCancelDelegationTokenReq.prototype.write = function(output) {
   if (this.delegationToken !== null && this.delegationToken !== undefined) {
     output.writeFieldBegin('delegationToken', Thrift.Type.STRING, 2);
     output.writeString(this.delegationToken);
-    output.writeFieldEnd();
-  }
-  if (this.sessionConf !== null && this.sessionConf !== undefined) {
-    output.writeFieldBegin('sessionConf', Thrift.Type.STRUCT, 3329);
-    this.sessionConf.write(output);
     output.writeFieldEnd();
   }
   output.writeFieldStop();
@@ -10838,7 +9819,6 @@ TCancelDelegationTokenResp.prototype.write = function(output) {
 var TRenewDelegationTokenReq = module.exports.TRenewDelegationTokenReq = function(args) {
   this.sessionHandle = null;
   this.delegationToken = null;
-  this.sessionConf = null;
   if (args) {
     if (args.sessionHandle !== undefined && args.sessionHandle !== null) {
       this.sessionHandle = new ttypes.TSessionHandle(args.sessionHandle);
@@ -10849,9 +9829,6 @@ var TRenewDelegationTokenReq = module.exports.TRenewDelegationTokenReq = functio
       this.delegationToken = args.delegationToken;
     } else {
       throw new Thrift.TProtocolException(Thrift.TProtocolExceptionType.UNKNOWN, 'Required field delegationToken is unset!');
-    }
-    if (args.sessionConf !== undefined && args.sessionConf !== null) {
-      this.sessionConf = new ttypes.TDBSqlSessionConf(args.sessionConf);
     }
   }
 };
@@ -10881,14 +9858,6 @@ TRenewDelegationTokenReq.prototype.read = function(input) {
         input.skip(ftype);
       }
       break;
-      case 3329:
-      if (ftype == Thrift.Type.STRUCT) {
-        this.sessionConf = new ttypes.TDBSqlSessionConf();
-        this.sessionConf.read(input);
-      } else {
-        input.skip(ftype);
-      }
-      break;
       default:
         input.skip(ftype);
     }
@@ -10908,11 +9877,6 @@ TRenewDelegationTokenReq.prototype.write = function(output) {
   if (this.delegationToken !== null && this.delegationToken !== undefined) {
     output.writeFieldBegin('delegationToken', Thrift.Type.STRING, 2);
     output.writeString(this.delegationToken);
-    output.writeFieldEnd();
-  }
-  if (this.sessionConf !== null && this.sessionConf !== undefined) {
-    output.writeFieldBegin('sessionConf', Thrift.Type.STRUCT, 3329);
-    this.sessionConf.write(output);
     output.writeFieldEnd();
   }
   output.writeFieldStop();
@@ -11027,12 +9991,12 @@ TProgressUpdateResp.prototype.read = function(input) {
       case 1:
       if (ftype == Thrift.Type.LIST) {
         this.headerNames = [];
-        var _rtmp3215 = input.readListBegin();
-        var _size214 = _rtmp3215.size || 0;
-        for (var _i216 = 0; _i216 < _size214; ++_i216) {
-          var elem217 = null;
-          elem217 = input.readString();
-          this.headerNames.push(elem217);
+        var _rtmp3210 = input.readListBegin();
+        var _size209 = _rtmp3210.size || 0;
+        for (var _i211 = 0; _i211 < _size209; ++_i211) {
+          var elem212 = null;
+          elem212 = input.readString();
+          this.headerNames.push(elem212);
         }
         input.readListEnd();
       } else {
@@ -11042,20 +10006,20 @@ TProgressUpdateResp.prototype.read = function(input) {
       case 2:
       if (ftype == Thrift.Type.LIST) {
         this.rows = [];
-        var _rtmp3219 = input.readListBegin();
-        var _size218 = _rtmp3219.size || 0;
-        for (var _i220 = 0; _i220 < _size218; ++_i220) {
-          var elem221 = null;
-          elem221 = [];
-          var _rtmp3223 = input.readListBegin();
-          var _size222 = _rtmp3223.size || 0;
-          for (var _i224 = 0; _i224 < _size222; ++_i224) {
-            var elem225 = null;
-            elem225 = input.readString();
-            elem221.push(elem225);
+        var _rtmp3214 = input.readListBegin();
+        var _size213 = _rtmp3214.size || 0;
+        for (var _i215 = 0; _i215 < _size213; ++_i215) {
+          var elem216 = null;
+          elem216 = [];
+          var _rtmp3218 = input.readListBegin();
+          var _size217 = _rtmp3218.size || 0;
+          for (var _i219 = 0; _i219 < _size217; ++_i219) {
+            var elem220 = null;
+            elem220 = input.readString();
+            elem216.push(elem220);
           }
           input.readListEnd();
-          this.rows.push(elem221);
+          this.rows.push(elem216);
         }
         input.readListEnd();
       } else {
@@ -11104,10 +10068,10 @@ TProgressUpdateResp.prototype.write = function(output) {
   if (this.headerNames !== null && this.headerNames !== undefined) {
     output.writeFieldBegin('headerNames', Thrift.Type.LIST, 1);
     output.writeListBegin(Thrift.Type.STRING, this.headerNames.length);
-    for (var iter226 in this.headerNames) {
-      if (this.headerNames.hasOwnProperty(iter226)) {
-        iter226 = this.headerNames[iter226];
-        output.writeString(iter226);
+    for (var iter221 in this.headerNames) {
+      if (this.headerNames.hasOwnProperty(iter221)) {
+        iter221 = this.headerNames[iter221];
+        output.writeString(iter221);
       }
     }
     output.writeListEnd();
@@ -11116,14 +10080,14 @@ TProgressUpdateResp.prototype.write = function(output) {
   if (this.rows !== null && this.rows !== undefined) {
     output.writeFieldBegin('rows', Thrift.Type.LIST, 2);
     output.writeListBegin(Thrift.Type.LIST, this.rows.length);
-    for (var iter227 in this.rows) {
-      if (this.rows.hasOwnProperty(iter227)) {
-        iter227 = this.rows[iter227];
-        output.writeListBegin(Thrift.Type.STRING, iter227.length);
-        for (var iter228 in iter227) {
-          if (iter227.hasOwnProperty(iter228)) {
-            iter228 = iter227[iter228];
-            output.writeString(iter228);
+    for (var iter222 in this.rows) {
+      if (this.rows.hasOwnProperty(iter222)) {
+        iter222 = this.rows[iter222];
+        output.writeListBegin(Thrift.Type.STRING, iter222.length);
+        for (var iter223 in iter222) {
+          if (iter222.hasOwnProperty(iter223)) {
+            iter223 = iter222[iter223];
+            output.writeString(iter223);
           }
         }
         output.writeListEnd();
