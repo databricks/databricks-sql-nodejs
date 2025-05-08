@@ -157,16 +157,22 @@ export default class DBSQLSession implements IDBSQLSession {
 
   private operations = new CloseableCollection<DBSQLOperation>();
 
+  /**
+   * Helper method to determine if runAsync should be set for metadata operations
+   * @private
+   * @returns true if supported by protocol version, undefined otherwise
+   */
+  private getRunAsyncForMetadataOperations(): boolean | undefined {
+    return ProtocolVersion.supportsAsyncMetadataOperations(this.serverProtocolVersion) ? true : undefined;
+  }
+
   constructor({ handle, context, serverProtocolVersion }: DBSQLSessionConstructorOptions) {
     this.sessionHandle = handle;
     this.context = context;
     // Get the server protocol version from the provided parameter (from TOpenSessionResp)
-    // rather than from the handle
     this.serverProtocolVersion = serverProtocolVersion;
     this.context.getLogger().log(LogLevel.debug, `Session created with id: ${this.id}`);
-    if (this.serverProtocolVersion) {
-      this.context.getLogger().log(LogLevel.debug, `Server protocol version: ${this.serverProtocolVersion}`);
-    }
+    this.context.getLogger().log(LogLevel.debug, `Server protocol version: ${this.serverProtocolVersion}`);
   }
 
   public get id() {
@@ -379,12 +385,9 @@ export default class DBSQLSession implements IDBSQLSession {
     const driver = await this.context.getDriver();
     const clientConfig = this.context.getConfig();
 
-    // Set runAsync only if supported by protocol version
-    const runAsync = ProtocolVersion.supportsAsyncMetadataOperations(this.serverProtocolVersion) ? true : undefined;
-
     const operationPromise = driver.getTypeInfo({
       sessionHandle: this.sessionHandle,
-      runAsync,
+      runAsync: this.getRunAsyncForMetadataOperations(),
       ...getDirectResultsOptions(request.maxRows, clientConfig),
     });
     const response = await this.handleResponse(operationPromise);
@@ -402,12 +405,9 @@ export default class DBSQLSession implements IDBSQLSession {
     const driver = await this.context.getDriver();
     const clientConfig = this.context.getConfig();
 
-    // Set runAsync only if supported by protocol version
-    const runAsync = ProtocolVersion.supportsAsyncMetadataOperations(this.serverProtocolVersion) ? true : undefined;
-
     const operationPromise = driver.getCatalogs({
       sessionHandle: this.sessionHandle,
-      runAsync,
+      runAsync: this.getRunAsyncForMetadataOperations(),
       ...getDirectResultsOptions(request.maxRows, clientConfig),
     });
     const response = await this.handleResponse(operationPromise);
@@ -425,14 +425,11 @@ export default class DBSQLSession implements IDBSQLSession {
     const driver = await this.context.getDriver();
     const clientConfig = this.context.getConfig();
 
-    // Set runAsync only if supported by protocol version
-    const runAsync = ProtocolVersion.supportsAsyncMetadataOperations(this.serverProtocolVersion) ? true : undefined;
-
     const operationPromise = driver.getSchemas({
       sessionHandle: this.sessionHandle,
       catalogName: request.catalogName,
       schemaName: request.schemaName,
-      runAsync,
+      runAsync: this.getRunAsyncForMetadataOperations(),
       ...getDirectResultsOptions(request.maxRows, clientConfig),
     });
     const response = await this.handleResponse(operationPromise);
@@ -450,16 +447,13 @@ export default class DBSQLSession implements IDBSQLSession {
     const driver = await this.context.getDriver();
     const clientConfig = this.context.getConfig();
 
-    // Set runAsync only if supported by protocol version
-    const runAsync = ProtocolVersion.supportsAsyncMetadataOperations(this.serverProtocolVersion) ? true : undefined;
-
     const operationPromise = driver.getTables({
       sessionHandle: this.sessionHandle,
       catalogName: request.catalogName,
       schemaName: request.schemaName,
       tableName: request.tableName,
       tableTypes: request.tableTypes,
-      runAsync,
+      runAsync: this.getRunAsyncForMetadataOperations(),
       ...getDirectResultsOptions(request.maxRows, clientConfig),
     });
     const response = await this.handleResponse(operationPromise);
@@ -477,12 +471,9 @@ export default class DBSQLSession implements IDBSQLSession {
     const driver = await this.context.getDriver();
     const clientConfig = this.context.getConfig();
 
-    // Set runAsync only if supported by protocol version
-    const runAsync = ProtocolVersion.supportsAsyncMetadataOperations(this.serverProtocolVersion) ? true : undefined;
-
     const operationPromise = driver.getTableTypes({
       sessionHandle: this.sessionHandle,
-      runAsync,
+      runAsync: this.getRunAsyncForMetadataOperations(),
       ...getDirectResultsOptions(request.maxRows, clientConfig),
     });
     const response = await this.handleResponse(operationPromise);
@@ -500,16 +491,13 @@ export default class DBSQLSession implements IDBSQLSession {
     const driver = await this.context.getDriver();
     const clientConfig = this.context.getConfig();
 
-    // Set runAsync only if supported by protocol version
-    const runAsync = ProtocolVersion.supportsAsyncMetadataOperations(this.serverProtocolVersion) ? true : undefined;
-
     const operationPromise = driver.getColumns({
       sessionHandle: this.sessionHandle,
       catalogName: request.catalogName,
       schemaName: request.schemaName,
       tableName: request.tableName,
       columnName: request.columnName,
-      runAsync,
+      runAsync: this.getRunAsyncForMetadataOperations(),
       ...getDirectResultsOptions(request.maxRows, clientConfig),
     });
     const response = await this.handleResponse(operationPromise);
@@ -527,15 +515,12 @@ export default class DBSQLSession implements IDBSQLSession {
     const driver = await this.context.getDriver();
     const clientConfig = this.context.getConfig();
 
-    // Set runAsync only if supported by protocol version
-    const runAsync = ProtocolVersion.supportsAsyncMetadataOperations(this.serverProtocolVersion) ? true : undefined;
-
     const operationPromise = driver.getFunctions({
       sessionHandle: this.sessionHandle,
       catalogName: request.catalogName,
       schemaName: request.schemaName,
       functionName: request.functionName,
-      runAsync,
+      runAsync: this.getRunAsyncForMetadataOperations(),
       ...getDirectResultsOptions(request.maxRows, clientConfig),
     });
     const response = await this.handleResponse(operationPromise);
@@ -547,15 +532,12 @@ export default class DBSQLSession implements IDBSQLSession {
     const driver = await this.context.getDriver();
     const clientConfig = this.context.getConfig();
 
-    // Set runAsync only if supported by protocol version
-    const runAsync = ProtocolVersion.supportsAsyncMetadataOperations(this.serverProtocolVersion) ? true : undefined;
-
     const operationPromise = driver.getPrimaryKeys({
       sessionHandle: this.sessionHandle,
       catalogName: request.catalogName,
       schemaName: request.schemaName,
       tableName: request.tableName,
-      runAsync,
+      runAsync: this.getRunAsyncForMetadataOperations(),
       ...getDirectResultsOptions(request.maxRows, clientConfig),
     });
     const response = await this.handleResponse(operationPromise);
@@ -573,9 +555,6 @@ export default class DBSQLSession implements IDBSQLSession {
     const driver = await this.context.getDriver();
     const clientConfig = this.context.getConfig();
 
-    // Set runAsync only if supported by protocol version
-    const runAsync = ProtocolVersion.supportsAsyncMetadataOperations(this.serverProtocolVersion) ? true : undefined;
-
     const operationPromise = driver.getCrossReference({
       sessionHandle: this.sessionHandle,
       parentCatalogName: request.parentCatalogName,
@@ -584,7 +563,7 @@ export default class DBSQLSession implements IDBSQLSession {
       foreignCatalogName: request.foreignCatalogName,
       foreignSchemaName: request.foreignSchemaName,
       foreignTableName: request.foreignTableName,
-      runAsync,
+      runAsync: this.getRunAsyncForMetadataOperations(),
       ...getDirectResultsOptions(request.maxRows, clientConfig),
     });
     const response = await this.handleResponse(operationPromise);
