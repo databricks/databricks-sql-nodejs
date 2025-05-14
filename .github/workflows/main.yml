@@ -4,13 +4,16 @@ on:
   push:
     branches:
       - main
-  pull_request_target:
+  pull_request:
     branches:
       - main
 
 jobs:
   lint:
-    runs-on: ubuntu-latest
+    runs-on:
+      group: databricks-protected-runner-group
+      labels: linux-ubuntu-latest
+    
     steps:
       - uses: actions/checkout@v3
       - name: Cache node modules
@@ -31,7 +34,9 @@ jobs:
           npm run lint
 
   unit-test:
-    runs-on: ubuntu-latest
+    runs-on:
+      group: databricks-protected-runner-group
+      labels: linux-ubuntu-latest
     strategy:
       matrix:
         # only LTS versions starting from the lowest we support
@@ -72,7 +77,9 @@ jobs:
           retention-days: 1
 
   e2e-test:
-    runs-on: ubuntu-latest
+    runs-on:
+      group: databricks-protected-runner-group
+      labels: linux-ubuntu-latest
     environment: azure-prod
     env:
       E2E_HOST: ${{ secrets.DATABRICKS_HOST }}
@@ -110,7 +117,9 @@ jobs:
 
   coverage:
     needs: [unit-test, e2e-test]
-    runs-on: ubuntu-latest
+    runs-on:
+      group: databricks-protected-runner-group
+      labels: linux-ubuntu-latest
     env:
       cache-name: cache-node-modules
 
