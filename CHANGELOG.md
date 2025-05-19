@@ -1,5 +1,14 @@
 # Release History
 
+## 1.11.0
+
+- Enable cloud fetch by default (databricks/databricks-sql-nodejs#287)
+- Added `useLZ4Compression` in `ExecuteStatementOptions` making compression configurable (databricks/databricks-sql-nodejs#288)
+- Improve URL handling. Fix #284 (databricks/databricks-sql-nodejs#290)
+- Add thrift protocol version handling for driver features (databricks/databricks-sql-nodejs#292)
+- Cleanup deprecated/removed fields in thrift files (databricks/databricks-sql-nodejs#295)
+- Add lenient LZ4 check to handle dependecy errors gracefully. Fixes #289 #275 #266 #270 (databricks/databricks-sql-nodejs#298)
+
 ## 1.10.0
 
 - Rename `clientId` parameter to `userAgentEntry` in connect call to standardize across sql drivers (databricks/databricks-sql-nodejs#281)
