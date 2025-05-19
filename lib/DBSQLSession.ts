@@ -227,12 +227,12 @@ export default class DBSQLSession implements IDBSQLSession {
       request.parameters = getQueryParameters(options.namedParameters, options.ordinalParameters);
     }
 
-    if (ProtocolVersion.supportsArrowCompression(this.serverProtocolVersion)) {
-      request.canDecompressLZ4Result = (options.useLZ4Compression ?? clientConfig.useLZ4Compression) && Boolean(LZ4);
-    }
-
     if (ProtocolVersion.supportsCloudFetch(this.serverProtocolVersion)) {
       request.canDownloadResult = options.useCloudFetch ?? clientConfig.useCloudFetch;
+    }
+
+    if (ProtocolVersion.supportsArrowCompression(this.serverProtocolVersion) && request.canDownloadResult !== true) {
+      request.canDecompressLZ4Result = (options.useLZ4Compression ?? clientConfig.useLZ4Compression) && Boolean(LZ4);
     }
 
     const operationPromise = driver.executeStatement(request);

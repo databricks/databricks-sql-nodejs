@@ -187,7 +187,10 @@ describe('Arrow support', () => {
     'should handle LZ4 compressed data',
     createTest(
       async (session) => {
-        const operation = await session.executeStatement(`SELECT * FROM ${tableName}`);
+        const operation = await session.executeStatement(
+          `SELECT * FROM ${tableName}`,
+          { useCloudFetch: false }, // Explicitly disable cloud fetch to test LZ4 compression
+        );
         const result = await operation.fetchAll();
         expect(fixArrowResult(result)).to.deep.equal(expectedArrow);
 
