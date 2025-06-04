@@ -12,7 +12,6 @@ function tryLoadLZ4Module(): LZ4Module | undefined {
     }
 
     if (err.code === 'MODULE_NOT_FOUND') {
-      console.warn('LZ4 module not installed: Missing dependency', err);
       return undefined;
     }
 
