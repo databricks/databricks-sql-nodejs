@@ -205,7 +205,7 @@ export default class ArrowResultConverter implements IResultsProvider<Array<any>
     }
 
     // Return other values as is
-    return typeof value === 'bigint' ? Number(value) : value;
+    return value;
   }
 
   private convertThriftTypes(record: Record<string, any>): any {
