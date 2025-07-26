@@ -18,6 +18,7 @@ export interface ClientConfig {
 
   useCloudFetch: boolean;
   cloudFetchConcurrentDownloads: number;
+  cloudFetchSpeedThresholdMBps: number;
 
   useLZ4Compression: boolean;
 }

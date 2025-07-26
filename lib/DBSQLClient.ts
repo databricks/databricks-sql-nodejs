@@ -90,6 +90,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
 
       useCloudFetch: true, // enabling cloud fetch by default.
       cloudFetchConcurrentDownloads: 10,
+      cloudFetchSpeedThresholdMBps: 0.1,
 
       useLZ4Compression: true,
     };

@@ -5,6 +5,7 @@ import IClientContext from '../contracts/IClientContext';
 import IResultsProvider, { ResultsProviderFetchNextOptions } from './IResultsProvider';
 import { ArrowBatch } from './utils';
 import { LZ4 } from '../utils';
+import { LogLevel } from '../contracts/IDBSQLLogger';
 
 export default class CloudFetchResultHandler implements IResultsProvider<ArrowBatch> {
   private readonly context: IClientContext;
@@ -68,17 +69,40 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
     return batch;
   }
 
+  private logDownloadMetrics(url: string, fileSizeBytes: number, downloadTimeMs: number): void {
+    const speedMBps = (fileSizeBytes / (1024 * 1024)) / (downloadTimeMs / 1000);
+    const cleanUrl = url.split('?')[0];
+    
+    this.context.getLogger().log(
+      LogLevel.info,
+      `Result File Download speed from cloud storage ${cleanUrl}: ${speedMBps.toFixed(4)} MB/s`
+    );
+    
+    const speedThresholdMBps = this.context.getConfig().cloudFetchSpeedThresholdMBps;
+    if (speedMBps < speedThresholdMBps) {
+      this.context.getLogger().log(
+        LogLevel.warn,
+        `Results download is slower than threshold speed of ${speedThresholdMBps.toFixed(4)} MB/s: ${speedMBps.toFixed(4)} MB/s`
+      );
+    }
+  }
+
   private async downloadLink(link: TSparkArrowResultLink): Promise<ArrowBatch> {
     if (Date.now() >= link.expiryTime.toNumber()) {
       throw new Error('CloudFetch link has expired');
     }
 
+    const startTime = Date.now();
     const response = await this.fetch(link.fileLink, { headers: link.httpHeaders });
     if (!response.ok) {
       throw new Error(`CloudFetch HTTP error ${response.status} ${response.statusText}`);
     }
 
     const result = await response.arrayBuffer();
+    const downloadTimeMs = Date.now() - startTime;
+    
+    this.logDownloadMetrics(link.fileLink, result.byteLength, downloadTimeMs);
+
     return {
       batches: [Buffer.from(result)],
       rowCount: link.rowCount.toNumber(true),
