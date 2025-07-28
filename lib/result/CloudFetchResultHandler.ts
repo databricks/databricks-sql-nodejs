@@ -70,20 +70,23 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
   }
 
   private logDownloadMetrics(url: string, fileSizeBytes: number, downloadTimeMs: number): void {
-    const speedMBps = (fileSizeBytes / (1024 * 1024)) / (downloadTimeMs / 1000);
+    const speedMBps = fileSizeBytes / (1024 * 1024) / (downloadTimeMs / 1000);
     const cleanUrl = url.split('?')[0];
-    
-    this.context.getLogger().log(
-      LogLevel.info,
-      `Result File Download speed from cloud storage ${cleanUrl}: ${speedMBps.toFixed(4)} MB/s`
-    );
-    
+
+    this.context
+      .getLogger()
+      .log(LogLevel.info, `Result File Download speed from cloud storage ${cleanUrl}: ${speedMBps.toFixed(4)} MB/s`);
+
     const speedThresholdMBps = this.context.getConfig().cloudFetchSpeedThresholdMBps;
     if (speedMBps < speedThresholdMBps) {
-      this.context.getLogger().log(
-        LogLevel.warn,
-        `Results download is slower than threshold speed of ${speedThresholdMBps.toFixed(4)} MB/s: ${speedMBps.toFixed(4)} MB/s`
-      );
+      this.context
+        .getLogger()
+        .log(
+          LogLevel.warn,
+          `Results download is slower than threshold speed of ${speedThresholdMBps.toFixed(
+            4,
+          )} MB/s: ${speedMBps.toFixed(4)} MB/s`,
+        );
     }
   }
 
@@ -100,7 +103,7 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
 
     const result = await response.arrayBuffer();
     const downloadTimeMs = Date.now() - startTime;
-    
+
     this.logDownloadMetrics(link.fileLink, result.byteLength, downloadTimeMs);
 
     return {
