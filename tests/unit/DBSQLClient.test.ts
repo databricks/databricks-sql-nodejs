@@ -185,6 +185,16 @@ describe('DBSQLClient.openSession', () => {
     }
   });
 
+  it('should pass session configuration to OpenSessionReq', async () => {
+    const client = new DBSQLClient();
+    const thriftClient = new ThriftClientStub();
+    sinon.stub(client, 'getClient').returns(Promise.resolve(thriftClient));
+
+    const configuration = { QUERY_TAGS: 'team:engineering', ansi_mode: 'true' };
+    await client.openSession({ configuration });
+    expect(thriftClient.openSessionReq?.configuration).to.deep.equal(configuration);
+  });
+
   it('should affect session behavior based on protocol version', async () => {
     const client = new DBSQLClient();
     const thriftClient = new ThriftClientStub();
