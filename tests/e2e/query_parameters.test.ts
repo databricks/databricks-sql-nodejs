@@ -17,6 +17,9 @@ const openSession = async () => {
   return connection.openSession({
     initialCatalog: config.catalog,
     initialSchema: config.schema,
+    configuration: {
+      QUERY_TAGS: 'test:e2e,driver:node',
+    },
   });
 };
 
