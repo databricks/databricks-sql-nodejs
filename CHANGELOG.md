@@ -1,5 +1,10 @@
 # Release History
 
+## 1.12.0
+
+- Support for session parameters (databricks/databricks-sql-nodejs#307 by @sreekanth-db)
+- Add metric logging for cloud fetch (databricks/databricks-sql-nodejs#305 by @shivam2680)
+
 ## 1.11.0
 
 - Enable cloud fetch by default (databricks/databricks-sql-nodejs#287)
