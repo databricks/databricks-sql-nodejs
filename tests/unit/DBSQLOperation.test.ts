@@ -1138,4 +1138,43 @@ describe('DBSQLOperation', () => {
       expect(operation['_data']['hasMoreRowsFlag']).to.be.false;
     });
   });
+
+  describe('metadata fetching (async-safety)', () => {
+    it('should handle concurrent metadata fetch requests without duplicate server calls', async () => {
+      const context = new ClientContextStub();
+      const driver = sinon.spy(context.driver);
+      driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
+      driver.getOperationStatusResp.hasResultSet = true;
+
+      // Create operation without direct results to force metadata fetching
+      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
+
+      // Trigger multiple concurrent metadata fetches
+      const results = await Promise.all([operation.hasMoreRows(), operation.hasMoreRows(), operation.hasMoreRows()]);
+
+      // All should succeed
+      expect(results).to.deep.equal([true, true, true]);
+
+      // But metadata should only be fetched once from server
+      expect(driver.getResultSetMetadata.callCount).to.equal(1);
+    });
+
+    it('should cache metadata after first fetch', async () => {
+      const context = new ClientContextStub();
+      const driver = sinon.spy(context.driver);
+      driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
+      driver.getOperationStatusResp.hasResultSet = true;
+
+      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
+
+      // First call should fetch metadata
+      await operation.hasMoreRows();
+      expect(driver.getResultSetMetadata.callCount).to.equal(1);
+
+      // Subsequent calls should use cached metadata
+      await operation.hasMoreRows();
+      await operation.hasMoreRows();
+      expect(driver.getResultSetMetadata.callCount).to.equal(1);
+    });
+  });
 });

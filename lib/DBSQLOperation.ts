@@ -66,6 +66,8 @@ export default class DBSQLOperation implements IOperation {
 
   private metadata?: TGetResultSetMetadataResp;
 
+  private metadataPromise?: Promise<TGetResultSetMetadataResp>;
+
   private state: TOperationState = TOperationState.INITIALIZED_STATE;
 
   // Once operation is finished or fails - cache status response, because subsequent calls
@@ -292,6 +294,12 @@ export default class DBSQLOperation implements IOperation {
       return false;
     }
 
+    // Wait for operation to finish before checking for more rows
+    // This ensures metadata can be fetched successfully
+    if (this.operationHandle.hasResultSet) {
+      await this.waitUntilReady();
+    }
+
     // If we fetched all the data from server - check if there's anything buffered in result handler
     const resultHandler = await this.getResultHandler();
     return resultHandler.hasMore();
@@ -383,16 +391,33 @@ export default class DBSQLOperation implements IOperation {
   }
 
   private async fetchMetadata() {
-    if (!this.metadata) {
+    // If metadata is already cached, return it immediately
+    if (this.metadata) {
+      return this.metadata;
+    }
+
+    // If a fetch is already in progress, wait for it to complete
+    if (this.metadataPromise) {
+      return this.metadataPromise;
+    }
+
+    // Start a new fetch and cache the promise to prevent concurrent fetches
+    this.metadataPromise = (async () => {
       const driver = await this.context.getDriver();
       const metadata = await driver.getResultSetMetadata({
         operationHandle: this.operationHandle,
       });
       Status.assert(metadata.status);
       this.metadata = metadata;
-    }
+      return metadata;
+    })();
 
-    return this.metadata;
+    try {
+      return await this.metadataPromise;
+    } finally {
+      // Clear the promise once completed (success or failure)
+      this.metadataPromise = undefined;
+    }
   }
 
   private async getResultHandler(): Promise<ResultSlicer<any>> {
