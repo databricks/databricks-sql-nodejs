@@ -172,6 +172,11 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
       }
     }
 
+    // Store enableMetricViewMetadata configuration
+    if (options.enableMetricViewMetadata !== undefined) {
+      this.config.enableMetricViewMetadata = options.enableMetricViewMetadata;
+    }
+
     this.authProvider = this.createAuthProvider(options, authProvider);
 
     this.connectionProvider = this.createConnectionProvider(options);
@@ -218,10 +223,18 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
    * const session = await client.openSession();
    */
   public async openSession(request: OpenSessionRequest = {}): Promise<IDBSQLSession> {
+    // Prepare session configuration
+    const configuration = request.configuration ? { ...request.configuration } : {};
+
+    // Add metric view metadata config if enabled
+    if (this.config.enableMetricViewMetadata) {
+      configuration['spark.sql.thriftserver.metadata.metricview.enabled'] = 'true';
+    }
+
     const response = await this.driver.openSession({
       client_protocol_i64: new Int64(TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V8),
       ...getInitialNamespaceOptions(request.initialCatalog, request.initialSchema),
-      configuration: request.configuration,
+      configuration,
       canUseMultipleCatalogs: true,
     });
 

@@ -21,6 +21,7 @@ export interface ClientConfig {
   cloudFetchSpeedThresholdMBps: number;
 
   useLZ4Compression: boolean;
+  enableMetricViewMetadata?: boolean;
 }
 
 export default interface IClientContext {
