@@ -33,6 +33,7 @@ export type ConnectionOptions = {
   userAgentEntry?: string;
   socketTimeout?: number;
   proxy?: ProxyOptions;
+  enableMetricViewMetadata?: boolean;
 } & AuthOptions;
 
 export interface OpenSessionRequest {

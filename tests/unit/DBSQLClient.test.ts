@@ -560,3 +560,80 @@ describe('DBSQLClient.createAuthProvider', () => {
     expect(provider).to.be.equal(customProvider);
   });
 });
+
+describe('DBSQLClient.enableMetricViewMetadata', () => {
+  it('should store enableMetricViewMetadata config when enabled', async () => {
+    const client = new DBSQLClient();
+
+    expect(client.getConfig().enableMetricViewMetadata).to.be.undefined;
+
+    await client.connect({ ...connectOptions, enableMetricViewMetadata: true });
+
+    expect(client.getConfig().enableMetricViewMetadata).to.be.true;
+  });
+
+  it('should not store enableMetricViewMetadata config when disabled', async () => {
+    const client = new DBSQLClient();
+
+    expect(client.getConfig().enableMetricViewMetadata).to.be.undefined;
+
+    await client.connect({ ...connectOptions, enableMetricViewMetadata: false });
+
+    expect(client.getConfig().enableMetricViewMetadata).to.be.false;
+  });
+
+  it('should inject session parameter when enableMetricViewMetadata is true', async () => {
+    const client = new DBSQLClient();
+    const thriftClient = new ThriftClientStub();
+    sinon.stub(client, 'getClient').returns(Promise.resolve(thriftClient));
+
+    await client.connect({ ...connectOptions, enableMetricViewMetadata: true });
+    await client.openSession();
+
+    expect(thriftClient.openSessionReq?.configuration).to.have.property(
+      'spark.sql.thriftserver.metadata.metricview.enabled',
+      'true',
+    );
+  });
+
+  it('should not inject session parameter when enableMetricViewMetadata is false', async () => {
+    const client = new DBSQLClient();
+    const thriftClient = new ThriftClientStub();
+    sinon.stub(client, 'getClient').returns(Promise.resolve(thriftClient));
+
+    await client.connect({ ...connectOptions, enableMetricViewMetadata: false });
+    await client.openSession();
+
+    expect(thriftClient.openSessionReq?.configuration).to.not.have.property(
+      'spark.sql.thriftserver.metadata.metricview.enabled',
+    );
+  });
+
+  it('should not inject session parameter when enableMetricViewMetadata is not set', async () => {
+    const client = new DBSQLClient();
+    const thriftClient = new ThriftClientStub();
+    sinon.stub(client, 'getClient').returns(Promise.resolve(thriftClient));
+
+    await client.connect(connectOptions);
+    await client.openSession();
+
+    expect(thriftClient.openSessionReq?.configuration).to.not.have.property(
+      'spark.sql.thriftserver.metadata.metricview.enabled',
+    );
+  });
+
+  it('should preserve user-provided session configuration', async () => {
+    const client = new DBSQLClient();
+    const thriftClient = new ThriftClientStub();
+    sinon.stub(client, 'getClient').returns(Promise.resolve(thriftClient));
+
+    await client.connect({ ...connectOptions, enableMetricViewMetadata: true });
+    const userConfig = { QUERY_TAGS: 'team:engineering', ansi_mode: 'true' };
+    await client.openSession({ configuration: userConfig });
+
+    expect(thriftClient.openSessionReq?.configuration).to.deep.equal({
+      ...userConfig,
+      'spark.sql.thriftserver.metadata.metricview.enabled': 'true',
+    });
+  });
+});
