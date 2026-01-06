@@ -23,6 +23,9 @@ import {
   TokenProviderAuthenticator,
   StaticTokenProvider,
   ExternalTokenProvider,
+  CachedTokenProvider,
+  FederationProvider,
+  ITokenProvider,
 } from './connection/auth/tokenProvider';
 import IDBSQLLogger, { LogLevel } from './contracts/IDBSQLLogger';
 import DBSQLLogger from './DBSQLLogger';
@@ -149,13 +152,45 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
       case 'custom':
         return options.provider;
       case 'token-provider':
-        return new TokenProviderAuthenticator(options.tokenProvider, this);
+        return new TokenProviderAuthenticator(
+          this.wrapTokenProvider(options.tokenProvider, options.host, options.enableTokenFederation, options.federationClientId),
+          this,
+        );
       case 'external-token':
-        return new TokenProviderAuthenticator(new ExternalTokenProvider(options.getToken), this);
+        return new TokenProviderAuthenticator(
+          this.wrapTokenProvider(new ExternalTokenProvider(options.getToken), options.host, options.enableTokenFederation, options.federationClientId),
+          this,
+        );
       case 'static-token':
-        return new TokenProviderAuthenticator(StaticTokenProvider.fromJWT(options.staticToken), this);
+        return new TokenProviderAuthenticator(
+          this.wrapTokenProvider(StaticTokenProvider.fromJWT(options.staticToken), options.host, options.enableTokenFederation, options.federationClientId),
+          this,
+        );
       // no default
     }
+  }
+
+  /**
+   * Wraps a token provider with caching and optional federation.
+   * Caching is always enabled by default. Federation is opt-in.
+   */
+  private wrapTokenProvider(
+    provider: ITokenProvider,
+    host: string,
+    enableFederation?: boolean,
+    federationClientId?: string,
+  ): ITokenProvider {
+    // Always wrap with caching first
+    let wrapped: ITokenProvider = new CachedTokenProvider(provider);
+
+    // Optionally wrap with federation
+    if (enableFederation) {
+      wrapped = new FederationProvider(wrapped, host, {
+        clientId: federationClientId,
+      });
+    }
+
+    return wrapped;
   }
 
   private createConnectionProvider(options: ConnectionOptions): IConnectionProvider {

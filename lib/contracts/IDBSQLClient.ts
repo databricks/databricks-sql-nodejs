@@ -34,14 +34,20 @@ type AuthOptions =
   | {
       authType: 'token-provider';
       tokenProvider: ITokenProvider;
+      enableTokenFederation?: boolean;
+      federationClientId?: string;
     }
   | {
       authType: 'external-token';
       getToken: TokenCallback;
+      enableTokenFederation?: boolean;
+      federationClientId?: string;
     }
   | {
       authType: 'static-token';
       staticToken: string;
+      enableTokenFederation?: boolean;
+      federationClientId?: string;
     };
 
 export type ConnectionOptions = {
