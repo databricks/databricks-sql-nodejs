@@ -3,10 +3,16 @@ import IDBSQLSession from './IDBSQLSession';
 import IAuthentication from '../connection/contracts/IAuthentication';
 import { ProxyOptions } from '../connection/contracts/IConnectionOptions';
 import OAuthPersistence from '../connection/auth/DatabricksOAuth/OAuthPersistence';
+import ITokenProvider from '../connection/auth/tokenProvider/ITokenProvider';
 
 export interface ClientOptions {
   logger?: IDBSQLLogger;
 }
+
+/**
+ * Type for the callback function that retrieves tokens from external sources.
+ */
+export type TokenCallback = () => Promise<string>;
 
 type AuthOptions =
   | {
@@ -24,6 +30,18 @@ type AuthOptions =
   | {
       authType: 'custom';
       provider: IAuthentication;
+    }
+  | {
+      authType: 'token-provider';
+      tokenProvider: ITokenProvider;
+    }
+  | {
+      authType: 'external-token';
+      getToken: TokenCallback;
+    }
+  | {
+      authType: 'static-token';
+      staticToken: string;
     };
 
 export type ConnectionOptions = {
