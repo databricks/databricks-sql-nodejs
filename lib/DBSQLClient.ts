@@ -153,17 +153,32 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
         return options.provider;
       case 'token-provider':
         return new TokenProviderAuthenticator(
-          this.wrapTokenProvider(options.tokenProvider, options.host, options.enableTokenFederation, options.federationClientId),
+          this.wrapTokenProvider(
+            options.tokenProvider,
+            options.host,
+            options.enableTokenFederation,
+            options.federationClientId,
+          ),
           this,
         );
       case 'external-token':
         return new TokenProviderAuthenticator(
-          this.wrapTokenProvider(new ExternalTokenProvider(options.getToken), options.host, options.enableTokenFederation, options.federationClientId),
+          this.wrapTokenProvider(
+            new ExternalTokenProvider(options.getToken),
+            options.host,
+            options.enableTokenFederation,
+            options.federationClientId,
+          ),
           this,
         );
       case 'static-token':
         return new TokenProviderAuthenticator(
-          this.wrapTokenProvider(StaticTokenProvider.fromJWT(options.staticToken), options.host, options.enableTokenFederation, options.federationClientId),
+          this.wrapTokenProvider(
+            StaticTokenProvider.fromJWT(options.staticToken),
+            options.host,
+            options.enableTokenFederation,
+            options.federationClientId,
+          ),
           this,
         );
       // no default
