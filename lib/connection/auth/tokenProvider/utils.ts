@@ -33,24 +33,6 @@ export function getJWTIssuer(token: string): string | null {
 }
 
 /**
- * Compares two host URLs, ignoring ports.
- * Treats "example.com" and "example.com:443" as equivalent.
- *
- * @param url1 - First URL or hostname
- * @param url2 - Second URL or hostname
- * @returns true if the hosts are the same
- */
-export function isSameHost(url1: string, url2: string): boolean {
-  try {
-    const host1 = extractHostname(url1);
-    const host2 = extractHostname(url2);
-    return host1.toLowerCase() === host2.toLowerCase();
-  } catch {
-    return false;
-  }
-}
-
-/**
  * Extracts the hostname from a URL or hostname string.
  * Handles both full URLs and bare hostnames.
  *
@@ -64,7 +46,7 @@ function extractHostname(urlOrHostname: string): string {
     return url.hostname;
   }
 
-  // Handle hostname with port (e.g., "example.com:443")
+  // Handle hostname with port (e.g., "databricks.com:443")
   const colonIndex = urlOrHostname.indexOf(':');
   if (colonIndex !== -1) {
     return urlOrHostname.substring(0, colonIndex);
@@ -72,4 +54,26 @@ function extractHostname(urlOrHostname: string): string {
 
   // Bare hostname
   return urlOrHostname;
+}
+
+/**
+ * Compares two host URLs, ignoring ports.
+ * Treats "databricks.com" and "databricks.com:443" as equivalent.
+ *
+ * @param url1 - First URL or hostname
+ * @param url2 - Second URL or hostname
+ * @returns true if the hosts are the same
+ */
+export function isSameHost(url1: string, url2: string): boolean {
+  try {
+    const host1 = extractHostname(url1);
+    const host2 = extractHostname(url2);
+    // Empty hostnames are not valid
+    if (!host1 || !host2) {
+      return false;
+    }
+    return host1.toLowerCase() === host2.toLowerCase();
+  } catch {
+    return false;
+  }
 }

@@ -1,7 +1,7 @@
 import fetch from 'node-fetch';
 import ITokenProvider from './ITokenProvider';
 import Token from './Token';
-import { decodeJWT, getJWTIssuer, isSameHost } from './utils';
+import { getJWTIssuer, isSameHost } from './utils';
 
 /**
  * Token exchange endpoint path for Databricks OIDC.
