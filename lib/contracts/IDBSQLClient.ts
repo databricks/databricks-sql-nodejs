@@ -4,15 +4,11 @@ import IAuthentication from '../connection/contracts/IAuthentication';
 import { ProxyOptions } from '../connection/contracts/IConnectionOptions';
 import OAuthPersistence from '../connection/auth/DatabricksOAuth/OAuthPersistence';
 import ITokenProvider from '../connection/auth/tokenProvider/ITokenProvider';
+import { TokenCallback } from '../connection/auth/tokenProvider/ExternalTokenProvider';
 
 export interface ClientOptions {
   logger?: IDBSQLLogger;
 }
-
-/**
- * Type for the callback function that retrieves tokens from external sources.
- */
-export type TokenCallback = () => Promise<string>;
 
 type AuthOptions =
   | {
