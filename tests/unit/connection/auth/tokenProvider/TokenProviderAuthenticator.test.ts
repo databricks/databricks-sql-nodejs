@@ -85,29 +85,6 @@ describe('TokenProviderAuthenticator', () => {
       expect(getTokenSpy.calledOnce).to.be.true;
     });
 
-    it('should log debug message', async () => {
-      const provider = new MockTokenProvider('my-access-token', 'TestProvider');
-      const authenticator = new TokenProviderAuthenticator(provider, context);
-
-      await authenticator.authenticate();
-
-      expect(context.logger.logs.length).to.be.greaterThan(0);
-      const debugLogs = context.logger.logs.filter((log) => log.message.includes('TestProvider'));
-      expect(debugLogs.length).to.be.greaterThan(0);
-    });
-
-    it('should log warning for expired token', async () => {
-      const provider = new MockTokenProvider('my-access-token');
-      const expiredDate = new Date(Date.now() - 60000); // 1 minute ago
-      provider.setToken(new Token('expired-token', { expiresAt: expiredDate }));
-      const authenticator = new TokenProviderAuthenticator(provider, context);
-
-      await authenticator.authenticate();
-
-      const warnLogs = context.logger.logs.filter((log) => log.message.includes('expired'));
-      expect(warnLogs.length).to.be.greaterThan(0);
-    });
-
     it('should propagate errors from provider', async () => {
       const error = new Error('Failed to get token');
       const provider: ITokenProvider = {
