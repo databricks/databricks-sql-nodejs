@@ -8,10 +8,7 @@
  */
 
 import { DBSQLClient } from '@databricks/sql';
-import {
-  ITokenProvider,
-  Token,
-} from '../../lib/connection/auth/tokenProvider';
+import { ITokenProvider, Token } from '../../lib/connection/auth/tokenProvider';
 
 /**
  * Custom token provider that refreshes tokens from a custom OAuth server.
@@ -48,7 +45,7 @@ class CustomOAuthTokenProvider implements ITokenProvider {
       throw new Error(`OAuth token request failed: ${response.status}`);
     }
 
-    const data = await response.json() as {
+    const data = (await response.json()) as {
       access_token: string;
       token_type?: string;
       expires_in?: number;
