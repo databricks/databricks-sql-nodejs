@@ -21,11 +21,7 @@ export default class TokenProviderAuthenticator implements IAuthentication {
    * @param context - The client context for logging
    * @param headers - Additional headers to include with each request
    */
-  constructor(
-    tokenProvider: ITokenProvider,
-    context: IClientContext,
-    headers?: HeadersInit,
-  ) {
+  constructor(tokenProvider: ITokenProvider, context: IClientContext, headers?: HeadersInit) {
     this.tokenProvider = tokenProvider;
     this.context = context;
     this.headers = headers ?? {};
