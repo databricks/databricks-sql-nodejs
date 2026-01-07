@@ -98,10 +98,11 @@ export default class Token {
 
   /**
    * Creates a Token from a JWT string, extracting the expiration time from the payload.
+   * If the JWT cannot be decoded, the token is created without expiration info.
+   * The server will validate the token anyway, so decoding failures are handled gracefully.
    * @param jwt - The JWT token string
    * @param options - Additional token options (tokenType, refreshToken, scopes)
-   * @returns A new Token instance with expiration extracted from the JWT
-   * @throws Error if the JWT cannot be decoded
+   * @returns A new Token instance with expiration extracted from the JWT (if available)
    */
   static fromJWT(
     jwt: string,
