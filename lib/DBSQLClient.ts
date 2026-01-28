@@ -1,5 +1,6 @@
 import thrift from 'thrift';
 import Int64 from 'node-int64';
+import os from 'os';
 
 import { EventEmitter } from 'events';
 import TCLIService from '../thrift/TCLIService';
@@ -23,6 +24,14 @@ import IDBSQLLogger, { LogLevel } from './contracts/IDBSQLLogger';
 import DBSQLLogger from './DBSQLLogger';
 import CloseableCollection from './utils/CloseableCollection';
 import IConnectionProvider from './connection/contracts/IConnectionProvider';
+import FeatureFlagCache from './telemetry/FeatureFlagCache';
+import TelemetryClientProvider from './telemetry/TelemetryClientProvider';
+import TelemetryEventEmitter from './telemetry/TelemetryEventEmitter';
+import MetricsAggregator from './telemetry/MetricsAggregator';
+import DatabricksTelemetryExporter from './telemetry/DatabricksTelemetryExporter';
+import { CircuitBreakerRegistry } from './telemetry/CircuitBreaker';
+import { DriverConfiguration } from './telemetry/types';
+import driverVersion from './version';
 
 function prependSlash(str: string): string {
   if (str.length > 0 && str.charAt(0) !== '/') {
@@ -67,6 +76,19 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
 
   private readonly sessions = new CloseableCollection<DBSQLSession>();
 
+  // Telemetry components (instance-based, NOT singletons)
+  private host?: string;
+
+  private featureFlagCache?: FeatureFlagCache;
+
+  private telemetryClientProvider?: TelemetryClientProvider;
+
+  private telemetryEmitter?: TelemetryEventEmitter;
+
+  private telemetryAggregator?: MetricsAggregator;
+
+  private circuitBreakerRegistry?: CircuitBreakerRegistry;
+
   private static getDefaultLogger(): IDBSQLLogger {
     if (!this.defaultLogger) {
       this.defaultLogger = new DBSQLLogger();
@@ -93,6 +115,15 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
       cloudFetchSpeedThresholdMBps: 0.1,
 
       useLZ4Compression: true,
+
+      // Telemetry defaults
+      telemetryEnabled: false, // Initially disabled for safe rollout
+      telemetryBatchSize: 100,
+      telemetryFlushIntervalMs: 5000,
+      telemetryMaxRetries: 3,
+      telemetryAuthenticatedExport: true,
+      telemetryCircuitBreakerThreshold: 5,
+      telemetryCircuitBreakerTimeout: 60000, // 1 minute
     };
   }
 
@@ -152,6 +183,124 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
   }
 
   /**
+   * Extract workspace ID from hostname.
+   * @param host - The host string (e.g., "workspace-id.cloud.databricks.com")
+   * @returns Workspace ID or host if extraction fails
+   */
+  private extractWorkspaceId(host: string): string {
+    // Extract workspace ID from hostname (first segment before first dot)
+    const parts = host.split('.');
+    return parts.length > 0 ? parts[0] : host;
+  }
+
+  /**
+   * Build driver configuration for telemetry reporting.
+   * @returns DriverConfiguration object with current driver settings
+   */
+  private buildDriverConfiguration(): DriverConfiguration {
+    return {
+      driverVersion,
+      driverName: '@databricks/sql',
+      nodeVersion: process.version,
+      platform: process.platform,
+      osVersion: os.release(),
+
+      // Feature flags
+      cloudFetchEnabled: this.config.useCloudFetch ?? false,
+      lz4Enabled: this.config.useLZ4Compression ?? false,
+      arrowEnabled: this.config.arrowEnabled ?? false,
+      directResultsEnabled: true, // Direct results always enabled
+
+      // Configuration values
+      socketTimeout: this.config.socketTimeout ?? 0,
+      retryMaxAttempts: this.config.retryMaxAttempts ?? 0,
+      cloudFetchConcurrentDownloads: this.config.cloudFetchConcurrentDownloads ?? 0,
+    };
+  }
+
+  /**
+   * Initialize telemetry components if enabled.
+   * CRITICAL: All errors swallowed and logged at LogLevel.debug ONLY.
+   * Driver NEVER throws exceptions due to telemetry.
+   */
+  private async initializeTelemetry(): Promise<void> {
+    if (!this.host) {
+      return;
+    }
+
+    try {
+      // Create feature flag cache instance
+      this.featureFlagCache = new FeatureFlagCache(this);
+      this.featureFlagCache.getOrCreateContext(this.host);
+
+      // Check if telemetry enabled via feature flag
+      const enabled = await this.featureFlagCache.isTelemetryEnabled(this.host);
+      if (!enabled) {
+        this.logger.log(LogLevel.debug, 'Telemetry disabled via feature flag');
+        return;
+      }
+
+      // Create telemetry components (all instance-based)
+      this.telemetryClientProvider = new TelemetryClientProvider(this);
+      this.telemetryEmitter = new TelemetryEventEmitter(this);
+
+      // Get or create telemetry client for this host (increments refCount)
+      this.telemetryClientProvider.getOrCreateClient(this.host);
+
+      // Create circuit breaker registry and exporter
+      this.circuitBreakerRegistry = new CircuitBreakerRegistry(this);
+      const exporter = new DatabricksTelemetryExporter(this, this.host, this.circuitBreakerRegistry);
+      this.telemetryAggregator = new MetricsAggregator(this, exporter);
+
+      // Wire up event listeners
+      this.telemetryEmitter.on('telemetry.connection.open', (event) => {
+        try {
+          this.telemetryAggregator?.processEvent(event);
+        } catch (error: any) {
+          this.logger.log(LogLevel.debug, `Error processing connection.open event: ${error.message}`);
+        }
+      });
+
+      this.telemetryEmitter.on('telemetry.statement.start', (event) => {
+        try {
+          this.telemetryAggregator?.processEvent(event);
+        } catch (error: any) {
+          this.logger.log(LogLevel.debug, `Error processing statement.start event: ${error.message}`);
+        }
+      });
+
+      this.telemetryEmitter.on('telemetry.statement.complete', (event) => {
+        try {
+          this.telemetryAggregator?.processEvent(event);
+        } catch (error: any) {
+          this.logger.log(LogLevel.debug, `Error processing statement.complete event: ${error.message}`);
+        }
+      });
+
+      this.telemetryEmitter.on('telemetry.cloudfetch.chunk', (event) => {
+        try {
+          this.telemetryAggregator?.processEvent(event);
+        } catch (error: any) {
+          this.logger.log(LogLevel.debug, `Error processing cloudfetch.chunk event: ${error.message}`);
+        }
+      });
+
+      this.telemetryEmitter.on('telemetry.error', (event) => {
+        try {
+          this.telemetryAggregator?.processEvent(event);
+        } catch (error: any) {
+          this.logger.log(LogLevel.debug, `Error processing error event: ${error.message}`);
+        }
+      });
+
+      this.logger.log(LogLevel.debug, 'Telemetry initialized successfully');
+    } catch (error: any) {
+      // Swallow all telemetry initialization errors
+      this.logger.log(LogLevel.debug, `Telemetry initialization failed: ${error.message}`);
+    }
+  }
+
+  /**
    * Connects DBSQLClient to endpoint
    * @public
    * @param options - host, path, and token are required
@@ -172,9 +321,17 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
       }
     }
 
+    // Store host for telemetry
+    this.host = options.host;
+
     // Store enableMetricViewMetadata configuration
     if (options.enableMetricViewMetadata !== undefined) {
       this.config.enableMetricViewMetadata = options.enableMetricViewMetadata;
+    }
+
+    // Override telemetry config if provided in options
+    if (options.telemetryEnabled !== undefined) {
+      this.config.telemetryEnabled = options.telemetryEnabled;
     }
 
     this.authProvider = this.createAuthProvider(options, authProvider);
@@ -209,6 +366,11 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
       this.logger.log(LogLevel.debug, 'Connection timed out.');
       this.emit('timeout');
     });
+
+    // Initialize telemetry if enabled
+    if (this.config.telemetryEnabled) {
+      await this.initializeTelemetry();
+    }
 
     return this;
   }
@@ -245,11 +407,51 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
       serverProtocolVersion: response.serverProtocolVersion,
     });
     this.sessions.add(session);
+
+    // Emit connection.open telemetry event
+    if (this.telemetryEmitter && this.host) {
+      try {
+        const workspaceId = this.extractWorkspaceId(this.host);
+        const driverConfig = this.buildDriverConfiguration();
+        this.telemetryEmitter.emitConnectionOpen({
+          sessionId: session.id,
+          workspaceId,
+          driverConfig,
+        });
+      } catch (error: any) {
+        // CRITICAL: All telemetry exceptions swallowed
+        this.logger.log(LogLevel.debug, `Error emitting connection.open event: ${error.message}`);
+      }
+    }
+
     return session;
   }
 
   public async close(): Promise<void> {
     await this.sessions.closeAll();
+
+    // Cleanup telemetry
+    if (this.host) {
+      try {
+        // Step 1: Flush any pending metrics
+        if (this.telemetryAggregator) {
+          await this.telemetryAggregator.flush();
+        }
+
+        // Step 2: Release telemetry client (decrements ref count, closes if last)
+        if (this.telemetryClientProvider) {
+          await this.telemetryClientProvider.releaseClient(this.host);
+        }
+
+        // Step 3: Release feature flag context (decrements ref count)
+        if (this.featureFlagCache) {
+          this.featureFlagCache.releaseContext(this.host);
+        }
+      } catch (error: any) {
+        // Swallow all telemetry cleanup errors
+        this.logger.log(LogLevel.debug, `Telemetry cleanup error: ${error.message}`);
+      }
+    }
 
     this.client = undefined;
     this.connectionProvider = undefined;
