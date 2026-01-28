@@ -1,0 +1,778 @@
+[
+  {
+    "id": "task-1-types",
+    "title": "Create Telemetry Type Definitions",
+    "description": "Create TypeScript interfaces and types for all telemetry components including TelemetryEvent, TelemetryMetric, DriverConfiguration, and related types. This forms the foundation for the entire telemetry system.",
+    "design_context": "The design document specifies core types: TelemetryConfiguration for component configuration, TelemetryEvent for runtime events emitted by the driver, TelemetryMetric for aggregated data exported to Databricks, DriverConfiguration for driver metadata, and StatementMetrics for per-statement aggregation. Event types include connection.open, statement.start, statement.complete, cloudfetch.chunk, and error. All types must support both session_id and statement_id for multi-level correlation following the JDBC driver pattern.",
+    "dependencies": [],
+    "input_requirements": [
+      "Design document at spec/telemetry-design.md",
+      "Sprint plan at spec/telemetry-sprint-plan.md",
+      "TypeScript project configuration"
+    ],
+    "output_deliverables": [
+      "lib/telemetry/types.ts with all type definitions",
+      "Exported types accessible to other telemetry components",
+      "JSDoc comments for all interfaces"
+    ],
+    "exit_criteria": [
+      "TelemetryConfiguration interface defined with all config fields",
+      "TelemetryEvent interface defined with eventType, timestamp, sessionId, statementId",
+      "TelemetryMetric interface defined for export payload",
+      "DriverConfiguration interface defined",
+      "StatementMetrics interface defined",
+      "Event type enums or constants defined",
+      "All interfaces exported from module",
+      "TypeScript compilation succeeds"
+    ],
+    "files_to_modify": [],
+    "files_to_create": [
+      "lib/telemetry/types.ts"
+    ],
+    "test_requirements": [
+      "No unit tests required (type definitions only)",
+      "TypeScript compiler validates interface definitions"
+    ],
+    "allowed_tools": [
+      "Read",
+      "Edit",
+      "Write",
+      "Bash"
+    ],
+    "max_turns": 100,
+    "estimated_complexity": "low"
+  },
+  {
+    "id": "task-2-feature-flag-cache",
+    "title": "Implement FeatureFlagCache Component",
+    "description": "Create per-host feature flag cache with reference counting and 15-minute TTL. This component caches feature flag values at the host level to avoid repeated API calls and prevent rate limiting. Must be instance-based (not singleton), take IClientContext in constructor, and follow existing driver patterns.",
+    "design_context": "FeatureFlagCache manages per-host contexts with reference counting to prevent rate limiting. Each context tracks telemetryEnabled flag, lastFetched timestamp, refCount for connections, and cacheDuration (15 minutes). The cache automatically expires after TTL and refetches from the server. Reference counting ensures contexts are only removed when all connections to a host are closed. This follows the JDBC driver pattern from DatabricksDriverFeatureFlagsContextFactory.java:27.",
+    "dependencies": [
+      "task-1-types"
+    ],
+    "input_requirements": [
+      "lib/telemetry/types.ts with type definitions",
+      "lib/contracts/IClientContext.ts interface",
+      "Design document section 3.1 FeatureFlagCache"
+    ],
+    "output_deliverables": [
+      "lib/telemetry/FeatureFlagCache.ts implementation",
+      "FeatureFlagContext interface definition",
+      "getOrCreateContext() method",
+      "releaseContext() method",
+      "isTelemetryEnabled() method with caching",
+      "fetchFeatureFlag() private method"
+    ],
+    "exit_criteria": [
+      "FeatureFlagCache class takes IClientContext in constructor",
+      "Per-host caching with Map<string, FeatureFlagContext> implemented",
+      "Reference counting increments on getOrCreateContext",
+      "Reference counting decrements on releaseContext",
+      "Context removed when refCount reaches zero",
+      "Cache expires after 15 minutes and refetches",
+      "All errors logged via context.getLogger() at LogLevel.debug",
+      "No exceptions propagate to caller",
+      "Unit tests achieve >80% coverage",
+      "Tests verify cache expiration behavior",
+      "Tests verify reference counting"
+    ],
+    "files_to_modify": [],
+    "files_to_create": [
+      "lib/telemetry/FeatureFlagCache.ts",
+      "tests/unit/telemetry/FeatureFlagCache.test.ts"
+    ],
+    "test_requirements": [
+      "Test cache stores feature flag per host",
+      "Test cache expires after 15 minutes",
+      "Test reference counting increments correctly",
+      "Test reference counting decrements correctly",
+      "Test context removed when refCount reaches zero",
+      "Test multiple hosts managed independently",
+      "Test errors logged via IDBSQLLogger at debug level",
+      "Test fetchFeatureFlag failure handling",
+      ">80% code coverage"
+    ],
+    "allowed_tools": [
+      "Read",
+      "Edit",
+      "Write",
+      "Bash"
+    ],
+    "max_turns": 100,
+    "estimated_complexity": "medium"
+  },
+  {
+    "id": "task-3-circuit-breaker",
+    "title": "Implement CircuitBreaker and CircuitBreakerRegistry",
+    "description": "Create circuit breaker implementation with three states (CLOSED, OPEN, HALF_OPEN) and CircuitBreakerRegistry for per-host circuit breaker management. Protects telemetry exporter from failing endpoints with automatic recovery.",
+    "design_context": "CircuitBreaker implements state machine to protect telemetry endpoint from failures. Opens after 5 consecutive failures, stays open for 1 minute, then enters HALF_OPEN to test recovery. Closes after 2 successes in HALF_OPEN state. CircuitBreakerRegistry manages per-host circuit breakers to isolate failures. All state transitions logged at LogLevel.debug via IDBSQLLogger.",
+    "dependencies": [
+      "task-1-types"
+    ],
+    "input_requirements": [
+      "lib/telemetry/types.ts with type definitions",
+      "lib/contracts/IClientContext.ts interface",
+      "Design document section 3.3 Circuit Breaker"
+    ],
+    "output_deliverables": [
+      "lib/telemetry/CircuitBreaker.ts with CircuitBreaker class and CircuitBreakerRegistry class",
+      "CircuitBreakerState enum (CLOSED, OPEN, HALF_OPEN)",
+      "CircuitBreakerConfig interface",
+      "execute() method wrapping operations",
+      "State transition logic",
+      "Per-host circuit breaker isolation"
+    ],
+    "exit_criteria": [
+      "CircuitBreaker starts in CLOSED state",
+      "Opens after configured failure threshold (default 5)",
+      "Stays OPEN for configured timeout (default 60s)",
+      "Transitions to HALF_OPEN after timeout",
+      "Closes after configured successes in HALF_OPEN (default 2)",
+      "Resets failure count on success",
+      "CircuitBreakerRegistry creates one breaker per host",
+      "State transitions logged via IDBSQLLogger at LogLevel.debug",
+      "No console logging",
+      "Unit tests achieve >80% coverage",
+      "Tests verify all state transitions",
+      "Tests verify per-host isolation"
+    ],
+    "files_to_modify": [],
+    "files_to_create": [
+      "lib/telemetry/CircuitBreaker.ts",
+      "tests/unit/telemetry/CircuitBreaker.test.ts",
+      "tests/unit/.stubs/CircuitBreakerStub.ts"
+    ],
+    "test_requirements": [
+      "Test starts in CLOSED state",
+      "Test opens after threshold failures",
+      "Test rejects operations when OPEN",
+      "Test transitions to HALF_OPEN after timeout",
+      "Test closes after successes in HALF_OPEN",
+      "Test resets failure count on success",
+      "Test per-host circuit breakers isolated",
+      "Test state transitions logged at debug level",
+      "Test no console logging used",
+      ">80% code coverage"
+    ],
+    "allowed_tools": [
+      "Read",
+      "Edit",
+      "Write",
+      "Bash"
+    ],
+    "max_turns": 100,
+    "estimated_complexity": "medium"
+  },
+  {
+    "id": "task-4-exception-classifier",
+    "title": "Implement ExceptionClassifier",
+    "description": "Create utility to classify exceptions as terminal (unrecoverable) vs retryable. This determines whether exceptions are flushed immediately or buffered until statement completion.",
+    "design_context": "ExceptionClassifier distinguishes between terminal exceptions (authentication failures 401/403, invalid requests 400, not found 404) that should flush immediately, and retryable exceptions (rate limiting 429, server errors 500/502/503/504, network timeouts) that should be buffered for batching. This follows the JDBC driver pattern of smart exception flushing to optimize telemetry export efficiency while ensuring critical errors are reported immediately.",
+    "dependencies": [
+      "task-1-types"
+    ],
+    "input_requirements": [
+      "lib/telemetry/types.ts with type definitions",
+      "Design document section 8.2 Terminal vs Retryable Exceptions"
+    ],
+    "output_deliverables": [
+      "lib/telemetry/ExceptionClassifier.ts with static methods",
+      "isTerminal() static method",
+      "isRetryable() static method",
+      "HTTP status code classification logic"
+    ],
+    "exit_criteria": [
+      "isTerminal() identifies 401, 403, 404, 400 as terminal",
+      "isTerminal() identifies AuthenticationError as terminal",
+      "isRetryable() identifies 429, 500, 502, 503, 504 as retryable",
+      "isRetryable() identifies network timeouts as retryable",
+      "Handles unknown error types gracefully",
+      "No dependencies on other telemetry components",
+      "Unit tests achieve >80% coverage",
+      "Tests verify all status code classifications"
+    ],
+    "files_to_modify": [],
+    "files_to_create": [
+      "lib/telemetry/ExceptionClassifier.ts",
+      "tests/unit/telemetry/ExceptionClassifier.test.ts"
+    ],
+    "test_requirements": [
+      "Test identifies AuthenticationError as terminal",
+      "Test identifies 401/403/404/400 as terminal",
+      "Test identifies 429/500/502/503/504 as retryable",
+      "Test identifies network timeouts as retryable",
+      "Test handles unknown errors safely",
+      "Test returns false for both when uncertain",
+      ">80% code coverage"
+    ],
+    "allowed_tools": [
+      "Read",
+      "Edit",
+      "Write",
+      "Bash"
+    ],
+    "max_turns": 100,
+    "estimated_complexity": "low"
+  },
+  {
+    "id": "task-5-telemetry-event-emitter",
+    "title": "Implement TelemetryEventEmitter",
+    "description": "Create EventEmitter subclass for telemetry events with complete exception swallowing. Emits events at key driver operations (connection open, statement lifecycle, cloudfetch chunks, errors) with all exceptions caught and logged at debug level only.",
+    "design_context": "TelemetryEventEmitter extends Node.js EventEmitter to emit telemetry events at key driver operations. Takes IClientContext in constructor to access logger and config. Methods: emitConnectionOpen(), emitStatementStart(), emitStatementComplete(), emitCloudFetchChunk(), emitError(). CRITICAL REQUIREMENT: ALL exceptions must be caught and logged at LogLevel.debug ONLY (never warn/error) to avoid customer anxiety. NO console logging allowed - only IDBSQLLogger. Respects telemetryEnabled flag from context config.",
+    "dependencies": [
+      "task-1-types"
+    ],
+    "input_requirements": [
+      "lib/telemetry/types.ts with TelemetryEvent interface",
+      "lib/contracts/IClientContext.ts interface",
+      "Node.js EventEmitter class",
+      "Design document section 3.4 TelemetryEventEmitter"
+    ],
+    "output_deliverables": [
+      "lib/telemetry/TelemetryEventEmitter.ts extending EventEmitter",
+      "emitConnectionOpen() method",
+      "emitStatementStart() method",
+      "emitStatementComplete() method",
+      "emitCloudFetchChunk() method",
+      "emitError() method",
+      "All methods wrapped in try-catch with debug logging"
+    ],
+    "exit_criteria": [
+      "CRITICAL: All emit methods wrapped in try-catch",
+      "CRITICAL: ALL exceptions logged at LogLevel.debug ONLY (never warn/error)",
+      "CRITICAL: NO exceptions propagate to caller (100% swallowed)",
+      "CRITICAL: NO console.log/debug/error calls (only IDBSQLLogger)",
+      "Takes IClientContext in constructor",
+      "Uses context.getLogger() for error logging",
+      "Reads telemetryEnabled from context.getConfig()",
+      "Events not emitted when disabled",
+      "All event types emit with correct data fields",
+      "Unit tests verify exception swallowing",
+      "Unit tests verify debug-only logging",
+      ">80% code coverage"
+    ],
+    "files_to_modify": [],
+    "files_to_create": [
+      "lib/telemetry/TelemetryEventEmitter.ts",
+      "tests/unit/telemetry/TelemetryEventEmitter.test.ts"
+    ],
+    "test_requirements": [
+      "Test emits connection.open event with correct data",
+      "Test emits statement lifecycle events",
+      "Test emits cloudfetch chunk events",
+      "Test emits error events",
+      "CRITICAL: Test exception thrown inside emit() is swallowed",
+      "CRITICAL: Test exception logged at debug level only",
+      "CRITICAL: Test no exception reaches caller",
+      "Test respects telemetryEnabled flag",
+      "Test uses logger from context",
+      "Test no console logging",
+      ">80% code coverage"
+    ],
+    "allowed_tools": [
+      "Read",
+      "Edit",
+      "Write",
+      "Bash"
+    ],
+    "max_turns": 100,
+    "estimated_complexity": "medium"
+  },
+  {
+    "id": "task-6-telemetry-client-provider",
+    "title": "Implement TelemetryClient and TelemetryClientProvider",
+    "description": "Create per-host telemetry client provider with reference counting. Manages one TelemetryClient per host shared across multiple connections to prevent rate limiting. Instance-based (not singleton) following driver patterns.",
+    "design_context": "TelemetryClientProvider manages one telemetry client per host to prevent rate limiting from concurrent connections. Large customers open many parallel connections to the same host - shared client batches events from all connections. Reference counting tracks active connections, only closes client when last connection closes. TelemetryClientHolder tracks client and refCount. Pattern from JDBC TelemetryClientFactory.java:27 with ConcurrentHashMap<String, TelemetryClientHolder>.",
+    "dependencies": [
+      "task-1-types",
+      "task-3-circuit-breaker"
+    ],
+    "input_requirements": [
+      "lib/telemetry/types.ts with type definitions",
+      "lib/telemetry/CircuitBreaker.ts for circuit breaker integration",
+      "lib/contracts/IClientContext.ts interface",
+      "Design document section 3.2 TelemetryClientProvider"
+    ],
+    "output_deliverables": [
+      "lib/telemetry/TelemetryClientProvider.ts with provider class",
+      "lib/telemetry/TelemetryClient.ts with basic client structure",
+      "TelemetryClientHolder interface",
+      "getOrCreateClient() method",
+      "releaseClient() method with cleanup",
+      "Per-host client map with reference counting"
+    ],
+    "exit_criteria": [
+      "TelemetryClientProvider takes IClientContext in constructor",
+      "One TelemetryClient created per host",
+      "Client shared across multiple connections to same host",
+      "Reference count increments on getOrCreateClient",
+      "Reference count decrements on releaseClient",
+      "Client closed only when refCount reaches zero",
+      "Client NOT closed while other connections exist",
+      "Passes IClientContext to TelemetryClient",
+      "Uses logger from context for all logging",
+      "All errors at LogLevel.debug only",
+      "Unit tests achieve >80% coverage",
+      "Tests verify reference counting",
+      "Tests verify per-host isolation"
+    ],
+    "files_to_modify": [],
+    "files_to_create": [
+      "lib/telemetry/TelemetryClientProvider.ts",
+      "lib/telemetry/TelemetryClient.ts",
+      "tests/unit/telemetry/TelemetryClientProvider.test.ts"
+    ],
+    "test_requirements": [
+      "Test creates one client per host",
+      "Test shares client across multiple connections",
+      "Test increments ref count on getOrCreateClient",
+      "Test decrements ref count on releaseClient",
+      "Test closes client when ref count reaches zero",
+      "Test does not close client while connections exist",
+      "Test passes context to TelemetryClient",
+      "Test uses logger from context",
+      "Test all errors logged at debug level",
+      ">80% code coverage"
+    ],
+    "allowed_tools": [
+      "Read",
+      "Edit",
+      "Write",
+      "Bash"
+    ],
+    "max_turns": 100,
+    "estimated_complexity": "medium"
+  },
+  {
+    "id": "task-7-metrics-aggregator",
+    "title": "Implement MetricsAggregator",
+    "description": "Create metrics aggregator that processes telemetry events, aggregates by statement_id, and manages batching/flushing to exporter. Handles terminal vs retryable exception flushing logic. Must swallow all exceptions and log at debug level only.",
+    "design_context": "MetricsAggregator aggregates telemetry events by statement_id using Map<string, StatementTelemetryDetails>. Connection events emitted immediately. Statement events buffered until complete. Terminal exceptions flushed immediately, retryable exceptions buffered. Batch size (default 100) and periodic timer (default 5s) trigger flushes. Follows JDBC TelemetryCollector.java:29-30 pattern with per-statement aggregation. Each exported event includes both statement_id and session_id for correlation. CRITICAL: All exceptions swallowed and logged at LogLevel.debug ONLY.",
+    "dependencies": [
+      "task-1-types",
+      "task-4-exception-classifier"
+    ],
+    "input_requirements": [
+      "lib/telemetry/types.ts with TelemetryEvent and TelemetryMetric",
+      "lib/telemetry/ExceptionClassifier.ts for terminal vs retryable classification",
+      "lib/contracts/IClientContext.ts interface",
+      "Design document section 3.5 MetricsAggregator"
+    ],
+    "output_deliverables": [
+      "lib/telemetry/MetricsAggregator.ts implementation",
+      "StatementTelemetryDetails interface",
+      "processEvent() method for all event types",
+      "completeStatement() method",
+      "flush() method",
+      "close() method",
+      "Batch size and periodic timer logic",
+      "Terminal vs retryable exception handling"
+    ],
+    "exit_criteria": [
+      "Takes IClientContext and DatabricksTelemetryExporter in constructor",
+      "Aggregates events by statement_id",
+      "Connection events emitted immediately (no aggregation)",
+      "Statement events buffered until completeStatement() called",
+      "Terminal exceptions flushed immediately",
+      "Retryable exceptions buffered until statement complete",
+      "Batch size from config triggers flush",
+      "Periodic timer from config triggers flush",
+      "Reads config from context (telemetryBatchSize, telemetryFlushIntervalMs)",
+      "CRITICAL: All logging via IDBSQLLogger at LogLevel.debug ONLY",
+      "CRITICAL: All exceptions swallowed (never propagate)",
+      "CRITICAL: NO console logging",
+      "Includes both session_id and statement_id in metrics",
+      "Unit tests verify exception swallowing",
+      "Unit tests verify debug-only logging",
+      ">80% code coverage"
+    ],
+    "files_to_modify": [],
+    "files_to_create": [
+      "lib/telemetry/MetricsAggregator.ts",
+      "tests/unit/telemetry/MetricsAggregator.test.ts"
+    ],
+    "test_requirements": [
+      "Test aggregates events by statement_id",
+      "Test emits connection events immediately",
+      "Test buffers statement events until complete",
+      "Test flushes when batch size reached",
+      "Test flushes on periodic timer",
+      "Test flushes terminal exceptions immediately",
+      "Test buffers retryable exceptions",
+      "Test includes session_id and statement_id",
+      "Test reads config from context",
+      "CRITICAL: Test exception in processEvent() swallowed",
+      "CRITICAL: Test exception in flush() swallowed",
+      "CRITICAL: Test all errors logged at debug level",
+      "CRITICAL: Test no console logging",
+      ">80% code coverage"
+    ],
+    "allowed_tools": [
+      "Read",
+      "Edit",
+      "Write",
+      "Bash"
+    ],
+    "max_turns": 100,
+    "estimated_complexity": "high"
+  },
+  {
+    "id": "task-8-databricks-telemetry-exporter",
+    "title": "Implement DatabricksTelemetryExporter",
+    "description": "Create exporter that sends aggregated metrics to Databricks telemetry service via HTTP POST. Integrates with circuit breaker for endpoint protection. Implements retry logic with exponential backoff. Must never throw exceptions.",
+    "design_context": "DatabricksTelemetryExporter exports aggregated metrics to Databricks telemetry service endpoints: /api/2.0/sql/telemetry-ext (authenticated) or /api/2.0/sql/telemetry-unauth (unauthenticated). Uses connection provider from context for HTTP calls. Integrates with CircuitBreaker to protect endpoint. Serializes payload to Databricks format with workspace_id, session_id, sql_statement_id. Implements retry with exponential backoff for retryable errors. CRITICAL: export() method NEVER throws - all exceptions swallowed and logged at LogLevel.debug ONLY.",
+    "dependencies": [
+      "task-1-types",
+      "task-3-circuit-breaker"
+    ],
+    "input_requirements": [
+      "lib/telemetry/types.ts with TelemetryMetric",
+      "lib/telemetry/CircuitBreaker.ts for endpoint protection",
+      "lib/contracts/IClientContext.ts interface",
+      "Design document section 3.6 DatabricksTelemetryExporter"
+    ],
+    "output_deliverables": [
+      "lib/telemetry/DatabricksTelemetryExporter.ts implementation",
+      "export() method that never throws",
+      "Circuit breaker integration",
+      "Payload serialization to Databricks format",
+      "Retry logic with exponential backoff",
+      "Authenticated and unauthenticated endpoint support"
+    ],
+    "exit_criteria": [
+      "Takes IClientContext, host, and CircuitBreakerRegistry in constructor",
+      "Exports to /api/2.0/sql/telemetry-ext (authenticated)",
+      "Exports to /api/2.0/sql/telemetry-unauth (unauthenticated)",
+      "Formats payload with workspace_id, session_id, sql_statement_id",
+      "Uses context.getConnectionProvider() for HTTP calls",
+      "Integrates with circuit breaker for endpoint protection",
+      "Retries on retryable errors (max from config)",
+      "Does not retry on terminal errors",
+      "Exponential backoff with jitter (100ms - 1000ms)",
+      "CRITICAL: All exceptions swallowed and logged at LogLevel.debug ONLY",
+      "CRITICAL: export() method NEVER throws (catches all exceptions)",
+      "CRITICAL: NO console logging",
+      "Unit tests verify exception handling",
+      "Unit tests verify circuit breaker integration",
+      ">80% code coverage"
+    ],
+    "files_to_modify": [],
+    "files_to_create": [
+      "lib/telemetry/DatabricksTelemetryExporter.ts",
+      "tests/unit/telemetry/DatabricksTelemetryExporter.test.ts",
+      "tests/unit/.stubs/TelemetryExporterStub.ts"
+    ],
+    "test_requirements": [
+      "Test exports to correct endpoint (authenticated/unauthenticated)",
+      "Test formats payload correctly",
+      "Test includes workspace_id, session_id, statement_id",
+      "Test retries on retryable errors",
+      "Test does not retry on terminal errors",
+      "Test respects circuit breaker state",
+      "Test uses connection provider from context",
+      "CRITICAL: Test network failure swallowed and logged at debug",
+      "CRITICAL: Test circuit breaker OPEN swallowed",
+      "CRITICAL: Test invalid response swallowed",
+      "CRITICAL: Test no exceptions reach caller under any scenario",
+      "CRITICAL: Test no console logging",
+      ">80% code coverage"
+    ],
+    "allowed_tools": [
+      "Read",
+      "Edit",
+      "Write",
+      "Bash"
+    ],
+    "max_turns": 100,
+    "estimated_complexity": "high"
+  },
+  {
+    "id": "task-9-dbsql-client-integration",
+    "title": "Integrate Telemetry into DBSQLClient",
+    "description": "Wire up telemetry initialization and cleanup in DBSQLClient. Add telemetry config to ClientConfig interface. Create telemetry component instances in connect() method. Implement graceful shutdown in close() method with reference counting. Must follow instance-based pattern (not singleton).",
+    "design_context": "DBSQLClient integration creates telemetry component instances (not singletons) and stores as private fields. Adds telemetry config to ClientConfig interface (not ClientOptions) following pattern of useCloudFetch, useLZ4Compression. In connect(): checks feature flag, creates FeatureFlagCache, TelemetryClientProvider, TelemetryEventEmitter, MetricsAggregator, DatabricksTelemetryExporter instances, wires event listeners. In close(): flushes pending metrics, releases telemetry client (decrements refCount), releases feature flag context. All telemetry errors swallowed and logged at LogLevel.debug ONLY - driver NEVER throws due to telemetry.",
+    "dependencies": [
+      "task-1-types",
+      "task-2-feature-flag-cache",
+      "task-3-circuit-breaker",
+      "task-5-telemetry-event-emitter",
+      "task-6-telemetry-client-provider",
+      "task-7-metrics-aggregator",
+      "task-8-databricks-telemetry-exporter"
+    ],
+    "input_requirements": [
+      "All telemetry components implemented",
+      "lib/DBSQLClient.ts existing implementation",
+      "lib/contracts/IClientContext.ts existing interface",
+      "lib/contracts/IDBSQLClient.ts existing interface",
+      "Design document section 6 Configuration"
+    ],
+    "output_deliverables": [
+      "Modified lib/contracts/IClientContext.ts with telemetry config in ClientConfig",
+      "Modified lib/contracts/IDBSQLClient.ts with telemetry override in ConnectionOptions",
+      "Modified lib/DBSQLClient.ts with telemetry initialization",
+      "Private fields for telemetry components",
+      "initializeTelemetry() method",
+      "Telemetry cleanup in close() method",
+      "Event listener wiring"
+    ],
+    "exit_criteria": [
+      "Telemetry config added to ClientConfig (NOT ClientOptions)",
+      "Default config includes telemetryEnabled: false (initially disabled)",
+      "All telemetry components instantiated (NOT singleton getInstance())",
+      "Components stored as private fields in DBSQLClient",
+      "Feature flag checked via FeatureFlagCache instance",
+      "TelemetryClientProvider used for per-host clients",
+      "Reference counting increments in connect()",
+      "Reference counting decrements in close()",
+      "Event listeners wired to aggregator",
+      "CRITICAL: All telemetry errors swallowed and logged at LogLevel.debug ONLY",
+      "CRITICAL: Driver NEVER throws exceptions due to telemetry",
+      "CRITICAL: NO console logging",
+      "Override pattern via ConnectionOptions works",
+      "Integration tests verify telemetry flow",
+      "Integration tests verify reference counting",
+      "Integration tests verify driver works when telemetry fails"
+    ],
+    "files_to_modify": [
+      "lib/DBSQLClient.ts",
+      "lib/contracts/IClientContext.ts",
+      "lib/contracts/IDBSQLClient.ts"
+    ],
+    "files_to_create": [
+      "tests/e2e/telemetry/telemetry-integration.test.ts"
+    ],
+    "test_requirements": [
+      "Test initializes telemetry on connect",
+      "Test respects feature flag",
+      "Test shares client across multiple connections",
+      "Test cleanup telemetry on close",
+      "Test reference counting works correctly",
+      "Test reads config from ClientConfig",
+      "Test allows override via ConnectionOptions",
+      "CRITICAL: Test telemetry initialization fails \u2192 driver continues normally",
+      "CRITICAL: Test feature flag fetch fails \u2192 driver continues normally",
+      "CRITICAL: Test all errors logged at debug level only",
+      "CRITICAL: Test no exceptions propagate to application code",
+      "Integration test end-to-end telemetry flow"
+    ],
+    "allowed_tools": [
+      "Read",
+      "Edit",
+      "Write",
+      "Bash"
+    ],
+    "max_turns": 100,
+    "estimated_complexity": "high"
+  },
+  {
+    "id": "task-10-event-emission-points",
+    "title": "Add Telemetry Event Emission Points",
+    "description": "Add telemetry event emission calls at key driver operations: connection open in DBSQLClient, statement lifecycle in DBSQLOperation, cloudfetch chunks in CloudFetchResultHandler. All event emissions must be wrapped in try-catch and respect telemetry enabled flag.",
+    "design_context": "Event emission points instrument the driver at key operations. DBSQLClient.connect() emits connection.open with session_id, workspace_id, driver config. DBSQLOperation emits statement.start on execution, statement.complete on finish with latency/poll metrics, error events on exceptions with terminal classification. CloudFetchResultHandler emits cloudfetch.chunk on each chunk download with index, latency, bytes, compression flag. All emissions check telemetryEnabled flag and wrap in try-catch. No performance impact when disabled.",
+    "dependencies": [
+      "task-5-telemetry-event-emitter",
+      "task-9-dbsql-client-integration"
+    ],
+    "input_requirements": [
+      "lib/telemetry/TelemetryEventEmitter.ts implemented",
+      "lib/DBSQLClient.ts with telemetry integration",
+      "lib/DBSQLSession.ts existing implementation",
+      "lib/DBSQLOperation.ts existing implementation",
+      "lib/result/CloudFetchResultHandler.ts existing implementation",
+      "Design document section 4 Data Collection"
+    ],
+    "output_deliverables": [
+      "Modified lib/DBSQLClient.ts with connection.open emission",
+      "Modified lib/DBSQLSession.ts with session events (if needed)",
+      "Modified lib/DBSQLOperation.ts with statement lifecycle and error emissions",
+      "Modified lib/result/CloudFetchResultHandler.ts with chunk emissions",
+      "All emissions wrapped in try-catch",
+      "All emissions respect telemetry enabled flag"
+    ],
+    "exit_criteria": [
+      "connection.open event emitted on successful connection",
+      "statement.start event emitted on statement execution",
+      "statement.complete event emitted on statement finish",
+      "cloudfetch.chunk event emitted on chunk download",
+      "error event emitted on exceptions with terminal classification",
+      "All emissions include required data fields",
+      "All emissions wrapped in try-catch",
+      "All emissions respect telemetryEnabled flag",
+      "No exceptions thrown from event emission",
+      "No performance impact when telemetry disabled",
+      "Integration tests verify events emitted correctly",
+      "Integration tests verify no driver impact on telemetry failure"
+    ],
+    "files_to_modify": [
+      "lib/DBSQLClient.ts",
+      "lib/DBSQLSession.ts",
+      "lib/DBSQLOperation.ts",
+      "lib/result/CloudFetchResultHandler.ts"
+    ],
+    "files_to_create": [],
+    "test_requirements": [
+      "Test connection.open event emitted with correct data",
+      "Test statement lifecycle events emitted",
+      "Test cloudfetch chunk events emitted",
+      "Test error events emitted on failures",
+      "Test events respect telemetry enabled flag",
+      "Test event emission does not impact driver when telemetry fails",
+      "Test no performance impact when disabled",
+      "Integration test verifies full event flow"
+    ],
+    "allowed_tools": [
+      "Read",
+      "Edit",
+      "Write",
+      "Bash"
+    ],
+    "max_turns": 100,
+    "estimated_complexity": "medium"
+  },
+  {
+    "id": "task-11-comprehensive-testing",
+    "title": "Write Comprehensive Unit and Integration Tests",
+    "description": "Create comprehensive test suite for all telemetry components achieving >80% code coverage. Write unit tests for each component, create test stubs following driver patterns, and write end-to-end integration tests. Must explicitly verify exception swallowing and debug-only logging.",
+    "design_context": "Testing strategy includes unit tests for all telemetry components with >80% coverage, test stubs in .stubs/ directory following driver patterns (ClientContextStub, TelemetryExporterStub, CircuitBreakerStub), and integration tests for end-to-end flow. CRITICAL testing requirements: verify ALL exceptions swallowed (inject errors, verify no propagation), verify ONLY LogLevel.debug used (never warn/error), verify NO console logging, verify driver works when telemetry completely fails. Use Mocha/Chai/Sinon following existing test patterns.",
+    "dependencies": [
+      "task-1-types",
+      "task-2-feature-flag-cache",
+      "task-3-circuit-breaker",
+      "task-4-exception-classifier",
+      "task-5-telemetry-event-emitter",
+      "task-6-telemetry-client-provider",
+      "task-7-metrics-aggregator",
+      "task-8-databricks-telemetry-exporter",
+      "task-9-dbsql-client-integration",
+      "task-10-event-emission-points"
+    ],
+    "input_requirements": [
+      "All telemetry components implemented",
+      "Existing test infrastructure (Mocha/Chai/Sinon)",
+      "Existing stub patterns in tests/unit/.stubs/",
+      "Design document section 10 Testing Strategy"
+    ],
+    "output_deliverables": [
+      "Unit tests for all telemetry components",
+      "Test stubs: ClientContextStub, TelemetryExporterStub, CircuitBreakerStub",
+      "Integration tests for end-to-end flow",
+      "Integration tests for multiple concurrent connections",
+      "Integration tests for circuit breaker behavior",
+      "Integration tests for graceful shutdown",
+      ">80% code coverage for telemetry module"
+    ],
+    "exit_criteria": [
+      "Unit tests written for FeatureFlagCache",
+      "Unit tests written for TelemetryClientProvider",
+      "Unit tests written for CircuitBreaker",
+      "Unit tests written for ExceptionClassifier",
+      "Unit tests written for TelemetryEventEmitter",
+      "Unit tests written for MetricsAggregator",
+      "Unit tests written for DatabricksTelemetryExporter",
+      "Test stubs created in .stubs/ directory",
+      "Integration test: connection \u2192 statement \u2192 export flow",
+      "Integration test: multiple concurrent connections share client",
+      "Integration test: circuit breaker behavior",
+      "Integration test: graceful shutdown with reference counting",
+      "Integration test: feature flag disabled scenario",
+      "CRITICAL: Tests verify ALL exceptions swallowed",
+      "CRITICAL: Tests verify ONLY LogLevel.debug used",
+      "CRITICAL: Tests verify NO console logging",
+      "CRITICAL: Tests verify driver works when telemetry fails",
+      ">80% code coverage achieved",
+      "All tests pass"
+    ],
+    "files_to_modify": [],
+    "files_to_create": [
+      "tests/unit/telemetry/FeatureFlagCache.test.ts",
+      "tests/unit/telemetry/TelemetryClientProvider.test.ts",
+      "tests/unit/telemetry/CircuitBreaker.test.ts",
+      "tests/unit/telemetry/ExceptionClassifier.test.ts",
+      "tests/unit/telemetry/TelemetryEventEmitter.test.ts",
+      "tests/unit/telemetry/MetricsAggregator.test.ts",
+      "tests/unit/telemetry/DatabricksTelemetryExporter.test.ts",
+      "tests/unit/.stubs/TelemetryExporterStub.ts",
+      "tests/unit/.stubs/CircuitBreakerStub.ts",
+      "tests/e2e/telemetry/telemetry-integration.test.ts"
+    ],
+    "test_requirements": [
+      "All public methods tested",
+      "Edge cases covered",
+      "Error scenarios tested",
+      "Exception swallowing verified",
+      "Debug-only logging verified",
+      "No console logging verified",
+      "Per-host behavior verified",
+      "Reference counting verified",
+      "Circuit breaker states verified",
+      "End-to-end flow verified",
+      ">80% code coverage"
+    ],
+    "allowed_tools": [
+      "Read",
+      "Edit",
+      "Write",
+      "Bash"
+    ],
+    "max_turns": 100,
+    "estimated_complexity": "high"
+  },
+  {
+    "id": "task-12-documentation",
+    "title": "Write Telemetry Documentation",
+    "description": "Create comprehensive telemetry documentation including configuration guide, privacy policy, event types reference, troubleshooting guide, and examples. Update README with telemetry section.",
+    "design_context": "Documentation requirements include comprehensive telemetry feature documentation in docs/TELEMETRY.md covering configuration options (telemetryEnabled, telemetryBatchSize, telemetryFlushIntervalMs, etc.), event types and data collected (connection, statement, cloudfetch, error), privacy considerations (what is/isn't collected), troubleshooting guide (feature flag issues, circuit breaker, logging), and example configurations. README.md updated with telemetry overview section linking to detailed docs. All documentation emphasizes privacy-first design and opt-in nature.",
+    "dependencies": [
+      "task-9-dbsql-client-integration",
+      "task-10-event-emission-points",
+      "task-11-comprehensive-testing"
+    ],
+    "input_requirements": [
+      "All telemetry implementation complete",
+      "Design document spec/telemetry-design.md",
+      "Sprint plan spec/telemetry-sprint-plan.md",
+      "Existing README.md structure"
+    ],
+    "output_deliverables": [
+      "docs/TELEMETRY.md with comprehensive documentation",
+      "Updated README.md with telemetry section",
+      "Configuration options documented",
+      "Event types and data collection documented",
+      "Privacy policy documented",
+      "Troubleshooting guide",
+      "Example configurations"
+    ],
+    "exit_criteria": [
+      "docs/TELEMETRY.md created with complete documentation",
+      "README.md updated with telemetry overview",
+      "Configuration options clearly explained",
+      "Event types documented with data fields",
+      "Privacy considerations documented (what is/isn't collected)",
+      "Troubleshooting guide covers common issues",
+      "Example configurations provided",
+      "Links between README and TELEMETRY.md work",
+      "Documentation reviewed and approved"
+    ],
+    "files_to_modify": [
+      "README.md"
+    ],
+    "files_to_create": [
+      "docs/TELEMETRY.md"
+    ],
+    "test_requirements": [
+      "No automated tests required",
+      "Documentation review by team",
+      "Verify all links work",
+      "Verify examples are accurate"
+    ],
+    "allowed_tools": [
+      "Read",
+      "Edit",
+      "Write",
+      "Bash"
+    ],
+    "max_turns": 100,
+    "estimated_complexity": "low"
+  }
+]
