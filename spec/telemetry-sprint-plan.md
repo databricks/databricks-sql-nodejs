@@ -254,11 +254,17 @@ This sprint plan outlines the implementation of event-based telemetry for the Da
 - ✅ Reads config from context
 
 **Acceptance Criteria**:
-- All emit methods wrap in try-catch
-- Exceptions logged via IDBSQLLogger at debug level
-- No exceptions propagate to caller
+- **🚨 CRITICAL**: All emit methods wrap in try-catch
+- **🚨 CRITICAL**: ALL exceptions logged at LogLevel.debug ONLY (never warn/error)
+- **🚨 CRITICAL**: NO exceptions propagate to caller (100% swallowed)
+- **🚨 CRITICAL**: NO console.log/debug/error calls (only IDBSQLLogger)
 - Events not emitted when disabled
 - Uses context for logger and config
+
+**Testing Must Verify**:
+- [ ] Throw exception inside emit method → verify swallowed
+- [ ] Verify logged at debug level (not warn/error)
+- [ ] Verify no exception reaches caller
 
 **Unit Tests**:
 - `should emit connection.open event`
@@ -305,7 +311,14 @@ This sprint plan outlines the implementation of event-based telemetry for the Da
 - Retryable exceptions buffered
 - Batch size from config triggers flush
 - Periodic timer from config triggers flush
-- All logging via IDBSQLLogger
+- **🚨 CRITICAL**: All logging via IDBSQLLogger at LogLevel.debug ONLY
+- **🚨 CRITICAL**: All exceptions swallowed (never propagate)
+- **🚨 CRITICAL**: NO console logging
+
+**Testing Must Verify**:
+- [ ] Exception in processEvent() → verify swallowed
+- [ ] Exception in flush() → verify swallowed
+- [ ] All errors logged at debug level only
 
 **Unit Tests**:
 - `should aggregate events by statement_id`
@@ -352,8 +365,16 @@ This sprint plan outlines the implementation of event-based telemetry for the Da
 - Properly formats payload with workspace_id, session_id, statement_id
 - Retries on retryable errors (max from config)
 - Circuit breaker protects endpoint
-- All exceptions swallowed and logged via IDBSQLLogger
+- **🚨 CRITICAL**: All exceptions swallowed and logged at LogLevel.debug ONLY
+- **🚨 CRITICAL**: NO exceptions propagate (export never throws)
+- **🚨 CRITICAL**: NO console logging
 - Uses connection provider for HTTP calls
+
+**Testing Must Verify**:
+- [ ] Network failure → verify swallowed and logged at debug
+- [ ] Circuit breaker OPEN → verify swallowed
+- [ ] Invalid response → verify swallowed
+- [ ] No exceptions reach caller under any scenario
 
 **Unit Tests**:
 - `should export metrics to correct endpoint`
@@ -398,9 +419,17 @@ This sprint plan outlines the implementation of event-based telemetry for the Da
 - Feature flag checked via FeatureFlagCache instance
 - TelemetryClientProvider used for per-host clients
 - Reference counting works correctly
-- All telemetry errors swallowed and logged via logger
+- **🚨 CRITICAL**: All telemetry errors swallowed and logged at LogLevel.debug ONLY
+- **🚨 CRITICAL**: Driver NEVER throws exceptions due to telemetry
+- **🚨 CRITICAL**: NO console logging in any telemetry code
 - Does not impact driver performance or stability
 - Follows existing driver patterns
+
+**Testing Must Verify**:
+- [ ] Telemetry initialization fails → driver continues normally
+- [ ] Feature flag fetch fails → driver continues normally
+- [ ] All errors logged at debug level (never warn/error/info)
+- [ ] No exceptions propagate to application code
 
 **Integration Tests**:
 - `should initialize telemetry on connect`
@@ -647,7 +676,9 @@ A task is considered complete when:
 - ✅ Code reviewed and approved
 - ✅ Documentation updated
 - ✅ No regressions in existing tests
-- ✅ Exception handling verified (all exceptions swallowed)
+- ✅ **🚨 CRITICAL**: Exception handling verified (ALL exceptions swallowed, NONE propagate)
+- ✅ **🚨 CRITICAL**: Logging verified (ONLY LogLevel.debug used, NO console logging)
+- ✅ **🚨 CRITICAL**: Error injection tested (telemetry failures don't impact driver)
 
 The sprint is considered complete when:
 - ✅ All tasks marked as complete
@@ -655,6 +686,9 @@ The sprint is considered complete when:
 - ✅ Code merged to main branch
 - ✅ Documentation published
 - ✅ Demo prepared for stakeholders
+- ✅ **🚨 CRITICAL**: Code review confirms NO exceptions can escape telemetry code
+- ✅ **🚨 CRITICAL**: Code review confirms NO console logging exists
+- ✅ **🚨 CRITICAL**: Integration tests prove driver works even when telemetry completely fails
 
 ---
 

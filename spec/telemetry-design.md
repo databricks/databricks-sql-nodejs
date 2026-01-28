@@ -37,7 +37,7 @@ This document outlines an **event-based telemetry design** for the Databricks No
 **Production Requirements** (from JDBC driver experience):
 - **Feature flag caching**: Per-host caching to avoid rate limiting
 - **Circuit breaker**: Protect against telemetry endpoint failures
-- **Exception swallowing**: All telemetry exceptions caught with minimal logging
+- **🚨 Exception swallowing**: ALL telemetry exceptions caught and logged at LogLevel.debug ONLY (never warn/error)
 - **Per-host telemetry client**: One client per host to prevent rate limiting
 - **Graceful shutdown**: Proper cleanup with reference counting
 - **Smart exception flushing**: Only flush terminal exceptions immediately
