@@ -61,9 +61,13 @@ export const DEFAULT_CIRCUIT_BREAKER_CONFIG: CircuitBreakerConfig = {
  */
 export class CircuitBreaker {
   private state: CircuitBreakerState = CircuitBreakerState.CLOSED;
+
   private failureCount = 0;
+
   private successCount = 0;
+
   private nextAttempt?: Date;
+
   private readonly config: CircuitBreakerConfig;
 
   constructor(
@@ -138,7 +142,7 @@ export class CircuitBreaker {
     this.failureCount = 0;
 
     if (this.state === CircuitBreakerState.HALF_OPEN) {
-      this.successCount++;
+      this.successCount += 1;
       logger.log(
         LogLevel.debug,
         `Circuit breaker success in HALF_OPEN (${this.successCount}/${this.config.successThreshold})`
@@ -160,7 +164,7 @@ export class CircuitBreaker {
   private onFailure(): void {
     const logger = this.context.getLogger();
 
-    this.failureCount++;
+    this.failureCount += 1;
     this.successCount = 0; // Reset success count on failure
 
     logger.log(

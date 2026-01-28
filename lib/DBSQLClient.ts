@@ -1,5 +1,6 @@
 import thrift from 'thrift';
 import Int64 from 'node-int64';
+import os from 'os';
 
 import { EventEmitter } from 'events';
 import TCLIService from '../thrift/TCLIService';
@@ -77,10 +78,15 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
 
   // Telemetry components (instance-based, NOT singletons)
   private host?: string;
+
   private featureFlagCache?: FeatureFlagCache;
+
   private telemetryClientProvider?: TelemetryClientProvider;
+
   private telemetryEmitter?: TelemetryEventEmitter;
+
   private telemetryAggregator?: MetricsAggregator;
+
   private circuitBreakerRegistry?: CircuitBreakerRegistry;
 
   private static getDefaultLogger(): IDBSQLLogger {
@@ -197,7 +203,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
       driverName: '@databricks/sql',
       nodeVersion: process.version,
       platform: process.platform,
-      osVersion: require('os').release(),
+      osVersion: os.release(),
 
       // Feature flags
       cloudFetchEnabled: this.config.useCloudFetch ?? false,
@@ -239,7 +245,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
       this.telemetryEmitter = new TelemetryEventEmitter(this);
 
       // Get or create telemetry client for this host (increments refCount)
-      const telemetryClient = this.telemetryClientProvider.getOrCreateClient(this.host);
+      this.telemetryClientProvider.getOrCreateClient(this.host);
 
       // Create circuit breaker registry and exporter
       this.circuitBreakerRegistry = new CircuitBreakerRegistry(this);

@@ -113,7 +113,8 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
     this.logDownloadMetrics(link.fileLink, result.byteLength, downloadTimeMs);
 
     // Emit cloudfetch.chunk telemetry event
-    this.emitCloudFetchChunk(this.chunkIndex++, downloadTimeMs, result.byteLength);
+    this.emitCloudFetchChunk(this.chunkIndex, downloadTimeMs, result.byteLength);
+    this.chunkIndex += 1;
 
     return {
       batches: [Buffer.from(result)],
@@ -144,7 +145,7 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
         return;
       }
 
-      const telemetryEmitter = (this.context as any).telemetryEmitter;
+      const {telemetryEmitter} = (this.context as any);
       if (!telemetryEmitter) {
         return;
       }

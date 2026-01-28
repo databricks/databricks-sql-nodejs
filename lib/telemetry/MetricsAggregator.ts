@@ -60,9 +60,13 @@ interface StatementTelemetryDetails {
  */
 export default class MetricsAggregator {
   private statementMetrics: Map<string, StatementTelemetryDetails> = new Map();
+
   private pendingMetrics: TelemetryMetric[] = [];
+
   private flushTimer: NodeJS.Timeout | null = null;
+
   private batchSize: number;
+
   private flushIntervalMs: number;
 
   constructor(
@@ -171,12 +175,10 @@ export default class MetricsAggregator {
 
       // Flush immediately for terminal errors
       this.flush();
-    } else {
+    } else if (event.statementId) {
       // Retryable error - buffer until statement complete
-      if (event.statementId) {
-        const details = this.getOrCreateStatementDetails(event);
-        details.errors.push(event);
-      }
+      const details = this.getOrCreateStatementDetails(event);
+      details.errors.push(event);
     }
   }
 
@@ -201,11 +203,15 @@ export default class MetricsAggregator {
         break;
 
       case TelemetryEventType.CLOUDFETCH_CHUNK:
-        details.chunkCount++;
+        details.chunkCount += 1;
         details.bytesDownloaded += event.bytes ?? 0;
         if (event.compressed !== undefined) {
           details.compressionEnabled = event.compressed;
         }
+        break;
+
+      default:
+        // Unknown event type - ignore
         break;
     }
   }

@@ -34,6 +34,7 @@ import { definedOrError } from './utils';
 import { OperationChunksIterator, OperationRowsIterator } from './utils/OperationIterator';
 import HiveDriverError from './errors/HiveDriverError';
 import IClientContext from './contracts/IClientContext';
+import ExceptionClassifier from './telemetry/ExceptionClassifier';
 
 interface DBSQLOperationConstructorOptions {
   handle: TOperationHandle;
@@ -79,7 +80,9 @@ export default class DBSQLOperation implements IOperation {
 
   // Telemetry tracking fields
   private startTime: number = Date.now();
+
   private pollCount: number = 0;
+
   private sessionId?: string;
 
   constructor({ handle, directResults, context, sessionId }: DBSQLOperationConstructorOptions) {
@@ -236,7 +239,7 @@ export default class DBSQLOperation implements IOperation {
     }
 
     // Track poll count for telemetry
-    this.pollCount++;
+    this.pollCount += 1;
 
     const driver = await this.context.getDriver();
     const response = await driver.getOperationStatus({
@@ -504,7 +507,7 @@ export default class DBSQLOperation implements IOperation {
    */
   private emitStatementStart(): void {
     try {
-      const telemetryEmitter = (this.context as any).telemetryEmitter;
+      const {telemetryEmitter} = (this.context as any);
       if (!telemetryEmitter) {
         return;
       }
@@ -525,8 +528,8 @@ export default class DBSQLOperation implements IOperation {
    */
   private emitStatementComplete(): void {
     try {
-      const telemetryEmitter = (this.context as any).telemetryEmitter;
-      const telemetryAggregator = (this.context as any).telemetryAggregator;
+      const {telemetryEmitter} = (this.context as any);
+      const {telemetryAggregator} = (this.context as any);
       if (!telemetryEmitter || !telemetryAggregator) {
         return;
       }
@@ -557,13 +560,12 @@ export default class DBSQLOperation implements IOperation {
    */
   private emitErrorEvent(error: Error): void {
     try {
-      const telemetryEmitter = (this.context as any).telemetryEmitter;
+      const {telemetryEmitter} = (this.context as any);
       if (!telemetryEmitter) {
         return;
       }
 
-      // Import ExceptionClassifier at runtime to avoid circular dependencies
-      const ExceptionClassifier = require('./telemetry/ExceptionClassifier').default;
+      // Classify the exception
       const isTerminal = ExceptionClassifier.isTerminal(error);
 
       telemetryEmitter.emitError({

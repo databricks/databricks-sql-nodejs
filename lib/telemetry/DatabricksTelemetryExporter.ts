@@ -14,12 +14,12 @@
  * limitations under the License.
  */
 
+import fetch, { Response } from 'node-fetch';
 import IClientContext from '../contracts/IClientContext';
 import { LogLevel } from '../contracts/IDBSQLLogger';
 import { TelemetryMetric, DEFAULT_TELEMETRY_CONFIG } from './types';
 import { CircuitBreakerRegistry } from './CircuitBreaker';
 import ExceptionClassifier from './ExceptionClassifier';
-import fetch, { Response } from 'node-fetch';
 
 /**
  * Databricks telemetry log format for export.
@@ -77,7 +77,9 @@ interface DatabricksTelemetryPayload {
  */
 export default class DatabricksTelemetryExporter {
   private circuitBreaker;
+
   private readonly userAgent: string;
+
   private fetchFn: typeof fetch;
 
   constructor(
@@ -90,7 +92,6 @@ export default class DatabricksTelemetryExporter {
     this.fetchFn = fetchFunction || fetch;
 
     // Get driver version for user agent
-    const config = context.getConfig();
     this.userAgent = `databricks-sql-nodejs/${this.getDriverVersion()}`;
   }
 
@@ -131,7 +132,8 @@ export default class DatabricksTelemetryExporter {
 
     let lastError: Error | null = null;
 
-    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    /* eslint-disable no-await-in-loop */
+    for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
       try {
         await this.exportInternal(metrics);
         return; // Success
@@ -157,7 +159,7 @@ export default class DatabricksTelemetryExporter {
         }
 
         // Calculate backoff with exponential + jitter (100ms - 1000ms)
-        const baseDelay = Math.min(100 * Math.pow(2, attempt), 1000);
+        const baseDelay = Math.min(100 * 2**attempt, 1000);
         const jitter = Math.random() * 100;
         const delay = baseDelay + jitter;
 
@@ -169,6 +171,7 @@ export default class DatabricksTelemetryExporter {
         await this.sleep(delay);
       }
     }
+    /* eslint-enable no-await-in-loop */
 
     // Should not reach here, but just in case
     if (lastError) {
@@ -200,10 +203,8 @@ export default class DatabricksTelemetryExporter {
       `Exporting ${metrics.length} telemetry metrics to ${authenticatedExport ? 'authenticated' : 'unauthenticated'} endpoint`
     );
 
-    // Get connection provider for auth headers (if authenticated)
-    const connectionProvider = await this.context.getConnectionProvider();
-
     // Make HTTP POST request
+    // Note: In production, auth headers would be added via connectionProvider
     const response: Response = await this.fetchFn(endpoint, {
       method: 'POST',
       headers: {
@@ -301,6 +302,8 @@ export default class DatabricksTelemetryExporter {
    * Sleep for the specified number of milliseconds.
    */
   private sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
+    return new Promise((resolve) => {
+      setTimeout(resolve, ms);
+    });
   }
 }

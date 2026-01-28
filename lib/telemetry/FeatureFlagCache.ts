@@ -34,7 +34,9 @@ export interface FeatureFlagContext {
  */
 export default class FeatureFlagCache {
   private contexts: Map<string, FeatureFlagContext>;
+
   private readonly CACHE_DURATION_MS = 15 * 60 * 1000; // 15 minutes
+
   private readonly FEATURE_FLAG_NAME = 'databricks.partnerplatform.clientConfigsFeatureFlags.enableTelemetryForNodeJs';
 
   constructor(private context: IClientContext) {
@@ -54,7 +56,7 @@ export default class FeatureFlagCache {
       };
       this.contexts.set(host, ctx);
     }
-    ctx.refCount++;
+    ctx.refCount += 1;
     return ctx;
   }
 
@@ -65,7 +67,7 @@ export default class FeatureFlagCache {
   releaseContext(host: string): void {
     const ctx = this.contexts.get(host);
     if (ctx) {
-      ctx.refCount--;
+      ctx.refCount -= 1;
       if (ctx.refCount <= 0) {
         this.contexts.delete(host);
       }
@@ -105,8 +107,10 @@ export default class FeatureFlagCache {
    * Fetches feature flag from server.
    * This is a placeholder implementation that returns false.
    * Real implementation would fetch from server using connection provider.
+   * @param _host The host to fetch feature flag for (unused in placeholder implementation)
    */
-  private async fetchFeatureFlag(host: string): Promise<boolean> {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  private async fetchFeatureFlag(_host: string): Promise<boolean> {
     // Placeholder implementation
     // Real implementation would use:
     // const connectionProvider = await this.context.getConnectionProvider();
