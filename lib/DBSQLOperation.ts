@@ -39,6 +39,7 @@ interface DBSQLOperationConstructorOptions {
   handle: TOperationHandle;
   directResults?: TSparkDirectResults;
   context: IClientContext;
+  sessionId?: string;
 }
 
 async function delay(ms?: number): Promise<void> {
@@ -76,9 +77,15 @@ export default class DBSQLOperation implements IOperation {
 
   private resultHandler?: ResultSlicer<any>;
 
-  constructor({ handle, directResults, context }: DBSQLOperationConstructorOptions) {
+  // Telemetry tracking fields
+  private startTime: number = Date.now();
+  private pollCount: number = 0;
+  private sessionId?: string;
+
+  constructor({ handle, directResults, context, sessionId }: DBSQLOperationConstructorOptions) {
     this.operationHandle = handle;
     this.context = context;
+    this.sessionId = sessionId;
 
     const useOnlyPrefetchedResults = Boolean(directResults?.closeOperation);
 
@@ -95,6 +102,9 @@ export default class DBSQLOperation implements IOperation {
     );
     this.closeOperation = directResults?.closeOperation;
     this.context.getLogger().log(LogLevel.debug, `Operation created with id: ${this.id}`);
+
+    // Emit statement.start telemetry event
+    this.emitStatementStart();
   }
 
   public iterateChunks(options?: IteratorOptions): IOperationChunksIterator {
@@ -225,6 +235,9 @@ export default class DBSQLOperation implements IOperation {
       return this.operationStatus;
     }
 
+    // Track poll count for telemetry
+    this.pollCount++;
+
     const driver = await this.context.getDriver();
     const response = await driver.getOperationStatus({
       operationHandle: this.operationHandle,
@@ -278,6 +291,9 @@ export default class DBSQLOperation implements IOperation {
     Status.assert(response.status);
     this.closed = true;
     const result = new Status(response.status);
+
+    // Emit statement.complete telemetry event
+    this.emitStatementComplete();
 
     this.onClose?.();
     return result;
@@ -441,7 +457,7 @@ export default class DBSQLOperation implements IOperation {
         case TSparkRowSetType.URL_BASED_SET:
           resultSource = new ArrowResultConverter(
             this.context,
-            new CloudFetchResultHandler(this.context, this._data, metadata),
+            new CloudFetchResultHandler(this.context, this._data, metadata, this.id),
             metadata,
           );
           break;
@@ -480,5 +496,85 @@ export default class DBSQLOperation implements IOperation {
     }
 
     return response;
+  }
+
+  /**
+   * Emit statement.start telemetry event.
+   * CRITICAL: All exceptions swallowed and logged at LogLevel.debug ONLY.
+   */
+  private emitStatementStart(): void {
+    try {
+      const telemetryEmitter = (this.context as any).telemetryEmitter;
+      if (!telemetryEmitter) {
+        return;
+      }
+
+      telemetryEmitter.emitStatementStart({
+        statementId: this.id,
+        sessionId: this.sessionId || '',
+        operationType: this.operationHandle.operationType?.toString(),
+      });
+    } catch (error: any) {
+      this.context.getLogger().log(LogLevel.debug, `Error emitting statement.start event: ${error.message}`);
+    }
+  }
+
+  /**
+   * Emit statement.complete telemetry event and complete aggregation.
+   * CRITICAL: All exceptions swallowed and logged at LogLevel.debug ONLY.
+   */
+  private emitStatementComplete(): void {
+    try {
+      const telemetryEmitter = (this.context as any).telemetryEmitter;
+      const telemetryAggregator = (this.context as any).telemetryAggregator;
+      if (!telemetryEmitter || !telemetryAggregator) {
+        return;
+      }
+
+      const latencyMs = Date.now() - this.startTime;
+      const resultFormat = this.metadata?.resultFormat
+        ? TSparkRowSetType[this.metadata.resultFormat]
+        : undefined;
+
+      telemetryEmitter.emitStatementComplete({
+        statementId: this.id,
+        sessionId: this.sessionId || '',
+        latencyMs,
+        resultFormat,
+        pollCount: this.pollCount,
+      });
+
+      // Complete statement aggregation
+      telemetryAggregator.completeStatement(this.id);
+    } catch (error: any) {
+      this.context.getLogger().log(LogLevel.debug, `Error emitting statement.complete event: ${error.message}`);
+    }
+  }
+
+  /**
+   * Emit error telemetry event with terminal classification.
+   * CRITICAL: All exceptions swallowed and logged at LogLevel.debug ONLY.
+   */
+  private emitErrorEvent(error: Error): void {
+    try {
+      const telemetryEmitter = (this.context as any).telemetryEmitter;
+      if (!telemetryEmitter) {
+        return;
+      }
+
+      // Import ExceptionClassifier at runtime to avoid circular dependencies
+      const ExceptionClassifier = require('./telemetry/ExceptionClassifier').default;
+      const isTerminal = ExceptionClassifier.isTerminal(error);
+
+      telemetryEmitter.emitError({
+        statementId: this.id,
+        sessionId: this.sessionId,
+        errorName: error.name || 'Error',
+        errorMessage: error.message || 'Unknown error',
+        isTerminal,
+      });
+    } catch (emitError: any) {
+      this.context.getLogger().log(LogLevel.debug, `Error emitting error event: ${emitError.message}`);
+    }
   }
 }

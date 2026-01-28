@@ -51,6 +51,53 @@ client
   });
 ```
 
+## Telemetry
+
+The Databricks SQL Driver for Node.js includes an **opt-in telemetry system** that collects driver usage metrics and performance data to help improve the driver. Telemetry is **disabled by default** and follows a **privacy-first design**.
+
+### Key Features
+
+- **Privacy-first**: No SQL queries, results, or sensitive data is ever collected
+- **Opt-in**: Controlled by server-side feature flag (disabled by default)
+- **Non-blocking**: All telemetry operations are asynchronous and never impact your queries
+- **Resilient**: Circuit breaker protection prevents telemetry failures from affecting your application
+
+### What Data is Collected?
+
+When enabled, the driver collects:
+
+- ✅ Driver version and configuration settings
+- ✅ Query performance metrics (latency, chunk counts, bytes downloaded)
+- ✅ Error types and status codes
+- ✅ Feature usage (CloudFetch, Arrow format, compression)
+
+**Never collected**:
+
+- ❌ SQL query text
+- ❌ Query results or data values
+- ❌ Table/column names or schema information
+- ❌ User credentials or personal information
+
+### Configuration
+
+To enable or disable telemetry explicitly:
+
+```javascript
+const client = new DBSQLClient({
+  telemetryEnabled: true,  // Enable telemetry (default: false)
+});
+
+// Or override per connection:
+await client.connect({
+  host: '********.databricks.com',
+  path: '/sql/2.0/warehouses/****************',
+  token: 'dapi********************************',
+  telemetryEnabled: false,  // Disable for this connection
+});
+```
+
+For detailed documentation including configuration options, event types, troubleshooting, and privacy details, see [docs/TELEMETRY.md](docs/TELEMETRY.md).
+
 ## Run Tests
 
 ### Unit tests

@@ -22,6 +22,15 @@ export interface ClientConfig {
 
   useLZ4Compression: boolean;
   enableMetricViewMetadata?: boolean;
+
+  // Telemetry configuration
+  telemetryEnabled?: boolean;
+  telemetryBatchSize?: number;
+  telemetryFlushIntervalMs?: number;
+  telemetryMaxRetries?: number;
+  telemetryAuthenticatedExport?: boolean;
+  telemetryCircuitBreakerThreshold?: number;
+  telemetryCircuitBreakerTimeout?: number;
 }
 
 export default interface IClientContext {
