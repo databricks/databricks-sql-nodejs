@@ -605,6 +605,7 @@ export default class DBSQLSession implements IDBSQLSession {
       handle,
       directResults: response.directResults,
       context: this.context,
+      sessionId: this.id,
     });
 
     this.operations.add(operation);
