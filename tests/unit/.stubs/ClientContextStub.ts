@@ -1,3 +1,4 @@
+import { HeadersInit } from 'node-fetch';
 import IClientContext, { ClientConfig } from '../../../lib/contracts/IClientContext';
 import IConnectionProvider from '../../../lib/connection/contracts/IConnectionProvider';
 import IDriver from '../../../lib/contracts/IDriver';
@@ -47,5 +48,9 @@ export default class ClientContextStub implements IClientContext {
 
   public async getDriver(): Promise<IDriver> {
     return this.driver;
+  }
+
+  public async getAuthHeaders(): Promise<HeadersInit> {
+    return {};
   }
 }
