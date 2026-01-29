@@ -89,8 +89,7 @@ export default class FeatureFlagCache {
       return false;
     }
 
-    const isExpired = !ctx.lastFetched ||
-      (Date.now() - ctx.lastFetched.getTime() > ctx.cacheDuration);
+    const isExpired = !ctx.lastFetched || Date.now() - ctx.lastFetched.getTime() > ctx.cacheDuration;
 
     if (isExpired) {
       try {
@@ -139,10 +138,7 @@ export default class FeatureFlagCache {
       });
 
       if (!response.ok) {
-        logger.log(
-          LogLevel.debug,
-          `Feature flag fetch failed: ${response.status} ${response.statusText}`
-        );
+        logger.log(LogLevel.debug, `Feature flag fetch failed: ${response.status} ${response.statusText}`);
         return false;
       }
 
@@ -165,10 +161,7 @@ export default class FeatureFlagCache {
           // Parse boolean value (can be string "true"/"false")
           const value = String(flag.value).toLowerCase();
           const enabled = value === 'true';
-          logger.log(
-            LogLevel.debug,
-            `Feature flag ${this.FEATURE_FLAG_NAME}: ${enabled}`
-          );
+          logger.log(LogLevel.debug, `Feature flag ${this.FEATURE_FLAG_NAME}: ${enabled}`);
           return enabled;
         }
       }
