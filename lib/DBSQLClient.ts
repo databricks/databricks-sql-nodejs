@@ -254,7 +254,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
       this.telemetryAggregator = new MetricsAggregator(this, exporter);
 
       // Wire up event listeners
-      this.telemetryEmitter.on('telemetry.connection.open', (event) => {
+      this.telemetryEmitter.on('connection.open', (event) => {
         try {
           this.telemetryAggregator?.processEvent(event);
         } catch (error: any) {
@@ -262,7 +262,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
         }
       });
 
-      this.telemetryEmitter.on('telemetry.statement.start', (event) => {
+      this.telemetryEmitter.on('statement.start', (event) => {
         try {
           this.telemetryAggregator?.processEvent(event);
         } catch (error: any) {
@@ -270,7 +270,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
         }
       });
 
-      this.telemetryEmitter.on('telemetry.statement.complete', (event) => {
+      this.telemetryEmitter.on('statement.complete', (event) => {
         try {
           this.telemetryAggregator?.processEvent(event);
         } catch (error: any) {
@@ -278,7 +278,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
         }
       });
 
-      this.telemetryEmitter.on('telemetry.cloudfetch.chunk', (event) => {
+      this.telemetryEmitter.on('cloudfetch.chunk', (event) => {
         try {
           this.telemetryAggregator?.processEvent(event);
         } catch (error: any) {
@@ -286,7 +286,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
         }
       });
 
-      this.telemetryEmitter.on('telemetry.error', (event) => {
+      this.telemetryEmitter.on('error', (event) => {
         try {
           this.telemetryAggregator?.processEvent(event);
         } catch (error: any) {
@@ -333,6 +333,12 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
     // Override telemetry config if provided in options
     if (options.telemetryEnabled !== undefined) {
       this.config.telemetryEnabled = options.telemetryEnabled;
+    }
+    if (options.telemetryBatchSize !== undefined) {
+      this.config.telemetryBatchSize = options.telemetryBatchSize;
+    }
+    if (options.telemetryAuthenticatedExport !== undefined) {
+      this.config.telemetryAuthenticatedExport = options.telemetryAuthenticatedExport;
     }
 
     this.authProvider = this.createAuthProvider(options, authProvider);
