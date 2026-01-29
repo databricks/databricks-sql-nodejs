@@ -1,3 +1,4 @@
+import { HeadersInit } from 'node-fetch';
 import IDBSQLLogger from './IDBSQLLogger';
 import IDriver from './IDriver';
 import IConnectionProvider from '../connection/contracts/IConnectionProvider';
@@ -43,4 +44,11 @@ export default interface IClientContext {
   getClient(): Promise<IThriftClient>;
 
   getDriver(): Promise<IDriver>;
+
+  /**
+   * Gets authentication headers for HTTP requests.
+   * Used by telemetry and feature flag fetching to authenticate REST API calls.
+   * @returns Promise resolving to headers object with authentication, or empty object if no auth
+   */
+  getAuthHeaders(): Promise<HeadersInit>;
 }

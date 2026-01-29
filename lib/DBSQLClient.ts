@@ -3,6 +3,7 @@ import Int64 from 'node-int64';
 import os from 'os';
 
 import { EventEmitter } from 'events';
+import { HeadersInit } from 'node-fetch';
 import TCLIService from '../thrift/TCLIService';
 import { TProtocolVersion } from '../thrift/TCLIService_types';
 import IDBSQLClient, { ClientOptions, ConnectionOptions, OpenSessionRequest } from './contracts/IDBSQLClient';
@@ -492,5 +493,17 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
 
   public async getDriver(): Promise<IDriver> {
     return this.driver;
+  }
+
+  public async getAuthHeaders(): Promise<HeadersInit> {
+    if (this.authProvider) {
+      try {
+        return await this.authProvider.authenticate();
+      } catch (error) {
+        this.logger.log(LogLevel.debug, `Error getting auth headers: ${error}`);
+        return {};
+      }
+    }
+    return {};
   }
 }
