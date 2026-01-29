@@ -14,9 +14,10 @@
  * limitations under the License.
  */
 
-import fetch from 'node-fetch';
 import IClientContext from '../contracts/IClientContext';
 import { LogLevel } from '../contracts/IDBSQLLogger';
+import fetch from 'node-fetch';
+import { buildUrl } from './urlUtils';
 
 /**
  * Context holding feature flag state for a specific host.
@@ -105,35 +106,28 @@ export default class FeatureFlagCache {
   }
 
   /**
-   * Gets the driver version from package.json.
-   * Used for version-specific feature flag requests.
-   */
-  private getDriverVersion(): string {
-    try {
-      // eslint-disable-next-line @typescript-eslint/no-var-requires
-      const packageJson = require('../../package.json');
-      return packageJson.version || 'unknown';
-    } catch {
-      return 'unknown';
-    }
-  }
-
-  /**
-   * Fetches feature flag from server REST API.
-   * Makes authenticated call to connector-service endpoint.
+   * Fetches feature flag from server using connector-service API.
+   * Calls GET /api/2.0/connector-service/feature-flags/OSS_NODEJS/{version}
+   *
    * @param host The host to fetch feature flag for
+   * @returns true if feature flag is enabled, false otherwise
    */
   private async fetchFeatureFlag(host: string): Promise<boolean> {
     const logger = this.context.getLogger();
+
     try {
+      // Get driver version for endpoint
       const driverVersion = this.getDriverVersion();
-      const endpoint = `https://${host}/api/2.0/connector-service/feature-flags/OSS_NODEJS/${driverVersion}`;
+
+      // Build feature flags endpoint for Node.js driver
+      const endpoint = buildUrl(host, `/api/2.0/connector-service/feature-flags/NODEJS/${driverVersion}`);
 
       // Get authentication headers
       const authHeaders = await this.context.getAuthHeaders();
 
-      logger.log(LogLevel.debug, `Fetching feature flag from ${endpoint}`);
+      logger.log(LogLevel.debug, `Fetching feature flags from ${endpoint}`);
 
+      // Make HTTP GET request with authentication
       const response = await fetch(endpoint, {
         method: 'GET',
         headers: {
@@ -144,36 +138,63 @@ export default class FeatureFlagCache {
       });
 
       if (!response.ok) {
-        logger.log(LogLevel.debug, `Feature flag fetch returned status ${response.status}`);
+        logger.log(
+          LogLevel.debug,
+          `Feature flag fetch failed: ${response.status} ${response.statusText}`
+        );
         return false;
       }
 
+      // Parse response JSON
       const data: any = await response.json();
 
-      // Update cache duration from ttl_seconds if provided
-      if (data && data.ttl_seconds) {
+      // Response format: { flags: [{ name: string, value: string }], ttl_seconds?: number }
+      if (data && data.flags && Array.isArray(data.flags)) {
+        // Update cache duration if TTL provided
         const ctx = this.contexts.get(host);
-        if (ctx) {
-          ctx.cacheDuration = data.ttl_seconds * 1000;
+        if (ctx && data.ttl_seconds) {
+          ctx.cacheDuration = data.ttl_seconds * 1000; // Convert to milliseconds
           logger.log(LogLevel.debug, `Updated cache duration to ${data.ttl_seconds} seconds`);
         }
-      }
 
-      // Find the telemetry flag
-      if (data && data.flags && Array.isArray(data.flags)) {
+        // Look for our specific feature flag
         const flag = data.flags.find((f: any) => f.name === this.FEATURE_FLAG_NAME);
+
         if (flag) {
-          const enabled = String(flag.value).toLowerCase() === 'true';
-          logger.log(LogLevel.debug, `Feature flag ${this.FEATURE_FLAG_NAME} = ${enabled}`);
+          // Parse boolean value (can be string "true"/"false")
+          const value = String(flag.value).toLowerCase();
+          const enabled = value === 'true';
+          logger.log(
+            LogLevel.debug,
+            `Feature flag ${this.FEATURE_FLAG_NAME}: ${enabled}`
+          );
           return enabled;
         }
       }
 
+      // Feature flag not found in response, default to false
       logger.log(LogLevel.debug, `Feature flag ${this.FEATURE_FLAG_NAME} not found in response`);
       return false;
     } catch (error: any) {
+      // Log at debug level only, never propagate exceptions
       logger.log(LogLevel.debug, `Error fetching feature flag from ${host}: ${error.message}`);
       return false;
+    }
+  }
+
+  /**
+   * Gets the driver version without -oss suffix for API calls.
+   * Format: "1.12.0" from "1.12.0-oss"
+   */
+  private getDriverVersion(): string {
+    try {
+      // Import version from lib/version.ts
+      const version = require('../version').default;
+      // Remove -oss suffix if present
+      return version.replace(/-oss$/, '');
+    } catch (error) {
+      // Fallback to a default version if import fails
+      return '1.0.0';
     }
   }
 }
