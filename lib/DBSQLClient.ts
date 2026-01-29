@@ -555,6 +555,11 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
     return this.driver;
   }
 
+  /**
+   * Gets authentication headers for HTTP requests.
+   * Used by telemetry and feature flag fetching to authenticate REST API calls.
+   * @returns Promise resolving to headers object with authentication, or empty object if no auth
+   */
   public async getAuthHeaders(): Promise<HeadersInit> {
     if (this.authProvider) {
       try {
