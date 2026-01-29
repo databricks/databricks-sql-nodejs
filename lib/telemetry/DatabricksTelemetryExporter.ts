@@ -20,6 +20,7 @@ import { LogLevel } from '../contracts/IDBSQLLogger';
 import { TelemetryMetric, DEFAULT_TELEMETRY_CONFIG } from './types';
 import { CircuitBreakerRegistry } from './CircuitBreaker';
 import ExceptionClassifier from './ExceptionClassifier';
+import { buildUrl } from './urlUtils';
 
 /**
  * Databricks telemetry log format for export.
@@ -37,19 +38,33 @@ interface DatabricksTelemetryLog {
     sql_driver_log: {
       session_id?: string;
       sql_statement_id?: string;
+      system_configuration?: {
+        driver_version?: string;
+        runtime_name?: string;
+        runtime_version?: string;
+        runtime_vendor?: string;
+        os_name?: string;
+        os_version?: string;
+        os_arch?: string;
+        driver_name?: string;
+        client_app_name?: string;
+      };
+      driver_connection_params?: any;
       operation_latency_ms?: number;
       sql_operation?: {
-        execution_result_format?: string;
+        execution_result?: string;
         chunk_details?: {
-          chunk_count: number;
-          total_bytes?: number;
+          total_chunks_present?: number;
+          total_chunks_iterated?: number;
+          initial_chunk_latency_millis?: number;
+          slowest_chunk_latency_millis?: number;
+          sum_chunks_download_time_millis?: number;
         };
       };
       error_info?: {
         error_name: string;
         stack_trace: string;
       };
-      driver_config?: any;
     };
   };
 }
@@ -190,8 +205,8 @@ export default class DatabricksTelemetryExporter {
     const authenticatedExport =
       config.telemetryAuthenticatedExport ?? DEFAULT_TELEMETRY_CONFIG.authenticatedExport;
     const endpoint = authenticatedExport
-      ? `https://${this.host}/api/2.0/sql/telemetry-ext`
-      : `https://${this.host}/api/2.0/sql/telemetry-unauth`;
+      ? buildUrl(this.host, '/telemetry-ext')
+      : buildUrl(this.host, '/telemetry-unauth');
 
     // Format payload
     const payload: DatabricksTelemetryPayload = {
@@ -206,7 +221,7 @@ export default class DatabricksTelemetryExporter {
     // Get authentication headers if using authenticated endpoint
     const authHeaders = authenticatedExport ? await this.context.getAuthHeaders() : {};
 
-    // Make HTTP POST request
+    // Make HTTP POST request with authentication
     const response: Response = await this.fetchFn(endpoint, {
       method: 'POST',
       headers: {
@@ -231,7 +246,7 @@ export default class DatabricksTelemetryExporter {
    */
   private toTelemetryLog(metric: TelemetryMetric): DatabricksTelemetryLog {
     const log: DatabricksTelemetryLog = {
-      workspace_id: metric.workspaceId,
+      // workspace_id: metric.workspaceId, // TODO: Determine if this should be numeric or omitted
       frontend_log_event_id: this.generateUUID(),
       context: {
         client_context: {
@@ -247,21 +262,29 @@ export default class DatabricksTelemetryExporter {
       },
     };
 
-    // Add metric-specific fields
+    // Add metric-specific fields based on proto definition
     if (metric.metricType === 'connection' && metric.driverConfig) {
-      log.entry.sql_driver_log.driver_config = metric.driverConfig;
+      // Map driverConfig to system_configuration (snake_case as per proto)
+      log.entry.sql_driver_log.system_configuration = {
+        driver_version: metric.driverConfig.driverVersion,
+        driver_name: metric.driverConfig.driverName,
+        runtime_name: 'Node.js',
+        runtime_version: metric.driverConfig.nodeVersion,
+        os_name: metric.driverConfig.platform,
+        os_version: metric.driverConfig.osVersion,
+      };
     } else if (metric.metricType === 'statement') {
       log.entry.sql_driver_log.operation_latency_ms = metric.latencyMs;
 
       if (metric.resultFormat || metric.chunkCount) {
         log.entry.sql_driver_log.sql_operation = {
-          execution_result_format: metric.resultFormat,
+          execution_result: metric.resultFormat,
         };
 
         if (metric.chunkCount && metric.chunkCount > 0) {
           log.entry.sql_driver_log.sql_operation.chunk_details = {
-            chunk_count: metric.chunkCount,
-            total_bytes: metric.bytesDownloaded,
+            total_chunks_present: metric.chunkCount,
+            total_chunks_iterated: metric.chunkCount,
           };
         }
       }
