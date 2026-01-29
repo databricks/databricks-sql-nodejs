@@ -54,10 +54,7 @@ export default class ExceptionClassifier {
       // 401 - Unauthorized (authentication required)
       // 403 - Forbidden (permission denied)
       // 404 - Not Found (resource does not exist)
-      return statusCode === 400 ||
-             statusCode === 401 ||
-             statusCode === 403 ||
-             statusCode === 404;
+      return statusCode === 400 || statusCode === 401 || statusCode === 403 || statusCode === 404;
     }
 
     // Default to false for unknown error types
@@ -95,11 +92,7 @@ export default class ExceptionClassifier {
       // 502 - Bad Gateway
       // 503 - Service Unavailable
       // 504 - Gateway Timeout
-      return statusCode === 429 ||
-             statusCode === 500 ||
-             statusCode === 502 ||
-             statusCode === 503 ||
-             statusCode === 504;
+      return statusCode === 429 || statusCode === 500 || statusCode === 502 || statusCode === 503 || statusCode === 504;
     }
 
     // Default to false for unknown error types
