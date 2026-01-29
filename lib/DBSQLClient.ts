@@ -290,6 +290,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
 
       // Check if telemetry enabled via feature flag
       const enabled = await this.featureFlagCache.isTelemetryEnabled(this.host);
+
       if (!enabled) {
         this.logger.log(LogLevel.debug, 'Telemetry disabled via feature flag');
         return;
