@@ -75,8 +75,8 @@ interface DatabricksTelemetryLog {
  */
 interface DatabricksTelemetryPayload {
   uploadTime: number;
-  items: string[];  // Always empty - required field
-  protoLogs: string[];  // JSON-stringified TelemetryFrontendLog objects
+  items: string[]; // Always empty - required field
+  protoLogs: string[]; // JSON-stringified TelemetryFrontendLog objects
 }
 
 /**
@@ -104,7 +104,7 @@ export default class DatabricksTelemetryExporter {
     private context: IClientContext,
     private host: string,
     private circuitBreakerRegistry: CircuitBreakerRegistry,
-    fetchFunction?: typeof fetch
+    fetchFunction?: typeof fetch,
   ) {
     this.circuitBreaker = circuitBreakerRegistry.getCircuitBreaker(host);
     this.fetchFn = fetchFunction || fetch;
@@ -177,13 +177,13 @@ export default class DatabricksTelemetryExporter {
         }
 
         // Calculate backoff with exponential + jitter (100ms - 1000ms)
-        const baseDelay = Math.min(100 * 2**attempt, 1000);
+        const baseDelay = Math.min(100 * 2 ** attempt, 1000);
         const jitter = Math.random() * 100;
         const delay = baseDelay + jitter;
 
         logger.log(
           LogLevel.debug,
-          `Retrying telemetry export (attempt ${attempt + 1}/${maxRetries}) after ${Math.round(delay)}ms`
+          `Retrying telemetry export (attempt ${attempt + 1}/${maxRetries}) after ${Math.round(delay)}ms`,
         );
 
         await this.sleep(delay);
@@ -205,8 +205,7 @@ export default class DatabricksTelemetryExporter {
     const logger = this.context.getLogger();
 
     // Determine endpoint based on authentication mode
-    const authenticatedExport =
-      config.telemetryAuthenticatedExport ?? DEFAULT_TELEMETRY_CONFIG.authenticatedExport;
+    const authenticatedExport = config.telemetryAuthenticatedExport ?? DEFAULT_TELEMETRY_CONFIG.authenticatedExport;
     const endpoint = authenticatedExport
       ? buildUrl(this.host, '/telemetry-ext')
       : buildUrl(this.host, '/telemetry-unauth');
@@ -217,13 +216,15 @@ export default class DatabricksTelemetryExporter {
 
     const payload: DatabricksTelemetryPayload = {
       uploadTime: Date.now(),
-      items: [],  // Required but unused
+      items: [], // Required but unused
       protoLogs,
     };
 
     logger.log(
       LogLevel.debug,
-      `Exporting ${metrics.length} telemetry metrics to ${authenticatedExport ? 'authenticated' : 'unauthenticated'} endpoint`
+      `Exporting ${metrics.length} telemetry metrics to ${
+        authenticatedExport ? 'authenticated' : 'unauthenticated'
+      } endpoint`,
     );
 
     // Get authentication headers if using authenticated endpoint

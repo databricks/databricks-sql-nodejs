@@ -16,12 +16,7 @@
 
 import IClientContext from '../contracts/IClientContext';
 import { LogLevel } from '../contracts/IDBSQLLogger';
-import {
-  TelemetryEvent,
-  TelemetryEventType,
-  TelemetryMetric,
-  DEFAULT_TELEMETRY_CONFIG,
-} from './types';
+import { TelemetryEvent, TelemetryEventType, TelemetryMetric, DEFAULT_TELEMETRY_CONFIG } from './types';
 import DatabricksTelemetryExporter from './DatabricksTelemetryExporter';
 import ExceptionClassifier from './ExceptionClassifier';
 
@@ -69,10 +64,7 @@ export default class MetricsAggregator {
 
   private flushIntervalMs: number;
 
-  constructor(
-    private context: IClientContext,
-    private exporter: DatabricksTelemetryExporter
-  ) {
+  constructor(private context: IClientContext, private exporter: DatabricksTelemetryExporter) {
     try {
       const config = context.getConfig();
       this.batchSize = config.telemetryBatchSize ?? DEFAULT_TELEMETRY_CONFIG.batchSize;

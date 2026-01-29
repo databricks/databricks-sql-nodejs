@@ -137,12 +137,7 @@ describe('CircuitBreaker', () => {
 
       expect(breaker.getState()).to.equal(CircuitBreakerState.OPEN);
       expect(breaker.getFailureCount()).to.equal(5);
-      expect(
-        logSpy.calledWith(
-          LogLevel.debug,
-          sinon.match(/Circuit breaker transitioned to OPEN/)
-        )
-      ).to.be.true;
+      expect(logSpy.calledWith(LogLevel.debug, sinon.match(/Circuit breaker transitioned to OPEN/))).to.be.true;
 
       logSpy.restore();
     });
@@ -176,12 +171,7 @@ describe('CircuitBreaker', () => {
         } catch {}
       }
 
-      expect(
-        logSpy.calledWith(
-          LogLevel.debug,
-          sinon.match(/Circuit breaker transitioned to OPEN/)
-        )
-      ).to.be.true;
+      expect(logSpy.calledWith(LogLevel.debug, sinon.match(/Circuit breaker transitioned to OPEN/))).to.be.true;
 
       logSpy.restore();
     });
@@ -268,12 +258,7 @@ describe('CircuitBreaker', () => {
       const successOperation = sinon.stub().resolves('success');
       await breaker.execute(successOperation);
 
-      expect(
-        logSpy.calledWith(
-          LogLevel.debug,
-          'Circuit breaker transitioned to HALF_OPEN'
-        )
-      ).to.be.true;
+      expect(logSpy.calledWith(LogLevel.debug, 'Circuit breaker transitioned to HALF_OPEN')).to.be.true;
 
       logSpy.restore();
     });
@@ -358,12 +343,7 @@ describe('CircuitBreaker', () => {
       await breaker.execute(operation2);
       expect(breaker.getState()).to.equal(CircuitBreakerState.CLOSED);
       expect(breaker.getSuccessCount()).to.equal(0); // Reset after closing
-      expect(
-        logSpy.calledWith(
-          LogLevel.debug,
-          'Circuit breaker transitioned to CLOSED'
-        )
-      ).to.be.true;
+      expect(logSpy.calledWith(LogLevel.debug, 'Circuit breaker transitioned to CLOSED')).to.be.true;
 
       logSpy.restore();
     });
@@ -442,12 +422,7 @@ describe('CircuitBreaker', () => {
         } catch {}
       }
 
-      expect(
-        logSpy.calledWith(
-          LogLevel.debug,
-          sinon.match(/Circuit breaker transitioned to OPEN/)
-        )
-      ).to.be.true;
+      expect(logSpy.calledWith(LogLevel.debug, sinon.match(/Circuit breaker transitioned to OPEN/))).to.be.true;
 
       // Wait for timeout
       clock.tick(60001);
@@ -456,22 +431,12 @@ describe('CircuitBreaker', () => {
       const successOp = sinon.stub().resolves('success');
       await breaker.execute(successOp);
 
-      expect(
-        logSpy.calledWith(
-          LogLevel.debug,
-          'Circuit breaker transitioned to HALF_OPEN'
-        )
-      ).to.be.true;
+      expect(logSpy.calledWith(LogLevel.debug, 'Circuit breaker transitioned to HALF_OPEN')).to.be.true;
 
       // Close circuit
       await breaker.execute(successOp);
 
-      expect(
-        logSpy.calledWith(
-          LogLevel.debug,
-          'Circuit breaker transitioned to CLOSED'
-        )
-      ).to.be.true;
+      expect(logSpy.calledWith(LogLevel.debug, 'Circuit breaker transitioned to CLOSED')).to.be.true;
 
       // Verify no console logging
       expect(logSpy.neverCalledWith(LogLevel.error, sinon.match.any)).to.be.true;
@@ -539,12 +504,7 @@ describe('CircuitBreakerRegistry', () => {
 
       registry.getCircuitBreaker(host);
 
-      expect(
-        logSpy.calledWith(
-          LogLevel.debug,
-          `Created circuit breaker for host: ${host}`
-        )
-      ).to.be.true;
+      expect(logSpy.calledWith(LogLevel.debug, `Created circuit breaker for host: ${host}`)).to.be.true;
 
       logSpy.restore();
     });
@@ -656,12 +616,7 @@ describe('CircuitBreakerRegistry', () => {
       registry.getCircuitBreaker(host);
       registry.removeCircuitBreaker(host);
 
-      expect(
-        logSpy.calledWith(
-          LogLevel.debug,
-          `Removed circuit breaker for host: ${host}`
-        )
-      ).to.be.true;
+      expect(logSpy.calledWith(LogLevel.debug, `Removed circuit breaker for host: ${host}`)).to.be.true;
 
       logSpy.restore();
     });
