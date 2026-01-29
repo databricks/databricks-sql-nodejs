@@ -70,10 +70,7 @@ export class CircuitBreaker {
 
   private readonly config: CircuitBreakerConfig;
 
-  constructor(
-    private context: IClientContext,
-    config?: Partial<CircuitBreakerConfig>
-  ) {
+  constructor(private context: IClientContext, config?: Partial<CircuitBreakerConfig>) {
     this.config = {
       ...DEFAULT_CIRCUIT_BREAKER_CONFIG,
       ...config,
@@ -145,7 +142,7 @@ export class CircuitBreaker {
       this.successCount += 1;
       logger.log(
         LogLevel.debug,
-        `Circuit breaker success in HALF_OPEN (${this.successCount}/${this.config.successThreshold})`
+        `Circuit breaker success in HALF_OPEN (${this.successCount}/${this.config.successThreshold})`,
       );
 
       if (this.successCount >= this.config.successThreshold) {
@@ -167,19 +164,13 @@ export class CircuitBreaker {
     this.failureCount += 1;
     this.successCount = 0; // Reset success count on failure
 
-    logger.log(
-      LogLevel.debug,
-      `Circuit breaker failure (${this.failureCount}/${this.config.failureThreshold})`
-    );
+    logger.log(LogLevel.debug, `Circuit breaker failure (${this.failureCount}/${this.config.failureThreshold})`);
 
     if (this.failureCount >= this.config.failureThreshold) {
       // Transition to OPEN
       this.state = CircuitBreakerState.OPEN;
       this.nextAttempt = new Date(Date.now() + this.config.timeout);
-      logger.log(
-        LogLevel.debug,
-        `Circuit breaker transitioned to OPEN (will retry after ${this.config.timeout}ms)`
-      );
+      logger.log(LogLevel.debug, `Circuit breaker transitioned to OPEN (will retry after ${this.config.timeout}ms)`);
     }
   }
 }
