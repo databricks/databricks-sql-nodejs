@@ -71,9 +71,12 @@ interface DatabricksTelemetryLog {
 
 /**
  * Payload format for Databricks telemetry export.
+ * Matches JDBC TelemetryRequest format with protoLogs.
  */
 interface DatabricksTelemetryPayload {
-  frontend_logs: DatabricksTelemetryLog[];
+  uploadTime: number;
+  items: string[];  // Always empty - required field
+  protoLogs: string[];  // JSON-stringified TelemetryFrontendLog objects
 }
 
 /**
@@ -208,9 +211,14 @@ export default class DatabricksTelemetryExporter {
       ? buildUrl(this.host, '/telemetry-ext')
       : buildUrl(this.host, '/telemetry-unauth');
 
-    // Format payload
+    // Format payload - each log is JSON-stringified to match JDBC format
+    const telemetryLogs = metrics.map((m) => this.toTelemetryLog(m));
+    const protoLogs = telemetryLogs.map((log) => JSON.stringify(log));
+
     const payload: DatabricksTelemetryPayload = {
-      frontend_logs: metrics.map((m) => this.toTelemetryLog(m)),
+      uploadTime: Date.now(),
+      items: [],  // Required but unused
+      protoLogs,
     };
 
     logger.log(
@@ -246,7 +254,6 @@ export default class DatabricksTelemetryExporter {
    */
   private toTelemetryLog(metric: TelemetryMetric): DatabricksTelemetryLog {
     const log: DatabricksTelemetryLog = {
-      // workspace_id: metric.workspaceId, // TODO: Determine if this should be numeric or omitted
       frontend_log_event_id: this.generateUUID(),
       context: {
         client_context: {
