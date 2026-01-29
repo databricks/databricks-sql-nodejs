@@ -203,16 +203,16 @@ export default class DatabricksTelemetryExporter {
       `Exporting ${metrics.length} telemetry metrics to ${authenticatedExport ? 'authenticated' : 'unauthenticated'} endpoint`
     );
 
+    // Get authentication headers if using authenticated endpoint
+    const authHeaders = authenticatedExport ? await this.context.getAuthHeaders() : {};
+
     // Make HTTP POST request
-    // Note: In production, auth headers would be added via connectionProvider
     const response: Response = await this.fetchFn(endpoint, {
       method: 'POST',
       headers: {
+        ...authHeaders,
         'Content-Type': 'application/json',
         'User-Agent': this.userAgent,
-        // Note: ConnectionProvider may add auth headers automatically
-        // via getThriftConnection, but for telemetry we use direct fetch
-        // In production, we'd need to extract auth headers from connectionProvider
       },
       body: JSON.stringify(payload),
     });
