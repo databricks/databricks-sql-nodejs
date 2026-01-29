@@ -25,10 +25,7 @@ import { LogLevel } from '../contracts/IDBSQLLogger';
 class TelemetryClient {
   private closed: boolean = false;
 
-  constructor(
-    private context: IClientContext,
-    private host: string
-  ) {
+  constructor(private context: IClientContext, private host: string) {
     const logger = context.getLogger();
     logger.log(LogLevel.debug, `Created TelemetryClient for host: ${host}`);
   }
