@@ -20,6 +20,7 @@
  * @param path The path to append (should start with /)
  * @returns Full URL with protocol
  */
+// eslint-disable-next-line import/prefer-default-export
 export function buildUrl(host: string, path: string): string {
   // Check if host already has protocol
   if (host.startsWith('http://') || host.startsWith('https://')) {
