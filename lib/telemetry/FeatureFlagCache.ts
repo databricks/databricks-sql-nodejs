@@ -14,9 +14,10 @@
  * limitations under the License.
  */
 
+import fetch from 'node-fetch';
 import IClientContext from '../contracts/IClientContext';
 import { LogLevel } from '../contracts/IDBSQLLogger';
-import fetch from 'node-fetch';
+import driverVersion from '../version';
 import { buildUrl } from './urlUtils';
 
 /**
@@ -117,10 +118,10 @@ export default class FeatureFlagCache {
 
     try {
       // Get driver version for endpoint
-      const driverVersion = this.getDriverVersion();
+      const version = this.getDriverVersion();
 
       // Build feature flags endpoint for Node.js driver
-      const endpoint = buildUrl(host, `/api/2.0/connector-service/feature-flags/NODEJS/${driverVersion}`);
+      const endpoint = buildUrl(host, `/api/2.0/connector-service/feature-flags/NODEJS/${version}`);
 
       // Get authentication headers
       const authHeaders = await this.context.getAuthHeaders();
@@ -187,14 +188,7 @@ export default class FeatureFlagCache {
    * Format: "1.12.0" from "1.12.0-oss"
    */
   private getDriverVersion(): string {
-    try {
-      // Import version from lib/version.ts
-      const version = require('../version').default;
-      // Remove -oss suffix if present
-      return version.replace(/-oss$/, '');
-    } catch (error) {
-      // Fallback to a default version if import fails
-      return '1.0.0';
-    }
+    // Remove -oss suffix if present
+    return driverVersion.replace(/-oss$/, '');
   }
 }
