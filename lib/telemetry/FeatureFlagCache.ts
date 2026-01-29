@@ -14,6 +14,7 @@
  * limitations under the License.
  */
 
+import fetch from 'node-fetch';
 import IClientContext from '../contracts/IClientContext';
 import { LogLevel } from '../contracts/IDBSQLLogger';
 
@@ -104,17 +105,75 @@ export default class FeatureFlagCache {
   }
 
   /**
-   * Fetches feature flag from server.
-   * This is a placeholder implementation that returns false.
-   * Real implementation would fetch from server using connection provider.
-   * @param _host The host to fetch feature flag for (unused in placeholder implementation)
+   * Gets the driver version from package.json.
+   * Used for version-specific feature flag requests.
    */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  private async fetchFeatureFlag(_host: string): Promise<boolean> {
-    // Placeholder implementation
-    // Real implementation would use:
-    // const connectionProvider = await this.context.getConnectionProvider();
-    // and make an API call to fetch the feature flag
-    return false;
+  private getDriverVersion(): string {
+    try {
+      // eslint-disable-next-line @typescript-eslint/no-var-requires
+      const packageJson = require('../../package.json');
+      return packageJson.version || 'unknown';
+    } catch {
+      return 'unknown';
+    }
+  }
+
+  /**
+   * Fetches feature flag from server REST API.
+   * Makes authenticated call to connector-service endpoint.
+   * @param host The host to fetch feature flag for
+   */
+  private async fetchFeatureFlag(host: string): Promise<boolean> {
+    const logger = this.context.getLogger();
+    try {
+      const driverVersion = this.getDriverVersion();
+      const endpoint = `https://${host}/api/2.0/connector-service/feature-flags/OSS_NODEJS/${driverVersion}`;
+
+      // Get authentication headers
+      const authHeaders = await this.context.getAuthHeaders();
+
+      logger.log(LogLevel.debug, `Fetching feature flag from ${endpoint}`);
+
+      const response = await fetch(endpoint, {
+        method: 'GET',
+        headers: {
+          ...authHeaders,
+          'Content-Type': 'application/json',
+          'User-Agent': `databricks-sql-nodejs/${driverVersion}`,
+        },
+      });
+
+      if (!response.ok) {
+        logger.log(LogLevel.debug, `Feature flag fetch returned status ${response.status}`);
+        return false;
+      }
+
+      const data: any = await response.json();
+
+      // Update cache duration from ttl_seconds if provided
+      if (data && data.ttl_seconds) {
+        const ctx = this.contexts.get(host);
+        if (ctx) {
+          ctx.cacheDuration = data.ttl_seconds * 1000;
+          logger.log(LogLevel.debug, `Updated cache duration to ${data.ttl_seconds} seconds`);
+        }
+      }
+
+      // Find the telemetry flag
+      if (data && data.flags && Array.isArray(data.flags)) {
+        const flag = data.flags.find((f: any) => f.name === this.FEATURE_FLAG_NAME);
+        if (flag) {
+          const enabled = String(flag.value).toLowerCase() === 'true';
+          logger.log(LogLevel.debug, `Feature flag ${this.FEATURE_FLAG_NAME} = ${enabled}`);
+          return enabled;
+        }
+      }
+
+      logger.log(LogLevel.debug, `Feature flag ${this.FEATURE_FLAG_NAME} not found in response`);
+      return false;
+    } catch (error: any) {
+      logger.log(LogLevel.debug, `Error fetching feature flag from ${host}: ${error.message}`);
+      return false;
+    }
   }
 }
