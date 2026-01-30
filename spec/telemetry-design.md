@@ -1099,21 +1099,31 @@ class DatabricksTelemetryExporter {
 
   private async exportInternal(metrics: TelemetryMetric[]): Promise<void> {
     const config = this.context.getConfig();
-    const connectionProvider = await this.context.getConnectionProvider();
+    const authenticatedExport = config.telemetryAuthenticatedExport ?? true;
 
-    const endpoint = config.telemetryAuthenticatedExport
-      ? `https://${this.host}/api/2.0/sql/telemetry-ext`
-      : `https://${this.host}/api/2.0/sql/telemetry-unauth`;
+    const endpoint = authenticatedExport
+      ? `https://${this.host}/telemetry-ext`
+      : `https://${this.host}/telemetry-unauth`;
+
+    // CRITICAL: Format payload to match JDBC TelemetryRequest with protoLogs
+    const telemetryLogs = metrics.map(m => this.toTelemetryLog(m));
+    const protoLogs = telemetryLogs.map(log => JSON.stringify(log));
 
     const payload = {
-      frontend_logs: metrics.map(m => this.toTelemetryLog(m)),
+      uploadTime: Date.now(),
+      items: [],              // Required but unused
+      protoLogs,              // Array of JSON-stringified log objects
     };
+
+    // Get authentication headers if using authenticated endpoint
+    const authHeaders = authenticatedExport ? await this.context.getAuthHeaders() : {};
 
     const response = await fetch(endpoint, {
       method: 'POST',
       headers: {
+        ...authHeaders,
         'Content-Type': 'application/json',
-        // Use connection provider's auth headers
+        'User-Agent': this.userAgent,
       },
       body: JSON.stringify(payload),
     });
@@ -1124,34 +1134,60 @@ class DatabricksTelemetryExporter {
   }
 
   private toTelemetryLog(metric: TelemetryMetric): any {
-    return {
-      workspace_id: metric.workspaceId,
+    const log = {
       frontend_log_event_id: this.generateUUID(),
       context: {
         client_context: {
           timestamp_millis: metric.timestamp,
-          user_agent: this.httpClient.userAgent,
+          user_agent: this.userAgent,
         },
       },
       entry: {
         sql_driver_log: {
           session_id: metric.sessionId,
           sql_statement_id: metric.statementId,
-          operation_latency_ms: metric.latencyMs,
-          sql_operation: {
-            execution_result_format: metric.resultFormat,
-            chunk_details: metric.chunkCount ? {
-              chunk_count: metric.chunkCount,
-              total_bytes: metric.bytesDownloaded,
-            } : undefined,
-          },
-          error_info: metric.errorName ? {
-            error_name: metric.errorName,
-            stack_trace: metric.errorMessage,
-          } : undefined,
         },
       },
     };
+
+    // Add metric-specific fields based on type
+    if (metric.metricType === 'connection' && metric.driverConfig) {
+      log.entry.sql_driver_log.system_configuration = {
+        driver_version: metric.driverConfig.driverVersion,
+        driver_name: metric.driverConfig.driverName,
+        runtime_name: 'Node.js',
+        runtime_version: metric.driverConfig.nodeVersion,
+        runtime_vendor: metric.driverConfig.runtimeVendor,
+        os_name: metric.driverConfig.platform,
+        os_version: metric.driverConfig.osVersion,
+        os_arch: metric.driverConfig.osArch,
+        locale_name: metric.driverConfig.localeName,
+        char_set_encoding: metric.driverConfig.charSetEncoding,
+        process_name: metric.driverConfig.processName,
+      };
+    } else if (metric.metricType === 'statement') {
+      log.entry.sql_driver_log.operation_latency_ms = metric.latencyMs;
+
+      if (metric.resultFormat || metric.chunkCount) {
+        log.entry.sql_driver_log.sql_operation = {
+          execution_result: metric.resultFormat,
+        };
+
+        if (metric.chunkCount && metric.chunkCount > 0) {
+          log.entry.sql_driver_log.sql_operation.chunk_details = {
+            total_chunks_present: metric.chunkCount,
+            total_chunks_iterated: metric.chunkCount,
+          };
+        }
+      }
+    } else if (metric.metricType === 'error') {
+      log.entry.sql_driver_log.error_info = {
+        error_name: metric.errorName || 'UnknownError',
+        stack_trace: metric.errorMessage || '',
+      };
+    }
+
+    return log;
   }
 
   private generateUUID(): string {
@@ -1189,10 +1225,15 @@ Collected once per connection:
 ```typescript
 interface DriverConfiguration {
   driverVersion: string;
-  driverName: string;
+  driverName: string;          // 'nodejs-sql-driver' (matches JDBC naming)
   nodeVersion: string;
   platform: string;
   osVersion: string;
+  osArch: string;              // Architecture (x64, arm64, etc.)
+  runtimeVendor: string;       // 'Node.js Foundation'
+  localeName: string;          // Locale (e.g., 'en_US')
+  charSetEncoding: string;     // Character encoding (e.g., 'UTF-8')
+  processName: string;         // Process name from process.title or script name
 
   // Feature flags
   cloudFetchEnabled: boolean;
@@ -1206,6 +1247,14 @@ interface DriverConfiguration {
   cloudFetchConcurrentDownloads: number;
 }
 ```
+
+**System Configuration Fields** (matches JDBC implementation):
+- **driverName**: Always set to `'nodejs-sql-driver'` to match JDBC driver naming convention
+- **osArch**: Obtained from `os.arch()` - reports CPU architecture (x64, arm64, ia32, etc.)
+- **runtimeVendor**: Always set to `'Node.js Foundation'` (equivalent to JDBC's java.vendor)
+- **localeName**: Extracted from `LANG` environment variable in format `language_country` (e.g., `en_US`), defaults to `en_US`
+- **charSetEncoding**: Always `'UTF-8'` (Node.js default encoding), equivalent to JDBC's Charset.defaultCharset()
+- **processName**: Obtained from `process.title` or extracted from `process.argv[1]` (script name), equivalent to JDBC's ProcessNameUtil.getProcessName()
 
 ### 4.3 Statement Metrics
 
@@ -1277,14 +1326,104 @@ flowchart TD
     L --> M[Lumberjack]
 ```
 
-### 5.2 Batching Strategy
+### 5.2 Payload Format
+
+**CRITICAL**: The Node.js driver uses the same payload format as JDBC with `protoLogs` (NOT `frontend_logs`).
+
+#### Payload Structure
+
+```typescript
+interface DatabricksTelemetryPayload {
+  uploadTime: number;          // Timestamp in milliseconds
+  items: string[];             // Required but unused (empty array)
+  protoLogs: string[];         // Array of JSON-stringified log objects
+}
+```
+
+#### Example Payload
+
+```json
+{
+  "uploadTime": 1706634000000,
+  "items": [],
+  "protoLogs": [
+    "{\"frontend_log_event_id\":\"550e8400-e29b-41d4-a716-446655440000\",\"context\":{\"client_context\":{\"timestamp_millis\":1706634000000,\"user_agent\":\"databricks-sql-nodejs/1.12.0\"}},\"entry\":{\"sql_driver_log\":{\"session_id\":\"01f0fd4d-2ed0-1469-bfee-b6c9c31cb586\",\"sql_statement_id\":null,\"system_configuration\":{\"driver_version\":\"1.12.0\",\"driver_name\":\"nodejs-sql-driver\",\"runtime_name\":\"Node.js\",\"runtime_version\":\"v22.16.0\",\"runtime_vendor\":\"Node.js Foundation\",\"os_name\":\"linux\",\"os_version\":\"5.4.0-1153-aws-fips\",\"os_arch\":\"x64\",\"locale_name\":\"en_US\",\"char_set_encoding\":\"UTF-8\",\"process_name\":\"node\"}}}}",
+    "{\"frontend_log_event_id\":\"550e8400-e29b-41d4-a716-446655440001\",\"context\":{\"client_context\":{\"timestamp_millis\":1706634001000,\"user_agent\":\"databricks-sql-nodejs/1.12.0\"}},\"entry\":{\"sql_driver_log\":{\"session_id\":\"01f0fd4d-2ed0-1469-bfee-b6c9c31cb586\",\"sql_statement_id\":\"01f0fd4d-2ed0-1469-bfee-b6c9c31cb587\",\"operation_latency_ms\":123,\"sql_operation\":{\"execution_result\":\"arrow\",\"chunk_details\":{\"total_chunks_present\":5,\"total_chunks_iterated\":5}}}}}"
+  ]
+}
+```
+
+#### Log Object Structure
+
+Each item in `protoLogs` is a JSON-stringified object with this structure:
+
+```typescript
+interface DatabricksTelemetryLog {
+  frontend_log_event_id: string;         // UUID v4
+  context: {
+    client_context: {
+      timestamp_millis: number;
+      user_agent: string;                // "databricks-sql-nodejs/<version>"
+    };
+  };
+  entry: {
+    sql_driver_log: {
+      session_id?: string;               // Session UUID
+      sql_statement_id?: string;         // Statement UUID (null for connection events)
+
+      // Connection events only
+      system_configuration?: {
+        driver_version?: string;         // e.g., "1.12.0"
+        driver_name?: string;            // "nodejs-sql-driver"
+        runtime_name?: string;           // "Node.js"
+        runtime_version?: string;        // e.g., "v22.16.0"
+        runtime_vendor?: string;         // "Node.js Foundation"
+        os_name?: string;                // e.g., "linux"
+        os_version?: string;             // e.g., "5.4.0-1153-aws-fips"
+        os_arch?: string;                // e.g., "x64"
+        locale_name?: string;            // e.g., "en_US"
+        char_set_encoding?: string;      // e.g., "UTF-8"
+        process_name?: string;           // e.g., "node"
+      };
+
+      // Statement events only
+      operation_latency_ms?: number;
+      sql_operation?: {
+        execution_result?: string;       // "inline" | "cloudfetch" | "arrow"
+        chunk_details?: {
+          total_chunks_present?: number;
+          total_chunks_iterated?: number;
+        };
+      };
+
+      // Error events only
+      error_info?: {
+        error_name: string;
+        stack_trace: string;
+      };
+    };
+  };
+}
+```
+
+**Key Points**:
+- Each telemetry log is **JSON-stringified** before being added to `protoLogs` array
+- The `items` field is required but always empty
+- The `uploadTime` is the timestamp when the batch is being exported
+- Each log has a unique `frontend_log_event_id` (UUID v4)
+- Connection events have `system_configuration` populated with all driver metadata
+- Statement events have `operation_latency_ms` and optional `sql_operation` details
+- Error events have `error_info` with error name and message
+- The `sql_statement_id` is `null` for connection events
+
+### 5.3 Batching Strategy
 
 - **Batch size**: Default 100 metrics
 - **Flush interval**: Default 5 seconds
 - **Force flush**: On connection close
 - **Background flushing**: Non-blocking with setInterval
 
-### 5.3 Retry Strategy
+### 5.4 Retry Strategy
 
 - **Retryable errors**: 429, 500, 502, 503, 504, network timeouts
 - **Terminal errors**: 400, 401, 403, 404
