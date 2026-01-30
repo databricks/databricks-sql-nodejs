@@ -31,7 +31,7 @@ import TelemetryEventEmitter from './telemetry/TelemetryEventEmitter';
 import MetricsAggregator from './telemetry/MetricsAggregator';
 import DatabricksTelemetryExporter from './telemetry/DatabricksTelemetryExporter';
 import { CircuitBreakerRegistry } from './telemetry/CircuitBreaker';
-import { DriverConfiguration } from './telemetry/types';
+import { DriverConfiguration, DRIVER_NAME } from './telemetry/types';
 import driverVersion from './version';
 
 function prependSlash(str: string): string {
@@ -201,7 +201,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
   private buildDriverConfiguration(): DriverConfiguration {
     return {
       driverVersion,
-      driverName: '@databricks/sql',
+      driverName: DRIVER_NAME,
       nodeVersion: process.version,
       platform: process.platform,
       osVersion: os.release(),
