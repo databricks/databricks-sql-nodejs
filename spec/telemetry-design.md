@@ -1632,6 +1632,158 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
 
 ---
 
+## 6.5 Telemetry Export Lifecycle
+
+This section clarifies **when** telemetry logs are exported during different lifecycle events.
+
+### Export Triggers
+
+Telemetry export can be triggered by:
+1. **Batch size threshold** - When pending metrics reach configured batch size (default: 100)
+2. **Periodic timer** - Every flush interval (default: 5 seconds)
+3. **Statement close** - Completes statement aggregation, may trigger batch export if batch full
+4. **Connection close** - Final flush of all pending metrics
+5. **Terminal error** - Immediate flush for non-retryable errors
+
+### Statement Close (DBSQLOperation.close())
+
+**What happens:**
+```typescript
+// In DBSQLOperation.close()
+try {
+  // 1. Emit statement.complete event with latency and metrics
+  this.telemetryEmitter.emitStatementComplete({
+    statementId: this.statementId,
+    sessionId: this.sessionId,
+    latencyMs: Date.now() - this.startTime,
+    resultFormat: this.resultFormat,
+    chunkCount: this.chunkCount,
+    bytesDownloaded: this.bytesDownloaded,
+    pollCount: this.pollCount,
+  });
+
+  // 2. Mark statement complete in aggregator
+  this.telemetryAggregator.completeStatement(this.statementId);
+} catch (error: any) {
+  // All exceptions swallowed
+  logger.log(LogLevel.debug, `Error in telemetry: ${error.message}`);
+}
+```
+
+**Export behavior:**
+- Statement metrics are **aggregated and added to pending batch**
+- Export happens **ONLY if batch size threshold is reached**
+- Otherwise, metrics remain buffered until next timer flush or connection close
+- **Does NOT automatically export** - just completes the aggregation
+
+### Connection Close (DBSQLClient.close())
+
+**What happens:**
+```typescript
+// In DBSQLClient.close()
+try {
+  // 1. Close aggregator (stops timer, completes statements, final flush)
+  if (this.telemetryAggregator) {
+    this.telemetryAggregator.close();
+  }
+
+  // 2. Release telemetry client (decrements ref count, closes if last)
+  if (this.telemetryClientProvider) {
+    await this.telemetryClientProvider.releaseClient(this.host);
+  }
+
+  // 3. Release feature flag context (decrements ref count)
+  if (this.featureFlagCache) {
+    this.featureFlagCache.releaseContext(this.host);
+  }
+} catch (error: any) {
+  logger.log(LogLevel.debug, `Telemetry cleanup error: ${error.message}`);
+}
+```
+
+**Export behavior:**
+- **ALWAYS exports** all pending metrics via `aggregator.close()`
+- Stops the periodic flush timer
+- Completes any incomplete statements in the aggregation map
+- Performs final flush to ensure no metrics are lost
+- **Guarantees export** of all buffered telemetry before connection closes
+
+**Aggregator.close() implementation:**
+```typescript
+// In MetricsAggregator.close()
+close(): void {
+  const logger = this.context.getLogger();
+
+  try {
+    // Step 1: Stop flush timer
+    if (this.flushTimer) {
+      clearInterval(this.flushTimer);
+      this.flushTimer = null;
+    }
+
+    // Step 2: Complete any remaining statements
+    for (const statementId of this.statementMetrics.keys()) {
+      this.completeStatement(statementId);
+    }
+
+    // Step 3: Final flush
+    this.flush();
+  } catch (error: any) {
+    logger.log(LogLevel.debug, `MetricsAggregator.close error: ${error.message}`);
+  }
+}
+```
+
+### Process Exit (Node.js shutdown)
+
+**What happens:**
+- **NO automatic export** if `DBSQLClient.close()` was not called
+- Telemetry is lost if process exits without proper cleanup
+- **Best practice**: Always call `client.close()` before exit
+
+**Recommended pattern:**
+```typescript
+const client = new DBSQLClient();
+
+// Register cleanup on process exit
+process.on('SIGINT', async () => {
+  await client.close();  // Ensures final telemetry flush
+  process.exit(0);
+});
+
+process.on('SIGTERM', async () => {
+  await client.close();  // Ensures final telemetry flush
+  process.exit(0);
+});
+```
+
+### Summary Table
+
+| Event | Statement Aggregated | Export Triggered | Notes |
+|-------|---------------------|------------------|-------|
+| **Statement Close** | ✅ Yes | ⚠️ Only if batch full | Metrics buffered, not immediately exported |
+| **Batch Size Reached** | N/A | ✅ Yes | Automatic export when 100 metrics buffered |
+| **Periodic Timer** | N/A | ✅ Yes | Every 5 seconds (configurable) |
+| **Connection Close** | ✅ Yes (incomplete) | ✅ Yes (guaranteed) | Completes all statements, flushes all metrics |
+| **Process Exit** | ❌ No | ❌ No | Lost unless `close()` was called first |
+| **Terminal Error** | N/A | ✅ Yes (immediate) | Auth errors, 4xx errors flushed right away |
+
+### Key Differences from JDBC
+
+**Node.js behavior:**
+- Statement close does **not** automatically export (buffered until batch/timer/connection-close)
+- Connection close **always** exports all pending metrics
+- Process exit does **not** guarantee export (must call `close()` explicitly)
+
+**JDBC behavior:**
+- Similar buffering and batch export strategy
+- JVM shutdown hooks provide more automatic cleanup
+- Connection close behavior is the same (guaranteed flush)
+
+**Recommendation**: Always call `client.close()` in a `finally` block or using `try-finally` to ensure telemetry is exported before the process exits.
+
+---
+
 ## 7. Privacy & Compliance
 
 ### 7.1 Data Privacy
