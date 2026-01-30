@@ -36,6 +36,7 @@ import { OperationChunksIterator, OperationRowsIterator } from './utils/Operatio
 import HiveDriverError from './errors/HiveDriverError';
 import IClientContext from './contracts/IClientContext';
 import ExceptionClassifier from './telemetry/ExceptionClassifier';
+import { mapOperationTypeToTelemetryType, mapResultFormatToTelemetryType } from './telemetry/telemetryTypeMappers';
 
 interface DBSQLOperationConstructorOptions {
   handle: TOperationHandle;
@@ -50,59 +51,6 @@ async function delay(ms?: number): Promise<void> {
       resolve();
     }, ms);
   });
-}
-
-/**
- * Map Thrift TOperationType to proto Operation.Type enum string.
- */
-function mapOperationTypeToProto(operationType?: TOperationType): string | undefined {
-  if (operationType === undefined) {
-    return undefined;
-  }
-
-  switch (operationType) {
-    case TOperationType.EXECUTE_STATEMENT:
-      return 'EXECUTE_STATEMENT';
-    case TOperationType.GET_TYPE_INFO:
-      return 'LIST_TYPE_INFO';
-    case TOperationType.GET_CATALOGS:
-      return 'LIST_CATALOGS';
-    case TOperationType.GET_SCHEMAS:
-      return 'LIST_SCHEMAS';
-    case TOperationType.GET_TABLES:
-      return 'LIST_TABLES';
-    case TOperationType.GET_TABLE_TYPES:
-      return 'LIST_TABLE_TYPES';
-    case TOperationType.GET_COLUMNS:
-      return 'LIST_COLUMNS';
-    case TOperationType.GET_FUNCTIONS:
-      return 'LIST_FUNCTIONS';
-    case TOperationType.UNKNOWN:
-    default:
-      return 'TYPE_UNSPECIFIED';
-  }
-}
-
-/**
- * Map Thrift TSparkRowSetType to proto ExecutionResult.Format enum string.
- */
-function mapResultFormatToProto(resultFormat?: TSparkRowSetType): string | undefined {
-  if (resultFormat === undefined) {
-    return undefined;
-  }
-
-  switch (resultFormat) {
-    case TSparkRowSetType.ARROW_BASED_SET:
-      return 'INLINE_ARROW';
-    case TSparkRowSetType.COLUMN_BASED_SET:
-      return 'COLUMNAR_INLINE';
-    case TSparkRowSetType.ROW_BASED_SET:
-      return 'INLINE_JSON';
-    case TSparkRowSetType.URL_BASED_SET:
-      return 'EXTERNAL_LINKS';
-    default:
-      return 'FORMAT_UNSPECIFIED';
-  }
 }
 
 export default class DBSQLOperation implements IOperation {
@@ -569,7 +517,7 @@ export default class DBSQLOperation implements IOperation {
       telemetryEmitter.emitStatementStart({
         statementId: this.id,
         sessionId: this.sessionId || '',
-        operationType: mapOperationTypeToProto(this.operationHandle.operationType),
+        operationType: mapOperationTypeToTelemetryType(this.operationHandle.operationType),
       });
     } catch (error: any) {
       this.context.getLogger().log(LogLevel.debug, `Error emitting statement.start event: ${error.message}`);
@@ -594,7 +542,7 @@ export default class DBSQLOperation implements IOperation {
         if (!this.metadata && !this.cancelled) {
           await this.getMetadata();
         }
-        resultFormat = mapResultFormatToProto(this.metadata?.resultFormat);
+        resultFormat = mapResultFormatToTelemetryType(this.metadata?.resultFormat);
       } catch (error) {
         // If metadata fetch fails, continue without it
         resultFormat = undefined;
