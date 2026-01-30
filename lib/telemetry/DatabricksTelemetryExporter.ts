@@ -308,18 +308,20 @@ export default class DatabricksTelemetryExporter {
     } else if (metric.metricType === 'statement') {
       log.entry.sql_driver_log.operation_latency_ms = metric.latencyMs;
 
-      // Always create sql_operation for statement events
-      log.entry.sql_driver_log.sql_operation = {
-        statement_type: metric.operationType,
-        is_compressed: metric.compressed,
-        execution_result: metric.resultFormat,
-      };
-
-      if (metric.chunkCount && metric.chunkCount > 0) {
-        log.entry.sql_driver_log.sql_operation.chunk_details = {
-          total_chunks_present: metric.chunkCount,
-          total_chunks_iterated: metric.chunkCount,
+      // Only create sql_operation if we have any fields to include
+      if (metric.operationType || metric.compressed !== undefined || metric.resultFormat || metric.chunkCount) {
+        log.entry.sql_driver_log.sql_operation = {
+          ...(metric.operationType && { statement_type: metric.operationType }),
+          ...(metric.compressed !== undefined && { is_compressed: metric.compressed }),
+          ...(metric.resultFormat && { execution_result: metric.resultFormat }),
         };
+
+        if (metric.chunkCount && metric.chunkCount > 0) {
+          log.entry.sql_driver_log.sql_operation.chunk_details = {
+            total_chunks_present: metric.chunkCount,
+            total_chunks_iterated: metric.chunkCount,
+          };
+        }
       }
     } else if (metric.metricType === 'error') {
       log.entry.sql_driver_log.error_info = {
