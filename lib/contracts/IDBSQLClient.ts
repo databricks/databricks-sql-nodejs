@@ -34,6 +34,10 @@ export type ConnectionOptions = {
   socketTimeout?: number;
   proxy?: ProxyOptions;
   enableMetricViewMetadata?: boolean;
+  // Optional telemetry overrides
+  telemetryEnabled?: boolean;
+  telemetryBatchSize?: number;
+  telemetryAuthenticatedExport?: boolean;
 } & AuthOptions;
 
 export interface OpenSessionRequest {
