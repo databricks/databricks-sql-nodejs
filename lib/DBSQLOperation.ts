@@ -13,7 +13,6 @@ import IOperation, {
 import {
   TGetOperationStatusResp,
   TOperationHandle,
-  TOperationType,
   TTableSchema,
   TSparkDirectResults,
   TGetResultSetMetadataResp,
@@ -509,7 +508,7 @@ export default class DBSQLOperation implements IOperation {
    */
   private emitStatementStart(): void {
     try {
-      const {telemetryEmitter} = (this.context as any);
+      const { telemetryEmitter } = this.context as any;
       if (!telemetryEmitter) {
         return;
       }
@@ -530,8 +529,8 @@ export default class DBSQLOperation implements IOperation {
    */
   private async emitStatementComplete(): Promise<void> {
     try {
-      const {telemetryEmitter} = (this.context as any);
-      const {telemetryAggregator} = (this.context as any);
+      const { telemetryEmitter } = this.context as any;
+      const { telemetryAggregator } = this.context as any;
       if (!telemetryEmitter || !telemetryAggregator) {
         return;
       }
@@ -571,7 +570,7 @@ export default class DBSQLOperation implements IOperation {
    */
   private emitErrorEvent(error: Error): void {
     try {
-      const {telemetryEmitter} = (this.context as any);
+      const { telemetryEmitter } = this.context as any;
       if (!telemetryEmitter) {
         return;
       }

@@ -21,6 +21,7 @@ All telemetry components have comprehensive test coverage exceeding the required
 - **100% function coverage** for telemetry module
 
 All **CRITICAL** test requirements have been verified:
+
 - ✅ ALL exceptions swallowed
 - ✅ ONLY LogLevel.debug used (never warn/error)
 - ✅ NO console logging
@@ -39,6 +40,7 @@ All **CRITICAL** test requirements have been verified:
 **Coverage**: 100% lines, 100% branches, 100% functions
 
 **Test Categories**:
+
 - Constructor and initialization (2 tests)
 - Context creation and reference counting (7 tests)
 - Feature flag caching and expiration (6 tests)
@@ -49,6 +51,7 @@ All **CRITICAL** test requirements have been verified:
 - No console logging verification (2 tests)
 
 **Key Verifications**:
+
 - ✅ Per-host feature flag contexts with reference counting
 - ✅ 15-minute cache expiration works correctly
 - ✅ Reference count increments/decrements properly
@@ -61,12 +64,14 @@ All **CRITICAL** test requirements have been verified:
 ### 2. TelemetryClientProvider & TelemetryClient
 
 **Test Files**:
+
 - `tests/unit/telemetry/TelemetryClientProvider.test.ts` (31 tests)
 - `tests/unit/telemetry/TelemetryClient.test.ts` (12 tests)
 
 **Coverage**: 100% lines, 100% branches, 100% functions
 
 **Test Categories**:
+
 - TelemetryClientProvider:
   - Constructor (2 tests)
   - One client per host creation (4 tests)
@@ -83,6 +88,7 @@ All **CRITICAL** test requirements have been verified:
   - Exception swallowing (2 tests)
 
 **Key Verifications**:
+
 - ✅ One telemetry client per host
 - ✅ Client shared across multiple connections to same host
 - ✅ Reference counting tracks active connections correctly
@@ -103,6 +109,7 @@ All **CRITICAL** test requirements have been verified:
 **Coverage**: 100% lines (61/61), 100% branches (16/16), 100% functions
 
 **Test Categories**:
+
 - Constructor and configuration (3 tests)
 - State transitions (8 tests)
 - Failure threshold behavior (4 tests)
@@ -113,6 +120,7 @@ All **CRITICAL** test requirements have been verified:
 - Logging verification (4 tests)
 
 **Key Verifications**:
+
 - ✅ Three-state circuit breaker (CLOSED, OPEN, HALF_OPEN)
 - ✅ State transitions work correctly
 - ✅ Opens after 5 consecutive failures (configurable)
@@ -134,6 +142,7 @@ All **CRITICAL** test requirements have been verified:
 **Coverage**: 100% lines (17/17), 100% branches (29/29), 100% functions
 
 **Test Categories**:
+
 - Terminal exception detection (14 tests)
 - Retryable exception detection (14 tests)
 - HTTP status code handling (12 tests)
@@ -141,6 +150,7 @@ All **CRITICAL** test requirements have been verified:
 - Unknown error handling (3 tests)
 
 **Key Verifications**:
+
 - ✅ Correctly identifies terminal exceptions (401, 403, 404, 400, AuthenticationError)
 - ✅ Correctly identifies retryable exceptions (429, 500, 502, 503, 504, RetryError, timeouts)
 - ✅ Handles both `statusCode` and `status` properties
@@ -158,6 +168,7 @@ All **CRITICAL** test requirements have been verified:
 **Coverage**: 100% lines, 100% branches, 100% functions
 
 **Test Categories**:
+
 - Constructor and initialization (3 tests)
 - Connection event emission (4 tests)
 - Statement event emission (8 tests)
@@ -168,6 +179,7 @@ All **CRITICAL** test requirements have been verified:
 - TelemetryEnabled flag respect (2 tests)
 
 **Key Verifications**:
+
 - ✅ All five event types emitted correctly
 - ✅ Events not emitted when telemetryEnabled is false
 - ✅ ALL methods wrapped in try-catch blocks
@@ -187,6 +199,7 @@ All **CRITICAL** test requirements have been verified:
 **Coverage**: 94.44% lines, 82.53% branches, 100% functions
 
 **Test Categories**:
+
 - Constructor and config (2 tests)
 - Connection event processing (2 tests)
 - Statement event aggregation (3 tests)
@@ -201,6 +214,7 @@ All **CRITICAL** test requirements have been verified:
 - Config reading (3 tests)
 
 **Key Verifications**:
+
 - ✅ Aggregates metrics by statement_id
 - ✅ Includes both statement_id and session_id in exports
 - ✅ Buffers retryable exceptions until statement complete
@@ -222,6 +236,7 @@ All **CRITICAL** test requirements have been verified:
 **Coverage**: 96.34% lines, 84.61% branches, 100% functions
 
 **Test Categories**:
+
 - Constructor and initialization (2 tests)
 - Export functionality (4 tests)
 - Circuit breaker integration (3 tests)
@@ -232,6 +247,7 @@ All **CRITICAL** test requirements have been verified:
 - No console logging (2 tests)
 
 **Key Verifications**:
+
 - ✅ Exports to authenticated endpoint (/api/2.0/sql/telemetry-ext)
 - ✅ Exports to unauthenticated endpoint (/api/2.0/sql/telemetry-unauth)
 - ✅ Integrates with circuit breaker correctly
@@ -253,22 +269,27 @@ All **CRITICAL** test requirements have been verified:
 **Test Count**: 10+ tests
 
 **Test Categories**:
+
 1. **Initialization Tests**:
+
    - Telemetry initialized when telemetryEnabled is true
    - Telemetry NOT initialized when telemetryEnabled is false
    - Feature flag respected when telemetry enabled
 
 2. **Reference Counting Tests**:
+
    - Multiple connections share telemetry client for same host
    - Reference counting works correctly
    - Cleanup on close
 
 3. **Error Handling Tests**:
+
    - Driver continues when telemetry initialization fails
    - Driver continues when feature flag fetch fails
    - No exceptions propagate to application
 
 4. **Configuration Tests**:
+
    - Default telemetry config values correct
    - ConnectionOptions override works
 
@@ -277,6 +298,7 @@ All **CRITICAL** test requirements have been verified:
    - Full telemetry flow verified
 
 **Key Verifications**:
+
 - ✅ Telemetry integration with DBSQLClient works correctly
 - ✅ Per-host client sharing verified
 - ✅ Reference counting verified across multiple connections
@@ -291,11 +313,13 @@ All **CRITICAL** test requirements have been verified:
 All test stubs follow driver patterns and are located in `tests/unit/.stubs/`:
 
 1. **CircuitBreakerStub.ts** ✅
+
    - Simplified circuit breaker for testing
    - Controllable state for deterministic tests
    - Tracks execute() call count
 
 2. **TelemetryExporterStub.ts** ✅
+
    - Records exported metrics for verification
    - Configurable to throw errors for testing
    - Provides access to all exported metrics
@@ -343,6 +367,7 @@ npx mocha --require ts-node/register tests/unit/telemetry/*.test.ts
 **Result**: ✅ 226 passing (3s)
 
 **Components Tested**:
+
 - CircuitBreaker: 32 passing
 - DatabricksTelemetryExporter: 24 passing
 - ExceptionClassifier: 51 passing
@@ -359,6 +384,7 @@ npx nyc npx mocha --require ts-node/register tests/unit/telemetry/*.test.ts
 ```
 
 **Result**:
+
 ```
 lib/telemetry                       |   97.76 |    90.59 |     100 |   97.72 |
   CircuitBreaker.ts                  |     100 |      100 |     100 |     100 |
@@ -379,6 +405,7 @@ lib/telemetry                       |   97.76 |    90.59 |     100 |   97.72 |
 ### 1. ✅ ALL Exceptions Swallowed
 
 **Verified in**:
+
 - FeatureFlagCache.test.ts (lines 624-716): Tests exception swallowing in all methods
 - TelemetryClientProvider.test.ts (lines 237-268): Tests exception swallowing during client operations
 - CircuitBreaker.test.ts: Circuit breaker properly handles and logs exceptions
@@ -388,6 +415,7 @@ lib/telemetry                       |   97.76 |    90.59 |     100 |   97.72 |
 - DatabricksTelemetryExporter.test.ts: Export never throws, all exceptions caught
 
 **Test Pattern Example**:
+
 ```typescript
 it('should swallow exception and log at debug level', () => {
   // Create scenario that throws
@@ -405,11 +433,13 @@ it('should swallow exception and log at debug level', () => {
 ### 2. ✅ ONLY LogLevel.debug Used (Never warn/error)
 
 **Verified in**:
+
 - All test files include dedicated tests to verify logging level
 - Tests use sinon spies to capture logger.log() calls
 - Tests verify NO calls with LogLevel.warn or LogLevel.error
 
 **Test Pattern Example**:
+
 ```typescript
 it('should log all errors at debug level only', () => {
   // ... perform operations that might log ...
@@ -425,10 +455,12 @@ it('should log all errors at debug level only', () => {
 ### 3. ✅ NO Console Logging
 
 **Verified in**:
+
 - All test files include dedicated tests with console spies
 - Tests verify console.log, console.debug, console.error never called
 
 **Test Pattern Example**:
+
 ```typescript
 it('should not use console.log', () => {
   const consoleSpy = sinon.spy(console, 'log');
@@ -443,11 +475,13 @@ it('should not use console.log', () => {
 ### 4. ✅ Driver Works When Telemetry Fails
 
 **Verified in**:
+
 - telemetry-integration.test.ts (lines 176-275): Multiple scenarios where telemetry fails
 - Tests stub telemetry components to throw errors
 - Verifies driver operations continue normally
 
 **Test Scenarios**:
+
 - Telemetry initialization fails → driver works
 - Feature flag fetch fails → driver works
 - Event emission fails → driver works
@@ -459,27 +493,28 @@ it('should not use console.log', () => {
 
 ### Overall Telemetry Module Coverage
 
-| Metric | Coverage | Status |
-|--------|----------|--------|
-| Lines | 97.76% | ✅ Exceeds >80% |
-| Branches | 90.59% | ✅ Exceeds >80% |
-| Functions | 100% | ✅ Complete |
+| Metric    | Coverage | Status          |
+| --------- | -------- | --------------- |
+| Lines     | 97.76%   | ✅ Exceeds >80% |
+| Branches  | 90.59%   | ✅ Exceeds >80% |
+| Functions | 100%     | ✅ Complete     |
 
 ### Coverage by Component
 
-| Component | Lines | Branches | Functions | Status |
-|-----------|-------|----------|-----------|--------|
-| CircuitBreaker | 100% | 100% | 100% | ✅ Perfect |
-| TelemetryClient | 100% | 100% | 100% | ✅ Perfect |
-| TelemetryClientProvider | 100% | 100% | 100% | ✅ Perfect |
-| FeatureFlagCache | 100% | 100% | 100% | ✅ Perfect |
-| ExceptionClassifier | 100% | 100% | 100% | ✅ Perfect |
-| TelemetryEventEmitter | 100% | 100% | 100% | ✅ Perfect |
-| DatabricksTelemetryExporter | 96.34% | 84.61% | 100% | ✅ Excellent |
-| MetricsAggregator | 94.44% | 82.53% | 100% | ✅ Excellent |
-| types.ts | 100% | 100% | 100% | ✅ Perfect |
+| Component                   | Lines  | Branches | Functions | Status       |
+| --------------------------- | ------ | -------- | --------- | ------------ |
+| CircuitBreaker              | 100%   | 100%     | 100%      | ✅ Perfect   |
+| TelemetryClient             | 100%   | 100%     | 100%      | ✅ Perfect   |
+| TelemetryClientProvider     | 100%   | 100%     | 100%      | ✅ Perfect   |
+| FeatureFlagCache            | 100%   | 100%     | 100%      | ✅ Perfect   |
+| ExceptionClassifier         | 100%   | 100%     | 100%      | ✅ Perfect   |
+| TelemetryEventEmitter       | 100%   | 100%     | 100%      | ✅ Perfect   |
+| DatabricksTelemetryExporter | 96.34% | 84.61%   | 100%      | ✅ Excellent |
+| MetricsAggregator           | 94.44% | 82.53%   | 100%      | ✅ Excellent |
+| types.ts                    | 100%   | 100%     | 100%      | ✅ Perfect   |
 
 **Notes**:
+
 - MetricsAggregator: Some uncovered lines are edge cases in error handling paths that are difficult to trigger in tests
 - DatabricksTelemetryExporter: Some uncovered branches are in retry backoff logic
 
@@ -488,12 +523,14 @@ it('should not use console.log', () => {
 ## Test Quality Metrics
 
 ### Test Organization
+
 - ✅ Tests organized by component
 - ✅ Clear describe/it structure
 - ✅ Consistent naming conventions
 - ✅ Proper setup/teardown in beforeEach/afterEach
 
 ### Test Coverage Types
+
 - ✅ **Happy path testing**: All normal operations covered
 - ✅ **Error path testing**: All error scenarios covered
 - ✅ **Edge case testing**: Boundary conditions tested
@@ -501,6 +538,7 @@ it('should not use console.log', () => {
 - ✅ **Negative testing**: Invalid inputs handled correctly
 
 ### Test Reliability
+
 - ✅ Tests use fake timers (sinon) for time-dependent code
 - ✅ Tests use stubs/spies to isolate components
 - ✅ Tests clean up after themselves (restore stubs)
@@ -514,26 +552,31 @@ it('should not use console.log', () => {
 ### Best Practices Followed
 
 1. **Exception Swallowing**:
+
    - Every telemetry method wrapped in try-catch
    - All exceptions logged at debug level only
    - No exceptions propagate to driver code
 
 2. **Debug-Only Logging**:
+
    - ALL logging uses LogLevel.debug
    - NEVER uses warn or error level
    - Uses IDBSQLLogger, not console
 
 3. **Per-Host Resource Management**:
+
    - Feature flags cached per host
    - Telemetry clients shared per host
    - Circuit breakers isolated per host
 
 4. **Reference Counting**:
+
    - Proper increment/decrement on connect/close
    - Resources cleaned up when refCount reaches zero
    - Resources NOT cleaned up while other connections exist
 
 5. **Circuit Breaker Protection**:
+
    - Protects against failing telemetry endpoint
    - Automatic recovery after timeout
    - Per-host isolation
@@ -548,6 +591,7 @@ it('should not use console.log', () => {
 ## Remaining Work (Optional Enhancements)
 
 ### Performance Tests (Deferred - Not Critical for MVP)
+
 - [ ] Measure telemetry overhead (< 1% target)
 - [ ] Benchmark event emission latency (< 1μs target)
 - [ ] Load testing with many concurrent connections
@@ -568,6 +612,7 @@ The telemetry test suite is **comprehensive, high-quality, and production-ready*
 - ✅ **Test stubs created following driver patterns**
 
 The test suite provides **strong confidence** that:
+
 1. All telemetry exceptions are swallowed
 2. Only debug-level logging is used
 3. No console logging occurs
@@ -597,6 +642,7 @@ The test suite provides **strong confidence** that:
 **Completed By**: Claude (Task 2.6)
 
 **Next Steps**:
+
 1. Review and approve test coverage
 2. Merge telemetry implementation
 3. Enable telemetry feature flag in production (when ready)

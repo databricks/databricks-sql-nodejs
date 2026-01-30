@@ -1,4 +1,5 @@
 # Telemetry Implementation Sprint Plan
+
 **Sprint Duration**: 2 weeks
 **Date Created**: 2026-01-28
 **Project**: Databricks Node.js SQL Driver
@@ -16,6 +17,7 @@ This sprint plan outlines the implementation of event-based telemetry for the Da
 **Implement core telemetry infrastructure with per-host management, circuit breaker protection, and basic event collection for connection and statement operations.**
 
 ### Success Criteria
+
 - ✅ Per-host telemetry client management with reference counting
 - ✅ Feature flag caching (15-minute TTL)
 - ✅ Circuit breaker implementation
@@ -31,16 +33,19 @@ This sprint plan outlines the implementation of event-based telemetry for the Da
 ## Context & Background
 
 ### Current State
+
 - ✅ Comprehensive telemetry design document completed
 - ❌ No telemetry implementation exists
 - ✅ Well-structured TypeScript codebase
 - ✅ JDBC driver as reference implementation
 
 ### Design Document Reference
+
 - **Location**: `spec/telemetry-design.md`
 - **Key Patterns**: Per-host clients, circuit breaker, feature flag caching, exception swallowing
 
 ### Dependencies
+
 - Node.js EventEmitter (built-in)
 - node-fetch (already in project)
 - TypeScript (already in project)
@@ -52,12 +57,15 @@ This sprint plan outlines the implementation of event-based telemetry for the Da
 ### Phase 1: Foundation & Infrastructure (4 days)
 
 #### Task 1.1: Create Telemetry Type Definitions (0.5 days) ✅ COMPLETED
+
 **Description**: Create TypeScript interfaces and types for telemetry components.
 
 **Files to Create**:
+
 - `lib/telemetry/types.ts` ✅
 
 **Deliverables**: ✅
+
 ```typescript
 // Core interfaces
 - TelemetryConfiguration ✅
@@ -72,11 +80,13 @@ This sprint plan outlines the implementation of event-based telemetry for the Da
 ```
 
 **Acceptance Criteria**: ✅
+
 - All interfaces properly typed with TypeScript ✅
 - Exported from telemetry module ✅
 - Documented with JSDoc comments ✅
 
 **Implementation Notes**:
+
 - Created comprehensive type definitions in `lib/telemetry/types.ts`
 - Defined TelemetryEventType enum with 5 event types
 - All interfaces include JSDoc comments for documentation
@@ -86,12 +96,15 @@ This sprint plan outlines the implementation of event-based telemetry for the Da
 ---
 
 #### Task 1.2: Implement FeatureFlagCache (1 day)
+
 **Description**: Create per-host feature flag cache with reference counting and 15-minute TTL.
 
 **Files to Create**:
+
 - `lib/telemetry/FeatureFlagCache.ts`
 
 **Deliverables**:
+
 - `FeatureFlagCache` class (instance-based, NOT singleton)
 - Constructor takes `IClientContext` parameter
 - `FeatureFlagContext` interface
@@ -104,12 +117,14 @@ This sprint plan outlines the implementation of event-based telemetry for the Da
 **JDBC Reference**: `DatabricksDriverFeatureFlagsContextFactory.java:27`
 
 **Pattern Alignment**:
+
 - ✅ No `getInstance()` - instance-based like `HttpConnection`, `DBSQLLogger`
 - ✅ Takes `IClientContext` in constructor
 - ✅ Uses `context.getLogger()` for logging
 - ✅ Stored as field in `DBSQLClient`
 
 **Acceptance Criteria**:
+
 - Reference counting works correctly
 - Cache expires after 15 minutes
 - Returns cached value when not expired
@@ -117,6 +132,7 @@ This sprint plan outlines the implementation of event-based telemetry for the Da
 - Accepts IClientContext in constructor
 
 **Unit Tests**:
+
 - `should cache feature flag per host`
 - `should expire cache after 15 minutes`
 - `should increment and decrement ref count`
@@ -127,13 +143,16 @@ This sprint plan outlines the implementation of event-based telemetry for the Da
 ---
 
 #### Task 1.3: Implement TelemetryClientProvider (1 day)
+
 **Description**: Create per-host telemetry client provider with reference counting.
 
 **Files to Create**:
+
 - `lib/telemetry/TelemetryClientProvider.ts` (renamed from Manager)
 - `lib/telemetry/TelemetryClient.ts` (basic structure)
 
 **Deliverables**:
+
 - `TelemetryClientProvider` class (instance-based, NOT singleton)
 - Constructor takes `IClientContext` parameter
 - `TelemetryClientHolder` interface
@@ -144,12 +163,14 @@ This sprint plan outlines the implementation of event-based telemetry for the Da
 **JDBC Reference**: `TelemetryClientFactory.java:27`
 
 **Pattern Alignment**:
+
 - ✅ Named "Provider" not "Manager" (follows driver naming: HttpConnection, PlainHttpAuthentication)
 - ✅ No `getInstance()` - instance-based
 - ✅ Takes `IClientContext` in constructor
 - ✅ Stored as field in `DBSQLClient`
 
 **Acceptance Criteria**:
+
 - One client per host (shared across connections)
 - Reference counting prevents premature cleanup
 - Client closed only when last connection closes
@@ -157,6 +178,7 @@ This sprint plan outlines the implementation of event-based telemetry for the Da
 - Uses logger from context
 
 **Unit Tests**:
+
 - `should create one client per host`
 - `should share client across multiple connections`
 - `should increment ref count on getOrCreateClient`
@@ -168,12 +190,15 @@ This sprint plan outlines the implementation of event-based telemetry for the Da
 ---
 
 #### Task 1.4: Implement CircuitBreaker (1.5 days)
+
 **Description**: Create circuit breaker for telemetry exporter with CLOSED/OPEN/HALF_OPEN states.
 
 **Files to Create**:
+
 - `lib/telemetry/CircuitBreaker.ts`
 
 **Deliverables**:
+
 - `CircuitBreaker` class with state machine
 - `CircuitBreakerRegistry` class (renamed from Manager, instance-based)
 - Three states: CLOSED, OPEN, HALF_OPEN
@@ -184,12 +209,14 @@ This sprint plan outlines the implementation of event-based telemetry for the Da
 **JDBC Reference**: `CircuitBreakerTelemetryPushClient.java:15`
 
 **Pattern Alignment**:
+
 - ✅ Named "Registry" not "Manager"
 - ✅ No `getInstance()` - instance-based
 - ✅ Stored in TelemetryClientProvider
 - ✅ Uses logger for state changes, not console.debug
 
 **Acceptance Criteria**:
+
 - Opens after 5 consecutive failures
 - Stays open for 1 minute
 - Enters HALF_OPEN state after timeout
@@ -198,6 +225,7 @@ This sprint plan outlines the implementation of event-based telemetry for the Da
 - Logging via IDBSQLLogger
 
 **Unit Tests**:
+
 - `should start in CLOSED state`
 - `should open after threshold failures`
 - `should reject operations when OPEN`
@@ -211,23 +239,28 @@ This sprint plan outlines the implementation of event-based telemetry for the Da
 ### Phase 2: Exception Handling & Event System (3 days)
 
 #### Task 2.1: Implement ExceptionClassifier (0.5 days)
+
 **Description**: Create classifier to distinguish terminal vs retryable exceptions.
 
 **Files to Create**:
+
 - `lib/telemetry/ExceptionClassifier.ts`
 
 **Deliverables**:
+
 - `isTerminal()` static method
 - `isRetryable()` static method
 - Classification logic for HTTP status codes
 - Support for driver error types
 
 **Acceptance Criteria**:
+
 - Correctly identifies terminal exceptions (401, 403, 404, 400)
 - Correctly identifies retryable exceptions (429, 500, 502, 503, 504)
 - Handles unknown error types gracefully
 
 **Unit Tests**:
+
 - `should identify AuthenticationError as terminal`
 - `should identify 401/403/404 as terminal`
 - `should identify 429/500/502/503/504 as retryable`
@@ -237,13 +270,16 @@ This sprint plan outlines the implementation of event-based telemetry for the Da
 ---
 
 #### Task 2.2: Implement TelemetryEventEmitter (1 day) ✅ COMPLETED
+
 **Description**: Create EventEmitter for telemetry events with exception swallowing.
 
 **Files to Create**:
+
 - `lib/telemetry/TelemetryEventEmitter.ts` ✅
 - `tests/unit/telemetry/TelemetryEventEmitter.test.ts` ✅
 
 **Deliverables**: ✅
+
 - `TelemetryEventEmitter` class extending EventEmitter ✅
 - Constructor takes `IClientContext` parameter ✅
 - Methods for emitting events: ✅
@@ -256,12 +292,14 @@ This sprint plan outlines the implementation of event-based telemetry for the Da
 - Reads `enabled` flag from `context.getConfig().telemetryEnabled` ✅
 
 **Pattern Alignment**: ✅
+
 - ✅ Takes IClientContext in constructor
 - ✅ Uses `context.getLogger()` for error logging
 - ✅ Uses LogLevel.debug (NOT console.debug or "TRACE")
 - ✅ Reads config from context
 
 **Acceptance Criteria**: ✅
+
 - **🚨 CRITICAL**: All emit methods wrap in try-catch ✅
 - **🚨 CRITICAL**: ALL exceptions logged at LogLevel.debug ONLY (never warn/error) ✅
 - **🚨 CRITICAL**: NO exceptions propagate to caller (100% swallowed) ✅
@@ -270,11 +308,13 @@ This sprint plan outlines the implementation of event-based telemetry for the Da
 - Uses context for logger and config ✅
 
 **Testing Must Verify**: ✅
+
 - [x] Throw exception inside emit method → verify swallowed ✅
 - [x] Verify logged at debug level (not warn/error) ✅
 - [x] Verify no exception reaches caller ✅
 
 **Unit Tests**: ✅ (31 test cases passing)
+
 - `should emit connection.open event` ✅
 - `should emit statement lifecycle events` ✅
 - `should emit cloudfetch chunk events` ✅
@@ -286,6 +326,7 @@ This sprint plan outlines the implementation of event-based telemetry for the Da
 - Additional tests for exception swallowing, console logging verification ✅
 
 **Implementation Notes**:
+
 - Created comprehensive implementation with all 5 emit methods
 - All methods wrapped in try-catch with debug-level logging only
 - Zero exceptions propagate to caller (100% swallowed)
@@ -299,13 +340,16 @@ This sprint plan outlines the implementation of event-based telemetry for the Da
 ---
 
 #### Task 2.3: Implement MetricsAggregator (1.5 days) ✅ COMPLETED
+
 **Description**: Create aggregator for events with statement-level aggregation and exception buffering.
 
 **Files to Create**:
+
 - `lib/telemetry/MetricsAggregator.ts` ✅
 - `tests/unit/telemetry/MetricsAggregator.test.ts` ✅
 
 **Deliverables**: ✅
+
 - `MetricsAggregator` class ✅
 - Constructor takes `IClientContext` and `DatabricksTelemetryExporter` ✅
 - Per-statement aggregation with `Map<string, StatementTelemetryDetails>` ✅
@@ -319,12 +363,14 @@ This sprint plan outlines the implementation of event-based telemetry for the Da
 **JDBC Reference**: `TelemetryCollector.java:29-30`
 
 **Pattern Alignment**: ✅
+
 - ✅ Takes IClientContext in constructor
 - ✅ Uses `context.getLogger()` for all logging
 - ✅ Reads config from context, not passed separately
 - ✅ Uses LogLevel.debug (NOT console.debug)
 
 **Acceptance Criteria**: ✅
+
 - ✅ Aggregates events by statement_id
 - ✅ Connection events emitted immediately
 - ✅ Statement events buffered until complete
@@ -337,11 +383,13 @@ This sprint plan outlines the implementation of event-based telemetry for the Da
 - ✅ **🚨 CRITICAL**: NO console logging
 
 **Testing Must Verify**: ✅
+
 - ✅ Exception in processEvent() → verify swallowed
 - ✅ Exception in flush() → verify swallowed
 - ✅ All errors logged at debug level only
 
 **Unit Tests**: ✅ (32 test cases passing)
+
 - ✅ `should aggregate events by statement_id`
 - ✅ `should emit connection events immediately`
 - ✅ `should buffer statement events until complete`
@@ -355,6 +403,7 @@ This sprint plan outlines the implementation of event-based telemetry for the Da
 - Additional tests for exception swallowing, console logging verification ✅
 
 **Implementation Notes**:
+
 - Created comprehensive implementation with all required methods
 - StatementTelemetryDetails interface defined for per-statement aggregation
 - processEvent() method handles all 5 event types (connection, statement, error, cloudfetch)
@@ -376,12 +425,15 @@ This sprint plan outlines the implementation of event-based telemetry for the Da
 ### Phase 3: Export & Integration (4 days)
 
 #### Task 3.1: Implement DatabricksTelemetryExporter (1.5 days)
+
 **Description**: Create exporter to send metrics to Databricks telemetry service.
 
 **Files to Create**:
+
 - `lib/telemetry/DatabricksTelemetryExporter.ts`
 
 **Deliverables**:
+
 - `DatabricksTelemetryExporter` class
 - Constructor takes `IClientContext`, `host`, and `CircuitBreakerRegistry`
 - Integration with CircuitBreaker
@@ -392,6 +444,7 @@ This sprint plan outlines the implementation of event-based telemetry for the Da
 - All logging via `logger.log(LogLevel.debug, ...)`
 
 **Pattern Alignment**:
+
 - ✅ Takes IClientContext as first parameter
 - ✅ Uses `context.getConnectionProvider()` for HTTP
 - ✅ Uses `context.getLogger()` for logging
@@ -399,6 +452,7 @@ This sprint plan outlines the implementation of event-based telemetry for the Da
 - ✅ No console.debug calls
 
 **Acceptance Criteria**:
+
 - Exports to `/api/2.0/sql/telemetry-ext` (authenticated)
 - Exports to `/api/2.0/sql/telemetry-unauth` (unauthenticated)
 - Properly formats payload with workspace_id, session_id, statement_id
@@ -410,12 +464,14 @@ This sprint plan outlines the implementation of event-based telemetry for the Da
 - Uses connection provider for HTTP calls
 
 **Testing Must Verify**:
+
 - [ ] Network failure → verify swallowed and logged at debug
 - [ ] Circuit breaker OPEN → verify swallowed
 - [ ] Invalid response → verify swallowed
 - [ ] No exceptions reach caller under any scenario
 
 **Unit Tests**:
+
 - `should export metrics to correct endpoint`
 - `should format payload correctly`
 - `should include workspace_id and session_id`
@@ -428,14 +484,17 @@ This sprint plan outlines the implementation of event-based telemetry for the Da
 ---
 
 #### Task 3.2: Integrate Telemetry into DBSQLClient (1.5 days)
+
 **Description**: Wire up telemetry initialization and cleanup in main client class.
 
 **Files to Modify**:
+
 - `lib/DBSQLClient.ts`
 - `lib/contracts/IClientContext.ts` (add telemetry fields to ClientConfig)
 - `lib/contracts/IDBSQLClient.ts` (add telemetry override to ConnectionOptions)
 
 **Deliverables**:
+
 - Add telemetry fields to `ClientConfig` interface (NOT ClientOptions)
 - Add telemetry defaults to `getDefaultConfig()`
 - Create telemetry component instances in `connect()` (NOT singletons)
@@ -445,6 +504,7 @@ This sprint plan outlines the implementation of event-based telemetry for the Da
 - Allow override via `ConnectionOptions.telemetryEnabled`
 
 **Pattern Alignment**:
+
 - ✅ Config in ClientConfig (like `useCloudFetch`, `useLZ4Compression`)
 - ✅ Instance-based components (no singletons)
 - ✅ Stored as private fields in DBSQLClient
@@ -452,6 +512,7 @@ This sprint plan outlines the implementation of event-based telemetry for the Da
 - ✅ Override pattern via ConnectionOptions (like existing options)
 
 **Acceptance Criteria**:
+
 - Telemetry config added to ClientConfig (NOT ClientOptions)
 - All components instantiated, not accessed via getInstance()
 - Components stored as private fields
@@ -465,12 +526,14 @@ This sprint plan outlines the implementation of event-based telemetry for the Da
 - Follows existing driver patterns
 
 **Testing Must Verify**:
+
 - [ ] Telemetry initialization fails → driver continues normally
 - [ ] Feature flag fetch fails → driver continues normally
 - [ ] All errors logged at debug level (never warn/error/info)
 - [ ] No exceptions propagate to application code
 
 **Integration Tests**:
+
 - `should initialize telemetry on connect`
 - `should respect feature flag`
 - `should share client across multiple connections`
@@ -482,15 +545,18 @@ This sprint plan outlines the implementation of event-based telemetry for the Da
 ---
 
 #### Task 3.3: Add Telemetry Event Emission Points (1 day)
+
 **Description**: Add event emission at key driver operations.
 
 **Files to Modify**:
+
 - `lib/DBSQLClient.ts` (connection events)
 - `lib/DBSQLSession.ts` (session events)
 - `lib/DBSQLOperation.ts` (statement and error events)
 - `lib/result/CloudFetchResultHandler.ts` (chunk events)
 
 **Deliverables**:
+
 - `connection.open` event on successful connection
 - `statement.start` event on statement execution
 - `statement.complete` event on statement finish
@@ -499,6 +565,7 @@ This sprint plan outlines the implementation of event-based telemetry for the Da
 - All event emissions wrapped in try-catch
 
 **Acceptance Criteria**:
+
 - Events emitted at correct lifecycle points
 - All required data included in events
 - No exceptions thrown from event emission
@@ -506,6 +573,7 @@ This sprint plan outlines the implementation of event-based telemetry for the Da
 - No performance impact when telemetry disabled
 
 **Integration Tests**:
+
 - `should emit connection.open event`
 - `should emit statement lifecycle events`
 - `should emit cloudfetch chunk events`
@@ -517,9 +585,11 @@ This sprint plan outlines the implementation of event-based telemetry for the Da
 ### Phase 4: Testing & Documentation (3 days)
 
 #### Task 4.1: Write Comprehensive Unit Tests (1.5 days)
+
 **Description**: Achieve >80% test coverage for all telemetry components.
 
 **Files to Create**:
+
 - `tests/unit/.stubs/ClientContextStub.ts` (mock IClientContext)
 - `tests/unit/.stubs/TelemetryExporterStub.ts`
 - `tests/unit/.stubs/CircuitBreakerStub.ts`
@@ -532,6 +602,7 @@ This sprint plan outlines the implementation of event-based telemetry for the Da
 - `tests/unit/telemetry/DatabricksTelemetryExporter.test.ts`
 
 **Deliverables**:
+
 - Unit tests for all components
 - Stub objects in `.stubs/` directory (follows driver pattern)
 - Mock IClientContext with logger, config, connection provider
@@ -540,6 +611,7 @@ This sprint plan outlines the implementation of event-based telemetry for the Da
 - No singleton dependencies to mock
 
 **Pattern Alignment**:
+
 - ✅ Stubs in `tests/unit/.stubs/` (like ThriftClientStub, AuthProviderStub)
 - ✅ Mock IClientContext consistently
 - ✅ Use `sinon` for spies and stubs
@@ -547,7 +619,8 @@ This sprint plan outlines the implementation of event-based telemetry for the Da
 - ✅ Test pattern: `client['privateMethod']()` for private access
 
 **Acceptance Criteria**:
-- >80% code coverage for telemetry module
+
+- > 80% code coverage for telemetry module
 - All public methods tested
 - Edge cases covered
 - Error scenarios tested
@@ -557,12 +630,15 @@ This sprint plan outlines the implementation of event-based telemetry for the Da
 ---
 
 #### Task 4.2: Write Integration Tests (1 day)
+
 **Description**: Create end-to-end integration tests for telemetry flow.
 
 **Files to Create**:
+
 - `tests/e2e/telemetry/telemetry-integration.test.ts`
 
 **Deliverables**:
+
 - End-to-end test: connection open → statement execute → export
 - Test with multiple concurrent connections
 - Test circuit breaker behavior
@@ -570,6 +646,7 @@ This sprint plan outlines the implementation of event-based telemetry for the Da
 - Test feature flag disabled scenario
 
 **Acceptance Criteria**:
+
 - Complete telemetry flow tested
 - Per-host client sharing verified
 - Circuit breaker behavior verified
@@ -579,13 +656,16 @@ This sprint plan outlines the implementation of event-based telemetry for the Da
 ---
 
 #### Task 4.3: Documentation & README Updates (0.5 days) ✅ COMPLETED
+
 **Description**: Update documentation with telemetry configuration and usage.
 
 **Files to Modify**:
+
 - `README.md` ✅
 - Create `docs/TELEMETRY.md` ✅
 
 **Deliverables**: ✅
+
 - Telemetry configuration documentation ✅
 - Event types and data collected ✅
 - Privacy policy documentation ✅
@@ -593,12 +673,14 @@ This sprint plan outlines the implementation of event-based telemetry for the Da
 - Example configuration ✅
 
 **Acceptance Criteria**: ✅
+
 - Clear documentation of telemetry features ✅
 - Configuration options explained ✅
 - Privacy considerations documented ✅
 - Examples provided ✅
 
 **Implementation Notes**:
+
 - Created comprehensive TELEMETRY.md with 11 major sections
 - Added telemetry overview section to README.md with link to detailed docs
 - All configuration options documented with examples
@@ -613,6 +695,7 @@ This sprint plan outlines the implementation of event-based telemetry for the Da
 ## Timeline & Milestones
 
 ### Week 1
+
 - **Days 1-2**: Phase 1 complete (Foundation & Infrastructure)
   - FeatureFlagCache, TelemetryClientManager, CircuitBreaker
 - **Days 3-4**: Phase 2 complete (Exception Handling & Event System)
@@ -620,6 +703,7 @@ This sprint plan outlines the implementation of event-based telemetry for the Da
 - **Day 5**: Phase 3 Task 3.1 (DatabricksTelemetryExporter)
 
 ### Week 2
+
 - **Days 6-7**: Phase 3 complete (Export & Integration)
   - DBSQLClient integration, event emission points
 - **Days 8-10**: Phase 4 complete (Testing & Documentation)
@@ -630,13 +714,16 @@ This sprint plan outlines the implementation of event-based telemetry for the Da
 ## Dependencies & Blockers
 
 ### Internal Dependencies
+
 - None - greenfield implementation
 
 ### External Dependencies
+
 - Databricks telemetry service endpoints
 - Feature flag API endpoint
 
 ### Potential Blockers
+
 - Feature flag API might not be ready → Use local config override
 - Telemetry endpoint might be rate limited → Circuit breaker protects us
 
@@ -645,17 +732,20 @@ This sprint plan outlines the implementation of event-based telemetry for the Da
 ## Success Metrics
 
 ### Functional Metrics
+
 - ✅ All unit tests passing (>80% coverage)
 - ✅ All integration tests passing
 - ✅ Zero telemetry exceptions propagated to driver
 - ✅ Circuit breaker successfully protects against failures
 
 ### Performance Metrics
+
 - ✅ Telemetry overhead < 1% when enabled
 - ✅ Zero overhead when disabled
 - ✅ No blocking operations in driver path
 
 ### Quality Metrics
+
 - ✅ TypeScript type safety maintained
 - ✅ Code review approved
 - ✅ Documentation complete
@@ -668,12 +758,14 @@ This sprint plan outlines the implementation of event-based telemetry for the Da
 The following items are explicitly **NOT** included in this sprint:
 
 ### Sprint 1 Deliverables
+
 - ✅ Complete telemetry infrastructure
 - ✅ All components implemented and tested
 - ✅ **Default: telemetryEnabled = false** (disabled for safe rollout)
 - ✅ Documentation with opt-in instructions
 
 ### Sprint 2 (Separate PR - Enable by Default)
+
 - **Task**: Change `telemetryEnabled: false` → `telemetryEnabled: true`
 - **Prerequisites**:
   - Sprint 1 deployed and validated
@@ -684,6 +776,7 @@ The following items are explicitly **NOT** included in this sprint:
 - **Risk**: Low (infrastructure already battle-tested)
 
 ### Deferred to Later Sprints
+
 - Custom telemetry log levels (FATAL, ERROR, WARN, INFO, DEBUG, TRACE)
 - Tag definition system with ExportScope filtering
 - Advanced metrics (poll latency, compression metrics)
@@ -691,6 +784,7 @@ The following items are explicitly **NOT** included in this sprint:
 - Telemetry dashboard/visualization
 
 ### Future Considerations
+
 - Metric retention and storage
 - Advanced analytics on telemetry data
 - Customer-facing telemetry configuration UI
@@ -701,16 +795,20 @@ The following items are explicitly **NOT** included in this sprint:
 ## Risk Assessment
 
 ### High Risk
+
 - None identified
 
 ### Medium Risk
+
 - **Circuit breaker tuning**: Default thresholds might need adjustment
+
   - **Mitigation**: Make thresholds configurable, can adjust post-sprint
 
 - **Feature flag API changes**: Server API might change format
   - **Mitigation**: Abstract API call behind interface, easy to update
 
 ### Low Risk
+
 - **Performance impact**: Minimal risk due to non-blocking design
   - **Mitigation**: Performance tests in integration suite
 
@@ -719,6 +817,7 @@ The following items are explicitly **NOT** included in this sprint:
 ## Definition of Done
 
 A task is considered complete when:
+
 - ✅ Code implemented and follows TypeScript best practices
 - ✅ Unit tests written with >80% coverage
 - ✅ Integration tests passing
@@ -730,6 +829,7 @@ A task is considered complete when:
 - ✅ **🚨 CRITICAL**: Error injection tested (telemetry failures don't impact driver)
 
 The sprint is considered complete when:
+
 - ✅ All tasks marked as complete
 - ✅ All tests passing
 - ✅ Code merged to main branch
@@ -744,16 +844,19 @@ The sprint is considered complete when:
 ## Stakeholder Communication
 
 ### Daily Updates
+
 - Progress shared in daily standup
 - Blockers escalated immediately
 
 ### Sprint Review
+
 - Demo telemetry in action
 - Show metrics being collected and exported
 - Review test coverage
 - Discuss learnings and improvements
 
 ### Sprint Retrospective
+
 - What went well
 - What could be improved
 - Action items for next sprint
@@ -763,12 +866,14 @@ The sprint is considered complete when:
 ## Notes & Assumptions
 
 ### Assumptions
+
 1. JDBC driver patterns are applicable to Node.js (adapted, not copied)
 2. Feature flag API is available (or can be stubbed)
 3. Databricks telemetry endpoints are available
 4. No breaking changes to driver API
 
 ### Technical Decisions
+
 1. **EventEmitter over custom pub/sub**: Native Node.js pattern
 2. **Instance-based over singletons**: Follows driver's existing patterns (HttpConnection, DBSQLLogger)
 3. **IClientContext dependency injection**: Consistent with HttpConnection, PlainHttpAuthentication
@@ -779,7 +884,9 @@ The sprint is considered complete when:
 8. **TypeScript**: Maintain type safety throughout
 
 ### Pattern Alignment Changes
+
 From original JDBC-inspired design:
+
 - ❌ Removed: `getInstance()` singleton pattern
 - ✅ Added: IClientContext parameter to all constructors
 - ❌ Removed: console.debug logging
@@ -790,6 +897,7 @@ From original JDBC-inspired design:
 - ✅ Added: Test stubs in `.stubs/` directory
 
 ### Open Questions
+
 1. Should telemetry be enabled by default? **Decision needed before merge**
 2. What workspace_id should be used in unauthenticated mode? **TBD**
 3. Should we expose telemetry events to customers? **Future sprint**
@@ -799,6 +907,7 @@ From original JDBC-inspired design:
 ## Appendix
 
 ### Reference Documents
+
 - **Design Document**: `spec/telemetry-design.md`
 - **JDBC Driver**: `/Users/samikshya.chand/Desktop/databricks-jdbc/`
   - `TelemetryClient.java`
@@ -807,6 +916,7 @@ From original JDBC-inspired design:
   - `TelemetryHelper.java`
 
 ### Key Files Created (Summary)
+
 ```
 lib/telemetry/
 ├── types.ts                         # Type definitions

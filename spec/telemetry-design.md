@@ -21,6 +21,7 @@ limitations under the License.
 This document outlines an **event-based telemetry design** for the Databricks Node.js SQL driver that leverages Node.js's native EventEmitter infrastructure. The design is inspired by the production-tested patterns from the Databricks JDBC driver and adapted to Node.js idioms.
 
 **Key Objectives:**
+
 - Collect driver usage metrics and export to Databricks telemetry service
 - Leverage Node.js EventEmitter for instrumentation
 - Maintain server-side feature flag control
@@ -28,6 +29,7 @@ This document outlines an **event-based telemetry design** for the Databricks No
 - Privacy-first: No PII or query data collected
 
 **Design Principles:**
+
 - **Event-driven architecture**: Use Node.js EventEmitter pattern
 - **Single instrumentation point**: Emit events at key driver operations
 - **Non-blocking**: All operations async with Promises
@@ -35,6 +37,7 @@ This document outlines an **event-based telemetry design** for the Databricks No
 - **Server-controlled**: Feature flag support for enable/disable
 
 **Production Requirements** (from JDBC driver experience):
+
 - **Feature flag caching**: Per-host caching to avoid rate limiting
 - **Circuit breaker**: Protect against telemetry endpoint failures
 - **🚨 Exception swallowing**: ALL telemetry exceptions caught and logged at LogLevel.debug ONLY (never warn/error)
@@ -49,19 +52,19 @@ This document outlines an **event-based telemetry design** for the Databricks No
 1. [Background & Motivation](#1-background--motivation)
 2. [Architecture Overview](#2-architecture-overview)
 3. [Core Components](#3-core-components)
-    - 3.1 [FeatureFlagCache (Per-Host)](#31-featureflagcache-per-host)
-    - 3.2 [TelemetryClientManager (Per-Host)](#32-telemetryclientmanager-per-host)
-    - 3.3 [Circuit Breaker](#33-circuit-breaker)
-    - 3.4 [TelemetryEventEmitter](#34-telemetryeventemitter)
-    - 3.5 [MetricsAggregator](#35-metricsaggregator)
-    - 3.6 [DatabricksTelemetryExporter](#36-databrickstelemetryexporter)
+   - 3.1 [FeatureFlagCache (Per-Host)](#31-featureflagcache-per-host)
+   - 3.2 [TelemetryClientManager (Per-Host)](#32-telemetryclientmanager-per-host)
+   - 3.3 [Circuit Breaker](#33-circuit-breaker)
+   - 3.4 [TelemetryEventEmitter](#34-telemetryeventemitter)
+   - 3.5 [MetricsAggregator](#35-metricsaggregator)
+   - 3.6 [DatabricksTelemetryExporter](#36-databrickstelemetryexporter)
 4. [Data Collection](#4-data-collection)
 5. [Export Mechanism](#5-export-mechanism)
 6. [Configuration](#6-configuration)
 7. [Privacy & Compliance](#7-privacy--compliance)
 8. [Error Handling](#8-error-handling)
-    - 8.1 [Exception Swallowing Strategy](#81-exception-swallowing-strategy)
-    - 8.2 [Terminal vs Retryable Exceptions](#82-terminal-vs-retryable-exceptions)
+   - 8.1 [Exception Swallowing Strategy](#81-exception-swallowing-strategy)
+   - 8.2 [Terminal vs Retryable Exceptions](#82-terminal-vs-retryable-exceptions)
 9. [Graceful Shutdown](#9-graceful-shutdown)
 10. [Testing Strategy](#10-testing-strategy)
 11. [Implementation Checklist](#11-implementation-checklist)
@@ -75,6 +78,7 @@ This document outlines an **event-based telemetry design** for the Databricks No
 ### 1.1 Current State
 
 The Databricks Node.js SQL driver currently:
+
 - ✅ **DBSQLClient**: Main client class for connection management
 - ✅ **DBSQLSession**: Session management with operation tracking
 - ✅ **DBSQLOperation**: Statement execution and result handling
@@ -84,6 +88,7 @@ The Databricks Node.js SQL driver currently:
 ### 1.2 Design Opportunity
 
 The driver needs comprehensive telemetry to:
+
 - Track driver usage patterns and performance metrics
 - Monitor CloudFetch adoption and effectiveness
 - Identify performance bottlenecks and optimization opportunities
@@ -92,6 +97,7 @@ The driver needs comprehensive telemetry to:
 ### 1.3 The Approach
 
 **Event-driven telemetry collection**:
+
 - ✅ Emit telemetry events at key driver operations
 - ✅ Aggregate metrics by statement ID
 - ✅ Export batched data to Databricks service
@@ -130,6 +136,7 @@ graph TB
 ```
 
 **Key Components:**
+
 1. **TelemetryEventEmitter** (new): Extends EventEmitter, emits events at key operations
 2. **FeatureFlagCache** (new): Per-host caching of feature flags with reference counting
 3. **TelemetryClientManager** (new): Manages one telemetry client per host with reference counting
@@ -181,6 +188,7 @@ sequenceDiagram
 **Location**: `lib/telemetry/FeatureFlagCache.ts`
 
 #### Rationale
+
 - **Per-host caching**: Feature flags cached by host (not per connection) to prevent rate limiting
 - **Reference counting**: Tracks number of connections per host for proper cleanup
 - **Automatic expiration**: Refreshes cached flags after TTL expires (15 minutes)
@@ -261,8 +269,7 @@ class FeatureFlagCache {
       return false;
     }
 
-    const isExpired = !ctx.lastFetched ||
-      (Date.now() - ctx.lastFetched.getTime() > ctx.cacheDuration);
+    const isExpired = !ctx.lastFetched || Date.now() - ctx.lastFetched.getTime() > ctx.cacheDuration;
 
     if (isExpired) {
       try {
@@ -302,6 +309,7 @@ export default FeatureFlagCache;
 **Implementation Status**: ✅ **COMPLETED** (Task 1.6)
 
 #### Rationale
+
 - **One client per host**: Large customers open many parallel connections to the same host
 - **Prevents rate limiting**: Shared client batches events from all connections
 - **Reference counting**: Tracks active connections, only closes client when last connection closes
@@ -310,6 +318,7 @@ export default FeatureFlagCache;
 #### Implementation Details
 
 **Key Features Implemented**:
+
 - ✅ TelemetryClientProvider takes IClientContext in constructor
 - ✅ One TelemetryClient created per host with reference counting
 - ✅ Client shared across multiple connections to same host
@@ -323,11 +332,13 @@ export default FeatureFlagCache;
 - ✅ Comprehensive unit tests with 100% code coverage
 
 **Test Coverage**:
+
 - 39 unit tests covering all functionality
 - 100% line coverage for both TelemetryClient and TelemetryClientProvider
 - 100% branch coverage
 
 **Test Scenarios**:
+
 1. Provider creation and initialization
 2. One client per host creation and sharing
 3. Reference counting (increment/decrement)
@@ -418,12 +429,14 @@ export default TelemetryClientProvider;
 **Implementation Status**: ✅ **COMPLETED** (Task 1.3)
 
 #### Rationale
+
 - **Endpoint protection**: The telemetry endpoint itself may fail or become unavailable
 - **Not just rate limiting**: Protects against 5xx errors, timeouts, network failures
 - **Resource efficiency**: Prevents wasting resources on a failing endpoint
 - **Auto-recovery**: Automatically detects when endpoint becomes healthy again
 
 #### States
+
 1. **Closed**: Normal operation, requests pass through
 2. **Open**: After threshold failures, all requests rejected immediately (drop events)
 3. **Half-Open**: After timeout, allows test requests to check if endpoint recovered
@@ -431,6 +444,7 @@ export default TelemetryClientProvider;
 #### Implementation Details
 
 **Key Features Implemented**:
+
 - ✅ Three-state circuit breaker (CLOSED, OPEN, HALF_OPEN)
 - ✅ Configurable failure threshold (default: 5 consecutive failures)
 - ✅ Configurable timeout period (default: 60 seconds)
@@ -441,6 +455,7 @@ export default TelemetryClientProvider;
 - ✅ Comprehensive unit tests with 100% code coverage
 
 **Default Configuration**:
+
 ```typescript
 {
   failureThreshold: 5,      // Open after 5 consecutive failures
@@ -450,6 +465,7 @@ export default TelemetryClientProvider;
 ```
 
 **State Transition Logic**:
+
 - **CLOSED → OPEN**: After `failureThreshold` consecutive failures
 - **OPEN → HALF_OPEN**: After `timeout` milliseconds
 - **HALF_OPEN → CLOSED**: After `successThreshold` consecutive successes
@@ -489,10 +505,7 @@ export class CircuitBreaker {
   private nextAttempt?: Date;
   private readonly config: CircuitBreakerConfig;
 
-  constructor(
-    private context: IClientContext,
-    config?: Partial<CircuitBreakerConfig>
-  ) {
+  constructor(private context: IClientContext, config?: Partial<CircuitBreakerConfig>) {
     this.config = {
       ...DEFAULT_CIRCUIT_BREAKER_CONFIG,
       ...config,
@@ -543,7 +556,7 @@ export class CircuitBreaker {
       this.successCount++;
       logger.log(
         LogLevel.debug,
-        `Circuit breaker success in HALF_OPEN (${this.successCount}/${this.config.successThreshold})`
+        `Circuit breaker success in HALF_OPEN (${this.successCount}/${this.config.successThreshold})`,
       );
 
       if (this.successCount >= this.config.successThreshold) {
@@ -560,18 +573,12 @@ export class CircuitBreaker {
     this.failureCount++;
     this.successCount = 0;
 
-    logger.log(
-      LogLevel.debug,
-      `Circuit breaker failure (${this.failureCount}/${this.config.failureThreshold})`
-    );
+    logger.log(LogLevel.debug, `Circuit breaker failure (${this.failureCount}/${this.config.failureThreshold})`);
 
     if (this.failureCount >= this.config.failureThreshold) {
       this.state = CircuitBreakerState.OPEN;
       this.nextAttempt = new Date(Date.now() + this.config.timeout);
-      logger.log(
-        LogLevel.debug,
-        `Circuit breaker transitioned to OPEN (will retry after ${this.config.timeout}ms)`
-      );
+      logger.log(LogLevel.debug, `Circuit breaker transitioned to OPEN (will retry after ${this.config.timeout}ms)`);
     }
   }
 }
@@ -618,11 +625,13 @@ export class CircuitBreakerRegistry {
 #### Test Coverage
 
 **Unit Tests** (`tests/unit/telemetry/CircuitBreaker.test.ts`):
+
 - ✅ 32 test cases covering all functionality
 - ✅ 100% line coverage (61/61 lines)
 - ✅ 100% branch coverage (16/16 branches)
 
 **Test Scenarios**:
+
 1. Initial state verification (CLOSED state, default config)
 2. State transitions: CLOSED → OPEN → HALF_OPEN → CLOSED
 3. Failure threshold configuration (default and custom)
@@ -635,6 +644,7 @@ export class CircuitBreakerRegistry {
 10. CircuitBreakerRegistry host management
 
 **Test Stub** (`tests/unit/.stubs/CircuitBreakerStub.ts`):
+
 - Simplified implementation for use in other component tests
 - Provides controllable state for testing dependent components
 
@@ -674,11 +684,7 @@ class TelemetryEventEmitter extends EventEmitter {
   /**
    * Emit a connection open event.
    */
-  emitConnectionOpen(data: {
-    sessionId: string;
-    workspaceId: string;
-    driverConfig: any;
-  }): void {
+  emitConnectionOpen(data: { sessionId: string; workspaceId: string; driverConfig: any }): void {
     if (!this.enabled) return;
 
     const logger = this.context.getLogger();
@@ -697,11 +703,7 @@ class TelemetryEventEmitter extends EventEmitter {
   /**
    * Emit a statement start event.
    */
-  emitStatementStart(data: {
-    statementId: string;
-    sessionId: string;
-    operationType: string;
-  }): void {
+  emitStatementStart(data: { statementId: string; sessionId: string; operationType: string }): void {
     if (!this.enabled) return;
 
     try {
@@ -804,6 +806,7 @@ export default TelemetryEventEmitter;
 **Key Design**: Aggregates metrics by `statement_id`, with each aggregated event including both `statement_id` and `session_id` for correlation. This follows the JDBC driver pattern.
 
 **JDBC References**:
+
 - `TelemetryCollector.java:29-30` - Per-statement aggregation using `ConcurrentHashMap<String, StatementTelemetryDetails>`
 - `TelemetryEvent.java:8-12` - Both `session_id` and `sql_statement_id` fields in exported events
 
@@ -843,10 +846,7 @@ class MetricsAggregator {
   private batch: TelemetryMetric[];
   private flushTimer?: NodeJS.Timeout;
 
-  constructor(
-    private context: IClientContext,
-    private exporter: DatabricksTelemetryExporter
-  ) {
+  constructor(private context: IClientContext, private exporter: DatabricksTelemetryExporter) {
     this.statements = new Map();
     this.batch = [];
     this.startPeriodicFlush();
@@ -989,11 +989,7 @@ class MetricsAggregator {
   private handleError(event: TelemetryEvent): void {
     if (event.isTerminal) {
       // Terminal exceptions: flush immediately
-      this.emitErrorMetric(
-        event.statementId || '',
-        event.sessionId || '',
-        new Error(event.errorMessage)
-      );
+      this.emitErrorMetric(event.statementId || '', event.sessionId || '', new Error(event.errorMessage));
     } else {
       // Retryable exceptions: buffer until statement completes
       const details = this.statements.get(event.statementId!);
@@ -1022,7 +1018,7 @@ class MetricsAggregator {
     this.batch.push(metric);
     if (this.batch.length >= (config.telemetryBatchSize ?? 100)) {
       // Fire and forget - don't block on flush
-      this.flush().catch(error => {
+      this.flush().catch((error) => {
         logger.log(LogLevel.debug, `Error in batch flush: ${error.message}`);
       });
     }
@@ -1033,7 +1029,7 @@ class MetricsAggregator {
     const logger = this.context.getLogger();
 
     this.flushTimer = setInterval(() => {
-      this.flush().catch(error => {
+      this.flush().catch((error) => {
         logger.log(LogLevel.debug, `Error in periodic flush: ${error.message}`);
       });
     }, config.telemetryFlushIntervalMs ?? 5000);
@@ -1071,7 +1067,7 @@ class DatabricksTelemetryExporter {
   constructor(
     private context: IClientContext,
     private host: string,
-    private circuitBreakerRegistry: CircuitBreakerRegistry
+    private circuitBreakerRegistry: CircuitBreakerRegistry,
   ) {
     this.circuitBreaker = circuitBreakerRegistry.getCircuitBreaker(host);
   }
@@ -1106,13 +1102,13 @@ class DatabricksTelemetryExporter {
       : `https://${this.host}/telemetry-unauth`;
 
     // CRITICAL: Format payload to match JDBC TelemetryRequest with protoLogs
-    const telemetryLogs = metrics.map(m => this.toTelemetryLog(m));
-    const protoLogs = telemetryLogs.map(log => JSON.stringify(log));
+    const telemetryLogs = metrics.map((m) => this.toTelemetryLog(m));
+    const protoLogs = telemetryLogs.map((log) => JSON.stringify(log));
 
     const payload = {
       uploadTime: Date.now(),
-      items: [],              // Required but unused
-      protoLogs,              // Array of JSON-stringified log objects
+      items: [], // Required but unused
+      protoLogs, // Array of JSON-stringified log objects
     };
 
     // Get authentication headers if using authenticated endpoint
@@ -1192,8 +1188,8 @@ class DatabricksTelemetryExporter {
 
   private generateUUID(): string {
     return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-      const r = Math.random() * 16 | 0;
-      const v = c === 'x' ? r : (r & 0x3 | 0x8);
+      const r = (Math.random() * 16) | 0;
+      const v = c === 'x' ? r : (r & 0x3) | 0x8;
       return v.toString(16);
     });
   }
@@ -1210,13 +1206,13 @@ export default DatabricksTelemetryExporter;
 
 The driver emits events at key operations:
 
-| Event | When | Data Collected |
-|-------|------|----------------|
-| `connection.open` | Session opened | session_id, workspace_id, driver config, latency_ms |
-| `statement.start` | Statement execution begins | statement_id, session_id, operation_type |
-| `statement.complete` | Statement execution ends | statement_id, latency, result_format, poll_count |
-| `cloudfetch.chunk` | CloudFetch chunk downloaded | statement_id, chunk_index, latency, bytes |
-| `error` | Error occurs | statement_id, error_name, error_message, is_terminal |
+| Event                | When                        | Data Collected                                       |
+| -------------------- | --------------------------- | ---------------------------------------------------- |
+| `connection.open`    | Session opened              | session_id, workspace_id, driver config, latency_ms  |
+| `statement.start`    | Statement execution begins  | statement_id, session_id, operation_type             |
+| `statement.complete` | Statement execution ends    | statement_id, latency, result_format, poll_count     |
+| `cloudfetch.chunk`   | CloudFetch chunk downloaded | statement_id, chunk_index, latency, bytes            |
+| `error`              | Error occurs                | statement_id, error_name, error_message, is_terminal |
 
 ### 4.2 Driver Configuration Data
 
@@ -1225,16 +1221,16 @@ Collected once per connection:
 ```typescript
 interface DriverConfiguration {
   driverVersion: string;
-  driverName: string;          // 'nodejs-sql-driver' (matches JDBC naming)
+  driverName: string; // 'nodejs-sql-driver' (matches JDBC naming)
   nodeVersion: string;
   platform: string;
   osVersion: string;
-  osArch: string;              // Architecture (x64, arm64, etc.)
-  runtimeVendor: string;       // 'Node.js Foundation'
-  localeName: string;          // Locale (e.g., 'en_US')
-  charSetEncoding: string;     // Character encoding (e.g., 'UTF-8')
-  processName: string;         // Process name from process.title or script name
-  authType: string;            // Authentication type (access-token, databricks-oauth, custom)
+  osArch: string; // Architecture (x64, arm64, etc.)
+  runtimeVendor: string; // 'Node.js Foundation'
+  localeName: string; // Locale (e.g., 'en_US')
+  charSetEncoding: string; // Character encoding (e.g., 'UTF-8')
+  processName: string; // Process name from process.title or script name
+  authType: string; // Authentication type (access-token, databricks-oauth, custom)
 
   // Feature flags
   cloudFetchEnabled: boolean;
@@ -1250,6 +1246,7 @@ interface DriverConfiguration {
 ```
 
 **System Configuration Fields** (matches JDBC implementation):
+
 - **driverName**: Always set to `'nodejs-sql-driver'` to match JDBC driver naming convention
 - **osArch**: Obtained from `os.arch()` - reports CPU architecture (x64, arm64, ia32, etc.)
 - **runtimeVendor**: Always set to `'Node.js Foundation'` (equivalent to JDBC's java.vendor)
@@ -1259,6 +1256,7 @@ interface DriverConfiguration {
 - **authType**: Authentication method used ('access-token', 'databricks-oauth', or 'custom'), exported as `driver_connection_params.auth_type`
 
 **Connection Parameters**:
+
 - **auth_type**: Exported in `driver_connection_params` field for connection metrics, indicates authentication method used
 
 ### 4.3 Statement Metrics
@@ -1291,6 +1289,7 @@ interface StatementMetrics {
 ### 4.4 Privacy Considerations
 
 **Never Collected**:
+
 - ❌ SQL query text
 - ❌ Query results or data values
 - ❌ Table/column names
@@ -1298,6 +1297,7 @@ interface StatementMetrics {
 - ❌ Credentials or tokens
 
 **Always Collected**:
+
 - ✅ Operation latency
 - ✅ Error codes and types
 - ✅ Feature flags (boolean settings)
@@ -1341,9 +1341,9 @@ flowchart TD
 
 ```typescript
 interface DatabricksTelemetryPayload {
-  uploadTime: number;          // Timestamp in milliseconds
-  items: string[];             // Required but unused (empty array)
-  protoLogs: string[];         // Array of JSON-stringified log objects
+  uploadTime: number; // Timestamp in milliseconds
+  items: string[]; // Required but unused (empty array)
+  protoLogs: string[]; // Array of JSON-stringified log objects
 }
 ```
 
@@ -1366,37 +1366,37 @@ Each item in `protoLogs` is a JSON-stringified object with this structure:
 
 ```typescript
 interface DatabricksTelemetryLog {
-  frontend_log_event_id: string;         // UUID v4
+  frontend_log_event_id: string; // UUID v4
   context: {
     client_context: {
       timestamp_millis: number;
-      user_agent: string;                // "databricks-sql-nodejs/<version>"
+      user_agent: string; // "databricks-sql-nodejs/<version>"
     };
   };
   entry: {
     sql_driver_log: {
-      session_id?: string;               // Session UUID
-      sql_statement_id?: string;         // Statement UUID (null for connection events)
+      session_id?: string; // Session UUID
+      sql_statement_id?: string; // Statement UUID (null for connection events)
 
       // Connection events only
       system_configuration?: {
-        driver_version?: string;         // e.g., "1.12.0"
-        driver_name?: string;            // "nodejs-sql-driver"
-        runtime_name?: string;           // "Node.js"
-        runtime_version?: string;        // e.g., "v22.16.0"
-        runtime_vendor?: string;         // "Node.js Foundation"
-        os_name?: string;                // e.g., "linux"
-        os_version?: string;             // e.g., "5.4.0-1153-aws-fips"
-        os_arch?: string;                // e.g., "x64"
-        locale_name?: string;            // e.g., "en_US"
-        char_set_encoding?: string;      // e.g., "UTF-8"
-        process_name?: string;           // e.g., "node"
+        driver_version?: string; // e.g., "1.12.0"
+        driver_name?: string; // "nodejs-sql-driver"
+        runtime_name?: string; // "Node.js"
+        runtime_version?: string; // e.g., "v22.16.0"
+        runtime_vendor?: string; // "Node.js Foundation"
+        os_name?: string; // e.g., "linux"
+        os_version?: string; // e.g., "5.4.0-1153-aws-fips"
+        os_arch?: string; // e.g., "x64"
+        locale_name?: string; // e.g., "en_US"
+        char_set_encoding?: string; // e.g., "UTF-8"
+        process_name?: string; // e.g., "node"
       };
 
       // Statement events only
       operation_latency_ms?: number;
       sql_operation?: {
-        execution_result?: string;       // "inline" | "cloudfetch" | "arrow"
+        execution_result?: string; // "inline" | "cloudfetch" | "arrow"
         chunk_details?: {
           total_chunks_present?: number;
           total_chunks_iterated?: number;
@@ -1414,6 +1414,7 @@ interface DatabricksTelemetryLog {
 ```
 
 **Key Points**:
+
 - Each telemetry log is **JSON-stringified** before being added to `protoLogs` array
 - The `items` field is required but always empty
 - The `uploadTime` is the timestamp when the batch is being exported
@@ -1646,6 +1647,7 @@ This section clarifies **when** telemetry logs are exported during different lif
 ### Export Triggers
 
 Telemetry export can be triggered by:
+
 1. **Batch size threshold** - When pending metrics reach configured batch size (default: 100)
 2. **Periodic timer** - Every flush interval (default: 5 seconds)
 3. **Statement close** - Completes statement aggregation, may trigger batch export if batch full
@@ -1655,6 +1657,7 @@ Telemetry export can be triggered by:
 ### Statement Close (DBSQLOperation.close())
 
 **What happens:**
+
 ```typescript
 // In DBSQLOperation.close()
 try {
@@ -1678,6 +1681,7 @@ try {
 ```
 
 **Export behavior:**
+
 - Statement metrics are **aggregated and added to pending batch**
 - Export happens **ONLY if batch size threshold is reached**
 - Otherwise, metrics remain buffered until next timer flush or connection close
@@ -1686,6 +1690,7 @@ try {
 ### Connection Close (DBSQLClient.close())
 
 **What happens:**
+
 ```typescript
 // In DBSQLClient.close()
 try {
@@ -1709,6 +1714,7 @@ try {
 ```
 
 **Export behavior:**
+
 - **ALWAYS exports** all pending metrics via `aggregator.close()`
 - Stops the periodic flush timer
 - Completes any incomplete statements in the aggregation map
@@ -1716,6 +1722,7 @@ try {
 - **Guarantees export** of all buffered telemetry before connection closes
 
 **Aggregator.close() implementation:**
+
 ```typescript
 // In MetricsAggregator.close()
 close(): void {
@@ -1744,45 +1751,49 @@ close(): void {
 ### Process Exit (Node.js shutdown)
 
 **What happens:**
+
 - **NO automatic export** if `DBSQLClient.close()` was not called
 - Telemetry is lost if process exits without proper cleanup
 - **Best practice**: Always call `client.close()` before exit
 
 **Recommended pattern:**
+
 ```typescript
 const client = new DBSQLClient();
 
 // Register cleanup on process exit
 process.on('SIGINT', async () => {
-  await client.close();  // Ensures final telemetry flush
+  await client.close(); // Ensures final telemetry flush
   process.exit(0);
 });
 
 process.on('SIGTERM', async () => {
-  await client.close();  // Ensures final telemetry flush
+  await client.close(); // Ensures final telemetry flush
   process.exit(0);
 });
 ```
 
 ### Summary Table
 
-| Event | Statement Aggregated | Export Triggered | Notes |
-|-------|---------------------|------------------|-------|
-| **Statement Close** | ✅ Yes | ⚠️ Only if batch full | Metrics buffered, not immediately exported |
-| **Batch Size Reached** | N/A | ✅ Yes | Automatic export when 100 metrics buffered |
-| **Periodic Timer** | N/A | ✅ Yes | Every 5 seconds (configurable) |
-| **Connection Close** | ✅ Yes (incomplete) | ✅ Yes (guaranteed) | Completes all statements, flushes all metrics |
-| **Process Exit** | ❌ No | ❌ No | Lost unless `close()` was called first |
-| **Terminal Error** | N/A | ✅ Yes (immediate) | Auth errors, 4xx errors flushed right away |
+| Event                  | Statement Aggregated | Export Triggered      | Notes                                         |
+| ---------------------- | -------------------- | --------------------- | --------------------------------------------- |
+| **Statement Close**    | ✅ Yes               | ⚠️ Only if batch full | Metrics buffered, not immediately exported    |
+| **Batch Size Reached** | N/A                  | ✅ Yes                | Automatic export when 100 metrics buffered    |
+| **Periodic Timer**     | N/A                  | ✅ Yes                | Every 5 seconds (configurable)                |
+| **Connection Close**   | ✅ Yes (incomplete)  | ✅ Yes (guaranteed)   | Completes all statements, flushes all metrics |
+| **Process Exit**       | ❌ No                | ❌ No                 | Lost unless `close()` was called first        |
+| **Terminal Error**     | N/A                  | ✅ Yes (immediate)    | Auth errors, 4xx errors flushed right away    |
 
 ### Key Differences from JDBC
 
 **Node.js behavior:**
+
 - Statement close does **not** automatically export (buffered until batch/timer/connection-close)
 - Connection close **always** exports all pending metrics
 - Process exit does **not** guarantee export (must call `close()` explicitly)
 
 **JDBC behavior:**
+
 - Similar buffering and batch export strategy
 - JVM shutdown hooks provide more automatic cleanup
 - Connection close behavior is the same (guaranteed flush)
@@ -1796,6 +1807,7 @@ process.on('SIGTERM', async () => {
 ### 7.1 Data Privacy
 
 **Never Collected**:
+
 - ❌ SQL query text (only statement ID)
 - ❌ Query results or data values
 - ❌ Table/column names from queries
@@ -1803,6 +1815,7 @@ process.on('SIGTERM', async () => {
 - ❌ Credentials or authentication tokens
 
 **Always Collected**:
+
 - ✅ Operation latency
 - ✅ Error codes (not full stack traces with PII)
 - ✅ Feature flags (boolean settings)
@@ -1825,11 +1838,13 @@ process.on('SIGTERM', async () => {
 **Core Principle**: Every telemetry exception must be swallowed with minimal logging to avoid customer anxiety.
 
 **Rationale** (from JDBC experience):
+
 - Customers become anxious when they see error logs, even if telemetry is non-blocking
 - Telemetry failures should never impact the driver's core functionality
 - **Critical**: Circuit breaker must catch errors **before** swallowing
 
 #### Logging Levels
+
 - **TRACE** (console.debug): Use for most telemetry errors (default)
 - **DEBUG** (console.debug): Use only for circuit breaker state changes
 - **WARN/ERROR**: Never use for telemetry errors
@@ -1855,6 +1870,7 @@ try {
 #### Exception Classification
 
 **Terminal Exceptions** (flush immediately):
+
 - Authentication failures (401, 403)
 - Invalid SQL syntax errors
 - Permission denied errors
@@ -1862,6 +1878,7 @@ try {
 - Invalid request format errors (400)
 
 **Retryable Exceptions** (buffer until statement completes):
+
 - Network timeouts
 - Connection errors
 - Rate limiting (429)
@@ -1877,6 +1894,7 @@ try {
 **Test Coverage**: 100% line coverage (17/17 lines), 100% branch coverage (29/29 branches)
 
 **Key Features Implemented**:
+
 - ✅ Static `isTerminal()` method that identifies terminal (unrecoverable) exceptions
 - ✅ Static `isRetryable()` method that identifies retryable (transient) exceptions
 - ✅ Supports both `statusCode` and `status` properties for HTTP status codes
@@ -1888,6 +1906,7 @@ try {
 - ✅ Comprehensive unit tests with 51 test cases
 
 **Terminal Exception Detection**:
+
 - Authentication failures: `AuthenticationError` class
 - HTTP 401 Unauthorized
 - HTTP 403 Forbidden
@@ -1895,6 +1914,7 @@ try {
 - HTTP 400 Bad Request
 
 **Retryable Exception Detection**:
+
 - Retry errors: `RetryError` class
 - Network timeouts: By error name (`TimeoutError`) or message containing "timeout"
 - HTTP 429 Too Many Requests
@@ -1904,6 +1924,7 @@ try {
 - HTTP 504 Gateway Timeout
 
 **Usage Example**:
+
 ```typescript
 import ExceptionClassifier from './telemetry/ExceptionClassifier';
 
@@ -1918,6 +1939,7 @@ if (ExceptionClassifier.isTerminal(error)) {
 ```
 
 **Implementation Notes**:
+
 - Uses `instanceof` checks for typed error classes (AuthenticationError, RetryError)
 - Checks both `statusCode` and `status` properties for flexibility with different HTTP clients
 - Prioritizes `statusCode` over `status` when both are present
@@ -2028,12 +2050,14 @@ class TelemetryClient {
 ### 10.1 Unit Tests
 
 **TelemetryEventEmitter Tests**:
+
 - `emitter_emits_connection_open_event`
 - `emitter_emits_statement_events`
 - `emitter_swallows_exceptions`
 - `emitter_respects_enabled_flag`
 
 **MetricsAggregator Tests**:
+
 - `aggregator_combines_events_by_statement_id`
 - `aggregator_emits_on_statement_complete`
 - `aggregator_handles_connection_event`
@@ -2043,27 +2067,32 @@ class TelemetryClient {
 - `aggregator_flushes_terminal_immediately`
 
 **CircuitBreaker Tests**:
+
 - `circuit_breaker_opens_after_failures`
 - `circuit_breaker_closes_after_successes`
 - `circuit_breaker_per_host_isolation`
 
 **FeatureFlagCache Tests**:
+
 - `cache_caches_per_host`
 - `cache_expires_after_15_minutes`
 - `cache_ref_counting_works`
 
 **TelemetryClientManager Tests**:
+
 - `manager_one_client_per_host`
 - `manager_ref_counting_works`
 - `manager_closes_on_last_release`
 
 **ExceptionClassifier Tests**:
+
 - `classifier_identifies_terminal`
 - `classifier_identifies_retryable`
 
 ### 10.2 Integration Tests
 
 **End-to-End Tests**:
+
 - `e2e_connection_open_exported_successfully`
 - `e2e_statement_with_chunks_aggregated_correctly`
 - `e2e_error_captured_in_metrics`
@@ -2077,10 +2106,12 @@ class TelemetryClient {
 ### 10.3 Performance Tests
 
 **Overhead Measurement**:
+
 - `telemetry_overhead_less_than_1_percent`
 - `event_emission_completes_under_one_microsecond`
 
 Compare:
+
 - Baseline: Driver without telemetry
 - With telemetry disabled: Should be ~0% overhead
 - With telemetry enabled: Should be < 1% overhead
@@ -2090,6 +2121,7 @@ Compare:
 ## 11. Implementation Checklist
 
 ### Phase 1: Feature Flag Cache & Per-Host Management
+
 - [x] **Create type definitions** (`lib/telemetry/types.ts`) - COMPLETED
   - ✅ TelemetryConfiguration interface with all config fields
   - ✅ TelemetryEvent interface with eventType, timestamp, sessionId, statementId
@@ -2122,6 +2154,7 @@ Compare:
   - ✅ Tests verify cleanup on zero refCount
 
 ### Phase 2: Circuit Breaker
+
 - [x] **Create `CircuitBreaker` class with state machine** - COMPLETED (Task 1.3)
   - ✅ Implemented three-state circuit breaker (CLOSED, OPEN, HALF_OPEN)
   - ✅ Configurable failure threshold (default: 5)
@@ -2150,6 +2183,7 @@ Compare:
   - ✅ Test stub created for integration testing
 
 ### Phase 3: Exception Handling
+
 - [x] **Create `ExceptionClassifier` for terminal vs retryable** - COMPLETED (Task 1.4)
   - ✅ Static `isTerminal()` method implemented
   - ✅ Static `isRetryable()` method implemented
@@ -2170,6 +2204,7 @@ Compare:
 - [x] Ensure circuit breaker sees exceptions before swallowing - COMPLETED (Task 1.7)
 
 ### Phase 4: Core Implementation
+
 - [x] **Create `TelemetryEventEmitter` class** - COMPLETED (Task 1.5)
   - ✅ Extends Node.js EventEmitter
   - ✅ Takes IClientContext in constructor
@@ -2216,6 +2251,7 @@ Compare:
 - [ ] Add event emission points to driver operations
 
 ### Phase 5: Integration
+
 - [x] **Update `DBSQLClient.connect()` to use managers** - COMPLETED (Task 2.4)
   - ✅ Added telemetryEnabled override to ConnectionOptions in IDBSQLClient.ts
   - ✅ Added private fields for telemetry components in DBSQLClient
@@ -2237,6 +2273,7 @@ Compare:
   - ✅ Increment/decrement reference counts properly
 
 ### Phase 6: Instrumentation
+
 - [x] **Add `connection.open` event emission** - COMPLETED (Task 2.5)
   - ✅ Emitted in DBSQLClient.openSession() after successful session creation
   - ✅ Includes sessionId, workspaceId (extracted from host), and driverConfig
@@ -2271,6 +2308,7 @@ Compare:
   - ✅ End-to-end telemetry flow verified
 
 ### Phase 7: Testing
+
 - [x] **Unit tests for all new components** - COMPLETED (Task 2.6)
   - ✅ All telemetry components have comprehensive unit tests
   - ✅ 226 unit tests passing
@@ -2310,6 +2348,7 @@ Compare:
 - [ ] Load tests with many concurrent connections - DEFERRED (not critical for MVP)
 
 ### Phase 8: Documentation
+
 - [x] **Update README with telemetry configuration** - COMPLETED (Task 4.3)
   - ✅ Added telemetry overview section to README.md
   - ✅ Included key features, data collection summary, and configuration examples
@@ -2336,6 +2375,7 @@ Compare:
 **Question**: Should we use a specific naming convention for telemetry events?
 
 **Recommendation**: Use dot-notation with namespace prefix:
+
 - `telemetry.connection.open`
 - `telemetry.statement.start`
 - `telemetry.statement.complete`
@@ -2347,6 +2387,7 @@ Compare:
 **Question**: How do we know when a statement is complete for aggregation?
 
 **Options**:
+
 1. **Explicit marker**: Call `completeStatement(id)` explicitly (recommended)
 2. **Timeout-based**: Emit after N seconds of inactivity
 3. **On close**: When operation is closed
@@ -2372,6 +2413,7 @@ Compare:
 ### 13.2 Existing Code References
 
 **JDBC Driver** (reference implementation):
+
 - `TelemetryClient.java:15`: Main telemetry client with batching and flush
 - `TelemetryClientFactory.java:27`: Per-host client management with reference counting
 - `CircuitBreakerTelemetryPushClient.java:15`: Circuit breaker wrapper
@@ -2389,6 +2431,7 @@ Compare:
 The Node.js driver implements the following fields from the `OssSqlDriverTelemetryLog` proto:
 
 **Top-level fields:**
+
 - `session_id` - Session UUID for correlation
 - `sql_statement_id` - Statement UUID (filtered to exclude NIL UUID)
 - `system_configuration` - Complete driver and OS configuration
@@ -2397,6 +2440,7 @@ The Node.js driver implements the following fields from the `OssSqlDriverTelemet
 - `error_info` - Error details (name and stack trace)
 
 **driver_connection_params:**
+
 - `http_path` - API endpoint path
 - `socket_timeout` - Connection timeout
 - `enable_arrow` - Arrow format flag
@@ -2404,6 +2448,7 @@ The Node.js driver implements the following fields from the `OssSqlDriverTelemet
 - `enable_metric_view_metadata` - Metric view metadata flag
 
 **sql_operation (SqlExecutionEvent):**
+
 - `statement_type` - Operation type (EXECUTE_STATEMENT, LIST_CATALOGS, etc.)
 - `is_compressed` - Compression flag from CloudFetch
 - `execution_result` - Result format (INLINE_ARROW, INLINE_JSON, EXTERNAL_LINKS, COLUMNAR_INLINE)
@@ -2415,6 +2460,7 @@ The Node.js driver implements the following fields from the `OssSqlDriverTelemet
 The following proto fields are **not currently implemented** as they require additional instrumentation that is not present in the Node.js driver:
 
 **sql_operation fields:**
+
 - `chunk_id` - Specific chunk identifier for failures (not tracked)
 - `retry_count` - Number of retry attempts (statement-level retries not tracked)
 - `operation_detail` (OperationDetail message):
@@ -2427,6 +2473,7 @@ The following proto fields are **not currently implemented** as they require add
   - `result_set_consumption_latency_millis` - Time to consume all results
 
 **chunk_details fields:**
+
 - `initial_chunk_latency_millis` - Time to download first chunk
 - `slowest_chunk_latency_millis` - Maximum chunk download time
 - `sum_chunks_download_time_millis` - Total download time across all chunks
@@ -2435,6 +2482,7 @@ The following proto fields are **not currently implemented** as they require add
 Most fields in `DriverConnectionParameters` are specific to JDBC/Java configurations and not applicable to the Node.js driver (proxy configuration, SSL settings, Azure/GCP specific settings, etc.). Only the fields listed in 14.1 are relevant and implemented.
 
 **Reason for exclusion:** These fields require extensive instrumentation to track:
+
 - Per-operation status polling (operation_detail)
 - Result set consumption timing (result_latency)
 - Per-chunk download timing (chunk_details timing fields)
@@ -2455,6 +2503,7 @@ This **event-based telemetry design** provides an efficient approach to collecti
 5. **Production-ready**: Exception swallowing, graceful shutdown, reference counting
 
 **Key Aggregation Pattern** (following JDBC):
+
 - **Aggregate by `statement_id`**: Multiple events for the same statement are aggregated together
 - **Include `session_id` in exports**: Each exported event contains both `statement_id` and `session_id`
 - **Enable multi-level correlation**: Allows correlation at both statement and session levels

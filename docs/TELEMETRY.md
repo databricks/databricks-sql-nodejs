@@ -43,6 +43,7 @@ The Databricks SQL Driver for Node.js includes an event-based telemetry system t
 - Provide better customer support
 
 **Key Features:**
+
 - **Privacy-first**: No PII, query text, or sensitive data is collected
 - **Opt-in by default**: Telemetry is disabled by default (controlled via server-side feature flag)
 - **Non-blocking**: All telemetry operations are asynchronous and never block your application
@@ -92,11 +93,11 @@ const { DBSQLClient } = require('@databricks/sql');
 
 const client = new DBSQLClient({
   // Telemetry configuration (all optional)
-  telemetryEnabled: true,              // Enable/disable telemetry (default: false)
-  telemetryBatchSize: 100,             // Number of events to batch before sending (default: 100)
-  telemetryFlushIntervalMs: 5000,      // Time interval to flush metrics in ms (default: 5000)
-  telemetryMaxRetries: 3,              // Maximum retry attempts for export (default: 3)
-  telemetryAuthenticatedExport: true,  // Use authenticated endpoint (default: true)
+  telemetryEnabled: true, // Enable/disable telemetry (default: false)
+  telemetryBatchSize: 100, // Number of events to batch before sending (default: 100)
+  telemetryFlushIntervalMs: 5000, // Time interval to flush metrics in ms (default: 5000)
+  telemetryMaxRetries: 3, // Maximum retry attempts for export (default: 3)
+  telemetryAuthenticatedExport: true, // Use authenticated endpoint (default: true)
   telemetryCircuitBreakerThreshold: 5, // Circuit breaker failure threshold (default: 5)
   telemetryCircuitBreakerTimeout: 60000, // Circuit breaker timeout in ms (default: 60000)
 });
@@ -109,21 +110,21 @@ await client.connect({
   host: '********.databricks.com',
   path: '/sql/2.0/warehouses/****************',
   token: 'dapi********************************',
-  telemetryEnabled: true,  // Override default setting for this connection
+  telemetryEnabled: true, // Override default setting for this connection
 });
 ```
 
 ### Configuration Options
 
-| Option | Type | Default | Description |
-|--------|------|---------|-------------|
-| `telemetryEnabled` | `boolean` | `false` | Enable or disable telemetry collection. Even when enabled, the server-side feature flag must also be enabled. |
-| `telemetryBatchSize` | `number` | `100` | Maximum number of events to accumulate before sending to the telemetry service. Larger values reduce network overhead but increase memory usage. |
-| `telemetryFlushIntervalMs` | `number` | `5000` (5 sec) | Time interval in milliseconds to automatically flush pending metrics. Ensures metrics are sent even if batch size isn't reached. |
-| `telemetryMaxRetries` | `number` | `3` | Maximum number of retry attempts when the telemetry export fails with retryable errors (e.g., network timeouts, 500 errors). |
-| `telemetryAuthenticatedExport` | `boolean` | `true` | Whether to use the authenticated telemetry endpoint (`/api/2.0/sql/telemetry-ext`). If false, uses the unauthenticated endpoint (`/api/2.0/sql/telemetry-unauth`). |
-| `telemetryCircuitBreakerThreshold` | `number` | `5` | Number of consecutive failures before the circuit breaker opens. When open, telemetry events are dropped to prevent wasting resources on a failing endpoint. |
-| `telemetryCircuitBreakerTimeout` | `number` | `60000` (60 sec) | Time in milliseconds the circuit breaker stays open before attempting to recover. After this timeout, the circuit breaker enters a half-open state to test if the endpoint has recovered. |
+| Option                             | Type      | Default          | Description                                                                                                                                                                               |
+| ---------------------------------- | --------- | ---------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `telemetryEnabled`                 | `boolean` | `false`          | Enable or disable telemetry collection. Even when enabled, the server-side feature flag must also be enabled.                                                                             |
+| `telemetryBatchSize`               | `number`  | `100`            | Maximum number of events to accumulate before sending to the telemetry service. Larger values reduce network overhead but increase memory usage.                                          |
+| `telemetryFlushIntervalMs`         | `number`  | `5000` (5 sec)   | Time interval in milliseconds to automatically flush pending metrics. Ensures metrics are sent even if batch size isn't reached.                                                          |
+| `telemetryMaxRetries`              | `number`  | `3`              | Maximum number of retry attempts when the telemetry export fails with retryable errors (e.g., network timeouts, 500 errors).                                                              |
+| `telemetryAuthenticatedExport`     | `boolean` | `true`           | Whether to use the authenticated telemetry endpoint (`/api/2.0/sql/telemetry-ext`). If false, uses the unauthenticated endpoint (`/api/2.0/sql/telemetry-unauth`).                        |
+| `telemetryCircuitBreakerThreshold` | `number`  | `5`              | Number of consecutive failures before the circuit breaker opens. When open, telemetry events are dropped to prevent wasting resources on a failing endpoint.                              |
+| `telemetryCircuitBreakerTimeout`   | `number`  | `60000` (60 sec) | Time in milliseconds the circuit breaker stays open before attempting to recover. After this timeout, the circuit breaker enters a half-open state to test if the endpoint has recovered. |
 
 ### Example Configurations
 
@@ -183,7 +184,7 @@ For high-throughput applications, you may want to adjust batching:
 ```javascript
 const client = new DBSQLClient({
   telemetryEnabled: true,
-  telemetryBatchSize: 200,        // Send larger batches
+  telemetryBatchSize: 200, // Send larger batches
   telemetryFlushIntervalMs: 10000, // Flush every 10 seconds
 });
 ```
@@ -195,7 +196,7 @@ For development, you might want more aggressive flushing:
 ```javascript
 const client = new DBSQLClient({
   telemetryEnabled: true,
-  telemetryBatchSize: 10,         // Smaller batches
+  telemetryBatchSize: 10, // Smaller batches
   telemetryFlushIntervalMs: 1000, // Flush every second
 });
 ```
@@ -213,6 +214,7 @@ The driver emits telemetry events at key operations throughout the query lifecyc
 **When Emitted**: Once per connection, when the session is successfully opened.
 
 **Data Collected**:
+
 - `sessionId`: Unique identifier for the session (UUID)
 - `workspaceId`: Workspace identifier (extracted from hostname)
 - `driverConfig`: Driver configuration metadata:
@@ -230,6 +232,7 @@ The driver emits telemetry events at key operations throughout the query lifecyc
   - `cloudFetchConcurrentDownloads`: Number of concurrent CloudFetch downloads
 
 **Example**:
+
 ```json
 {
   "eventType": "connection.open",
@@ -258,20 +261,23 @@ The driver emits telemetry events at key operations throughout the query lifecyc
 **Event Type**: `statement.start` and `statement.complete`
 
 **When Emitted**:
+
 - `statement.start`: When a SQL statement begins execution
 - `statement.complete`: When statement execution finishes (success or failure)
 
 **Data Collected**:
+
 - `statementId`: Unique identifier for the statement (UUID)
 - `sessionId`: Session ID for correlation
-- `operationType`: Type of SQL operation (SELECT, INSERT, etc.) - *only for start event*
-- `latencyMs`: Total execution latency in milliseconds - *only for complete event*
-- `resultFormat`: Format of results (inline, cloudfetch, arrow) - *only for complete event*
-- `pollCount`: Number of status poll operations performed - *only for complete event*
-- `chunkCount`: Number of result chunks downloaded - *only for complete event*
-- `bytesDownloaded`: Total bytes downloaded - *only for complete event*
+- `operationType`: Type of SQL operation (SELECT, INSERT, etc.) - _only for start event_
+- `latencyMs`: Total execution latency in milliseconds - _only for complete event_
+- `resultFormat`: Format of results (inline, cloudfetch, arrow) - _only for complete event_
+- `pollCount`: Number of status poll operations performed - _only for complete event_
+- `chunkCount`: Number of result chunks downloaded - _only for complete event_
+- `bytesDownloaded`: Total bytes downloaded - _only for complete event_
 
 **Example (statement.complete)**:
+
 ```json
 {
   "eventType": "statement.complete",
@@ -293,6 +299,7 @@ The driver emits telemetry events at key operations throughout the query lifecyc
 **When Emitted**: Each time a CloudFetch chunk is downloaded from cloud storage.
 
 **Data Collected**:
+
 - `statementId`: Statement ID for correlation
 - `chunkIndex`: Index of the chunk in the result set (0-based)
 - `latencyMs`: Download latency for this chunk in milliseconds
@@ -300,6 +307,7 @@ The driver emits telemetry events at key operations throughout the query lifecyc
 - `compressed`: Whether the chunk was compressed
 
 **Example**:
+
 ```json
 {
   "eventType": "cloudfetch.chunk",
@@ -319,6 +327,7 @@ The driver emits telemetry events at key operations throughout the query lifecyc
 **When Emitted**: When an error occurs during query execution. Terminal errors (authentication failures, invalid syntax) are flushed immediately. Retryable errors (network timeouts, server errors) are buffered and sent when the statement completes.
 
 **Data Collected**:
+
 - `statementId`: Statement ID for correlation (if available)
 - `sessionId`: Session ID for correlation (if available)
 - `errorName`: Error type/name (e.g., "AuthenticationError", "TimeoutError")
@@ -326,6 +335,7 @@ The driver emits telemetry events at key operations throughout the query lifecyc
 - `isTerminal`: Whether the error is terminal (non-retryable)
 
 **Example**:
+
 ```json
 {
   "eventType": "error",
@@ -351,6 +361,7 @@ The Databricks server controls whether telemetry is enabled for a given workspac
 **Feature Flag Name**: `databricks.partnerplatform.clientConfigsFeatureFlags.enableTelemetryForNodeJs`
 
 **Behavior**:
+
 - The driver queries this feature flag when opening a connection
 - If the flag is **disabled**, telemetry is **not collected**, regardless of client configuration
 - If the flag is **enabled**, telemetry collection follows the client configuration
@@ -358,6 +369,7 @@ The Databricks server controls whether telemetry is enabled for a given workspac
 - Multiple connections to the same host share the same cached feature flag value
 
 **Why Server-Side Control?**
+
 - Allows Databricks to control telemetry rollout across workspaces
 - Enables quick disable in case of issues
 - Provides per-workspace granularity
@@ -368,12 +380,12 @@ The client-side `telemetryEnabled` setting provides an additional control:
 
 **Decision Matrix**:
 
-| Server Feature Flag | Client `telemetryEnabled` | Result |
-|---------------------|---------------------------|--------|
-| Disabled | `true` | Telemetry **disabled** (server wins) |
-| Disabled | `false` | Telemetry **disabled** |
-| Enabled | `true` | Telemetry **enabled** |
-| Enabled | `false` | Telemetry **disabled** (client can opt-out) |
+| Server Feature Flag | Client `telemetryEnabled` | Result                                      |
+| ------------------- | ------------------------- | ------------------------------------------- |
+| Disabled            | `true`                    | Telemetry **disabled** (server wins)        |
+| Disabled            | `false`                   | Telemetry **disabled**                      |
+| Enabled             | `true`                    | Telemetry **enabled**                       |
+| Enabled             | `false`                   | Telemetry **disabled** (client can opt-out) |
 
 **In summary**: Both must be enabled for telemetry to be collected.
 
@@ -386,11 +398,13 @@ The client-side `telemetryEnabled` setting provides an additional control:
 The telemetry system uses **per-host** management to prevent rate limiting and optimize resource usage:
 
 **Key Concepts**:
+
 - **One telemetry client per host**: Multiple connections to the same Databricks host share a single telemetry client
 - **Reference counting**: The shared client is only closed when the last connection to that host closes
 - **Feature flag caching**: Feature flags are cached per host for 15 minutes to avoid repeated API calls
 
 **Why Per-Host?**
+
 - Large applications may open many parallel connections to the same warehouse
 - A single shared client batches events from all connections, reducing network overhead
 - Prevents rate limiting on the telemetry endpoint
@@ -400,17 +414,20 @@ The telemetry system uses **per-host** management to prevent rate limiting and o
 The circuit breaker protects your application from telemetry endpoint failures:
 
 **States**:
+
 1. **CLOSED** (normal): Telemetry requests are sent normally
 2. **OPEN** (failing): After 5 consecutive failures, requests are rejected immediately (events dropped)
 3. **HALF_OPEN** (testing): After 60 seconds, a test request is allowed to check if the endpoint recovered
 
 **State Transitions**:
+
 - **CLOSED → OPEN**: After `telemetryCircuitBreakerThreshold` consecutive failures (default: 5)
 - **OPEN → HALF_OPEN**: After `telemetryCircuitBreakerTimeout` milliseconds (default: 60000 = 1 minute)
 - **HALF_OPEN → CLOSED**: After 2 consecutive successes
 - **HALF_OPEN → OPEN**: On any failure
 
 **Why Circuit Breaker?**
+
 - Prevents wasting resources on a failing telemetry endpoint
 - Automatically recovers when the endpoint becomes healthy
 - Isolates failures per host (one host's circuit breaker doesn't affect others)
@@ -422,12 +439,14 @@ The telemetry system follows a **strict exception swallowing policy**:
 **Principle**: **No telemetry exception should ever impact your application.**
 
 **Implementation**:
+
 - All telemetry operations are wrapped in try-catch blocks
 - All exceptions are caught and logged at `debug` level only (never `warn` or `error`)
 - No exceptions propagate to application code
 - The driver continues normally even if telemetry completely fails
 
 **What This Means for You**:
+
 - Telemetry failures won't cause your queries to fail
 - You won't see error logs from telemetry in production (only debug logs)
 - Your application performance is unaffected by telemetry issues
@@ -443,6 +462,7 @@ The telemetry system follows a **strict exception swallowing policy**:
 **Possible Causes and Solutions**:
 
 1. **Telemetry disabled by default**
+
    - **Solution**: Explicitly enable in client configuration:
      ```javascript
      const client = new DBSQLClient({
@@ -451,10 +471,12 @@ The telemetry system follows a **strict exception swallowing policy**:
      ```
 
 2. **Server feature flag disabled**
+
    - **Check**: Look for debug log: `"Telemetry disabled via feature flag"`
    - **Solution**: This is controlled by Databricks. If you believe it should be enabled, contact Databricks support.
 
 3. **Circuit breaker is OPEN**
+
    - **Check**: Look for debug log: `"Circuit breaker OPEN - dropping telemetry"`
    - **Solution**: The circuit breaker opens after repeated failures. It will automatically attempt recovery after 60 seconds. Check network connectivity and Databricks service status.
 
@@ -471,6 +493,7 @@ The telemetry system follows a **strict exception swallowing policy**:
 **Symptom**: Circuit breaker frequently opens, telemetry events are dropped.
 
 **Possible Causes**:
+
 - Network connectivity issues
 - Databricks telemetry service unavailable
 - Rate limiting (if using multiple connections)
@@ -479,6 +502,7 @@ The telemetry system follows a **strict exception swallowing policy**:
 **Debugging Steps**:
 
 1. **Check debug logs** for circuit breaker state transitions:
+
    ```
    [DEBUG] Circuit breaker transitioned to OPEN (will retry after 60000ms)
    [DEBUG] Circuit breaker failure (5/5)
@@ -491,7 +515,7 @@ The telemetry system follows a **strict exception swallowing policy**:
 4. **Adjust circuit breaker settings** if needed:
    ```javascript
    const client = new DBSQLClient({
-     telemetryCircuitBreakerThreshold: 10,  // More tolerant
+     telemetryCircuitBreakerThreshold: 10, // More tolerant
      telemetryCircuitBreakerTimeout: 30000, // Retry sooner
    });
    ```
@@ -510,6 +534,7 @@ const client = new DBSQLClient();
 ```
 
 **Useful Debug Log Messages**:
+
 - `"Telemetry initialized"` - Telemetry system started successfully
 - `"Telemetry disabled via feature flag"` - Server feature flag disabled
 - `"Circuit breaker transitioned to OPEN"` - Circuit breaker opened due to failures
@@ -537,6 +562,7 @@ The telemetry system is designed to **never collect** sensitive information:
 The following **non-sensitive** data is collected:
 
 **Driver Metadata** (collected once per connection):
+
 - Driver version (e.g., "3.5.0")
 - Driver name ("databricks-sql-nodejs")
 - Node.js version (e.g., "20.10.0")
@@ -546,6 +572,7 @@ The following **non-sensitive** data is collected:
 - Configuration values (timeouts, retry counts, etc.)
 
 **Performance Metrics** (collected per statement):
+
 - Execution latency in milliseconds
 - Number of poll operations
 - Number of result chunks
@@ -553,11 +580,13 @@ The following **non-sensitive** data is collected:
 - Result format (inline, cloudfetch, arrow)
 
 **Correlation IDs** (for data aggregation):
+
 - Session ID (randomly generated UUID, not tied to user identity)
 - Statement ID (randomly generated UUID)
 - Workspace ID (for grouping metrics by workspace)
 
 **Error Information** (when errors occur):
+
 - Error type/name (e.g., "TimeoutError", "AuthenticationError")
 - HTTP status codes (e.g., 401, 500)
 - Error messages (sanitized, no PII or sensitive data)
@@ -567,20 +596,24 @@ The following **non-sensitive** data is collected:
 The telemetry system is designed to comply with major privacy regulations:
 
 **GDPR (General Data Protection Regulation)**:
+
 - No personal data is collected
 - UUIDs are randomly generated and not tied to individuals
 - Workspace ID is used only for technical correlation
 
 **CCPA (California Consumer Privacy Act)**:
+
 - No personal information is collected
 - No sale or sharing of personal data
 
 **SOC 2 (Service Organization Control 2)**:
+
 - All telemetry data is encrypted in transit using HTTPS
 - Data is sent to Databricks-controlled endpoints
 - Uses existing authentication mechanisms (no separate credentials)
 
 **Data Residency**:
+
 - Telemetry data is sent to the same regional Databricks control plane as your workloads
 - No cross-region data transfer
 
@@ -604,6 +637,7 @@ The telemetry system is designed to have **minimal performance impact** on your 
 - **Network**: Batched exports every 5 seconds (configurable)
 
 **Design Principles for Low Overhead**:
+
 1. **Non-blocking**: All telemetry operations use asynchronous Promises
 2. **Fire-and-forget**: Event emission doesn't wait for export completion
 3. **Batching**: Events are aggregated and sent in batches to minimize network calls
@@ -661,6 +695,7 @@ This ensures telemetry is never collected, regardless of the server feature flag
 ### Q: Where is telemetry data sent?
 
 **A**: Telemetry data is sent to Databricks-controlled telemetry endpoints:
+
 - **Authenticated**: `https://<your-host>/api/2.0/sql/telemetry-ext`
 - **Unauthenticated**: `https://<your-host>/api/2.0/sql/telemetry-unauth`
 

@@ -84,7 +84,7 @@ To enable or disable telemetry explicitly:
 
 ```javascript
 const client = new DBSQLClient({
-  telemetryEnabled: true,  // Enable telemetry (default: false)
+  telemetryEnabled: true, // Enable telemetry (default: false)
 });
 
 // Or override per connection:
@@ -92,7 +92,7 @@ await client.connect({
   host: '********.databricks.com',
   path: '/sql/2.0/warehouses/****************',
   token: 'dapi********************************',
-  telemetryEnabled: false,  // Disable for this connection
+  telemetryEnabled: false, // Disable for this connection
 });
 ```
 

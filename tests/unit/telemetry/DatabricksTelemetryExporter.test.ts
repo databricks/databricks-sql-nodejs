@@ -44,7 +44,7 @@ describe('DatabricksTelemetryExporter', () => {
       context,
       'test.databricks.com',
       circuitBreakerRegistry,
-      fetchStub as any
+      fetchStub as any,
     );
 
     // Spy on logger
@@ -101,7 +101,7 @@ describe('DatabricksTelemetryExporter', () => {
         context,
         'test.databricks.com',
         circuitBreakerRegistry,
-        fetchStub as any
+        fetchStub as any,
       );
 
       const metrics: TelemetryMetric[] = [

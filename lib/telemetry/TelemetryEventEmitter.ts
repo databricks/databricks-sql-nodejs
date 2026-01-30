@@ -71,6 +71,29 @@ export default class TelemetryEventEmitter extends EventEmitter {
   }
 
   /**
+   * Emit a connection close event.
+   *
+   * @param data Connection close event data including sessionId and latencyMs
+   */
+  emitConnectionClose(data: { sessionId: string; latencyMs: number }): void {
+    if (!this.enabled) return;
+
+    const logger = this.context.getLogger();
+    try {
+      const event: TelemetryEvent = {
+        eventType: TelemetryEventType.CONNECTION_CLOSE,
+        timestamp: Date.now(),
+        sessionId: data.sessionId,
+        latencyMs: data.latencyMs,
+      };
+      this.emit(TelemetryEventType.CONNECTION_CLOSE, event);
+    } catch (error: any) {
+      // Swallow all exceptions - log at debug level only
+      logger.log(LogLevel.debug, `Error emitting connection close event: ${error.message}`);
+    }
+  }
+
+  /**
    * Emit a statement start event.
    *
    * @param data Statement start data including statementId, sessionId, and operationType

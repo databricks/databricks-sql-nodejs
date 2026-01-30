@@ -106,6 +106,11 @@ export default class MetricsAggregator {
         return;
       }
 
+      if (event.eventType === TelemetryEventType.CONNECTION_CLOSE) {
+        this.processConnectionCloseEvent(event);
+        return;
+      }
+
       // Error events - check if terminal or retryable
       if (event.eventType === TelemetryEventType.ERROR) {
         this.processErrorEvent(event);
@@ -137,6 +142,21 @@ export default class MetricsAggregator {
       sessionId: event.sessionId,
       workspaceId: event.workspaceId,
       driverConfig: event.driverConfig,
+      latencyMs: event.latencyMs,
+    };
+
+    this.addPendingMetric(metric);
+  }
+
+  /**
+   * Process connection close event (emit immediately)
+   */
+  private processConnectionCloseEvent(event: TelemetryEvent): void {
+    const metric: TelemetryMetric = {
+      metricType: 'connection',
+      timestamp: event.timestamp,
+      sessionId: event.sessionId,
+      driverConfig: this.driverConfig,
       latencyMs: event.latencyMs,
     };
 

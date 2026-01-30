@@ -24,6 +24,7 @@ export const DRIVER_NAME = 'nodejs-sql-driver';
  */
 export enum TelemetryEventType {
   CONNECTION_OPEN = 'connection.open',
+  CONNECTION_CLOSE = 'connection.close',
   STATEMENT_START = 'statement.start',
   STATEMENT_COMPLETE = 'statement.complete',
   CLOUDFETCH_CHUNK = 'cloudfetch.chunk',

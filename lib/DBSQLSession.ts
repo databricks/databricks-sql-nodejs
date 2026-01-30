@@ -151,6 +151,8 @@ export default class DBSQLSession implements IDBSQLSession {
 
   private isOpen = true;
 
+  private openTime: number;
+
   private serverProtocolVersion?: TProtocolVersion;
 
   public onClose?: () => void;
@@ -169,6 +171,7 @@ export default class DBSQLSession implements IDBSQLSession {
   constructor({ handle, context, serverProtocolVersion }: DBSQLSessionConstructorOptions) {
     this.sessionHandle = handle;
     this.context = context;
+    this.openTime = Date.now();
     // Get the server protocol version from the provided parameter (from TOpenSessionResp)
     this.serverProtocolVersion = serverProtocolVersion;
     this.context.getLogger().log(LogLevel.debug, `Session created with id: ${this.id}`);
@@ -593,6 +596,16 @@ export default class DBSQLSession implements IDBSQLSession {
     // notify owner connection
     this.onClose?.();
     this.isOpen = false;
+
+    // Emit connection close telemetry
+    const closeLatency = Date.now() - this.openTime;
+    const { telemetryEmitter } = this.context as any;
+    if (telemetryEmitter) {
+      telemetryEmitter.emitConnectionClose({
+        sessionId: this.id,
+        latencyMs: closeLatency,
+      });
+    }
 
     this.context.getLogger().log(LogLevel.debug, `Session closed with id: ${this.id}`);
     return new Status(response.status);

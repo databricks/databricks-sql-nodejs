@@ -38,8 +38,7 @@ describe('TelemetryClient', () => {
 
       new TelemetryClient(context, HOST);
 
-      expect(logSpy.calledWith(LogLevel.debug, `Created TelemetryClient for host: ${HOST}`)).to.be
-        .true;
+      expect(logSpy.calledWith(LogLevel.debug, `Created TelemetryClient for host: ${HOST}`)).to.be.true;
     });
   });
 
@@ -87,8 +86,7 @@ describe('TelemetryClient', () => {
 
       await client.close();
 
-      expect(logSpy.calledWith(LogLevel.debug, `Closing TelemetryClient for host: ${HOST}`)).to.be
-        .true;
+      expect(logSpy.calledWith(LogLevel.debug, `Closing TelemetryClient for host: ${HOST}`)).to.be.true;
     });
 
     it('should be idempotent', async () => {
