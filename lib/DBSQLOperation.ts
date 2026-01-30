@@ -54,7 +54,6 @@ async function delay(ms?: number): Promise<void> {
 
 /**
  * Map Thrift TOperationType to proto Operation.Type enum string.
- * Proto values: EXECUTE_STATEMENT=3, LIST_TYPE_INFO=7, LIST_CATALOGS=8, etc.
  */
 function mapOperationTypeToProto(operationType?: TOperationType): string | undefined {
   if (operationType === undefined) {
@@ -81,6 +80,28 @@ function mapOperationTypeToProto(operationType?: TOperationType): string | undef
     case TOperationType.UNKNOWN:
     default:
       return 'TYPE_UNSPECIFIED';
+  }
+}
+
+/**
+ * Map Thrift TSparkRowSetType to proto ExecutionResult.Format enum string.
+ */
+function mapResultFormatToProto(resultFormat?: TSparkRowSetType): string | undefined {
+  if (resultFormat === undefined) {
+    return undefined;
+  }
+
+  switch (resultFormat) {
+    case TSparkRowSetType.ARROW_BASED_SET:
+      return 'INLINE_ARROW';
+    case TSparkRowSetType.COLUMN_BASED_SET:
+      return 'COLUMNAR_INLINE';
+    case TSparkRowSetType.ROW_BASED_SET:
+      return 'INLINE_JSON';
+    case TSparkRowSetType.URL_BASED_SET:
+      return 'EXTERNAL_LINKS';
+    default:
+      return 'FORMAT_UNSPECIFIED';
   }
 }
 
@@ -573,9 +594,7 @@ export default class DBSQLOperation implements IOperation {
         if (!this.metadata && !this.cancelled) {
           await this.getMetadata();
         }
-        resultFormat = this.metadata?.resultFormat
-          ? TSparkRowSetType[this.metadata.resultFormat]
-          : undefined;
+        resultFormat = mapResultFormatToProto(this.metadata?.resultFormat);
       } catch (error) {
         // If metadata fetch fails, continue without it
         resultFormat = undefined;
