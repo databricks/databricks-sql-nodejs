@@ -115,6 +115,12 @@ describe('TelemetryEventEmitter', () => {
         nodeVersion: process.version,
         platform: process.platform,
         osVersion: 'test-os',
+        osArch: 'x64',
+        runtimeVendor: 'Node.js Foundation',
+        localeName: 'en_US',
+        charSetEncoding: 'UTF-8',
+        processName: 'node',
+        authType: 'pat',
         cloudFetchEnabled: true,
         lz4Enabled: true,
         arrowEnabled: false,
@@ -137,6 +143,7 @@ describe('TelemetryEventEmitter', () => {
         sessionId: 'session-123',
         workspaceId: 'workspace-456',
         driverConfig,
+        latencyMs: 100,
       });
     });
 
@@ -170,6 +177,7 @@ describe('TelemetryEventEmitter', () => {
         sessionId: 'session-123',
         workspaceId: 'workspace-456',
         driverConfig: {} as DriverConfiguration,
+        latencyMs: 100,
       });
 
       expect(eventEmitted).to.be.false;
@@ -186,6 +194,7 @@ describe('TelemetryEventEmitter', () => {
         sessionId: 'session-123',
         workspaceId: 'workspace-456',
         driverConfig: {} as DriverConfiguration,
+        latencyMs: 100,
       });
 
       expect((logger.log as sinon.SinonStub).calledWith(LogLevel.debug)).to.be.true;
@@ -201,6 +210,7 @@ describe('TelemetryEventEmitter', () => {
         sessionId: 'session-123',
         workspaceId: 'workspace-456',
         driverConfig: {} as DriverConfiguration,
+        latencyMs: 100,
       });
 
       const logStub = logger.log as sinon.SinonStub;
@@ -526,6 +536,7 @@ describe('TelemetryEventEmitter', () => {
           sessionId: 'session-123',
           workspaceId: 'workspace-456',
           driverConfig: {} as DriverConfiguration,
+          latencyMs: 100,
         });
       }).to.not.throw();
     });
@@ -592,6 +603,7 @@ describe('TelemetryEventEmitter', () => {
         sessionId: 'session-123',
         workspaceId: 'workspace-456',
         driverConfig: {} as DriverConfiguration,
+        latencyMs: 100,
       });
 
       expect(consoleSpy.called).to.be.false;
@@ -663,6 +675,7 @@ describe('TelemetryEventEmitter', () => {
         sessionId: 'session-123',
         workspaceId: 'workspace-456',
         driverConfig: {} as DriverConfiguration,
+        latencyMs: 100,
       });
 
       expect(eventCount).to.equal(1);
@@ -699,6 +712,7 @@ describe('TelemetryEventEmitter', () => {
         sessionId: 'session-123',
         workspaceId: 'workspace-456',
         driverConfig: {} as DriverConfiguration,
+        latencyMs: 100,
       });
       disabledEmitter.emitStatementStart({
         statementId: 'stmt-789',
