@@ -253,6 +253,41 @@ export default class DatabricksTelemetryExporter {
   }
 
   /**
+   * Map Operation.Type to Statement.Type for statement_type field.
+   * Operation.Type (EXECUTE_STATEMENT, LIST_CATALOGS, etc.) maps to Statement.Type (QUERY, METADATA, etc.)
+   */
+  private mapOperationToStatementType(operationType?: string): string {
+    if (!operationType) {
+      return 'TYPE_UNSPECIFIED';
+    }
+
+    // Metadata operations map to METADATA
+    if (
+      operationType === 'LIST_TYPE_INFO' ||
+      operationType === 'LIST_CATALOGS' ||
+      operationType === 'LIST_SCHEMAS' ||
+      operationType === 'LIST_TABLES' ||
+      operationType === 'LIST_TABLE_TYPES' ||
+      operationType === 'LIST_COLUMNS' ||
+      operationType === 'LIST_FUNCTIONS' ||
+      operationType === 'LIST_PRIMARY_KEYS' ||
+      operationType === 'LIST_IMPORTED_KEYS' ||
+      operationType === 'LIST_EXPORTED_KEYS' ||
+      operationType === 'LIST_CROSS_REFERENCES'
+    ) {
+      return 'METADATA';
+    }
+
+    // EXECUTE_STATEMENT maps to QUERY
+    if (operationType === 'EXECUTE_STATEMENT') {
+      return 'QUERY';
+    }
+
+    // Default to TYPE_UNSPECIFIED
+    return 'TYPE_UNSPECIFIED';
+  }
+
+  /**
    * Convert TelemetryMetric to Databricks telemetry log format.
    */
   private toTelemetryLog(metric: TelemetryMetric): DatabricksTelemetryLog {
@@ -324,10 +359,12 @@ export default class DatabricksTelemetryExporter {
         log.entry.sql_driver_log.operation_latency_ms = metric.latencyMs;
       }
 
-      // Include operation type (CREATE_SESSION or DELETE_SESSION)
+      // Include operation type in operation_detail (CREATE_SESSION or DELETE_SESSION)
       if (metric.operationType) {
         log.entry.sql_driver_log.sql_operation = {
-          statement_type: metric.operationType,
+          operation_detail: {
+            operation_type: metric.operationType,
+          },
         };
       }
     } else if (metric.metricType === 'statement') {
@@ -336,9 +373,16 @@ export default class DatabricksTelemetryExporter {
       // Only create sql_operation if we have any fields to include
       if (metric.operationType || metric.compressed !== undefined || metric.resultFormat || metric.chunkCount) {
         log.entry.sql_driver_log.sql_operation = {
-          statement_type: metric.operationType,
+          // Map operationType to statement_type (Statement.Type enum)
+          statement_type: this.mapOperationToStatementType(metric.operationType),
           ...(metric.compressed !== undefined && { is_compressed: metric.compressed }),
           ...(metric.resultFormat && { execution_result: metric.resultFormat }),
+          // Include operation_type in operation_detail
+          ...(metric.operationType && {
+            operation_detail: {
+              operation_type: metric.operationType,
+            },
+          }),
         };
 
         if (metric.chunkCount && metric.chunkCount > 0) {
