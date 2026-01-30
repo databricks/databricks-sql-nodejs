@@ -494,9 +494,9 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
     // Cleanup telemetry
     if (this.host) {
       try {
-        // Step 1: Flush any pending metrics
+        // Step 1: Close aggregator (stops timer, completes statements, final flush)
         if (this.telemetryAggregator) {
-          await this.telemetryAggregator.flush();
+          this.telemetryAggregator.close();
         }
 
         // Step 2: Release telemetry client (decrements ref count, closes if last)
