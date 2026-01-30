@@ -1234,6 +1234,7 @@ interface DriverConfiguration {
   localeName: string;          // Locale (e.g., 'en_US')
   charSetEncoding: string;     // Character encoding (e.g., 'UTF-8')
   processName: string;         // Process name from process.title or script name
+  authType: string;            // Authentication type (access-token, databricks-oauth, custom)
 
   // Feature flags
   cloudFetchEnabled: boolean;
@@ -1255,6 +1256,10 @@ interface DriverConfiguration {
 - **localeName**: Extracted from `LANG` environment variable in format `language_country` (e.g., `en_US`), defaults to `en_US`
 - **charSetEncoding**: Always `'UTF-8'` (Node.js default encoding), equivalent to JDBC's Charset.defaultCharset()
 - **processName**: Obtained from `process.title` or extracted from `process.argv[1]` (script name), equivalent to JDBC's ProcessNameUtil.getProcessName()
+- **authType**: Authentication method used ('access-token', 'databricks-oauth', or 'custom'), exported as `driver_connection_params.auth_type`
+
+**Connection Parameters**:
+- **auth_type**: Exported in `driver_connection_params` field for connection metrics, indicates authentication method used
 
 ### 4.3 Statement Metrics
 
@@ -1271,7 +1276,7 @@ interface StatementMetrics {
   pollCount: number;
   pollLatencyMs: number;
 
-  // Result format
+  // Result format (fetched from metadata before statement close)
   resultFormat: 'inline' | 'cloudfetch' | 'arrow';
 
   // CloudFetch metrics
@@ -1280,6 +1285,8 @@ interface StatementMetrics {
   compressionEnabled?: boolean;
 }
 ```
+
+**Result Format Population**: To ensure `sql_operation` is properly populated in telemetry logs, the driver fetches result set metadata before emitting the `statement.complete` event. This guarantees that `resultFormat` is available even if the user closes the statement immediately after execution without explicitly fetching results.
 
 ### 4.4 Privacy Considerations
 

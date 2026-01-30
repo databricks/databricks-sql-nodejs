@@ -80,6 +80,8 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
   // Telemetry components (instance-based, NOT singletons)
   private host?: string;
 
+  private authType?: string;
+
   private featureFlagCache?: FeatureFlagCache;
 
   private telemetryClientProvider?: TelemetryClientProvider;
@@ -210,6 +212,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
       localeName: this.getLocaleName(),
       charSetEncoding: 'UTF-8',
       processName: this.getProcessName(),
+      authType: this.authType || 'access-token',
 
       // Feature flags
       cloudFetchEnabled: this.config.useCloudFetch ?? false,
@@ -377,8 +380,9 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
       }
     }
 
-    // Store host for telemetry
+    // Store host and auth type for telemetry
     this.host = options.host;
+    this.authType = options.authType || 'access-token'; // Default to access-token
 
     // Store enableMetricViewMetadata configuration
     if (options.enableMetricViewMetadata !== undefined) {

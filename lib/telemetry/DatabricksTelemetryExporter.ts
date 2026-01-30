@@ -293,6 +293,10 @@ export default class DatabricksTelemetryExporter {
       if (metric.latencyMs !== undefined) {
         log.entry.sql_driver_log.operation_latency_ms = metric.latencyMs;
       }
+      // Include driver connection params (auth type)
+      log.entry.sql_driver_log.driver_connection_params = {
+        auth_type: metric.driverConfig.authType,
+      };
     } else if (metric.metricType === 'statement') {
       log.entry.sql_driver_log.operation_latency_ms = metric.latencyMs;
 

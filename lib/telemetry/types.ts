@@ -31,11 +31,6 @@ export enum TelemetryEventType {
 }
 
 /**
- * Driver name constant for telemetry
- */
-export const DRIVER_NAME = 'nodejs-sql-driver';
-
-/**
  * Configuration for telemetry components
  */
 export interface TelemetryConfiguration {
@@ -214,6 +209,9 @@ export interface DriverConfiguration {
 
   /** Process name */
   processName: string;
+
+  /** Authentication type (access-token, databricks-oauth, custom) */
+  authType: string;
 
   // Feature flags
   /** Whether CloudFetch is enabled */

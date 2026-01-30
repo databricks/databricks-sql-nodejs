@@ -296,7 +296,7 @@ export default class DBSQLOperation implements IOperation {
     const result = new Status(response.status);
 
     // Emit statement.complete telemetry event
-    this.emitStatementComplete();
+    await this.emitStatementComplete();
 
     this.onClose?.();
     return result;
@@ -526,7 +526,7 @@ export default class DBSQLOperation implements IOperation {
    * Emit statement.complete telemetry event and complete aggregation.
    * CRITICAL: All exceptions swallowed and logged at LogLevel.debug ONLY.
    */
-  private emitStatementComplete(): void {
+  private async emitStatementComplete(): Promise<void> {
     try {
       const {telemetryEmitter} = (this.context as any);
       const {telemetryAggregator} = (this.context as any);
@@ -534,10 +534,21 @@ export default class DBSQLOperation implements IOperation {
         return;
       }
 
+      // Fetch metadata if not already fetched to get result format
+      let resultFormat: string | undefined;
+      try {
+        if (!this.metadata && !this.cancelled) {
+          await this.getMetadata();
+        }
+        resultFormat = this.metadata?.resultFormat
+          ? TSparkRowSetType[this.metadata.resultFormat]
+          : undefined;
+      } catch (error) {
+        // If metadata fetch fails, continue without it
+        resultFormat = undefined;
+      }
+
       const latencyMs = Date.now() - this.startTime;
-      const resultFormat = this.metadata?.resultFormat
-        ? TSparkRowSetType[this.metadata.resultFormat]
-        : undefined;
 
       telemetryEmitter.emitStatementComplete({
         statementId: this.id,
