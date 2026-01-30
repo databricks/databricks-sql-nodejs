@@ -241,6 +241,13 @@ export interface DriverConfiguration {
 
   /** Number of concurrent CloudFetch downloads */
   cloudFetchConcurrentDownloads: number;
+
+  // Connection parameters for telemetry
+  /** HTTP path for API calls */
+  httpPath?: string;
+
+  /** Whether metric view metadata is enabled */
+  enableMetricViewMetadata?: boolean;
 }
 
 /**

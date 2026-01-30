@@ -80,6 +80,8 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
   // Telemetry components (instance-based, NOT singletons)
   private host?: string;
 
+  private httpPath?: string;
+
   private authType?: string;
 
   private featureFlagCache?: FeatureFlagCache;
@@ -224,6 +226,10 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
       socketTimeout: this.config.socketTimeout ?? 0,
       retryMaxAttempts: this.config.retryMaxAttempts ?? 0,
       cloudFetchConcurrentDownloads: this.config.cloudFetchConcurrentDownloads ?? 0,
+
+      // Connection parameters
+      httpPath: this.httpPath,
+      enableMetricViewMetadata: this.config.enableMetricViewMetadata,
     };
   }
 
@@ -400,8 +406,9 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
       }
     }
 
-    // Store host and auth type for telemetry (convert to telemetry auth enum)
+    // Store connection params for telemetry
     this.host = options.host;
+    this.httpPath = options.path;
     this.authType = this.mapAuthType(options);
 
     // Store enableMetricViewMetadata configuration

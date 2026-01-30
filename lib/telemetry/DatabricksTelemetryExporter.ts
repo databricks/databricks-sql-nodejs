@@ -52,6 +52,13 @@ interface DatabricksTelemetryLog {
         char_set_encoding?: string;
         process_name?: string;
       };
+      driver_connection_params?: {
+        http_path?: string;
+        socket_timeout?: number;
+        enable_arrow?: boolean;
+        enable_direct_results?: boolean;
+        enable_metric_view_metadata?: boolean;
+      };
       auth_type?: string;
       operation_latency_ms?: number;
       sql_operation?: {
@@ -301,7 +308,25 @@ export default class DatabricksTelemetryExporter {
       if (metric.latencyMs !== undefined) {
         log.entry.sql_driver_log.operation_latency_ms = metric.latencyMs;
       }
-      // Include auth type at top level (proto field 5)
+      // Include driver connection params (only if we have fields to include)
+      if (
+        metric.driverConfig.httpPath ||
+        metric.driverConfig.socketTimeout ||
+        metric.driverConfig.enableMetricViewMetadata !== undefined
+      ) {
+        log.entry.sql_driver_log.driver_connection_params = {
+          ...(metric.driverConfig.httpPath && { http_path: metric.driverConfig.httpPath }),
+          ...(metric.driverConfig.socketTimeout && { socket_timeout: metric.driverConfig.socketTimeout }),
+          ...(metric.driverConfig.arrowEnabled !== undefined && { enable_arrow: metric.driverConfig.arrowEnabled }),
+          ...(metric.driverConfig.directResultsEnabled !== undefined && {
+            enable_direct_results: metric.driverConfig.directResultsEnabled,
+          }),
+          ...(metric.driverConfig.enableMetricViewMetadata !== undefined && {
+            enable_metric_view_metadata: metric.driverConfig.enableMetricViewMetadata,
+          }),
+        };
+      }
+      // Include auth type at top level
       log.entry.sql_driver_log.auth_type = metric.driverConfig.authType;
     } else if (metric.metricType === 'statement') {
       log.entry.sql_driver_log.operation_latency_ms = metric.latencyMs;
