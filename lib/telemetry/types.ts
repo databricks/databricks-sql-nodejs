@@ -157,6 +157,9 @@ export interface TelemetryMetric {
   /** Execution latency in milliseconds */
   latencyMs?: number;
 
+  /** Type of operation (SELECT, INSERT, etc.) */
+  operationType?: string;
+
   /** Result format (inline, cloudfetch, arrow) */
   resultFormat?: string;
 
@@ -168,6 +171,9 @@ export interface TelemetryMetric {
 
   /** Number of poll operations */
   pollCount?: number;
+
+  /** Whether compression was used */
+  compressed?: boolean;
 
   /** Error name/type */
   errorName?: string;

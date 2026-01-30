@@ -55,6 +55,8 @@ interface DatabricksTelemetryLog {
       driver_connection_params?: any;
       operation_latency_ms?: number;
       sql_operation?: {
+        statement_type?: string;
+        is_compressed?: boolean;
         execution_result?: string;
         chunk_details?: {
           total_chunks_present?: number;
@@ -300,17 +302,18 @@ export default class DatabricksTelemetryExporter {
     } else if (metric.metricType === 'statement') {
       log.entry.sql_driver_log.operation_latency_ms = metric.latencyMs;
 
-      if (metric.resultFormat || metric.chunkCount) {
-        log.entry.sql_driver_log.sql_operation = {
-          execution_result: metric.resultFormat,
-        };
+      // Always create sql_operation for statement events
+      log.entry.sql_driver_log.sql_operation = {
+        statement_type: metric.operationType,
+        is_compressed: metric.compressed,
+        execution_result: metric.resultFormat,
+      };
 
-        if (metric.chunkCount && metric.chunkCount > 0) {
-          log.entry.sql_driver_log.sql_operation.chunk_details = {
-            total_chunks_present: metric.chunkCount,
-            total_chunks_iterated: metric.chunkCount,
-          };
-        }
+      if (metric.chunkCount && metric.chunkCount > 0) {
+        log.entry.sql_driver_log.sql_operation.chunk_details = {
+          total_chunks_present: metric.chunkCount,
+          total_chunks_iterated: metric.chunkCount,
+        };
       }
     } else if (metric.metricType === 'error') {
       log.entry.sql_driver_log.error_info = {

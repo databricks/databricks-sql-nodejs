@@ -252,11 +252,13 @@ export default class MetricsAggregator {
         sessionId: details.sessionId,
         statementId: details.statementId,
         workspaceId: details.workspaceId,
+        operationType: details.operationType,
         latencyMs: details.executionLatencyMs,
         resultFormat: details.resultFormat,
         chunkCount: details.chunkCount,
         bytesDownloaded: details.bytesDownloaded,
         pollCount: details.pollCount,
+        compressed: details.compressionEnabled,
       };
 
       this.addPendingMetric(metric);
