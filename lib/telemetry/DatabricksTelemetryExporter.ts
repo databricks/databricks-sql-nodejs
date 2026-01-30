@@ -278,8 +278,13 @@ export default class DatabricksTelemetryExporter {
         driver_name: metric.driverConfig.driverName,
         runtime_name: 'Node.js',
         runtime_version: metric.driverConfig.nodeVersion,
+        runtime_vendor: metric.driverConfig.runtimeVendor,
         os_name: metric.driverConfig.platform,
         os_version: metric.driverConfig.osVersion,
+        os_arch: metric.driverConfig.osArch,
+        locale_name: metric.driverConfig.localeName,
+        char_set_encoding: metric.driverConfig.charSetEncoding,
+        process_name: metric.driverConfig.processName,
       };
     } else if (metric.metricType === 'statement') {
       log.entry.sql_driver_log.operation_latency_ms = metric.latencyMs;
