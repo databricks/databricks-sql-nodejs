@@ -288,9 +288,8 @@ export default class DatabricksTelemetryExporter {
       },
     };
 
-    // Add metric-specific fields based on proto definition
-    if (metric.metricType === 'connection' && metric.driverConfig) {
-      // Map driverConfig to system_configuration (snake_case as per proto)
+    // Include system_configuration, driver_connection_params, and auth_type for ALL metrics (if available)
+    if (metric.driverConfig) {
       log.entry.sql_driver_log.system_configuration = {
         driver_version: metric.driverConfig.driverVersion,
         driver_name: metric.driverConfig.driverName,
@@ -304,10 +303,7 @@ export default class DatabricksTelemetryExporter {
         char_set_encoding: metric.driverConfig.charSetEncoding,
         process_name: metric.driverConfig.processName,
       };
-      // Include connection open latency
-      if (metric.latencyMs !== undefined) {
-        log.entry.sql_driver_log.operation_latency_ms = metric.latencyMs;
-      }
+
       // Include driver connection params (only if we have fields to include)
       if (
         metric.driverConfig.httpPath ||
@@ -326,8 +322,17 @@ export default class DatabricksTelemetryExporter {
           }),
         };
       }
+
       // Include auth type at top level
       log.entry.sql_driver_log.auth_type = metric.driverConfig.authType;
+    }
+
+    // Add metric-specific fields based on proto definition
+    if (metric.metricType === 'connection') {
+      // Include connection open latency
+      if (metric.latencyMs !== undefined) {
+        log.entry.sql_driver_log.operation_latency_ms = metric.latencyMs;
+      }
     } else if (metric.metricType === 'statement') {
       log.entry.sql_driver_log.operation_latency_ms = metric.latencyMs;
 

@@ -151,7 +151,7 @@ export interface TelemetryMetric {
   /** Workspace ID */
   workspaceId?: string;
 
-  /** Driver configuration (for connection metrics) */
+  /** Driver configuration (included in all metrics for context) */
   driverConfig?: DriverConfiguration;
 
   /** Execution latency in milliseconds */
