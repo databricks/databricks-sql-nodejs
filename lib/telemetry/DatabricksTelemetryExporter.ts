@@ -52,10 +52,22 @@ interface DatabricksTelemetryLog {
         char_set_encoding?: string;
         process_name?: string;
       };
-      driver_connection_params?: any;
+      driver_connection_params?: {
+        http_path?: string;
+        socket_timeout?: number;
+        enable_arrow?: boolean;
+        enable_direct_results?: boolean;
+        enable_metric_view_metadata?: boolean;
+      };
+      auth_type?: string;
       operation_latency_ms?: number;
       sql_operation?: {
+        statement_type?: string;
+        is_compressed?: boolean;
         execution_result?: string;
+        operation_detail?: {
+          operation_type?: string;
+        };
         chunk_details?: {
           total_chunks_present?: number;
           total_chunks_iterated?: number;
@@ -205,7 +217,6 @@ export default class DatabricksTelemetryExporter {
    */
   private async exportInternal(metrics: TelemetryMetric[]): Promise<void> {
     const config = this.context.getConfig();
-    const logger = this.context.getLogger();
 
     // Determine endpoint based on authentication mode
     const authenticatedExport = config.telemetryAuthenticatedExport ?? DEFAULT_TELEMETRY_CONFIG.authenticatedExport;
@@ -222,13 +233,6 @@ export default class DatabricksTelemetryExporter {
       items: [], // Required but unused
       protoLogs,
     };
-
-    logger.log(
-      LogLevel.debug,
-      `Exporting ${metrics.length} telemetry metrics to ${
-        authenticatedExport ? 'authenticated' : 'unauthenticated'
-      } endpoint`,
-    );
 
     // Get authentication headers if using authenticated endpoint
     const authHeaders = authenticatedExport ? await this.context.getAuthHeaders() : {};
@@ -249,14 +253,53 @@ export default class DatabricksTelemetryExporter {
       error.statusCode = response.status;
       throw error;
     }
+  }
 
-    logger.log(LogLevel.debug, `Successfully exported ${metrics.length} telemetry metrics`);
+  /**
+   * Map Operation.Type to Statement.Type for statement_type field.
+   * Operation.Type (EXECUTE_STATEMENT, LIST_CATALOGS, etc.) maps to Statement.Type (QUERY, METADATA, etc.)
+   */
+  private mapOperationToStatementType(operationType?: string): string {
+    if (!operationType) {
+      return 'TYPE_UNSPECIFIED';
+    }
+
+    // Metadata operations map to METADATA
+    if (
+      operationType === 'LIST_TYPE_INFO' ||
+      operationType === 'LIST_CATALOGS' ||
+      operationType === 'LIST_SCHEMAS' ||
+      operationType === 'LIST_TABLES' ||
+      operationType === 'LIST_TABLE_TYPES' ||
+      operationType === 'LIST_COLUMNS' ||
+      operationType === 'LIST_FUNCTIONS' ||
+      operationType === 'LIST_PRIMARY_KEYS' ||
+      operationType === 'LIST_IMPORTED_KEYS' ||
+      operationType === 'LIST_EXPORTED_KEYS' ||
+      operationType === 'LIST_CROSS_REFERENCES'
+    ) {
+      return 'METADATA';
+    }
+
+    // EXECUTE_STATEMENT maps to QUERY
+    if (operationType === 'EXECUTE_STATEMENT') {
+      return 'QUERY';
+    }
+
+    // Default to TYPE_UNSPECIFIED
+    return 'TYPE_UNSPECIFIED';
   }
 
   /**
    * Convert TelemetryMetric to Databricks telemetry log format.
    */
   private toTelemetryLog(metric: TelemetryMetric): DatabricksTelemetryLog {
+    // Filter out NIL UUID for statement ID
+    const statementId =
+      metric.statementId && metric.statementId !== '00000000-0000-0000-0000-000000000000'
+        ? metric.statementId
+        : undefined;
+
     const log: DatabricksTelemetryLog = {
       frontend_log_event_id: this.generateUUID(),
       context: {
@@ -268,14 +311,13 @@ export default class DatabricksTelemetryExporter {
       entry: {
         sql_driver_log: {
           session_id: metric.sessionId,
-          sql_statement_id: metric.statementId,
+          sql_statement_id: statementId,
         },
       },
     };
 
-    // Add metric-specific fields based on proto definition
-    if (metric.metricType === 'connection' && metric.driverConfig) {
-      // Map driverConfig to system_configuration (snake_case as per proto)
+    // Include system_configuration, driver_connection_params, and auth_type for ALL metrics (if available)
+    if (metric.driverConfig) {
       log.entry.sql_driver_log.system_configuration = {
         driver_version: metric.driverConfig.driverVersion,
         driver_name: metric.driverConfig.driverName,
@@ -289,12 +331,61 @@ export default class DatabricksTelemetryExporter {
         char_set_encoding: metric.driverConfig.charSetEncoding,
         process_name: metric.driverConfig.processName,
       };
+
+      // Include driver connection params (only if we have fields to include)
+      if (
+        metric.driverConfig.httpPath ||
+        metric.driverConfig.socketTimeout ||
+        metric.driverConfig.enableMetricViewMetadata !== undefined
+      ) {
+        log.entry.sql_driver_log.driver_connection_params = {
+          ...(metric.driverConfig.httpPath && { http_path: metric.driverConfig.httpPath }),
+          ...(metric.driverConfig.socketTimeout && { socket_timeout: metric.driverConfig.socketTimeout }),
+          ...(metric.driverConfig.arrowEnabled !== undefined && { enable_arrow: metric.driverConfig.arrowEnabled }),
+          ...(metric.driverConfig.directResultsEnabled !== undefined && {
+            enable_direct_results: metric.driverConfig.directResultsEnabled,
+          }),
+          ...(metric.driverConfig.enableMetricViewMetadata !== undefined && {
+            enable_metric_view_metadata: metric.driverConfig.enableMetricViewMetadata,
+          }),
+        };
+      }
+
+      // Include auth type at top level
+      log.entry.sql_driver_log.auth_type = metric.driverConfig.authType;
+    }
+
+    // Add metric-specific fields based on proto definition
+    if (metric.metricType === 'connection') {
+      // Include connection latency
+      if (metric.latencyMs !== undefined) {
+        log.entry.sql_driver_log.operation_latency_ms = metric.latencyMs;
+      }
+
+      // Include operation type in operation_detail (CREATE_SESSION or DELETE_SESSION)
+      if (metric.operationType) {
+        log.entry.sql_driver_log.sql_operation = {
+          operation_detail: {
+            operation_type: metric.operationType,
+          },
+        };
+      }
     } else if (metric.metricType === 'statement') {
       log.entry.sql_driver_log.operation_latency_ms = metric.latencyMs;
 
-      if (metric.resultFormat || metric.chunkCount) {
+      // Only create sql_operation if we have any fields to include
+      if (metric.operationType || metric.compressed !== undefined || metric.resultFormat || metric.chunkCount) {
         log.entry.sql_driver_log.sql_operation = {
-          execution_result: metric.resultFormat,
+          // Map operationType to statement_type (Statement.Type enum)
+          statement_type: this.mapOperationToStatementType(metric.operationType),
+          ...(metric.compressed !== undefined && { is_compressed: metric.compressed }),
+          ...(metric.resultFormat && { execution_result: metric.resultFormat }),
+          // Include operation_type in operation_detail
+          ...(metric.operationType && {
+            operation_detail: {
+              operation_type: metric.operationType,
+            },
+          }),
         };
 
         if (metric.chunkCount && metric.chunkCount > 0) {

@@ -16,7 +16,13 @@
 
 import IClientContext from '../contracts/IClientContext';
 import { LogLevel } from '../contracts/IDBSQLLogger';
-import { TelemetryEvent, TelemetryEventType, TelemetryMetric, DEFAULT_TELEMETRY_CONFIG } from './types';
+import {
+  TelemetryEvent,
+  TelemetryEventType,
+  TelemetryMetric,
+  DriverConfiguration,
+  DEFAULT_TELEMETRY_CONFIG,
+} from './types';
 import DatabricksTelemetryExporter from './DatabricksTelemetryExporter';
 import ExceptionClassifier from './ExceptionClassifier';
 
@@ -64,6 +70,8 @@ export default class MetricsAggregator {
 
   private flushIntervalMs: number;
 
+  private driverConfig?: DriverConfiguration;
+
   constructor(private context: IClientContext, private exporter: DatabricksTelemetryExporter) {
     try {
       const config = context.getConfig();
@@ -98,6 +106,11 @@ export default class MetricsAggregator {
         return;
       }
 
+      if (event.eventType === TelemetryEventType.CONNECTION_CLOSE) {
+        this.processConnectionCloseEvent(event);
+        return;
+      }
+
       // Error events - check if terminal or retryable
       if (event.eventType === TelemetryEventType.ERROR) {
         this.processErrorEvent(event);
@@ -118,12 +131,35 @@ export default class MetricsAggregator {
    * Process connection event (emit immediately)
    */
   private processConnectionEvent(event: TelemetryEvent): void {
+    // Cache driver config for use in all subsequent metrics
+    if (event.driverConfig) {
+      this.driverConfig = event.driverConfig;
+    }
+
     const metric: TelemetryMetric = {
       metricType: 'connection',
       timestamp: event.timestamp,
       sessionId: event.sessionId,
       workspaceId: event.workspaceId,
       driverConfig: event.driverConfig,
+      operationType: 'CREATE_SESSION',
+      latencyMs: event.latencyMs,
+    };
+
+    this.addPendingMetric(metric);
+  }
+
+  /**
+   * Process connection close event (emit immediately)
+   */
+  private processConnectionCloseEvent(event: TelemetryEvent): void {
+    const metric: TelemetryMetric = {
+      metricType: 'connection',
+      timestamp: event.timestamp,
+      sessionId: event.sessionId,
+      driverConfig: this.driverConfig,
+      operationType: 'DELETE_SESSION',
+      latencyMs: event.latencyMs,
     };
 
     this.addPendingMetric(metric);
@@ -152,13 +188,14 @@ export default class MetricsAggregator {
         details.errors.push(event);
         this.completeStatement(event.statementId);
       } else {
-        // Standalone error - emit immediately
+        // Standalone error - emit immediately (include cached driver config for context)
         const metric: TelemetryMetric = {
           metricType: 'error',
           timestamp: event.timestamp,
           sessionId: event.sessionId,
           statementId: event.statementId,
           workspaceId: event.workspaceId,
+          driverConfig: this.driverConfig,
           errorName: event.errorName,
           errorMessage: event.errorMessage,
         };
@@ -244,23 +281,26 @@ export default class MetricsAggregator {
         return;
       }
 
-      // Create statement metric
+      // Create statement metric (include cached driver config for context)
       const metric: TelemetryMetric = {
         metricType: 'statement',
         timestamp: details.startTime,
         sessionId: details.sessionId,
         statementId: details.statementId,
         workspaceId: details.workspaceId,
+        driverConfig: this.driverConfig,
+        operationType: details.operationType,
         latencyMs: details.executionLatencyMs,
         resultFormat: details.resultFormat,
         chunkCount: details.chunkCount,
         bytesDownloaded: details.bytesDownloaded,
         pollCount: details.pollCount,
+        compressed: details.compressionEnabled,
       };
 
       this.addPendingMetric(metric);
 
-      // Add buffered error metrics
+      // Add buffered error metrics (include cached driver config for context)
       for (const errorEvent of details.errors) {
         const errorMetric: TelemetryMetric = {
           metricType: 'error',
@@ -268,6 +308,7 @@ export default class MetricsAggregator {
           sessionId: details.sessionId,
           statementId: details.statementId,
           workspaceId: details.workspaceId,
+          driverConfig: this.driverConfig,
           errorName: errorEvent.errorName,
           errorMessage: errorEvent.errorMessage,
         };
@@ -307,8 +348,6 @@ export default class MetricsAggregator {
 
       const metricsToExport = [...this.pendingMetrics];
       this.pendingMetrics = [];
-
-      logger.log(LogLevel.debug, `Flushing ${metricsToExport.length} telemetry metrics`);
 
       // Export metrics (exporter.export never throws)
       this.exporter.export(metricsToExport);

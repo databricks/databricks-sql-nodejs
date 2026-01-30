@@ -35,6 +35,7 @@ import { OperationChunksIterator, OperationRowsIterator } from './utils/Operatio
 import HiveDriverError from './errors/HiveDriverError';
 import IClientContext from './contracts/IClientContext';
 import ExceptionClassifier from './telemetry/ExceptionClassifier';
+import { mapOperationTypeToTelemetryType, mapResultFormatToTelemetryType } from './telemetry/telemetryTypeMappers';
 
 interface DBSQLOperationConstructorOptions {
   handle: TOperationHandle;
@@ -296,7 +297,7 @@ export default class DBSQLOperation implements IOperation {
     const result = new Status(response.status);
 
     // Emit statement.complete telemetry event
-    this.emitStatementComplete();
+    await this.emitStatementComplete();
 
     this.onClose?.();
     return result;
@@ -507,7 +508,7 @@ export default class DBSQLOperation implements IOperation {
    */
   private emitStatementStart(): void {
     try {
-      const {telemetryEmitter} = (this.context as any);
+      const { telemetryEmitter } = this.context as any;
       if (!telemetryEmitter) {
         return;
       }
@@ -515,7 +516,7 @@ export default class DBSQLOperation implements IOperation {
       telemetryEmitter.emitStatementStart({
         statementId: this.id,
         sessionId: this.sessionId || '',
-        operationType: this.operationHandle.operationType?.toString(),
+        operationType: mapOperationTypeToTelemetryType(this.operationHandle.operationType),
       });
     } catch (error: any) {
       this.context.getLogger().log(LogLevel.debug, `Error emitting statement.start event: ${error.message}`);
@@ -526,18 +527,27 @@ export default class DBSQLOperation implements IOperation {
    * Emit statement.complete telemetry event and complete aggregation.
    * CRITICAL: All exceptions swallowed and logged at LogLevel.debug ONLY.
    */
-  private emitStatementComplete(): void {
+  private async emitStatementComplete(): Promise<void> {
     try {
-      const {telemetryEmitter} = (this.context as any);
-      const {telemetryAggregator} = (this.context as any);
+      const { telemetryEmitter } = this.context as any;
+      const { telemetryAggregator } = this.context as any;
       if (!telemetryEmitter || !telemetryAggregator) {
         return;
       }
 
+      // Fetch metadata if not already fetched to get result format
+      let resultFormat: string | undefined;
+      try {
+        if (!this.metadata && !this.cancelled) {
+          await this.getMetadata();
+        }
+        resultFormat = mapResultFormatToTelemetryType(this.metadata?.resultFormat);
+      } catch (error) {
+        // If metadata fetch fails, continue without it
+        resultFormat = undefined;
+      }
+
       const latencyMs = Date.now() - this.startTime;
-      const resultFormat = this.metadata?.resultFormat
-        ? TSparkRowSetType[this.metadata.resultFormat]
-        : undefined;
 
       telemetryEmitter.emitStatementComplete({
         statementId: this.id,
@@ -560,7 +570,7 @@ export default class DBSQLOperation implements IOperation {
    */
   private emitErrorEvent(error: Error): void {
     try {
-      const {telemetryEmitter} = (this.context as any);
+      const { telemetryEmitter } = this.context as any;
       if (!telemetryEmitter) {
         return;
       }

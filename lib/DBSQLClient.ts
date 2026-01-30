@@ -80,6 +80,10 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
   // Telemetry components (instance-based, NOT singletons)
   private host?: string;
 
+  private httpPath?: string;
+
+  private authType?: string;
+
   private featureFlagCache?: FeatureFlagCache;
 
   private telemetryClientProvider?: TelemetryClientProvider;
@@ -118,7 +122,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
       useLZ4Compression: true,
 
       // Telemetry defaults
-      telemetryEnabled: false, // Initially disabled for safe rollout
+      telemetryEnabled: true, // Enabled by default, gated by feature flag
       telemetryBatchSize: 100,
       telemetryFlushIntervalMs: 5000,
       telemetryMaxRetries: 3,
@@ -210,6 +214,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
       localeName: this.getLocaleName(),
       charSetEncoding: 'UTF-8',
       processName: this.getProcessName(),
+      authType: this.authType || 'pat',
 
       // Feature flags
       cloudFetchEnabled: this.config.useCloudFetch ?? false,
@@ -221,7 +226,31 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
       socketTimeout: this.config.socketTimeout ?? 0,
       retryMaxAttempts: this.config.retryMaxAttempts ?? 0,
       cloudFetchConcurrentDownloads: this.config.cloudFetchConcurrentDownloads ?? 0,
+
+      // Connection parameters
+      httpPath: this.httpPath,
+      enableMetricViewMetadata: this.config.enableMetricViewMetadata,
     };
+  }
+
+  /**
+   * Map Node.js auth type to telemetry auth enum string.
+   * Distinguishes between U2M and M2M OAuth flows.
+   */
+  private mapAuthType(options: ConnectionOptions): string {
+    if (options.authType === 'databricks-oauth') {
+      // Check if M2M (has client secret) or U2M (no client secret)
+      return options.oauthClientSecret === undefined
+        ? 'external-browser' // U2M OAuth (User-to-Machine)
+        : 'oauth-m2m'; // M2M OAuth (Machine-to-Machine)
+    }
+
+    if (options.authType === 'custom') {
+      return 'custom'; // Custom auth provider
+    }
+
+    // 'access-token' or undefined
+    return 'pat'; // Personal Access Token
   }
 
   /**
@@ -290,8 +319,9 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
 
       // Check if telemetry enabled via feature flag
       const enabled = await this.featureFlagCache.isTelemetryEnabled(this.host);
+
       if (!enabled) {
-        this.logger.log(LogLevel.debug, 'Telemetry disabled via feature flag');
+        this.logger.log(LogLevel.debug, 'Telemetry: disabled');
         return;
       }
 
@@ -313,6 +343,14 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
           this.telemetryAggregator?.processEvent(event);
         } catch (error: any) {
           this.logger.log(LogLevel.debug, `Error processing connection.open event: ${error.message}`);
+        }
+      });
+
+      this.telemetryEmitter.on('connection.close', (event) => {
+        try {
+          this.telemetryAggregator?.processEvent(event);
+        } catch (error: any) {
+          this.logger.log(LogLevel.debug, `Error processing connection.close event: ${error.message}`);
         }
       });
 
@@ -348,10 +386,10 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
         }
       });
 
-      this.logger.log(LogLevel.debug, 'Telemetry initialized successfully');
+      this.logger.log(LogLevel.debug, 'Telemetry: enabled');
     } catch (error: any) {
       // Swallow all telemetry initialization errors
-      this.logger.log(LogLevel.debug, `Telemetry initialization failed: ${error.message}`);
+      this.logger.log(LogLevel.debug, `Telemetry initialization error: ${error.message}`);
     }
   }
 
@@ -376,8 +414,10 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
       }
     }
 
-    // Store host for telemetry
+    // Store connection params for telemetry
     this.host = options.host;
+    this.httpPath = options.path;
+    this.authType = this.mapAuthType(options);
 
     // Store enableMetricViewMetadata configuration
     if (options.enableMetricViewMetadata !== undefined) {
@@ -446,6 +486,9 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
    * const session = await client.openSession();
    */
   public async openSession(request: OpenSessionRequest = {}): Promise<IDBSQLSession> {
+    // Track connection open latency
+    const startTime = Date.now();
+
     // Prepare session configuration
     const configuration = request.configuration ? { ...request.configuration } : {};
 
@@ -472,12 +515,14 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
     // Emit connection.open telemetry event
     if (this.telemetryEmitter && this.host) {
       try {
+        const latencyMs = Date.now() - startTime;
         const workspaceId = this.extractWorkspaceId(this.host);
         const driverConfig = this.buildDriverConfiguration();
         this.telemetryEmitter.emitConnectionOpen({
           sessionId: session.id,
           workspaceId,
           driverConfig,
+          latencyMs,
         });
       } catch (error: any) {
         // CRITICAL: All telemetry exceptions swallowed
@@ -555,6 +600,11 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
     return this.driver;
   }
 
+  /**
+   * Gets authentication headers for HTTP requests.
+   * Used by telemetry and feature flag fetching to authenticate REST API calls.
+   * @returns Promise resolving to headers object with authentication, or empty object if no auth
+   */
   public async getAuthHeaders(): Promise<HeadersInit> {
     if (this.authProvider) {
       try {

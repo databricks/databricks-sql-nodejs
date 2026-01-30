@@ -24,16 +24,12 @@ export const DRIVER_NAME = 'nodejs-sql-driver';
  */
 export enum TelemetryEventType {
   CONNECTION_OPEN = 'connection.open',
+  CONNECTION_CLOSE = 'connection.close',
   STATEMENT_START = 'statement.start',
   STATEMENT_COMPLETE = 'statement.complete',
   CLOUDFETCH_CHUNK = 'cloudfetch.chunk',
   ERROR = 'error',
 }
-
-/**
- * Driver name constant for telemetry
- */
-export const DRIVER_NAME = 'nodejs-sql-driver';
 
 /**
  * Configuration for telemetry components
@@ -65,7 +61,7 @@ export interface TelemetryConfiguration {
  * Default telemetry configuration values
  */
 export const DEFAULT_TELEMETRY_CONFIG: Required<TelemetryConfiguration> = {
-  enabled: false, // Initially disabled for safe rollout
+  enabled: true, // Enabled by default, gated by feature flag
   batchSize: 100,
   flushIntervalMs: 5000,
   maxRetries: 3,
@@ -156,11 +152,14 @@ export interface TelemetryMetric {
   /** Workspace ID */
   workspaceId?: string;
 
-  /** Driver configuration (for connection metrics) */
+  /** Driver configuration (included in all metrics for context) */
   driverConfig?: DriverConfiguration;
 
   /** Execution latency in milliseconds */
   latencyMs?: number;
+
+  /** Type of operation (SELECT, INSERT, etc.) */
+  operationType?: string;
 
   /** Result format (inline, cloudfetch, arrow) */
   resultFormat?: string;
@@ -173,6 +172,9 @@ export interface TelemetryMetric {
 
   /** Number of poll operations */
   pollCount?: number;
+
+  /** Whether compression was used */
+  compressed?: boolean;
 
   /** Error name/type */
   errorName?: string;
@@ -215,6 +217,9 @@ export interface DriverConfiguration {
   /** Process name */
   processName: string;
 
+  /** Authentication type (pat, external-browser, oauth-m2m, custom) */
+  authType: string;
+
   // Feature flags
   /** Whether CloudFetch is enabled */
   cloudFetchEnabled: boolean;
@@ -237,6 +242,13 @@ export interface DriverConfiguration {
 
   /** Number of concurrent CloudFetch downloads */
   cloudFetchConcurrentDownloads: number;
+
+  // Connection parameters for telemetry
+  /** HTTP path for API calls */
+  httpPath?: string;
+
+  /** Whether metric view metadata is enabled */
+  enableMetricViewMetadata?: boolean;
 }
 
 /**

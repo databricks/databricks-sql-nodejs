@@ -180,7 +180,9 @@ describe('Telemetry Integration', () => {
       const client = new DBSQLClient();
 
       // Stub feature flag to throw an error
-      const featureFlagStub = sinon.stub(FeatureFlagCache.prototype, 'isTelemetryEnabled').rejects(new Error('Feature flag fetch failed'));
+      const featureFlagStub = sinon
+        .stub(FeatureFlagCache.prototype, 'isTelemetryEnabled')
+        .rejects(new Error('Feature flag fetch failed'));
 
       try {
         // Connection should succeed even if telemetry fails
@@ -217,7 +219,9 @@ describe('Telemetry Integration', () => {
       const client = new DBSQLClient();
 
       // Stub getOrCreateContext to throw
-      const contextStub = sinon.stub(FeatureFlagCache.prototype, 'getOrCreateContext').throws(new Error('Context creation failed'));
+      const contextStub = sinon
+        .stub(FeatureFlagCache.prototype, 'getOrCreateContext')
+        .throws(new Error('Context creation failed'));
 
       try {
         // Connection should succeed even if telemetry fails
@@ -247,8 +251,12 @@ describe('Telemetry Integration', () => {
       const client = new DBSQLClient();
 
       // Stub multiple telemetry methods to throw
-      const emitterStub = sinon.stub(TelemetryEventEmitter.prototype, 'emitConnectionOpen').throws(new Error('Emitter failed'));
-      const aggregatorStub = sinon.stub(MetricsAggregator.prototype, 'processEvent').throws(new Error('Aggregator failed'));
+      const emitterStub = sinon
+        .stub(TelemetryEventEmitter.prototype, 'emitConnectionOpen')
+        .throws(new Error('Emitter failed'));
+      const aggregatorStub = sinon
+        .stub(MetricsAggregator.prototype, 'processEvent')
+        .throws(new Error('Aggregator failed'));
 
       try {
         // Connection should not throw

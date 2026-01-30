@@ -145,7 +145,7 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
         return;
       }
 
-      const {telemetryEmitter} = (this.context as any);
+      const { telemetryEmitter } = this.context as any;
       if (!telemetryEmitter) {
         return;
       }

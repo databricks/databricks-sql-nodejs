@@ -44,7 +44,7 @@ describe('DatabricksTelemetryExporter', () => {
       context,
       'test.databricks.com',
       circuitBreakerRegistry,
-      fetchStub as any
+      fetchStub as any,
     );
 
     // Spy on logger
@@ -101,7 +101,7 @@ describe('DatabricksTelemetryExporter', () => {
         context,
         'test.databricks.com',
         circuitBreakerRegistry,
-        fetchStub as any
+        fetchStub as any,
       );
 
       const metrics: TelemetryMetric[] = [
@@ -141,6 +141,12 @@ describe('DatabricksTelemetryExporter', () => {
             nodeVersion: 'v16.0.0',
             platform: 'linux',
             osVersion: 'Ubuntu 20.04',
+            osArch: 'x64',
+            runtimeVendor: 'Node.js Foundation',
+            localeName: 'en_US',
+            charSetEncoding: 'UTF-8',
+            processName: 'node',
+            authType: 'pat',
             cloudFetchEnabled: true,
             lz4Enabled: true,
             arrowEnabled: false,
