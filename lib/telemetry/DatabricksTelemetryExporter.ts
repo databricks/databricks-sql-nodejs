@@ -65,6 +65,9 @@ interface DatabricksTelemetryLog {
         statement_type?: string;
         is_compressed?: boolean;
         execution_result?: string;
+        operation_detail?: {
+          operation_type?: string;
+        };
         chunk_details?: {
           total_chunks_present?: number;
           total_chunks_iterated?: number;

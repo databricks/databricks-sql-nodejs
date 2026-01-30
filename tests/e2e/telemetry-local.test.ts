@@ -12,6 +12,8 @@
 
 import { DBSQLClient, LogLevel } from '../../lib';
 import IDBSQLLogger from '../../lib/contracts/IDBSQLLogger';
+import sinon from 'sinon';
+import * as nodeFetch from 'node-fetch';
 
 // Custom logger to capture telemetry debug logs
 class DebugLogger implements IDBSQLLogger {
@@ -29,6 +31,8 @@ class DebugLogger implements IDBSQLLogger {
 }
 
 describe('Telemetry E2E Test (Local Only)', () => {
+  let fetchStub: sinon.SinonStub;
+
   it('should send telemetry for SELECT 1 query', async function () {
     this.timeout(30000);
 
@@ -50,6 +54,33 @@ describe('Telemetry E2E Test (Local Only)', () => {
     console.log('\n' + '='.repeat(60));
     console.log('TELEMETRY E2E TEST');
     console.log('='.repeat(60));
+
+    // Stub fetch to capture telemetry payloads
+    const originalFetch = nodeFetch.default;
+    fetchStub = sinon.stub(nodeFetch, 'default').callsFake(async (url: any, options?: any) => {
+      // Capture and log telemetry requests
+      if (typeof url === 'string' && (url.includes('/telemetry-ext') || url.includes('/telemetry-unauth'))) {
+        const body = options?.body ? JSON.parse(options.body) : null;
+
+        console.log('\n' + '='.repeat(60));
+        console.log('📊 TELEMETRY REQUEST CAPTURED');
+        console.log('='.repeat(60));
+        console.log('URL:', url);
+
+        if (body && body.protoLogs) {
+          console.log(`\nProtoLogs count: ${body.protoLogs.length}`);
+          body.protoLogs.forEach((log: string, index: number) => {
+            const parsed = JSON.parse(log);
+            console.log(`\n--- ProtoLog ${index + 1} ---`);
+            console.log(JSON.stringify(parsed, null, 2));
+          });
+        }
+        console.log('='.repeat(60) + '\n');
+      }
+
+      // Call original fetch
+      return originalFetch(url, options);
+    });
 
     const client = new DBSQLClient({
       logger: new DebugLogger(),
@@ -100,10 +131,15 @@ describe('Telemetry E2E Test (Local Only)', () => {
     console.log('\n' + '='.repeat(60));
     console.log('TEST COMPLETE');
     console.log('='.repeat(60));
-    console.log('\nCheck the logs above for telemetry-related messages (shown in cyan)');
-    console.log('Look for:');
-    console.log('  - "Exporting N telemetry metrics"');
-    console.log('  - "Successfully exported N telemetry metrics"');
-    console.log('  - "Feature flag enabled: true"\n');
+    console.log('\nCheck the logs above for captured telemetry payloads');
+    console.log('Should see 3 ProtoLogs:');
+    console.log('  1. CONNECTION_OPEN (CREATE_SESSION)');
+    console.log('  2. STATEMENT_COMPLETE (EXECUTE_STATEMENT)');
+    console.log('  3. CONNECTION_CLOSE (DELETE_SESSION)\n');
+
+    // Restore fetch stub
+    if (fetchStub) {
+      fetchStub.restore();
+    }
   });
 });
