@@ -15,6 +15,11 @@
  */
 
 /**
+ * Driver name constant for telemetry
+ */
+export const DRIVER_NAME = 'nodejs-sql-driver';
+
+/**
  * Event types emitted by the telemetry system
  */
 export enum TelemetryEventType {
