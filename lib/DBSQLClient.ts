@@ -212,7 +212,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
       localeName: this.getLocaleName(),
       charSetEncoding: 'UTF-8',
       processName: this.getProcessName(),
-      authType: this.authType || 'access-token',
+      authType: this.authType || 'pat',
 
       // Feature flags
       cloudFetchEnabled: this.config.useCloudFetch ?? false,
@@ -225,6 +225,26 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
       retryMaxAttempts: this.config.retryMaxAttempts ?? 0,
       cloudFetchConcurrentDownloads: this.config.cloudFetchConcurrentDownloads ?? 0,
     };
+  }
+
+  /**
+   * Map Node.js auth type to telemetry auth enum string.
+   * Distinguishes between U2M and M2M OAuth flows.
+   */
+  private mapAuthType(options: ConnectionOptions): string {
+    if (options.authType === 'databricks-oauth') {
+      // Check if M2M (has client secret) or U2M (no client secret)
+      return options.oauthClientSecret === undefined
+        ? 'external-browser' // U2M OAuth (User-to-Machine)
+        : 'oauth-m2m'; // M2M OAuth (Machine-to-Machine)
+    }
+
+    if (options.authType === 'custom') {
+      return 'custom'; // Custom auth provider
+    }
+
+    // 'access-token' or undefined
+    return 'pat'; // Personal Access Token
   }
 
   /**
@@ -380,9 +400,9 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
       }
     }
 
-    // Store host and auth type for telemetry
+    // Store host and auth type for telemetry (convert to telemetry auth enum)
     this.host = options.host;
-    this.authType = options.authType || 'access-token'; // Default to access-token
+    this.authType = this.mapAuthType(options);
 
     // Store enableMetricViewMetadata configuration
     if (options.enableMetricViewMetadata !== undefined) {

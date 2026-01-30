@@ -210,7 +210,7 @@ export interface DriverConfiguration {
   /** Process name */
   processName: string;
 
-  /** Authentication type (access-token, databricks-oauth, custom) */
+  /** Authentication type (pat, external-browser, oauth-m2m, custom) */
   authType: string;
 
   // Feature flags
