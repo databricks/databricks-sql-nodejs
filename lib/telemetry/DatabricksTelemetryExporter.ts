@@ -214,7 +214,6 @@ export default class DatabricksTelemetryExporter {
    */
   private async exportInternal(metrics: TelemetryMetric[]): Promise<void> {
     const config = this.context.getConfig();
-    const logger = this.context.getLogger();
 
     // Determine endpoint based on authentication mode
     const authenticatedExport = config.telemetryAuthenticatedExport ?? DEFAULT_TELEMETRY_CONFIG.authenticatedExport;
@@ -231,13 +230,6 @@ export default class DatabricksTelemetryExporter {
       items: [], // Required but unused
       protoLogs,
     };
-
-    logger.log(
-      LogLevel.debug,
-      `Exporting ${metrics.length} telemetry metrics to ${
-        authenticatedExport ? 'authenticated' : 'unauthenticated'
-      } endpoint`,
-    );
 
     // Get authentication headers if using authenticated endpoint
     const authHeaders = authenticatedExport ? await this.context.getAuthHeaders() : {};
@@ -258,8 +250,6 @@ export default class DatabricksTelemetryExporter {
       error.statusCode = response.status;
       throw error;
     }
-
-    logger.log(LogLevel.debug, `Successfully exported ${metrics.length} telemetry metrics`);
   }
 
   /**

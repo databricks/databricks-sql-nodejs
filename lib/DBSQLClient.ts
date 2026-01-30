@@ -321,7 +321,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
       const enabled = await this.featureFlagCache.isTelemetryEnabled(this.host);
 
       if (!enabled) {
-        this.logger.log(LogLevel.debug, 'Telemetry disabled via feature flag');
+        this.logger.log(LogLevel.debug, 'Telemetry: disabled');
         return;
       }
 
@@ -386,10 +386,10 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
         }
       });
 
-      this.logger.log(LogLevel.debug, 'Telemetry initialized successfully');
+      this.logger.log(LogLevel.debug, 'Telemetry: enabled');
     } catch (error: any) {
       // Swallow all telemetry initialization errors
-      this.logger.log(LogLevel.debug, `Telemetry initialization failed: ${error.message}`);
+      this.logger.log(LogLevel.debug, `Telemetry initialization error: ${error.message}`);
     }
   }
 

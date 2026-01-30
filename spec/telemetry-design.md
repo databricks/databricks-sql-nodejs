@@ -1843,11 +1843,38 @@ process.on('SIGTERM', async () => {
 - Telemetry failures should never impact the driver's core functionality
 - **Critical**: Circuit breaker must catch errors **before** swallowing
 
+#### Logging Policy - Silent by Default
+
+**Telemetry logging is kept as silent as possible** to avoid noise in customer logs:
+
+**Startup Messages** (LogLevel.debug):
+
+- `Telemetry: enabled` - When telemetry is successfully initialized
+- `Telemetry: disabled` - When feature flag disables telemetry
+
+**Shutdown Messages** (LogLevel.debug):
+
+- `Telemetry: closed` - When telemetry client is closed
+
+**Error Messages** (LogLevel.debug):
+
+- `Telemetry initialization error: <message>` - Only on initialization failures
+- `Telemetry close error: <message>` - Only on cleanup failures
+- `Telemetry export error: <message>` - Only on export failures
+- `Circuit breaker OPEN - dropping telemetry` - Only when circuit breaker opens
+
+**Never Logged**:
+
+- Individual event emissions (connection.open, statement.start, etc.)
+- Metric flushing operations
+- Successful exports
+- Reference counting changes
+- Client creation/lifecycle events
+
 #### Logging Levels
 
-- **TRACE** (console.debug): Use for most telemetry errors (default)
-- **DEBUG** (console.debug): Use only for circuit breaker state changes
-- **WARN/ERROR**: Never use for telemetry errors
+- **DEBUG** (LogLevel.debug): All telemetry messages use this level
+- **WARN/ERROR**: Never used for telemetry - avoids customer anxiety
 
 #### Exception Handling Pattern
 
@@ -1858,8 +1885,8 @@ try {
   // Telemetry operation
   this.telemetryEmitter.emitStatementComplete({ ... });
 } catch (error) {
-  // Swallow ALL exceptions
-  console.debug('[TRACE] Telemetry error:', error);
+  // Swallow ALL exceptions - no logging unless critical
+  logger.log(LogLevel.debug, `Telemetry export error: ${error.message}`);
 }
 ```
 

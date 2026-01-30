@@ -347,8 +347,6 @@ export default class MetricsAggregator {
       const metricsToExport = [...this.pendingMetrics];
       this.pendingMetrics = [];
 
-      logger.log(LogLevel.debug, `Flushing ${metricsToExport.length} telemetry metrics`);
-
       // Export metrics (exporter.export never throws)
       this.exporter.export(metricsToExport);
     } catch (error: any) {

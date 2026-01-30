@@ -26,8 +26,7 @@ class TelemetryClient {
   private closed: boolean = false;
 
   constructor(private context: IClientContext, private host: string) {
-    const logger = context.getLogger();
-    logger.log(LogLevel.debug, `Created TelemetryClient for host: ${host}`);
+    // Client created silently
   }
 
   /**
@@ -54,15 +53,13 @@ class TelemetryClient {
     }
 
     try {
-      const logger = this.context.getLogger();
-      logger.log(LogLevel.debug, `Closing TelemetryClient for host: ${this.host}`);
       this.closed = true;
     } catch (error: any) {
       // Swallow all exceptions per requirement
       this.closed = true;
       try {
         const logger = this.context.getLogger();
-        logger.log(LogLevel.debug, `Error closing TelemetryClient: ${error.message}`);
+        logger.log(LogLevel.debug, `Telemetry close error: ${error.message}`);
       } catch (logError: any) {
         // If even logging fails, silently swallow
       }

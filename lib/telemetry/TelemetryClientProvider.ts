@@ -40,8 +40,6 @@ class TelemetryClientProvider {
 
   constructor(private context: IClientContext) {
     this.clients = new Map();
-    const logger = context.getLogger();
-    logger.log(LogLevel.debug, 'Created TelemetryClientProvider');
   }
 
   /**
@@ -52,7 +50,6 @@ class TelemetryClientProvider {
    * @returns The telemetry client for the host
    */
   getOrCreateClient(host: string): TelemetryClient {
-    const logger = this.context.getLogger();
     let holder = this.clients.get(host);
 
     if (!holder) {
@@ -63,12 +60,10 @@ class TelemetryClientProvider {
         refCount: 0,
       };
       this.clients.set(host, holder);
-      logger.log(LogLevel.debug, `Created new TelemetryClient for host: ${host}`);
     }
 
     // Increment reference count
     holder.refCount += 1;
-    logger.log(LogLevel.debug, `TelemetryClient reference count for ${host}: ${holder.refCount}`);
 
     return holder.client;
   }
@@ -84,23 +79,21 @@ class TelemetryClientProvider {
     const holder = this.clients.get(host);
 
     if (!holder) {
-      logger.log(LogLevel.debug, `No TelemetryClient found for host: ${host}`);
       return;
     }
 
     // Decrement reference count
     holder.refCount -= 1;
-    logger.log(LogLevel.debug, `TelemetryClient reference count for ${host}: ${holder.refCount}`);
 
     // Close and remove client when reference count reaches zero
     if (holder.refCount <= 0) {
       try {
         await holder.client.close();
         this.clients.delete(host);
-        logger.log(LogLevel.debug, `Closed and removed TelemetryClient for host: ${host}`);
+        logger.log(LogLevel.debug, 'Telemetry: closed');
       } catch (error: any) {
         // Swallow all exceptions per requirement
-        logger.log(LogLevel.debug, `Error releasing TelemetryClient: ${error.message}`);
+        logger.log(LogLevel.debug, `Telemetry close error: ${error.message}`);
       }
     }
   }
