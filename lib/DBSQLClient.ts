@@ -346,6 +346,14 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
         }
       });
 
+      this.telemetryEmitter.on('connection.close', (event) => {
+        try {
+          this.telemetryAggregator?.processEvent(event);
+        } catch (error: any) {
+          this.logger.log(LogLevel.debug, `Error processing connection.close event: ${error.message}`);
+        }
+      });
+
       this.telemetryEmitter.on('statement.start', (event) => {
         try {
           this.telemetryAggregator?.processEvent(event);
