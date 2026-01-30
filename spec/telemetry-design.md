@@ -2382,6 +2382,68 @@ Compare:
 
 ---
 
+## 14. Proto Field Coverage
+
+### 14.1 Implemented Fields
+
+The Node.js driver implements the following fields from the `OssSqlDriverTelemetryLog` proto:
+
+**Top-level fields:**
+- `session_id` - Session UUID for correlation
+- `sql_statement_id` - Statement UUID (filtered to exclude NIL UUID)
+- `system_configuration` - Complete driver and OS configuration
+- `auth_type` - Authentication type (pat, external-browser, oauth-m2m, custom)
+- `operation_latency_ms` - Operation execution time
+- `error_info` - Error details (name and stack trace)
+
+**driver_connection_params:**
+- `http_path` - API endpoint path
+- `socket_timeout` - Connection timeout
+- `enable_arrow` - Arrow format flag
+- `enable_direct_results` - Direct results flag
+- `enable_metric_view_metadata` - Metric view metadata flag
+
+**sql_operation (SqlExecutionEvent):**
+- `statement_type` - Operation type (EXECUTE_STATEMENT, LIST_CATALOGS, etc.)
+- `is_compressed` - Compression flag from CloudFetch
+- `execution_result` - Result format (INLINE_ARROW, INLINE_JSON, EXTERNAL_LINKS, COLUMNAR_INLINE)
+- `chunk_details.total_chunks_present` - Number of chunks
+- `chunk_details.total_chunks_iterated` - Number of chunks downloaded
+
+### 14.2 Not Implemented Fields
+
+The following proto fields are **not currently implemented** as they require additional instrumentation that is not present in the Node.js driver:
+
+**sql_operation fields:**
+- `chunk_id` - Specific chunk identifier for failures (not tracked)
+- `retry_count` - Number of retry attempts (statement-level retries not tracked)
+- `operation_detail` (OperationDetail message):
+  - `n_operation_status_calls` - Count of getOperationStatus calls
+  - `operation_status_latency_millis` - Total latency of status calls
+  - `operation_type` - Type of operation (redundant with statement_type)
+  - `is_internal_call` - Whether operation is internal
+- `result_latency` (ResultLatency message):
+  - `result_set_ready_latency_millis` - Time until first result available
+  - `result_set_consumption_latency_millis` - Time to consume all results
+
+**chunk_details fields:**
+- `initial_chunk_latency_millis` - Time to download first chunk
+- `slowest_chunk_latency_millis` - Maximum chunk download time
+- `sum_chunks_download_time_millis` - Total download time across all chunks
+
+**driver_connection_params fields:**
+Most fields in `DriverConnectionParameters` are specific to JDBC/Java configurations and not applicable to the Node.js driver (proxy configuration, SSL settings, Azure/GCP specific settings, etc.). Only the fields listed in 14.1 are relevant and implemented.
+
+**Reason for exclusion:** These fields require extensive instrumentation to track:
+- Per-operation status polling (operation_detail)
+- Result set consumption timing (result_latency)
+- Per-chunk download timing (chunk_details timing fields)
+- Statement-level retry tracking
+
+Implementing these would add significant complexity to the driver's core execution paths. They can be added in future iterations if needed for specific debugging or optimization use cases.
+
+---
+
 ## Summary
 
 This **event-based telemetry design** provides an efficient approach to collecting driver metrics by:
