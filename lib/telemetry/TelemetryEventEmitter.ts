@@ -45,7 +45,12 @@ export default class TelemetryEventEmitter extends EventEmitter {
    *
    * @param data Connection event data including sessionId, workspaceId, and driverConfig
    */
-  emitConnectionOpen(data: { sessionId: string; workspaceId: string; driverConfig: DriverConfiguration }): void {
+  emitConnectionOpen(data: {
+    sessionId: string;
+    workspaceId: string;
+    driverConfig: DriverConfiguration;
+    latencyMs: number;
+  }): void {
     if (!this.enabled) return;
 
     const logger = this.context.getLogger();
@@ -56,6 +61,7 @@ export default class TelemetryEventEmitter extends EventEmitter {
         sessionId: data.sessionId,
         workspaceId: data.workspaceId,
         driverConfig: data.driverConfig,
+        latencyMs: data.latencyMs,
       };
       this.emit(TelemetryEventType.CONNECTION_OPEN, event);
     } catch (error: any) {

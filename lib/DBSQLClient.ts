@@ -118,7 +118,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
       useLZ4Compression: true,
 
       // Telemetry defaults
-      telemetryEnabled: false, // Initially disabled for safe rollout
+      telemetryEnabled: true, // Enabled by default, gated by feature flag
       telemetryBatchSize: 100,
       telemetryFlushIntervalMs: 5000,
       telemetryMaxRetries: 3,
@@ -447,6 +447,9 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
    * const session = await client.openSession();
    */
   public async openSession(request: OpenSessionRequest = {}): Promise<IDBSQLSession> {
+    // Track connection open latency
+    const startTime = Date.now();
+
     // Prepare session configuration
     const configuration = request.configuration ? { ...request.configuration } : {};
 
@@ -473,12 +476,14 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
     // Emit connection.open telemetry event
     if (this.telemetryEmitter && this.host) {
       try {
+        const latencyMs = Date.now() - startTime;
         const workspaceId = this.extractWorkspaceId(this.host);
         const driverConfig = this.buildDriverConfiguration();
         this.telemetryEmitter.emitConnectionOpen({
           sessionId: session.id,
           workspaceId,
           driverConfig,
+          latencyMs,
         });
       } catch (error: any) {
         // CRITICAL: All telemetry exceptions swallowed

@@ -1212,7 +1212,7 @@ The driver emits events at key operations:
 
 | Event | When | Data Collected |
 |-------|------|----------------|
-| `connection.open` | Connection established | session_id, workspace_id, driver config |
+| `connection.open` | Session opened | session_id, workspace_id, driver config, latency_ms |
 | `statement.start` | Statement execution begins | statement_id, session_id, operation_type |
 | `statement.complete` | Statement execution ends | statement_id, latency, result_format, poll_count |
 | `cloudfetch.chunk` | CloudFetch chunk downloaded | statement_id, chunk_index, latency, bytes |

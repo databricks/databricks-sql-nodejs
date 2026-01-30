@@ -124,6 +124,7 @@ export default class MetricsAggregator {
       sessionId: event.sessionId,
       workspaceId: event.workspaceId,
       driverConfig: event.driverConfig,
+      latencyMs: event.latencyMs,
     };
 
     this.addPendingMetric(metric);

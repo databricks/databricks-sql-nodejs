@@ -65,7 +65,7 @@ export interface TelemetryConfiguration {
  * Default telemetry configuration values
  */
 export const DEFAULT_TELEMETRY_CONFIG: Required<TelemetryConfiguration> = {
-  enabled: false, // Initially disabled for safe rollout
+  enabled: true, // Enabled by default, gated by feature flag
   batchSize: 100,
   flushIntervalMs: 5000,
   maxRetries: 3,

@@ -289,6 +289,10 @@ export default class DatabricksTelemetryExporter {
         char_set_encoding: metric.driverConfig.charSetEncoding,
         process_name: metric.driverConfig.processName,
       };
+      // Include connection open latency
+      if (metric.latencyMs !== undefined) {
+        log.entry.sql_driver_log.operation_latency_ms = metric.latencyMs;
+      }
     } else if (metric.metricType === 'statement') {
       log.entry.sql_driver_log.operation_latency_ms = metric.latencyMs;
 
