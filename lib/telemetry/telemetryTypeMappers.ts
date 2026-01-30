@@ -18,10 +18,11 @@ import { TOperationType, TSparkRowSetType } from '../../thrift/TCLIService_types
 
 /**
  * Map Thrift TOperationType to telemetry Operation.Type enum string.
+ * Returns 'TYPE_UNSPECIFIED' if operationType is undefined or unknown.
  */
-export function mapOperationTypeToTelemetryType(operationType?: TOperationType): string | undefined {
+export function mapOperationTypeToTelemetryType(operationType?: TOperationType): string {
   if (operationType === undefined) {
-    return undefined;
+    return 'TYPE_UNSPECIFIED';
   }
 
   switch (operationType) {

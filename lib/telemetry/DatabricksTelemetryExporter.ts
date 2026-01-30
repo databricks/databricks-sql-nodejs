@@ -329,7 +329,7 @@ export default class DatabricksTelemetryExporter {
       // Only create sql_operation if we have any fields to include
       if (metric.operationType || metric.compressed !== undefined || metric.resultFormat || metric.chunkCount) {
         log.entry.sql_driver_log.sql_operation = {
-          ...(metric.operationType && { statement_type: metric.operationType }),
+          statement_type: metric.operationType,
           ...(metric.compressed !== undefined && { is_compressed: metric.compressed }),
           ...(metric.resultFormat && { execution_result: metric.resultFormat }),
         };
