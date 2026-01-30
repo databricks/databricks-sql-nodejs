@@ -259,6 +259,12 @@ export default class DatabricksTelemetryExporter {
    * Convert TelemetryMetric to Databricks telemetry log format.
    */
   private toTelemetryLog(metric: TelemetryMetric): DatabricksTelemetryLog {
+    // Filter out NIL UUID for statement ID
+    const statementId =
+      metric.statementId && metric.statementId !== '00000000-0000-0000-0000-000000000000'
+        ? metric.statementId
+        : undefined;
+
     const log: DatabricksTelemetryLog = {
       frontend_log_event_id: this.generateUUID(),
       context: {
@@ -270,7 +276,7 @@ export default class DatabricksTelemetryExporter {
       entry: {
         sql_driver_log: {
           session_id: metric.sessionId,
-          sql_statement_id: metric.statementId,
+          sql_statement_id: statementId,
         },
       },
     };
