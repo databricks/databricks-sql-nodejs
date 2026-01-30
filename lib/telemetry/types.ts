@@ -195,6 +195,21 @@ export interface DriverConfiguration {
   /** OS version */
   osVersion: string;
 
+  /** OS architecture (x64, arm64, etc.) */
+  osArch: string;
+
+  /** Runtime vendor (Node.js Foundation) */
+  runtimeVendor: string;
+
+  /** Locale name (e.g., en_US) */
+  localeName: string;
+
+  /** Character set encoding (e.g., UTF-8) */
+  charSetEncoding: string;
+
+  /** Process name */
+  processName: string;
+
   // Feature flags
   /** Whether CloudFetch is enabled */
   cloudFetchEnabled: boolean;
