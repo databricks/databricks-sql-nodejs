@@ -142,6 +142,7 @@ export default class MetricsAggregator {
       sessionId: event.sessionId,
       workspaceId: event.workspaceId,
       driverConfig: event.driverConfig,
+      operationType: 'CREATE_SESSION',
       latencyMs: event.latencyMs,
     };
 
@@ -157,6 +158,7 @@ export default class MetricsAggregator {
       timestamp: event.timestamp,
       sessionId: event.sessionId,
       driverConfig: this.driverConfig,
+      operationType: 'DELETE_SESSION',
       latencyMs: event.latencyMs,
     };
 

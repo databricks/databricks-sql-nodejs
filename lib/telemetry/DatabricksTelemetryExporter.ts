@@ -319,9 +319,16 @@ export default class DatabricksTelemetryExporter {
 
     // Add metric-specific fields based on proto definition
     if (metric.metricType === 'connection') {
-      // Include connection open latency
+      // Include connection latency
       if (metric.latencyMs !== undefined) {
         log.entry.sql_driver_log.operation_latency_ms = metric.latencyMs;
+      }
+
+      // Include operation type (CREATE_SESSION or DELETE_SESSION)
+      if (metric.operationType) {
+        log.entry.sql_driver_log.sql_operation = {
+          statement_type: metric.operationType,
+        };
       }
     } else if (metric.metricType === 'statement') {
       log.entry.sql_driver_log.operation_latency_ms = metric.latencyMs;
