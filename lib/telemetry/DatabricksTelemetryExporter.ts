@@ -48,6 +48,9 @@ interface DatabricksTelemetryLog {
         os_arch?: string;
         driver_name?: string;
         client_app_name?: string;
+        locale_name?: string;
+        char_set_encoding?: string;
+        process_name?: string;
       };
       driver_connection_params?: any;
       operation_latency_ms?: number;

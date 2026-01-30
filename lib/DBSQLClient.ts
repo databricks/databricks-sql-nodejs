@@ -205,6 +205,11 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
       nodeVersion: process.version,
       platform: process.platform,
       osVersion: os.release(),
+      osArch: os.arch(),
+      runtimeVendor: 'Node.js Foundation',
+      localeName: this.getLocaleName(),
+      charSetEncoding: 'UTF-8',
+      processName: this.getProcessName(),
 
       // Feature flags
       cloudFetchEnabled: this.config.useCloudFetch ?? false,
@@ -217,6 +222,55 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
       retryMaxAttempts: this.config.retryMaxAttempts ?? 0,
       cloudFetchConcurrentDownloads: this.config.cloudFetchConcurrentDownloads ?? 0,
     };
+  }
+
+  /**
+   * Get locale name in format language_country (e.g., en_US).
+   * Matches JDBC format: user.language + '_' + user.country
+   */
+  private getLocaleName(): string {
+    try {
+      // Try to get from environment variables
+      const lang = process.env.LANG || process.env.LC_ALL || process.env.LC_MESSAGES || '';
+      if (lang) {
+        // LANG format is typically "en_US.UTF-8", extract "en_US"
+        const match = lang.match(/^([a-z]{2}_[A-Z]{2})/);
+        if (match) {
+          return match[1];
+        }
+      }
+      // Fallback to en_US
+      return 'en_US';
+    } catch {
+      return 'en_US';
+    }
+  }
+
+  /**
+   * Get process name, similar to JDBC's ProcessNameUtil.
+   * Returns the script name or process title.
+   */
+  private getProcessName(): string {
+    try {
+      // Try process.title first (can be set by application)
+      if (process.title && process.title !== 'node') {
+        return process.title;
+      }
+      // Try to get the main script name from argv[1]
+      if (process.argv && process.argv.length > 1) {
+        const scriptPath = process.argv[1];
+        // Extract filename without path
+        const filename = scriptPath.split('/').pop()?.split('\\').pop() || '';
+        // Remove extension
+        const nameWithoutExt = filename.replace(/\.[^.]*$/, '');
+        if (nameWithoutExt) {
+          return nameWithoutExt;
+        }
+      }
+      return 'node';
+    } catch {
+      return 'node';
+    }
   }
 
   /**
