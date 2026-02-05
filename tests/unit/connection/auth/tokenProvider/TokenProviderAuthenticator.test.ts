@@ -104,5 +104,21 @@ describe('TokenProviderAuthenticator', () => {
         expect(e).to.equal(error);
       }
     });
+
+    it('should throw error when token is expired', async () => {
+      const provider = new MockTokenProvider('my-access-token', 'TestProvider');
+      const expiredDate = new Date(Date.now() - 60000); // 1 minute ago
+      provider.setToken(new Token('expired-token', { expiresAt: expiredDate }));
+      const authenticator = new TokenProviderAuthenticator(provider, context);
+
+      try {
+        await authenticator.authenticate();
+        expect.fail('Should have thrown an error');
+      } catch (e) {
+        expect(e).to.be.instanceOf(Error);
+        expect((e as Error).message).to.include('expired');
+        expect((e as Error).message).to.include('TestProvider');
+      }
+    });
   });
 });

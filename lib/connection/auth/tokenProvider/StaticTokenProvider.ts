@@ -1,5 +1,5 @@
 import ITokenProvider from './ITokenProvider';
-import Token from './Token';
+import Token, { TokenOptions, TokenFromJWTOptions } from './Token';
 
 /**
  * A token provider that returns a static token.
@@ -13,15 +13,7 @@ export default class StaticTokenProvider implements ITokenProvider {
    * @param accessToken - The access token string
    * @param options - Optional token configuration (tokenType, expiresAt, refreshToken, scopes)
    */
-  constructor(
-    accessToken: string,
-    options?: {
-      tokenType?: string;
-      expiresAt?: Date;
-      refreshToken?: string;
-      scopes?: string[];
-    },
-  ) {
+  constructor(accessToken: string, options?: TokenOptions) {
     this.token = new Token(accessToken, options);
   }
 
@@ -31,14 +23,7 @@ export default class StaticTokenProvider implements ITokenProvider {
    * @param jwt - The JWT token string
    * @param options - Optional token configuration
    */
-  static fromJWT(
-    jwt: string,
-    options?: {
-      tokenType?: string;
-      refreshToken?: string;
-      scopes?: string[];
-    },
-  ): StaticTokenProvider {
+  static fromJWT(jwt: string, options?: TokenFromJWTOptions): StaticTokenProvider {
     const token = Token.fromJWT(jwt, options);
     return new StaticTokenProvider(token.accessToken, {
       tokenType: token.tokenType,

@@ -36,7 +36,9 @@ export default class TokenProviderAuthenticator implements IAuthentication {
     const token = await this.tokenProvider.getToken();
 
     if (token.isExpired()) {
-      logger.log(LogLevel.warn, `TokenProviderAuthenticator: token from ${providerName} is expired`);
+      const message = `TokenProviderAuthenticator: token from ${providerName} is expired`;
+      logger.log(LogLevel.error, message);
+      throw new Error(message);
     }
 
     return token.setAuthHeader(this.headers);
