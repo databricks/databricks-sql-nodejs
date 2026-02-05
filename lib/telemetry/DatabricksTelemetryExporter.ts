@@ -91,7 +91,7 @@ interface DatabricksTelemetryLog {
 interface DatabricksTelemetryPayload {
   uploadTime: number;
   items: string[]; // Always empty - required field
-  protoLogs: string[]; // JSON-stringified TelemetryFrontendLog objects
+  protoLogs: string[]; // JSON-stringified DatabricksTelemetryLog objects
 }
 
 /**
@@ -237,7 +237,11 @@ export default class DatabricksTelemetryExporter {
     // Get authentication headers if using authenticated endpoint
     const authHeaders = authenticatedExport ? await this.context.getAuthHeaders() : {};
 
-    // Make HTTP POST request with authentication
+    // Get agent with proxy settings (same pattern as CloudFetchResultHandler and DBSQLSession)
+    const connectionProvider = await this.context.getConnectionProvider();
+    const agent = await connectionProvider.getAgent();
+
+    // Make HTTP POST request with authentication and proxy support
     const response: Response = await this.fetchFn(endpoint, {
       method: 'POST',
       headers: {
@@ -246,6 +250,7 @@ export default class DatabricksTelemetryExporter {
         'User-Agent': this.userAgent,
       },
       body: JSON.stringify(payload),
+      agent, // Include agent for proxy support
     });
 
     if (!response.ok) {
