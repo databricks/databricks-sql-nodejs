@@ -22,9 +22,10 @@ import { buildUrl } from './urlUtils';
 
 /**
  * Context holding feature flag state for a specific host.
+ * Stores all feature flags from the server for extensibility.
  */
 export interface FeatureFlagContext {
-  telemetryEnabled?: boolean;
+  flags: Map<string, string>; // All feature flags from server (extensible for future flags)
   lastFetched?: Date;
   refCount: number;
   cacheDuration: number; // 15 minutes in ms
@@ -54,6 +55,7 @@ export default class FeatureFlagCache {
     let ctx = this.contexts.get(host);
     if (!ctx) {
       ctx = {
+        flags: new Map<string, string>(),
         refCount: 0,
         cacheDuration: this.CACHE_DURATION_MS,
       };
@@ -78,10 +80,14 @@ export default class FeatureFlagCache {
   }
 
   /**
-   * Checks if telemetry is enabled for the host.
+   * Generic method to check if a feature flag is enabled.
    * Uses cached value if available and not expired.
+   *
+   * @param host The host to check
+   * @param flagName The feature flag name to query
+   * @returns true if flag is enabled (value is "true"), false otherwise
    */
-  async isTelemetryEnabled(host: string): Promise<boolean> {
+  async isFeatureEnabled(host: string, flagName: string): Promise<boolean> {
     const logger = this.context.getLogger();
     const ctx = this.contexts.get(host);
 
@@ -93,26 +99,36 @@ export default class FeatureFlagCache {
 
     if (isExpired) {
       try {
-        // Fetch feature flag from server
-        ctx.telemetryEnabled = await this.fetchFeatureFlag(host);
+        // Fetch all feature flags from server
+        await this.fetchFeatureFlags(host);
         ctx.lastFetched = new Date();
       } catch (error: any) {
         // Log at debug level only, never propagate exceptions
-        logger.log(LogLevel.debug, `Error fetching feature flag: ${error.message}`);
+        logger.log(LogLevel.debug, `Error fetching feature flags: ${error.message}`);
       }
     }
 
-    return ctx.telemetryEnabled ?? false;
+    // Get flag value and parse as boolean
+    const value = ctx.flags.get(flagName);
+    return value?.toLowerCase() === 'true';
   }
 
   /**
-   * Fetches feature flag from server using connector-service API.
-   * Calls GET /api/2.0/connector-service/feature-flags/OSS_NODEJS/{version}
-   *
-   * @param host The host to fetch feature flag for
-   * @returns true if feature flag is enabled, false otherwise
+   * Convenience method to check if telemetry is enabled for the host.
+   * Uses cached value if available and not expired.
    */
-  private async fetchFeatureFlag(host: string): Promise<boolean> {
+  async isTelemetryEnabled(host: string): Promise<boolean> {
+    return this.isFeatureEnabled(host, this.FEATURE_FLAG_NAME);
+  }
+
+  /**
+   * Fetches all feature flags from server using connector-service API.
+   * Calls GET /api/2.0/connector-service/feature-flags/NODEJS/{version}
+   * Stores all flags in the context for extensibility.
+   *
+   * @param host The host to fetch feature flags for
+   */
+  private async fetchFeatureFlags(host: string): Promise<void> {
     const logger = this.context.getLogger();
 
     try {
@@ -143,8 +159,8 @@ export default class FeatureFlagCache {
       });
 
       if (!response.ok) {
-        logger.log(LogLevel.debug, `Feature flag fetch failed: ${response.status} ${response.statusText}`);
-        return false;
+        logger.log(LogLevel.debug, `Feature flags fetch failed: ${response.status} ${response.statusText}`);
+        return;
       }
 
       // Parse response JSON
@@ -152,32 +168,30 @@ export default class FeatureFlagCache {
 
       // Response format: { flags: [{ name: string, value: string }], ttl_seconds?: number }
       if (data && data.flags && Array.isArray(data.flags)) {
-        // Update cache duration if TTL provided
         const ctx = this.contexts.get(host);
-        if (ctx && data.ttl_seconds) {
+        if (!ctx) {
+          return;
+        }
+
+        // Clear existing flags and store all flags from response
+        ctx.flags.clear();
+        for (const flag of data.flags) {
+          if (flag.name && flag.value !== undefined) {
+            ctx.flags.set(flag.name, String(flag.value));
+          }
+        }
+
+        logger.log(LogLevel.debug, `Stored ${ctx.flags.size} feature flags from server`);
+
+        // Update cache duration if TTL provided
+        if (data.ttl_seconds) {
           ctx.cacheDuration = data.ttl_seconds * 1000; // Convert to milliseconds
           logger.log(LogLevel.debug, `Updated cache duration to ${data.ttl_seconds} seconds`);
         }
-
-        // Look for our specific feature flag
-        const flag = data.flags.find((f: any) => f.name === this.FEATURE_FLAG_NAME);
-
-        if (flag) {
-          // Parse boolean value (can be string "true"/"false")
-          const value = String(flag.value).toLowerCase();
-          const enabled = value === 'true';
-          logger.log(LogLevel.debug, `Feature flag ${this.FEATURE_FLAG_NAME}: ${enabled}`);
-          return enabled;
-        }
       }
-
-      // Feature flag not found in response, default to false
-      logger.log(LogLevel.debug, `Feature flag ${this.FEATURE_FLAG_NAME} not found in response`);
-      return false;
     } catch (error: any) {
       // Log at debug level only, never propagate exceptions
-      logger.log(LogLevel.debug, `Error fetching feature flag from ${host}: ${error.message}`);
-      return false;
+      logger.log(LogLevel.debug, `Error fetching feature flags from ${host}: ${error.message}`);
     }
   }
 
