@@ -296,8 +296,10 @@ export default class MetricsAggregator {
 
   /**
    * Flush all pending metrics to exporter. Never throws.
+   *
+   * @param resetTimer If true, resets the flush timer after flushing (default: true)
    */
-  flush(): void {
+  flush(resetTimer: boolean = true): void {
     const logger = this.context.getLogger();
 
     try {
@@ -312,6 +314,12 @@ export default class MetricsAggregator {
 
       // Export metrics (exporter.export never throws)
       this.exporter.export(metricsToExport);
+
+      // Reset timer to avoid rapid successive flushes (e.g., batch flush at 25s then timer flush at 30s)
+      // This ensures consistent spacing between exports and helps avoid rate limiting
+      if (resetTimer) {
+        this.startFlushTimer();
+      }
     } catch (error: any) {
       // CRITICAL: All exceptions swallowed and logged at debug level ONLY
       logger.log(LogLevel.debug, `MetricsAggregator.flush error: ${error.message}`);
@@ -330,7 +338,8 @@ export default class MetricsAggregator {
       }
 
       this.flushTimer = setInterval(() => {
-        this.flush();
+        // Don't reset timer when flush is triggered by the timer itself
+        this.flush(false);
       }, this.flushIntervalMs);
 
       // Prevent timer from keeping Node.js process alive
@@ -359,8 +368,8 @@ export default class MetricsAggregator {
         this.completeStatement(statementId);
       }
 
-      // Final flush
-      this.flush();
+      // Final flush - don't reset timer since we're closing
+      this.flush(false);
     } catch (error: any) {
       // CRITICAL: All exceptions swallowed and logged at debug level ONLY
       logger.log(LogLevel.debug, `MetricsAggregator.close error: ${error.message}`);
