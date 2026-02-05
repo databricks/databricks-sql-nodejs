@@ -313,8 +313,11 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
     }
 
     try {
-      // Create feature flag cache instance
-      this.featureFlagCache = new FeatureFlagCache(this);
+      // Create circuit breaker registry (shared by feature flags and telemetry)
+      this.circuitBreakerRegistry = new CircuitBreakerRegistry(this);
+
+      // Create feature flag cache instance with circuit breaker protection
+      this.featureFlagCache = new FeatureFlagCache(this, this.circuitBreakerRegistry);
       this.featureFlagCache.getOrCreateContext(this.host);
 
       // Check if telemetry enabled via feature flag
@@ -332,8 +335,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
       // Get or create telemetry client for this host (increments refCount)
       this.telemetryClientProvider.getOrCreateClient(this.host);
 
-      // Create circuit breaker registry and exporter
-      this.circuitBreakerRegistry = new CircuitBreakerRegistry(this);
+      // Create telemetry exporter with shared circuit breaker registry
       const exporter = new DatabricksTelemetryExporter(this, this.host, this.circuitBreakerRegistry);
       this.telemetryAggregator = new MetricsAggregator(this, exporter);
 

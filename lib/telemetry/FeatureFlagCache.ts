@@ -19,6 +19,7 @@ import IClientContext from '../contracts/IClientContext';
 import { LogLevel } from '../contracts/IDBSQLLogger';
 import driverVersion from '../version';
 import { buildUrl } from './urlUtils';
+import { CircuitBreaker, CircuitBreakerRegistry } from './CircuitBreaker';
 
 /**
  * Context holding feature flag state for a specific host.
@@ -43,8 +44,14 @@ export default class FeatureFlagCache {
 
   private readonly FEATURE_FLAG_NAME = 'databricks.partnerplatform.clientConfigsFeatureFlags.enableTelemetryForNodeJs';
 
-  constructor(private context: IClientContext) {
+  private circuitBreakerRegistry: CircuitBreakerRegistry;
+
+  constructor(
+    private context: IClientContext,
+    circuitBreakerRegistry?: CircuitBreakerRegistry,
+  ) {
     this.contexts = new Map();
+    this.circuitBreakerRegistry = circuitBreakerRegistry || new CircuitBreakerRegistry(context);
   }
 
   /**
@@ -99,12 +106,20 @@ export default class FeatureFlagCache {
 
     if (isExpired) {
       try {
-        // Fetch all feature flags from server
-        await this.fetchFeatureFlags(host);
+        // Fetch all feature flags from server with circuit breaker protection
+        const circuitBreaker = this.circuitBreakerRegistry.getCircuitBreaker(host);
+        await circuitBreaker.execute(async () => {
+          await this.fetchFeatureFlags(host);
+        });
         ctx.lastFetched = new Date();
       } catch (error: any) {
         // Log at debug level only, never propagate exceptions
-        logger.log(LogLevel.debug, `Error fetching feature flags: ${error.message}`);
+        // Circuit breaker OPEN or fetch failed - use cached values
+        if (error.message === 'Circuit breaker OPEN') {
+          logger.log(LogLevel.debug, 'Feature flags: Circuit breaker OPEN - using cached values');
+        } else {
+          logger.log(LogLevel.debug, `Error fetching feature flags: ${error.message}`);
+        }
       }
     }
 
