@@ -87,7 +87,7 @@ describe('DatabricksTelemetryExporter', () => {
 
       expect(fetchStub.calledOnce).to.be.true;
       const call = fetchStub.getCall(0);
-      expect(call.args[0]).to.equal('https://test.databricks.com/api/2.0/sql/telemetry-ext');
+      expect(call.args[0]).to.equal('https://test.databricks.com/telemetry-ext');
     });
 
     it('should export to unauthenticated endpoint when disabled', async () => {
@@ -123,7 +123,7 @@ describe('DatabricksTelemetryExporter', () => {
 
       expect(fetchStub.calledOnce).to.be.true;
       const call = fetchStub.getCall(0);
-      expect(call.args[0]).to.equal('https://test.databricks.com/api/2.0/sql/telemetry-unauth');
+      expect(call.args[0]).to.equal('https://test.databricks.com/telemetry-unauth');
     });
   });
 
@@ -170,10 +170,26 @@ describe('DatabricksTelemetryExporter', () => {
       const call = fetchStub.getCall(0);
       const body = JSON.parse(call.args[1].body);
 
-      expect(body.frontend_logs).to.have.lengthOf(1);
-      expect(body.frontend_logs[0].workspace_id).to.equal('ws-1');
-      expect(body.frontend_logs[0].entry.sql_driver_log.session_id).to.equal('session-1');
-      expect(body.frontend_logs[0].entry.sql_driver_log.driver_config).to.deep.equal(metrics[0].driverConfig);
+      expect(body.protoLogs).to.have.lengthOf(1);
+      const log = JSON.parse(body.protoLogs[0]);
+      expect(log.entry.sql_driver_log.session_id).to.equal('session-1');
+      expect(log.entry.sql_driver_log.system_configuration).to.deep.equal(
+        metrics[0].driverConfig
+          ? {
+              driver_version: metrics[0].driverConfig.driverVersion,
+              driver_name: metrics[0].driverConfig.driverName,
+              runtime_name: 'Node.js',
+              runtime_version: metrics[0].driverConfig.nodeVersion,
+              runtime_vendor: metrics[0].driverConfig.runtimeVendor,
+              os_name: metrics[0].driverConfig.platform,
+              os_version: metrics[0].driverConfig.osVersion,
+              os_arch: metrics[0].driverConfig.osArch,
+              locale_name: metrics[0].driverConfig.localeName,
+              char_set_encoding: metrics[0].driverConfig.charSetEncoding,
+              process_name: metrics[0].driverConfig.processName,
+            }
+          : undefined,
+      );
     });
 
     it('should format statement metric correctly', async () => {
@@ -203,15 +219,14 @@ describe('DatabricksTelemetryExporter', () => {
       const call = fetchStub.getCall(0);
       const body = JSON.parse(call.args[1].body);
 
-      expect(body.frontend_logs).to.have.lengthOf(1);
-      const log = body.frontend_logs[0];
-      expect(log.workspace_id).to.equal('ws-1');
+      expect(body.protoLogs).to.have.lengthOf(1);
+      const log = JSON.parse(body.protoLogs[0]);
       expect(log.entry.sql_driver_log.session_id).to.equal('session-1');
       expect(log.entry.sql_driver_log.sql_statement_id).to.equal('stmt-1');
       expect(log.entry.sql_driver_log.operation_latency_ms).to.equal(1500);
-      expect(log.entry.sql_driver_log.sql_operation.execution_result_format).to.equal('cloudfetch');
-      expect(log.entry.sql_driver_log.sql_operation.chunk_details.chunk_count).to.equal(5);
-      expect(log.entry.sql_driver_log.sql_operation.chunk_details.total_bytes).to.equal(1024000);
+      expect(log.entry.sql_driver_log.sql_operation.execution_result).to.equal('cloudfetch');
+      expect(log.entry.sql_driver_log.sql_operation.chunk_details.total_chunks_present).to.equal(5);
+      expect(log.entry.sql_driver_log.sql_operation.chunk_details.total_chunks_iterated).to.equal(5);
     });
 
     it('should format error metric correctly', async () => {
@@ -239,8 +254,8 @@ describe('DatabricksTelemetryExporter', () => {
       const call = fetchStub.getCall(0);
       const body = JSON.parse(call.args[1].body);
 
-      expect(body.frontend_logs).to.have.lengthOf(1);
-      const log = body.frontend_logs[0];
+      expect(body.protoLogs).to.have.lengthOf(1);
+      const log = JSON.parse(body.protoLogs[0]);
       expect(log.entry.sql_driver_log.error_info.error_name).to.equal('AuthenticationError');
       expect(log.entry.sql_driver_log.error_info.stack_trace).to.equal('Invalid credentials');
     });
@@ -267,9 +282,8 @@ describe('DatabricksTelemetryExporter', () => {
 
       const call = fetchStub.getCall(0);
       const body = JSON.parse(call.args[1].body);
-      const log = body.frontend_logs[0];
+      const log = JSON.parse(body.protoLogs[0]);
 
-      expect(log.workspace_id).to.equal('ws-789');
       expect(log.entry.sql_driver_log.session_id).to.equal('session-123');
       expect(log.entry.sql_driver_log.sql_statement_id).to.equal('stmt-456');
     });
