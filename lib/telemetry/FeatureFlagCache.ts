@@ -127,7 +127,11 @@ export default class FeatureFlagCache {
 
       logger.log(LogLevel.debug, `Fetching feature flags from ${endpoint}`);
 
-      // Make HTTP GET request with authentication
+      // Get agent with proxy settings (same pattern as CloudFetchResultHandler and DBSQLSession)
+      const connectionProvider = await this.context.getConnectionProvider();
+      const agent = await connectionProvider.getAgent();
+
+      // Make HTTP GET request with authentication and proxy support
       const response = await fetch(endpoint, {
         method: 'GET',
         headers: {
@@ -135,6 +139,7 @@ export default class FeatureFlagCache {
           'Content-Type': 'application/json',
           'User-Agent': `databricks-sql-nodejs/${driverVersion}`,
         },
+        agent, // Include agent for proxy support
       });
 
       if (!response.ok) {
