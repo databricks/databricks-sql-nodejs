@@ -7,6 +7,26 @@ import { HeadersInit } from 'node-fetch';
 const EXPIRATION_BUFFER_SECONDS = 30;
 
 /**
+ * Options for creating a Token instance.
+ */
+export interface TokenOptions {
+  /** The token type (e.g., "Bearer"). Defaults to "Bearer". */
+  tokenType?: string;
+  /** The expiration time of the token. */
+  expiresAt?: Date;
+  /** The refresh token, if available. */
+  refreshToken?: string;
+  /** The scopes associated with this token. */
+  scopes?: string[];
+}
+
+/**
+ * Options for creating a Token from a JWT string.
+ * Does not include expiresAt since it is extracted from the JWT payload.
+ */
+export type TokenFromJWTOptions = Omit<TokenOptions, 'expiresAt'>;
+
+/**
  * Represents an access token with optional metadata and lifecycle management.
  */
 export default class Token {
@@ -20,15 +40,7 @@ export default class Token {
 
   private readonly _scopes?: string[];
 
-  constructor(
-    accessToken: string,
-    options?: {
-      tokenType?: string;
-      expiresAt?: Date;
-      refreshToken?: string;
-      scopes?: string[];
-    },
-  ) {
+  constructor(accessToken: string, options?: TokenOptions) {
     this._accessToken = accessToken;
     this._tokenType = options?.tokenType ?? 'Bearer';
     this._expiresAt = options?.expiresAt;
@@ -101,17 +113,11 @@ export default class Token {
    * If the JWT cannot be decoded, the token is created without expiration info.
    * The server will validate the token anyway, so decoding failures are handled gracefully.
    * @param jwt - The JWT token string
-   * @param options - Additional token options (tokenType, refreshToken, scopes)
+   * @param options - Additional token options (tokenType, refreshToken, scopes).
+   *                  Note: expiresAt is not accepted here as it is extracted from the JWT payload.
    * @returns A new Token instance with expiration extracted from the JWT (if available)
    */
-  static fromJWT(
-    jwt: string,
-    options?: {
-      tokenType?: string;
-      refreshToken?: string;
-      scopes?: string[];
-    },
-  ): Token {
+  static fromJWT(jwt: string, options?: TokenFromJWTOptions): Token {
     let expiresAt: Date | undefined;
 
     try {

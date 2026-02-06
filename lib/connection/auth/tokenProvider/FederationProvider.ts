@@ -29,6 +29,21 @@ const DEFAULT_SCOPE = 'sql';
 const REQUEST_TIMEOUT_MS = 30000;
 
 /**
+ * Maximum number of retry attempts for transient errors.
+ */
+const MAX_RETRY_ATTEMPTS = 3;
+
+/**
+ * Base delay in milliseconds for exponential backoff.
+ */
+const RETRY_BASE_DELAY_MS = 1000;
+
+/**
+ * HTTP status codes that are considered retryable.
+ */
+const RETRYABLE_STATUS_CODES = new Set([429, 500, 502, 503, 504]);
+
+/**
  * A token provider that wraps another provider with automatic token federation.
  * When the base provider returns a token from a different issuer, this provider
  * exchanges it for a Databricks-compatible token using RFC 8693.
@@ -111,6 +126,7 @@ export default class FederationProvider implements ITokenProvider {
 
   /**
    * Exchanges the token for a Databricks-compatible token using RFC 8693.
+   * Includes retry logic for transient errors with exponential backoff.
    * @param token - The token to exchange
    * @returns The exchanged token
    */
@@ -128,47 +144,102 @@ export default class FederationProvider implements ITokenProvider {
       params.append('client_id', this.clientId);
     }
 
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+    let lastError: Error | undefined;
 
-    try {
-      const response = await fetch(url, {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/x-www-form-urlencoded',
-        },
-        body: params.toString(),
-        signal: controller.signal,
-      });
-
-      if (!response.ok) {
-        const errorText = await response.text();
-        throw new Error(`Token exchange failed: ${response.status} ${response.statusText} - ${errorText}`);
+    for (let attempt = 0; attempt <= MAX_RETRY_ATTEMPTS; attempt++) {
+      if (attempt > 0) {
+        // Exponential backoff: 1s, 2s, 4s
+        const delay = RETRY_BASE_DELAY_MS * Math.pow(2, attempt - 1);
+        await this.sleep(delay);
       }
 
-      const data = (await response.json()) as {
-        access_token?: string;
-        token_type?: string;
-        expires_in?: number;
-      };
+      const controller = new AbortController();
+      const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
-      if (!data.access_token) {
-        throw new Error('Token exchange response missing access_token');
+      try {
+        const response = await fetch(url, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+          },
+          body: params.toString(),
+          signal: controller.signal,
+        });
+
+        if (!response.ok) {
+          const errorText = await response.text();
+          const error = new Error(`Token exchange failed: ${response.status} ${response.statusText} - ${errorText}`);
+
+          // Check if this is a retryable status code
+          if (RETRYABLE_STATUS_CODES.has(response.status) && attempt < MAX_RETRY_ATTEMPTS) {
+            lastError = error;
+            continue;
+          }
+
+          throw error;
+        }
+
+        const data = (await response.json()) as {
+          access_token?: string;
+          token_type?: string;
+          expires_in?: number;
+        };
+
+        if (!data.access_token) {
+          throw new Error('Token exchange response missing access_token');
+        }
+
+        // Calculate expiration from expires_in
+        let expiresAt: Date | undefined;
+        if (typeof data.expires_in === 'number') {
+          expiresAt = new Date(Date.now() + data.expires_in * 1000);
+        }
+
+        return new Token(data.access_token, {
+          tokenType: data.token_type ?? 'Bearer',
+          expiresAt,
+        });
+      } catch (error) {
+        clearTimeout(timeoutId);
+
+        // Retry on network errors (timeout, connection issues)
+        if (this.isRetryableError(error) && attempt < MAX_RETRY_ATTEMPTS) {
+          lastError = error instanceof Error ? error : new Error(String(error));
+          continue;
+        }
+
+        throw error;
+      } finally {
+        clearTimeout(timeoutId);
       }
-
-      // Calculate expiration from expires_in
-      let expiresAt: Date | undefined;
-      if (typeof data.expires_in === 'number') {
-        expiresAt = new Date(Date.now() + data.expires_in * 1000);
-      }
-
-      return new Token(data.access_token, {
-        tokenType: data.token_type ?? 'Bearer',
-        expiresAt,
-      });
-    } finally {
-      clearTimeout(timeoutId);
     }
+
+    // If we exhausted all retries, throw the last error
+    throw lastError ?? new Error('Token exchange failed after retries');
+  }
+
+  /**
+   * Determines if an error is retryable (network errors, timeouts).
+   */
+  private isRetryableError(error: unknown): boolean {
+    if (error instanceof Error) {
+      // AbortError from timeout
+      if (error.name === 'AbortError') {
+        return true;
+      }
+      // Network errors from node-fetch
+      if (error.name === 'FetchError') {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  /**
+   * Sleeps for the specified duration.
+   */
+  private sleep(ms: number): Promise<void> {
+    return new Promise((resolve) => setTimeout(resolve, ms));
   }
 
   /**
