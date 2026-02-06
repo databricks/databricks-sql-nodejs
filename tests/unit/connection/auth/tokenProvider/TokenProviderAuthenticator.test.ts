@@ -105,9 +105,35 @@ describe('TokenProviderAuthenticator', () => {
       }
     });
 
-    it('should throw error when token is expired', async () => {
+    it('should retry once when token is expired and succeed with fresh token', async () => {
+      const expiredDate = new Date(Date.now() - 60000);
+      const freshDate = new Date(Date.now() + 3600000);
+      const expiredToken = new Token('expired-token', { expiresAt: expiredDate });
+      const freshToken = new Token('fresh-token', { expiresAt: freshDate });
+
+      let callCount = 0;
+      const provider: ITokenProvider = {
+        async getToken() {
+          callCount += 1;
+          return callCount === 1 ? expiredToken : freshToken;
+        },
+        getName() {
+          return 'TestProvider';
+        },
+      };
+
+      const authenticator = new TokenProviderAuthenticator(provider, context);
+      const headers = await authenticator.authenticate();
+
+      expect(callCount).to.equal(2);
+      expect(headers).to.deep.equal({
+        Authorization: 'Bearer fresh-token',
+      });
+    });
+
+    it('should throw error when token is still expired after retry', async () => {
       const provider = new MockTokenProvider('my-access-token', 'TestProvider');
-      const expiredDate = new Date(Date.now() - 60000); // 1 minute ago
+      const expiredDate = new Date(Date.now() - 60000);
       provider.setToken(new Token('expired-token', { expiresAt: expiredDate }));
       const authenticator = new TokenProviderAuthenticator(provider, context);
 
