@@ -27,7 +27,32 @@ class CustomOAuthTokenProvider implements ITokenProvider {
   async getToken(): Promise<Token> {
     console.log('Fetching token from custom OAuth server...');
 
-    // Example: Fetch token using client credentials grant
+    // Retry transient errors with exponential backoff
+    const maxRetries = 3;
+    let lastError: Error | undefined;
+
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+      if (attempt > 0) {
+        const delay = 1000 * Math.pow(2, attempt - 1);
+        await new Promise((resolve) => setTimeout(resolve, delay));
+      }
+
+      try {
+        return await this.fetchToken();
+      } catch (error) {
+        lastError = error instanceof Error ? error : new Error(String(error));
+
+        // Only retry on transient errors (5xx, network issues)
+        if (error instanceof Error && error.message.includes('OAuth token request failed: 4')) {
+          throw error; // Don't retry client errors (4xx)
+        }
+      }
+    }
+
+    throw lastError ?? new Error('Token fetch failed after retries');
+  }
+
+  private async fetchToken(): Promise<Token> {
     const response = await fetch(`${this.oauthServerUrl}/oauth/token`, {
       method: 'POST',
       headers: {
@@ -99,7 +124,9 @@ async function main() {
 
   const client = new DBSQLClient();
 
-  // Option 1: Use a custom OAuth token provider
+  // Option 1: Use a custom OAuth token provider (shown below)
+  // Option 2: Use a file-based token provider for development:
+  //   const fileProvider = new FileTokenProvider('/path/to/token.json');
   const oauthProvider = new CustomOAuthTokenProvider(
     process.env.OAUTH_SERVER_URL!,
     process.env.OAUTH_CLIENT_ID!,
