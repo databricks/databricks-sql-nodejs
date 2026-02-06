@@ -28,6 +28,7 @@ async function getAzureADToken(): Promise<string> {
 }
 
 // Example: Fetch a token from Google
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 async function getGoogleToken(): Promise<string> {
   // Example using google-auth-library:
   //

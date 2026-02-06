@@ -15,7 +15,9 @@ import { ITokenProvider, Token } from '../../lib/connection/auth/tokenProvider';
  */
 class CustomOAuthTokenProvider implements ITokenProvider {
   private readonly oauthServerUrl: string;
+
   private readonly clientId: string;
+
   private readonly clientSecret: string;
 
   constructor(oauthServerUrl: string, clientId: string, clientSecret: string) {
@@ -25,31 +27,37 @@ class CustomOAuthTokenProvider implements ITokenProvider {
   }
 
   async getToken(): Promise<Token> {
+    // eslint-disable-next-line no-console
     console.log('Fetching token from custom OAuth server...');
+    return this.fetchTokenWithRetry(0);
+  }
 
-    // Retry transient errors with exponential backoff
+  /**
+   * Recursively attempts to fetch a token with exponential backoff.
+   */
+  private async fetchTokenWithRetry(attempt: number): Promise<Token> {
     const maxRetries = 3;
-    let lastError: Error | undefined;
 
-    for (let attempt = 0; attempt <= maxRetries; attempt++) {
-      if (attempt > 0) {
-        const delay = 1000 * Math.pow(2, attempt - 1);
-        await new Promise((resolve) => setTimeout(resolve, delay));
+    try {
+      return await this.fetchToken();
+    } catch (error) {
+      // Don't retry client errors (4xx)
+      if (error instanceof Error && error.message.includes('OAuth token request failed: 4')) {
+        throw error;
       }
 
-      try {
-        return await this.fetchToken();
-      } catch (error) {
-        lastError = error instanceof Error ? error : new Error(String(error));
-
-        // Only retry on transient errors (5xx, network issues)
-        if (error instanceof Error && error.message.includes('OAuth token request failed: 4')) {
-          throw error; // Don't retry client errors (4xx)
-        }
+      if (attempt >= maxRetries) {
+        throw error;
       }
+
+      // Exponential backoff: 1s, 2s, 4s
+      const delay = 1000 * (2 ** attempt);
+      await new Promise<void>((resolve) => {
+        setTimeout(resolve, delay);
+      });
+
+      return this.fetchTokenWithRetry(attempt + 1);
     }
-
-    throw lastError ?? new Error('Token fetch failed after retries');
   }
 
   private async fetchToken(): Promise<Token> {
@@ -96,6 +104,8 @@ class CustomOAuthTokenProvider implements ITokenProvider {
 /**
  * Simple token provider that reads from a file (for development/testing).
  */
+// exported for use as an alternative example provider
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 class FileTokenProvider implements ITokenProvider {
   private readonly filePath: string;
 
