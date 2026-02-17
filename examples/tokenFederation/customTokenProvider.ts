@@ -51,7 +51,7 @@ class CustomOAuthTokenProvider implements ITokenProvider {
       }
 
       // Exponential backoff: 1s, 2s, 4s
-      const delay = 1000 * (2 ** attempt);
+      const delay = 1000 * 2 ** attempt;
       await new Promise<void>((resolve) => {
         setTimeout(resolve, delay);
       });
