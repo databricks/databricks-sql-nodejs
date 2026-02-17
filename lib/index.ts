@@ -9,12 +9,28 @@ import DBSQLSession from './DBSQLSession';
 import { DBSQLParameter, DBSQLParameterType } from './DBSQLParameter';
 import DBSQLLogger from './DBSQLLogger';
 import PlainHttpAuthentication from './connection/auth/PlainHttpAuthentication';
+import {
+  Token,
+  StaticTokenProvider,
+  ExternalTokenProvider,
+  CachedTokenProvider,
+  FederationProvider,
+} from './connection/auth/tokenProvider';
 import HttpConnection from './connection/connections/HttpConnection';
 import { formatProgress } from './utils';
 import { LogLevel } from './contracts/IDBSQLLogger';
 
+// Re-export types for TypeScript users
+export type { default as ITokenProvider } from './connection/auth/tokenProvider/ITokenProvider';
+
 export const auth = {
   PlainHttpAuthentication,
+  // Token provider classes for custom authentication
+  Token,
+  StaticTokenProvider,
+  ExternalTokenProvider,
+  CachedTokenProvider,
+  FederationProvider,
 };
 
 const { TException, TApplicationException, TApplicationExceptionType, TProtocolException, TProtocolExceptionType } =
