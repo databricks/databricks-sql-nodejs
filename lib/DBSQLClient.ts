@@ -19,6 +19,11 @@ import HiveDriverError from './errors/HiveDriverError';
 import { buildUserAgentString, definedOrError } from './utils';
 import PlainHttpAuthentication from './connection/auth/PlainHttpAuthentication';
 import DatabricksOAuth, { OAuthFlow } from './connection/auth/DatabricksOAuth';
+import {
+  TokenProviderAuthenticator,
+  StaticTokenProvider,
+  ExternalTokenProvider,
+} from './connection/auth/tokenProvider';
 import IDBSQLLogger, { LogLevel } from './contracts/IDBSQLLogger';
 import DBSQLLogger from './DBSQLLogger';
 import CloseableCollection from './utils/CloseableCollection';
@@ -143,6 +148,12 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
         });
       case 'custom':
         return options.provider;
+      case 'token-provider':
+        return new TokenProviderAuthenticator(options.tokenProvider, this);
+      case 'external-token':
+        return new TokenProviderAuthenticator(new ExternalTokenProvider(options.getToken), this);
+      case 'static-token':
+        return new TokenProviderAuthenticator(StaticTokenProvider.fromJWT(options.staticToken), this);
       // no default
     }
   }
