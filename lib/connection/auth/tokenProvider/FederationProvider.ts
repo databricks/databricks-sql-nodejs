@@ -225,7 +225,7 @@ export default class FederationProvider implements ITokenProvider {
       }
 
       // Exponential backoff: 1s, 2s, 4s
-      const delay = RETRY_BASE_DELAY_MS * (2 ** attempt);
+      const delay = RETRY_BASE_DELAY_MS * 2 ** attempt;
       await new Promise<void>((resolve) => {
         setTimeout(resolve, delay);
       });

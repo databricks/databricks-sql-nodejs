@@ -232,7 +232,7 @@ export default class DBSQLSession implements IDBSQLSession {
     }
 
     if (ProtocolVersion.supportsArrowCompression(this.serverProtocolVersion) && request.canDownloadResult !== true) {
-      request.canDecompressLZ4Result = (options.useLZ4Compression ?? clientConfig.useLZ4Compression) && Boolean(LZ4);
+      request.canDecompressLZ4Result = (options.useLZ4Compression ?? clientConfig.useLZ4Compression) && Boolean(LZ4());
     }
 
     const operationPromise = driver.executeStatement(request);
