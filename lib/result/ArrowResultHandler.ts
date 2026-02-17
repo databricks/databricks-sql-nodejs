@@ -26,7 +26,7 @@ export default class ArrowResultHandler implements IResultsProvider<ArrowBatch> 
     this.arrowSchema = arrowSchema ?? hiveSchemaToArrowSchema(schema);
     this.isLZ4Compressed = lz4Compressed ?? false;
 
-    if (this.isLZ4Compressed && !LZ4) {
+    if (this.isLZ4Compressed && !LZ4()) {
       throw new HiveDriverError('Cannot handle LZ4 compressed result: module `lz4` not installed');
     }
   }
@@ -52,7 +52,7 @@ export default class ArrowResultHandler implements IResultsProvider<ArrowBatch> 
     let totalRowCount = 0;
     rowSet?.arrowBatches?.forEach(({ batch, rowCount }) => {
       if (batch) {
-        batches.push(this.isLZ4Compressed ? LZ4!.decode(batch) : batch);
+        batches.push(this.isLZ4Compressed ? LZ4()!.decode(batch) : batch);
         totalRowCount += rowCount.toNumber(true);
       }
     });

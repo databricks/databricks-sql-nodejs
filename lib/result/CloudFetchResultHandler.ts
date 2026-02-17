@@ -27,7 +27,7 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
     this.source = source;
     this.isLZ4Compressed = lz4Compressed ?? false;
 
-    if (this.isLZ4Compressed && !LZ4) {
+    if (this.isLZ4Compressed && !LZ4()) {
       throw new HiveDriverError('Cannot handle LZ4 compressed result: module `lz4` not installed');
     }
   }
@@ -64,7 +64,7 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
     }
 
     if (this.isLZ4Compressed) {
-      batch.batches = batch.batches.map((buffer) => LZ4!.decode(buffer));
+      batch.batches = batch.batches.map((buffer) => LZ4()!.decode(buffer));
     }
     return batch;
   }
