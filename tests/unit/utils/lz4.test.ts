@@ -22,9 +22,7 @@ describe('lz4 module loader', () => {
     });
   });
 
-  const mockModuleLoad = (
-    lz4MockOrError: unknown,
-  ): { restore: () => void; wasLz4LoadAttempted: () => boolean } => {
+  const mockModuleLoad = (lz4MockOrError: unknown): { restore: () => void; wasLz4LoadAttempted: () => boolean } => {
     // eslint-disable-next-line global-require
     const Module = require('module');
     const originalLoad = Module._load;
