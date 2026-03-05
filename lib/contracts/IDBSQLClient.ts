@@ -3,6 +3,8 @@ import IDBSQLSession from './IDBSQLSession';
 import IAuthentication from '../connection/contracts/IAuthentication';
 import { ProxyOptions } from '../connection/contracts/IConnectionOptions';
 import OAuthPersistence from '../connection/auth/DatabricksOAuth/OAuthPersistence';
+import ITokenProvider from '../connection/auth/tokenProvider/ITokenProvider';
+import { TokenCallback } from '../connection/auth/tokenProvider/ExternalTokenProvider';
 
 export interface ClientOptions {
   logger?: IDBSQLLogger;
@@ -24,6 +26,24 @@ type AuthOptions =
   | {
       authType: 'custom';
       provider: IAuthentication;
+    }
+  | {
+      authType: 'token-provider';
+      tokenProvider: ITokenProvider;
+      enableTokenFederation?: boolean;
+      federationClientId?: string;
+    }
+  | {
+      authType: 'external-token';
+      getToken: TokenCallback;
+      enableTokenFederation?: boolean;
+      federationClientId?: string;
+    }
+  | {
+      authType: 'static-token';
+      staticToken: string;
+      enableTokenFederation?: boolean;
+      federationClientId?: string;
     };
 
 export type ConnectionOptions = {
