@@ -1,5 +1,12 @@
 # Release History
 
+## 1.13.0
+
+- Add token federation support with custom token providers (databricks/databricks-sql-nodejs#318, databricks/databricks-sql-nodejs#319, databricks/databricks-sql-nodejs#320 by @madhav-db)
+- Add metric view metadata support (databricks/databricks-sql-nodejs#312 by @shivam2680)
+- Fix: Avoid calling require('lz4') if it's really not required (databricks/databricks-sql-nodejs#316 by @ikkala)
+- Add telemetry foundation (off by default) (databricks/databricks-sql-nodejs#324 by @samikshya-db)
+
 ## 1.12.0
 
 - Support for session parameters (databricks/databricks-sql-nodejs#307 by @sreekanth-db)
