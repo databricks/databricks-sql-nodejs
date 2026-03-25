@@ -52,7 +52,15 @@ describe('serializeQueryTags', () => {
     expect(serializeQueryTags({ val: 'a\\b:c,d' })).to.equal('val:a\\\\b\\:c\\,d');
   });
 
-  it('should not escape special characters in keys', () => {
+  it('should escape backslash in key', () => {
+    expect(serializeQueryTags({ 'a\\b': 'value' })).to.equal('a\\\\b:value');
+  });
+
+  it('should escape backslash in key with null value', () => {
+    expect(serializeQueryTags({ 'a\\b': null })).to.equal('a\\\\b');
+  });
+
+  it('should not escape other special characters in keys', () => {
     expect(serializeQueryTags({ 'key:name': 'value' })).to.equal('key:name:value');
   });
 });
