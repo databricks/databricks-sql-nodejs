@@ -21,6 +21,12 @@ export type ExecuteStatementOptions = {
   stagingAllowedLocalPath?: string | string[];
   namedParameters?: Record<string, DBSQLParameter | DBSQLParameterValue>;
   ordinalParameters?: Array<DBSQLParameter | DBSQLParameterValue>;
+  /**
+   * Per-statement query tags as key-value pairs. Serialized and passed via confOverlay
+   * as "query_tags". Values may be null/undefined to include a key without a value.
+   * These tags apply only to this statement and do not persist across queries.
+   */
+  queryTags?: Record<string, string | null | undefined>;
 };
 
 export type TypeInfoRequest = {

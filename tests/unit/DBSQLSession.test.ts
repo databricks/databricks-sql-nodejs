@@ -259,6 +259,44 @@ describe('DBSQLSession', () => {
     });
   });
 
+  describe('executeStatement with queryTags', () => {
+    it('should set confOverlay with query_tags when queryTags are provided', async () => {
+      const context = new ClientContextStub();
+      const driver = sinon.spy(context.driver);
+      const session = new DBSQLSession({ handle: sessionHandleStub, context });
+
+      await session.executeStatement('SELECT 1', { queryTags: { team: 'eng', app: 'etl' } });
+
+      expect(driver.executeStatement.callCount).to.eq(1);
+      const req = driver.executeStatement.firstCall.args[0];
+      expect(req.confOverlay).to.deep.include({ query_tags: 'team:eng,app:etl' });
+    });
+
+    it('should not set confOverlay query_tags when queryTags is not provided', async () => {
+      const context = new ClientContextStub();
+      const driver = sinon.spy(context.driver);
+      const session = new DBSQLSession({ handle: sessionHandleStub, context });
+
+      await session.executeStatement('SELECT 1');
+
+      expect(driver.executeStatement.callCount).to.eq(1);
+      const req = driver.executeStatement.firstCall.args[0];
+      expect(req.confOverlay?.query_tags).to.be.undefined;
+    });
+
+    it('should not set confOverlay query_tags when queryTags is empty', async () => {
+      const context = new ClientContextStub();
+      const driver = sinon.spy(context.driver);
+      const session = new DBSQLSession({ handle: sessionHandleStub, context });
+
+      await session.executeStatement('SELECT 1', { queryTags: {} });
+
+      expect(driver.executeStatement.callCount).to.eq(1);
+      const req = driver.executeStatement.firstCall.args[0];
+      expect(req.confOverlay?.query_tags).to.be.undefined;
+    });
+  });
+
   describe('getTypeInfo', () => {
     it('should run operation', async () => {
       const session = new DBSQLSession({ handle: sessionHandleStub, context: new ClientContextStub() });
