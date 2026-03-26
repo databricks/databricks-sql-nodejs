@@ -1,0 +1,2 @@
+# Protect CI/CD configuration — changes require review from maintainers
+/.github/ @jadewang-db @jackyhu-db @vikrantpuppala @shivam2680
