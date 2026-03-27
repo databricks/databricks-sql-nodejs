@@ -1,10 +1,16 @@
-import type LZ4Namespace from 'lz4';
-
-type LZ4Module = typeof LZ4Namespace;
+interface LZ4Module {
+  encode(data: Buffer): Buffer;
+  decode(data: Buffer): Buffer;
+}
 
 function tryLoadLZ4Module(): LZ4Module | undefined {
   try {
-    return require('lz4'); // eslint-disable-line global-require
+    // eslint-disable-next-line global-require
+    const lz4napi = require('lz4-napi');
+    return {
+      encode: lz4napi.compressFrameSync,
+      decode: lz4napi.decompressFrameSync,
+    };
   } catch (err) {
     if (!(err instanceof Error) || !('code' in err)) {
       // eslint-disable-next-line no-console

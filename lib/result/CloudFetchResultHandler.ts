@@ -28,7 +28,7 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
     this.isLZ4Compressed = lz4Compressed ?? false;
 
     if (this.isLZ4Compressed && !LZ4()) {
-      throw new HiveDriverError('Cannot handle LZ4 compressed result: module `lz4` not installed');
+      throw new HiveDriverError('Cannot handle LZ4 compressed result: module `lz4-napi` not installed');
     }
   }
 

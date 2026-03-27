@@ -1,7 +1,7 @@
 import { expect, AssertionError } from 'chai';
 import sinon, { SinonStub } from 'sinon';
 import Int64 from 'node-int64';
-import LZ4 from 'lz4';
+import { compressFrameSync } from 'lz4-napi';
 import { Request, Response } from 'node-fetch';
 import { ShouldRetryResult } from '../../../lib/connection/contracts/IRetryPolicy';
 import { HttpTransactionDetails } from '../../../lib/connection/contracts/IConnectionProvider';
@@ -306,7 +306,7 @@ describe('CloudFetchResultHandler', () => {
 
     context.invokeWithRetryStub.callsFake(async () => ({
       request: new Request('localhost'),
-      response: new Response(LZ4.encode(expectedBatch), { status: 200 }),
+      response: new Response(compressFrameSync(expectedBatch), { status: 200 }),
     }));
 
     expect(await rowSetProvider.hasMore()).to.be.true;

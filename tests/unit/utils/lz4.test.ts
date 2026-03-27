@@ -29,7 +29,7 @@ describe('lz4 module loader', () => {
     let lz4LoadAttempted = false;
 
     Module._load = (request: string, parent: unknown, isMain: boolean) => {
-      if (request === 'lz4') {
+      if (request === 'lz4-napi') {
         lz4LoadAttempted = true;
         if (lz4MockOrError instanceof Error) {
           throw lz4MockOrError;
@@ -53,19 +53,19 @@ describe('lz4 module loader', () => {
     return require('../../../lib/utils/lz4');
   };
 
-  it('should successfully load and use lz4 module when available', () => {
-    const fakeLz4 = {
-      encode: (buf: Buffer) => {
+  it('should successfully load and use lz4-napi module when available', () => {
+    const fakeLz4Napi = {
+      compressFrameSync: (buf: Buffer) => {
         const compressed = Buffer.from(`compressed:${buf.toString()}`);
         return compressed;
       },
-      decode: (buf: Buffer) => {
+      decompressFrameSync: (buf: Buffer) => {
         const decompressed = buf.toString().replace('compressed:', '');
         return Buffer.from(decompressed);
       },
     };
 
-    const { restore } = mockModuleLoad(fakeLz4);
+    const { restore } = mockModuleLoad(fakeLz4Napi);
     const moduleExports = loadLz4Module();
     const lz4Module = moduleExports.default();
     restore();
@@ -82,8 +82,8 @@ describe('lz4 module loader', () => {
     expect(consoleWarnStub.called).to.be.false;
   });
 
-  it('should return undefined when lz4 module fails to load with MODULE_NOT_FOUND', () => {
-    const err: NodeJS.ErrnoException = new Error("Cannot find module 'lz4'");
+  it('should return undefined when lz4-napi module fails to load with MODULE_NOT_FOUND', () => {
+    const err: NodeJS.ErrnoException = new Error("Cannot find module 'lz4-napi'");
     err.code = 'MODULE_NOT_FOUND';
 
     const { restore } = mockModuleLoad(err);
@@ -95,7 +95,7 @@ describe('lz4 module loader', () => {
     expect(consoleWarnStub.called).to.be.false;
   });
 
-  it('should return undefined and log warning when lz4 fails with ERR_DLOPEN_FAILED', () => {
+  it('should return undefined and log warning when lz4-napi fails with ERR_DLOPEN_FAILED', () => {
     const err: NodeJS.ErrnoException = new Error('Module did not self-register');
     err.code = 'ERR_DLOPEN_FAILED';
 
@@ -109,7 +109,7 @@ describe('lz4 module loader', () => {
     expect(consoleWarnStub.firstCall.args[0]).to.include('Architecture or version mismatch');
   });
 
-  it('should return undefined and log warning when lz4 fails with unknown error code', () => {
+  it('should return undefined and log warning when lz4-napi fails with unknown error code', () => {
     const err: NodeJS.ErrnoException = new Error('Some unknown error');
     err.code = 'UNKNOWN_ERROR';
 
@@ -136,13 +136,13 @@ describe('lz4 module loader', () => {
     expect(consoleWarnStub.firstCall.args[0]).to.include('Invalid error object');
   });
 
-  it('should not attempt to load lz4 module when getResolvedModule is not called', () => {
-    const fakeLz4 = {
-      encode: () => Buffer.from(''),
-      decode: () => Buffer.from(''),
+  it('should not attempt to load lz4-napi module when getResolvedModule is not called', () => {
+    const fakeLz4Napi = {
+      compressFrameSync: () => Buffer.from(''),
+      decompressFrameSync: () => Buffer.from(''),
     };
 
-    const { restore, wasLz4LoadAttempted } = mockModuleLoad(fakeLz4);
+    const { restore, wasLz4LoadAttempted } = mockModuleLoad(fakeLz4Napi);
 
     // Load the module but don't call getResolvedModule
     loadLz4Module();
