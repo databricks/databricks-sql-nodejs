@@ -54,7 +54,7 @@
     "@types/node": "^18.11.9",
     "@types/node-fetch": "^2.6.4",
     "@types/node-int64": "^0.4.29",
-    "@types/sinon": "^17.0.3",
+    "@types/sinon": "^21.0.0",
     "@types/thrift": "^0.10.11",
     "@types/uuid": "^8.3.4",
     "@typescript-eslint/eslint-plugin": "^5.44.0",
