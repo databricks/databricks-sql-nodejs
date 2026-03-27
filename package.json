@@ -85,7 +85,7 @@
     "openid-client": "^5.4.2",
     "proxy-agent": "^6.3.1",
     "thrift": "^0.16.0",
-    "uuid": "^9.0.0",
+    "uuid": "^13.0.0",
     "winston": "^3.8.2"
   },
   "optionalDependencies": {
