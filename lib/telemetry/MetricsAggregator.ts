@@ -64,11 +64,14 @@ export default class MetricsAggregator {
 
   private flushIntervalMs: number;
 
+  private maxPendingMetrics: number;
+
   constructor(private context: IClientContext, private exporter: DatabricksTelemetryExporter) {
     try {
       const config = context.getConfig();
       this.batchSize = config.telemetryBatchSize ?? DEFAULT_TELEMETRY_CONFIG.batchSize;
       this.flushIntervalMs = config.telemetryFlushIntervalMs ?? DEFAULT_TELEMETRY_CONFIG.flushIntervalMs;
+      this.maxPendingMetrics = config.telemetryMaxPendingMetrics ?? DEFAULT_TELEMETRY_CONFIG.maxPendingMetrics;
 
       // Start periodic flush timer
       this.startFlushTimer();
@@ -80,6 +83,7 @@ export default class MetricsAggregator {
       // Initialize with default values
       this.batchSize = DEFAULT_TELEMETRY_CONFIG.batchSize;
       this.flushIntervalMs = DEFAULT_TELEMETRY_CONFIG.flushIntervalMs;
+      this.maxPendingMetrics = DEFAULT_TELEMETRY_CONFIG.maxPendingMetrics;
     }
   }
 
@@ -283,10 +287,20 @@ export default class MetricsAggregator {
   }
 
   /**
-   * Add a metric to pending batch and flush if batch size reached
+   * Add a metric to pending batch and flush if batch size reached.
+   * Drops oldest metrics if the buffer exceeds maxPendingMetrics to prevent
+   * unbounded growth when the circuit breaker keeps failing exports.
    */
   private addPendingMetric(metric: TelemetryMetric): void {
     this.pendingMetrics.push(metric);
+
+    // Cap the buffer to avoid unbounded memory growth when exports keep failing
+    if (this.pendingMetrics.length > this.maxPendingMetrics) {
+      const dropped = this.pendingMetrics.length - this.maxPendingMetrics;
+      this.pendingMetrics = this.pendingMetrics.slice(dropped);
+      const logger = this.context.getLogger();
+      logger.log(LogLevel.debug, `Dropped ${dropped} oldest telemetry metrics (buffer full at ${this.maxPendingMetrics})`);
+    }
 
     // Check if batch size reached
     if (this.pendingMetrics.length >= this.batchSize) {

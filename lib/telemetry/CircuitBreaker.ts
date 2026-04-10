@@ -166,8 +166,9 @@ export class CircuitBreaker {
 
     logger.log(LogLevel.debug, `Circuit breaker failure (${this.failureCount}/${this.config.failureThreshold})`);
 
-    if (this.failureCount >= this.config.failureThreshold) {
-      // Transition to OPEN
+    // In HALF_OPEN state, any failure immediately reopens the circuit.
+    // In CLOSED state, reopen only after failureThreshold consecutive failures.
+    if (this.state === CircuitBreakerState.HALF_OPEN || this.failureCount >= this.config.failureThreshold) {
       this.state = CircuitBreakerState.OPEN;
       this.nextAttempt = new Date(Date.now() + this.config.timeout);
       logger.log(LogLevel.debug, `Circuit breaker transitioned to OPEN (will retry after ${this.config.timeout}ms)`);

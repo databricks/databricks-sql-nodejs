@@ -54,6 +54,9 @@ export interface TelemetryConfiguration {
 
   /** Circuit breaker timeout in milliseconds */
   circuitBreakerTimeout?: number;
+
+  /** Maximum number of pending metrics buffered before dropping oldest (prevents unbounded growth when export keeps failing) */
+  maxPendingMetrics?: number;
 }
 
 /**
@@ -67,6 +70,7 @@ export const DEFAULT_TELEMETRY_CONFIG: Required<TelemetryConfiguration> = {
   authenticatedExport: true,
   circuitBreakerThreshold: 5,
   circuitBreakerTimeout: 60000, // 1 minute
+  maxPendingMetrics: 500,
 };
 
 /**

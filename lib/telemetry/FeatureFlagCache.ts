@@ -18,7 +18,6 @@ import fetch from 'node-fetch';
 import IClientContext from '../contracts/IClientContext';
 import { LogLevel } from '../contracts/IDBSQLLogger';
 import driverVersion from '../version';
-import { buildUrl } from './urlUtils';
 
 /**
  * Context holding feature flag state for a specific host.
@@ -120,7 +119,7 @@ export default class FeatureFlagCache {
       const version = this.getDriverVersion();
 
       // Build feature flags endpoint for Node.js driver
-      const endpoint = buildUrl(host, `/api/2.0/connector-service/feature-flags/NODEJS/${version}`);
+      const endpoint = this.buildUrl(host, `/api/2.0/connector-service/feature-flags/NODEJS/${version}`);
 
       // Get authentication headers
       const authHeaders = await this.context.getAuthHeaders();
@@ -179,6 +178,16 @@ export default class FeatureFlagCache {
       logger.log(LogLevel.debug, `Error fetching feature flag from ${host}: ${error.message}`);
       return false;
     }
+  }
+
+  /**
+   * Build full URL from host and path, handling protocol correctly.
+   */
+  private buildUrl(host: string, path: string): string {
+    if (host.startsWith('http://') || host.startsWith('https://')) {
+      return `${host}${path}`;
+    }
+    return `https://${host}${path}`;
   }
 
   /**

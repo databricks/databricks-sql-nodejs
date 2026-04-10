@@ -32,6 +32,7 @@ export interface ClientConfig {
   telemetryAuthenticatedExport?: boolean;
   telemetryCircuitBreakerThreshold?: number;
   telemetryCircuitBreakerTimeout?: number;
+  telemetryMaxPendingMetrics?: number;
 }
 
 export default interface IClientContext {

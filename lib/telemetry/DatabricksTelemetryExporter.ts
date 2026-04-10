@@ -20,7 +20,6 @@ import { LogLevel } from '../contracts/IDBSQLLogger';
 import { TelemetryMetric, DEFAULT_TELEMETRY_CONFIG } from './types';
 import { CircuitBreakerRegistry } from './CircuitBreaker';
 import ExceptionClassifier from './ExceptionClassifier';
-import { buildUrl } from './urlUtils';
 
 /**
  * Databricks telemetry log format for export.
@@ -210,8 +209,8 @@ export default class DatabricksTelemetryExporter {
     // Determine endpoint based on authentication mode
     const authenticatedExport = config.telemetryAuthenticatedExport ?? DEFAULT_TELEMETRY_CONFIG.authenticatedExport;
     const endpoint = authenticatedExport
-      ? buildUrl(this.host, '/telemetry-ext')
-      : buildUrl(this.host, '/telemetry-unauth');
+      ? this.buildUrl(this.host, '/telemetry-ext')
+      : this.buildUrl(this.host, '/telemetry-unauth');
 
     // Format payload - each log is JSON-stringified to match JDBC format
     const telemetryLogs = metrics.map((m) => this.toTelemetryLog(m));
@@ -317,6 +316,16 @@ export default class DatabricksTelemetryExporter {
     }
 
     return log;
+  }
+
+  /**
+   * Build full URL from host and path, handling protocol correctly.
+   */
+  private buildUrl(host: string, path: string): string {
+    if (host.startsWith('http://') || host.startsWith('https://')) {
+      return `${host}${path}`;
+    }
+    return `https://${host}${path}`;
   }
 
   /**

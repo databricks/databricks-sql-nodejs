@@ -367,42 +367,39 @@ describe('CircuitBreaker', () => {
       expect(breaker.getState()).to.equal(CircuitBreakerState.CLOSED);
     });
 
-    it('should reopen if operation fails in HALF_OPEN state', async () => {
+    it('should reopen immediately if operation fails in HALF_OPEN state', async () => {
       const context = new ClientContextStub();
       const breaker = new CircuitBreaker(context);
 
       await openAndWaitForHalfOpen(breaker);
 
-      // First success
+      // First success moves to HALF_OPEN
       const successOp = sinon.stub().resolves('success');
       await breaker.execute(successOp);
       expect(breaker.getState()).to.equal(CircuitBreakerState.HALF_OPEN);
       expect(breaker.getSuccessCount()).to.equal(1);
 
-      // Failure should reset success count but not immediately open
+      // Any failure in HALF_OPEN immediately reopens the circuit
       const failOp = sinon.stub().rejects(new Error('Failed'));
       try {
         await breaker.execute(failOp);
       } catch {}
 
       expect(breaker.getSuccessCount()).to.equal(0); // Reset
-      expect(breaker.getFailureCount()).to.equal(1);
-      expect(breaker.getState()).to.equal(CircuitBreakerState.HALF_OPEN);
+      expect(breaker.getState()).to.equal(CircuitBreakerState.OPEN);
     });
 
-    it('should track failures and eventually reopen circuit', async () => {
+    it('should reopen immediately on first failure in HALF_OPEN state', async () => {
       const context = new ClientContextStub();
       const breaker = new CircuitBreaker(context);
 
       await openAndWaitForHalfOpen(breaker);
 
-      // Now in HALF_OPEN, fail 5 times to reopen
+      // A single failure in HALF_OPEN reopens immediately (not after threshold)
       const failOp = sinon.stub().rejects(new Error('Failed'));
-      for (let i = 0; i < 5; i++) {
-        try {
-          await breaker.execute(failOp);
-        } catch {}
-      }
+      try {
+        await breaker.execute(failOp);
+      } catch {}
 
       expect(breaker.getState()).to.equal(CircuitBreakerState.OPEN);
     });
