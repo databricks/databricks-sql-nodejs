@@ -283,9 +283,7 @@ describe('MetricsAggregator', () => {
       const exporter = makeExporterStub();
       const aggregator = new MetricsAggregator(context, exporter as any);
 
-      expect(() =>
-        aggregator.processEvent({ eventType: 'unknown.event', timestamp: Date.now() }),
-      ).to.not.throw();
+      expect(() => aggregator.processEvent({ eventType: 'unknown.event', timestamp: Date.now() })).to.not.throw();
     });
   });
 });

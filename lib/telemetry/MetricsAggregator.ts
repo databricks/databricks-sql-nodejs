@@ -299,7 +299,10 @@ export default class MetricsAggregator {
       const dropped = this.pendingMetrics.length - this.maxPendingMetrics;
       this.pendingMetrics = this.pendingMetrics.slice(dropped);
       const logger = this.context.getLogger();
-      logger.log(LogLevel.debug, `Dropped ${dropped} oldest telemetry metrics (buffer full at ${this.maxPendingMetrics})`);
+      logger.log(
+        LogLevel.debug,
+        `Dropped ${dropped} oldest telemetry metrics (buffer full at ${this.maxPendingMetrics})`,
+      );
     }
 
     // Check if batch size reached

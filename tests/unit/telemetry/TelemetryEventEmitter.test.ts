@@ -84,7 +84,9 @@ describe('TelemetryEventEmitter', () => {
         throw new Error('listener boom');
       });
 
-      expect(() => emitter.emitConnectionOpen({ sessionId: 's1', workspaceId: 'w1', driverConfig: {} as any })).to.not.throw();
+      expect(() =>
+        emitter.emitConnectionOpen({ sessionId: 's1', workspaceId: 'w1', driverConfig: {} as any }),
+      ).to.not.throw();
       expect(logSpy.calledWith(LogLevel.debug, sinon.match(/listener boom/))).to.be.true;
 
       logSpy.restore();
@@ -153,7 +155,13 @@ describe('TelemetryEventEmitter', () => {
       const listener = sinon.stub();
       emitter.on(TelemetryEventType.ERROR, listener);
 
-      emitter.emitError({ statementId: 'st1', sessionId: 's1', errorName: 'NetworkError', errorMessage: 'timeout', isTerminal: false });
+      emitter.emitError({
+        statementId: 'st1',
+        sessionId: 's1',
+        errorName: 'NetworkError',
+        errorMessage: 'timeout',
+        isTerminal: false,
+      });
 
       expect(listener.calledOnce).to.be.true;
       const event = listener.firstCall.args[0];

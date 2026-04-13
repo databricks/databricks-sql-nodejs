@@ -156,7 +156,9 @@ describe('DatabricksTelemetryExporter', () => {
       const context = new ClientContextStub({ telemetryMaxRetries: 3 } as any);
       const registry = new CircuitBreakerRegistry(context);
       const exporter = new DatabricksTelemetryExporter(context, 'host.example.com', registry);
-      const sendRequestStub = sinon.stub(exporter as any, 'sendRequest').returns(makeErrorResponse(401, 'Unauthorized'));
+      const sendRequestStub = sinon
+        .stub(exporter as any, 'sendRequest')
+        .returns(makeErrorResponse(401, 'Unauthorized'));
 
       await exporter.export([makeMetric()]);
 
