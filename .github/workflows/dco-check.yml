@@ -8,7 +8,9 @@ permissions:
 
 jobs:
   check:
-    runs-on: ubuntu-latest
+    runs-on:
+      group: databricks-protected-runner-group
+      labels: linux-ubuntu-latest
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
         with:
