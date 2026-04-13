@@ -48,63 +48,64 @@ describe('DatabricksTelemetryExporter', () => {
 
   afterEach(() => {
     clock.restore();
+    sinon.restore();
   });
 
   describe('export() - basic', () => {
     it('should return immediately for empty metrics array', async () => {
       const context = new ClientContextStub();
       const registry = new CircuitBreakerRegistry(context);
-      const fetchStub = sinon.stub().returns(makeOkResponse());
-      const exporter = new DatabricksTelemetryExporter(context, 'host.example.com', registry, fetchStub as any);
+      const exporter = new DatabricksTelemetryExporter(context, 'host.example.com', registry);
+      const sendRequestStub = sinon.stub(exporter as any, 'sendRequest').returns(makeOkResponse());
 
       await exporter.export([]);
 
-      expect(fetchStub.called).to.be.false;
+      expect(sendRequestStub.called).to.be.false;
     });
 
-    it('should call fetch with correct endpoint for authenticated export', async () => {
+    it('should call sendRequest with correct endpoint for authenticated export', async () => {
       const context = new ClientContextStub({ telemetryAuthenticatedExport: true } as any);
       const registry = new CircuitBreakerRegistry(context);
-      const fetchStub = sinon.stub().returns(makeOkResponse());
-      const exporter = new DatabricksTelemetryExporter(context, 'host.example.com', registry, fetchStub as any);
+      const exporter = new DatabricksTelemetryExporter(context, 'host.example.com', registry);
+      const sendRequestStub = sinon.stub(exporter as any, 'sendRequest').returns(makeOkResponse());
 
       await exporter.export([makeMetric()]);
 
-      expect(fetchStub.calledOnce).to.be.true;
-      const url: string = fetchStub.firstCall.args[0];
+      expect(sendRequestStub.calledOnce).to.be.true;
+      const url = sendRequestStub.firstCall.args[0] as string;
       expect(url).to.include('telemetry-ext');
       expect(url).to.include('https://');
     });
 
-    it('should call fetch with unauthenticated endpoint when configured', async () => {
+    it('should call sendRequest with unauthenticated endpoint when configured', async () => {
       const context = new ClientContextStub({ telemetryAuthenticatedExport: false } as any);
       const registry = new CircuitBreakerRegistry(context);
-      const fetchStub = sinon.stub().returns(makeOkResponse());
-      const exporter = new DatabricksTelemetryExporter(context, 'host.example.com', registry, fetchStub as any);
+      const exporter = new DatabricksTelemetryExporter(context, 'host.example.com', registry);
+      const sendRequestStub = sinon.stub(exporter as any, 'sendRequest').returns(makeOkResponse());
 
       await exporter.export([makeMetric()]);
 
-      const url: string = fetchStub.firstCall.args[0];
+      const url = sendRequestStub.firstCall.args[0] as string;
       expect(url).to.include('telemetry-unauth');
     });
 
     it('should preserve host protocol if already set', async () => {
       const context = new ClientContextStub({ telemetryAuthenticatedExport: true } as any);
       const registry = new CircuitBreakerRegistry(context);
-      const fetchStub = sinon.stub().returns(makeOkResponse());
-      const exporter = new DatabricksTelemetryExporter(context, 'https://host.example.com', registry, fetchStub as any);
+      const exporter = new DatabricksTelemetryExporter(context, 'https://host.example.com', registry);
+      const sendRequestStub = sinon.stub(exporter as any, 'sendRequest').returns(makeOkResponse());
 
       await exporter.export([makeMetric()]);
 
-      const url: string = fetchStub.firstCall.args[0];
+      const url = sendRequestStub.firstCall.args[0] as string;
       expect(url).to.equal('https://host.example.com/telemetry-ext');
     });
 
-    it('should never throw even when fetch fails', async () => {
+    it('should never throw even when sendRequest fails', async () => {
       const context = new ClientContextStub();
       const registry = new CircuitBreakerRegistry(context);
-      const fetchStub = sinon.stub().rejects(new Error('network error'));
-      const exporter = new DatabricksTelemetryExporter(context, 'host.example.com', registry, fetchStub as any);
+      const exporter = new DatabricksTelemetryExporter(context, 'host.example.com', registry);
+      sinon.stub(exporter as any, 'sendRequest').rejects(new Error('network error'));
 
       let threw = false;
       try {
@@ -120,60 +121,62 @@ describe('DatabricksTelemetryExporter', () => {
     it('should retry on retryable HTTP errors (503)', async () => {
       const context = new ClientContextStub({ telemetryMaxRetries: 2 } as any);
       const registry = new CircuitBreakerRegistry(context);
+      const exporter = new DatabricksTelemetryExporter(context, 'host.example.com', registry);
       // Fail twice with 503, then succeed
-      const fetchStub = sinon
-        .stub()
+      const sendRequestStub = sinon
+        .stub(exporter as any, 'sendRequest')
         .onFirstCall()
         .returns(makeErrorResponse(503, 'Service Unavailable'))
         .onSecondCall()
         .returns(makeErrorResponse(503, 'Service Unavailable'))
         .onThirdCall()
         .returns(makeOkResponse());
-      const exporter = new DatabricksTelemetryExporter(context, 'host.example.com', registry, fetchStub as any);
 
       // Advance fake timers automatically for sleep calls
       const exportPromise = exporter.export([makeMetric()]);
       await clock.runAllAsync();
       await exportPromise;
 
-      expect(fetchStub.callCount).to.equal(3);
+      expect(sendRequestStub.callCount).to.equal(3);
     });
 
     it('should not retry on terminal HTTP errors (400)', async () => {
       const context = new ClientContextStub({ telemetryMaxRetries: 3 } as any);
       const registry = new CircuitBreakerRegistry(context);
-      const fetchStub = sinon.stub().returns(makeErrorResponse(400, 'Bad Request'));
-      const exporter = new DatabricksTelemetryExporter(context, 'host.example.com', registry, fetchStub as any);
+      const exporter = new DatabricksTelemetryExporter(context, 'host.example.com', registry);
+      const sendRequestStub = sinon.stub(exporter as any, 'sendRequest').returns(makeErrorResponse(400, 'Bad Request'));
 
       await exporter.export([makeMetric()]);
 
       // Only one call — no retry on terminal error
-      expect(fetchStub.callCount).to.equal(1);
+      expect(sendRequestStub.callCount).to.equal(1);
     });
 
     it('should not retry on terminal HTTP errors (401)', async () => {
       const context = new ClientContextStub({ telemetryMaxRetries: 3 } as any);
       const registry = new CircuitBreakerRegistry(context);
-      const fetchStub = sinon.stub().returns(makeErrorResponse(401, 'Unauthorized'));
-      const exporter = new DatabricksTelemetryExporter(context, 'host.example.com', registry, fetchStub as any);
+      const exporter = new DatabricksTelemetryExporter(context, 'host.example.com', registry);
+      const sendRequestStub = sinon.stub(exporter as any, 'sendRequest').returns(makeErrorResponse(401, 'Unauthorized'));
 
       await exporter.export([makeMetric()]);
 
-      expect(fetchStub.callCount).to.equal(1);
+      expect(sendRequestStub.callCount).to.equal(1);
     });
 
     it('should give up after maxRetries are exhausted', async () => {
       const context = new ClientContextStub({ telemetryMaxRetries: 2 } as any);
       const registry = new CircuitBreakerRegistry(context);
-      const fetchStub = sinon.stub().returns(makeErrorResponse(503, 'Service Unavailable'));
-      const exporter = new DatabricksTelemetryExporter(context, 'host.example.com', registry, fetchStub as any);
+      const exporter = new DatabricksTelemetryExporter(context, 'host.example.com', registry);
+      const sendRequestStub = sinon
+        .stub(exporter as any, 'sendRequest')
+        .returns(makeErrorResponse(503, 'Service Unavailable'));
 
       const exportPromise = exporter.export([makeMetric()]);
       await clock.runAllAsync();
       await exportPromise;
 
       // 1 initial + 2 retries = 3 total calls
-      expect(fetchStub.callCount).to.equal(3);
+      expect(sendRequestStub.callCount).to.equal(3);
     });
   });
 
@@ -183,17 +186,19 @@ describe('DatabricksTelemetryExporter', () => {
       const context = new ClientContextStub({ telemetryMaxRetries: 0 } as any);
       const registry = new CircuitBreakerRegistry(context);
       registry.getCircuitBreaker('host.example.com', { failureThreshold: 1 });
-      const fetchStub = sinon.stub().returns(makeErrorResponse(503, 'Service Unavailable'));
-      const exporter = new DatabricksTelemetryExporter(context, 'host.example.com', registry, fetchStub as any);
+      const exporter = new DatabricksTelemetryExporter(context, 'host.example.com', registry);
+      const sendRequestStub = sinon
+        .stub(exporter as any, 'sendRequest')
+        .returns(makeErrorResponse(503, 'Service Unavailable'));
 
       // Trip the circuit breaker (1 non-retryable-pathway failure is enough)
       await exporter.export([makeMetric()]);
-      fetchStub.reset();
+      sendRequestStub.reset();
 
-      // Now circuit is OPEN, export should be dropped without calling fetch
+      // Now circuit is OPEN, export should be dropped without calling sendRequest
       await exporter.export([makeMetric()]);
 
-      expect(fetchStub.called).to.be.false;
+      expect(sendRequestStub.called).to.be.false;
     });
 
     it('should log at debug level when circuit is OPEN', async () => {
@@ -201,8 +206,8 @@ describe('DatabricksTelemetryExporter', () => {
       const logSpy = sinon.spy((context as any).logger, 'log');
       const registry = new CircuitBreakerRegistry(context);
       registry.getCircuitBreaker('host.example.com', { failureThreshold: 1 });
-      const fetchStub = sinon.stub().returns(makeErrorResponse(503, 'Service Unavailable'));
-      const exporter = new DatabricksTelemetryExporter(context, 'host.example.com', registry, fetchStub as any);
+      const exporter = new DatabricksTelemetryExporter(context, 'host.example.com', registry);
+      sinon.stub(exporter as any, 'sendRequest').returns(makeErrorResponse(503, 'Service Unavailable'));
 
       await exporter.export([makeMetric()]);
       logSpy.resetHistory();
@@ -210,8 +215,6 @@ describe('DatabricksTelemetryExporter', () => {
       await exporter.export([makeMetric()]);
 
       expect(logSpy.calledWith(LogLevel.debug, sinon.match(/Circuit breaker OPEN/))).to.be.true;
-
-      logSpy.restore();
     });
   });
 
@@ -219,12 +222,12 @@ describe('DatabricksTelemetryExporter', () => {
     it('should send POST request with JSON content-type', async () => {
       const context = new ClientContextStub();
       const registry = new CircuitBreakerRegistry(context);
-      const fetchStub = sinon.stub().returns(makeOkResponse());
-      const exporter = new DatabricksTelemetryExporter(context, 'host.example.com', registry, fetchStub as any);
+      const exporter = new DatabricksTelemetryExporter(context, 'host.example.com', registry);
+      const sendRequestStub = sinon.stub(exporter as any, 'sendRequest').returns(makeOkResponse());
 
       await exporter.export([makeMetric()]);
 
-      const options = fetchStub.firstCall.args[1];
+      const options = sendRequestStub.firstCall.args[1] as any;
       expect(options.method).to.equal('POST');
       expect(options.headers['Content-Type']).to.equal('application/json');
     });
@@ -232,12 +235,12 @@ describe('DatabricksTelemetryExporter', () => {
     it('should include protoLogs in payload body', async () => {
       const context = new ClientContextStub();
       const registry = new CircuitBreakerRegistry(context);
-      const fetchStub = sinon.stub().returns(makeOkResponse());
-      const exporter = new DatabricksTelemetryExporter(context, 'host.example.com', registry, fetchStub as any);
+      const exporter = new DatabricksTelemetryExporter(context, 'host.example.com', registry);
+      const sendRequestStub = sinon.stub(exporter as any, 'sendRequest').returns(makeOkResponse());
 
       await exporter.export([makeMetric(), makeMetric()]);
 
-      const body = JSON.parse(fetchStub.firstCall.args[1].body);
+      const body = JSON.parse((sendRequestStub.firstCall.args[1] as any).body);
       expect(body.protoLogs).to.be.an('array').with.length(2);
       expect(body.items).to.be.an('array').that.is.empty;
       expect(body.uploadTime).to.be.a('number');
@@ -249,8 +252,8 @@ describe('DatabricksTelemetryExporter', () => {
       const context = new ClientContextStub();
       const logSpy = sinon.spy((context as any).logger, 'log');
       const registry = new CircuitBreakerRegistry(context);
-      const fetchStub = sinon.stub().rejects(new Error('something went wrong'));
-      const exporter = new DatabricksTelemetryExporter(context, 'host.example.com', registry, fetchStub as any);
+      const exporter = new DatabricksTelemetryExporter(context, 'host.example.com', registry);
+      sinon.stub(exporter as any, 'sendRequest').rejects(new Error('something went wrong'));
 
       const exportPromise = exporter.export([makeMetric()]);
       await clock.runAllAsync();
@@ -258,8 +261,6 @@ describe('DatabricksTelemetryExporter', () => {
 
       expect(logSpy.neverCalledWith(LogLevel.error, sinon.match.any)).to.be.true;
       expect(logSpy.neverCalledWith(LogLevel.warn, sinon.match.any)).to.be.true;
-
-      logSpy.restore();
     });
   });
 });

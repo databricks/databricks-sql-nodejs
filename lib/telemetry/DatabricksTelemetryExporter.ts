@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import fetch, { Response } from 'node-fetch';
+import fetch, { Response, RequestInit } from 'node-fetch';
 import IClientContext from '../contracts/IClientContext';
 import { LogLevel } from '../contracts/IDBSQLLogger';
 import { TelemetryMetric, DEFAULT_TELEMETRY_CONFIG } from './types';
@@ -100,16 +100,12 @@ export default class DatabricksTelemetryExporter {
 
   private readonly userAgent: string;
 
-  private fetchFn: typeof fetch;
-
   constructor(
     private context: IClientContext,
     private host: string,
     private circuitBreakerRegistry: CircuitBreakerRegistry,
-    fetchFunction?: typeof fetch,
   ) {
     this.circuitBreaker = circuitBreakerRegistry.getCircuitBreaker(host);
-    this.fetchFn = fetchFunction || fetch;
 
     // Get driver version for user agent
     this.userAgent = `databricks-sql-nodejs/${this.getDriverVersion()}`;
@@ -232,12 +228,8 @@ export default class DatabricksTelemetryExporter {
     // Get authentication headers if using authenticated endpoint
     const authHeaders = authenticatedExport ? await this.context.getAuthHeaders() : {};
 
-    // Get agent with proxy settings (same pattern as CloudFetchResultHandler and DBSQLSession)
-    const connectionProvider = await this.context.getConnectionProvider();
-    const agent = await connectionProvider.getAgent();
-
     // Make HTTP POST request with authentication and proxy support
-    const response: Response = await this.fetchFn(endpoint, {
+    const response: Response = await this.sendRequest(endpoint, {
       method: 'POST',
       headers: {
         ...authHeaders,
@@ -245,7 +237,6 @@ export default class DatabricksTelemetryExporter {
         'User-Agent': this.userAgent,
       },
       body: JSON.stringify(payload),
-      agent, // Include agent for proxy support
     });
 
     if (!response.ok) {
@@ -255,6 +246,16 @@ export default class DatabricksTelemetryExporter {
     }
 
     logger.log(LogLevel.debug, `Successfully exported ${metrics.length} telemetry metrics`);
+  }
+
+  /**
+   * Makes an HTTP request using the connection provider's agent for proxy support.
+   * Follows the same pattern as CloudFetchResultHandler and DBSQLSession.
+   */
+  private async sendRequest(url: string, init: RequestInit): Promise<Response> {
+    const connectionProvider = await this.context.getConnectionProvider();
+    const agent = await connectionProvider.getAgent();
+    return fetch(url, { ...init, agent });
   }
 
   /**
