@@ -68,6 +68,9 @@ export class CircuitBreaker {
 
   private nextAttempt?: Date;
 
+  /** Number of in-flight requests in HALF_OPEN state (limits to 1 probe) */
+  private halfOpenInflight = 0;
+
   private readonly config: CircuitBreakerConfig;
 
   constructor(private context: IClientContext, config?: Partial<CircuitBreakerConfig>) {
@@ -95,7 +98,17 @@ export class CircuitBreaker {
       // Timeout expired, transition to HALF_OPEN
       this.state = CircuitBreakerState.HALF_OPEN;
       this.successCount = 0;
+      this.halfOpenInflight = 0;
       logger.log(LogLevel.debug, 'Circuit breaker transitioned to HALF_OPEN');
+    }
+
+    // In HALF_OPEN state, allow only one probe request at a time
+    if (this.state === CircuitBreakerState.HALF_OPEN && this.halfOpenInflight > 0) {
+      throw new Error('Circuit breaker OPEN');
+    }
+
+    if (this.state === CircuitBreakerState.HALF_OPEN) {
+      this.halfOpenInflight += 1;
     }
 
     try {
@@ -105,6 +118,10 @@ export class CircuitBreaker {
     } catch (error) {
       this.onFailure();
       throw error;
+    } finally {
+      if (this.halfOpenInflight > 0) {
+        this.halfOpenInflight -= 1;
+      }
     }
   }
 
@@ -171,7 +188,11 @@ export class CircuitBreaker {
     if (this.state === CircuitBreakerState.HALF_OPEN || this.failureCount >= this.config.failureThreshold) {
       this.state = CircuitBreakerState.OPEN;
       this.nextAttempt = new Date(Date.now() + this.config.timeout);
-      logger.log(LogLevel.debug, `Circuit breaker transitioned to OPEN (will retry after ${this.config.timeout}ms)`);
+      // Log at warn level for OPEN transitions — meaningful operational signal
+      logger.log(
+        LogLevel.warn,
+        `Telemetry circuit breaker OPEN after ${this.failureCount} failures (will retry after ${this.config.timeout}ms)`,
+      );
     }
   }
 }
@@ -202,6 +223,12 @@ export class CircuitBreakerRegistry {
       this.breakers.set(host, breaker);
       const logger = this.context.getLogger();
       logger.log(LogLevel.debug, `Created circuit breaker for host: ${host}`);
+    } else if (config) {
+      const logger = this.context.getLogger();
+      logger.log(
+        LogLevel.debug,
+        `Circuit breaker for host ${host} already exists; provided config will be ignored`,
+      );
     }
     return breaker;
   }

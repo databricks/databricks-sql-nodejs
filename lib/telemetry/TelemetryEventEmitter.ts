@@ -36,7 +36,7 @@ export default class TelemetryEventEmitter extends EventEmitter {
     super();
     // Check if telemetry is enabled from config
     // Default to false for safe rollout
-    const config = context.getConfig() as any;
+    const config = context.getConfig();
     this.enabled = config.telemetryEnabled ?? false;
   }
 

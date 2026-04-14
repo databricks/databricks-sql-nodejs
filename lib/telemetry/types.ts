@@ -27,7 +27,7 @@ export enum TelemetryEventType {
   STATEMENT_START = 'statement.start',
   STATEMENT_COMPLETE = 'statement.complete',
   CLOUDFETCH_CHUNK = 'cloudfetch.chunk',
-  ERROR = 'error',
+  ERROR = 'telemetry.error',
 }
 
 /**
@@ -78,7 +78,7 @@ export const DEFAULT_TELEMETRY_CONFIG: Required<TelemetryConfiguration> = {
  */
 export interface TelemetryEvent {
   /** Type of the event */
-  eventType: TelemetryEventType | string;
+  eventType: TelemetryEventType;
 
   /** Timestamp when the event occurred (milliseconds since epoch) */
   timestamp: number;

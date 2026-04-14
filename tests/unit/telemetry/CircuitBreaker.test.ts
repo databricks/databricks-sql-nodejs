@@ -137,7 +137,7 @@ describe('CircuitBreaker', () => {
 
       expect(breaker.getState()).to.equal(CircuitBreakerState.OPEN);
       expect(breaker.getFailureCount()).to.equal(5);
-      expect(logSpy.calledWith(LogLevel.debug, sinon.match(/Circuit breaker transitioned to OPEN/))).to.be.true;
+      expect(logSpy.calledWith(LogLevel.warn, sinon.match(/Telemetry circuit breaker OPEN/))).to.be.true;
 
       logSpy.restore();
     });
@@ -171,7 +171,7 @@ describe('CircuitBreaker', () => {
         } catch {}
       }
 
-      expect(logSpy.calledWith(LogLevel.debug, sinon.match(/Circuit breaker transitioned to OPEN/))).to.be.true;
+      expect(logSpy.calledWith(LogLevel.warn, sinon.match(/Telemetry circuit breaker OPEN/))).to.be.true;
 
       logSpy.restore();
     });
@@ -419,7 +419,7 @@ describe('CircuitBreaker', () => {
         } catch {}
       }
 
-      expect(logSpy.calledWith(LogLevel.debug, sinon.match(/Circuit breaker transitioned to OPEN/))).to.be.true;
+      expect(logSpy.calledWith(LogLevel.warn, sinon.match(/Telemetry circuit breaker OPEN/))).to.be.true;
 
       // Wait for timeout
       clock.tick(60001);
@@ -435,9 +435,8 @@ describe('CircuitBreaker', () => {
 
       expect(logSpy.calledWith(LogLevel.debug, 'Circuit breaker transitioned to CLOSED')).to.be.true;
 
-      // Verify no console logging
+      // Verify no error-level logging; warn is expected for OPEN transitions
       expect(logSpy.neverCalledWith(LogLevel.error, sinon.match.any)).to.be.true;
-      expect(logSpy.neverCalledWith(LogLevel.warn, sinon.match.any)).to.be.true;
       expect(logSpy.neverCalledWith(LogLevel.info, sinon.match.any)).to.be.true;
 
       logSpy.restore();

@@ -51,6 +51,6 @@ export default class ClientContextStub implements IClientContext {
   }
 
   public async getAuthHeaders(): Promise<HeadersInit> {
-    return {};
+    return { Authorization: 'Bearer test-token' };
   }
 }

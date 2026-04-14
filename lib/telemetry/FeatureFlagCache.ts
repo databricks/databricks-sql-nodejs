@@ -17,6 +17,7 @@
 import fetch from 'node-fetch';
 import IClientContext from '../contracts/IClientContext';
 import { LogLevel } from '../contracts/IDBSQLLogger';
+import { buildTelemetryUrl } from './telemetryUtils';
 import driverVersion from '../version';
 
 /**
@@ -37,7 +38,14 @@ export interface FeatureFlagContext {
 export default class FeatureFlagCache {
   private contexts: Map<string, FeatureFlagContext>;
 
+  /** In-flight fetch promises for deduplication (prevents thundering herd) */
+  private fetchPromises: Map<string, Promise<boolean>> = new Map();
+
   private readonly CACHE_DURATION_MS = 15 * 60 * 1000; // 15 minutes
+
+  private readonly MIN_CACHE_DURATION_S = 60; // 1 minute minimum TTL
+
+  private readonly MAX_CACHE_DURATION_S = 3600; // 1 hour maximum TTL
 
   private readonly FEATURE_FLAG_NAME = 'databricks.partnerplatform.clientConfigsFeatureFlags.enableTelemetryForNodeJs';
 
@@ -72,6 +80,7 @@ export default class FeatureFlagCache {
       ctx.refCount -= 1;
       if (ctx.refCount <= 0) {
         this.contexts.delete(host);
+        this.fetchPromises.delete(host); // Invalidate stale in-flight fetch
       }
     }
   }
@@ -91,14 +100,26 @@ export default class FeatureFlagCache {
     const isExpired = !ctx.lastFetched || Date.now() - ctx.lastFetched.getTime() > ctx.cacheDuration;
 
     if (isExpired) {
-      try {
-        // Fetch feature flag from server
-        ctx.telemetryEnabled = await this.fetchFeatureFlag(host);
-        ctx.lastFetched = new Date();
-      } catch (error: any) {
-        // Log at debug level only, never propagate exceptions
-        logger.log(LogLevel.debug, `Error fetching feature flag: ${error.message}`);
+      // Deduplicate concurrent fetches for the same host (prevents thundering herd)
+      if (!this.fetchPromises.has(host)) {
+        const fetchPromise = this.fetchFeatureFlag(host)
+          .then((enabled) => {
+            ctx.telemetryEnabled = enabled;
+            ctx.lastFetched = new Date();
+            return enabled;
+          })
+          .catch((error: any) => {
+            logger.log(LogLevel.debug, `Error fetching feature flag: ${error.message}`);
+            return ctx.telemetryEnabled ?? false;
+          })
+          .finally(() => {
+            this.fetchPromises.delete(host);
+          });
+        this.fetchPromises.set(host, fetchPromise);
       }
+
+      // Promise is guaranteed to resolve (never rejects) due to .catch() in the chain above
+      await this.fetchPromises.get(host);
     }
 
     return ctx.telemetryEnabled ?? false;
@@ -106,7 +127,7 @@ export default class FeatureFlagCache {
 
   /**
    * Fetches feature flag from server using connector-service API.
-   * Calls GET /api/2.0/connector-service/feature-flags/OSS_NODEJS/{version}
+   * Calls GET /api/2.0/connector-service/feature-flags/NODEJS/{version}
    *
    * @param host The host to fetch feature flag for
    * @returns true if feature flag is enabled, false otherwise
@@ -119,7 +140,7 @@ export default class FeatureFlagCache {
       const version = this.getDriverVersion();
 
       // Build feature flags endpoint for Node.js driver
-      const endpoint = this.buildUrl(host, `/api/2.0/connector-service/feature-flags/NODEJS/${version}`);
+      const endpoint = buildTelemetryUrl(host, `/api/2.0/connector-service/feature-flags/NODEJS/${version}`);
 
       // Get authentication headers
       const authHeaders = await this.context.getAuthHeaders();
@@ -139,9 +160,12 @@ export default class FeatureFlagCache {
           'User-Agent': `databricks-sql-nodejs/${driverVersion}`,
         },
         agent, // Include agent for proxy support
+        timeout: 10000, // 10 second timeout to prevent indefinite hangs
       });
 
       if (!response.ok) {
+        // Consume response body to release socket back to connection pool
+        await response.text().catch(() => {});
         logger.log(LogLevel.debug, `Feature flag fetch failed: ${response.status} ${response.statusText}`);
         return false;
       }
@@ -151,11 +175,12 @@ export default class FeatureFlagCache {
 
       // Response format: { flags: [{ name: string, value: string }], ttl_seconds?: number }
       if (data && data.flags && Array.isArray(data.flags)) {
-        // Update cache duration if TTL provided
+        // Update cache duration if TTL provided, clamped to safe bounds
         const ctx = this.contexts.get(host);
-        if (ctx && data.ttl_seconds) {
-          ctx.cacheDuration = data.ttl_seconds * 1000; // Convert to milliseconds
-          logger.log(LogLevel.debug, `Updated cache duration to ${data.ttl_seconds} seconds`);
+        if (ctx && typeof data.ttl_seconds === 'number' && data.ttl_seconds > 0) {
+          const clampedTtl = Math.max(this.MIN_CACHE_DURATION_S, Math.min(this.MAX_CACHE_DURATION_S, data.ttl_seconds));
+          ctx.cacheDuration = clampedTtl * 1000; // Convert to milliseconds
+          logger.log(LogLevel.debug, `Updated cache duration to ${clampedTtl} seconds`);
         }
 
         // Look for our specific feature flag
@@ -178,16 +203,6 @@ export default class FeatureFlagCache {
       logger.log(LogLevel.debug, `Error fetching feature flag from ${host}: ${error.message}`);
       return false;
     }
-  }
-
-  /**
-   * Build full URL from host and path, handling protocol correctly.
-   */
-  private buildUrl(host: string, path: string): string {
-    if (host.startsWith('http://') || host.startsWith('https://')) {
-      return `${host}${path}`;
-    }
-    return `https://${host}${path}`;
   }
 
   /**

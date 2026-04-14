@@ -329,8 +329,11 @@ export default class MetricsAggregator {
 
       logger.log(LogLevel.debug, `Flushing ${metricsToExport.length} telemetry metrics`);
 
-      // Export metrics (exporter.export never throws)
-      this.exporter.export(metricsToExport);
+      // Export metrics - exporter.export is designed to never throw, but add safety catch
+      // to prevent unhandled promise rejections from crashing the process (Node.js 15+)
+      Promise.resolve(this.exporter.export(metricsToExport)).catch((err: any) => {
+        logger.log(LogLevel.debug, `Unexpected export error: ${err?.message}`);
+      });
 
       // Reset timer to avoid rapid successive flushes (e.g., batch flush at 25s then timer flush at 30s)
       // This ensures consistent spacing between exports and helps avoid rate limiting
@@ -380,8 +383,9 @@ export default class MetricsAggregator {
         this.flushTimer = null;
       }
 
-      // Complete any remaining statements
-      for (const statementId of this.statementMetrics.keys()) {
+      // Complete any remaining statements (snapshot keys to avoid mutation during iteration)
+      const remainingStatements = [...this.statementMetrics.keys()];
+      for (const statementId of remainingStatements) {
         this.completeStatement(statementId);
       }
 

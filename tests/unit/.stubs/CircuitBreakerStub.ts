@@ -112,7 +112,8 @@ export default class CircuitBreakerStub {
   private onFailure(): void {
     this.failureCount++;
     this.successCount = 0;
-    if (this.failureCount >= 5) {
+    // In HALF_OPEN state, any single failure immediately reopens (matches real implementation)
+    if (this.state === CircuitBreakerState.HALF_OPEN || this.failureCount >= 5) {
       this.state = CircuitBreakerState.OPEN;
     }
   }

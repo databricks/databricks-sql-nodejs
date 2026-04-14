@@ -19,8 +19,9 @@ import fetch, { Response, RequestInit } from 'node-fetch';
 import IClientContext from '../contracts/IClientContext';
 import { LogLevel } from '../contracts/IDBSQLLogger';
 import { TelemetryMetric, DEFAULT_TELEMETRY_CONFIG } from './types';
-import { CircuitBreakerRegistry } from './CircuitBreaker';
+import { CircuitBreaker, CircuitBreakerRegistry } from './CircuitBreaker';
 import ExceptionClassifier from './ExceptionClassifier';
+import { buildTelemetryUrl } from './telemetryUtils';
 import driverVersion from '../version';
 
 /**
@@ -87,8 +88,8 @@ interface DatabricksTelemetryPayload {
  * Exports telemetry metrics to Databricks telemetry service.
  *
  * Endpoints:
- * - Authenticated: /api/2.0/sql/telemetry-ext
- * - Unauthenticated: /api/2.0/sql/telemetry-unauth
+ * - Authenticated: /telemetry-ext
+ * - Unauthenticated: /telemetry-unauth
  *
  * Features:
  * - Circuit breaker integration for endpoint protection
@@ -98,7 +99,7 @@ interface DatabricksTelemetryPayload {
  * - CRITICAL: All logging at LogLevel.debug ONLY
  */
 export default class DatabricksTelemetryExporter {
-  private circuitBreaker;
+  private readonly circuitBreaker: CircuitBreaker;
 
   private readonly userAgent: string;
 
@@ -207,8 +208,8 @@ export default class DatabricksTelemetryExporter {
     // Determine endpoint based on authentication mode
     const authenticatedExport = config.telemetryAuthenticatedExport ?? DEFAULT_TELEMETRY_CONFIG.authenticatedExport;
     const endpoint = authenticatedExport
-      ? this.buildUrl(this.host, '/telemetry-ext')
-      : this.buildUrl(this.host, '/telemetry-unauth');
+      ? buildTelemetryUrl(this.host, '/telemetry-ext')
+      : buildTelemetryUrl(this.host, '/telemetry-unauth');
 
     // Format payload - each log is JSON-stringified to match JDBC format
     const telemetryLogs = metrics.map((m) => this.toTelemetryLog(m));
@@ -230,6 +231,14 @@ export default class DatabricksTelemetryExporter {
     // Get authentication headers if using authenticated endpoint
     const authHeaders = authenticatedExport ? await this.context.getAuthHeaders() : {};
 
+    // Skip export if authenticated mode is requested but no auth headers available.
+    // Note: all auth providers in this codebase return plain objects (Record<string, string>).
+    const headersObj = authHeaders as Record<string, string>;
+    if (authenticatedExport && (!headersObj || !headersObj['Authorization'])) {
+      logger.log(LogLevel.debug, 'Skipping telemetry export: authenticated mode but no Authorization header');
+      return;
+    }
+
     // Make HTTP POST request with authentication and proxy support
     const response: Response = await this.sendRequest(endpoint, {
       method: 'POST',
@@ -239,14 +248,19 @@ export default class DatabricksTelemetryExporter {
         'User-Agent': this.userAgent,
       },
       body: JSON.stringify(payload),
+      timeout: 10000, // 10 second timeout to prevent indefinite hangs
     });
 
     if (!response.ok) {
+      // Consume response body to release socket back to connection pool
+      await response.text().catch(() => {});
       const error: any = new Error(`Telemetry export failed: ${response.status} ${response.statusText}`);
       error.statusCode = response.status;
       throw error;
     }
 
+    // Consume response body to release socket back to connection pool
+    await response.text().catch(() => {});
     logger.log(LogLevel.debug, `Successfully exported ${metrics.length} telemetry metrics`);
   }
 
@@ -265,6 +279,7 @@ export default class DatabricksTelemetryExporter {
    */
   private toTelemetryLog(metric: TelemetryMetric): DatabricksTelemetryLog {
     const log: DatabricksTelemetryLog = {
+      workspace_id: metric.workspaceId,
       frontend_log_event_id: this.generateUUID(),
       context: {
         client_context: {
@@ -319,16 +334,6 @@ export default class DatabricksTelemetryExporter {
     }
 
     return log;
-  }
-
-  /**
-   * Build full URL from host and path, handling protocol correctly.
-   */
-  private buildUrl(host: string, path: string): string {
-    if (host.startsWith('http://') || host.startsWith('https://')) {
-      return `${host}${path}`;
-    }
-    return `https://${host}${path}`;
   }
 
   /**
