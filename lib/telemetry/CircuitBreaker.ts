@@ -225,10 +225,7 @@ export class CircuitBreakerRegistry {
       logger.log(LogLevel.debug, `Created circuit breaker for host: ${host}`);
     } else if (config) {
       const logger = this.context.getLogger();
-      logger.log(
-        LogLevel.debug,
-        `Circuit breaker for host ${host} already exists; provided config will be ignored`,
-      );
+      logger.log(LogLevel.debug, `Circuit breaker for host ${host} already exists; provided config will be ignored`);
     }
     return breaker;
   }
