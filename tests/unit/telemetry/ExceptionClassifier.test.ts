@@ -169,6 +169,32 @@ describe('ExceptionClassifier', () => {
       });
     });
 
+    describe('Network connection errors', () => {
+      it('should identify ECONNREFUSED as retryable', () => {
+        const error = new Error('connect ECONNREFUSED 127.0.0.1:443');
+        (error as any).code = 'ECONNREFUSED';
+        expect(ExceptionClassifier.isRetryable(error)).to.be.true;
+      });
+
+      it('should identify ENOTFOUND as retryable', () => {
+        const error = new Error('getaddrinfo ENOTFOUND host.example.com');
+        (error as any).code = 'ENOTFOUND';
+        expect(ExceptionClassifier.isRetryable(error)).to.be.true;
+      });
+
+      it('should identify EHOSTUNREACH as retryable', () => {
+        const error = new Error('connect EHOSTUNREACH');
+        (error as any).code = 'EHOSTUNREACH';
+        expect(ExceptionClassifier.isRetryable(error)).to.be.true;
+      });
+
+      it('should identify ECONNRESET as retryable', () => {
+        const error = new Error('read ECONNRESET');
+        (error as any).code = 'ECONNRESET';
+        expect(ExceptionClassifier.isRetryable(error)).to.be.true;
+      });
+    });
+
     describe('HTTP 429 Too Many Requests', () => {
       it('should identify 429 status code as retryable', () => {
         const error = new Error('Too Many Requests');

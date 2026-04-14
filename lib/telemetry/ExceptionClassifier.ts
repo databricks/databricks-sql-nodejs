@@ -81,6 +81,17 @@ export default class ExceptionClassifier {
       return true;
     }
 
+    // Check for transient network errors (connection refused, DNS failure, host unreachable)
+    const errorCode = (error as any).code;
+    if (
+      errorCode === 'ECONNREFUSED' ||
+      errorCode === 'ENOTFOUND' ||
+      errorCode === 'EHOSTUNREACH' ||
+      errorCode === 'ECONNRESET'
+    ) {
+      return true;
+    }
+
     // Check for HTTP status codes in error properties
     // Supporting both 'statusCode' and 'status' property names for flexibility
     const statusCode = (error as any).statusCode ?? (error as any).status;

@@ -14,12 +14,14 @@
  * limitations under the License.
  */
 
+import { v4 as uuidv4 } from 'uuid';
 import fetch, { Response, RequestInit } from 'node-fetch';
 import IClientContext from '../contracts/IClientContext';
 import { LogLevel } from '../contracts/IDBSQLLogger';
 import { TelemetryMetric, DEFAULT_TELEMETRY_CONFIG } from './types';
 import { CircuitBreakerRegistry } from './CircuitBreaker';
 import ExceptionClassifier from './ExceptionClassifier';
+import driverVersion from '../version';
 
 /**
  * Databricks telemetry log format for export.
@@ -333,23 +335,14 @@ export default class DatabricksTelemetryExporter {
    * Generate a UUID v4.
    */
   private generateUUID(): string {
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-      const r = (Math.random() * 16) | 0;
-      const v = c === 'x' ? r : (r & 0x3) | 0x8;
-      return v.toString(16);
-    });
+    return uuidv4();
   }
 
   /**
-   * Get driver version from package.json.
+   * Get driver version from the version module.
    */
   private getDriverVersion(): string {
-    try {
-      // In production, this would read from package.json
-      return '1.0.0';
-    } catch {
-      return 'unknown';
-    }
+    return driverVersion;
   }
 
   /**
