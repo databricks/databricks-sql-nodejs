@@ -18,7 +18,7 @@
  * Build full URL from host and path, always using HTTPS.
  * Strips any existing protocol prefix and enforces HTTPS.
  */
-export function buildTelemetryUrl(host: string, path: string): string {
+export default function buildTelemetryUrl(host: string, path: string): string {
   const cleanHost = host.replace(/^https?:\/\//, '').replace(/\/+$/, '');
   return `https://${cleanHost}${path}`;
 }

@@ -17,7 +17,7 @@
 import fetch from 'node-fetch';
 import IClientContext from '../contracts/IClientContext';
 import { LogLevel } from '../contracts/IDBSQLLogger';
-import { buildTelemetryUrl } from './telemetryUtils';
+import buildTelemetryUrl from './telemetryUtils';
 import driverVersion from '../version';
 
 /**

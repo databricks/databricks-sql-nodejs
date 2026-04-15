@@ -21,7 +21,7 @@ import { LogLevel } from '../contracts/IDBSQLLogger';
 import { TelemetryMetric, DEFAULT_TELEMETRY_CONFIG } from './types';
 import { CircuitBreaker, CircuitBreakerRegistry } from './CircuitBreaker';
 import ExceptionClassifier from './ExceptionClassifier';
-import { buildTelemetryUrl } from './telemetryUtils';
+import buildTelemetryUrl from './telemetryUtils';
 import driverVersion from '../version';
 
 /**
@@ -234,7 +234,7 @@ export default class DatabricksTelemetryExporter {
     // Skip export if authenticated mode is requested but no auth headers available.
     // Note: all auth providers in this codebase return plain objects (Record<string, string>).
     const headersObj = authHeaders as Record<string, string>;
-    if (authenticatedExport && (!headersObj || !headersObj['Authorization'])) {
+    if (authenticatedExport && (!headersObj || !headersObj.Authorization)) {
       logger.log(LogLevel.debug, 'Skipping telemetry export: authenticated mode but no Authorization header');
       return;
     }
