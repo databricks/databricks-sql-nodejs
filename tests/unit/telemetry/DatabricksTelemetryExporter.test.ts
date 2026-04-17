@@ -308,7 +308,9 @@ describe('DatabricksTelemetryExporter', () => {
       await exporter.export([makeMetric()]);
       await exporter.export([makeMetric()]);
 
-      const warnCalls = logSpy.getCalls().filter((c) => c.args[0] === LogLevel.warn && /Authorization/.test(c.args[1]));
+      const warnCalls = logSpy
+        .getCalls()
+        .filter((c) => c.args[0] === LogLevel.warn && /Authorization/.test(String(c.args[1])));
       expect(warnCalls.length).to.equal(1);
     });
 
@@ -327,7 +329,9 @@ describe('DatabricksTelemetryExporter', () => {
       headers = {};
       await exporter.export([makeMetric()]); // warns again
 
-      const warnCalls = logSpy.getCalls().filter((c) => c.args[0] === LogLevel.warn && /Authorization/.test(c.args[1]));
+      const warnCalls = logSpy
+        .getCalls()
+        .filter((c) => c.args[0] === LogLevel.warn && /Authorization/.test(String(c.args[1])));
       expect(warnCalls.length).to.equal(2);
     });
   });
