@@ -32,7 +32,7 @@ describe('buildUserAgentString', () => {
     // Prefix: 'NodejsDatabricksSqlConnector/'
     // Version: three period-separated digits and optional suffix
     const re =
-      /^(?<productName>NodejsDatabricksSqlConnector)\/(?<productVersion>\d+\.\d+\.\d+(-[^(]+)?)\s*\((?<comment>[^)]+)\)$/i;
+      /^(?<productName>NodejsDatabricksSqlConnector)\/(?<productVersion>\d+\.\d+\.\d+(-[^(]+)?)\s*\((?<comment>[^)]+)\)(\s+agent\/[a-z-]+)?$/i;
     const match = re.exec(ua);
     expect(match).to.not.be.eq(null);
 
@@ -61,6 +61,21 @@ describe('buildUserAgentString', () => {
     const userAgentEntry = 'dkea-internal-token';
     const userAgentString = buildUserAgentString(userAgentEntry);
     expect(userAgentString).to.include('<REDACTED>');
+  });
+
+  it('appends agent suffix when agent env var is set', () => {
+    const orig = process.env.CLAUDECODE;
+    try {
+      process.env.CLAUDECODE = '1';
+      const ua = buildUserAgentString();
+      expect(ua).to.include('agent/claude-code');
+    } finally {
+      if (orig === undefined) {
+        delete process.env.CLAUDECODE;
+      } else {
+        process.env.CLAUDECODE = orig;
+      }
+    }
   });
 });
 
