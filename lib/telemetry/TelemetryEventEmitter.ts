@@ -166,6 +166,7 @@ export default class TelemetryEventEmitter extends EventEmitter {
     sessionId?: string;
     errorName: string;
     errorMessage: string;
+    errorStack?: string;
     isTerminal: boolean;
   }): void {
     if (!this.enabled) return;
@@ -179,6 +180,7 @@ export default class TelemetryEventEmitter extends EventEmitter {
         sessionId: data.sessionId,
         errorName: data.errorName,
         errorMessage: data.errorMessage,
+        errorStack: data.errorStack,
         isTerminal: data.isTerminal,
       };
       this.emit(TelemetryEventType.ERROR, event);

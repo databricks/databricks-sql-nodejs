@@ -15,10 +15,165 @@
  */
 
 /**
- * Build full URL from host and path, always using HTTPS.
- * Strips any existing protocol prefix and enforces HTTPS.
+ * Hosts we always refuse to send authenticated telemetry to. Targeted at the
+ * `/api/2.0/sql/telemetry-ext` exfil vector: an attacker-influenced `host`
+ * (env var, tampered config, etc.) must not be able to redirect the Bearer
+ * token to a loopback/IMDS/RFC1918 endpoint.
  */
-export default function buildTelemetryUrl(host: string, path: string): string {
+const BLOCKED_HOST_PATTERNS: RegExp[] = [
+  /^(?:127\.|0\.|10\.|169\.254\.|172\.(?:1[6-9]|2[0-9]|3[01])\.|192\.168\.)/,
+  /^(?:localhost|metadata\.google\.internal|metadata\.azure\.com)$/i,
+  /^\[?::1\]?$/,
+  /^\[?(?:fc|fd)[0-9a-f]{2}:/i,
+  /^\[?::ffff:(?:127|10|0|169\.254)\./i,
+];
+
+/**
+ * Build an HTTPS telemetry URL from a host and a path.
+ *
+ * Refuses anything beyond a bare `host[:port]` so a compromised or mistyped
+ * host cannot redirect the authenticated request to an attacker-controlled
+ * endpoint. Defeated historical bypasses include:
+ *   - protocol-relative prefix: `//attacker.com`
+ *   - zero-width / ASCII whitespace in the host
+ *   - userinfo (`user:pass@host`)
+ *   - path/query/fragment
+ *   - CRLF (header injection on some fetch backends)
+ *   - loopback / link-local / RFC1918 / cloud-metadata addresses
+ *
+ * Returns `null` when the host fails any check; callers drop the batch.
+ */
+export function buildTelemetryUrl(host: string, path: string): string | null {
+  if (typeof host !== 'string' || host.length === 0) {
+    return null;
+  }
+
+  // Reject ASCII whitespace + common zero-width/BOM codepoints that JS `\s`
+  // does not cover but `new URL` silently strips.
+  if (/[\s\u200b-\u200f\u2060\ufeff]/.test(host)) {
+    return null;
+  }
+
   const cleanHost = host.replace(/^https?:\/\//, '').replace(/\/+$/, '');
-  return `https://${cleanHost}${path}`;
+  if (cleanHost.length === 0) {
+    return null;
+  }
+
+  // Reject anything that looks like userinfo / path / protocol-relative
+  // prefix before URL parsing. `new URL('https://' + '//x')` would otherwise
+  // normalise the doubled slash and accept `x` as the host.
+  if (/[/\\@]/.test(cleanHost)) {
+    return null;
+  }
+
+  let parsed: URL;
+  try {
+    parsed = new URL(`https://${cleanHost}`);
+  } catch {
+    return null;
+  }
+
+  if (
+    parsed.pathname !== '/' ||
+    parsed.search !== '' ||
+    parsed.hash !== '' ||
+    parsed.username !== '' ||
+    parsed.password !== ''
+  ) {
+    return null;
+  }
+
+  // Defence in depth: ensure `new URL` did not silently rewrite the host we
+  // validated (e.g. by stripping a codepoint we missed above). `new URL`
+  // normalises away the default :443 for https, so compare using the
+  // port-stripped hostname instead of .host.
+  const expectedHost = cleanHost.toLowerCase().replace(/:443$/, '');
+  const actualHost = parsed.host.toLowerCase().replace(/:443$/, '');
+  if (actualHost !== expectedHost) {
+    return null;
+  }
+
+  if (BLOCKED_HOST_PATTERNS.some((r) => r.test(parsed.hostname))) {
+    return null;
+  }
+
+  return `https://${parsed.host}${path}`;
+}
+
+/**
+ * Prefixes the Databricks driver uses for internal token formats. Kept in
+ * sync with `lib/utils/buildUserAgentString.ts`'s `redactInternalToken`.
+ * Extending one list should extend the other.
+ */
+const DATABRICKS_TOKEN_PREFIXES = ['dkea', 'dskea', 'dapi', 'dsapi', 'dose'];
+
+const SECRET_PATTERNS: Array<[RegExp, string]> = [
+  // `Authorization: Bearer <token>` / `Bearer <token>` anywhere in a stack.
+  [/Bearer\s+[A-Za-z0-9._\-+/=]+/gi, 'Bearer <REDACTED>'],
+  // `Authorization: Basic <base64>`.
+  [/Basic\s+[A-Za-z0-9+/=]+/gi, 'Basic <REDACTED>'],
+  // URL userinfo: `https://user:pass@host/…`.
+  [/([a-z][a-z0-9+.-]*:\/\/)[^/\s:@]+:[^/\s@]+@/gi, '$1<REDACTED>@'],
+  // Databricks PATs / service-token prefixes without `Bearer`, e.g.
+  // `token is dapi0123…` — appears in error stacks that echo the raw value.
+  [new RegExp(`\\b(?:${DATABRICKS_TOKEN_PREFIXES.join('|')})[A-Za-z0-9]{8,}`, 'g'), '<REDACTED>'],
+  // JWTs (three base64url segments separated by dots).
+  [/\beyJ[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\b/g, '<REDACTED_JWT>'],
+  // JSON-encoded secrets: `"client_secret":"..."`, `"access_token":"..."` etc.
+  [
+    /"(password|token|client_secret|refresh_token|access_token|id_token|secret|api[_-]?key|apikey)"\s*:\s*"[^"]*"/gi,
+    '"$1":"<REDACTED>"',
+  ],
+  // Form-URL-encoded / key=value secrets.
+  [
+    /\b(token|password|client_secret|refresh_token|access_token|id_token|secret|api[_-]?key|apikey)=[^\s&"']+/gi,
+    '$1=<REDACTED>',
+  ],
+];
+
+/**
+ * Strips common secret shapes from a free-form error string and caps length.
+ * Applied before anything is shipped off-box. Redaction happens before
+ * truncation so a long stack cannot bury a secret past the cap; truncation
+ * then runs a second pass to catch anything that appeared only in the tail.
+ */
+export function redactSensitive(value: string | undefined, maxLen = 2048): string {
+  if (!value) {
+    return '';
+  }
+  let redacted = value;
+  for (const [pattern, replacement] of SECRET_PATTERNS) {
+    redacted = redacted.replace(pattern, replacement);
+  }
+  if (redacted.length > maxLen) {
+    redacted = `${redacted.slice(0, maxLen)}…[truncated]`;
+    for (const [pattern, replacement] of SECRET_PATTERNS) {
+      redacted = redacted.replace(pattern, replacement);
+    }
+  }
+  return redacted;
+}
+
+/**
+ * Returns a safe `process_name` value: the basename of the first whitespace-
+ * delimited token, with trailing whitespace trimmed. This defeats both the
+ * absolute-path PII leak (`/home/<user>/app.js`) and the argv-leak shape
+ * (`node --db-password=X app.js`) that some producers pass in.
+ */
+export function sanitizeProcessName(name: string | undefined): string {
+  if (!name) {
+    return '';
+  }
+  const trimmed = name.trim();
+  if (trimmed.length === 0) {
+    return '';
+  }
+  // Drop argv tail: anything after the first whitespace — argv[0] shouldn't
+  // contain spaces, but producers sometimes pass `argv.join(' ')`.
+  const firstToken = trimmed.split(/\s/, 1)[0];
+  if (!firstToken) {
+    return '';
+  }
+  const lastSep = Math.max(firstToken.lastIndexOf('/'), firstToken.lastIndexOf('\\'));
+  return lastSep < 0 ? firstToken : firstToken.slice(lastSep + 1);
 }

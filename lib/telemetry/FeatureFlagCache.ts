@@ -14,49 +14,50 @@
  * limitations under the License.
  */
 
-import fetch from 'node-fetch';
+import fetch, { Headers, RequestInit, Response } from 'node-fetch';
 import IClientContext from '../contracts/IClientContext';
 import { LogLevel } from '../contracts/IDBSQLLogger';
-import buildTelemetryUrl from './telemetryUtils';
+import IAuthentication from '../connection/contracts/IAuthentication';
+import { buildTelemetryUrl } from './telemetryUtils';
+import buildUserAgentString from '../utils/buildUserAgentString';
 import driverVersion from '../version';
 
-/**
- * Context holding feature flag state for a specific host.
- */
 export interface FeatureFlagContext {
   telemetryEnabled?: boolean;
   lastFetched?: Date;
   refCount: number;
-  cacheDuration: number; // 15 minutes in ms
+  cacheDuration: number;
 }
 
 /**
- * Manages feature flag cache per host.
- * Prevents rate limiting by caching feature flag responses.
- * Instance-based, stored in DBSQLClient.
+ * Per-host feature-flag cache used to gate telemetry emission. Responsibilities:
+ *   - dedupe in-flight fetches (thundering-herd protection);
+ *   - ref-count so context goes away when the last consumer closes;
+ *   - clamp server-provided TTL into a safe band.
+ *
+ * Shares HTTP plumbing (agent, user agent) with DatabricksTelemetryExporter.
+ * Consumer wiring lands in a later PR in this stack (see PR description).
  */
 export default class FeatureFlagCache {
   private contexts: Map<string, FeatureFlagContext>;
 
-  /** In-flight fetch promises for deduplication (prevents thundering herd) */
   private fetchPromises: Map<string, Promise<boolean>> = new Map();
 
-  private readonly CACHE_DURATION_MS = 15 * 60 * 1000; // 15 minutes
+  private readonly userAgent: string;
 
-  private readonly MIN_CACHE_DURATION_S = 60; // 1 minute minimum TTL
+  private readonly CACHE_DURATION_MS = 15 * 60 * 1000;
 
-  private readonly MAX_CACHE_DURATION_S = 3600; // 1 hour maximum TTL
+  private readonly MIN_CACHE_DURATION_S = 60;
+
+  private readonly MAX_CACHE_DURATION_S = 3600;
 
   private readonly FEATURE_FLAG_NAME = 'databricks.partnerplatform.clientConfigsFeatureFlags.enableTelemetryForNodeJs';
 
-  constructor(private context: IClientContext) {
+  constructor(private context: IClientContext, private authProvider?: IAuthentication) {
     this.contexts = new Map();
+    this.userAgent = buildUserAgentString(this.context.getConfig().userAgentEntry);
   }
 
-  /**
-   * Gets or creates a feature flag context for the host.
-   * Increments reference count.
-   */
   getOrCreateContext(host: string): FeatureFlagContext {
     let ctx = this.contexts.get(host);
     if (!ctx) {
@@ -70,25 +71,17 @@ export default class FeatureFlagCache {
     return ctx;
   }
 
-  /**
-   * Decrements reference count for the host.
-   * Removes context when ref count reaches zero.
-   */
   releaseContext(host: string): void {
     const ctx = this.contexts.get(host);
     if (ctx) {
       ctx.refCount -= 1;
       if (ctx.refCount <= 0) {
         this.contexts.delete(host);
-        this.fetchPromises.delete(host); // Invalidate stale in-flight fetch
+        this.fetchPromises.delete(host);
       }
     }
   }
 
-  /**
-   * Checks if telemetry is enabled for the host.
-   * Uses cached value if available and not expired.
-   */
   async isTelemetryEnabled(host: string): Promise<boolean> {
     const logger = this.context.getLogger();
     const ctx = this.contexts.get(host);
@@ -100,7 +93,6 @@ export default class FeatureFlagCache {
     const isExpired = !ctx.lastFetched || Date.now() - ctx.lastFetched.getTime() > ctx.cacheDuration;
 
     if (isExpired) {
-      // Deduplicate concurrent fetches for the same host (prevents thundering herd)
       if (!this.fetchPromises.has(host)) {
         const fetchPromise = this.fetchFeatureFlag(host)
           .then((enabled) => {
@@ -118,7 +110,6 @@ export default class FeatureFlagCache {
         this.fetchPromises.set(host, fetchPromise);
       }
 
-      // Promise is guaranteed to resolve (never rejects) due to .catch() in the chain above
       await this.fetchPromises.get(host);
     }
 
@@ -126,91 +117,108 @@ export default class FeatureFlagCache {
   }
 
   /**
-   * Fetches feature flag from server using connector-service API.
-   * Calls GET /api/2.0/connector-service/feature-flags/NODEJS/{version}
-   *
-   * @param host The host to fetch feature flag for
-   * @returns true if feature flag is enabled, false otherwise
+   * Strips the `-oss` suffix the feature-flag API does not accept. The server
+   * keys off the SemVer triplet only, so anything appended would 404.
    */
+  private getDriverVersion(): string {
+    return driverVersion.replace(/-oss$/, '');
+  }
+
   private async fetchFeatureFlag(host: string): Promise<boolean> {
     const logger = this.context.getLogger();
 
     try {
-      // Get driver version for endpoint
-      const version = this.getDriverVersion();
+      const endpoint = buildTelemetryUrl(
+        host,
+        `/api/2.0/connector-service/feature-flags/NODEJS/${this.getDriverVersion()}`,
+      );
+      if (!endpoint) {
+        logger.log(LogLevel.debug, `Feature flag fetch skipped: invalid host ${host}`);
+        return false;
+      }
 
-      // Build feature flags endpoint for Node.js driver
-      const endpoint = buildTelemetryUrl(host, `/api/2.0/connector-service/feature-flags/NODEJS/${version}`);
-
-      // Get authentication headers
-      const authHeaders = await this.context.getAuthHeaders();
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+        'User-Agent': this.userAgent,
+        ...(await this.getAuthHeaders()),
+      };
 
       logger.log(LogLevel.debug, `Fetching feature flags from ${endpoint}`);
 
-      // Get agent with proxy settings (same pattern as CloudFetchResultHandler and DBSQLSession)
-      const connectionProvider = await this.context.getConnectionProvider();
-      const agent = await connectionProvider.getAgent();
-
-      // Make HTTP GET request with authentication and proxy support
-      const response = await fetch(endpoint, {
+      const response = await this.sendRequest(endpoint, {
         method: 'GET',
-        headers: {
-          ...authHeaders,
-          'Content-Type': 'application/json',
-          'User-Agent': `databricks-sql-nodejs/${driverVersion}`,
-        },
-        agent, // Include agent for proxy support
-        timeout: 10000, // 10 second timeout to prevent indefinite hangs
+        headers,
+        timeout: 10000,
       });
 
       if (!response.ok) {
-        // Consume response body to release socket back to connection pool
         await response.text().catch(() => {});
         logger.log(LogLevel.debug, `Feature flag fetch failed: ${response.status} ${response.statusText}`);
         return false;
       }
 
-      // Parse response JSON
       const data: any = await response.json();
 
-      // Response format: { flags: [{ name: string, value: string }], ttl_seconds?: number }
       if (data && data.flags && Array.isArray(data.flags)) {
-        // Update cache duration if TTL provided, clamped to safe bounds
         const ctx = this.contexts.get(host);
         if (ctx && typeof data.ttl_seconds === 'number' && data.ttl_seconds > 0) {
           const clampedTtl = Math.max(this.MIN_CACHE_DURATION_S, Math.min(this.MAX_CACHE_DURATION_S, data.ttl_seconds));
-          ctx.cacheDuration = clampedTtl * 1000; // Convert to milliseconds
+          ctx.cacheDuration = clampedTtl * 1000;
           logger.log(LogLevel.debug, `Updated cache duration to ${clampedTtl} seconds`);
         }
 
-        // Look for our specific feature flag
         const flag = data.flags.find((f: any) => f.name === this.FEATURE_FLAG_NAME);
-
         if (flag) {
-          // Parse boolean value (can be string "true"/"false")
-          const value = String(flag.value).toLowerCase();
-          const enabled = value === 'true';
+          const enabled = String(flag.value).toLowerCase() === 'true';
           logger.log(LogLevel.debug, `Feature flag ${this.FEATURE_FLAG_NAME}: ${enabled}`);
           return enabled;
         }
       }
 
-      // Feature flag not found in response, default to false
       logger.log(LogLevel.debug, `Feature flag ${this.FEATURE_FLAG_NAME} not found in response`);
       return false;
     } catch (error: any) {
-      // Log at debug level only, never propagate exceptions
       logger.log(LogLevel.debug, `Error fetching feature flag from ${host}: ${error.message}`);
       return false;
     }
   }
 
-  /**
-   * Gets the driver version without -oss suffix for API calls.
-   * Format: "1.12.0" from "1.12.0-oss"
-   */
-  private getDriverVersion(): string {
-    // Remove -oss suffix if present
-    return driverVersion.replace(/-oss$/, '');
+  private async sendRequest(url: string, init: RequestInit): Promise<Response> {
+    const connectionProvider = await this.context.getConnectionProvider();
+    const agent = await connectionProvider.getAgent();
+    return fetch(url, { ...init, agent });
+  }
+
+  private async getAuthHeaders(): Promise<Record<string, string>> {
+    if (!this.authProvider) {
+      return {};
+    }
+    try {
+      const raw = await this.authProvider.authenticate();
+      if (!raw) {
+        return {};
+      }
+      if (raw instanceof Headers) {
+        const out: Record<string, string> = {};
+        raw.forEach((value: string, key: string) => {
+          out[key] = value;
+        });
+        return out;
+      }
+      if (Array.isArray(raw)) {
+        const out: Record<string, string> = {};
+        for (const entry of raw as Array<[string, string]>) {
+          if (entry && entry.length === 2) {
+            const [key, value] = entry;
+            out[key] = value;
+          }
+        }
+        return out;
+      }
+      return { ...(raw as Record<string, string>) };
+    } catch (error: any) {
+      this.context.getLogger().log(LogLevel.debug, `Feature flag auth failed: ${error?.message ?? error}`);
+      return {};
+    }
   }
 }

@@ -17,7 +17,9 @@
 import { expect } from 'chai';
 import sinon from 'sinon';
 import {
+  CIRCUIT_BREAKER_OPEN_CODE,
   CircuitBreaker,
+  CircuitBreakerOpenError,
   CircuitBreakerRegistry,
   CircuitBreakerState,
   DEFAULT_CIRCUIT_BREAKER_CONFIG,
@@ -402,6 +404,65 @@ describe('CircuitBreaker', () => {
       } catch {}
 
       expect(breaker.getState()).to.equal(CircuitBreakerState.OPEN);
+    });
+  });
+
+  describe('HALF_OPEN concurrent-probe invariant', () => {
+    it('admits only one probe when two callers race after OPEN→HALF_OPEN transition', async () => {
+      clock.restore();
+      const context = new ClientContextStub();
+      const breaker = new CircuitBreaker(context, { failureThreshold: 1, timeout: 1, successThreshold: 1 });
+
+      // Trip to OPEN.
+      await breaker.execute(() => Promise.reject(new Error('boom'))).catch(() => {});
+      expect(breaker.getState()).to.equal(CircuitBreakerState.OPEN);
+
+      // Wait past the timeout so the next execute() flips to HALF_OPEN.
+      await new Promise((r) => setTimeout(r, 5));
+
+      // Hold the probe in-flight so the second caller races against it.
+      let releaseProbe: (() => void) | null = null;
+      const probeGate = new Promise<void>((res) => {
+        releaseProbe = res;
+      });
+
+      let probeRan = false;
+      let rejectedRan = false;
+
+      const first = breaker.execute(async () => {
+        probeRan = true;
+        await probeGate;
+      });
+
+      const second = breaker
+        .execute(async () => {
+          rejectedRan = true;
+        })
+        .catch((err) => err);
+
+      const secondResult = await second;
+      expect(probeRan).to.be.true;
+      expect(rejectedRan).to.be.false;
+      expect(secondResult).to.be.instanceOf(CircuitBreakerOpenError);
+
+      releaseProbe!();
+      await first;
+    });
+
+    it('throws CircuitBreakerOpenError with code when OPEN', async () => {
+      const context = new ClientContextStub();
+      const breaker = new CircuitBreaker(context, { failureThreshold: 1, timeout: 60_000, successThreshold: 1 });
+
+      await breaker.execute(() => Promise.reject(new Error('boom'))).catch(() => {});
+
+      let caught: any;
+      try {
+        await breaker.execute(async () => 1);
+      } catch (err) {
+        caught = err;
+      }
+      expect(caught).to.be.instanceOf(CircuitBreakerOpenError);
+      expect(caught.code).to.equal(CIRCUIT_BREAKER_OPEN_CODE);
     });
   });
 

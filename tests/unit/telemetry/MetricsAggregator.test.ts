@@ -275,6 +275,47 @@ describe('MetricsAggregator', () => {
       const metrics = exporter.export.firstCall.args[0];
       expect(metrics[0].metricType).to.equal('statement');
     });
+
+    it('awaits in-flight export before resolving — prevents process.exit truncation', async () => {
+      clock.restore();
+      const context = new ClientContextStub();
+      let resolveExport!: () => void;
+      const pendingExport = new Promise<void>((r) => {
+        resolveExport = r;
+      });
+      const exporter: any = { export: sinon.stub().returns(pendingExport) };
+      const aggregator = new MetricsAggregator(context, exporter);
+
+      aggregator.processEvent(connectionEvent());
+
+      const done = aggregator.close();
+      expect(done).to.be.an.instanceof(Promise);
+
+      let resolved = false;
+      done.then(() => {
+        resolved = true;
+      });
+      await Promise.resolve();
+      await Promise.resolve();
+      expect(resolved, 'close() should wait for exporter promise before resolving').to.be.false;
+
+      resolveExport();
+      await done;
+      expect(resolved).to.be.true;
+    });
+
+    it('does not resurrect the flush timer after close', async () => {
+      clock.restore();
+      const context = new ClientContextStub({ telemetryBatchSize: 1 } as any);
+      const exporter = makeExporterStub();
+      const aggregator = new MetricsAggregator(context, exporter as any);
+
+      aggregator.processEvent(statementEvent(TelemetryEventType.STATEMENT_START));
+      await aggregator.close();
+
+      expect((aggregator as any).flushTimer, 'flushTimer should be null after close').to.equal(null);
+      expect((aggregator as any).closed).to.be.true;
+    });
   });
 
   describe('exception swallowing', () => {

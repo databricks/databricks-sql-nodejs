@@ -43,8 +43,17 @@ export interface TelemetryConfiguration {
   /** Interval in milliseconds to flush metrics */
   flushIntervalMs?: number;
 
-  /** Maximum retry attempts for export */
+  /** Maximum retry attempts for export (attempts *after* the initial call) */
   maxRetries?: number;
+
+  /** Minimum backoff delay in ms for retry backoff */
+  backoffBaseMs?: number;
+
+  /** Maximum backoff delay in ms (includes jitter) */
+  backoffMaxMs?: number;
+
+  /** Upper bound of added jitter in ms */
+  backoffJitterMs?: number;
 
   /** Whether to use authenticated export endpoint */
   authenticatedExport?: boolean;
@@ -55,23 +64,34 @@ export interface TelemetryConfiguration {
   /** Circuit breaker timeout in milliseconds */
   circuitBreakerTimeout?: number;
 
-  /** Maximum number of pending metrics buffered before dropping oldest (prevents unbounded growth when export keeps failing) */
+  /** Maximum number of pending metrics buffered before dropping oldest */
   maxPendingMetrics?: number;
+
+  /** Maximum number of error events buffered per statement before dropping oldest */
+  maxErrorsPerStatement?: number;
+
+  /** TTL in ms after which abandoned statement aggregations are evicted */
+  statementTtlMs?: number;
 }
 
 /**
  * Default telemetry configuration values
  */
-export const DEFAULT_TELEMETRY_CONFIG: Required<TelemetryConfiguration> = {
-  enabled: false, // Initially disabled for safe rollout
+export const DEFAULT_TELEMETRY_CONFIG: Readonly<Required<TelemetryConfiguration>> = Object.freeze({
+  enabled: false,
   batchSize: 100,
   flushIntervalMs: 5000,
   maxRetries: 3,
+  backoffBaseMs: 100,
+  backoffMaxMs: 1000,
+  backoffJitterMs: 100,
   authenticatedExport: true,
   circuitBreakerThreshold: 5,
-  circuitBreakerTimeout: 60000, // 1 minute
+  circuitBreakerTimeout: 60000,
   maxPendingMetrics: 500,
-};
+  maxErrorsPerStatement: 50,
+  statementTtlMs: 60 * 60 * 1000, // 1 hour
+});
 
 /**
  * Runtime telemetry event emitted by the driver
@@ -132,6 +152,9 @@ export interface TelemetryEvent {
   /** Error message */
   errorMessage?: string;
 
+  /** Stack trace, captured at emission site; redacted before export */
+  errorStack?: string;
+
   /** Whether the error is terminal (non-retryable) */
   isTerminal?: boolean;
 }
@@ -178,6 +201,9 @@ export interface TelemetryMetric {
 
   /** Error message */
   errorMessage?: string;
+
+  /** Stack trace, captured at emission site; redacted before export */
+  errorStack?: string;
 }
 
 /**
@@ -211,7 +237,10 @@ export interface DriverConfiguration {
   /** Character set encoding (e.g., UTF-8) */
   charSetEncoding: string;
 
-  /** Process name */
+  /**
+   * Process name. Producers MUST pass only a basename (no absolute path) —
+   * `sanitizeProcessName()` is applied at export time as a defence in depth.
+   */
   processName: string;
 
   // Feature flags

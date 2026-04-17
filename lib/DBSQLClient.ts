@@ -2,7 +2,6 @@ import thrift from 'thrift';
 import Int64 from 'node-int64';
 
 import { EventEmitter } from 'events';
-import { HeadersInit } from 'node-fetch';
 import TCLIService from '../thrift/TCLIService';
 import { TProtocolVersion } from '../thrift/TCLIService_types';
 import IDBSQLClient, { ClientOptions, ConnectionOptions, OpenSessionRequest } from './contracts/IDBSQLClient';
@@ -239,6 +238,12 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
       this.config.enableMetricViewMetadata = options.enableMetricViewMetadata;
     }
 
+    // Persist userAgentEntry so telemetry and feature-flag call sites reuse
+    // the same value as the primary Thrift connection's User-Agent.
+    if (options.userAgentEntry !== undefined) {
+      this.config.userAgentEntry = options.userAgentEntry;
+    }
+
     this.authProvider = this.createAuthProvider(options, authProvider);
 
     this.connectionProvider = this.createConnectionProvider(options);
@@ -354,15 +359,14 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
     return this.driver;
   }
 
-  public async getAuthHeaders(): Promise<HeadersInit> {
-    if (this.authProvider) {
-      try {
-        return await this.authProvider.authenticate();
-      } catch (error) {
-        this.logger.log(LogLevel.debug, `Error getting auth headers: ${error}`);
-        return {};
-      }
-    }
-    return {};
+  /**
+   * Returns the authentication provider associated with this client, if any.
+   * Intended for internal telemetry/feature-flag call sites that need to
+   * obtain auth headers directly without routing through `IClientContext`.
+   *
+   * @internal Not part of the public API. May change without notice.
+   */
+  public getAuthProvider(): IAuthentication | undefined {
+    return this.authProvider;
   }
 }
