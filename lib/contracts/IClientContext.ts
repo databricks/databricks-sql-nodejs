@@ -28,9 +28,16 @@ export interface ClientConfig {
   telemetryBatchSize?: number;
   telemetryFlushIntervalMs?: number;
   telemetryMaxRetries?: number;
+  telemetryBackoffBaseMs?: number;
+  telemetryBackoffMaxMs?: number;
+  telemetryBackoffJitterMs?: number;
   telemetryAuthenticatedExport?: boolean;
   telemetryCircuitBreakerThreshold?: number;
   telemetryCircuitBreakerTimeout?: number;
+  telemetryMaxPendingMetrics?: number;
+  telemetryMaxErrorsPerStatement?: number;
+  telemetryStatementTtlMs?: number;
+  userAgentEntry?: string;
 }
 
 export default interface IClientContext {

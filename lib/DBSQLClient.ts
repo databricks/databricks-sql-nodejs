@@ -238,6 +238,12 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
       this.config.enableMetricViewMetadata = options.enableMetricViewMetadata;
     }
 
+    // Persist userAgentEntry so telemetry and feature-flag call sites reuse
+    // the same value as the primary Thrift connection's User-Agent.
+    if (options.userAgentEntry !== undefined) {
+      this.config.userAgentEntry = options.userAgentEntry;
+    }
+
     this.authProvider = this.createAuthProvider(options, authProvider);
 
     this.connectionProvider = this.createConnectionProvider(options);
@@ -351,5 +357,16 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
 
   public async getDriver(): Promise<IDriver> {
     return this.driver;
+  }
+
+  /**
+   * Returns the authentication provider associated with this client, if any.
+   * Intended for internal telemetry/feature-flag call sites that need to
+   * obtain auth headers directly without routing through `IClientContext`.
+   *
+   * @internal Not part of the public API. May change without notice.
+   */
+  public getAuthProvider(): IAuthentication | undefined {
+    return this.authProvider;
   }
 }
