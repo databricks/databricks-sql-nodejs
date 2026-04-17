@@ -15,7 +15,7 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
-import fetch, { Headers, RequestInit, Response } from 'node-fetch';
+import fetch, { RequestInit, Response } from 'node-fetch';
 import IClientContext from '../contracts/IClientContext';
 import { LogLevel } from '../contracts/IDBSQLLogger';
 import IAuthentication from '../connection/contracts/IAuthentication';
@@ -24,7 +24,13 @@ import HiveDriverError from '../errors/HiveDriverError';
 import { TelemetryMetric, DEFAULT_TELEMETRY_CONFIG } from './types';
 import { CircuitBreaker, CircuitBreakerOpenError, CircuitBreakerRegistry } from './CircuitBreaker';
 import ExceptionClassifier from './ExceptionClassifier';
-import { buildTelemetryUrl, redactSensitive, sanitizeProcessName } from './telemetryUtils';
+import {
+  buildTelemetryUrl,
+  hasAuthorization,
+  normalizeHeaders,
+  redactSensitive,
+  sanitizeProcessName,
+} from './telemetryUtils';
 import buildUserAgentString from '../utils/buildUserAgentString';
 
 interface DatabricksTelemetryLog {
@@ -238,7 +244,7 @@ export default class DatabricksTelemetryExporter {
 
     if (authenticatedExport) {
       headers = { ...headers, ...(await this.getAuthHeaders()) };
-      if (!this.hasAuthorization(headers)) {
+      if (!hasAuthorization(headers)) {
         if (!this.authMissingWarned) {
           this.authMissingWarned = true;
           logger.log(LogLevel.warn, 'Telemetry: Authorization header missing — metrics will be dropped');
@@ -288,52 +294,11 @@ export default class DatabricksTelemetryExporter {
     }
     const logger = this.context.getLogger();
     try {
-      const raw = await this.authProvider.authenticate();
-      return this.normalizeHeaders(raw);
+      return normalizeHeaders(await this.authProvider.authenticate());
     } catch (error: any) {
       logger.log(LogLevel.debug, `Telemetry: auth provider threw: ${error?.message ?? error}`);
       return {};
     }
-  }
-
-  private normalizeHeaders(raw: unknown): Record<string, string> {
-    if (!raw) {
-      return {};
-    }
-    // node-fetch HeadersInit = Headers | [string,string][] | Record<string,string>.
-    if (raw instanceof Headers) {
-      const out: Record<string, string> = {};
-      raw.forEach((value: string, key: string) => {
-        out[key] = value;
-      });
-      return out;
-    }
-    if (Array.isArray(raw)) {
-      const out: Record<string, string> = {};
-      for (const entry of raw as Array<[string, string]>) {
-        if (entry && entry.length === 2 && typeof entry[1] === 'string') {
-          const [key, value] = entry;
-          out[key] = value;
-        }
-      }
-      return out;
-    }
-    const out: Record<string, string> = {};
-    for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
-      if (typeof v === 'string') {
-        out[k] = v;
-      }
-    }
-    return out;
-  }
-
-  private hasAuthorization(headers: Record<string, string>): boolean {
-    for (const key of Object.keys(headers)) {
-      if (key.toLowerCase() === 'authorization' && headers[key]) {
-        return true;
-      }
-    }
-    return false;
   }
 
   private async sendRequest(url: string, init: RequestInit): Promise<Response> {

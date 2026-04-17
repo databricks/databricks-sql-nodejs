@@ -14,11 +14,12 @@
  * limitations under the License.
  */
 
-import fetch, { Headers, RequestInit, Response } from 'node-fetch';
+import fetch, { RequestInit, Response } from 'node-fetch';
 import IClientContext from '../contracts/IClientContext';
 import { LogLevel } from '../contracts/IDBSQLLogger';
 import IAuthentication from '../connection/contracts/IAuthentication';
-import { buildTelemetryUrl } from './telemetryUtils';
+import { buildTelemetryUrl, normalizeHeaders } from './telemetryUtils';
+import ExceptionClassifier from './ExceptionClassifier';
 import buildUserAgentString from '../utils/buildUserAgentString';
 import driverVersion from '../version';
 
@@ -145,7 +146,7 @@ export default class FeatureFlagCache {
 
       logger.log(LogLevel.debug, `Fetching feature flags from ${endpoint}`);
 
-      const response = await this.sendRequest(endpoint, {
+      const response = await this.fetchWithRetry(endpoint, {
         method: 'GET',
         headers,
         timeout: 10000,
@@ -183,10 +184,29 @@ export default class FeatureFlagCache {
     }
   }
 
-  private async sendRequest(url: string, init: RequestInit): Promise<Response> {
+  /**
+   * Retries transient network errors once before giving up. Without a retry
+   * a single hiccup would leave telemetry disabled for the full cache TTL
+   * (15 min). One retry gives an ephemeral DNS / connection-reset failure
+   * a second chance without pushing sustained load at a broken endpoint.
+   */
+  private async fetchWithRetry(url: string, init: RequestInit): Promise<Response> {
     const connectionProvider = await this.context.getConnectionProvider();
     const agent = await connectionProvider.getAgent();
-    return fetch(url, { ...init, agent });
+    const logger = this.context.getLogger();
+
+    try {
+      return await fetch(url, { ...init, agent });
+    } catch (err: any) {
+      if (!ExceptionClassifier.isRetryable(err)) {
+        throw err;
+      }
+      logger.log(LogLevel.debug, `Feature flag fetch retry after transient: ${err?.code ?? err?.message ?? err}`);
+      await new Promise((resolve) => {
+        setTimeout(resolve, 100 + Math.random() * 100);
+      });
+      return fetch(url, { ...init, agent });
+    }
   }
 
   private async getAuthHeaders(): Promise<Record<string, string>> {
@@ -194,28 +214,7 @@ export default class FeatureFlagCache {
       return {};
     }
     try {
-      const raw = await this.authProvider.authenticate();
-      if (!raw) {
-        return {};
-      }
-      if (raw instanceof Headers) {
-        const out: Record<string, string> = {};
-        raw.forEach((value: string, key: string) => {
-          out[key] = value;
-        });
-        return out;
-      }
-      if (Array.isArray(raw)) {
-        const out: Record<string, string> = {};
-        for (const entry of raw as Array<[string, string]>) {
-          if (entry && entry.length === 2) {
-            const [key, value] = entry;
-            out[key] = value;
-          }
-        }
-        return out;
-      }
-      return { ...(raw as Record<string, string>) };
+      return normalizeHeaders(await this.authProvider.authenticate());
     } catch (error: any) {
       this.context.getLogger().log(LogLevel.debug, `Feature flag auth failed: ${error?.message ?? error}`);
       return {};

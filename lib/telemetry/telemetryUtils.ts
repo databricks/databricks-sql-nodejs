@@ -155,6 +155,57 @@ export function redactSensitive(value: string | undefined, maxLen = 2048): strin
 }
 
 /**
+ * Normalises any `HeadersInit` shape (`Headers`, `[string,string][]`, or
+ * `Record<string, string>`) into a plain string dictionary. Non-string
+ * values are dropped. Shared by the exporter and FeatureFlagCache so there
+ * is one source of truth for auth-header handling.
+ */
+export function normalizeHeaders(raw: unknown): Record<string, string> {
+  if (!raw || typeof raw !== 'object') {
+    return {};
+  }
+  // Avoid importing node-fetch here; use structural check.
+  if (typeof (raw as any).forEach === 'function' && !Array.isArray(raw)) {
+    const out: Record<string, string> = {};
+    (raw as any).forEach((value: unknown, key: unknown) => {
+      if (typeof key === 'string' && typeof value === 'string') {
+        out[key] = value;
+      }
+    });
+    return out;
+  }
+  if (Array.isArray(raw)) {
+    const out: Record<string, string> = {};
+    for (const entry of raw as Array<[unknown, unknown]>) {
+      if (Array.isArray(entry) && entry.length === 2 && typeof entry[0] === 'string' && typeof entry[1] === 'string') {
+        const [key, value] = entry;
+        out[key] = value;
+      }
+    }
+    return out;
+  }
+  const out: Record<string, string> = {};
+  for (const [k, v] of Object.entries(raw as Record<string, unknown>)) {
+    if (typeof v === 'string') {
+      out[k] = v;
+    }
+  }
+  return out;
+}
+
+/**
+ * Case-insensitive check for a non-empty `Authorization` header.
+ */
+export function hasAuthorization(headers: Record<string, string>): boolean {
+  for (const key of Object.keys(headers)) {
+    if (key.toLowerCase() === 'authorization' && headers[key]) {
+      return true;
+    }
+  }
+  return false;
+}
+
+/**
  * Returns a safe `process_name` value: the basename of the first whitespace-
  * delimited token, with trailing whitespace trimmed. This defeats both the
  * absolute-path PII leak (`/home/<user>/app.js`) and the argv-leak shape

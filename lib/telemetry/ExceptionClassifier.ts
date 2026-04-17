@@ -81,13 +81,17 @@ export default class ExceptionClassifier {
       return true;
     }
 
-    // Check for transient network errors (connection refused, DNS failure, host unreachable)
+    // Transient network errors. Notably does NOT include `ENOTFOUND`:
+    // DNS "not found" usually indicates a misconfigured host, not a transient
+    // fault. Retrying pushes load at the resolver without any expectation of
+    // success; circuit-breaker failure accounting is the better response.
     const errorCode = (error as any).code;
     if (
       errorCode === 'ECONNREFUSED' ||
-      errorCode === 'ENOTFOUND' ||
+      errorCode === 'ECONNRESET' ||
       errorCode === 'EHOSTUNREACH' ||
-      errorCode === 'ECONNRESET'
+      errorCode === 'ETIMEDOUT' ||
+      errorCode === 'EAI_AGAIN'
     ) {
       return true;
     }

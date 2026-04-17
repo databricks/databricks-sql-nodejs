@@ -176,10 +176,13 @@ describe('ExceptionClassifier', () => {
         expect(ExceptionClassifier.isRetryable(error)).to.be.true;
       });
 
-      it('should identify ENOTFOUND as retryable', () => {
+      it('should NOT identify ENOTFOUND as retryable (likely misconfigured host)', () => {
+        // DNS "not found" is deterministic; retrying just pushes load at
+        // the resolver without any expectation of success. Breaker records
+        // it as a failure and moves on.
         const error = new Error('getaddrinfo ENOTFOUND host.example.com');
         (error as any).code = 'ENOTFOUND';
-        expect(ExceptionClassifier.isRetryable(error)).to.be.true;
+        expect(ExceptionClassifier.isRetryable(error)).to.be.false;
       });
 
       it('should identify EHOSTUNREACH as retryable', () => {
@@ -191,6 +194,19 @@ describe('ExceptionClassifier', () => {
       it('should identify ECONNRESET as retryable', () => {
         const error = new Error('read ECONNRESET');
         (error as any).code = 'ECONNRESET';
+        expect(ExceptionClassifier.isRetryable(error)).to.be.true;
+      });
+
+      it('should identify ETIMEDOUT as retryable', () => {
+        const error = new Error('connect ETIMEDOUT');
+        (error as any).code = 'ETIMEDOUT';
+        expect(ExceptionClassifier.isRetryable(error)).to.be.true;
+      });
+
+      it('should identify EAI_AGAIN as retryable', () => {
+        // getaddrinfo EAI_AGAIN is a temporary DNS lookup failure (unlike ENOTFOUND).
+        const error = new Error('getaddrinfo EAI_AGAIN host.example.com');
+        (error as any).code = 'EAI_AGAIN';
         expect(ExceptionClassifier.isRetryable(error)).to.be.true;
       });
     });
