@@ -191,8 +191,11 @@ describe('redactSensitive', () => {
   });
 
   it('redacts realistic JWT', () => {
-    // Built from parts so the full token never appears as a source literal —
-    // otherwise secret scanners flag the test file itself.
+    // This is NOT a real token — it's a synthetic JWT-shaped string built
+    // from harmless segments purely to exercise the regex. Constructed by
+    // string concatenation so the assembled token never appears as a
+    // source literal (otherwise pre-commit secret scanners, rightly, flag
+    // the test file itself).
     const header = `${'eyJ'}hbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9`;
     const payload = `${'eyJ'}zdWIiOiJ0ZXN0LXN1YmplY3QifQ`;
     const signature = 'Ab-123_xyz456_abcDEF789';
