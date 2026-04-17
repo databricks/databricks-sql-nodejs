@@ -31,7 +31,7 @@ import IOperation from './contracts/IOperation';
 import DBSQLOperation from './DBSQLOperation';
 import Status from './dto/Status';
 import InfoValue from './dto/InfoValue';
-import { definedOrError, LZ4, ProtocolVersion } from './utils';
+import { definedOrError, LZ4, ProtocolVersion, serializeQueryTags } from './utils';
 import CloseableCollection from './utils/CloseableCollection';
 import { LogLevel } from './contracts/IDBSQLLogger';
 import HiveDriverError from './errors/HiveDriverError';
@@ -225,6 +225,11 @@ export default class DBSQLSession implements IDBSQLSession {
 
     if (ProtocolVersion.supportsParameterizedQueries(this.serverProtocolVersion)) {
       request.parameters = getQueryParameters(options.namedParameters, options.ordinalParameters);
+    }
+
+    const serializedQueryTags = serializeQueryTags(options.queryTags);
+    if (serializedQueryTags !== undefined) {
+      request.confOverlay = { ...request.confOverlay, query_tags: serializedQueryTags };
     }
 
     if (ProtocolVersion.supportsCloudFetch(this.serverProtocolVersion)) {
