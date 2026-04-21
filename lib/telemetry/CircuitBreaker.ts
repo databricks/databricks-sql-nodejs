@@ -17,41 +17,48 @@
 import IClientContext from '../contracts/IClientContext';
 import { LogLevel } from '../contracts/IDBSQLLogger';
 
+/**
+ * States of the circuit breaker.
+ */
 export enum CircuitBreakerState {
+  /** Normal operation, requests pass through */
   CLOSED = 'CLOSED',
+  /** After threshold failures, all requests rejected immediately */
   OPEN = 'OPEN',
+  /** After timeout, allows test requests to check if endpoint recovered */
   HALF_OPEN = 'HALF_OPEN',
 }
 
+/**
+ * Configuration for circuit breaker behavior.
+ */
 export interface CircuitBreakerConfig {
+  /** Number of consecutive failures before opening the circuit */
   failureThreshold: number;
+  /** Time in milliseconds to wait before attempting recovery */
   timeout: number;
+  /** Number of consecutive successes in HALF_OPEN state to close the circuit */
   successThreshold: number;
 }
 
-export const DEFAULT_CIRCUIT_BREAKER_CONFIG: Readonly<CircuitBreakerConfig> = Object.freeze({
+/**
+ * Default circuit breaker configuration.
+ */
+export const DEFAULT_CIRCUIT_BREAKER_CONFIG: CircuitBreakerConfig = {
   failureThreshold: 5,
-  timeout: 60000,
+  timeout: 60000, // 1 minute
   successThreshold: 2,
-});
-
-export const CIRCUIT_BREAKER_OPEN_CODE = 'CIRCUIT_BREAKER_OPEN' as const;
+};
 
 /**
- * Thrown when execute() is called while the breaker is OPEN or a HALF_OPEN
- * probe is already in flight. Callers identify the condition via
- * `instanceof CircuitBreakerOpenError` or `err.code === CIRCUIT_BREAKER_OPEN_CODE`
- * rather than string-matching the message.
+ * Circuit breaker for telemetry exporter.
+ * Protects against failing telemetry endpoint with automatic recovery.
+ *
+ * States:
+ * - CLOSED: Normal operation, requests pass through
+ * - OPEN: After threshold failures, all requests rejected immediately
+ * - HALF_OPEN: After timeout, allows test requests to check if endpoint recovered
  */
-export class CircuitBreakerOpenError extends Error {
-  readonly code = CIRCUIT_BREAKER_OPEN_CODE;
-
-  constructor(message = 'Circuit breaker OPEN') {
-    super(message);
-    this.name = 'CircuitBreakerOpenError';
-  }
-}
-
 export class CircuitBreaker {
   private state: CircuitBreakerState = CircuitBreakerState.CLOSED;
 
@@ -61,6 +68,7 @@ export class CircuitBreaker {
 
   private nextAttempt?: Date;
 
+  /** Number of in-flight requests in HALF_OPEN state (limits to 1 probe) */
   private halfOpenInflight = 0;
 
   private readonly config: CircuitBreakerConfig;
@@ -72,13 +80,36 @@ export class CircuitBreaker {
     };
   }
 
+  /**
+   * Executes an operation with circuit breaker protection.
+   *
+   * @param operation The operation to execute
+   * @returns Promise resolving to the operation result
+   * @throws Error if circuit is OPEN or operation fails
+   */
   async execute<T>(operation: () => Promise<T>): Promise<T> {
-    const admitted = this.tryAdmit();
-    if (!admitted) {
-      throw new CircuitBreakerOpenError();
+    const logger = this.context.getLogger();
+
+    // Check if circuit is open
+    if (this.state === CircuitBreakerState.OPEN) {
+      if (this.nextAttempt && Date.now() < this.nextAttempt.getTime()) {
+        throw new Error('Circuit breaker OPEN');
+      }
+      // Timeout expired, transition to HALF_OPEN
+      this.state = CircuitBreakerState.HALF_OPEN;
+      this.successCount = 0;
+      this.halfOpenInflight = 0;
+      logger.log(LogLevel.debug, 'Circuit breaker transitioned to HALF_OPEN');
     }
 
-    const { wasHalfOpenProbe } = admitted;
+    // In HALF_OPEN state, allow only one probe request at a time
+    if (this.state === CircuitBreakerState.HALF_OPEN && this.halfOpenInflight > 0) {
+      throw new Error('Circuit breaker OPEN');
+    }
+
+    if (this.state === CircuitBreakerState.HALF_OPEN) {
+      this.halfOpenInflight += 1;
+    }
 
     try {
       const result = await operation();
@@ -88,60 +119,40 @@ export class CircuitBreaker {
       this.onFailure();
       throw error;
     } finally {
-      if (wasHalfOpenProbe && this.halfOpenInflight > 0) {
+      if (this.halfOpenInflight > 0) {
         this.halfOpenInflight -= 1;
       }
     }
   }
 
   /**
-   * Synchronous admission check. Returning `null` means "reject". Returning
-   * an object means the caller is admitted; `wasHalfOpenProbe` indicates
-   * whether this admission consumed the single HALF_OPEN probe slot so the
-   * caller can decrement it in `finally`.
-   *
-   * Running this as a single synchronous block is what prevents the
-   * concurrent-probe race that existed in the previous implementation.
+   * Gets the current state of the circuit breaker.
    */
-  private tryAdmit(): { wasHalfOpenProbe: boolean } | null {
-    const logger = this.context.getLogger();
-
-    if (this.state === CircuitBreakerState.OPEN) {
-      if (this.nextAttempt && Date.now() < this.nextAttempt.getTime()) {
-        return null;
-      }
-      this.state = CircuitBreakerState.HALF_OPEN;
-      this.successCount = 0;
-      this.halfOpenInflight = 0;
-      logger.log(LogLevel.debug, 'Circuit breaker transitioned to HALF_OPEN');
-    }
-
-    if (this.state === CircuitBreakerState.HALF_OPEN) {
-      if (this.halfOpenInflight > 0) {
-        return null;
-      }
-      this.halfOpenInflight += 1;
-      return { wasHalfOpenProbe: true };
-    }
-
-    return { wasHalfOpenProbe: false };
-  }
-
   getState(): CircuitBreakerState {
     return this.state;
   }
 
+  /**
+   * Gets the current failure count.
+   */
   getFailureCount(): number {
     return this.failureCount;
   }
 
+  /**
+   * Gets the current success count (relevant in HALF_OPEN state).
+   */
   getSuccessCount(): number {
     return this.successCount;
   }
 
+  /**
+   * Handles successful operation execution.
+   */
   private onSuccess(): void {
     const logger = this.context.getLogger();
 
+    // Reset failure count on any success
     this.failureCount = 0;
 
     if (this.state === CircuitBreakerState.HALF_OPEN) {
@@ -152,6 +163,7 @@ export class CircuitBreaker {
       );
 
       if (this.successCount >= this.config.successThreshold) {
+        // Transition to CLOSED
         this.state = CircuitBreakerState.CLOSED;
         this.successCount = 0;
         this.nextAttempt = undefined;
@@ -160,17 +172,23 @@ export class CircuitBreaker {
     }
   }
 
+  /**
+   * Handles failed operation execution.
+   */
   private onFailure(): void {
     const logger = this.context.getLogger();
 
     this.failureCount += 1;
-    this.successCount = 0;
+    this.successCount = 0; // Reset success count on failure
 
     logger.log(LogLevel.debug, `Circuit breaker failure (${this.failureCount}/${this.config.failureThreshold})`);
 
+    // In HALF_OPEN state, any failure immediately reopens the circuit.
+    // In CLOSED state, reopen only after failureThreshold consecutive failures.
     if (this.state === CircuitBreakerState.HALF_OPEN || this.failureCount >= this.config.failureThreshold) {
       this.state = CircuitBreakerState.OPEN;
       this.nextAttempt = new Date(Date.now() + this.config.timeout);
+      // Log at warn level for OPEN transitions — meaningful operational signal
       logger.log(
         LogLevel.warn,
         `Telemetry circuit breaker OPEN after ${this.failureCount} failures (will retry after ${this.config.timeout}ms)`,
@@ -179,6 +197,11 @@ export class CircuitBreaker {
   }
 }
 
+/**
+ * Manages circuit breakers per host.
+ * Ensures each host has its own isolated circuit breaker to prevent
+ * failures on one host from affecting telemetry to other hosts.
+ */
 export class CircuitBreakerRegistry {
   private breakers: Map<string, CircuitBreaker>;
 
@@ -186,6 +209,13 @@ export class CircuitBreakerRegistry {
     this.breakers = new Map();
   }
 
+  /**
+   * Gets or creates a circuit breaker for the specified host.
+   *
+   * @param host The host identifier (e.g., "workspace.cloud.databricks.com")
+   * @param config Optional configuration overrides
+   * @returns Circuit breaker for the host
+   */
   getCircuitBreaker(host: string, config?: Partial<CircuitBreakerConfig>): CircuitBreaker {
     let breaker = this.breakers.get(host);
     if (!breaker) {
@@ -200,16 +230,30 @@ export class CircuitBreakerRegistry {
     return breaker;
   }
 
+  /**
+   * Gets all registered circuit breakers.
+   * Useful for testing and diagnostics.
+   */
   getAllBreakers(): Map<string, CircuitBreaker> {
     return new Map(this.breakers);
   }
 
+  /**
+   * Removes a circuit breaker for the specified host.
+   * Useful for cleanup when a host is no longer in use.
+   *
+   * @param host The host identifier
+   */
   removeCircuitBreaker(host: string): void {
     this.breakers.delete(host);
     const logger = this.context.getLogger();
     logger.log(LogLevel.debug, `Removed circuit breaker for host: ${host}`);
   }
 
+  /**
+   * Clears all circuit breakers.
+   * Useful for testing.
+   */
   clear(): void {
     this.breakers.clear();
   }

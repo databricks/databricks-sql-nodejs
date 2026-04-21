@@ -1,3 +1,4 @@
+import { HeadersInit } from 'node-fetch';
 import IDBSQLLogger from './IDBSQLLogger';
 import IDriver from './IDriver';
 import IConnectionProvider from '../connection/contracts/IConnectionProvider';
@@ -28,16 +29,10 @@ export interface ClientConfig {
   telemetryBatchSize?: number;
   telemetryFlushIntervalMs?: number;
   telemetryMaxRetries?: number;
-  telemetryBackoffBaseMs?: number;
-  telemetryBackoffMaxMs?: number;
-  telemetryBackoffJitterMs?: number;
   telemetryAuthenticatedExport?: boolean;
   telemetryCircuitBreakerThreshold?: number;
   telemetryCircuitBreakerTimeout?: number;
   telemetryMaxPendingMetrics?: number;
-  telemetryMaxErrorsPerStatement?: number;
-  telemetryStatementTtlMs?: number;
-  userAgentEntry?: string;
 }
 
 export default interface IClientContext {
@@ -50,4 +45,11 @@ export default interface IClientContext {
   getClient(): Promise<IThriftClient>;
 
   getDriver(): Promise<IDriver>;
+
+  /**
+   * Gets authentication headers for HTTP requests.
+   * Used by telemetry and feature flag fetching to authenticate REST API calls.
+   * @returns Promise resolving to headers object with authentication, or empty object if no auth
+   */
+  getAuthHeaders(): Promise<HeadersInit>;
 }
