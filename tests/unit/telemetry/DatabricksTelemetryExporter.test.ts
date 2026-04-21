@@ -118,42 +118,32 @@ describe('DatabricksTelemetryExporter', () => {
   });
 
   describe('export() - retry logic', () => {
-    it('should retry on retryable HTTP errors (503)', async () => {
-      const context = new ClientContextStub({ telemetryMaxRetries: 2 } as any);
+    it('should invoke sendRequest once per export and delegate retry to connectionProvider.getRetryPolicy', async () => {
+      // Retry is now handled inside sendRequest via retryPolicy.invokeWithRetry (shared connection stack).
+      // From the exporter's perspective, sendRequest is one atomic call.
+      const context = new ClientContextStub();
       const registry = new CircuitBreakerRegistry(context);
       const exporter = new DatabricksTelemetryExporter(context, 'host.example.com', registry);
-      // Fail twice with 503, then succeed
-      const sendRequestStub = sinon
-        .stub(exporter as any, 'sendRequest')
-        .onFirstCall()
-        .returns(makeErrorResponse(503, 'Service Unavailable'))
-        .onSecondCall()
-        .returns(makeErrorResponse(503, 'Service Unavailable'))
-        .onThirdCall()
-        .returns(makeOkResponse());
+      const sendRequestStub = sinon.stub(exporter as any, 'sendRequest').returns(makeOkResponse());
 
-      // Advance fake timers automatically for sleep calls
-      const exportPromise = exporter.export([makeMetric()]);
-      await clock.runAllAsync();
-      await exportPromise;
+      await exporter.export([makeMetric()]);
 
-      expect(sendRequestStub.callCount).to.equal(3);
+      expect(sendRequestStub.callCount).to.equal(1);
     });
 
     it('should not retry on terminal HTTP errors (400)', async () => {
-      const context = new ClientContextStub({ telemetryMaxRetries: 3 } as any);
+      const context = new ClientContextStub();
       const registry = new CircuitBreakerRegistry(context);
       const exporter = new DatabricksTelemetryExporter(context, 'host.example.com', registry);
       const sendRequestStub = sinon.stub(exporter as any, 'sendRequest').returns(makeErrorResponse(400, 'Bad Request'));
 
       await exporter.export([makeMetric()]);
 
-      // Only one call — no retry on terminal error
       expect(sendRequestStub.callCount).to.equal(1);
     });
 
     it('should not retry on terminal HTTP errors (401)', async () => {
-      const context = new ClientContextStub({ telemetryMaxRetries: 3 } as any);
+      const context = new ClientContextStub();
       const registry = new CircuitBreakerRegistry(context);
       const exporter = new DatabricksTelemetryExporter(context, 'host.example.com', registry);
       const sendRequestStub = sinon
@@ -165,20 +155,19 @@ describe('DatabricksTelemetryExporter', () => {
       expect(sendRequestStub.callCount).to.equal(1);
     });
 
-    it('should give up after maxRetries are exhausted', async () => {
-      const context = new ClientContextStub({ telemetryMaxRetries: 2 } as any);
+    it('should swallow all errors when sendRequest fails after retries are exhausted', async () => {
+      const context = new ClientContextStub();
       const registry = new CircuitBreakerRegistry(context);
       const exporter = new DatabricksTelemetryExporter(context, 'host.example.com', registry);
-      const sendRequestStub = sinon
-        .stub(exporter as any, 'sendRequest')
-        .returns(makeErrorResponse(503, 'Service Unavailable'));
+      sinon.stub(exporter as any, 'sendRequest').returns(makeErrorResponse(503, 'Service Unavailable'));
 
-      const exportPromise = exporter.export([makeMetric()]);
-      await clock.runAllAsync();
-      await exportPromise;
-
-      // 1 initial + 2 retries = 3 total calls
-      expect(sendRequestStub.callCount).to.equal(3);
+      let threw = false;
+      try {
+        await exporter.export([makeMetric()]);
+      } catch {
+        threw = true;
+      }
+      expect(threw).to.be.false;
     });
   });
 

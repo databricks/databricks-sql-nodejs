@@ -60,6 +60,8 @@ export default class MetricsAggregator {
 
   private flushTimer: NodeJS.Timeout | null = null;
 
+  private closing: boolean = false;
+
   private batchSize: number;
 
   private flushIntervalMs: number;
@@ -170,7 +172,7 @@ export default class MetricsAggregator {
       }
 
       // Flush immediately for terminal errors
-      this.flush();
+      void this.flush();
     } else if (event.statementId) {
       // Retryable error - buffer until statement complete
       const details = this.getOrCreateStatementDetails(event);
@@ -305,23 +307,24 @@ export default class MetricsAggregator {
       );
     }
 
-    // Check if batch size reached
-    if (this.pendingMetrics.length >= this.batchSize) {
-      this.flush();
+    // Don't batch-flush during close; close() will do a single awaited flush
+    if (!this.closing && this.pendingMetrics.length >= this.batchSize) {
+      void this.flush();
     }
   }
 
   /**
    * Flush all pending metrics to exporter. Never throws.
+   * Returns the export promise so callers can await it (e.g. close()).
    *
    * @param resetTimer If true, resets the flush timer after flushing (default: true)
    */
-  flush(resetTimer: boolean = true): void {
+  flush(resetTimer: boolean = true): Promise<void> {
     const logger = this.context.getLogger();
 
     try {
       if (this.pendingMetrics.length === 0) {
-        return;
+        return Promise.resolve();
       }
 
       const metricsToExport = [...this.pendingMetrics];
@@ -329,20 +332,19 @@ export default class MetricsAggregator {
 
       logger.log(LogLevel.debug, `Flushing ${metricsToExport.length} telemetry metrics`);
 
-      // Export metrics - exporter.export is designed to never throw, but add safety catch
-      // to prevent unhandled promise rejections from crashing the process (Node.js 15+)
-      Promise.resolve(this.exporter.export(metricsToExport)).catch((err: any) => {
+      const exportPromise = this.exporter.export(metricsToExport).catch((err: any) => {
         logger.log(LogLevel.debug, `Unexpected export error: ${err?.message}`);
       });
 
-      // Reset timer to avoid rapid successive flushes (e.g., batch flush at 25s then timer flush at 30s)
-      // This ensures consistent spacing between exports and helps avoid rate limiting
       if (resetTimer) {
         this.startFlushTimer();
       }
+
+      return exportPromise;
     } catch (error: any) {
       // CRITICAL: All exceptions swallowed and logged at debug level ONLY
       logger.log(LogLevel.debug, `MetricsAggregator.flush error: ${error.message}`);
+      return Promise.resolve();
     }
   }
 
@@ -358,8 +360,7 @@ export default class MetricsAggregator {
       }
 
       this.flushTimer = setInterval(() => {
-        // Don't reset timer when flush is triggered by the timer itself
-        this.flush(false);
+        void this.flush(false);
       }, this.flushIntervalMs);
 
       // Prevent timer from keeping Node.js process alive
@@ -373,24 +374,26 @@ export default class MetricsAggregator {
   /**
    * Close the aggregator and flush remaining metrics. Never throws.
    */
-  close(): void {
+  async close(): Promise<void> {
     const logger = this.context.getLogger();
 
     try {
-      // Stop flush timer
+      this.closing = true;
+
       if (this.flushTimer) {
         clearInterval(this.flushTimer);
         this.flushTimer = null;
       }
 
-      // Complete any remaining statements (snapshot keys to avoid mutation during iteration)
+      // Complete remaining statements; addPendingMetric won't trigger intermediate
+      // batch flushes while this.closing is true (avoids fire-and-forget promises
+      // escaping past the awaited flush below).
       const remainingStatements = [...this.statementMetrics.keys()];
       for (const statementId of remainingStatements) {
         this.completeStatement(statementId);
       }
 
-      // Final flush - don't reset timer since we're closing
-      this.flush(false);
+      await this.flush(false);
     } catch (error: any) {
       // CRITICAL: All exceptions swallowed and logged at debug level ONLY
       logger.log(LogLevel.debug, `MetricsAggregator.close error: ${error.message}`);

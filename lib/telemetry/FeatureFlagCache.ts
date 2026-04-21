@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import fetch from 'node-fetch';
+import fetch, { Request, RequestInit } from 'node-fetch';
 import IClientContext from '../contracts/IClientContext';
 import { LogLevel } from '../contracts/IDBSQLLogger';
 import buildTelemetryUrl from './telemetryUtils';
@@ -147,21 +147,26 @@ export default class FeatureFlagCache {
 
       logger.log(LogLevel.debug, `Fetching feature flags from ${endpoint}`);
 
-      // Get agent with proxy settings (same pattern as CloudFetchResultHandler and DBSQLSession)
       const connectionProvider = await this.context.getConnectionProvider();
       const agent = await connectionProvider.getAgent();
+      const retryPolicy = await connectionProvider.getRetryPolicy();
 
-      // Make HTTP GET request with authentication and proxy support
-      const response = await fetch(endpoint, {
+      const requestConfig: RequestInit = {
         method: 'GET',
         headers: {
           ...authHeaders,
           'Content-Type': 'application/json',
           'User-Agent': `databricks-sql-nodejs/${driverVersion}`,
         },
-        agent, // Include agent for proxy support
-        timeout: 10000, // 10 second timeout to prevent indefinite hangs
+        agent,
+        timeout: 10000,
+      };
+
+      const result = await retryPolicy.invokeWithRetry(() => {
+        const request = new Request(endpoint, requestConfig);
+        return fetch(request).then((response) => ({ request, response }));
       });
+      const response = result.response;
 
       if (!response.ok) {
         // Consume response body to release socket back to connection pool

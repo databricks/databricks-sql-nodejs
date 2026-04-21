@@ -15,12 +15,11 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
-import fetch, { Response, RequestInit } from 'node-fetch';
+import fetch, { Response, RequestInit, Request } from 'node-fetch';
 import IClientContext from '../contracts/IClientContext';
 import { LogLevel } from '../contracts/IDBSQLLogger';
 import { TelemetryMetric, DEFAULT_TELEMETRY_CONFIG } from './types';
 import { CircuitBreaker, CircuitBreakerRegistry } from './CircuitBreaker';
-import ExceptionClassifier from './ExceptionClassifier';
 import buildTelemetryUrl from './telemetryUtils';
 import driverVersion from '../version';
 
@@ -128,7 +127,7 @@ export default class DatabricksTelemetryExporter {
 
     try {
       await this.circuitBreaker.execute(async () => {
-        await this.exportWithRetry(metrics);
+        await this.exportInternal(metrics);
       });
     } catch (error: any) {
       // CRITICAL: All exceptions swallowed and logged at debug level ONLY
@@ -137,64 +136,6 @@ export default class DatabricksTelemetryExporter {
       } else {
         logger.log(LogLevel.debug, `Telemetry export error: ${error.message}`);
       }
-    }
-  }
-
-  /**
-   * Export metrics with retry logic for retryable errors.
-   * Implements exponential backoff with jitter.
-   */
-  private async exportWithRetry(metrics: TelemetryMetric[]): Promise<void> {
-    const config = this.context.getConfig();
-    const logger = this.context.getLogger();
-    const maxRetries = config.telemetryMaxRetries ?? DEFAULT_TELEMETRY_CONFIG.maxRetries;
-
-    let lastError: Error | null = null;
-
-    /* eslint-disable no-await-in-loop */
-    for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
-      try {
-        await this.exportInternal(metrics);
-        return; // Success
-      } catch (error: any) {
-        lastError = error;
-
-        // Check if error is terminal (don't retry)
-        if (ExceptionClassifier.isTerminal(error)) {
-          logger.log(LogLevel.debug, `Terminal error - no retry: ${error.message}`);
-          throw error; // Terminal error, propagate to circuit breaker
-        }
-
-        // Check if error is retryable
-        if (!ExceptionClassifier.isRetryable(error)) {
-          logger.log(LogLevel.debug, `Non-retryable error: ${error.message}`);
-          throw error; // Not retryable, propagate to circuit breaker
-        }
-
-        // Last attempt reached
-        if (attempt >= maxRetries) {
-          logger.log(LogLevel.debug, `Max retries reached (${maxRetries}): ${error.message}`);
-          throw error; // Max retries exhausted, propagate to circuit breaker
-        }
-
-        // Calculate backoff with exponential + jitter (100ms - 1000ms)
-        const baseDelay = Math.min(100 * 2 ** attempt, 1000);
-        const jitter = Math.random() * 100;
-        const delay = baseDelay + jitter;
-
-        logger.log(
-          LogLevel.debug,
-          `Retrying telemetry export (attempt ${attempt + 1}/${maxRetries}) after ${Math.round(delay)}ms`,
-        );
-
-        await this.sleep(delay);
-      }
-    }
-    /* eslint-enable no-await-in-loop */
-
-    // Should not reach here, but just in case
-    if (lastError) {
-      throw lastError;
     }
   }
 
@@ -265,13 +206,19 @@ export default class DatabricksTelemetryExporter {
   }
 
   /**
-   * Makes an HTTP request using the connection provider's agent for proxy support.
-   * Follows the same pattern as CloudFetchResultHandler and DBSQLSession.
+   * Makes an HTTP request through the shared connection stack (agent + retry policy),
+   * matching the CloudFetchResultHandler pattern.
    */
   private async sendRequest(url: string, init: RequestInit): Promise<Response> {
     const connectionProvider = await this.context.getConnectionProvider();
     const agent = await connectionProvider.getAgent();
-    return fetch(url, { ...init, agent });
+    const retryPolicy = await connectionProvider.getRetryPolicy();
+    const requestConfig: RequestInit = { agent, ...init };
+    const result = await retryPolicy.invokeWithRetry(() => {
+      const request = new Request(url, requestConfig);
+      return fetch(request).then((response) => ({ request, response }));
+    });
+    return result.response;
   }
 
   /**
@@ -348,14 +295,5 @@ export default class DatabricksTelemetryExporter {
    */
   private getDriverVersion(): string {
     return driverVersion;
-  }
-
-  /**
-   * Sleep for the specified number of milliseconds.
-   */
-  private sleep(ms: number): Promise<void> {
-    return new Promise((resolve) => {
-      setTimeout(resolve, ms);
-    });
   }
 }
