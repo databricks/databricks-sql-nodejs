@@ -48,24 +48,16 @@ class TelemetryClient {
    * Closes the telemetry client and releases resources.
    * Should only be called by TelemetryClientProvider when reference count reaches zero.
    */
-  async close(): Promise<void> {
+  close(): void {
     if (this.closed) {
       return;
     }
-
     try {
-      const logger = this.context.getLogger();
-      logger.log(LogLevel.debug, `Closing TelemetryClient for host: ${this.host}`);
+      this.context.getLogger().log(LogLevel.debug, `Closing TelemetryClient for host: ${this.host}`);
+    } catch {
+      // swallow
+    } finally {
       this.closed = true;
-    } catch (error: any) {
-      // Swallow all exceptions per requirement
-      this.closed = true;
-      try {
-        const logger = this.context.getLogger();
-        logger.log(LogLevel.debug, `Error closing TelemetryClient: ${error.message}`);
-      } catch (logError: any) {
-        // If even logging fails, silently swallow
-      }
     }
   }
 }

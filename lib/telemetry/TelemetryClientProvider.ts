@@ -32,8 +32,9 @@ interface TelemetryClientHolder {
  * Prevents rate limiting by sharing clients across connections to the same host.
  * Instance-based (not singleton), stored in DBSQLClient.
  *
- * Pattern from JDBC TelemetryClientFactory.java:27 with
- * ConcurrentHashMap<String, TelemetryClientHolder>.
+ * Reference counts are incremented synchronously so there are no async races
+ * on the count itself. The map entry is deleted before awaiting close() so a
+ * concurrent getOrCreateClient call always gets a fresh instance.
  */
 class TelemetryClientProvider {
   private clients: Map<string, TelemetryClientHolder>;
@@ -79,7 +80,7 @@ class TelemetryClientProvider {
    *
    * @param host The host identifier
    */
-  async releaseClient(host: string): Promise<void> {
+  releaseClient(host: string): void {
     const logger = this.context.getLogger();
     const holder = this.clients.get(host);
 
@@ -98,7 +99,7 @@ class TelemetryClientProvider {
     if (holder.refCount <= 0) {
       this.clients.delete(host);
       try {
-        await holder.client.close();
+        holder.client.close();
         logger.log(LogLevel.debug, `Closed and removed TelemetryClient for host: ${host}`);
       } catch (error: any) {
         // Swallow all exceptions per requirement
@@ -108,11 +109,7 @@ class TelemetryClientProvider {
   }
 
   /**
-   * Gets the current reference count for a host's client.
-   * Useful for testing and diagnostics.
-   *
-   * @param host The host identifier
-   * @returns The reference count, or 0 if no client exists
+   * @internal Exposed for testing only.
    */
   getRefCount(host: string): number {
     const holder = this.clients.get(host);
@@ -120,8 +117,7 @@ class TelemetryClientProvider {
   }
 
   /**
-   * Gets all active clients.
-   * Useful for testing and diagnostics.
+   * @internal Exposed for testing only.
    */
   getActiveClients(): Map<string, TelemetryClient> {
     const result = new Map<string, TelemetryClient>();
