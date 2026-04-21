@@ -1,5 +1,9 @@
 # Release History
 
+## Unreleased
+
+- Fix Azure AD OAuth for tenant-specific and single-tenant Entra apps, and correct the scope resource: use the Databricks Azure Login App ID (not the tenant GUID) as the OAuth scope; route OIDC discovery to `login.microsoftonline.com/${azureTenantId}/` when `azureTenantId` is provided (fallback `/organizations/` preserved).
+
 ## 1.13.0
 
 - Add token federation support with custom token providers (databricks/databricks-sql-nodejs#318, databricks/databricks-sql-nodejs#319, databricks/databricks-sql-nodejs#320 by @madhav-db)
