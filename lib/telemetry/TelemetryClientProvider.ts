@@ -92,11 +92,13 @@ class TelemetryClientProvider {
     holder.refCount -= 1;
     logger.log(LogLevel.debug, `TelemetryClient reference count for ${host}: ${holder.refCount}`);
 
-    // Close and remove client when reference count reaches zero
+    // Close and remove client when reference count reaches zero.
+    // Delete from map before awaiting close so a concurrent getOrCreateClient
+    // creates a fresh client rather than receiving this closing one.
     if (holder.refCount <= 0) {
+      this.clients.delete(host);
       try {
         await holder.client.close();
-        this.clients.delete(host);
         logger.log(LogLevel.debug, `Closed and removed TelemetryClient for host: ${host}`);
       } catch (error: any) {
         // Swallow all exceptions per requirement
