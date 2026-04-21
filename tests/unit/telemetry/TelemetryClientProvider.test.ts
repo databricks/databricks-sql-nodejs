@@ -91,9 +91,7 @@ describe('TelemetryClientProvider', () => {
 
       provider.getOrCreateClient(HOST1);
 
-      expect(
-        logSpy.calledWith(LogLevel.debug, `Created new TelemetryClient for host: ${HOST1}`)
-      ).to.be.true;
+      expect(logSpy.calledWith(LogLevel.debug, `Created new TelemetryClient for host: ${HOST1}`)).to.be.true;
     });
 
     it('should log reference count at debug level', () => {
@@ -103,9 +101,7 @@ describe('TelemetryClientProvider', () => {
 
       provider.getOrCreateClient(HOST1);
 
-      expect(
-        logSpy.calledWith(LogLevel.debug, `TelemetryClient reference count for ${HOST1}: 1`)
-      ).to.be.true;
+      expect(logSpy.calledWith(LogLevel.debug, `TelemetryClient reference count for ${HOST1}: 1`)).to.be.true;
     });
 
     it('should pass context to TelemetryClient', () => {
@@ -184,8 +180,7 @@ describe('TelemetryClientProvider', () => {
 
       await provider.releaseClient(HOST1);
 
-      expect(logSpy.calledWith(LogLevel.debug, `No TelemetryClient found for host: ${HOST1}`)).to
-        .be.true;
+      expect(logSpy.calledWith(LogLevel.debug, `No TelemetryClient found for host: ${HOST1}`)).to.be.true;
     });
 
     it('should log reference count decrease at debug level', async () => {
@@ -198,9 +193,7 @@ describe('TelemetryClientProvider', () => {
 
       await provider.releaseClient(HOST1);
 
-      expect(
-        logSpy.calledWith(LogLevel.debug, `TelemetryClient reference count for ${HOST1}: 1`)
-      ).to.be.true;
+      expect(logSpy.calledWith(LogLevel.debug, `TelemetryClient reference count for ${HOST1}: 1`)).to.be.true;
     });
 
     it('should log client closure at debug level', async () => {
@@ -211,9 +204,7 @@ describe('TelemetryClientProvider', () => {
       provider.getOrCreateClient(HOST1);
       await provider.releaseClient(HOST1);
 
-      expect(
-        logSpy.calledWith(LogLevel.debug, `Closed and removed TelemetryClient for host: ${HOST1}`)
-      ).to.be.true;
+      expect(logSpy.calledWith(LogLevel.debug, `Closed and removed TelemetryClient for host: ${HOST1}`)).to.be.true;
     });
 
     it('should swallow errors during client closure', async () => {
@@ -227,9 +218,7 @@ describe('TelemetryClientProvider', () => {
 
       await provider.releaseClient(HOST1);
 
-      expect(
-        logSpy.calledWith(LogLevel.debug, `Error releasing TelemetryClient: ${error.message}`)
-      ).to.be.true;
+      expect(logSpy.calledWith(LogLevel.debug, `Error releasing TelemetryClient: ${error.message}`)).to.be.true;
     });
   });
 
@@ -388,9 +377,7 @@ describe('TelemetryClientProvider', () => {
 
       await provider.releaseClient(HOST1);
 
-      const errorLogs = logSpy
-        .getCalls()
-        .filter((call) => call.args[1].includes('Error releasing'));
+      const errorLogs = logSpy.getCalls().filter((call) => call.args[1].includes('Error releasing'));
       expect(errorLogs.length).to.be.greaterThan(0);
       errorLogs.forEach((call) => {
         expect(call.args[0]).to.equal(LogLevel.debug);

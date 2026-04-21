@@ -68,10 +68,7 @@ class TelemetryClientProvider {
 
     // Increment reference count
     holder.refCount += 1;
-    logger.log(
-      LogLevel.debug,
-      `TelemetryClient reference count for ${host}: ${holder.refCount}`
-    );
+    logger.log(LogLevel.debug, `TelemetryClient reference count for ${host}: ${holder.refCount}`);
 
     return holder.client;
   }
@@ -93,10 +90,7 @@ class TelemetryClientProvider {
 
     // Decrement reference count
     holder.refCount -= 1;
-    logger.log(
-      LogLevel.debug,
-      `TelemetryClient reference count for ${host}: ${holder.refCount}`
-    );
+    logger.log(LogLevel.debug, `TelemetryClient reference count for ${host}: ${holder.refCount}`);
 
     // Close and remove client when reference count reaches zero
     if (holder.refCount <= 0) {

@@ -48,5 +48,4 @@ export default class ClientContextStub implements IClientContext {
   public async getDriver(): Promise<IDriver> {
     return this.driver;
   }
-
 }
