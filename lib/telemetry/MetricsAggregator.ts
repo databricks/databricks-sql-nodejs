@@ -322,8 +322,6 @@ export default class MetricsAggregator {
     if (this.pendingMetrics.length >= this.batchSize && !this.closing) {
       // resetTimer=false so the periodic tail-drain keeps its cadence even
       // under sustained batch-size bursts.
-      // Suppressed during close() so fire-and-forget promises don't race past
-      // the single awaited flushForClose().
       const logger = this.context.getLogger();
       Promise.resolve(this.flush(false)).catch((err: any) => {
         logger.log(LogLevel.debug, `Batch-trigger flush failed: ${err?.message ?? err}`);
@@ -410,53 +408,27 @@ export default class MetricsAggregator {
 
   async close(): Promise<void> {
     const logger = this.context.getLogger();
-    this.closing = true;
-    this.closed = true;
 
     try {
+      // Suppress batch-triggered fire-and-forget flushes from addPendingMetric
+      // so no promises escape past the single awaited flush below.
+      this.closing = true;
+
       if (this.flushTimer) {
         clearInterval(this.flushTimer);
         this.flushTimer = null;
       }
 
-      // Snapshot keys — completeStatement mutates statementMetrics.
+      // closed is still false here so completeStatement → addPendingMetric works normally.
       const remainingStatements = [...this.statementMetrics.keys()];
       for (const statementId of remainingStatements) {
-        this.completeStatementForClose(statementId);
+        this.completeStatement(statementId);
       }
 
-      await this.flushForClose();
-
-      // Belt-and-braces: something the above awaited could in principle
-      // have resurrected a timer. Clear once more.
-      if (this.flushTimer) {
-        clearInterval(this.flushTimer);
-        this.flushTimer = null;
-      }
+      this.closed = true;
+      await this.flush(false);
     } catch (error: any) {
       logger.log(LogLevel.debug, `MetricsAggregator.close error: ${error.message}`);
-    }
-  }
-
-  /** completeStatement variant that bypasses the `closed` guard. */
-  private completeStatementForClose(statementId: string): void {
-    const prev = this.closed;
-    this.closed = false;
-    try {
-      this.completeStatement(statementId);
-    } finally {
-      this.closed = prev;
-    }
-  }
-
-  /** flush variant that bypasses the `closed` guard on addPendingMetric. */
-  private async flushForClose(): Promise<void> {
-    const prev = this.closed;
-    this.closed = false;
-    try {
-      await this.flush(false);
-    } finally {
-      this.closed = prev;
     }
   }
 }
