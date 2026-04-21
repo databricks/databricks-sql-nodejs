@@ -234,8 +234,7 @@ export default class DatabricksTelemetryExporter {
       protoLogs,
     };
 
-    // Get authentication headers if using authenticated endpoint
-    const authHeaders = authenticatedExport ? await this.context.getAuthHeaders() : {};
+    const authHeaders = authenticatedExport ? ((await this.context.getAuthProvider()?.authenticate()) ?? {}) : {};
 
     // Get agent with proxy settings (same pattern as CloudFetchResultHandler and DBSQLSession)
     const connectionProvider = await this.context.getConnectionProvider();

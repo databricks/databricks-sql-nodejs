@@ -17,7 +17,9 @@
 import { expect } from 'chai';
 import sinon from 'sinon';
 import {
+  CIRCUIT_BREAKER_OPEN_CODE,
   CircuitBreaker,
+  CircuitBreakerOpenError,
   CircuitBreakerRegistry,
   CircuitBreakerState,
   DEFAULT_CIRCUIT_BREAKER_CONFIG,
@@ -137,7 +139,7 @@ describe('CircuitBreaker', () => {
 
       expect(breaker.getState()).to.equal(CircuitBreakerState.OPEN);
       expect(breaker.getFailureCount()).to.equal(5);
-      expect(logSpy.calledWith(LogLevel.debug, sinon.match(/Circuit breaker transitioned to OPEN/))).to.be.true;
+      expect(logSpy.calledWith(LogLevel.warn, sinon.match(/Telemetry circuit breaker OPEN/))).to.be.true;
 
       logSpy.restore();
     });
@@ -171,7 +173,7 @@ describe('CircuitBreaker', () => {
         } catch {}
       }
 
-      expect(logSpy.calledWith(LogLevel.debug, sinon.match(/Circuit breaker transitioned to OPEN/))).to.be.true;
+      expect(logSpy.calledWith(LogLevel.warn, sinon.match(/Telemetry circuit breaker OPEN/))).to.be.true;
 
       logSpy.restore();
     });
@@ -367,44 +369,100 @@ describe('CircuitBreaker', () => {
       expect(breaker.getState()).to.equal(CircuitBreakerState.CLOSED);
     });
 
-    it('should reopen if operation fails in HALF_OPEN state', async () => {
+    it('should reopen immediately if operation fails in HALF_OPEN state', async () => {
       const context = new ClientContextStub();
       const breaker = new CircuitBreaker(context);
 
       await openAndWaitForHalfOpen(breaker);
 
-      // First success
+      // First success moves to HALF_OPEN
       const successOp = sinon.stub().resolves('success');
       await breaker.execute(successOp);
       expect(breaker.getState()).to.equal(CircuitBreakerState.HALF_OPEN);
       expect(breaker.getSuccessCount()).to.equal(1);
 
-      // Failure should reset success count but not immediately open
+      // Any failure in HALF_OPEN immediately reopens the circuit
       const failOp = sinon.stub().rejects(new Error('Failed'));
       try {
         await breaker.execute(failOp);
       } catch {}
 
       expect(breaker.getSuccessCount()).to.equal(0); // Reset
-      expect(breaker.getFailureCount()).to.equal(1);
-      expect(breaker.getState()).to.equal(CircuitBreakerState.HALF_OPEN);
+      expect(breaker.getState()).to.equal(CircuitBreakerState.OPEN);
     });
 
-    it('should track failures and eventually reopen circuit', async () => {
+    it('should reopen immediately on first failure in HALF_OPEN state', async () => {
       const context = new ClientContextStub();
       const breaker = new CircuitBreaker(context);
 
       await openAndWaitForHalfOpen(breaker);
 
-      // Now in HALF_OPEN, fail 5 times to reopen
+      // A single failure in HALF_OPEN reopens immediately (not after threshold)
       const failOp = sinon.stub().rejects(new Error('Failed'));
-      for (let i = 0; i < 5; i++) {
-        try {
-          await breaker.execute(failOp);
-        } catch {}
-      }
+      try {
+        await breaker.execute(failOp);
+      } catch {}
 
       expect(breaker.getState()).to.equal(CircuitBreakerState.OPEN);
+    });
+  });
+
+  describe('HALF_OPEN concurrent-probe invariant', () => {
+    it('admits only one probe when two callers race after OPEN→HALF_OPEN transition', async () => {
+      clock.restore();
+      const context = new ClientContextStub();
+      const breaker = new CircuitBreaker(context, { failureThreshold: 1, timeout: 1, successThreshold: 1 });
+
+      // Trip to OPEN.
+      await breaker.execute(() => Promise.reject(new Error('boom'))).catch(() => {});
+      expect(breaker.getState()).to.equal(CircuitBreakerState.OPEN);
+
+      // Wait past the timeout so the next execute() flips to HALF_OPEN.
+      await new Promise((r) => setTimeout(r, 5));
+
+      // Hold the probe in-flight so the second caller races against it.
+      let releaseProbe: (() => void) | null = null;
+      const probeGate = new Promise<void>((res) => {
+        releaseProbe = res;
+      });
+
+      let probeRan = false;
+      let rejectedRan = false;
+
+      const first = breaker.execute(async () => {
+        probeRan = true;
+        await probeGate;
+      });
+
+      const second = breaker
+        .execute(async () => {
+          rejectedRan = true;
+        })
+        .catch((err) => err);
+
+      const secondResult = await second;
+      expect(probeRan).to.be.true;
+      expect(rejectedRan).to.be.false;
+      expect(secondResult).to.be.instanceOf(CircuitBreakerOpenError);
+
+      releaseProbe!();
+      await first;
+    });
+
+    it('throws CircuitBreakerOpenError with code when OPEN', async () => {
+      const context = new ClientContextStub();
+      const breaker = new CircuitBreaker(context, { failureThreshold: 1, timeout: 60_000, successThreshold: 1 });
+
+      await breaker.execute(() => Promise.reject(new Error('boom'))).catch(() => {});
+
+      let caught: any;
+      try {
+        await breaker.execute(async () => 1);
+      } catch (err) {
+        caught = err;
+      }
+      expect(caught).to.be.instanceOf(CircuitBreakerOpenError);
+      expect(caught.code).to.equal(CIRCUIT_BREAKER_OPEN_CODE);
     });
   });
 
@@ -422,7 +480,7 @@ describe('CircuitBreaker', () => {
         } catch {}
       }
 
-      expect(logSpy.calledWith(LogLevel.debug, sinon.match(/Circuit breaker transitioned to OPEN/))).to.be.true;
+      expect(logSpy.calledWith(LogLevel.warn, sinon.match(/Telemetry circuit breaker OPEN/))).to.be.true;
 
       // Wait for timeout
       clock.tick(60001);
@@ -438,9 +496,8 @@ describe('CircuitBreaker', () => {
 
       expect(logSpy.calledWith(LogLevel.debug, 'Circuit breaker transitioned to CLOSED')).to.be.true;
 
-      // Verify no console logging
+      // Verify no error-level logging; warn is expected for OPEN transitions
       expect(logSpy.neverCalledWith(LogLevel.error, sinon.match.any)).to.be.true;
-      expect(logSpy.neverCalledWith(LogLevel.warn, sinon.match.any)).to.be.true;
       expect(logSpy.neverCalledWith(LogLevel.info, sinon.match.any)).to.be.true;
 
       logSpy.restore();

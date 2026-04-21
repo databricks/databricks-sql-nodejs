@@ -63,7 +63,7 @@ describe('TelemetryClient', () => {
       const context = new ClientContextStub();
       const client = new TelemetryClient(context, HOST);
 
-      await client.close();
+      client.close();
 
       expect(client.isClosed()).to.be.true;
     });
@@ -74,7 +74,7 @@ describe('TelemetryClient', () => {
       const context = new ClientContextStub();
       const client = new TelemetryClient(context, HOST);
 
-      await client.close();
+      client.close();
 
       expect(client.isClosed()).to.be.true;
     });
@@ -84,7 +84,7 @@ describe('TelemetryClient', () => {
       const logSpy = sinon.spy(context.logger, 'log');
       const client = new TelemetryClient(context, HOST);
 
-      await client.close();
+      client.close();
 
       expect(logSpy.calledWith(LogLevel.debug, `Closing TelemetryClient for host: ${HOST}`)).to.be.true;
     });
@@ -94,10 +94,10 @@ describe('TelemetryClient', () => {
       const logSpy = sinon.spy(context.logger, 'log');
       const client = new TelemetryClient(context, HOST);
 
-      await client.close();
+      client.close();
       const firstCallCount = logSpy.callCount;
 
-      await client.close();
+      client.close();
 
       // Should not log again on second close
       expect(logSpy.callCount).to.equal(firstCallCount);
@@ -113,26 +113,20 @@ describe('TelemetryClient', () => {
       sinon.stub(context.logger, 'log').throws(error);
 
       // Should not throw
-      await client.close();
+      client.close();
       // If we get here without throwing, the test passes
       expect(true).to.be.true;
     });
 
-    it('should log errors at debug level only', async () => {
+    it('should still set closed when logger throws', () => {
       const context = new ClientContextStub();
       const client = new TelemetryClient(context, HOST);
-      const error = new Error('Test error');
 
-      // Stub logger to throw on first call, succeed on second
-      const logStub = sinon.stub(context.logger, 'log');
-      logStub.onFirstCall().throws(error);
-      logStub.onSecondCall().returns();
+      sinon.stub(context.logger, 'log').throws(new Error('Logger error'));
 
-      await client.close();
+      client.close();
 
-      // Second call should log the error at debug level
-      expect(logStub.secondCall.args[0]).to.equal(LogLevel.debug);
-      expect(logStub.secondCall.args[1]).to.include('Error closing TelemetryClient');
+      expect(client.isClosed()).to.be.true;
     });
   });
 
@@ -151,7 +145,7 @@ describe('TelemetryClient', () => {
       const logSpy = sinon.spy(context.logger, 'log');
       const client = new TelemetryClient(context, HOST);
 
-      await client.close();
+      client.close();
 
       logSpy.getCalls().forEach((call) => {
         expect(call.args[0]).to.equal(LogLevel.debug);

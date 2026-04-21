@@ -153,8 +153,7 @@ export default class FeatureFlagCache {
       // Build feature flags endpoint for Node.js driver
       const endpoint = buildUrl(host, `/api/2.0/connector-service/feature-flags/NODEJS/${version}`);
 
-      // Get authentication headers
-      const authHeaders = await this.context.getAuthHeaders();
+      const authHeaders = (await this.context.getAuthProvider()?.authenticate()) ?? {};
 
       logger.log(LogLevel.debug, `Fetching feature flags from ${endpoint}`);
 

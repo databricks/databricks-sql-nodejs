@@ -32,14 +32,17 @@ interface TelemetryClientHolder {
  * Prevents rate limiting by sharing clients across connections to the same host.
  * Instance-based (not singleton), stored in DBSQLClient.
  *
- * Pattern from JDBC TelemetryClientFactory.java:27 with
- * ConcurrentHashMap<String, TelemetryClientHolder>.
+ * Reference counts are incremented synchronously so there are no async races
+ * on the count itself. The map entry is deleted before awaiting close() so a
+ * concurrent getOrCreateClient call always gets a fresh instance.
  */
 class TelemetryClientProvider {
   private clients: Map<string, TelemetryClientHolder>;
 
   constructor(private context: IClientContext) {
     this.clients = new Map();
+    const logger = context.getLogger();
+    logger.log(LogLevel.debug, 'Created TelemetryClientProvider');
   }
 
   /**
@@ -50,6 +53,7 @@ class TelemetryClientProvider {
    * @returns The telemetry client for the host
    */
   getOrCreateClient(host: string): TelemetryClient {
+    const logger = this.context.getLogger();
     let holder = this.clients.get(host);
 
     if (!holder) {
@@ -60,10 +64,12 @@ class TelemetryClientProvider {
         refCount: 0,
       };
       this.clients.set(host, holder);
+      logger.log(LogLevel.debug, `Created new TelemetryClient for host: ${host}`);
     }
 
     // Increment reference count
     holder.refCount += 1;
+    logger.log(LogLevel.debug, `TelemetryClient reference count for ${host}: ${holder.refCount}`);
 
     return holder.client;
   }
@@ -74,36 +80,36 @@ class TelemetryClientProvider {
    *
    * @param host The host identifier
    */
-  async releaseClient(host: string): Promise<void> {
+  releaseClient(host: string): void {
     const logger = this.context.getLogger();
     const holder = this.clients.get(host);
 
     if (!holder) {
+      logger.log(LogLevel.debug, `No TelemetryClient found for host: ${host}`);
       return;
     }
 
     // Decrement reference count
     holder.refCount -= 1;
+    logger.log(LogLevel.debug, `TelemetryClient reference count for ${host}: ${holder.refCount}`);
 
-    // Close and remove client when reference count reaches zero
+    // Close and remove client when reference count reaches zero.
+    // Delete from map before awaiting close so a concurrent getOrCreateClient
+    // creates a fresh client rather than receiving this closing one.
     if (holder.refCount <= 0) {
+      this.clients.delete(host);
       try {
-        await holder.client.close();
-        this.clients.delete(host);
-        logger.log(LogLevel.debug, 'Telemetry: closed');
+        holder.client.close();
+        logger.log(LogLevel.debug, `Closed and removed TelemetryClient for host: ${host}`);
       } catch (error: any) {
         // Swallow all exceptions per requirement
-        logger.log(LogLevel.debug, `Telemetry close error: ${error.message}`);
+        logger.log(LogLevel.debug, `Error releasing TelemetryClient: ${error.message}`);
       }
     }
   }
 
   /**
-   * Gets the current reference count for a host's client.
-   * Useful for testing and diagnostics.
-   *
-   * @param host The host identifier
-   * @returns The reference count, or 0 if no client exists
+   * @internal Exposed for testing only.
    */
   getRefCount(host: string): number {
     const holder = this.clients.get(host);
@@ -111,8 +117,7 @@ class TelemetryClientProvider {
   }
 
   /**
-   * Gets all active clients.
-   * Useful for testing and diagnostics.
+   * @internal Exposed for testing only.
    */
   getActiveClients(): Map<string, TelemetryClient> {
     const result = new Map<string, TelemetryClient>();

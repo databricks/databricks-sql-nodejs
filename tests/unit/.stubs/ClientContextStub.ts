@@ -1,9 +1,9 @@
-import { HeadersInit } from 'node-fetch';
 import IClientContext, { ClientConfig } from '../../../lib/contracts/IClientContext';
 import IConnectionProvider from '../../../lib/connection/contracts/IConnectionProvider';
 import IDriver from '../../../lib/contracts/IDriver';
 import IThriftClient from '../../../lib/contracts/IThriftClient';
 import IDBSQLLogger from '../../../lib/contracts/IDBSQLLogger';
+import IAuthentication from '../../../lib/connection/contracts/IAuthentication';
 import DBSQLClient from '../../../lib/DBSQLClient';
 
 import LoggerStub from './LoggerStub';
@@ -50,7 +50,7 @@ export default class ClientContextStub implements IClientContext {
     return this.driver;
   }
 
-  public async getAuthHeaders(): Promise<HeadersInit> {
-    return {};
+  public getAuthProvider(): IAuthentication | undefined {
+    return undefined;
   }
 }

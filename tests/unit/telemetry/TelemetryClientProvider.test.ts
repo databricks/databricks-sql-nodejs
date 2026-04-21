@@ -124,10 +124,10 @@ describe('TelemetryClientProvider', () => {
       provider.getOrCreateClient(HOST1);
       expect(provider.getRefCount(HOST1)).to.equal(3);
 
-      await provider.releaseClient(HOST1);
+      provider.releaseClient(HOST1);
       expect(provider.getRefCount(HOST1)).to.equal(2);
 
-      await provider.releaseClient(HOST1);
+      provider.releaseClient(HOST1);
       expect(provider.getRefCount(HOST1)).to.equal(1);
     });
 
@@ -138,7 +138,7 @@ describe('TelemetryClientProvider', () => {
       const client = provider.getOrCreateClient(HOST1);
       const closeSpy = sinon.spy(client, 'close');
 
-      await provider.releaseClient(HOST1);
+      provider.releaseClient(HOST1);
 
       expect(closeSpy.calledOnce).to.be.true;
       expect(client.isClosed()).to.be.true;
@@ -151,7 +151,7 @@ describe('TelemetryClientProvider', () => {
       provider.getOrCreateClient(HOST1);
       expect(provider.getActiveClients().size).to.equal(1);
 
-      await provider.releaseClient(HOST1);
+      provider.releaseClient(HOST1);
 
       expect(provider.getActiveClients().size).to.equal(0);
       expect(provider.getRefCount(HOST1)).to.equal(0);
@@ -166,7 +166,7 @@ describe('TelemetryClientProvider', () => {
       provider.getOrCreateClient(HOST1);
       const closeSpy = sinon.spy(client, 'close');
 
-      await provider.releaseClient(HOST1);
+      provider.releaseClient(HOST1);
 
       expect(closeSpy.called).to.be.false;
       expect(client.isClosed()).to.be.false;
@@ -178,7 +178,7 @@ describe('TelemetryClientProvider', () => {
       const provider = new TelemetryClientProvider(context);
       const logSpy = sinon.spy(context.logger, 'log');
 
-      await provider.releaseClient(HOST1);
+      provider.releaseClient(HOST1);
 
       expect(logSpy.calledWith(LogLevel.debug, `No TelemetryClient found for host: ${HOST1}`)).to.be.true;
     });
@@ -191,7 +191,7 @@ describe('TelemetryClientProvider', () => {
       provider.getOrCreateClient(HOST1);
       provider.getOrCreateClient(HOST1);
 
-      await provider.releaseClient(HOST1);
+      provider.releaseClient(HOST1);
 
       expect(logSpy.calledWith(LogLevel.debug, `TelemetryClient reference count for ${HOST1}: 1`)).to.be.true;
     });
@@ -202,7 +202,7 @@ describe('TelemetryClientProvider', () => {
       const logSpy = sinon.spy(context.logger, 'log');
 
       provider.getOrCreateClient(HOST1);
-      await provider.releaseClient(HOST1);
+      provider.releaseClient(HOST1);
 
       expect(logSpy.calledWith(LogLevel.debug, `Closed and removed TelemetryClient for host: ${HOST1}`)).to.be.true;
     });
@@ -213,10 +213,10 @@ describe('TelemetryClientProvider', () => {
 
       const client = provider.getOrCreateClient(HOST1);
       const error = new Error('Close error');
-      sinon.stub(client, 'close').rejects(error);
+      sinon.stub(client, 'close').throws(error);
       const logSpy = sinon.spy(context.logger, 'log');
 
-      await provider.releaseClient(HOST1);
+      provider.releaseClient(HOST1);
 
       expect(logSpy.calledWith(LogLevel.debug, `Error releasing TelemetryClient: ${error.message}`)).to.be.true;
     });
@@ -236,7 +236,7 @@ describe('TelemetryClientProvider', () => {
       expect(provider.getRefCount(HOST1)).to.equal(2);
       expect(provider.getRefCount(HOST2)).to.equal(3);
 
-      await provider.releaseClient(HOST1);
+      provider.releaseClient(HOST1);
 
       expect(provider.getRefCount(HOST1)).to.equal(1);
       expect(provider.getRefCount(HOST2)).to.equal(3);
@@ -250,15 +250,15 @@ describe('TelemetryClientProvider', () => {
       provider.getOrCreateClient(HOST1);
       const client2 = provider.getOrCreateClient(HOST2);
 
-      await provider.releaseClient(HOST1);
+      provider.releaseClient(HOST1);
       expect(client1.isClosed()).to.be.false;
       expect(provider.getActiveClients().size).to.equal(2);
 
-      await provider.releaseClient(HOST1);
+      provider.releaseClient(HOST1);
       expect(client1.isClosed()).to.be.true;
       expect(provider.getActiveClients().size).to.equal(1);
 
-      await provider.releaseClient(HOST2);
+      provider.releaseClient(HOST2);
       expect(client2.isClosed()).to.be.true;
       expect(provider.getActiveClients().size).to.equal(0);
     });
@@ -284,7 +284,7 @@ describe('TelemetryClientProvider', () => {
       const client1 = provider.getOrCreateClient(HOST1);
       const client2 = provider.getOrCreateClient(HOST2);
 
-      await provider.releaseClient(HOST1);
+      provider.releaseClient(HOST1);
 
       expect(client1.isClosed()).to.be.true;
       expect(client2.isClosed()).to.be.false;
@@ -343,7 +343,7 @@ describe('TelemetryClientProvider', () => {
       provider.getOrCreateClient(HOST1);
       provider.getOrCreateClient(HOST2);
 
-      await provider.releaseClient(HOST1);
+      provider.releaseClient(HOST1);
 
       const clients = provider.getActiveClients();
 
@@ -373,9 +373,9 @@ describe('TelemetryClientProvider', () => {
       const logSpy = sinon.spy(context.logger, 'log');
 
       const client = provider.getOrCreateClient(HOST1);
-      sinon.stub(client, 'close').rejects(new Error('Test error'));
+      sinon.stub(client, 'close').throws(new Error('Test error'));
 
-      await provider.releaseClient(HOST1);
+      provider.releaseClient(HOST1);
 
       const errorLogs = logSpy.getCalls().filter((call) => call.args[1].includes('Error releasing'));
       expect(errorLogs.length).to.be.greaterThan(0);

@@ -26,7 +26,8 @@ class TelemetryClient {
   private closed: boolean = false;
 
   constructor(private context: IClientContext, private host: string) {
-    // Client created silently
+    const logger = context.getLogger();
+    logger.log(LogLevel.debug, `Created TelemetryClient for host: ${host}`);
   }
 
   /**
@@ -47,22 +48,16 @@ class TelemetryClient {
    * Closes the telemetry client and releases resources.
    * Should only be called by TelemetryClientProvider when reference count reaches zero.
    */
-  async close(): Promise<void> {
+  close(): void {
     if (this.closed) {
       return;
     }
-
     try {
+      this.context.getLogger().log(LogLevel.debug, `Closing TelemetryClient for host: ${this.host}`);
+    } catch {
+      // swallow
+    } finally {
       this.closed = true;
-    } catch (error: any) {
-      // Swallow all exceptions per requirement
-      this.closed = true;
-      try {
-        const logger = this.context.getLogger();
-        logger.log(LogLevel.debug, `Telemetry close error: ${error.message}`);
-      } catch (logError: any) {
-        // If even logging fails, silently swallow
-      }
     }
   }
 }
