@@ -51,6 +51,8 @@ export default class MetricsAggregator {
 
   private closed = false;
 
+  private closing = false;
+
   private batchSize: number;
 
   private flushIntervalMs: number;
@@ -317,9 +319,11 @@ export default class MetricsAggregator {
       );
     }
 
-    if (this.pendingMetrics.length >= this.batchSize) {
+    if (this.pendingMetrics.length >= this.batchSize && !this.closing) {
       // resetTimer=false so the periodic tail-drain keeps its cadence even
       // under sustained batch-size bursts.
+      // Suppressed during close() so fire-and-forget promises don't race past
+      // the single awaited flushForClose().
       const logger = this.context.getLogger();
       Promise.resolve(this.flush(false)).catch((err: any) => {
         logger.log(LogLevel.debug, `Batch-trigger flush failed: ${err?.message ?? err}`);
@@ -406,6 +410,7 @@ export default class MetricsAggregator {
 
   async close(): Promise<void> {
     const logger = this.context.getLogger();
+    this.closing = true;
     this.closed = true;
 
     try {

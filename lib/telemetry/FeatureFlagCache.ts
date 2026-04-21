@@ -14,12 +14,11 @@
  * limitations under the License.
  */
 
-import fetch, { RequestInit, Response } from 'node-fetch';
+import fetch, { RequestInit, Response, Request } from 'node-fetch';
 import IClientContext from '../contracts/IClientContext';
 import { LogLevel } from '../contracts/IDBSQLLogger';
 import IAuthentication from '../connection/contracts/IAuthentication';
 import { buildTelemetryUrl, normalizeHeaders } from './telemetryUtils';
-import ExceptionClassifier from './ExceptionClassifier';
 import buildUserAgentString from '../utils/buildUserAgentString';
 import driverVersion from '../version';
 
@@ -193,20 +192,13 @@ export default class FeatureFlagCache {
   private async fetchWithRetry(url: string, init: RequestInit): Promise<Response> {
     const connectionProvider = await this.context.getConnectionProvider();
     const agent = await connectionProvider.getAgent();
-    const logger = this.context.getLogger();
-
-    try {
-      return await fetch(url, { ...init, agent });
-    } catch (err: any) {
-      if (!ExceptionClassifier.isRetryable(err)) {
-        throw err;
-      }
-      logger.log(LogLevel.debug, `Feature flag fetch retry after transient: ${err?.code ?? err?.message ?? err}`);
-      await new Promise((resolve) => {
-        setTimeout(resolve, 100 + Math.random() * 100);
-      });
-      return fetch(url, { ...init, agent });
-    }
+    const retryPolicy = await connectionProvider.getRetryPolicy();
+    const requestConfig: RequestInit = { agent, ...init };
+    const result = await retryPolicy.invokeWithRetry(() => {
+      const request = new Request(url, requestConfig);
+      return fetch(request).then((response) => ({ request, response }));
+    });
+    return result.response;
   }
 
   private async getAuthHeaders(): Promise<Record<string, string>> {
