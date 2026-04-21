@@ -1,5 +1,6 @@
 import os from 'os';
 import packageVersion from '../version';
+import detectAgent from './agentDetector';
 
 const productName = 'NodejsDatabricksSqlConnector';
 
@@ -27,5 +28,12 @@ export default function buildUserAgentString(userAgentEntry?: string): string {
   }
 
   const extra = [userAgentEntry, getNodeVersion(), getOperatingSystemVersion()].filter(Boolean);
-  return `${productName}/${packageVersion} (${extra.join('; ')})`;
+  let ua = `${productName}/${packageVersion} (${extra.join('; ')})`;
+
+  const agentProduct = detectAgent();
+  if (agentProduct) {
+    ua += ` agent/${agentProduct}`;
+  }
+
+  return ua;
 }

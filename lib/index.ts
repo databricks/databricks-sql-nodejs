@@ -23,6 +23,11 @@ import { LogLevel } from './contracts/IDBSQLLogger';
 // Re-export types for TypeScript users
 export type { default as ITokenProvider } from './connection/auth/tokenProvider/ITokenProvider';
 
+// Re-export telemetry error classes so consumers can instanceof-check rather
+// than string-matching error messages.
+export { CircuitBreakerOpenError, CIRCUIT_BREAKER_OPEN_CODE } from './telemetry/CircuitBreaker';
+export { TelemetryTerminalError } from './telemetry/DatabricksTelemetryExporter';
+
 export const auth = {
   PlainHttpAuthentication,
   // Token provider classes for custom authentication

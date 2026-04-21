@@ -14,7 +14,7 @@
  * limitations under the License.
  */
 
-import { CircuitBreakerState } from '../../../lib/telemetry/CircuitBreaker';
+import { CircuitBreakerOpenError, CircuitBreakerState } from '../../../lib/telemetry/CircuitBreaker';
 
 /**
  * Stub implementation of CircuitBreaker for testing.
@@ -34,7 +34,7 @@ export default class CircuitBreakerStub {
     this.executeCallCount++;
 
     if (this.state === CircuitBreakerState.OPEN) {
-      throw new Error('Circuit breaker OPEN');
+      throw new CircuitBreakerOpenError();
     }
 
     try {
@@ -112,7 +112,8 @@ export default class CircuitBreakerStub {
   private onFailure(): void {
     this.failureCount++;
     this.successCount = 0;
-    if (this.failureCount >= 5) {
+    // In HALF_OPEN state, any single failure immediately reopens (matches real implementation)
+    if (this.state === CircuitBreakerState.HALF_OPEN || this.failureCount >= 5) {
       this.state = CircuitBreakerState.OPEN;
     }
   }
