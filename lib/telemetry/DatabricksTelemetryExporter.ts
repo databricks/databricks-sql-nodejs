@@ -15,7 +15,7 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
-import fetch, { RequestInit, Response } from 'node-fetch';
+import fetch, { RequestInit, Response, Request } from 'node-fetch';
 import IClientContext from '../contracts/IClientContext';
 import { LogLevel } from '../contracts/IDBSQLLogger';
 import IAuthentication from '../connection/contracts/IAuthentication';
@@ -304,7 +304,13 @@ export default class DatabricksTelemetryExporter {
   private async sendRequest(url: string, init: RequestInit): Promise<Response> {
     const connectionProvider = await this.context.getConnectionProvider();
     const agent = await connectionProvider.getAgent();
-    return fetch(url, { ...init, agent });
+    const retryPolicy = await connectionProvider.getRetryPolicy();
+    const requestConfig: RequestInit = { agent, ...init };
+    const result = await retryPolicy.invokeWithRetry(() => {
+      const request = new Request(url, requestConfig);
+      return fetch(request).then((response) => ({ request, response }));
+    });
+    return result.response;
   }
 
   private toTelemetryLog(
