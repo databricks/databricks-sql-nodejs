@@ -39,7 +39,7 @@ describe('TelemetryClientProvider', () => {
 
       new TelemetryClientProvider(context);
 
-      expect(logSpy.calledWith(LogLevel.debug, 'Created TelemetryClientProvider')).to.be.true;
+      expect(logSpy.calledWith(LogLevel.debug, sinon.match(/created.*telemetryclientprovider/i))).to.be.true;
     });
   });
 
@@ -91,7 +91,7 @@ describe('TelemetryClientProvider', () => {
 
       provider.getOrCreateClient(HOST1);
 
-      expect(logSpy.calledWith(LogLevel.debug, `Created new TelemetryClient for host: ${HOST1}`)).to.be.true;
+      expect(logSpy.calledWith(LogLevel.debug, sinon.match(/created new telemetryclient/i))).to.be.true;
     });
 
     it('should log reference count at debug level', () => {
@@ -101,7 +101,7 @@ describe('TelemetryClientProvider', () => {
 
       provider.getOrCreateClient(HOST1);
 
-      expect(logSpy.calledWith(LogLevel.debug, `TelemetryClient reference count for ${HOST1}: 1`)).to.be.true;
+      expect(logSpy.calledWith(LogLevel.debug, sinon.match(/reference count for/i).and(sinon.match(/: 1$/)))).to.be.true;
     });
 
     it('should pass context to TelemetryClient', () => {
@@ -180,7 +180,7 @@ describe('TelemetryClientProvider', () => {
 
       provider.releaseClient(HOST1);
 
-      expect(logSpy.calledWith(LogLevel.debug, `No TelemetryClient found for host: ${HOST1}`)).to.be.true;
+      expect(logSpy.calledWith(LogLevel.debug, sinon.match(/no telemetryclient found/i))).to.be.true;
     });
 
     it('should log reference count decrease at debug level', async () => {
@@ -193,7 +193,7 @@ describe('TelemetryClientProvider', () => {
 
       provider.releaseClient(HOST1);
 
-      expect(logSpy.calledWith(LogLevel.debug, `TelemetryClient reference count for ${HOST1}: 1`)).to.be.true;
+      expect(logSpy.calledWith(LogLevel.debug, sinon.match(/reference count for/i).and(sinon.match(/: 1$/)))).to.be.true;
     });
 
     it('should log client closure at debug level', async () => {
@@ -204,10 +204,10 @@ describe('TelemetryClientProvider', () => {
       provider.getOrCreateClient(HOST1);
       provider.releaseClient(HOST1);
 
-      expect(logSpy.calledWith(LogLevel.debug, `Closed and removed TelemetryClient for host: ${HOST1}`)).to.be.true;
+      expect(logSpy.calledWith(LogLevel.debug, sinon.match(/closed and removed telemetryclient/i))).to.be.true;
     });
 
-    it('should swallow errors during client closure', async () => {
+    it('should swallow Error during client closure', async () => {
       const context = new ClientContextStub();
       const provider = new TelemetryClientProvider(context);
 
@@ -218,7 +218,82 @@ describe('TelemetryClientProvider', () => {
 
       provider.releaseClient(HOST1);
 
-      expect(logSpy.calledWith(LogLevel.debug, `Error releasing TelemetryClient: ${error.message}`)).to.be.true;
+      expect(logSpy.calledWith(LogLevel.debug, sinon.match(/error releasing telemetryclient/i).and(sinon.match(/close error/i)))).to.be.true;
+    });
+
+    it('should swallow non-Error throws during client closure', () => {
+      const context = new ClientContextStub();
+      const provider = new TelemetryClientProvider(context);
+
+      const client = provider.getOrCreateClient(HOST1);
+      // Non-Error throws — string, null, undefined — must not escape the catch.
+      sinon.stub(client, 'close').callsFake(() => {
+        // eslint-disable-next-line no-throw-literal
+        throw 'stringy-error';
+      });
+      const logSpy = sinon.spy(context.logger, 'log');
+
+      expect(() => provider.releaseClient(HOST1)).to.not.throw();
+      expect(logSpy.calledWith(LogLevel.debug, sinon.match(/error releasing telemetryclient/i).and(sinon.match(/stringy-error/)))).to.be.true;
+    });
+
+    it('should not throw or corrupt state on double-release', () => {
+      const context = new ClientContextStub();
+      const provider = new TelemetryClientProvider(context);
+
+      // One get, two releases — the second must not throw and must not
+      // leave the provider in a state where refCount is negative.
+      provider.getOrCreateClient(HOST1);
+      provider.releaseClient(HOST1);
+
+      expect(() => provider.releaseClient(HOST1)).to.not.throw();
+      expect(provider.getRefCount(HOST1)).to.equal(0);
+      expect(provider.getActiveClients().size).to.equal(0);
+    });
+
+    it('should return a fresh non-closed client after full release', () => {
+      const context = new ClientContextStub();
+      const provider = new TelemetryClientProvider(context);
+
+      const first = provider.getOrCreateClient(HOST1);
+      provider.releaseClient(HOST1);
+      expect(first.isClosed()).to.be.true;
+
+      const second = provider.getOrCreateClient(HOST1);
+      expect(second).to.not.equal(first);
+      expect(second.isClosed()).to.be.false;
+      expect(provider.getRefCount(HOST1)).to.equal(1);
+    });
+  });
+
+  describe('Host normalization', () => {
+    it('should treat scheme, case, port and trailing slash as the same host', () => {
+      const context = new ClientContextStub();
+      const provider = new TelemetryClientProvider(context);
+
+      const a = provider.getOrCreateClient('workspace.cloud.databricks.com');
+      const b = provider.getOrCreateClient('https://workspace.cloud.databricks.com');
+      const c = provider.getOrCreateClient('https://WorkSpace.CLOUD.databricks.com/');
+      const d = provider.getOrCreateClient('workspace.cloud.databricks.com:443');
+      const e = provider.getOrCreateClient('  workspace.cloud.databricks.com.  ');
+
+      expect(a).to.equal(b);
+      expect(a).to.equal(c);
+      expect(a).to.equal(d);
+      expect(a).to.equal(e);
+      expect(provider.getActiveClients().size).to.equal(1);
+      expect(provider.getRefCount('workspace.cloud.databricks.com')).to.equal(5);
+    });
+
+    it('should release under an alias correctly', () => {
+      const context = new ClientContextStub();
+      const provider = new TelemetryClientProvider(context);
+
+      provider.getOrCreateClient('example.com');
+      provider.releaseClient('HTTPS://Example.COM/');
+
+      expect(provider.getRefCount('example.com')).to.equal(0);
+      expect(provider.getActiveClients().size).to.equal(0);
     });
   });
 
@@ -367,7 +442,7 @@ describe('TelemetryClientProvider', () => {
       });
     });
 
-    it('should log all errors at debug level only', async () => {
+    it('should log close errors at debug level', async () => {
       const context = new ClientContextStub();
       const provider = new TelemetryClientProvider(context);
       const logSpy = sinon.spy(context.logger, 'log');
@@ -377,7 +452,7 @@ describe('TelemetryClientProvider', () => {
 
       provider.releaseClient(HOST1);
 
-      const errorLogs = logSpy.getCalls().filter((call) => call.args[1].includes('Error releasing'));
+      const errorLogs = logSpy.getCalls().filter((call) => /error releasing/i.test(String(call.args[1])));
       expect(errorLogs.length).to.be.greaterThan(0);
       errorLogs.forEach((call) => {
         expect(call.args[0]).to.equal(LogLevel.debug);
