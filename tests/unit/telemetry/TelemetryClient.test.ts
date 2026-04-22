@@ -112,10 +112,7 @@ describe('TelemetryClient', () => {
       const error = new Error('Logger error');
       sinon.stub(context.logger, 'log').throws(error);
 
-      // Should not throw
-      client.close();
-      // If we get here without throwing, the test passes
-      expect(true).to.be.true;
+      expect(() => client.close()).to.not.throw();
     });
 
     it('should still set closed when logger throws', () => {
