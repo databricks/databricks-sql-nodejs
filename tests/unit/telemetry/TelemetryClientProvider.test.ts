@@ -101,7 +101,8 @@ describe('TelemetryClientProvider', () => {
 
       provider.getOrCreateClient(HOST1);
 
-      expect(logSpy.calledWith(LogLevel.debug, sinon.match(/reference count for/i).and(sinon.match(/: 1$/)))).to.be.true;
+      expect(logSpy.calledWith(LogLevel.debug, sinon.match(/reference count for/i).and(sinon.match(/: 1$/)))).to.be
+        .true;
     });
 
     it('should pass context to TelemetryClient', () => {
@@ -193,7 +194,8 @@ describe('TelemetryClientProvider', () => {
 
       provider.releaseClient(HOST1);
 
-      expect(logSpy.calledWith(LogLevel.debug, sinon.match(/reference count for/i).and(sinon.match(/: 1$/)))).to.be.true;
+      expect(logSpy.calledWith(LogLevel.debug, sinon.match(/reference count for/i).and(sinon.match(/: 1$/)))).to.be
+        .true;
     });
 
     it('should log client closure at debug level', async () => {
@@ -218,7 +220,12 @@ describe('TelemetryClientProvider', () => {
 
       provider.releaseClient(HOST1);
 
-      expect(logSpy.calledWith(LogLevel.debug, sinon.match(/error releasing telemetryclient/i).and(sinon.match(/close error/i)))).to.be.true;
+      expect(
+        logSpy.calledWith(
+          LogLevel.debug,
+          sinon.match(/error releasing telemetryclient/i).and(sinon.match(/close error/i)),
+        ),
+      ).to.be.true;
     });
 
     it('should swallow non-Error throws during client closure', () => {
@@ -234,7 +241,12 @@ describe('TelemetryClientProvider', () => {
       const logSpy = sinon.spy(context.logger, 'log');
 
       expect(() => provider.releaseClient(HOST1)).to.not.throw();
-      expect(logSpy.calledWith(LogLevel.debug, sinon.match(/error releasing telemetryclient/i).and(sinon.match(/stringy-error/)))).to.be.true;
+      expect(
+        logSpy.calledWith(
+          LogLevel.debug,
+          sinon.match(/error releasing telemetryclient/i).and(sinon.match(/stringy-error/)),
+        ),
+      ).to.be.true;
     });
 
     it('should not throw or corrupt state on double-release', () => {
