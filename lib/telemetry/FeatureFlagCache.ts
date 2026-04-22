@@ -19,7 +19,7 @@ import IClientContext from '../contracts/IClientContext';
 import { LogLevel } from '../contracts/IDBSQLLogger';
 import driverVersion from '../version';
 import { buildUrl } from './urlUtils';
-import { CircuitBreaker, CircuitBreakerRegistry } from './CircuitBreaker';
+import { CircuitBreakerRegistry } from './CircuitBreaker';
 
 /**
  * Context holding feature flag state for a specific host.
