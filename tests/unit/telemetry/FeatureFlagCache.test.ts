@@ -141,10 +141,7 @@ describe('FeatureFlagCache', () => {
       const fetchStub = sinon.stub(cache as any, 'fetchFeatureFlags').callsFake(async () => {
         const ctx = (cache as any).contexts.get(host);
         if (ctx) {
-          ctx.flags.set(
-            'databricks.partnerplatform.clientConfigsFeatureFlags.enableTelemetryForNodeJs',
-            'true',
-          );
+          ctx.flags.set('databricks.partnerplatform.clientConfigsFeatureFlags.enableTelemetryForNodeJs', 'true');
         }
       });
 
@@ -166,10 +163,7 @@ describe('FeatureFlagCache', () => {
       const fetchStub = sinon.stub(cache as any, 'fetchFeatureFlags').callsFake(async () => {
         const ctx = (cache as any).contexts.get(host);
         if (ctx) {
-          ctx.flags.set(
-            'databricks.partnerplatform.clientConfigsFeatureFlags.enableTelemetryForNodeJs',
-            'true',
-          );
+          ctx.flags.set('databricks.partnerplatform.clientConfigsFeatureFlags.enableTelemetryForNodeJs', 'true');
         }
       });
 
@@ -302,10 +296,7 @@ describe('FeatureFlagCache', () => {
       const fetchStub = sinon.stub(cache as any, 'fetchFeatureFlags').callsFake(async () => {
         const ctx = (cache as any).contexts.get(host);
         if (ctx) {
-          ctx.flags.set(
-            'databricks.partnerplatform.clientConfigsFeatureFlags.enableTelemetryForNodeJs',
-            'true',
-          );
+          ctx.flags.set('databricks.partnerplatform.clientConfigsFeatureFlags.enableTelemetryForNodeJs', 'true');
         }
       });
 

@@ -46,10 +46,7 @@ export default class FeatureFlagCache {
 
   private circuitBreakerRegistry: CircuitBreakerRegistry;
 
-  constructor(
-    private context: IClientContext,
-    circuitBreakerRegistry?: CircuitBreakerRegistry,
-  ) {
+  constructor(private context: IClientContext, circuitBreakerRegistry?: CircuitBreakerRegistry) {
     this.contexts = new Map();
     this.circuitBreakerRegistry = circuitBreakerRegistry || new CircuitBreakerRegistry(context);
   }
