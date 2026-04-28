@@ -34,8 +34,8 @@ import { definedOrError } from './utils';
 import { OperationChunksIterator, OperationRowsIterator } from './utils/OperationIterator';
 import HiveDriverError from './errors/HiveDriverError';
 import IClientContext from './contracts/IClientContext';
-import ExceptionClassifier from './telemetry/ExceptionClassifier';
 import { mapOperationTypeToTelemetryType, mapResultFormatToTelemetryType } from './telemetry/telemetryTypeMappers';
+import ExceptionClassifier from './telemetry/ExceptionClassifier';
 
 interface DBSQLOperationConstructorOptions {
   handle: TOperationHandle;
@@ -181,6 +181,15 @@ export default class DBSQLOperation implements IOperation {
    * const result = await queryOperation.fetchChunk({maxRows: 1000});
    */
   public async fetchChunk(options?: FetchOptions): Promise<Array<object>> {
+    try {
+      return await this.fetchChunkInternal(options);
+    } catch (err: any) {
+      this.emitErrorEvent(err);
+      throw err;
+    }
+  }
+
+  private async fetchChunkInternal(options?: FetchOptions): Promise<Array<object>> {
     await this.failIfClosed();
 
     if (!this.operationHandle.hasResultSet) {
@@ -257,6 +266,15 @@ export default class DBSQLOperation implements IOperation {
    * @throws {StatusError}
    */
   public async cancel(): Promise<Status> {
+    try {
+      return await this.cancelInternal();
+    } catch (err: any) {
+      this.emitErrorEvent(err);
+      throw err;
+    }
+  }
+
+  private async cancelInternal(): Promise<Status> {
     if (this.closed || this.cancelled) {
       return Status.success();
     }
@@ -281,6 +299,15 @@ export default class DBSQLOperation implements IOperation {
    * @throws {StatusError}
    */
   public async close(): Promise<Status> {
+    try {
+      return await this.closeInternal();
+    } catch (err: any) {
+      this.emitErrorEvent(err);
+      throw err;
+    }
+  }
+
+  private async closeInternal(): Promise<Status> {
     if (this.closed || this.cancelled) {
       return Status.success();
     }
@@ -341,9 +368,14 @@ export default class DBSQLOperation implements IOperation {
   }
 
   public async getMetadata(): Promise<TGetResultSetMetadataResp> {
-    await this.failIfClosed();
-    await this.waitUntilReady();
-    return this.fetchMetadata();
+    try {
+      await this.failIfClosed();
+      await this.waitUntilReady();
+      return await this.fetchMetadata();
+    } catch (err: any) {
+      this.emitErrorEvent(err);
+      throw err;
+    }
   }
 
   private async failIfClosed(): Promise<void> {
@@ -509,7 +541,7 @@ export default class DBSQLOperation implements IOperation {
    */
   private emitStatementStart(): void {
     try {
-      const { telemetryEmitter } = this.context as any;
+      const telemetryEmitter = this.context.getTelemetryEmitter?.();
       if (!telemetryEmitter) {
         return;
       }
@@ -530,23 +562,19 @@ export default class DBSQLOperation implements IOperation {
    */
   private async emitStatementComplete(): Promise<void> {
     try {
-      const { telemetryEmitter } = this.context as any;
-      const { telemetryAggregator } = this.context as any;
+      const telemetryEmitter = this.context.getTelemetryEmitter?.();
+      const telemetryAggregator = this.context.getTelemetryAggregator?.();
       if (!telemetryEmitter || !telemetryAggregator) {
         return;
       }
 
-      // Fetch metadata if not already fetched to get result format
-      let resultFormat: string | undefined;
-      try {
-        if (!this.metadata && !this.cancelled) {
-          await this.getMetadata();
-        }
-        resultFormat = mapResultFormatToTelemetryType(this.metadata?.resultFormat);
-      } catch (error) {
-        // If metadata fetch fails, continue without it
-        resultFormat = undefined;
-      }
+      // Use whatever metadata was already fetched by the result-handling
+      // path. Do NOT trigger a `getMetadata()` here — that issues a Thrift
+      // RPC on every close (doubles close latency for short DDL/DML) AND
+      // throws if the operation is already in an error/closed state, which
+      // would then fire spurious error telemetry from `getMetadata`'s error
+      // wrapper.
+      const resultFormat = mapResultFormatToTelemetryType(this.metadata?.resultFormat);
 
       const latencyMs = Date.now() - this.startTime;
 
@@ -566,25 +594,24 @@ export default class DBSQLOperation implements IOperation {
   }
 
   /**
-   * Emit error telemetry event with terminal classification.
-   * CRITICAL: All exceptions swallowed and logged at LogLevel.debug ONLY.
+   * Emit a telemetry error event for an exception thrown by an operation.
+   * Terminal errors (per `ExceptionClassifier`) trigger an immediate flush
+   * in the aggregator; retryable errors are buffered until the statement
+   * completes. All exceptions from this method itself are swallowed at
+   * debug level — telemetry must never break the driver.
    */
   private emitErrorEvent(error: Error): void {
     try {
-      const { telemetryEmitter } = this.context as any;
-      if (!telemetryEmitter) {
-        return;
-      }
-
-      // Classify the exception
-      const isTerminal = ExceptionClassifier.isTerminal(error);
+      const telemetryEmitter = this.context.getTelemetryEmitter?.();
+      if (!telemetryEmitter) return;
 
       telemetryEmitter.emitError({
         statementId: this.id,
         sessionId: this.sessionId,
         errorName: error.name || 'Error',
         errorMessage: error.message || 'Unknown error',
-        isTerminal,
+        errorStack: error.stack,
+        isTerminal: ExceptionClassifier.isTerminal(error),
       });
     } catch (emitError: any) {
       this.context.getLogger().log(LogLevel.debug, `Error emitting error event: ${emitError.message}`);

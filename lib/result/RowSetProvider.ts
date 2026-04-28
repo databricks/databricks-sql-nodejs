@@ -114,7 +114,7 @@ export default class RowSetProvider implements IResultsProvider<TRowSet | undefi
         return;
       }
 
-      const { telemetryEmitter } = this.context as any;
+      const telemetryEmitter = this.context.getTelemetryEmitter?.();
       if (!telemetryEmitter) {
         return;
       }

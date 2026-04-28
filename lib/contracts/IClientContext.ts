@@ -3,6 +3,8 @@ import IDriver from './IDriver';
 import IConnectionProvider from '../connection/contracts/IConnectionProvider';
 import IThriftClient from './IThriftClient';
 import IAuthentication from '../connection/contracts/IAuthentication';
+import type TelemetryEventEmitter from '../telemetry/TelemetryEventEmitter';
+import type MetricsAggregator from '../telemetry/MetricsAggregator';
 
 export interface ClientConfig {
   directResultsDefaultMaxRows: number;
@@ -53,4 +55,10 @@ export default interface IClientContext {
   getDriver(): Promise<IDriver>;
 
   getAuthProvider(): IAuthentication | undefined;
+
+  /** @internal Telemetry event emitter, undefined when telemetry is disabled. */
+  getTelemetryEmitter?(): TelemetryEventEmitter | undefined;
+
+  /** @internal Telemetry aggregator, undefined when telemetry is disabled. */
+  getTelemetryAggregator?(): MetricsAggregator | undefined;
 }

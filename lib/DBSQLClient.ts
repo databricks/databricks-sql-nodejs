@@ -32,13 +32,10 @@ import IDBSQLLogger, { LogLevel } from './contracts/IDBSQLLogger';
 import DBSQLLogger from './DBSQLLogger';
 import CloseableCollection from './utils/CloseableCollection';
 import IConnectionProvider from './connection/contracts/IConnectionProvider';
-import FeatureFlagCache from './telemetry/FeatureFlagCache';
+import TelemetryClient from './telemetry/TelemetryClient';
 import TelemetryClientProvider from './telemetry/TelemetryClientProvider';
 import TelemetryEventEmitter from './telemetry/TelemetryEventEmitter';
-import MetricsAggregator from './telemetry/MetricsAggregator';
-import DatabricksTelemetryExporter from './telemetry/DatabricksTelemetryExporter';
-import { CircuitBreakerRegistry } from './telemetry/CircuitBreaker';
-import { DriverConfiguration, DRIVER_NAME } from './telemetry/types';
+import { DriverConfiguration, DRIVER_NAME, TelemetryEventType } from './telemetry/types';
 import driverVersion from './version';
 
 function prependSlash(str: string): string {
@@ -84,22 +81,20 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
 
   private readonly sessions = new CloseableCollection<DBSQLSession>();
 
-  // Telemetry components (instance-based, NOT singletons)
+  // Telemetry components — `telemetryClient` is the shared per-host owner
+  // (process-wide via TelemetryClientProvider). The exporter, aggregator,
+  // circuit-breaker registry and feature-flag cache live on it. Each
+  // DBSQLClient still owns its own `telemetryEmitter` so it respects its
+  // own `telemetryEnabled` flag.
   private host?: string;
 
   private httpPath?: string;
 
   private authType?: string;
 
-  private featureFlagCache?: FeatureFlagCache;
-
-  private telemetryClientProvider?: TelemetryClientProvider;
+  private telemetryClient?: TelemetryClient;
 
   private telemetryEmitter?: TelemetryEventEmitter;
-
-  private telemetryAggregator?: MetricsAggregator;
-
-  private circuitBreakerRegistry?: CircuitBreakerRegistry;
 
   private static getDefaultLogger(): IDBSQLLogger {
     if (!this.defaultLogger) {
@@ -298,19 +293,23 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
    * Distinguishes between U2M and M2M OAuth flows.
    */
   private mapAuthType(options: ConnectionOptions): string {
-    if (options.authType === 'databricks-oauth') {
-      // Check if M2M (has client secret) or U2M (no client secret)
-      return options.oauthClientSecret === undefined
-        ? 'external-browser' // U2M OAuth (User-to-Machine)
-        : 'oauth-m2m'; // M2M OAuth (Machine-to-Machine)
+    switch (options.authType) {
+      case 'databricks-oauth':
+        return options.oauthClientSecret === undefined ? 'external-browser' : 'oauth-m2m';
+      case 'custom':
+        return 'custom';
+      case 'token-provider':
+        return 'token-provider';
+      case 'external-token':
+        return 'external-token';
+      case 'static-token':
+        return 'static-token';
+      case 'access-token':
+      case undefined:
+        return 'pat';
+      default:
+        return 'unknown';
     }
-
-    if (options.authType === 'custom') {
-      return 'custom'; // Custom auth provider
-    }
-
-    // 'access-token' or undefined
-    return 'pat'; // Personal Access Token
   }
 
   /**
@@ -373,80 +372,34 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
     }
 
     try {
-      // Create circuit breaker registry (shared by feature flags and telemetry)
-      this.circuitBreakerRegistry = new CircuitBreakerRegistry(this);
+      // Acquire (or create) the per-host TelemetryClient from the
+      // process-wide provider. The shared client owns the circuit-breaker
+      // registry, feature-flag cache, exporter, and aggregator. Multiple
+      // DBSQLClient instances on the same host share these resources so
+      // breaker counters and HTTP batches don't fragment per-instance.
+      this.telemetryClient = TelemetryClientProvider.getInstance().getOrCreateClient(this, this.host);
 
-      // Create feature flag cache instance with circuit breaker protection
-      this.featureFlagCache = new FeatureFlagCache(this, this.circuitBreakerRegistry);
-      this.featureFlagCache.getOrCreateContext(this.host);
-
-      // Check if telemetry enabled via feature flag
-      const enabled = await this.featureFlagCache.isTelemetryEnabled(this.host);
+      // Use the shared feature-flag cache (registered in the previous step).
+      const enabled = await this.telemetryClient.getFeatureFlagCache().isTelemetryEnabled(this.host);
 
       if (!enabled) {
+        // Release our refcount immediately; we won't be emitting.
+        await TelemetryClientProvider.getInstance().releaseClient(this, this.host);
+        this.telemetryClient = undefined;
         this.logger.log(LogLevel.debug, 'Telemetry: disabled');
         return;
       }
 
-      // Create telemetry components (all instance-based)
-      this.telemetryClientProvider = new TelemetryClientProvider(this);
+      // Each DBSQLClient still owns its own emitter so it respects its own
+      // `telemetryEnabled` flag and feature-flag result. All emitters bridge
+      // into the SHARED aggregator on the TelemetryClient.
       this.telemetryEmitter = new TelemetryEventEmitter(this);
-
-      // Get or create telemetry client for this host (increments refCount)
-      this.telemetryClientProvider.getOrCreateClient(this.host);
-
-      // Create telemetry exporter with shared circuit breaker registry
-      const exporter = new DatabricksTelemetryExporter(this, this.host, this.circuitBreakerRegistry);
-      this.telemetryAggregator = new MetricsAggregator(this, exporter);
-
-      // Wire up event listeners
-      this.telemetryEmitter.on('connection.open', (event) => {
-        try {
-          this.telemetryAggregator?.processEvent(event);
-        } catch (error: any) {
-          this.logger.log(LogLevel.debug, `Error processing connection.open event: ${error.message}`);
-        }
-      });
-
-      this.telemetryEmitter.on('connection.close', (event) => {
-        try {
-          this.telemetryAggregator?.processEvent(event);
-        } catch (error: any) {
-          this.logger.log(LogLevel.debug, `Error processing connection.close event: ${error.message}`);
-        }
-      });
-
-      this.telemetryEmitter.on('statement.start', (event) => {
-        try {
-          this.telemetryAggregator?.processEvent(event);
-        } catch (error: any) {
-          this.logger.log(LogLevel.debug, `Error processing statement.start event: ${error.message}`);
-        }
-      });
-
-      this.telemetryEmitter.on('statement.complete', (event) => {
-        try {
-          this.telemetryAggregator?.processEvent(event);
-        } catch (error: any) {
-          this.logger.log(LogLevel.debug, `Error processing statement.complete event: ${error.message}`);
-        }
-      });
-
-      this.telemetryEmitter.on('cloudfetch.chunk', (event) => {
-        try {
-          this.telemetryAggregator?.processEvent(event);
-        } catch (error: any) {
-          this.logger.log(LogLevel.debug, `Error processing cloudfetch.chunk event: ${error.message}`);
-        }
-      });
-
-      this.telemetryEmitter.on('error', (event) => {
-        try {
-          this.telemetryAggregator?.processEvent(event);
-        } catch (error: any) {
-          this.logger.log(LogLevel.debug, `Error processing error event: ${error.message}`);
-        }
-      });
+      const sharedAggregator = this.telemetryClient.getAggregator();
+      for (const eventType of Object.values(TelemetryEventType)) {
+        this.telemetryEmitter.on(eventType, (event) => {
+          sharedAggregator.processEvent(event);
+        });
+      }
 
       this.logger.log(LogLevel.debug, 'Telemetry: enabled');
     } catch (error: any) {
@@ -613,27 +566,17 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
   public async close(): Promise<void> {
     await this.sessions.closeAll();
 
-    // Cleanup telemetry
-    if (this.host) {
+    // Cleanup telemetry. Releasing our refcount on the shared TelemetryClient
+    // is awaited because the underlying close() drains the final HTTP POST —
+    // a caller doing `await client.close(); process.exit(0)` would otherwise
+    // truncate the in-flight request when this is the last refcount holder.
+    if (this.host && this.telemetryClient) {
       try {
-        // Step 1: Close aggregator (stops timer, completes statements, final flush)
-        if (this.telemetryAggregator) {
-          this.telemetryAggregator.close();
-        }
-
-        // Step 2: Release telemetry client (decrements ref count, closes if last)
-        if (this.telemetryClientProvider) {
-          await this.telemetryClientProvider.releaseClient(this.host);
-        }
-
-        // Step 3: Release feature flag context (decrements ref count)
-        if (this.featureFlagCache) {
-          this.featureFlagCache.releaseContext(this.host);
-        }
+        await TelemetryClientProvider.getInstance().releaseClient(this, this.host);
       } catch (error: any) {
-        // Swallow all telemetry cleanup errors
         this.logger.log(LogLevel.debug, `Telemetry cleanup error: ${error.message}`);
       }
+      this.telemetryClient = undefined;
     }
 
     this.client = undefined;
@@ -686,5 +629,15 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
    */
   public getAuthProvider(): IAuthentication | undefined {
     return this.authProvider;
+  }
+
+  /** @internal */
+  public getTelemetryEmitter(): TelemetryEventEmitter | undefined {
+    return this.telemetryEmitter;
+  }
+
+  /** @internal */
+  public getTelemetryAggregator() {
+    return this.telemetryClient?.getAggregator();
   }
 }

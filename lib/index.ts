@@ -24,6 +24,7 @@ import { LogLevel } from './contracts/IDBSQLLogger';
 export type { default as ITokenProvider } from './connection/auth/tokenProvider/ITokenProvider';
 
 export { CircuitBreakerOpenError, CIRCUIT_BREAKER_OPEN_CODE } from './telemetry/CircuitBreaker';
+export { TelemetryTerminalError } from './telemetry/DatabricksTelemetryExporter';
 
 export const auth = {
   PlainHttpAuthentication,

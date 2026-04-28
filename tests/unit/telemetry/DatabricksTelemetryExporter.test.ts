@@ -17,621 +17,482 @@
 import { expect } from 'chai';
 import sinon from 'sinon';
 import DatabricksTelemetryExporter from '../../../lib/telemetry/DatabricksTelemetryExporter';
-import { CircuitBreakerRegistry, CircuitBreakerState } from '../../../lib/telemetry/CircuitBreaker';
+import { CircuitBreakerRegistry } from '../../../lib/telemetry/CircuitBreaker';
 import { TelemetryMetric } from '../../../lib/telemetry/types';
 import ClientContextStub from '../.stubs/ClientContextStub';
 import { LogLevel } from '../../../lib/contracts/IDBSQLLogger';
+import IAuthentication from '../../../lib/connection/contracts/IAuthentication';
+
+const fakeAuthProvider: IAuthentication = {
+  authenticate: async () => ({ Authorization: 'Bearer test-token' }),
+};
+
+function makeMetric(overrides: Partial<TelemetryMetric> = {}): TelemetryMetric {
+  return {
+    metricType: 'connection',
+    timestamp: Date.now(),
+    sessionId: 'session-1',
+    ...overrides,
+  };
+}
+
+function makeOkResponse() {
+  return Promise.resolve({ ok: true, status: 200, statusText: 'OK', text: () => Promise.resolve('') });
+}
+
+function makeErrorResponse(status: number, statusText: string) {
+  return Promise.resolve({ ok: false, status, statusText, text: () => Promise.resolve('') });
+}
 
 describe('DatabricksTelemetryExporter', () => {
-  let context: ClientContextStub;
-  let circuitBreakerRegistry: CircuitBreakerRegistry;
-  let exporter: DatabricksTelemetryExporter;
-  let fetchStub: sinon.SinonStub;
-  let logSpy: sinon.SinonSpy;
+  let clock: sinon.SinonFakeTimers;
 
   beforeEach(() => {
-    context = new ClientContextStub({
-      telemetryAuthenticatedExport: true,
-      telemetryMaxRetries: 3,
-    });
-    circuitBreakerRegistry = new CircuitBreakerRegistry(context);
-
-    // Create fetch stub
-    fetchStub = sinon.stub();
-
-    // Create exporter with injected fetch function
-    exporter = new DatabricksTelemetryExporter(
-      context,
-      'test.databricks.com',
-      circuitBreakerRegistry,
-      fetchStub as any,
-    );
-
-    // Spy on logger
-    logSpy = sinon.spy(context.logger, 'log');
+    clock = sinon.useFakeTimers();
   });
 
   afterEach(() => {
+    clock.restore();
     sinon.restore();
   });
 
-  describe('Constructor', () => {
-    it('should create exporter with IClientContext', () => {
-      expect(exporter).to.be.instanceOf(DatabricksTelemetryExporter);
+  describe('export() - basic', () => {
+    it('should return immediately for empty metrics array', async () => {
+      const context = new ClientContextStub();
+      const registry = new CircuitBreakerRegistry(context);
+      const exporter = new DatabricksTelemetryExporter(context, 'host.example.com', registry, fakeAuthProvider);
+      const sendRequestStub = sinon.stub(exporter as any, 'sendRequest').returns(makeOkResponse());
+
+      await exporter.export([]);
+
+      expect(sendRequestStub.called).to.be.false;
     });
 
-    it('should create circuit breaker for host', () => {
-      const breaker = circuitBreakerRegistry.getCircuitBreaker('test.databricks.com');
-      expect(breaker.getState()).to.equal(CircuitBreakerState.CLOSED);
-    });
-  });
+    it('should call sendRequest with correct endpoint for authenticated export', async () => {
+      const context = new ClientContextStub({ telemetryAuthenticatedExport: true } as any);
+      const registry = new CircuitBreakerRegistry(context);
+      const exporter = new DatabricksTelemetryExporter(context, 'host.example.com', registry, fakeAuthProvider);
+      const sendRequestStub = sinon.stub(exporter as any, 'sendRequest').returns(makeOkResponse());
 
-  describe('export() - endpoint selection', () => {
-    it('should export to authenticated endpoint when enabled', async () => {
-      const metrics: TelemetryMetric[] = [
-        {
-          metricType: 'connection',
-          timestamp: Date.now(),
-          sessionId: 'session-1',
-          workspaceId: 'ws-1',
-        },
-      ];
+      await exporter.export([makeMetric()]);
 
-      fetchStub.resolves({
-        ok: true,
-        status: 200,
-        statusText: 'OK',
-      });
-
-      await exporter.export(metrics);
-
-      expect(fetchStub.calledOnce).to.be.true;
-      const call = fetchStub.getCall(0);
-      expect(call.args[0]).to.equal('https://test.databricks.com/telemetry-ext');
+      expect(sendRequestStub.calledOnce).to.be.true;
+      const url = sendRequestStub.firstCall.args[0] as string;
+      expect(url).to.include('telemetry-ext');
+      expect(url).to.include('https://');
     });
 
-    it('should export to unauthenticated endpoint when disabled', async () => {
-      context = new ClientContextStub({
-        telemetryAuthenticatedExport: false,
-        telemetryMaxRetries: 3,
-      });
+    it('should call sendRequest with unauthenticated endpoint when configured', async () => {
+      const context = new ClientContextStub({ telemetryAuthenticatedExport: false } as any);
+      const registry = new CircuitBreakerRegistry(context);
+      const exporter = new DatabricksTelemetryExporter(context, 'host.example.com', registry, fakeAuthProvider);
+      const sendRequestStub = sinon.stub(exporter as any, 'sendRequest').returns(makeOkResponse());
 
-      // Create new exporter with updated context and inject fetchStub
-      exporter = new DatabricksTelemetryExporter(
-        context,
-        'test.databricks.com',
-        circuitBreakerRegistry,
-        fetchStub as any,
-      );
+      await exporter.export([makeMetric()]);
 
-      const metrics: TelemetryMetric[] = [
-        {
-          metricType: 'connection',
-          timestamp: Date.now(),
-          sessionId: 'session-1',
-          workspaceId: 'ws-1',
-        },
-      ];
-
-      fetchStub.resolves({
-        ok: true,
-        status: 200,
-        statusText: 'OK',
-      });
-
-      await exporter.export(metrics);
-
-      expect(fetchStub.calledOnce).to.be.true;
-      const call = fetchStub.getCall(0);
-      expect(call.args[0]).to.equal('https://test.databricks.com/telemetry-unauth');
-    });
-  });
-
-  describe('export() - payload format', () => {
-    it('should format connection metric correctly', async () => {
-      const metrics: TelemetryMetric[] = [
-        {
-          metricType: 'connection',
-          timestamp: 1234567890,
-          sessionId: 'session-1',
-          workspaceId: 'ws-1',
-          driverConfig: {
-            driverVersion: '1.0.0',
-            driverName: 'databricks-sql-nodejs',
-            nodeVersion: 'v16.0.0',
-            platform: 'linux',
-            osVersion: 'Ubuntu 20.04',
-            osArch: 'x64',
-            runtimeVendor: 'Node.js Foundation',
-            localeName: 'en_US',
-            charSetEncoding: 'UTF-8',
-            processName: 'node',
-            authType: 'pat',
-            cloudFetchEnabled: true,
-            lz4Enabled: true,
-            arrowEnabled: false,
-            directResultsEnabled: true,
-            socketTimeout: 3000,
-            retryMaxAttempts: 3,
-            cloudFetchConcurrentDownloads: 10,
-          },
-        },
-      ];
-
-      fetchStub.resolves({
-        ok: true,
-        status: 200,
-        statusText: 'OK',
-      });
-
-      await exporter.export(metrics);
-
-      expect(fetchStub.calledOnce).to.be.true;
-      const call = fetchStub.getCall(0);
-      const body = JSON.parse(call.args[1].body);
-
-      expect(body.protoLogs).to.have.lengthOf(1);
-      const log = JSON.parse(body.protoLogs[0]);
-      expect(log.entry.sql_driver_log.session_id).to.equal('session-1');
-      expect(log.entry.sql_driver_log.system_configuration).to.deep.equal(
-        metrics[0].driverConfig
-          ? {
-              driver_version: metrics[0].driverConfig.driverVersion,
-              driver_name: metrics[0].driverConfig.driverName,
-              runtime_name: 'Node.js',
-              runtime_version: metrics[0].driverConfig.nodeVersion,
-              runtime_vendor: metrics[0].driverConfig.runtimeVendor,
-              os_name: metrics[0].driverConfig.platform,
-              os_version: metrics[0].driverConfig.osVersion,
-              os_arch: metrics[0].driverConfig.osArch,
-              locale_name: metrics[0].driverConfig.localeName,
-              char_set_encoding: metrics[0].driverConfig.charSetEncoding,
-              process_name: metrics[0].driverConfig.processName,
-            }
-          : undefined,
-      );
+      const url = sendRequestStub.firstCall.args[0] as string;
+      expect(url).to.include('telemetry-unauth');
     });
 
-    it('should format statement metric correctly', async () => {
-      const metrics: TelemetryMetric[] = [
-        {
-          metricType: 'statement',
-          timestamp: 1234567890,
-          sessionId: 'session-1',
-          statementId: 'stmt-1',
-          workspaceId: 'ws-1',
-          latencyMs: 1500,
-          resultFormat: 'cloudfetch',
-          chunkCount: 5,
-          bytesDownloaded: 1024000,
-        },
-      ];
+    it('should preserve host protocol if already set', async () => {
+      const context = new ClientContextStub({ telemetryAuthenticatedExport: true } as any);
+      const registry = new CircuitBreakerRegistry(context);
+      const exporter = new DatabricksTelemetryExporter(context, 'https://host.example.com', registry, fakeAuthProvider);
+      const sendRequestStub = sinon.stub(exporter as any, 'sendRequest').returns(makeOkResponse());
 
-      fetchStub.resolves({
-        ok: true,
-        status: 200,
-        statusText: 'OK',
-      });
+      await exporter.export([makeMetric()]);
 
-      await exporter.export(metrics);
-
-      expect(fetchStub.calledOnce).to.be.true;
-      const call = fetchStub.getCall(0);
-      const body = JSON.parse(call.args[1].body);
-
-      expect(body.protoLogs).to.have.lengthOf(1);
-      const log = JSON.parse(body.protoLogs[0]);
-      expect(log.entry.sql_driver_log.session_id).to.equal('session-1');
-      expect(log.entry.sql_driver_log.sql_statement_id).to.equal('stmt-1');
-      expect(log.entry.sql_driver_log.operation_latency_ms).to.equal(1500);
-      expect(log.entry.sql_driver_log.sql_operation.execution_result).to.equal('cloudfetch');
-      expect(log.entry.sql_driver_log.sql_operation.chunk_details.total_chunks_present).to.equal(5);
-      expect(log.entry.sql_driver_log.sql_operation.chunk_details.total_chunks_iterated).to.equal(5);
+      const url = sendRequestStub.firstCall.args[0] as string;
+      expect(url).to.equal('https://host.example.com/telemetry-ext');
     });
 
-    it('should format error metric correctly', async () => {
-      const metrics: TelemetryMetric[] = [
-        {
-          metricType: 'error',
-          timestamp: 1234567890,
-          sessionId: 'session-1',
-          statementId: 'stmt-1',
-          workspaceId: 'ws-1',
-          errorName: 'AuthenticationError',
-          errorMessage: 'Invalid credentials',
-        },
-      ];
+    it('should never throw even when sendRequest fails', async () => {
+      const context = new ClientContextStub();
+      const registry = new CircuitBreakerRegistry(context);
+      const exporter = new DatabricksTelemetryExporter(context, 'host.example.com', registry, fakeAuthProvider);
+      sinon.stub(exporter as any, 'sendRequest').rejects(new Error('network error'));
 
-      fetchStub.resolves({
-        ok: true,
-        status: 200,
-        statusText: 'OK',
-      });
-
-      await exporter.export(metrics);
-
-      expect(fetchStub.calledOnce).to.be.true;
-      const call = fetchStub.getCall(0);
-      const body = JSON.parse(call.args[1].body);
-
-      expect(body.protoLogs).to.have.lengthOf(1);
-      const log = JSON.parse(body.protoLogs[0]);
-      expect(log.entry.sql_driver_log.error_info.error_name).to.equal('AuthenticationError');
-      expect(log.entry.sql_driver_log.error_info.stack_trace).to.equal('Invalid credentials');
-    });
-
-    it('should include workspace_id, session_id, and sql_statement_id', async () => {
-      const metrics: TelemetryMetric[] = [
-        {
-          metricType: 'statement',
-          timestamp: Date.now(),
-          sessionId: 'session-123',
-          statementId: 'stmt-456',
-          workspaceId: 'ws-789',
-          latencyMs: 100,
-        },
-      ];
-
-      fetchStub.resolves({
-        ok: true,
-        status: 200,
-        statusText: 'OK',
-      });
-
-      await exporter.export(metrics);
-
-      const call = fetchStub.getCall(0);
-      const body = JSON.parse(call.args[1].body);
-      const log = JSON.parse(body.protoLogs[0]);
-
-      expect(log.entry.sql_driver_log.session_id).to.equal('session-123');
-      expect(log.entry.sql_driver_log.sql_statement_id).to.equal('stmt-456');
+      let threw = false;
+      try {
+        await exporter.export([makeMetric()]);
+      } catch {
+        threw = true;
+      }
+      expect(threw).to.be.false;
     });
   });
 
   describe('export() - retry logic', () => {
-    it('should retry on retryable error (429)', async () => {
-      const metrics: TelemetryMetric[] = [
-        {
-          metricType: 'connection',
-          timestamp: Date.now(),
-          sessionId: 'session-1',
-        },
-      ];
+    it('should retry on retryable HTTP errors (503)', async () => {
+      const context = new ClientContextStub({ telemetryMaxRetries: 2 } as any);
+      const registry = new CircuitBreakerRegistry(context);
+      const exporter = new DatabricksTelemetryExporter(context, 'host.example.com', registry, fakeAuthProvider);
+      // Fail twice with 503, then succeed
+      const sendRequestStub = sinon
+        .stub(exporter as any, 'sendRequest')
+        .onFirstCall()
+        .returns(makeErrorResponse(503, 'Service Unavailable'))
+        .onSecondCall()
+        .returns(makeErrorResponse(503, 'Service Unavailable'))
+        .onThirdCall()
+        .returns(makeOkResponse());
 
-      // First call fails with 429, second succeeds
-      fetchStub.onFirstCall().resolves({
-        ok: false,
-        status: 429,
-        statusText: 'Too Many Requests',
-      });
-      fetchStub.onSecondCall().resolves({
-        ok: true,
-        status: 200,
-        statusText: 'OK',
-      });
+      // Advance fake timers automatically for sleep calls
+      const exportPromise = exporter.export([makeMetric()]);
+      await clock.runAllAsync();
+      await exportPromise;
 
-      await exporter.export(metrics);
-
-      expect(fetchStub.callCount).to.equal(2);
+      expect(sendRequestStub.callCount).to.equal(3);
     });
 
-    it('should retry on retryable error (500)', async () => {
-      const metrics: TelemetryMetric[] = [
-        {
-          metricType: 'connection',
-          timestamp: Date.now(),
-          sessionId: 'session-1',
-        },
-      ];
+    it('should not retry on terminal HTTP errors (400)', async () => {
+      const context = new ClientContextStub({ telemetryMaxRetries: 3 } as any);
+      const registry = new CircuitBreakerRegistry(context);
+      const exporter = new DatabricksTelemetryExporter(context, 'host.example.com', registry, fakeAuthProvider);
+      const sendRequestStub = sinon.stub(exporter as any, 'sendRequest').returns(makeErrorResponse(400, 'Bad Request'));
 
-      fetchStub.onFirstCall().resolves({
-        ok: false,
-        status: 500,
-        statusText: 'Internal Server Error',
-      });
-      fetchStub.onSecondCall().resolves({
-        ok: true,
-        status: 200,
-        statusText: 'OK',
-      });
+      await exporter.export([makeMetric()]);
 
-      await exporter.export(metrics);
-
-      expect(fetchStub.callCount).to.equal(2);
+      // Only one call — no retry on terminal error
+      expect(sendRequestStub.callCount).to.equal(1);
     });
 
-    it('should not retry on terminal error (400)', async () => {
-      const metrics: TelemetryMetric[] = [
-        {
-          metricType: 'connection',
-          timestamp: Date.now(),
-          sessionId: 'session-1',
-        },
-      ];
+    it('should not retry on terminal HTTP errors (401)', async () => {
+      const context = new ClientContextStub({ telemetryMaxRetries: 3 } as any);
+      const registry = new CircuitBreakerRegistry(context);
+      const exporter = new DatabricksTelemetryExporter(context, 'host.example.com', registry, fakeAuthProvider);
+      const sendRequestStub = sinon
+        .stub(exporter as any, 'sendRequest')
+        .returns(makeErrorResponse(401, 'Unauthorized'));
 
-      fetchStub.resolves({
-        ok: false,
-        status: 400,
-        statusText: 'Bad Request',
-      });
+      await exporter.export([makeMetric()]);
 
-      await exporter.export(metrics);
-
-      // Should only be called once (no retry)
-      expect(fetchStub.callCount).to.equal(1);
+      expect(sendRequestStub.callCount).to.equal(1);
     });
 
-    it('should not retry on terminal error (401)', async () => {
-      const metrics: TelemetryMetric[] = [
-        {
-          metricType: 'connection',
-          timestamp: Date.now(),
-          sessionId: 'session-1',
-        },
-      ];
+    it('should give up after maxRetries are exhausted', async () => {
+      const context = new ClientContextStub({ telemetryMaxRetries: 2 } as any);
+      const registry = new CircuitBreakerRegistry(context);
+      const exporter = new DatabricksTelemetryExporter(context, 'host.example.com', registry, fakeAuthProvider);
+      const sendRequestStub = sinon
+        .stub(exporter as any, 'sendRequest')
+        .returns(makeErrorResponse(503, 'Service Unavailable'));
 
-      fetchStub.resolves({
-        ok: false,
-        status: 401,
-        statusText: 'Unauthorized',
-      });
+      const exportPromise = exporter.export([makeMetric()]);
+      await clock.runAllAsync();
+      await exportPromise;
 
-      await exporter.export(metrics);
-
-      expect(fetchStub.callCount).to.equal(1);
-    });
-
-    it('should respect max retry limit', async () => {
-      const metrics: TelemetryMetric[] = [
-        {
-          metricType: 'connection',
-          timestamp: Date.now(),
-          sessionId: 'session-1',
-        },
-      ];
-
-      // Always fail with retryable error
-      fetchStub.resolves({
-        ok: false,
-        status: 503,
-        statusText: 'Service Unavailable',
-      });
-
-      await exporter.export(metrics);
-
-      // Should try initial + 3 retries = 4 total
-      expect(fetchStub.callCount).to.equal(4);
-    });
-
-    it('should use exponential backoff with jitter', async () => {
-      const metrics: TelemetryMetric[] = [
-        {
-          metricType: 'connection',
-          timestamp: Date.now(),
-          sessionId: 'session-1',
-        },
-      ];
-
-      // Mock all failures to test retry behavior
-      fetchStub.callsFake(() => {
-        return Promise.resolve({
-          ok: false,
-          status: 503,
-          statusText: 'Service Unavailable',
-        });
-      });
-
-      await exporter.export(metrics);
-
-      // Should have multiple attempts (initial + retries)
-      expect(fetchStub.callCount).to.be.greaterThan(1);
+      // 1 initial + 2 retries = 3 total calls
+      expect(sendRequestStub.callCount).to.equal(3);
     });
   });
 
   describe('export() - circuit breaker integration', () => {
-    it('should use circuit breaker for endpoint protection', async () => {
-      const metrics: TelemetryMetric[] = [
-        {
-          metricType: 'connection',
-          timestamp: Date.now(),
-          sessionId: 'session-1',
-        },
-      ];
+    it('should drop telemetry when circuit breaker is OPEN', async () => {
+      // maxRetries: 0 avoids sleep delays; failureThreshold: 1 trips the breaker on first failure
+      const context = new ClientContextStub({ telemetryMaxRetries: 0 } as any);
+      const registry = new CircuitBreakerRegistry(context);
+      registry.getCircuitBreaker('host.example.com', { failureThreshold: 1 });
+      const exporter = new DatabricksTelemetryExporter(context, 'host.example.com', registry, fakeAuthProvider);
+      const sendRequestStub = sinon
+        .stub(exporter as any, 'sendRequest')
+        .returns(makeErrorResponse(503, 'Service Unavailable'));
 
-      fetchStub.resolves({
-        ok: true,
-        status: 200,
-        statusText: 'OK',
-      });
+      // Trip the circuit breaker (1 non-retryable-pathway failure is enough)
+      await exporter.export([makeMetric()]);
+      sendRequestStub.reset();
 
-      await exporter.export(metrics);
+      // Now circuit is OPEN, export should be dropped without calling sendRequest
+      await exporter.export([makeMetric()]);
 
-      const breaker = circuitBreakerRegistry.getCircuitBreaker('test.databricks.com');
-      expect(breaker.getState()).to.equal(CircuitBreakerState.CLOSED);
+      expect(sendRequestStub.called).to.be.false;
     });
 
-    it('should handle circuit breaker OPEN state gracefully', async () => {
-      const metrics: TelemetryMetric[] = [
-        {
-          metricType: 'connection',
-          timestamp: Date.now(),
-          sessionId: 'session-1',
-        },
-      ];
+    it('should log at debug level when circuit is OPEN', async () => {
+      const context = new ClientContextStub({ telemetryMaxRetries: 0 } as any);
+      const logSpy = sinon.spy((context as any).logger, 'log');
+      const registry = new CircuitBreakerRegistry(context);
+      registry.getCircuitBreaker('host.example.com', { failureThreshold: 1 });
+      const exporter = new DatabricksTelemetryExporter(context, 'host.example.com', registry, fakeAuthProvider);
+      sinon.stub(exporter as any, 'sendRequest').returns(makeErrorResponse(503, 'Service Unavailable'));
 
-      // Trigger circuit breaker to open
-      const breaker = circuitBreakerRegistry.getCircuitBreaker('test.databricks.com');
-      fetchStub.rejects(new Error('Network failure'));
+      await exporter.export([makeMetric()]);
+      logSpy.resetHistory();
 
-      for (let i = 0; i < 5; i++) {
-        try {
-          await breaker.execute(async () => {
-            throw new Error('Network failure');
-          });
-        } catch {
-          // Expected
-        }
-      }
+      await exporter.export([makeMetric()]);
 
-      expect(breaker.getState()).to.equal(CircuitBreakerState.OPEN);
-
-      // Now export should be dropped without error
-      await exporter.export(metrics);
-
-      // Should log circuit breaker OPEN
-      expect(logSpy.calledWith(LogLevel.debug, 'Circuit breaker OPEN - dropping telemetry')).to.be.true;
+      expect(logSpy.calledWith(LogLevel.debug, sinon.match(/Circuit breaker OPEN/))).to.be.true;
     });
   });
 
-  describe('export() - exception handling', () => {
-    it('CRITICAL: should never throw on network failure', async () => {
-      const metrics: TelemetryMetric[] = [
-        {
-          metricType: 'connection',
-          timestamp: Date.now(),
-          sessionId: 'session-1',
-        },
-      ];
+  describe('export() - payload format', () => {
+    it('should send POST request with JSON content-type', async () => {
+      const context = new ClientContextStub();
+      const registry = new CircuitBreakerRegistry(context);
+      const exporter = new DatabricksTelemetryExporter(context, 'host.example.com', registry, fakeAuthProvider);
+      const sendRequestStub = sinon.stub(exporter as any, 'sendRequest').returns(makeOkResponse());
 
-      fetchStub.rejects(new Error('Network failure'));
+      await exporter.export([makeMetric()]);
 
-      // Should not throw
-      await exporter.export(metrics);
-
-      // Should log at debug level only
-      expect(logSpy.args.every((args) => args[0] === LogLevel.debug)).to.be.true;
+      const options = sendRequestStub.firstCall.args[1] as any;
+      expect(options.method).to.equal('POST');
+      expect(options.headers['Content-Type']).to.equal('application/json');
     });
 
-    it('CRITICAL: should never throw on invalid response', async () => {
-      const metrics: TelemetryMetric[] = [
-        {
-          metricType: 'connection',
-          timestamp: Date.now(),
-          sessionId: 'session-1',
-        },
-      ];
+    it('should include protoLogs in payload body', async () => {
+      const context = new ClientContextStub();
+      const registry = new CircuitBreakerRegistry(context);
+      const exporter = new DatabricksTelemetryExporter(context, 'host.example.com', registry, fakeAuthProvider);
+      const sendRequestStub = sinon.stub(exporter as any, 'sendRequest').returns(makeOkResponse());
 
-      fetchStub.resolves({
-        ok: false,
-        status: 500,
-        statusText: 'Internal Server Error',
-      });
+      await exporter.export([makeMetric(), makeMetric()]);
 
-      // Should not throw
-      await exporter.export(metrics);
-
-      // Should log at debug level only
-      expect(logSpy.args.every((args) => args[0] === LogLevel.debug)).to.be.true;
-    });
-
-    it('CRITICAL: should swallow all exceptions and log at debug level', async () => {
-      const metrics: TelemetryMetric[] = [
-        {
-          metricType: 'connection',
-          timestamp: Date.now(),
-          sessionId: 'session-1',
-        },
-      ];
-
-      fetchStub.rejects(new Error('Unexpected error'));
-
-      await exporter.export(metrics);
-
-      // Verify all logging is at debug level
-      logSpy.getCalls().forEach((call) => {
-        expect(call.args[0]).to.equal(LogLevel.debug);
-      });
-    });
-
-    it('CRITICAL: should handle empty metrics array gracefully', async () => {
-      await exporter.export([]);
-
-      // Should not call fetch
-      expect(fetchStub.called).to.be.false;
-    });
-
-    it('CRITICAL: should handle null/undefined metrics gracefully', async () => {
-      await exporter.export(null as any);
-      await exporter.export(undefined as any);
-
-      // Should not call fetch
-      expect(fetchStub.called).to.be.false;
+      const body = JSON.parse((sendRequestStub.firstCall.args[1] as any).body);
+      expect(body.protoLogs).to.be.an('array').with.length(2);
+      expect(body.items).to.be.an('array').that.is.empty;
+      expect(body.uploadTime).to.be.a('number');
     });
   });
 
-  describe('export() - logging', () => {
-    it('CRITICAL: should log only at debug level', async () => {
-      const metrics: TelemetryMetric[] = [
-        {
-          metricType: 'connection',
-          timestamp: Date.now(),
-          sessionId: 'session-1',
-        },
-      ];
+  describe('logging level compliance', () => {
+    it('should only log at debug level', async () => {
+      const context = new ClientContextStub();
+      const logSpy = sinon.spy((context as any).logger, 'log');
+      const registry = new CircuitBreakerRegistry(context);
+      const exporter = new DatabricksTelemetryExporter(context, 'host.example.com', registry, fakeAuthProvider);
+      sinon.stub(exporter as any, 'sendRequest').rejects(new Error('something went wrong'));
 
-      fetchStub.resolves({
-        ok: true,
-        status: 200,
-        statusText: 'OK',
-      });
+      const exportPromise = exporter.export([makeMetric()]);
+      await clock.runAllAsync();
+      await exportPromise;
 
-      await exporter.export(metrics);
-
-      // All log calls should be at debug level
-      logSpy.getCalls().forEach((call) => {
-        expect(call.args[0]).to.equal(LogLevel.debug);
-      });
-    });
-
-    it('CRITICAL: should not use console logging', async () => {
-      const consoleLogSpy = sinon.spy(console, 'log');
-      const consoleErrorSpy = sinon.spy(console, 'error');
-      const consoleWarnSpy = sinon.spy(console, 'warn');
-
-      const metrics: TelemetryMetric[] = [
-        {
-          metricType: 'connection',
-          timestamp: Date.now(),
-          sessionId: 'session-1',
-        },
-      ];
-
-      fetchStub.rejects(new Error('Test error'));
-
-      await exporter.export(metrics);
-
-      expect(consoleLogSpy.called).to.be.false;
-      expect(consoleErrorSpy.called).to.be.false;
-      expect(consoleWarnSpy.called).to.be.false;
-
-      consoleLogSpy.restore();
-      consoleErrorSpy.restore();
-      consoleWarnSpy.restore();
+      expect(logSpy.neverCalledWith(LogLevel.error, sinon.match.any)).to.be.true;
+      // Note: circuit breaker logs at warn level when transitioning to OPEN, which is expected
     });
   });
 
-  describe('export() - connection provider integration', () => {
-    it('should use connection provider from context', async () => {
-      const metrics: TelemetryMetric[] = [
-        {
+  describe('Authorization header flow', () => {
+    it('sends Authorization header returned by the auth provider on authenticated export', async () => {
+      const context = new ClientContextStub({ telemetryAuthenticatedExport: true } as any);
+      const registry = new CircuitBreakerRegistry(context);
+      const exporter = new DatabricksTelemetryExporter(context, 'host.example.com', registry, fakeAuthProvider);
+      const sendRequestStub = sinon.stub(exporter as any, 'sendRequest').returns(makeOkResponse());
+
+      await exporter.export([makeMetric()]);
+
+      const init = sendRequestStub.firstCall.args[1] as any;
+      expect(init.headers.Authorization).to.equal('Bearer test-token');
+    });
+
+    it('drops the batch when authenticated export is requested but auth returns no header', async () => {
+      const context = new ClientContextStub({ telemetryAuthenticatedExport: true, telemetryMaxRetries: 0 } as any);
+      const registry = new CircuitBreakerRegistry(context);
+      const emptyAuth = { authenticate: async () => ({}) };
+      const exporter = new DatabricksTelemetryExporter(context, 'host.example.com', registry, emptyAuth as any);
+      const sendRequestStub = sinon.stub(exporter as any, 'sendRequest').returns(makeOkResponse());
+
+      await exporter.export([makeMetric()]);
+
+      expect(sendRequestStub.called).to.be.false;
+    });
+
+    it('warns exactly once across consecutive auth-missing drops', async () => {
+      const context = new ClientContextStub({ telemetryAuthenticatedExport: true, telemetryMaxRetries: 0 } as any);
+      const logSpy = sinon.spy((context as any).logger, 'log');
+      const registry = new CircuitBreakerRegistry(context);
+      const emptyAuth = { authenticate: async () => ({}) };
+      const exporter = new DatabricksTelemetryExporter(context, 'host.example.com', registry, emptyAuth as any);
+      sinon.stub(exporter as any, 'sendRequest').returns(makeOkResponse());
+
+      await exporter.export([makeMetric()]);
+      await exporter.export([makeMetric()]);
+      await exporter.export([makeMetric()]);
+
+      const warnCalls = logSpy
+        .getCalls()
+        .filter((c) => c.args[0] === LogLevel.warn && /Authorization/.test(String(c.args[1])));
+      expect(warnCalls.length).to.equal(1);
+    });
+
+    it('re-arms the auth-missing warn after a successful export', async () => {
+      const context = new ClientContextStub({ telemetryAuthenticatedExport: true, telemetryMaxRetries: 0 } as any);
+      const logSpy = sinon.spy((context as any).logger, 'log');
+      const registry = new CircuitBreakerRegistry(context);
+      let headers: Record<string, string> = {};
+      const toggleAuth = { authenticate: async () => headers };
+      const exporter = new DatabricksTelemetryExporter(context, 'host.example.com', registry, toggleAuth as any);
+      sinon.stub(exporter as any, 'sendRequest').returns(makeOkResponse());
+
+      await exporter.export([makeMetric()]); // warns once
+      headers = { Authorization: 'Bearer recovered' };
+      await exporter.export([makeMetric()]); // success → re-arms
+      headers = {};
+      await exporter.export([makeMetric()]); // warns again
+
+      const warnCalls = logSpy
+        .getCalls()
+        .filter((c) => c.args[0] === LogLevel.warn && /Authorization/.test(String(c.args[1])));
+      expect(warnCalls.length).to.equal(2);
+    });
+  });
+
+  describe('unauthenticated endpoint privacy', () => {
+    it('omits workspace_id, session_id, statement_id from unauth payload', async () => {
+      const context = new ClientContextStub({ telemetryAuthenticatedExport: false } as any);
+      const registry = new CircuitBreakerRegistry(context);
+      const exporter = new DatabricksTelemetryExporter(context, 'host.example.com', registry, fakeAuthProvider);
+      const sendRequestStub = sinon.stub(exporter as any, 'sendRequest').returns(makeOkResponse());
+
+      await exporter.export([
+        makeMetric({
           metricType: 'connection',
-          timestamp: Date.now(),
-          sessionId: 'session-1',
-        },
-      ];
+          sessionId: 'session-xyz',
+          statementId: 'stmt-abc',
+          workspaceId: 'ws-123',
+        } as any),
+      ]);
 
-      const getConnectionProviderSpy = sinon.spy(context, 'getConnectionProvider');
+      const body = JSON.parse((sendRequestStub.firstCall.args[1] as any).body);
+      const log = JSON.parse(body.protoLogs[0]);
+      expect(log.workspace_id).to.be.undefined;
+      expect(log.entry.sql_driver_log.session_id).to.be.undefined;
+      expect(log.entry.sql_driver_log.sql_statement_id).to.be.undefined;
+    });
 
-      fetchStub.resolves({
-        ok: true,
-        status: 200,
-        statusText: 'OK',
-      });
+    it('omits system_configuration from unauth payload', async () => {
+      const context = new ClientContextStub({ telemetryAuthenticatedExport: false } as any);
+      const registry = new CircuitBreakerRegistry(context);
+      const exporter = new DatabricksTelemetryExporter(context, 'host.example.com', registry, fakeAuthProvider);
+      const sendRequestStub = sinon.stub(exporter as any, 'sendRequest').returns(makeOkResponse());
 
-      await exporter.export(metrics);
+      await exporter.export([
+        makeMetric({
+          metricType: 'connection',
+          driverConfig: {
+            driverVersion: '1.x',
+            driverName: 'nodejs-sql-driver',
+            nodeVersion: '20.0',
+            platform: 'linux',
+            osVersion: '5.0',
+            osArch: 'x64',
+            runtimeVendor: 'v8',
+            localeName: 'en_US',
+            charSetEncoding: 'UTF-8',
+            processName: '/home/alice/worker.js',
+          },
+        } as any),
+      ]);
 
-      expect(getConnectionProviderSpy.called).to.be.true;
+      const body = JSON.parse((sendRequestStub.firstCall.args[1] as any).body);
+      const log = JSON.parse(body.protoLogs[0]);
+      expect(log.entry.sql_driver_log.system_configuration).to.be.undefined;
+    });
+
+    it('strips userAgentEntry from User-Agent on unauth path', async () => {
+      const context = new ClientContextStub({
+        telemetryAuthenticatedExport: false,
+        userAgentEntry: 'MyTenantApp/1.2.3',
+      } as any);
+      const registry = new CircuitBreakerRegistry(context);
+      const exporter = new DatabricksTelemetryExporter(context, 'host.example.com', registry, fakeAuthProvider);
+      const sendRequestStub = sinon.stub(exporter as any, 'sendRequest').returns(makeOkResponse());
+
+      await exporter.export([makeMetric()]);
+
+      const ua = (sendRequestStub.firstCall.args[1] as any).headers['User-Agent'];
+      expect(ua).to.not.include('MyTenantApp');
+    });
+
+    it('blanks stack_trace on unauth error metrics', async () => {
+      const context = new ClientContextStub({ telemetryAuthenticatedExport: false } as any);
+      const registry = new CircuitBreakerRegistry(context);
+      const exporter = new DatabricksTelemetryExporter(context, 'host.example.com', registry, fakeAuthProvider);
+      const sendRequestStub = sinon.stub(exporter as any, 'sendRequest').returns(makeOkResponse());
+
+      await exporter.export([
+        makeMetric({
+          metricType: 'error',
+          errorName: 'SomeError',
+          errorMessage: 'Bearer leaked-token in the message',
+          errorStack: 'Error: leak\n    at fn (dapi0123456789abcdef)',
+        } as any),
+      ]);
+
+      const body = JSON.parse((sendRequestStub.firstCall.args[1] as any).body);
+      const log = JSON.parse(body.protoLogs[0]);
+      expect(log.entry.sql_driver_log.error_info.stack_trace).to.equal('');
+      expect(log.entry.sql_driver_log.error_info.error_name).to.equal('SomeError');
+    });
+  });
+
+  describe('errorStack flow (authenticated)', () => {
+    it('redacts Bearer tokens in stack_trace before export', async () => {
+      const context = new ClientContextStub({ telemetryAuthenticatedExport: true } as any);
+      const registry = new CircuitBreakerRegistry(context);
+      const exporter = new DatabricksTelemetryExporter(context, 'host.example.com', registry, fakeAuthProvider);
+      const sendRequestStub = sinon.stub(exporter as any, 'sendRequest').returns(makeOkResponse());
+
+      await exporter.export([
+        makeMetric({
+          metricType: 'error',
+          errorName: 'AuthError',
+          errorMessage: 'ignored because errorStack is preferred',
+          errorStack: 'Error: boom\n    at Bearer leaked-bearer-token',
+        } as any),
+      ]);
+
+      const body = JSON.parse((sendRequestStub.firstCall.args[1] as any).body);
+      const log = JSON.parse(body.protoLogs[0]);
+      const stack = log.entry.sql_driver_log.stack_trace ?? log.entry.sql_driver_log.error_info?.stack_trace;
+      expect(stack).to.include('<REDACTED>');
+      expect(stack).to.not.include('leaked-bearer-token');
+    });
+  });
+
+  describe('host validation', () => {
+    it('drops the batch when host fails validation (malformed)', async () => {
+      const context = new ClientContextStub();
+      const registry = new CircuitBreakerRegistry(context);
+      const exporter = new DatabricksTelemetryExporter(context, '//attacker.com', registry, fakeAuthProvider);
+      const sendRequestStub = sinon.stub(exporter as any, 'sendRequest').returns(makeOkResponse());
+
+      await exporter.export([makeMetric()]);
+
+      expect(sendRequestStub.called).to.be.false;
+    });
+
+    it('drops the batch when host is loopback', async () => {
+      const context = new ClientContextStub();
+      const registry = new CircuitBreakerRegistry(context);
+      const exporter = new DatabricksTelemetryExporter(context, '127.0.0.1', registry, fakeAuthProvider);
+      const sendRequestStub = sinon.stub(exporter as any, 'sendRequest').returns(makeOkResponse());
+
+      await exporter.export([makeMetric()]);
+
+      expect(sendRequestStub.called).to.be.false;
+    });
+  });
+
+  describe('dispose()', () => {
+    it('removes the per-host circuit breaker from the registry', () => {
+      const context = new ClientContextStub();
+      const registry = new CircuitBreakerRegistry(context);
+      const exporter = new DatabricksTelemetryExporter(context, 'host.example.com', registry, fakeAuthProvider);
+
+      expect(registry.getAllBreakers().has('host.example.com')).to.be.true;
+
+      exporter.dispose();
+
+      expect(registry.getAllBreakers().has('host.example.com')).to.be.false;
+    });
+
+    it('is idempotent', () => {
+      const context = new ClientContextStub();
+      const registry = new CircuitBreakerRegistry(context);
+      const exporter = new DatabricksTelemetryExporter(context, 'host.example.com', registry, fakeAuthProvider);
+
+      exporter.dispose();
+      expect(() => exporter.dispose()).to.not.throw();
     });
   });
 });

@@ -18,50 +18,58 @@ import IClientContext from '../contracts/IClientContext';
 import { LogLevel } from '../contracts/IDBSQLLogger';
 import TelemetryClient from './TelemetryClient';
 
-/**
- * Holds a telemetry client and its reference count.
- * The reference count tracks how many connections are using this client.
- */
 interface TelemetryClientHolder {
   client: TelemetryClient;
   refCount: number;
 }
 
 // Soft cap on distinct host entries. Above this the provider warns once so a
-// misconfigured caller (per-request hosts, unnormalized aliases) is visible in
-// logs rather than silently growing the map.
+// misconfigured caller (per-request hosts, unnormalized aliases) is visible
+// in logs rather than silently growing the map.
 const MAX_CLIENTS_SOFT_LIMIT = 128;
 
 /**
- * Manages one telemetry client per host.
- * Prevents rate limiting by sharing clients across connections to the same host.
- * Instance-based (not singleton), stored in DBSQLClient.
+ * Process-wide registry of `TelemetryClient`s, one per host. Multiple
+ * `DBSQLClient` instances connecting to the same host share the same
+ * `TelemetryClient`, which owns the host-scoped circuit breaker, feature
+ * flag cache, exporter, and aggregator.
  *
- * Reference counts are incremented and decremented synchronously, and
- * `close()` is sync today, so there is no await between map mutation and
- * client teardown. The map entry is removed before `close()` runs so a
- * concurrent `getOrCreateClient` call for the same host gets a fresh
- * instance rather than receiving this closing one. When `close()` becomes
- * async (e.g. HTTP flush in [5/7]) the flow will need to `await` after the
- * delete to preserve the same invariant.
+ * Singleton because the resources we're sharing — circuit-breaker counters,
+ * batched HTTP exports — are correct only at process scope. Per-`DBSQLClient`
+ * provider scope (the previous design) deduplicates nothing.
+ *
+ * `getOrCreateClient` is sync: caller increments refcount, registers its
+ * context+auth, and walks away. `releaseClient` is `async` because the
+ * underlying `TelemetryClient.close()` awaits the final flush.
  */
 class TelemetryClientProvider {
-  private clients: Map<string, TelemetryClientHolder>;
+  private static instance: TelemetryClientProvider | undefined;
+
+  private clients = new Map<string, TelemetryClientHolder>();
 
   private softLimitWarned = false;
 
-  constructor(private context: IClientContext) {
-    this.clients = new Map();
-    const logger = context.getLogger();
-    logger.log(LogLevel.debug, 'Created TelemetryClientProvider');
+  /**
+   * Production code should use `TelemetryClientProvider.getInstance()` for
+   * the process-wide singleton. The constructor remains public for unit
+   * tests that need an isolated provider with its own map.
+   */
+  public constructor() {}
+
+  static getInstance(): TelemetryClientProvider {
+    if (!TelemetryClientProvider.instance) {
+      TelemetryClientProvider.instance = new TelemetryClientProvider();
+    }
+    return TelemetryClientProvider.instance;
   }
 
   /**
-   * Canonicalize host so aliases (scheme, default port, trailing slash, case,
-   * trailing dot, surrounding whitespace) map to the same entry. Kept to a
-   * lightweight lexical normalization — `buildTelemetryUrl` still performs
-   * the strict security validation when a request is actually built.
+   * @internal Reset for tests. Production code should never call this.
    */
+  static resetInstance(): void {
+    TelemetryClientProvider.instance = undefined;
+  }
+
   private static normalizeHostKey(host: string): string {
     return host
       .trim()
@@ -73,23 +81,17 @@ class TelemetryClientProvider {
   }
 
   /**
-   * Gets or creates a telemetry client for the specified host.
-   * Increments the reference count for the client.
-   *
-   * @param host The host identifier (e.g., "workspace.cloud.databricks.com")
-   * @returns The telemetry client for the host
+   * Get or create the `TelemetryClient` for `host`, registering `context` as
+   * a participant. Increments refcount.
    */
-  getOrCreateClient(host: string): TelemetryClient {
-    const logger = this.context.getLogger();
+  getOrCreateClient(context: IClientContext, host: string): TelemetryClient {
+    const logger = context.getLogger();
     const key = TelemetryClientProvider.normalizeHostKey(host);
     let holder = this.clients.get(key);
 
     if (!holder) {
-      const client = new TelemetryClient(this.context, key);
-      holder = {
-        client,
-        refCount: 0,
-      };
+      const client = new TelemetryClient(context, key);
+      holder = { client, refCount: 0 };
       this.clients.set(key, holder);
       logger.log(LogLevel.debug, `Created new TelemetryClient for host: ${host}`);
 
@@ -100,22 +102,21 @@ class TelemetryClientProvider {
           `TelemetryClientProvider has ${this.clients.size} distinct hosts — possible alias or leak`,
         );
       }
+    } else {
+      holder.client.registerContext(context);
     }
 
     holder.refCount += 1;
     logger.log(LogLevel.debug, `TelemetryClient reference count for ${host}: ${holder.refCount}`);
-
     return holder.client;
   }
 
   /**
-   * Releases a telemetry client for the specified host.
-   * Decrements the reference count and closes the client when it reaches zero.
-   *
-   * @param host The host identifier
+   * Release `context`'s registration. When the last `DBSQLClient` releases,
+   * the underlying `TelemetryClient.close()` runs and the entry is removed.
    */
-  releaseClient(host: string): void {
-    const logger = this.context.getLogger();
+  async releaseClient(context: IClientContext, host: string): Promise<void> {
+    const logger = context.getLogger();
     const key = TelemetryClientProvider.normalizeHostKey(host);
     const holder = this.clients.get(key);
 
@@ -124,24 +125,22 @@ class TelemetryClientProvider {
       return;
     }
 
-    // Guard against double-release: a caller releasing more times than it got
-    // would otherwise drive refCount negative and close a client another
-    // caller is still holding. Warn loudly and refuse to decrement further.
     if (holder.refCount <= 0) {
       logger.log(LogLevel.warn, `Unbalanced release for TelemetryClient host: ${host}`);
       return;
     }
 
+    holder.client.unregisterContext(context);
     holder.refCount -= 1;
     logger.log(LogLevel.debug, `TelemetryClient reference count for ${host}: ${holder.refCount}`);
 
-    // Close and remove client when reference count reaches zero.
-    // Remove from map before calling close so a concurrent getOrCreateClient
-    // creates a fresh client rather than receiving this closing one.
     if (holder.refCount <= 0) {
+      // Remove from map BEFORE awaiting close so a concurrent
+      // getOrCreateClient creates a fresh instance rather than receiving
+      // this closing one.
       this.clients.delete(key);
       try {
-        holder.client.close();
+        await holder.client.close();
         logger.log(LogLevel.debug, `Closed and removed TelemetryClient for host: ${host}`);
       } catch (error) {
         const msg = error instanceof Error ? error.message : String(error);
@@ -150,17 +149,13 @@ class TelemetryClientProvider {
     }
   }
 
-  /**
-   * @internal Exposed for testing only.
-   */
+  /** @internal Exposed for testing only. */
   getRefCount(host: string): number {
     const holder = this.clients.get(TelemetryClientProvider.normalizeHostKey(host));
     return holder ? holder.refCount : 0;
   }
 
-  /**
-   * @internal Exposed for testing only.
-   */
+  /** @internal Exposed for testing only. */
   getActiveClients(): Map<string, TelemetryClient> {
     const result = new Map<string, TelemetryClient>();
     for (const [host, holder] of this.clients.entries()) {

@@ -14,17 +14,25 @@
  * limitations under the License.
  */
 
-import fetch, { Response } from 'node-fetch';
+import { v4 as uuidv4 } from 'uuid';
+import fetch, { RequestInit, Response, Request } from 'node-fetch';
 import IClientContext from '../contracts/IClientContext';
 import { LogLevel } from '../contracts/IDBSQLLogger';
+import IAuthentication from '../connection/contracts/IAuthentication';
+import AuthenticationError from '../errors/AuthenticationError';
+import HiveDriverError from '../errors/HiveDriverError';
 import { TelemetryMetric, DEFAULT_TELEMETRY_CONFIG } from './types';
-import { CircuitBreakerRegistry } from './CircuitBreaker';
+import { CircuitBreaker, CircuitBreakerOpenError, CircuitBreakerRegistry } from './CircuitBreaker';
 import ExceptionClassifier from './ExceptionClassifier';
-import { buildUrl } from './urlUtils';
+import {
+  buildTelemetryUrl,
+  hasAuthorization,
+  normalizeHeaders,
+  redactSensitive,
+  sanitizeProcessName,
+} from './telemetryUtils';
+import buildUserAgentString from '../utils/buildUserAgentString';
 
-/**
- * Databricks telemetry log format for export.
- */
 interface DatabricksTelemetryLog {
   workspace_id?: string;
   frontend_log_event_id: string;
@@ -52,22 +60,9 @@ interface DatabricksTelemetryLog {
         char_set_encoding?: string;
         process_name?: string;
       };
-      driver_connection_params?: {
-        http_path?: string;
-        socket_timeout?: number;
-        enable_arrow?: boolean;
-        enable_direct_results?: boolean;
-        enable_metric_view_metadata?: boolean;
-      };
-      auth_type?: string;
       operation_latency_ms?: number;
       sql_operation?: {
-        statement_type?: string;
-        is_compressed?: boolean;
         execution_result?: string;
-        operation_detail?: {
-          operation_type?: string;
-        };
         chunk_details?: {
           total_chunks_present?: number;
           total_chunks_iterated?: number;
@@ -85,54 +80,60 @@ interface DatabricksTelemetryLog {
 }
 
 /**
- * Payload format for Databricks telemetry export.
- * Matches JDBC TelemetryRequest format with protoLogs.
+ * Thrown for non-credential terminal telemetry failures (e.g. refusal to
+ * export to an invalid host). Separate from `AuthenticationError` so the
+ * classifier can keep the "short-circuit, don't retry, count as breaker
+ * failure" contract without muddying the auth taxonomy used by the rest of
+ * the driver.
  */
-interface DatabricksTelemetryPayload {
-  uploadTime: number;
-  items: string[]; // Always empty - required field
-  protoLogs: string[]; // JSON-stringified DatabricksTelemetryLog objects
+export class TelemetryTerminalError extends HiveDriverError {
+  readonly terminal = true as const;
 }
 
 /**
- * Exports telemetry metrics to Databricks telemetry service.
+ * Exports telemetry metrics to the Databricks telemetry service.
  *
- * Endpoints:
- * - Authenticated: /api/2.0/sql/telemetry-ext
- * - Unauthenticated: /api/2.0/sql/telemetry-unauth
- *
- * Features:
- * - Circuit breaker integration for endpoint protection
- * - Retry logic with exponential backoff for retryable errors
- * - Terminal error detection (no retry on 400, 401, 403, 404)
- * - CRITICAL: export() method NEVER throws - all exceptions swallowed
- * - CRITICAL: All logging at LogLevel.debug ONLY
+ * CRITICAL: export() never throws — all errors are swallowed and logged at
+ * LogLevel.debug (the one exception is a single warn on the first observed
+ * auth-missing, re-armed on recovery).
  */
 export default class DatabricksTelemetryExporter {
-  private circuitBreaker;
+  private readonly circuitBreaker: CircuitBreaker;
 
-  private readonly userAgent: string;
+  private readonly authenticatedUserAgent: string;
 
-  private fetchFn: typeof fetch;
+  /** User-Agent used for the unauthenticated endpoint; strips any
+   *  caller-supplied `userAgentEntry` that could identify the customer. */
+  private readonly unauthenticatedUserAgent: string;
+
+  private authMissingWarned = false;
 
   constructor(
     private context: IClientContext,
     private host: string,
     private circuitBreakerRegistry: CircuitBreakerRegistry,
-    fetchFunction?: typeof fetch,
+    private authProvider?: IAuthentication,
   ) {
     this.circuitBreaker = circuitBreakerRegistry.getCircuitBreaker(host);
-    this.fetchFn = fetchFunction || fetch;
-
-    // Get driver version for user agent
-    this.userAgent = `databricks-sql-nodejs/${this.getDriverVersion()}`;
+    const config = this.context.getConfig();
+    this.authenticatedUserAgent = buildUserAgentString(config.userAgentEntry);
+    this.unauthenticatedUserAgent = buildUserAgentString(undefined);
   }
 
   /**
-   * Export metrics to Databricks service. Never throws.
+   * Release the per-host circuit breaker. Intended for the owning client's
+   * close() path.
    *
-   * @param metrics - Array of telemetry metrics to export
+   * NOTE: `CircuitBreakerRegistry` currently shares one breaker per host
+   * across consumers; calling this while another consumer is active will
+   * reset their failure-count memory. The owning-client is expected to be
+   * the last consumer on its host; multi-consumer refcounting on the
+   * registry will land in the consumer-wiring PR.
    */
+  dispose(): void {
+    this.circuitBreakerRegistry.removeCircuitBreaker(this.host);
+  }
+
   async export(metrics: TelemetryMetric[]): Promise<void> {
     if (!metrics || metrics.length === 0) {
       return;
@@ -141,64 +142,76 @@ export default class DatabricksTelemetryExporter {
     const logger = this.context.getLogger();
 
     try {
-      await this.circuitBreaker.execute(async () => {
-        await this.exportWithRetry(metrics);
-      });
+      await this.circuitBreaker.execute(() => this.exportWithRetry(metrics));
     } catch (error: any) {
-      // CRITICAL: All exceptions swallowed and logged at debug level ONLY
-      if (error.message === 'Circuit breaker OPEN') {
+      if (error instanceof CircuitBreakerOpenError) {
         logger.log(LogLevel.debug, 'Circuit breaker OPEN - dropping telemetry');
+      } else if (error instanceof AuthenticationError) {
+        logger.log(LogLevel.debug, `Telemetry export auth failure: ${error.message}`);
+      } else if (error instanceof TelemetryTerminalError) {
+        logger.log(LogLevel.debug, `Telemetry export refused: ${error.message}`);
       } else {
-        logger.log(LogLevel.debug, `Telemetry export error: ${error.message}`);
+        logger.log(LogLevel.debug, `Telemetry export error: ${error?.message ?? error}`);
       }
     }
   }
 
   /**
-   * Export metrics with retry logic for retryable errors.
-   * Implements exponential backoff with jitter.
+   * Retry wrapper shaped after HttpRetryPolicy: retries only on errors
+   * classified as retryable by ExceptionClassifier, stops on terminal ones,
+   * surfaces the last error to the circuit breaker.
+   *
+   * `maxRetries` is the number of retries *after* the first attempt (i.e.
+   * attempts = maxRetries + 1), matching HttpRetryPolicy's semantics.
    */
   private async exportWithRetry(metrics: TelemetryMetric[]): Promise<void> {
     const config = this.context.getConfig();
     const logger = this.context.getLogger();
-    const maxRetries = config.telemetryMaxRetries ?? DEFAULT_TELEMETRY_CONFIG.maxRetries;
+
+    const rawMaxRetries = config.telemetryMaxRetries ?? DEFAULT_TELEMETRY_CONFIG.maxRetries;
+    const maxRetries =
+      Number.isFinite(rawMaxRetries) && rawMaxRetries >= 0 ? rawMaxRetries : DEFAULT_TELEMETRY_CONFIG.maxRetries;
+    const baseMs = config.telemetryBackoffBaseMs ?? DEFAULT_TELEMETRY_CONFIG.backoffBaseMs;
+    const maxMs = config.telemetryBackoffMaxMs ?? DEFAULT_TELEMETRY_CONFIG.backoffMaxMs;
+    const jitterMs = config.telemetryBackoffJitterMs ?? DEFAULT_TELEMETRY_CONFIG.backoffJitterMs;
+
+    const totalAttempts = maxRetries + 1;
 
     let lastError: Error | null = null;
 
     /* eslint-disable no-await-in-loop */
-    for (let attempt = 0; attempt <= maxRetries; attempt += 1) {
+    for (let attempt = 0; attempt < totalAttempts; attempt += 1) {
       try {
         await this.exportInternal(metrics);
-        return; // Success
+        return;
       } catch (error: any) {
         lastError = error;
 
-        // Check if error is terminal (don't retry)
-        if (ExceptionClassifier.isTerminal(error)) {
-          logger.log(LogLevel.debug, `Terminal error - no retry: ${error.message}`);
-          throw error; // Terminal error, propagate to circuit breaker
+        if (
+          error instanceof AuthenticationError ||
+          error instanceof TelemetryTerminalError ||
+          ExceptionClassifier.isTerminal(error)
+        ) {
+          throw error;
         }
-
-        // Check if error is retryable
         if (!ExceptionClassifier.isRetryable(error)) {
-          logger.log(LogLevel.debug, `Non-retryable error: ${error.message}`);
-          throw error; // Not retryable, propagate to circuit breaker
+          throw error;
+        }
+        if (attempt >= totalAttempts - 1) {
+          throw error;
         }
 
-        // Last attempt reached
-        if (attempt >= maxRetries) {
-          logger.log(LogLevel.debug, `Max retries reached (${maxRetries}): ${error.message}`);
-          throw error; // Max retries exhausted, propagate to circuit breaker
-        }
+        const base = Math.min(baseMs * 2 ** attempt, maxMs);
+        const jitter = Math.random() * jitterMs;
+        const delay = Math.min(base + jitter, maxMs);
 
-        // Calculate backoff with exponential + jitter (100ms - 1000ms)
-        const baseDelay = Math.min(100 * 2 ** attempt, 1000);
-        const jitter = Math.random() * 100;
-        const delay = baseDelay + jitter;
-
+        // Include the failing error so ops can see what's being retried,
+        // not just the cadence.
         logger.log(
           LogLevel.debug,
-          `Retrying telemetry export (attempt ${attempt + 1}/${maxRetries}) after ${Math.round(delay)}ms`,
+          `Retrying telemetry export (attempt ${attempt + 1}/${totalAttempts}) after ${Math.round(delay)}ms: ${
+            error?.statusCode ?? ''
+          } ${redactSensitive(error?.message ?? '')}`,
         );
 
         await this.sleep(delay);
@@ -206,244 +219,183 @@ export default class DatabricksTelemetryExporter {
     }
     /* eslint-enable no-await-in-loop */
 
-    // Should not reach here, but just in case
     if (lastError) {
       throw lastError;
     }
   }
 
-  /**
-   * Internal export implementation that makes the HTTP call.
-   */
   private async exportInternal(metrics: TelemetryMetric[]): Promise<void> {
     const config = this.context.getConfig();
+    const logger = this.context.getLogger();
 
-    // Determine endpoint based on authentication mode
     const authenticatedExport = config.telemetryAuthenticatedExport ?? DEFAULT_TELEMETRY_CONFIG.authenticatedExport;
-    const endpoint = authenticatedExport
-      ? buildUrl(this.host, '/telemetry-ext')
-      : buildUrl(this.host, '/telemetry-unauth');
+    const endpoint = buildTelemetryUrl(this.host, authenticatedExport ? '/telemetry-ext' : '/telemetry-unauth');
+    if (!endpoint) {
+      // Malformed / deny-listed host — drop the batch rather than letting
+      // it target an attacker-controlled destination.
+      throw new TelemetryTerminalError('Refusing telemetry export: host failed validation');
+    }
 
-    // Format payload - each log is JSON-stringified to match JDBC format
-    const telemetryLogs = metrics.map((m) => this.toTelemetryLog(m));
-    const protoLogs = telemetryLogs.map((log) => JSON.stringify(log));
-
-    const payload: DatabricksTelemetryPayload = {
-      uploadTime: Date.now(),
-      items: [], // Required but unused
-      protoLogs,
+    const userAgent = authenticatedExport ? this.authenticatedUserAgent : this.unauthenticatedUserAgent;
+    let headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+      'User-Agent': userAgent,
     };
 
-    const authHeaders = authenticatedExport ? (await this.context.getAuthProvider()?.authenticate()) ?? {} : {};
+    if (authenticatedExport) {
+      headers = { ...headers, ...(await this.getAuthHeaders()) };
+      if (!hasAuthorization(headers)) {
+        if (!this.authMissingWarned) {
+          this.authMissingWarned = true;
+          logger.log(LogLevel.warn, 'Telemetry: Authorization header missing — metrics will be dropped');
+        }
+        throw new AuthenticationError('Telemetry export: missing Authorization header');
+      }
+    }
 
-    // Get agent with proxy settings (same pattern as CloudFetchResultHandler and DBSQLSession)
-    const connectionProvider = await this.context.getConnectionProvider();
-    const agent = await connectionProvider.getAgent();
+    const protoLogs = metrics.map((m) => this.toTelemetryLog(m, authenticatedExport, userAgent));
+    const body = JSON.stringify({
+      uploadTime: Date.now(),
+      items: [],
+      protoLogs: protoLogs.map((log) => JSON.stringify(log)),
+    });
 
-    // Make HTTP POST request with authentication and proxy support
-    const response: Response = await this.fetchFn(endpoint, {
+    logger.log(
+      LogLevel.debug,
+      `Exporting ${metrics.length} telemetry metrics to ${
+        authenticatedExport ? 'authenticated' : 'unauthenticated'
+      } endpoint`,
+    );
+
+    const response = await this.sendRequest(endpoint, {
       method: 'POST',
-      headers: {
-        ...authHeaders,
-        'Content-Type': 'application/json',
-        'User-Agent': this.userAgent,
-      },
-      body: JSON.stringify(payload),
-      agent, // Include agent for proxy support
+      headers,
+      body,
+      timeout: 10000,
     });
 
     if (!response.ok) {
+      await response.text().catch(() => {});
       const error: any = new Error(`Telemetry export failed: ${response.status} ${response.statusText}`);
       error.statusCode = response.status;
       throw error;
     }
+
+    await response.text().catch(() => {});
+    // Successful round-trip re-arms the "auth missing" warn so operators see
+    // a fresh signal the next time auth breaks.
+    this.authMissingWarned = false;
+    logger.log(LogLevel.debug, `Successfully exported ${metrics.length} telemetry metrics`);
   }
 
-  /**
-   * Map Operation.Type to Statement.Type for statement_type field.
-   * Operation.Type (EXECUTE_STATEMENT, LIST_CATALOGS, etc.) maps to Statement.Type (QUERY, METADATA, etc.)
-   */
-  private mapOperationToStatementType(operationType?: string): string {
-    if (!operationType) {
-      return 'TYPE_UNSPECIFIED';
+  private async getAuthHeaders(): Promise<Record<string, string>> {
+    // Prefer the explicitly-injected auth provider; fall back to the context
+    // (used when a shared TelemetryClient resolves auth through its FIFO of
+    // registered DBSQLClients).
+    const authProvider = this.authProvider ?? this.context.getAuthProvider();
+    if (!authProvider) {
+      return {};
     }
-
-    // Metadata operations map to METADATA
-    if (
-      operationType === 'LIST_TYPE_INFO' ||
-      operationType === 'LIST_CATALOGS' ||
-      operationType === 'LIST_SCHEMAS' ||
-      operationType === 'LIST_TABLES' ||
-      operationType === 'LIST_TABLE_TYPES' ||
-      operationType === 'LIST_COLUMNS' ||
-      operationType === 'LIST_FUNCTIONS' ||
-      operationType === 'LIST_PRIMARY_KEYS' ||
-      operationType === 'LIST_IMPORTED_KEYS' ||
-      operationType === 'LIST_EXPORTED_KEYS' ||
-      operationType === 'LIST_CROSS_REFERENCES'
-    ) {
-      return 'METADATA';
+    const logger = this.context.getLogger();
+    try {
+      return normalizeHeaders(await authProvider.authenticate());
+    } catch (error: any) {
+      logger.log(LogLevel.debug, `Telemetry: auth provider threw: ${error?.message ?? error}`);
+      return {};
     }
-
-    // EXECUTE_STATEMENT maps to QUERY
-    if (operationType === 'EXECUTE_STATEMENT') {
-      return 'QUERY';
-    }
-
-    // Default to TYPE_UNSPECIFIED
-    return 'TYPE_UNSPECIFIED';
   }
 
-  /**
-   * Convert TelemetryMetric to Databricks telemetry log format.
-   */
-  private toTelemetryLog(metric: TelemetryMetric): DatabricksTelemetryLog {
-    // Filter out NIL UUID for statement ID
-    const statementId =
-      metric.statementId && metric.statementId !== '00000000-0000-0000-0000-000000000000'
-        ? metric.statementId
-        : undefined;
+  private async sendRequest(url: string, init: RequestInit): Promise<Response> {
+    const connectionProvider = await this.context.getConnectionProvider();
+    const agent = await connectionProvider.getAgent();
+    const retryPolicy = await connectionProvider.getRetryPolicy();
+    const requestConfig: RequestInit = { agent, ...init };
+    const result = await retryPolicy.invokeWithRetry(() => {
+      const request = new Request(url, requestConfig);
+      return fetch(request).then((response) => ({ request, response }));
+    });
+    return result.response;
+  }
+
+  private toTelemetryLog(
+    metric: TelemetryMetric,
+    authenticatedExport: boolean,
+    userAgent: string,
+  ): DatabricksTelemetryLog {
+    // Unauthenticated export must not ship correlation IDs, fingerprint
+    // data, or raw error detail — an on-path observer could otherwise link
+    // sessions → workspaces → user activity without any auth.
+    const includeCorrelation = authenticatedExport;
 
     const log: DatabricksTelemetryLog = {
-      frontend_log_event_id: this.generateUUID(),
+      workspace_id: includeCorrelation ? metric.workspaceId : undefined,
+      frontend_log_event_id: uuidv4(),
       context: {
         client_context: {
           timestamp_millis: metric.timestamp,
-          user_agent: this.userAgent,
+          user_agent: userAgent,
         },
       },
       entry: {
         sql_driver_log: {
-          session_id: metric.sessionId,
-          sql_statement_id: statementId,
+          session_id: includeCorrelation ? metric.sessionId : undefined,
+          sql_statement_id: includeCorrelation ? metric.statementId : undefined,
         },
       },
     };
 
-    // Include system_configuration, driver_connection_params, and auth_type for ALL metrics (if available)
-    if (metric.driverConfig) {
-      log.entry.sql_driver_log.system_configuration = {
-        driver_version: metric.driverConfig.driverVersion,
-        driver_name: metric.driverConfig.driverName,
-        runtime_name: 'Node.js',
-        runtime_version: metric.driverConfig.nodeVersion,
-        runtime_vendor: metric.driverConfig.runtimeVendor,
-        os_name: metric.driverConfig.platform,
-        os_version: metric.driverConfig.osVersion,
-        os_arch: metric.driverConfig.osArch,
-        locale_name: metric.driverConfig.localeName,
-        char_set_encoding: metric.driverConfig.charSetEncoding,
-        process_name: metric.driverConfig.processName,
-      };
-
-      // Include driver connection params (only if we have fields to include)
-      if (
-        metric.driverConfig.httpPath ||
-        metric.driverConfig.socketTimeout ||
-        metric.driverConfig.enableMetricViewMetadata !== undefined
-      ) {
-        log.entry.sql_driver_log.driver_connection_params = {
-          ...(metric.driverConfig.httpPath && { http_path: metric.driverConfig.httpPath }),
-          ...(metric.driverConfig.socketTimeout && { socket_timeout: metric.driverConfig.socketTimeout }),
-          ...(metric.driverConfig.arrowEnabled !== undefined && { enable_arrow: metric.driverConfig.arrowEnabled }),
-          ...(metric.driverConfig.directResultsEnabled !== undefined && {
-            enable_direct_results: metric.driverConfig.directResultsEnabled,
-          }),
-          ...(metric.driverConfig.enableMetricViewMetadata !== undefined && {
-            enable_metric_view_metadata: metric.driverConfig.enableMetricViewMetadata,
-          }),
-        };
-      }
-
-      // Include auth type at top level
-      log.entry.sql_driver_log.auth_type = metric.driverConfig.authType;
-    }
-
-    // Add metric-specific fields based on proto definition
     if (metric.metricType === 'connection') {
-      // Include connection latency
       if (metric.latencyMs !== undefined) {
         log.entry.sql_driver_log.operation_latency_ms = metric.latencyMs;
       }
-
-      // Include operation type in operation_detail (CREATE_SESSION or DELETE_SESSION)
-      if (metric.operationType) {
-        log.entry.sql_driver_log.sql_operation = {
-          operation_detail: {
-            operation_type: metric.operationType,
-          },
+      if (metric.driverConfig && includeCorrelation) {
+        // system_configuration is a high-entropy client fingerprint (OS, arch,
+        // locale, process, runtime). Only ship on the authenticated path.
+        log.entry.sql_driver_log.system_configuration = {
+          driver_version: metric.driverConfig.driverVersion,
+          driver_name: metric.driverConfig.driverName,
+          runtime_name: 'Node.js',
+          runtime_version: metric.driverConfig.nodeVersion,
+          runtime_vendor: metric.driverConfig.runtimeVendor,
+          os_name: metric.driverConfig.platform,
+          os_version: metric.driverConfig.osVersion,
+          os_arch: metric.driverConfig.osArch,
+          locale_name: metric.driverConfig.localeName,
+          char_set_encoding: metric.driverConfig.charSetEncoding,
+          process_name: sanitizeProcessName(metric.driverConfig.processName) || undefined,
         };
       }
     } else if (metric.metricType === 'statement') {
       log.entry.sql_driver_log.operation_latency_ms = metric.latencyMs;
 
-      // Only create sql_operation if we have any fields to include
-      if (metric.operationType || metric.compressed !== undefined || metric.resultFormat || metric.chunkCount) {
+      if (metric.resultFormat || metric.chunkCount) {
         log.entry.sql_driver_log.sql_operation = {
-          // Map operationType to statement_type (Statement.Type enum)
-          statement_type: this.mapOperationToStatementType(metric.operationType),
-          ...(metric.compressed !== undefined && { is_compressed: metric.compressed }),
-          ...(metric.resultFormat && { execution_result: metric.resultFormat }),
-          // Include operation_type in operation_detail
-          ...(metric.operationType && {
-            operation_detail: {
-              operation_type: metric.operationType,
-            },
-          }),
+          execution_result: metric.resultFormat,
         };
 
-        if (metric.chunkCount && metric.chunkCount > 0) {
+        if ((metric.chunkCount ?? 0) > 0) {
           log.entry.sql_driver_log.sql_operation.chunk_details = {
             total_chunks_present: metric.chunkCount,
             total_chunks_iterated: metric.chunkCount,
-            ...(metric.chunkInitialLatencyMs !== undefined && {
-              initial_chunk_latency_millis: metric.chunkInitialLatencyMs,
-            }),
-            ...(metric.chunkSlowestLatencyMs !== undefined && {
-              slowest_chunk_latency_millis: metric.chunkSlowestLatencyMs,
-            }),
-            ...(metric.chunkSumLatencyMs !== undefined && {
-              sum_chunks_download_time_millis: metric.chunkSumLatencyMs,
-            }),
+            initial_chunk_latency_millis: metric.chunkInitialLatencyMs,
+            slowest_chunk_latency_millis: metric.chunkSlowestLatencyMs,
+            sum_chunks_download_time_millis: metric.chunkSumLatencyMs,
           };
         }
       }
     } else if (metric.metricType === 'error') {
+      const stackOrMessage = metric.errorStack ?? metric.errorMessage ?? '';
       log.entry.sql_driver_log.error_info = {
         error_name: metric.errorName || 'UnknownError',
-        stack_trace: metric.errorMessage || '',
+        // Redact common secret shapes and cap length. On the unauth path we
+        // keep only the error class — no message body.
+        stack_trace: includeCorrelation ? redactSensitive(stackOrMessage) : '',
       };
     }
 
     return log;
   }
 
-  /**
-   * Generate a UUID v4.
-   */
-  private generateUUID(): string {
-    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
-      const r = (Math.random() * 16) | 0;
-      const v = c === 'x' ? r : (r & 0x3) | 0x8;
-      return v.toString(16);
-    });
-  }
-
-  /**
-   * Get driver version from package.json.
-   */
-  private getDriverVersion(): string {
-    try {
-      // In production, this would read from package.json
-      return '1.0.0';
-    } catch {
-      return 'unknown';
-    }
-  }
-
-  /**
-   * Sleep for the specified number of milliseconds.
-   */
   private sleep(ms: number): Promise<void> {
     return new Promise((resolve) => {
       setTimeout(resolve, ms);

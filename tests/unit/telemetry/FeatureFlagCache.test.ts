@@ -42,7 +42,7 @@ describe('FeatureFlagCache', () => {
       expect(ctx).to.not.be.undefined;
       expect(ctx.refCount).to.equal(1);
       expect(ctx.cacheDuration).to.equal(15 * 60 * 1000); // 15 minutes
-      expect(ctx.flags.size).to.equal(0); // Empty flags map initially
+      expect(ctx.telemetryEnabled).to.be.undefined;
       expect(ctx.lastFetched).to.be.undefined;
     });
 
@@ -137,13 +137,8 @@ describe('FeatureFlagCache', () => {
       const cache = new FeatureFlagCache(context);
       const host = 'test-host.databricks.com';
 
-      // Stub the private fetchFeatureFlags method to populate flags Map
-      const fetchStub = sinon.stub(cache as any, 'fetchFeatureFlags').callsFake(async () => {
-        const ctx = (cache as any).contexts.get(host);
-        if (ctx) {
-          ctx.flags.set('databricks.partnerplatform.clientConfigsFeatureFlags.enableTelemetryForNodeJs', 'true');
-        }
-      });
+      // Stub the private fetchFeatureFlag method
+      const fetchStub = sinon.stub(cache as any, 'fetchFeatureFlag').resolves(true);
 
       cache.getOrCreateContext(host);
       const enabled = await cache.isTelemetryEnabled(host);
@@ -160,12 +155,7 @@ describe('FeatureFlagCache', () => {
       const cache = new FeatureFlagCache(context);
       const host = 'test-host.databricks.com';
 
-      const fetchStub = sinon.stub(cache as any, 'fetchFeatureFlags').callsFake(async () => {
-        const ctx = (cache as any).contexts.get(host);
-        if (ctx) {
-          ctx.flags.set('databricks.partnerplatform.clientConfigsFeatureFlags.enableTelemetryForNodeJs', 'true');
-        }
-      });
+      const fetchStub = sinon.stub(cache as any, 'fetchFeatureFlag').resolves(true);
 
       cache.getOrCreateContext(host);
 
@@ -189,18 +179,9 @@ describe('FeatureFlagCache', () => {
       const cache = new FeatureFlagCache(context);
       const host = 'test-host.databricks.com';
 
-      let callCount = 0;
-      const fetchStub = sinon.stub(cache as any, 'fetchFeatureFlags').callsFake(async () => {
-        const ctx = (cache as any).contexts.get(host);
-        if (ctx) {
-          callCount++;
-          // First call returns true, second returns false
-          ctx.flags.set(
-            'databricks.partnerplatform.clientConfigsFeatureFlags.enableTelemetryForNodeJs',
-            callCount === 1 ? 'true' : 'false',
-          );
-        }
-      });
+      const fetchStub = sinon.stub(cache as any, 'fetchFeatureFlag');
+      fetchStub.onFirstCall().resolves(true);
+      fetchStub.onSecondCall().resolves(false);
 
       cache.getOrCreateContext(host);
 
@@ -226,24 +207,24 @@ describe('FeatureFlagCache', () => {
       const cache = new FeatureFlagCache(context);
       const host = 'test-host.databricks.com';
 
-      const fetchStub = sinon.stub(cache as any, 'fetchFeatureFlags').rejects(new Error('Network error'));
+      const fetchStub = sinon.stub(cache as any, 'fetchFeatureFlag').rejects(new Error('Network error'));
 
       cache.getOrCreateContext(host);
       const enabled = await cache.isTelemetryEnabled(host);
 
       expect(enabled).to.be.false;
-      expect(logSpy.calledWith(LogLevel.debug, 'Error fetching feature flags: Network error')).to.be.true;
+      expect(logSpy.calledWith(LogLevel.debug, 'Error fetching feature flag: Network error')).to.be.true;
 
       fetchStub.restore();
       logSpy.restore();
     });
 
-    it('should not propagate exceptions from fetchFeatureFlags', async () => {
+    it('should not propagate exceptions from fetchFeatureFlag', async () => {
       const context = new ClientContextStub();
       const cache = new FeatureFlagCache(context);
       const host = 'test-host.databricks.com';
 
-      const fetchStub = sinon.stub(cache as any, 'fetchFeatureFlags').rejects(new Error('Network error'));
+      const fetchStub = sinon.stub(cache as any, 'fetchFeatureFlag').rejects(new Error('Network error'));
 
       cache.getOrCreateContext(host);
 
@@ -254,13 +235,12 @@ describe('FeatureFlagCache', () => {
       fetchStub.restore();
     });
 
-    it('should return false when flag is not set in the map', async () => {
+    it('should return false when telemetryEnabled is undefined', async () => {
       const context = new ClientContextStub();
       const cache = new FeatureFlagCache(context);
       const host = 'test-host.databricks.com';
 
-      // Stub fetchFeatureFlags to do nothing (leaves flags map empty)
-      const fetchStub = sinon.stub(cache as any, 'fetchFeatureFlags').resolves();
+      const fetchStub = sinon.stub(cache as any, 'fetchFeatureFlag').resolves(undefined);
 
       cache.getOrCreateContext(host);
       const enabled = await cache.isTelemetryEnabled(host);
@@ -271,19 +251,15 @@ describe('FeatureFlagCache', () => {
     });
   });
 
-  describe('fetchFeatureFlags', () => {
-    it('should handle fetch errors gracefully', async () => {
+  describe('fetchFeatureFlag', () => {
+    it('should return false as placeholder implementation', async () => {
       const context = new ClientContextStub();
       const cache = new FeatureFlagCache(context);
       const host = 'test-host.databricks.com';
 
-      cache.getOrCreateContext(host);
-
-      // Access private method through any cast - should not throw even if fetch fails
-      await (cache as any).fetchFeatureFlags(host);
-
-      // Should log at debug level but not throw
-      // Exact behavior depends on network conditions, this just verifies no exception
+      // Access private method through any cast
+      const result = await (cache as any).fetchFeatureFlag(host);
+      expect(result).to.be.false;
     });
   });
 
@@ -293,12 +269,7 @@ describe('FeatureFlagCache', () => {
       const cache = new FeatureFlagCache(context);
       const host = 'test-host.databricks.com';
 
-      const fetchStub = sinon.stub(cache as any, 'fetchFeatureFlags').callsFake(async () => {
-        const ctx = (cache as any).contexts.get(host);
-        if (ctx) {
-          ctx.flags.set('databricks.partnerplatform.clientConfigsFeatureFlags.enableTelemetryForNodeJs', 'true');
-        }
-      });
+      const fetchStub = sinon.stub(cache as any, 'fetchFeatureFlag').resolves(true);
 
       // Simulate 3 connections to same host
       cache.getOrCreateContext(host);
@@ -330,16 +301,9 @@ describe('FeatureFlagCache', () => {
       const host1 = 'host1.databricks.com';
       const host2 = 'host2.databricks.com';
 
-      const fetchStub = sinon.stub(cache as any, 'fetchFeatureFlags').callsFake(async (host: string) => {
-        const ctx = (cache as any).contexts.get(host);
-        if (ctx) {
-          // host1 returns true, host2 returns false
-          ctx.flags.set(
-            'databricks.partnerplatform.clientConfigsFeatureFlags.enableTelemetryForNodeJs',
-            host === host1 ? 'true' : 'false',
-          );
-        }
-      });
+      const fetchStub = sinon.stub(cache as any, 'fetchFeatureFlag');
+      fetchStub.withArgs(host1).resolves(true);
+      fetchStub.withArgs(host2).resolves(false);
 
       cache.getOrCreateContext(host1);
       cache.getOrCreateContext(host2);

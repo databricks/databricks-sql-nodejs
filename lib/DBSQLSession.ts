@@ -599,7 +599,7 @@ export default class DBSQLSession implements IDBSQLSession {
 
     // Emit connection close telemetry
     const closeLatency = Date.now() - this.openTime;
-    const { telemetryEmitter } = this.context as any;
+    const telemetryEmitter = this.context.getTelemetryEmitter?.();
     if (telemetryEmitter) {
       telemetryEmitter.emitConnectionClose({
         sessionId: this.id,
