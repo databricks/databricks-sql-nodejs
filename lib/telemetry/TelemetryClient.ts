@@ -130,6 +130,10 @@ class TelemetryClient implements IClientContext {
     let lastErr: unknown;
     for (const ctx of this.contexts) {
       try {
+        // Sequential fall-through is intentional — each context returns the
+        // same shared connection provider; we try the next registrant only
+        // when the current head is unusable.
+        // eslint-disable-next-line no-await-in-loop
         return await ctx.getConnectionProvider();
       } catch (err) {
         lastErr = err;

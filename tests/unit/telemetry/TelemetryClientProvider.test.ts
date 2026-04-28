@@ -32,7 +32,6 @@ describe('TelemetryClientProvider', () => {
 
       expect(provider.getActiveClients().size).to.equal(0);
     });
-
   });
 
   describe('getOrCreateClient', () => {

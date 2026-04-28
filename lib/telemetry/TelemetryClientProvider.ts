@@ -49,12 +49,10 @@ class TelemetryClientProvider {
 
   private softLimitWarned = false;
 
-  /**
-   * Production code should use `TelemetryClientProvider.getInstance()` for
-   * the process-wide singleton. The constructor remains public for unit
-   * tests that need an isolated provider with its own map.
-   */
-  public constructor() {}
+  // Production code should use `TelemetryClientProvider.getInstance()` for
+  // the process-wide singleton. The constructor remains public so unit tests
+  // can build an isolated provider with its own map. Deliberate no-op body —
+  // initial state is set inline on the field declarations above.
 
   static getInstance(): TelemetryClientProvider {
     if (!TelemetryClientProvider.instance) {
