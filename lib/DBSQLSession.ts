@@ -39,6 +39,7 @@ import StagingError from './errors/StagingError';
 import { DBSQLParameter, DBSQLParameterValue } from './DBSQLParameter';
 import ParameterError from './errors/ParameterError';
 import IClientContext, { ClientConfig } from './contracts/IClientContext';
+import { safeEmit } from './telemetry/telemetryUtils';
 
 // Explicitly promisify a callback-style `pipeline` because `node:stream/promises` is not available in Node 14
 const pipeline = util.promisify(stream.pipeline);
@@ -586,29 +587,36 @@ export default class DBSQLSession implements IDBSQLSession {
     // Close owned operations one by one, removing successfully closed ones from the list
     await this.operations.closeAll();
 
-    const driver = await this.context.getDriver();
-    const response = await driver.closeSession({
-      sessionHandle: this.sessionHandle,
-    });
-    // check status for being successful
-    Status.assert(response.status);
-
-    // notify owner connection
-    this.onClose?.();
-    this.isOpen = false;
-
-    // Emit connection close telemetry
-    const closeLatency = Date.now() - this.openTime;
-    const telemetryEmitter = this.context.getTelemetryEmitter?.();
-    if (telemetryEmitter) {
-      telemetryEmitter.emitConnectionClose({
-        sessionId: this.id,
-        latencyMs: closeLatency,
+    const emitClose = () => {
+      // Emit connection.close regardless of whether closeSession succeeded —
+      // a failed close is the most diagnostic event for connection-failure rate.
+      safeEmit(this.context, (emitter) => {
+        emitter.emitConnectionClose({
+          sessionId: this.id,
+          latencyMs: Date.now() - this.openTime,
+        });
       });
-    }
+    };
 
-    this.context.getLogger().log(LogLevel.debug, `Session closed with id: ${this.id}`);
-    return new Status(response.status);
+    try {
+      const driver = await this.context.getDriver();
+      const response = await driver.closeSession({
+        sessionHandle: this.sessionHandle,
+      });
+      Status.assert(response.status);
+
+      this.onClose?.();
+      this.isOpen = false;
+      emitClose();
+
+      this.context.getLogger().log(LogLevel.debug, `Session closed with id: ${this.id}`);
+      return new Status(response.status);
+    } catch (err) {
+      this.onClose?.();
+      this.isOpen = false;
+      emitClose();
+      throw err;
+    }
   }
 
   private createOperation(response: OperationResponseShape): DBSQLOperation {

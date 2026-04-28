@@ -6,6 +6,13 @@
 - Add metric view metadata support (databricks/databricks-sql-nodejs#312 by @shivam2680)
 - Fix: Avoid calling require('lz4') if it's really not required (databricks/databricks-sql-nodejs#316 by @ikkala)
 - Add telemetry foundation (off by default) (databricks/databricks-sql-nodejs#324 by @samikshya-db)
+- Telemetry event emission and per-host aggregation (databricks/databricks-sql-nodejs#327 by @samikshya-db).
+  **Default change:** `telemetryEnabled` now defaults to `true` (gated by a remote feature flag).
+  To opt out programmatically, pass `telemetryEnabled: false` to `connect()`.
+  To disable globally without code changes, set the environment variable
+  `DATABRICKS_TELEMETRY_DISABLED` to one of `1`, `true`, `yes`, or `on`
+  (case-insensitive). Other values (empty, `0`, `false`, etc.) are ignored
+  — the runtime config takes precedence.
 
 ## 1.12.0
 

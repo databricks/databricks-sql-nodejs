@@ -129,6 +129,12 @@ const SECRET_PATTERNS: Array<[RegExp, string]> = [
     /\b(token|password|client_secret|refresh_token|access_token|id_token|secret|api[_-]?key|apikey)=[^\s&"']+/gi,
     '$1=<REDACTED>',
   ],
+  // OS-username-bearing filesystem paths in error stacks. `/home/<user>/`,
+  // `/Users/<user>/`, `C:\Users\<user>\`. Stack traces routinely echo the
+  // running user's home directory which leaks both the OS account name and
+  // application directory layout.
+  [/\/(?:home|Users)\/[^/\s)\]]+\//g, '/<HOMEDIR>/'],
+  [/[A-Za-z]:\\Users\\[^\\\s)\]]+\\/g, '<WINHOMEDIR>\\'],
 ];
 
 /**
@@ -227,4 +233,34 @@ export function sanitizeProcessName(name: string | undefined): string {
   }
   const lastSep = Math.max(firstToken.lastIndexOf('/'), firstToken.lastIndexOf('\\'));
   return lastSep < 0 ? firstToken : firstToken.slice(lastSep + 1);
+}
+
+/**
+ * Run a telemetry emit at a call site, swallowing all exceptions and logging
+ * at debug level. Replaces the copy-pasted try/catch + getTelemetryEmitter?.()
+ * scaffold at every emit site. Telemetry must never break the driver.
+ */
+export function safeEmit(
+  // The any below is intentional: this helper is consumed by both `IClientContext`
+  // and the narrower per-call surface used in tests. Keeping it loose avoids
+  // a dependency cycle through IClientContext / TelemetryEventEmitter.
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  context: { getTelemetryEmitter?: () => any; getLogger: () => { log: (level: any, msg: string) => void } },
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  fn: (emitter: any) => void,
+): void {
+  try {
+    const emitter = context.getTelemetryEmitter?.();
+    if (emitter) {
+      fn(emitter);
+    }
+  } catch (err: any) {
+    try {
+      // LogLevel.debug = 'debug' — see lib/contracts/IDBSQLLogger.ts. Avoid
+      // an import here to keep this helper free of cyclic deps.
+      context.getLogger().log('debug', `Telemetry emit error: ${err?.message ?? err}`);
+    } catch {
+      // swallow logger errors too — telemetry never breaks the driver
+    }
+  }
 }

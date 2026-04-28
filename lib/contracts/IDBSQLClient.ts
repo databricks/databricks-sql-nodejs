@@ -54,10 +54,81 @@ export type ConnectionOptions = {
   socketTimeout?: number;
   proxy?: ProxyOptions;
   enableMetricViewMetadata?: boolean;
-  // Optional telemetry overrides
+
+  /**
+   * Whether the driver emits telemetry events (connection / statement /
+   * cloud-fetch / error). Defaults to `true`.
+   *
+   * Activation is gated by **two** conditions:
+   *   1. This flag is `true` **and**
+   *   2. The remote feature flag for the workspace allows telemetry.
+   *
+   * Setting this to `false` is a hard, unconditional opt-out. Setting to
+   * `true` only requests telemetry; the workspace must also allow it.
+   *
+   * The environment variable `DATABRICKS_TELEMETRY_DISABLED` set to one of
+   * `1`, `true`, `yes`, or `on` (case-insensitive) overrides this flag and
+   * disables telemetry entirely.
+   */
   telemetryEnabled?: boolean;
+
+  /**
+   * Maximum number of metrics to batch before flushing to the telemetry
+   * endpoint. Default 100.
+   */
   telemetryBatchSize?: number;
+
+  /**
+   * How often to flush buffered telemetry metrics, in milliseconds.
+   * The flush timer is `unref()`'d so it cannot keep the Node.js process
+   * alive on its own. Default 5000ms.
+   */
+  telemetryFlushIntervalMs?: number;
+
+  /**
+   * Maximum retry attempts for a telemetry export *after* the initial call.
+   * Default 3.
+   */
+  telemetryMaxRetries?: number;
+
+  /**
+   * When `true`, telemetry is sent to the authenticated `/telemetry-ext`
+   * endpoint with workspace + session + statement IDs and a system
+   * configuration block. When `false`, only error names are emitted via the
+   * unauthenticated endpoint. Default `true`.
+   *
+   * Privacy-relevant: setting `false` minimizes the data surface at the
+   * cost of losing most observability.
+   */
   telemetryAuthenticatedExport?: boolean;
+
+  /**
+   * Number of consecutive telemetry export failures before the per-host
+   * circuit breaker trips and pauses exports. Default 5.
+   */
+  telemetryCircuitBreakerThreshold?: number;
+
+  /**
+   * How long the circuit breaker stays open before re-probing the
+   * telemetry endpoint, in milliseconds. Default 60000ms (1 minute).
+   */
+  telemetryCircuitBreakerTimeout?: number;
+
+  /**
+   * Maximum wall-clock time `client.close()` will wait for the final
+   * telemetry flush HTTP POST. Bounds shutdown latency so callers
+   * doing `await client.close(); process.exit(0)` are not held up by a
+   * misbehaving telemetry endpoint. Default 2000ms.
+   */
+  telemetryCloseTimeoutMs?: number;
+
+  /**
+   * Hard cap on the per-statement aggregation map size. When the cap is
+   * reached, the oldest entry is evicted (its buffered errors are emitted
+   * as standalone metrics first so the first-failure signal survives).
+   * Default 5000.
+   */
+  telemetryMaxStatementMetrics?: number;
 } & AuthOptions;
 
 export interface OpenSessionRequest {

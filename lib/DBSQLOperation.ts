@@ -36,6 +36,7 @@ import HiveDriverError from './errors/HiveDriverError';
 import IClientContext from './contracts/IClientContext';
 import { mapOperationTypeToTelemetryType, mapResultFormatToTelemetryType } from './telemetry/telemetryTypeMappers';
 import ExceptionClassifier from './telemetry/ExceptionClassifier';
+import { safeEmit } from './telemetry/telemetryUtils';
 
 interface DBSQLOperationConstructorOptions {
   handle: TOperationHandle;
@@ -181,12 +182,7 @@ export default class DBSQLOperation implements IOperation {
    * const result = await queryOperation.fetchChunk({maxRows: 1000});
    */
   public async fetchChunk(options?: FetchOptions): Promise<Array<object>> {
-    try {
-      return await this.fetchChunkInternal(options);
-    } catch (err: any) {
-      this.emitErrorEvent(err);
-      throw err;
-    }
+    return this.withErrorTelemetry(() => this.fetchChunkInternal(options));
   }
 
   private async fetchChunkInternal(options?: FetchOptions): Promise<Array<object>> {
@@ -266,12 +262,7 @@ export default class DBSQLOperation implements IOperation {
    * @throws {StatusError}
    */
   public async cancel(): Promise<Status> {
-    try {
-      return await this.cancelInternal();
-    } catch (err: any) {
-      this.emitErrorEvent(err);
-      throw err;
-    }
+    return this.withErrorTelemetry(() => this.cancelInternal());
   }
 
   private async cancelInternal(): Promise<Status> {
@@ -299,12 +290,7 @@ export default class DBSQLOperation implements IOperation {
    * @throws {StatusError}
    */
   public async close(): Promise<Status> {
-    try {
-      return await this.closeInternal();
-    } catch (err: any) {
-      this.emitErrorEvent(err);
-      throw err;
-    }
+    return this.withErrorTelemetry(() => this.closeInternal());
   }
 
   private async closeInternal(): Promise<Status> {
@@ -332,46 +318,63 @@ export default class DBSQLOperation implements IOperation {
   }
 
   public async finished(options?: FinishedOptions): Promise<void> {
-    await this.failIfClosed();
-    await this.waitUntilReady(options);
+    return this.withErrorTelemetry(async () => {
+      await this.failIfClosed();
+      await this.waitUntilReady(options);
+    });
   }
 
   public async hasMoreRows(): Promise<boolean> {
-    // If operation is closed or cancelled - we should not try to get data from it
-    if (this.closed || this.cancelled) {
-      return false;
-    }
+    return this.withErrorTelemetry(async () => {
+      // If operation is closed or cancelled - we should not try to get data from it
+      if (this.closed || this.cancelled) {
+        return false;
+      }
 
-    // Wait for operation to finish before checking for more rows
-    // This ensures metadata can be fetched successfully
-    if (this.operationHandle.hasResultSet) {
-      await this.waitUntilReady();
-    }
+      // Wait for operation to finish before checking for more rows
+      // This ensures metadata can be fetched successfully
+      if (this.operationHandle.hasResultSet) {
+        await this.waitUntilReady();
+      }
 
-    // If we fetched all the data from server - check if there's anything buffered in result handler
-    const resultHandler = await this.getResultHandler();
-    return resultHandler.hasMore();
+      // If we fetched all the data from server - check if there's anything buffered in result handler
+      const resultHandler = await this.getResultHandler();
+      return resultHandler.hasMore();
+    });
   }
 
   public async getSchema(options?: GetSchemaOptions): Promise<TTableSchema | null> {
-    await this.failIfClosed();
+    return this.withErrorTelemetry(async () => {
+      await this.failIfClosed();
 
-    if (!this.operationHandle.hasResultSet) {
-      return null;
-    }
+      if (!this.operationHandle.hasResultSet) {
+        return null;
+      }
 
-    await this.waitUntilReady(options);
+      await this.waitUntilReady(options);
 
-    this.context.getLogger().log(LogLevel.debug, `Fetching schema for operation with id: ${this.id}`);
-    const metadata = await this.fetchMetadata();
-    return metadata.schema ?? null;
+      this.context.getLogger().log(LogLevel.debug, `Fetching schema for operation with id: ${this.id}`);
+      const metadata = await this.fetchMetadata();
+      return metadata.schema ?? null;
+    });
   }
 
   public async getMetadata(): Promise<TGetResultSetMetadataResp> {
-    try {
+    return this.withErrorTelemetry(async () => {
       await this.failIfClosed();
       await this.waitUntilReady();
-      return await this.fetchMetadata();
+      return this.fetchMetadata();
+    });
+  }
+
+  /**
+   * Wrap a public IOperation method so any thrown error is captured as an
+   * error telemetry event before being rethrown to the caller. Telemetry
+   * never alters the throw semantics.
+   */
+  private async withErrorTelemetry<T>(fn: () => Promise<T>): Promise<T> {
+    try {
+      return await fn();
     } catch (err: any) {
       this.emitErrorEvent(err);
       throw err;
@@ -540,20 +543,13 @@ export default class DBSQLOperation implements IOperation {
    * CRITICAL: All exceptions swallowed and logged at LogLevel.debug ONLY.
    */
   private emitStatementStart(): void {
-    try {
-      const telemetryEmitter = this.context.getTelemetryEmitter?.();
-      if (!telemetryEmitter) {
-        return;
-      }
-
-      telemetryEmitter.emitStatementStart({
+    safeEmit(this.context, (emitter) => {
+      emitter.emitStatementStart({
         statementId: this.id,
         sessionId: this.sessionId || '',
         operationType: mapOperationTypeToTelemetryType(this.operationHandle.operationType),
       });
-    } catch (error: any) {
-      this.context.getLogger().log(LogLevel.debug, `Error emitting statement.start event: ${error.message}`);
-    }
+    });
   }
 
   /**
@@ -561,12 +557,9 @@ export default class DBSQLOperation implements IOperation {
    * CRITICAL: All exceptions swallowed and logged at LogLevel.debug ONLY.
    */
   private async emitStatementComplete(): Promise<void> {
-    try {
-      const telemetryEmitter = this.context.getTelemetryEmitter?.();
-      const telemetryAggregator = this.context.getTelemetryAggregator?.();
-      if (!telemetryEmitter || !telemetryAggregator) {
-        return;
-      }
+    safeEmit(this.context, (emitter) => {
+      const aggregator = this.context.getTelemetryAggregator?.();
+      if (!aggregator) return;
 
       // Use whatever metadata was already fetched by the result-handling
       // path. Do NOT trigger a `getMetadata()` here — that issues a Thrift
@@ -575,10 +568,9 @@ export default class DBSQLOperation implements IOperation {
       // would then fire spurious error telemetry from `getMetadata`'s error
       // wrapper.
       const resultFormat = mapResultFormatToTelemetryType(this.metadata?.resultFormat);
-
       const latencyMs = Date.now() - this.startTime;
 
-      telemetryEmitter.emitStatementComplete({
+      emitter.emitStatementComplete({
         statementId: this.id,
         sessionId: this.sessionId || '',
         latencyMs,
@@ -586,11 +578,8 @@ export default class DBSQLOperation implements IOperation {
         pollCount: this.pollCount,
       });
 
-      // Complete statement aggregation
-      telemetryAggregator.completeStatement(this.id);
-    } catch (error: any) {
-      this.context.getLogger().log(LogLevel.debug, `Error emitting statement.complete event: ${error.message}`);
-    }
+      aggregator.completeStatement(this.id);
+    });
   }
 
   /**
@@ -601,11 +590,8 @@ export default class DBSQLOperation implements IOperation {
    * debug level — telemetry must never break the driver.
    */
   private emitErrorEvent(error: Error): void {
-    try {
-      const telemetryEmitter = this.context.getTelemetryEmitter?.();
-      if (!telemetryEmitter) return;
-
-      telemetryEmitter.emitError({
+    safeEmit(this.context, (emitter) => {
+      emitter.emitError({
         statementId: this.id,
         sessionId: this.sessionId,
         errorName: error.name || 'Error',
@@ -613,8 +599,6 @@ export default class DBSQLOperation implements IOperation {
         errorStack: error.stack,
         isTerminal: ExceptionClassifier.isTerminal(error),
       });
-    } catch (emitError: any) {
-      this.context.getLogger().log(LogLevel.debug, `Error emitting error event: ${emitError.message}`);
-    }
+    });
   }
 }

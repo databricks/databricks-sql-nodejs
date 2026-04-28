@@ -2,7 +2,7 @@ import Int64 from 'node-int64';
 import { TFetchOrientation, TFetchResultsResp, TOperationHandle, TRowSet } from '../../thrift/TCLIService_types';
 import Status from '../dto/Status';
 import IClientContext from '../contracts/IClientContext';
-import { LogLevel } from '../contracts/IDBSQLLogger';
+import { safeEmit } from '../telemetry/telemetryUtils';
 import IResultsProvider, { ResultsProviderFetchNextOptions } from './IResultsProvider';
 import { getColumnValue } from './utils';
 
@@ -109,16 +109,10 @@ export default class RowSetProvider implements IResultsProvider<TRowSet | undefi
    * CRITICAL: All exceptions swallowed and logged at LogLevel.debug ONLY.
    */
   private emitChunkEvent(latencyMs: number, response: TFetchResultsResp): void {
-    try {
-      if (!this.statementId) {
-        return;
-      }
-
-      const telemetryEmitter = this.context.getTelemetryEmitter?.();
-      if (!telemetryEmitter) {
-        return;
-      }
-
+    if (!this.statementId) {
+      return;
+    }
+    safeEmit(this.context, (emitter) => {
       let bytes = 0;
       const arrowBatches = response.results?.arrowBatches;
       if (arrowBatches) {
@@ -127,16 +121,14 @@ export default class RowSetProvider implements IResultsProvider<TRowSet | undefi
         }
       }
 
-      telemetryEmitter.emitCloudFetchChunk({
+      emitter.emitCloudFetchChunk({
         statementId: this.statementId,
         chunkIndex: this.chunkIndex,
         latencyMs,
         bytes,
       });
       this.chunkIndex += 1;
-    } catch (error: any) {
-      this.context.getLogger().log(LogLevel.debug, `Error emitting FetchResults chunk event: ${error.message}`);
-    }
+    });
   }
 
   public async hasMore() {

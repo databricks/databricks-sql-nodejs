@@ -36,6 +36,7 @@ import TelemetryClient from './telemetry/TelemetryClient';
 import TelemetryClientProvider from './telemetry/TelemetryClientProvider';
 import TelemetryEventEmitter from './telemetry/TelemetryEventEmitter';
 import { DriverConfiguration, DRIVER_NAME, TelemetryEventType } from './telemetry/types';
+import { safeEmit } from './telemetry/telemetryUtils';
 import driverVersion from './version';
 
 function prependSlash(str: string): string {
@@ -429,6 +430,19 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
       }
     }
 
+    // If connect() is being called a second time (reconnect, host switch),
+    // release the prior telemetry refcount and emitter so we don't leak a
+    // refcount in the process-wide TelemetryClientProvider for the old host.
+    if (this.host && this.telemetryClient) {
+      try {
+        await TelemetryClientProvider.getInstance().releaseClient(this, this.host);
+      } catch (error: any) {
+        this.logger.log(LogLevel.debug, `Telemetry release-on-reconnect error: ${error.message}`);
+      }
+      this.telemetryClient = undefined;
+      this.telemetryEmitter = undefined;
+    }
+
     // Store connection params for telemetry
     this.host = options.host;
     this.httpPath = options.path;
@@ -440,14 +454,22 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
     }
 
     // Override telemetry config if provided in options
-    if (options.telemetryEnabled !== undefined) {
-      this.config.telemetryEnabled = options.telemetryEnabled;
-    }
-    if (options.telemetryBatchSize !== undefined) {
-      this.config.telemetryBatchSize = options.telemetryBatchSize;
-    }
-    if (options.telemetryAuthenticatedExport !== undefined) {
-      this.config.telemetryAuthenticatedExport = options.telemetryAuthenticatedExport;
+    const telemetryOverrides = [
+      'telemetryEnabled',
+      'telemetryBatchSize',
+      'telemetryFlushIntervalMs',
+      'telemetryMaxRetries',
+      'telemetryAuthenticatedExport',
+      'telemetryCircuitBreakerThreshold',
+      'telemetryCircuitBreakerTimeout',
+      'telemetryCloseTimeoutMs',
+      'telemetryMaxStatementMetrics',
+    ] as const;
+    for (const k of telemetryOverrides) {
+      if (options[k] !== undefined) {
+        // The narrow union forces a cast; values are validated at point of use.
+        (this.config as any)[k] = options[k];
+      }
     }
 
     // Persist userAgentEntry so telemetry and feature-flag call sites reuse
@@ -489,8 +511,15 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
       this.emit('timeout');
     });
 
-    // Initialize telemetry if enabled
-    if (this.config.telemetryEnabled) {
+    // Initialize telemetry if enabled. The env var DATABRICKS_TELEMETRY_DISABLED
+    // is a hard kill switch for ops/IT teams who can't redeploy app code.
+    // Recognized truthy values: 1, true, yes, on (case-insensitive). Anything
+    // else (empty, "0", "false", "no", "off") leaves the runtime config in
+    // charge — avoiding the footgun where a sysadmin sets the var to "false"
+    // expecting to enable telemetry.
+    const envKill = process.env.DATABRICKS_TELEMETRY_DISABLED;
+    const envDisabled = typeof envKill === 'string' && /^(1|true|yes|on)$/i.test(envKill.trim());
+    if (this.config.telemetryEnabled && !envDisabled) {
       await this.initializeTelemetry();
     }
 
@@ -534,22 +563,18 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
     this.sessions.add(session);
 
     // Emit connection.open telemetry event
-    if (this.telemetryEmitter && this.host) {
-      try {
-        const latencyMs = Date.now() - startTime;
-        const workspaceId = this.extractWorkspaceId(this.host);
-        const driverConfig = this.buildDriverConfiguration();
-        this.telemetryEmitter.emitConnectionOpen({
-          sessionId: session.id,
-          workspaceId,
-          driverConfig,
-          latencyMs,
-        });
-      } catch (error: any) {
-        // CRITICAL: All telemetry exceptions swallowed
-        this.logger.log(LogLevel.debug, `Error emitting connection.open event: ${error.message}`);
-      }
-    }
+    safeEmit(this, (emitter) => {
+      if (!this.host) return;
+      const latencyMs = Date.now() - startTime;
+      const workspaceId = this.extractWorkspaceId(this.host);
+      const driverConfig = this.buildDriverConfiguration();
+      emitter.emitConnectionOpen({
+        sessionId: session.id,
+        workspaceId,
+        driverConfig,
+        latencyMs,
+      });
+    });
 
     return session;
   }
@@ -578,6 +603,9 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
       }
       this.telemetryClient = undefined;
     }
+    // Drop the emitter ref so post-close calls (e.g. session.close racing
+    // with client.close) cannot smuggle events into the closed aggregator.
+    this.telemetryEmitter = undefined;
 
     this.client = undefined;
     this.connectionProvider = undefined;

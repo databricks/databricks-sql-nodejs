@@ -52,6 +52,11 @@ export default class MetricsAggregator {
 
   private flushTimer: NodeJS.Timeout | null = null;
 
+  // Single in-flight flush serializer. Concurrent triggers (batch hit, periodic
+  // tick, terminal-error, manual flush) all share one HTTP POST so the user's
+  // socket pool can't be starved by a slow telemetry endpoint.
+  private flushInFlight: Promise<void> | null = null;
+
   private closed = false;
 
   private closing = false;
@@ -66,6 +71,8 @@ export default class MetricsAggregator {
 
   private statementTtlMs: number;
 
+  private maxStatementMetrics: number;
+
   constructor(private context: IClientContext, private exporter: DatabricksTelemetryExporter) {
     try {
       const config = context.getConfig();
@@ -75,6 +82,8 @@ export default class MetricsAggregator {
       this.maxErrorsPerStatement =
         config.telemetryMaxErrorsPerStatement ?? DEFAULT_TELEMETRY_CONFIG.maxErrorsPerStatement;
       this.statementTtlMs = config.telemetryStatementTtlMs ?? DEFAULT_TELEMETRY_CONFIG.statementTtlMs;
+      this.maxStatementMetrics =
+        config.telemetryMaxStatementMetrics ?? DEFAULT_TELEMETRY_CONFIG.maxStatementMetrics;
 
       this.startFlushTimer();
     } catch (error: any) {
@@ -86,6 +95,7 @@ export default class MetricsAggregator {
       this.maxPendingMetrics = DEFAULT_TELEMETRY_CONFIG.maxPendingMetrics;
       this.maxErrorsPerStatement = DEFAULT_TELEMETRY_CONFIG.maxErrorsPerStatement;
       this.statementTtlMs = DEFAULT_TELEMETRY_CONFIG.statementTtlMs;
+      this.maxStatementMetrics = DEFAULT_TELEMETRY_CONFIG.maxStatementMetrics;
     }
   }
 
@@ -235,6 +245,12 @@ export default class MetricsAggregator {
     const statementId = event.statementId!;
 
     if (!this.statementMetrics.has(statementId)) {
+      // Hard cap on map size — abandoned operations or buggy upstreams that
+      // emit errors with random fresh statementIds would otherwise grow this
+      // map unbounded for up to statementTtlMs.
+      if (this.statementMetrics.size >= this.maxStatementMetrics) {
+        this.evictOldestStatement();
+      }
       this.statementMetrics.set(statementId, {
         statementId,
         sessionId: event.sessionId!,
@@ -249,6 +265,34 @@ export default class MetricsAggregator {
     }
 
     return this.statementMetrics.get(statementId)!;
+  }
+
+  /**
+   * Drop the oldest entry by insertion order to make room. Emits its buffered
+   * errors as standalone metrics first so the first-failure signal survives.
+   * Map iteration order is insertion order in JS.
+   */
+  private evictOldestStatement(): void {
+    const oldest = this.statementMetrics.keys().next();
+    if (oldest.done) return;
+    const id = oldest.value;
+    const details = this.statementMetrics.get(id)!;
+    for (const errorEvent of details.errors) {
+      this.addPendingMetric({
+        metricType: 'error',
+        timestamp: errorEvent.timestamp,
+        sessionId: details.sessionId,
+        statementId: details.statementId,
+        workspaceId: details.workspaceId,
+        errorName: errorEvent.errorName,
+        errorMessage: errorEvent.errorMessage,
+        errorStack: errorEvent.errorStack,
+      });
+    }
+    this.statementMetrics.delete(id);
+    this.context
+      .getLogger()
+      .log(LogLevel.debug, `MetricsAggregator: evicted oldest statement ${id} (max=${this.maxStatementMetrics})`);
   }
 
   /**
@@ -381,6 +425,20 @@ export default class MetricsAggregator {
    * `process.exit()` after `client.close()` doesn't truncate the POST.
    */
   async flush(resetTimer: boolean = true): Promise<void> {
+    // Coalesce concurrent flush callers onto the in-flight promise so we
+    // never run two HTTP POSTs in parallel against the telemetry endpoint.
+    // Pending metrics arriving while flushInFlight is set will be picked up
+    // by the next caller.
+    if (this.flushInFlight) {
+      return this.flushInFlight;
+    }
+    this.flushInFlight = this.runFlush(resetTimer).finally(() => {
+      this.flushInFlight = null;
+    });
+    return this.flushInFlight;
+  }
+
+  private async runFlush(resetTimer: boolean): Promise<void> {
     const logger = this.context.getLogger();
 
     let exportPromise: Promise<void> | null = null;
@@ -463,7 +521,37 @@ export default class MetricsAggregator {
       }
 
       this.closed = true;
-      await this.flush(false);
+      // Cap the wait on the final flush so a flapping telemetry endpoint
+      // can't hold up the user's process.exit(0). The in-flight POST is
+      // abandoned past the deadline; data loss is preferable to a hung exit.
+      const timeoutMs = this.context.getConfig().telemetryCloseTimeoutMs ?? 2000;
+      let timeoutHandle: NodeJS.Timeout | null = null;
+      const timeoutPromise = new Promise<void>((resolve) => {
+        timeoutHandle = setTimeout(() => {
+          logger.log(LogLevel.debug, `MetricsAggregator.close: flush timed out after ${timeoutMs}ms`);
+          resolve();
+        }, timeoutMs);
+        timeoutHandle.unref?.();
+      });
+      // Drain pattern: if a batch-trigger flush was already in-flight when
+      // close() ran, it captured a snapshot before completeStatement above
+      // appended the close-time metrics. Wait for that to finish and then
+      // run a fresh flush that picks up whatever's still in pendingMetrics.
+      const drain = async (): Promise<void> => {
+        if (this.flushInFlight) {
+          await this.flushInFlight;
+        }
+        if (this.pendingMetrics.length > 0) {
+          await this.flush(false);
+        }
+      };
+      try {
+        await Promise.race([drain(), timeoutPromise]);
+      } finally {
+        if (timeoutHandle) {
+          clearTimeout(timeoutHandle);
+        }
+      }
     } catch (error: any) {
       logger.log(LogLevel.debug, `MetricsAggregator.close error: ${error.message}`);
     }

@@ -73,6 +73,17 @@ export interface TelemetryConfiguration {
 
   /** TTL in ms after which abandoned statement aggregations are evicted */
   statementTtlMs?: number;
+
+  /**
+   * Maximum wall-clock time `close()` will wait for the final flush HTTP POST
+   * before abandoning it and returning. Bounds shutdown latency so callers
+   * doing `await client.close(); process.exit(0)` are not held up by a
+   * misbehaving telemetry endpoint.
+   */
+  closeTimeoutMs?: number;
+
+  /** Hard cap on per-statement aggregation map size; oldest evicted on overflow. */
+  maxStatementMetrics?: number;
 }
 
 /**
@@ -92,6 +103,8 @@ export const DEFAULT_TELEMETRY_CONFIG: Readonly<Required<TelemetryConfiguration>
   maxPendingMetrics: 500,
   maxErrorsPerStatement: 50,
   statementTtlMs: 60 * 60 * 1000, // 1 hour
+  closeTimeoutMs: 2000, // 2s — caps client.close() shutdown latency
+  maxStatementMetrics: 5000, // hard cap for the per-statement aggregation map
 });
 
 /**

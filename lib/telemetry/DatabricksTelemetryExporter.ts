@@ -292,7 +292,7 @@ export default class DatabricksTelemetryExporter {
     // Prefer the explicitly-injected auth provider; fall back to the context
     // (used when a shared TelemetryClient resolves auth through its FIFO of
     // registered DBSQLClients).
-    const authProvider = this.authProvider ?? this.context.getAuthProvider();
+    const authProvider = this.authProvider ?? this.context.getAuthProvider?.();
     if (!authProvider) {
       return {};
     }

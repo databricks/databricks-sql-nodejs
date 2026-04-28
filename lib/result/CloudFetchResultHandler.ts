@@ -6,6 +6,7 @@ import IResultsProvider, { ResultsProviderFetchNextOptions } from './IResultsPro
 import { ArrowBatch } from './utils';
 import { LZ4 } from '../utils';
 import { LogLevel } from '../contracts/IDBSQLLogger';
+import { safeEmit } from '../telemetry/telemetryUtils';
 
 export default class CloudFetchResultHandler implements IResultsProvider<ArrowBatch> {
   private readonly context: IClientContext;
@@ -140,25 +141,17 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
    * CRITICAL: All exceptions swallowed and logged at LogLevel.debug ONLY.
    */
   private emitCloudFetchChunk(chunkIndex: number, latencyMs: number, bytes: number): void {
-    try {
-      if (!this.statementId) {
-        return;
-      }
-
-      const telemetryEmitter = this.context.getTelemetryEmitter?.();
-      if (!telemetryEmitter) {
-        return;
-      }
-
-      telemetryEmitter.emitCloudFetchChunk({
+    if (!this.statementId) {
+      return;
+    }
+    safeEmit(this.context, (emitter) => {
+      emitter.emitCloudFetchChunk({
         statementId: this.statementId,
         chunkIndex,
         latencyMs,
         bytes,
         compressed: this.isLZ4Compressed,
       });
-    } catch (error: any) {
-      this.context.getLogger().log(LogLevel.debug, `Error emitting cloudfetch.chunk event: ${error.message}`);
-    }
+    });
   }
 }

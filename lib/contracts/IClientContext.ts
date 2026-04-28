@@ -40,6 +40,8 @@ export interface ClientConfig {
   telemetryMaxPendingMetrics?: number;
   telemetryMaxErrorsPerStatement?: number;
   telemetryStatementTtlMs?: number;
+  telemetryCloseTimeoutMs?: number;
+  telemetryMaxStatementMetrics?: number;
   userAgentEntry?: string;
 }
 
@@ -54,7 +56,7 @@ export default interface IClientContext {
 
   getDriver(): Promise<IDriver>;
 
-  getAuthProvider(): IAuthentication | undefined;
+  getAuthProvider?(): IAuthentication | undefined;
 
   /** @internal Telemetry event emitter, undefined when telemetry is disabled. */
   getTelemetryEmitter?(): TelemetryEventEmitter | undefined;

@@ -24,6 +24,13 @@ import TelemetryEventEmitter from '../../../lib/telemetry/TelemetryEventEmitter'
 import MetricsAggregator from '../../../lib/telemetry/MetricsAggregator';
 
 describe('Telemetry Integration', () => {
+  // Reset the process-wide singleton between tests so refcount + cached
+  // feature flags from one test don't leak into the next.
+  afterEach(() => {
+    TelemetryClientProvider.resetInstance();
+    sinon.restore();
+  });
+
   describe('Initialization', () => {
     it('should initialize telemetry when telemetryEnabled is true', async function () {
       this.timeout(30000);
@@ -298,8 +305,9 @@ describe('Telemetry Integration', () => {
       expect(clientConfig).to.have.property('telemetryCircuitBreakerThreshold');
       expect(clientConfig).to.have.property('telemetryCircuitBreakerTimeout');
 
-      // Verify default values
-      expect(clientConfig.telemetryEnabled).to.equal(false); // Initially disabled
+      // Verify default values. telemetryEnabled defaults to true (gated by
+      // remote feature flag and DATABRICKS_TELEMETRY_DISABLED env var).
+      expect(clientConfig.telemetryEnabled).to.equal(true);
       expect(clientConfig.telemetryBatchSize).to.equal(100);
       expect(clientConfig.telemetryFlushIntervalMs).to.equal(5000);
       expect(clientConfig.telemetryMaxRetries).to.equal(3);
@@ -313,20 +321,19 @@ describe('Telemetry Integration', () => {
 
       const client = new DBSQLClient();
 
-      // Default should be false
-      expect(client.getConfig().telemetryEnabled).to.equal(false);
+      // Default is true; verify explicit override to false.
+      expect(client.getConfig().telemetryEnabled).to.equal(true);
 
       try {
-        // Override to true
         await client.connect({
           host: config.host,
           path: config.path,
           token: config.token,
-          telemetryEnabled: true,
+          telemetryEnabled: false,
         });
 
-        // Config should be updated
-        expect(client.getConfig().telemetryEnabled).to.equal(true);
+        // Config should reflect the override
+        expect(client.getConfig().telemetryEnabled).to.equal(false);
 
         await client.close();
       } catch (error) {

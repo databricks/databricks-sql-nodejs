@@ -75,13 +75,16 @@ class TelemetryClient implements IClientContext {
     // first-registrant's tuning — documented invariant.
     this.config = initialContext.getConfig();
     this.contexts.push(initialContext);
-    const auth = initialContext.getAuthProvider();
+    const auth = initialContext.getAuthProvider?.();
     if (auth) {
       this.authProviders.push(auth);
     }
 
     this.circuitBreakerRegistry = new CircuitBreakerRegistry(this);
     this.featureFlagCache = new FeatureFlagCache(this);
+    // Register this host with the feature-flag cache so isTelemetryEnabled()
+    // does not short-circuit to false. close() releases via releaseContext().
+    this.featureFlagCache.getOrCreateContext(host);
     this.exporter = new DatabricksTelemetryExporter(this, host, this.circuitBreakerRegistry);
     this.aggregator = new MetricsAggregator(this, this.exporter);
 
@@ -96,10 +99,37 @@ class TelemetryClient implements IClientContext {
   registerContext(context: IClientContext): void {
     if (!this.contexts.includes(context)) {
       this.contexts.push(context);
+      // Warn when subsequent registrants pass telemetry knobs that diverge
+      // from the first-registrant's snapshot — those values are silently
+      // ignored. Privacy-relevant for telemetryAuthenticatedExport.
+      this.warnOnConfigDivergence(context.getConfig());
     }
-    const auth = context.getAuthProvider();
+    const auth = context.getAuthProvider?.();
     if (auth && !this.authProviders.includes(auth)) {
       this.authProviders.push(auth);
+    }
+  }
+
+  private warnOnConfigDivergence(other: ClientConfig): void {
+    const keys: Array<keyof ClientConfig> = [
+      'telemetryAuthenticatedExport',
+      'telemetryBatchSize',
+      'telemetryFlushIntervalMs',
+      'telemetryMaxRetries',
+      'telemetryCircuitBreakerThreshold',
+      'telemetryCircuitBreakerTimeout',
+      // Privacy-relevant: User-Agent is snapshotted from the first registrant
+      // and shared across the host. Multi-tenant SaaS layers with per-tenant
+      // userAgentEntry values would otherwise silently ship under tenant-1's UA.
+      'userAgentEntry',
+    ];
+    const diverged = keys.filter((k) => other[k] !== undefined && other[k] !== this.config[k]);
+    if (diverged.length > 0) {
+      this.logger.log(
+        LogLevel.warn,
+        `TelemetryClient(${this.host}): registered context's telemetry settings ` +
+          `[${diverged.join(', ')}] differ from the first registrant's; the new values will be ignored.`,
+      );
     }
   }
 
@@ -110,7 +140,7 @@ class TelemetryClient implements IClientContext {
    */
   unregisterContext(context: IClientContext): void {
     this.contexts = this.contexts.filter((c) => c !== context);
-    const auth = context.getAuthProvider();
+    const auth = context.getAuthProvider?.();
     if (auth) {
       this.authProviders = this.authProviders.filter((a) => a !== auth);
     }
