@@ -601,6 +601,15 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
     return session;
   }
 
+  /**
+   * Closes the client, releasing sessions and telemetry resources.
+   *
+   * The internal telemetry flush timer uses `setInterval(...).unref()` so it
+   * cannot keep the Node.js process alive on its own. As a consequence, any
+   * telemetry buffered between flush ticks is lost if the process exits
+   * without calling `close()`. Long-lived applications should `await` this
+   * method on shutdown so the aggregator drains its remaining metrics.
+   */
   public async close(): Promise<void> {
     await this.sessions.closeAll();
 

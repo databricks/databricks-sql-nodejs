@@ -44,6 +44,10 @@ interface StatementTelemetryDetails {
   bytesDownloaded: number;
   pollCount: number;
   compressionEnabled?: boolean;
+  // Snapshot of driverConfig taken when the statement started, so a later
+  // CONNECTION_OPEN on the same client can't retroactively rewrite this
+  // statement's reported config.
+  driverConfig?: DriverConfiguration;
   errors: TelemetryEvent[];
 }
 
@@ -282,6 +286,7 @@ export default class MetricsAggregator {
         chunkSumLatencyMs: 0,
         bytesDownloaded: 0,
         pollCount: 0,
+        driverConfig: this.driverConfig,
         errors: [],
       });
     }
@@ -303,14 +308,16 @@ export default class MetricsAggregator {
         return;
       }
 
-      // Create statement metric (include cached driver config for context)
+      // Create statement metric (use config snapshotted at statement start;
+      // fall back to current cached config if the statement predates any
+      // CONNECTION_OPEN we observed)
       const metric: TelemetryMetric = {
         metricType: 'statement',
         timestamp: details.startTime,
         sessionId: details.sessionId,
         statementId: details.statementId,
         workspaceId: details.workspaceId,
-        driverConfig: this.driverConfig,
+        driverConfig: details.driverConfig ?? this.driverConfig,
         operationType: details.operationType,
         latencyMs: details.executionLatencyMs,
         resultFormat: details.resultFormat,
@@ -325,7 +332,8 @@ export default class MetricsAggregator {
 
       this.addPendingMetric(metric);
 
-      // Add buffered error metrics (include cached driver config for context)
+      // Add buffered error metrics (use the same per-statement driverConfig
+      // snapshot, so errors and the statement metric agree on config)
       for (const errorEvent of details.errors) {
         const errorMetric: TelemetryMetric = {
           metricType: 'error',
@@ -333,7 +341,7 @@ export default class MetricsAggregator {
           sessionId: details.sessionId,
           statementId: details.statementId,
           workspaceId: details.workspaceId,
-          driverConfig: this.driverConfig,
+          driverConfig: details.driverConfig ?? this.driverConfig,
           errorName: errorEvent.errorName,
           errorMessage: errorEvent.errorMessage,
         };
@@ -376,8 +384,12 @@ export default class MetricsAggregator {
       const metricsToExport = [...this.pendingMetrics];
       this.pendingMetrics = [];
 
-      // Export metrics (exporter.export never throws)
-      this.exporter.export(metricsToExport);
+      // Export metrics. exporter.export() is documented to never throw, but
+      // attach a .catch defensively so a future regression that leaks a
+      // rejection doesn't surface as an unhandled promise rejection.
+      this.exporter.export(metricsToExport).catch((error: any) => {
+        logger.log(LogLevel.debug, `Telemetry export rejected: ${error?.message ?? error}`);
+      });
 
       // Reset timer to avoid rapid successive flushes (e.g., batch flush at 25s then timer flush at 30s)
       // This ensures consistent spacing between exports and helps avoid rate limiting
