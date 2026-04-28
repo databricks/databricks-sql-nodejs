@@ -194,6 +194,15 @@ export interface TelemetryMetric {
   /** Number of result chunks */
   chunkCount?: number;
 
+  /** Latency of the first chunk fetch in milliseconds */
+  chunkInitialLatencyMs?: number;
+
+  /** Latency of the slowest chunk fetch in milliseconds */
+  chunkSlowestLatencyMs?: number;
+
+  /** Sum of all chunk fetch latencies in milliseconds */
+  chunkSumLatencyMs?: number;
+
   /** Total bytes downloaded */
   bytesDownloaded?: number;
 
@@ -314,6 +323,15 @@ export interface StatementMetrics {
 
   /** Number of CloudFetch chunks downloaded */
   chunkCount: number;
+
+  /** Latency of the first chunk fetch in milliseconds */
+  chunkInitialLatencyMs?: number;
+
+  /** Latency of the slowest chunk fetch in milliseconds */
+  chunkSlowestLatencyMs?: number;
+
+  /** Sum of all chunk fetch latencies in milliseconds */
+  chunkSumLatencyMs?: number;
 
   /** Total bytes downloaded */
   totalBytesDownloaded: number;

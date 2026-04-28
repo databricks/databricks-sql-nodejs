@@ -2,6 +2,7 @@ import Int64 from 'node-int64';
 import { TFetchOrientation, TFetchResultsResp, TOperationHandle, TRowSet } from '../../thrift/TCLIService_types';
 import Status from '../dto/Status';
 import IClientContext from '../contracts/IClientContext';
+import { LogLevel } from '../contracts/IDBSQLLogger';
 import IResultsProvider, { ResultsProviderFetchNextOptions } from './IResultsProvider';
 import { getColumnValue } from './utils';
 
@@ -26,6 +27,10 @@ export default class RowSetProvider implements IResultsProvider<TRowSet | undefi
 
   private readonly operationHandle: TOperationHandle;
 
+  private readonly statementId?: string;
+
+  private chunkIndex: number = 0;
+
   private fetchOrientation: TFetchOrientation = TFetchOrientation.FETCH_FIRST;
 
   private prefetchedResults: TFetchResultsResp[] = [];
@@ -48,9 +53,11 @@ export default class RowSetProvider implements IResultsProvider<TRowSet | undefi
     operationHandle: TOperationHandle,
     prefetchedResults: Array<TFetchResultsResp | undefined>,
     returnOnlyPrefetchedResults: boolean,
+    statementId?: string,
   ) {
     this.context = context;
     this.operationHandle = operationHandle;
+    this.statementId = statementId;
     prefetchedResults.forEach((item) => {
       if (item) {
         this.prefetchedResults.push(item);
@@ -83,14 +90,53 @@ export default class RowSetProvider implements IResultsProvider<TRowSet | undefi
     }
 
     const driver = await this.context.getDriver();
+    const startTime = Date.now();
     const response = await driver.fetchResults({
       operationHandle: this.operationHandle,
       orientation: this.fetchOrientation,
       maxRows: new Int64(limit),
       fetchType: FetchType.Data,
     });
+    const latencyMs = Date.now() - startTime;
+
+    this.emitChunkEvent(latencyMs, response);
 
     return this.processFetchResponse(response);
+  }
+
+  /**
+   * Emit a chunk telemetry event for one FetchResults page.
+   * CRITICAL: All exceptions swallowed and logged at LogLevel.debug ONLY.
+   */
+  private emitChunkEvent(latencyMs: number, response: TFetchResultsResp): void {
+    try {
+      if (!this.statementId) {
+        return;
+      }
+
+      const { telemetryEmitter } = this.context as any;
+      if (!telemetryEmitter) {
+        return;
+      }
+
+      let bytes = 0;
+      const arrowBatches = response.results?.arrowBatches;
+      if (arrowBatches) {
+        for (const batch of arrowBatches) {
+          bytes += batch.batch?.length ?? 0;
+        }
+      }
+
+      telemetryEmitter.emitCloudFetchChunk({
+        statementId: this.statementId,
+        chunkIndex: this.chunkIndex,
+        latencyMs,
+        bytes,
+      });
+      this.chunkIndex += 1;
+    } catch (error: any) {
+      this.context.getLogger().log(LogLevel.debug, `Error emitting FetchResults chunk event: ${error.message}`);
+    }
   }
 
   public async hasMore() {

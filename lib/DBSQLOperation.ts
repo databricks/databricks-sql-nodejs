@@ -103,6 +103,7 @@ export default class DBSQLOperation implements IOperation {
       this.operationHandle,
       [directResults?.resultSet],
       useOnlyPrefetchedResults,
+      this.id,
     );
     this.closeOperation = directResults?.closeOperation;
     this.context.getLogger().log(LogLevel.debug, `Operation created with id: ${this.id}`);

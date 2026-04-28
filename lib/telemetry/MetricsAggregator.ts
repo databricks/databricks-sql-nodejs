@@ -38,6 +38,9 @@ interface StatementTelemetryDetails {
   executionLatencyMs?: number;
   resultFormat?: string;
   chunkCount: number;
+  chunkInitialLatencyMs?: number;
+  chunkSlowestLatencyMs?: number;
+  chunkSumLatencyMs: number;
   bytesDownloaded: number;
   pollCount: number;
   compressionEnabled?: boolean;
@@ -226,8 +229,14 @@ export default class MetricsAggregator {
       case TelemetryEventType.STATEMENT_COMPLETE:
         details.executionLatencyMs = event.latencyMs;
         details.resultFormat = event.resultFormat;
-        details.chunkCount = event.chunkCount ?? 0;
-        details.bytesDownloaded = event.bytesDownloaded ?? 0;
+        // Only override with event-provided values; otherwise keep counts
+        // accumulated from CLOUDFETCH_CHUNK events.
+        if (event.chunkCount !== undefined) {
+          details.chunkCount = event.chunkCount;
+        }
+        if (event.bytesDownloaded !== undefined) {
+          details.bytesDownloaded = event.bytesDownloaded;
+        }
         details.pollCount = event.pollCount ?? 0;
         break;
 
@@ -236,6 +245,18 @@ export default class MetricsAggregator {
         details.bytesDownloaded += event.bytes ?? 0;
         if (event.compressed !== undefined) {
           details.compressionEnabled = event.compressed;
+        }
+        // Per-chunk timing aggregation (mirrors Go's chunkTimingAccumulator).
+        // Only record when latencyMs is positive — keeps prefetched/cached
+        // pages out of the timing stats.
+        if (event.latencyMs !== undefined && event.latencyMs > 0) {
+          if (details.chunkInitialLatencyMs === undefined) {
+            details.chunkInitialLatencyMs = event.latencyMs;
+          }
+          if (details.chunkSlowestLatencyMs === undefined || event.latencyMs > details.chunkSlowestLatencyMs) {
+            details.chunkSlowestLatencyMs = event.latencyMs;
+          }
+          details.chunkSumLatencyMs += event.latencyMs;
         }
         break;
 
@@ -258,6 +279,7 @@ export default class MetricsAggregator {
         workspaceId: event.workspaceId,
         startTime: event.timestamp,
         chunkCount: 0,
+        chunkSumLatencyMs: 0,
         bytesDownloaded: 0,
         pollCount: 0,
         errors: [],
@@ -293,6 +315,9 @@ export default class MetricsAggregator {
         latencyMs: details.executionLatencyMs,
         resultFormat: details.resultFormat,
         chunkCount: details.chunkCount,
+        chunkInitialLatencyMs: details.chunkInitialLatencyMs,
+        chunkSlowestLatencyMs: details.chunkSlowestLatencyMs,
+        chunkSumLatencyMs: details.chunkSumLatencyMs > 0 ? details.chunkSumLatencyMs : undefined,
         bytesDownloaded: details.bytesDownloaded,
         pollCount: details.pollCount,
         compressed: details.compressionEnabled,

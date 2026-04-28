@@ -396,6 +396,15 @@ export default class DatabricksTelemetryExporter {
           log.entry.sql_driver_log.sql_operation.chunk_details = {
             total_chunks_present: metric.chunkCount,
             total_chunks_iterated: metric.chunkCount,
+            ...(metric.chunkInitialLatencyMs !== undefined && {
+              initial_chunk_latency_millis: metric.chunkInitialLatencyMs,
+            }),
+            ...(metric.chunkSlowestLatencyMs !== undefined && {
+              slowest_chunk_latency_millis: metric.chunkSlowestLatencyMs,
+            }),
+            ...(metric.chunkSumLatencyMs !== undefined && {
+              sum_chunks_download_time_millis: metric.chunkSumLatencyMs,
+            }),
           };
         }
       }
