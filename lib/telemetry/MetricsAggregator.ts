@@ -82,8 +82,7 @@ export default class MetricsAggregator {
       this.maxErrorsPerStatement =
         config.telemetryMaxErrorsPerStatement ?? DEFAULT_TELEMETRY_CONFIG.maxErrorsPerStatement;
       this.statementTtlMs = config.telemetryStatementTtlMs ?? DEFAULT_TELEMETRY_CONFIG.statementTtlMs;
-      this.maxStatementMetrics =
-        config.telemetryMaxStatementMetrics ?? DEFAULT_TELEMETRY_CONFIG.maxStatementMetrics;
+      this.maxStatementMetrics = config.telemetryMaxStatementMetrics ?? DEFAULT_TELEMETRY_CONFIG.maxStatementMetrics;
 
       this.startFlushTimer();
     } catch (error: any) {
