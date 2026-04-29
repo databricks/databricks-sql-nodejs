@@ -51,6 +51,70 @@ client
   });
 ```
 
+## Telemetry
+
+Starting with version 1.13, the driver collects telemetry — connection,
+statement, and CloudFetch chunk metrics, plus error events with redacted
+stack traces — to help Databricks improve driver performance and
+reliability. **Telemetry is enabled by default and gated by a server-side
+feature flag**: events are emitted only when the workspace's feature flag
+is on. No SQL text, parameter values, or row data are ever included.
+
+### What's collected
+
+- Connection lifecycle (`CREATE_SESSION`, `DELETE_SESSION`) with latency.
+- Statement lifecycle (`STATEMENT_START`, `STATEMENT_COMPLETE`) with
+  execution latency, operation type, and result format.
+- CloudFetch chunk timings and byte counts.
+- Error events with redacted stack traces (Bearer/JWT tokens, OAuth
+  secrets, home-directory paths, and Databricks PATs are stripped before
+  emission).
+
+See `TelemetryEvent` and `TelemetryMetric` in the package exports for the
+exact payload shapes.
+
+### Opting out
+
+Three independent ways to disable telemetry, in order of precedence:
+
+1. **Environment variable** — set `DATABRICKS_TELEMETRY_DISABLED` to one
+   of `1`, `true`, `yes`, or `on` (case-insensitive). Other values
+   (empty, `0`, `false`, `off`, `no`) are ignored, leaving the runtime
+   config in charge.
+2. **Programmatic** — pass `telemetryEnabled: false` to `connect()`:
+   ```javascript
+   await client.connect({
+     host,
+     path,
+     token,
+     telemetryEnabled: false,
+   });
+   ```
+3. **Server-side** — Databricks-managed feature flag; if disabled for
+   your workspace, the driver does not emit telemetry regardless of
+   client config.
+
+### Tuning
+
+If you keep telemetry on, the following knobs are available on
+`ConnectionOptions` (see JSDoc on `IDBSQLClient.ts` for defaults and
+units):
+
+- `telemetryAuthenticatedExport` — set to `false` to ship reduced
+  payloads (no statement/session correlation IDs, generic User-Agent)
+  via the unauthenticated endpoint.
+- `telemetryBatchSize`, `telemetryFlushIntervalMs`, `telemetryMaxRetries`
+  — batching and retry tuning.
+- `telemetryCircuitBreakerThreshold`, `telemetryCircuitBreakerTimeout` —
+  circuit-breaker tuning for the export endpoint.
+- `telemetryCloseTimeoutMs` — bound on `await client.close()` waiting for
+  the final flush.
+
+> **Note for short-lived processes**: always `await client.close()`
+> before `process.exit(0)` so the final batch is flushed. Without an
+> explicit close, the periodic flush timer is `unref()`'d to avoid
+> holding the event loop open, so any unflushed events are dropped.
+
 ## Run Tests
 
 ### Unit tests

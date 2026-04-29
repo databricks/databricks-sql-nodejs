@@ -175,21 +175,43 @@ class TelemetryClient implements IClientContext {
   }
 
   async getClient(): Promise<IThriftClient> {
-    if (this.contexts.length === 0) {
-      throw new Error(`TelemetryClient: no client available for host ${this.host}`);
+    let lastErr: unknown;
+    for (const ctx of this.contexts) {
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        return await ctx.getClient();
+      } catch (err) {
+        lastErr = err;
+      }
     }
-    return this.contexts[0].getClient();
+    throw lastErr instanceof Error ? lastErr : new Error(`TelemetryClient: no client available for host ${this.host}`);
   }
 
   async getDriver(): Promise<IDriver> {
-    if (this.contexts.length === 0) {
-      throw new Error(`TelemetryClient: no driver available for host ${this.host}`);
+    let lastErr: unknown;
+    for (const ctx of this.contexts) {
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        return await ctx.getDriver();
+      } catch (err) {
+        lastErr = err;
+      }
     }
-    return this.contexts[0].getDriver();
+    throw lastErr instanceof Error ? lastErr : new Error(`TelemetryClient: no driver available for host ${this.host}`);
   }
 
   getAuthProvider(): IAuthentication | undefined {
-    return this.authProviders[0];
+    // Walk the FIFO and return the first usable provider. A registered head
+    // whose underlying DBSQLClient has revoked credentials will surface as
+    // an `authenticate()` failure inside the exporter retry loop, but we
+    // can avoid that round-trip when the array contains a clearly-defined
+    // entry. Symmetric with `getConnectionProvider` fallthrough.
+    for (const provider of this.authProviders) {
+      if (provider !== undefined) {
+        return provider;
+      }
+    }
+    return undefined;
   }
 
   getTelemetryEmitter(): undefined {

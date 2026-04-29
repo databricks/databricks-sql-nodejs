@@ -222,6 +222,60 @@ describe('TelemetryEventEmitter', () => {
     });
   });
 
+  describe('emitConnectionClose', () => {
+    it('emits connection.close with sessionId and latencyMs', (done) => {
+      emitter.on(TelemetryEventType.CONNECTION_CLOSE, (event: TelemetryEvent) => {
+        expect(event.eventType).to.equal(TelemetryEventType.CONNECTION_CLOSE);
+        expect(event.sessionId).to.equal('session-close-1');
+        expect(event.latencyMs).to.equal(7);
+        expect(event.timestamp).to.be.a('number');
+        done();
+      });
+
+      emitter.emitConnectionClose({ sessionId: 'session-close-1', latencyMs: 7 });
+    });
+
+    it('does not emit when telemetry is disabled', () => {
+      const disabledContext = {
+        getLogger: () => logger,
+        getConfig: () => ({
+          telemetryEnabled: false,
+          directResultsDefaultMaxRows: 10000,
+          fetchChunkDefaultMaxRows: 100000,
+          socketTimeout: 900000,
+          retryMaxAttempts: 30,
+          retriesTimeout: 900000,
+          retryDelayMin: 1000,
+          retryDelayMax: 30000,
+          useCloudFetch: true,
+          cloudFetchConcurrentDownloads: 10,
+          cloudFetchSpeedThresholdMBps: 0,
+          useLZ4Compression: true,
+        }),
+      } as any;
+
+      const disabledEmitter = new TelemetryEventEmitter(disabledContext);
+      let emitted = false;
+      disabledEmitter.on(TelemetryEventType.CONNECTION_CLOSE, () => {
+        emitted = true;
+      });
+
+      disabledEmitter.emitConnectionClose({ sessionId: 's', latencyMs: 1 });
+      expect(emitted).to.be.false;
+    });
+
+    it('swallows exceptions from listeners and logs at debug level', () => {
+      emitter.on(TelemetryEventType.CONNECTION_CLOSE, () => {
+        throw new Error('listener boom');
+      });
+
+      expect(() => emitter.emitConnectionClose({ sessionId: 's', latencyMs: 1 })).to.not.throw();
+      const logStub = logger.log as sinon.SinonStub;
+      const debugCalls = logStub.getCalls().filter((c) => c.args[0] === LogLevel.debug);
+      expect(debugCalls.some((c) => /connection close/i.test(c.args[1]))).to.be.true;
+    });
+  });
+
   describe('emitStatementStart', () => {
     it('should emit statement.start event with correct data', (done) => {
       emitter.on(TelemetryEventType.STATEMENT_START, (event: TelemetryEvent) => {

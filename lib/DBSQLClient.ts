@@ -404,8 +404,23 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
 
       this.logger.log(LogLevel.debug, 'Telemetry: enabled');
     } catch (error: any) {
-      // Swallow all telemetry initialization errors
-      this.logger.log(LogLevel.debug, `Telemetry initialization error: ${error.message}`);
+      // Swallow all telemetry initialization errors. If we acquired a refcount
+      // before the throw, release it — otherwise the per-host TelemetryClient
+      // (and its flush timer / exporter / FFCache) leaks for the lifetime of
+      // the process on long-running supervisors that retry-connect.
+      if (this.telemetryClient) {
+        try {
+          await TelemetryClientProvider.getInstance().releaseClient(this, this.host);
+        } catch (releaseError: any) {
+          this.logger.log(
+            LogLevel.debug,
+            `Telemetry release-after-init-failure error: ${releaseError?.message ?? releaseError}`,
+          );
+        }
+        this.telemetryClient = undefined;
+        this.telemetryEmitter = undefined;
+      }
+      this.logger.log(LogLevel.debug, `Telemetry initialization error: ${error?.message ?? error}`);
     }
   }
 
