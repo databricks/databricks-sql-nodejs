@@ -296,9 +296,9 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
     if (request.queryTags !== undefined) {
       const serialized = serializeQueryTags(request.queryTags);
       if (serialized) {
-        configuration['QUERY_TAGS'] = serialized;
+        configuration.QUERY_TAGS = serialized;
       } else {
-        delete configuration['QUERY_TAGS'];
+        delete configuration.QUERY_TAGS;
       }
     }
 

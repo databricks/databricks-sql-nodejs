@@ -9,7 +9,7 @@
  * @param queryTags - dictionary of query tag key-value pairs
  * @returns serialized string, or undefined if input is empty/null/undefined
  */
-export function serializeQueryTags(
+export default function serializeQueryTags(
   queryTags: Record<string, string | null | undefined> | null | undefined,
 ): string | undefined {
   if (queryTags == null) {

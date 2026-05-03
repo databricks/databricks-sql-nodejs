@@ -1,5 +1,5 @@
 import { expect } from 'chai';
-import { serializeQueryTags } from '../../../lib/utils/queryTags';
+import serializeQueryTags from '../../../lib/utils/queryTags';
 
 describe('serializeQueryTags', () => {
   it('should return undefined for null input', () => {
