@@ -98,7 +98,7 @@ function prepareTestInstances(options: Partial<AuthorizationCodeOptions>) {
     return httpServer;
   });
 
-  authCode['createHttpServer'] = createHttpServer;
+  authCode['createHttpServer'] = createHttpServer as any;
 
   openAuthUrl.callsFake(async (authUrl) => {
     const params = JSON.parse(authUrl);
