@@ -1,5 +1,8 @@
 import { expect } from 'chai';
 import sinon from 'sinon';
+import { createRequire } from 'module';
+
+const require = createRequire(import.meta.url);
 
 describe('lz4 module loader', () => {
   let moduleLoadStub: sinon.SinonStub | undefined;
