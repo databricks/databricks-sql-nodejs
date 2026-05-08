@@ -1,5 +1,6 @@
 // Don't move this import - it should be placed before any other
 import './polyfills';
+import './utils/thriftCompat';
 
 import { Thrift } from 'thrift';
 import TCLIService from '../thrift/TCLIService';

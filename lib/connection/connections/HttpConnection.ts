@@ -1,3 +1,4 @@
+import '../../utils/thriftCompat';
 import thrift from 'thrift';
 import https from 'https';
 import http from 'http';

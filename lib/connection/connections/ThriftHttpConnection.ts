@@ -5,6 +5,7 @@
 */
 
 import { EventEmitter } from 'events';
+import '../../utils/thriftCompat';
 import { TBinaryProtocol, TBufferedTransport, Thrift, TProtocol, TProtocolConstructor, TTransport } from 'thrift';
 import fetch, { RequestInit, HeadersInit, Request, Response, FetchError } from 'node-fetch';
 // @ts-expect-error TS7016: Could not find a declaration file for module

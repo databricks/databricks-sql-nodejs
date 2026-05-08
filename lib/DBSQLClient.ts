@@ -1,3 +1,4 @@
+import './utils/thriftCompat';
 import thrift from 'thrift';
 import Int64 from 'node-int64';
 
