@@ -17,7 +17,7 @@ import HttpConnection from './connection/connections/HttpConnection';
 import IConnectionOptions from './connection/contracts/IConnectionOptions';
 import Status from './dto/Status';
 import HiveDriverError from './errors/HiveDriverError';
-import { buildUserAgentString, definedOrError } from './utils';
+import { buildUserAgentString, definedOrError, serializeQueryTags } from './utils';
 import PlainHttpAuthentication from './connection/auth/PlainHttpAuthentication';
 import DatabricksOAuth, { OAuthFlow } from './connection/auth/DatabricksOAuth';
 import {
@@ -642,6 +642,16 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
     // Add metric view metadata config if enabled
     if (this.config.enableMetricViewMetadata) {
       configuration['spark.sql.thriftserver.metadata.metricview.enabled'] = 'true';
+    }
+
+    // Serialize queryTags dict and set in configuration; takes precedence over configuration.QUERY_TAGS
+    if (request.queryTags !== undefined) {
+      const serialized = serializeQueryTags(request.queryTags);
+      if (serialized) {
+        configuration.QUERY_TAGS = serialized;
+      } else {
+        delete configuration.QUERY_TAGS;
+      }
     }
 
     const response = await this.driver.openSession({
