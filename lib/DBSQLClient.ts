@@ -314,7 +314,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
    * attribution is better off seeing a missing field than a wrong value.
    */
   private extractWorkspaceId(): string | undefined {
-    const {httpPath} = this;
+    const { httpPath } = this;
     if (!httpPath) {
       return undefined;
     }

@@ -195,12 +195,12 @@ describe('Telemetry Integration', function () {
           telemetryEnabled: true,
         });
 
-        // Both clients should call getOrCreateClient exactly once each.
-        // Tightened from `at.least(2)` to `equal(2)` — under the previous
-        // assertion an off-by-one refcount leak (e.g. an extra call from a
-        // reconnect path) would not fail the test.
+        // Each connect calls getOrCreateClient exactly once when the feature
+        // flag is on (no FF-disabled release path). Tightened from
+        // `at.least(2)` to `equal(2)` — an off-by-one refcount leak from a
+        // reconnect path would now fail the test.
         expect(getOrCreateClientSpy.callCount).to.equal(2);
-        // Both calls should target the same host so the singleton actually shares.
+        // Both calls must target the same host so the singleton actually shares.
         const host1 = getOrCreateClientSpy.firstCall.args[1];
         const host2 = getOrCreateClientSpy.secondCall.args[1];
         expect(host1).to.equal(host2);

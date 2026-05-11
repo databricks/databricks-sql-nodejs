@@ -168,7 +168,7 @@ export default class RowSetProvider implements IResultsProvider<TRowSet | undefi
    * CRITICAL: All exceptions swallowed and logged at LogLevel.debug ONLY.
    */
   private emitChunkEvent(latencyMs: number, response: TFetchResultsResp): void {
-    const {statementId} = this;
+    const { statementId } = this;
     if (!statementId) {
       return;
     }
@@ -184,19 +184,19 @@ export default class RowSetProvider implements IResultsProvider<TRowSet | undefi
       //   - `columns[i].*Val.values`    — COLUMN_BASED_SET, sum across columns
       //   - `rows[i]`                   — legacy row-based set (rare; estimate)
       let bytes = 0;
-      const {results} = response;
+      const { results } = response;
       if (results) {
-        const {arrowBatches} = results;
+        const { arrowBatches } = results;
         if (arrowBatches) {
           for (const batch of arrowBatches) {
             bytes += batch.batch?.length ?? 0;
           }
         }
-        const {binaryColumns} = results;
+        const { binaryColumns } = results;
         if (binaryColumns) {
           bytes += binaryColumns.length;
         }
-        const {columns} = results;
+        const { columns } = results;
         if (columns) {
           for (const column of columns) {
             bytes += estimateColumnBytes(column);
