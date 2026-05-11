@@ -116,7 +116,16 @@ export default class DatabricksTelemetryExporter {
   ) {
     this.circuitBreaker = circuitBreakerRegistry.getCircuitBreaker(host);
     const config = this.context.getConfig();
-    this.authenticatedUserAgent = buildUserAgentString(config.userAgentEntry);
+    // Telemetry-default-on means anything in `userAgentEntry` ships to the
+    // telemetry endpoint on every POST. `buildUserAgentString` redacts
+    // Databricks token *prefixes* (dapi, dose, …) but not the broader secret
+    // shapes — JWTs, OAuth `client_secret`, JSON-encoded credentials, URL
+    // userinfo — that customers occasionally stuff into the user-agent.
+    // Run the full SECRET_PATTERNS sweep before the UA is built so the
+    // header value never carries an unredacted secret. The user's primary
+    // Thrift connection is unaffected.
+    const redactedEntry = config.userAgentEntry === undefined ? undefined : redactSensitive(config.userAgentEntry, 256);
+    this.authenticatedUserAgent = buildUserAgentString(redactedEntry);
     this.unauthenticatedUserAgent = buildUserAgentString(undefined);
   }
 
@@ -308,13 +317,23 @@ export default class DatabricksTelemetryExporter {
   private async sendRequest(url: string, init: RequestInit): Promise<Response> {
     const connectionProvider = await this.context.getConnectionProvider();
     const agent = await connectionProvider.getAgent();
-    const retryPolicy = await connectionProvider.getRetryPolicy();
+    // Do NOT route through `connectionProvider.getRetryPolicy()` here. That
+    // policy is bounded by the customer's `retriesTimeout` (15 min default)
+    // and `retryMaxAttempts` (5), so each call to `sendRequest` could spend
+    // up to ~15 min retrying on its own. Stacked under the exporter's outer
+    // `exportWithRetry` loop (`telemetryMaxRetries` default 3) the worst-case
+    // wall-clock per batch reaches ~45 min — during which `flushInFlight`
+    // blocks subsequent flushes and `addPendingMetric` silently drops past
+    // the buffer cap.
+    //
+    // Telemetry must be a polite background citizen: the outer loop is the
+    // single source of retry, and a single attempt here is the right shape.
+    // Connection-level errors that the customer retry policy would have
+    // bridged (transient socket errors, 5xx) are still classified by
+    // `ExceptionClassifier` and retried by `exportWithRetry` instead.
     const requestConfig: RequestInit = { agent, ...init };
-    const result = await retryPolicy.invokeWithRetry(() => {
-      const request = new Request(url, requestConfig);
-      return fetch(request).then((response) => ({ request, response }));
-    });
-    return result.response;
+    const request = new Request(url, requestConfig);
+    return fetch(request);
   }
 
   private toTelemetryLog(
@@ -385,10 +404,12 @@ export default class DatabricksTelemetryExporter {
       }
     } else if (metric.metricType === 'error') {
       const stackOrMessage = metric.errorStack ?? metric.errorMessage ?? '';
+      // Primary redaction site is TelemetryEventEmitter.emitError — this
+      // second pass is defence-in-depth in case a metric reached the
+      // exporter via a path that bypassed the emitter (programmatic injection
+      // in tests, future call sites). On the unauth path we ship nothing.
       log.entry.sql_driver_log.error_info = {
         error_name: metric.errorName || 'UnknownError',
-        // Redact common secret shapes and cap length. On the unauth path we
-        // keep only the error class — no message body.
         stack_trace: includeCorrelation ? redactSensitive(stackOrMessage) : '',
       };
     }

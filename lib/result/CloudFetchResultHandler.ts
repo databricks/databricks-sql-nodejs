@@ -141,12 +141,13 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
    * CRITICAL: All exceptions swallowed and logged at LogLevel.debug ONLY.
    */
   private emitCloudFetchChunk(chunkIndex: number, latencyMs: number, bytes: number): void {
-    if (!this.statementId) {
+    const {statementId} = this;
+    if (!statementId) {
       return;
     }
     safeEmit(this.context, (emitter) => {
       emitter.emitCloudFetchChunk({
-        statementId: this.statementId,
+        statementId,
         chunkIndex,
         latencyMs,
         bytes,

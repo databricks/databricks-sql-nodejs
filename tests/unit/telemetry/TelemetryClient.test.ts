@@ -188,8 +188,11 @@ describe('TelemetryClient', () => {
 
       const internal = client as any;
       expect(internal.contexts).to.have.lengthOf(2);
-      expect(internal.contexts[0]).to.equal(ctxA);
-      expect(internal.contexts[1]).to.equal(ctxB);
+      // `contexts` is now an array of {context, authProvider} snapshots so
+      // unregisterContext can use the cached auth-provider reference even
+      // after a registrant rotates credentials. Unwrap `.context` to assert.
+      expect(internal.contexts[0].context).to.equal(ctxA);
+      expect(internal.contexts[1].context).to.equal(ctxB);
     });
 
     it('registerContext is idempotent for the same context', () => {
@@ -212,7 +215,7 @@ describe('TelemetryClient', () => {
 
       const internal = client as any;
       expect(internal.contexts).to.have.lengthOf(1);
-      expect(internal.contexts[0]).to.equal(ctxB);
+      expect(internal.contexts[0].context).to.equal(ctxB);
     });
 
     it('warns when a registered context has divergent telemetry config (F12)', () => {

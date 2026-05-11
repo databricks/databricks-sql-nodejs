@@ -35,7 +35,8 @@ import IConnectionProvider from './connection/contracts/IConnectionProvider';
 import TelemetryClient from './telemetry/TelemetryClient';
 import TelemetryClientProvider from './telemetry/TelemetryClientProvider';
 import TelemetryEventEmitter from './telemetry/TelemetryEventEmitter';
-import { DriverConfiguration, DRIVER_NAME, TelemetryEventType } from './telemetry/types';
+import MetricsAggregator from './telemetry/MetricsAggregator';
+import { DriverConfiguration, DRIVER_NAME, TelemetryEventType, DEFAULT_TELEMETRY_CONFIG } from './telemetry/types';
 import { safeEmit } from './telemetry/telemetryUtils';
 import driverVersion from './version';
 
@@ -60,6 +61,34 @@ function getInitialNamespaceOptions(catalogName?: string, schemaName?: string) {
 }
 
 export type ThriftLibrary = Pick<typeof thrift, 'createClient'>;
+
+/**
+ * Copy any defined telemetry knob from `src` into `dst`. Both objects declare
+ * identical types for these keys, so the assignment is structurally typed —
+ * a wrong-shape value in `ConnectionOptions` is caught at the call site.
+ *
+ * Keep this in sync with the `telemetry*` knobs exposed in
+ * `ConnectionOptions` (lib/contracts/IDBSQLClient.ts) and `ClientConfig`
+ * (lib/contracts/IClientContext.ts). Adding a knob requires extending this
+ * list AND the public option surface; otherwise the user-supplied override
+ * silently does nothing.
+ */
+function copyDefinedTelemetryOptions(src: ConnectionOptions, dst: ClientConfig): void {
+  if (src.telemetryEnabled !== undefined) dst.telemetryEnabled = src.telemetryEnabled;
+  if (src.telemetryBatchSize !== undefined) dst.telemetryBatchSize = src.telemetryBatchSize;
+  if (src.telemetryFlushIntervalMs !== undefined) dst.telemetryFlushIntervalMs = src.telemetryFlushIntervalMs;
+  if (src.telemetryMaxRetries !== undefined) dst.telemetryMaxRetries = src.telemetryMaxRetries;
+  if (src.telemetryAuthenticatedExport !== undefined)
+    dst.telemetryAuthenticatedExport = src.telemetryAuthenticatedExport;
+  if (src.telemetryCircuitBreakerThreshold !== undefined)
+    dst.telemetryCircuitBreakerThreshold = src.telemetryCircuitBreakerThreshold;
+  if (src.telemetryCircuitBreakerTimeout !== undefined)
+    dst.telemetryCircuitBreakerTimeout = src.telemetryCircuitBreakerTimeout;
+  if (src.telemetryCloseTimeoutMs !== undefined) dst.telemetryCloseTimeoutMs = src.telemetryCloseTimeoutMs;
+  if (src.telemetryMaxStatementMetrics !== undefined)
+    dst.telemetryMaxStatementMetrics = src.telemetryMaxStatementMetrics;
+  if (src.telemetryMaxPendingMetrics !== undefined) dst.telemetryMaxPendingMetrics = src.telemetryMaxPendingMetrics;
+}
 
 export default class DBSQLClient extends EventEmitter implements IDBSQLClient, IClientContext {
   private static defaultLogger?: IDBSQLLogger;
@@ -97,6 +126,13 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
 
   private telemetryEmitter?: TelemetryEventEmitter;
 
+  // True once we've shipped the full DriverConfiguration on a CONNECTION_OPEN
+  // event for this client. Subsequent openSession events for the same client
+  // strip the (~1KB, static-for-the-process) blob — a long-running client
+  // opening N sessions would otherwise pay N×blob bytes for telemetry on data
+  // that hasn't changed since the first session.
+  private driverConfigShipped = false;
+
   private static getDefaultLogger(): IDBSQLLogger {
     if (!this.defaultLogger) {
       this.defaultLogger = new DBSQLLogger();
@@ -124,14 +160,30 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
 
       useLZ4Compression: true,
 
-      // Telemetry defaults
-      telemetryEnabled: true, // Enabled by default, gated by feature flag
-      telemetryBatchSize: 100,
-      telemetryFlushIntervalMs: 5000,
-      telemetryMaxRetries: 3,
-      telemetryAuthenticatedExport: true,
-      telemetryCircuitBreakerThreshold: 5,
-      telemetryCircuitBreakerTimeout: 60000, // 1 minute
+      // Telemetry defaults are sourced from DEFAULT_TELEMETRY_CONFIG so
+      // every component reads from the same single frozen const. Mapping the
+      // unprefixed TelemetryConfiguration keys to the `telemetry`-prefixed
+      // ClientConfig keys is mechanical; doing it once here means that adding
+      // a new knob to DEFAULT_TELEMETRY_CONFIG only requires extending the
+      // ClientConfig surface and (optionally) adding to telemetryOverrides.
+      // Previously this method declared 7 keys while DEFAULT_TELEMETRY_CONFIG
+      // declared 15 — silent desync risk every time someone touched one but
+      // not the other.
+      telemetryEnabled: DEFAULT_TELEMETRY_CONFIG.enabled,
+      telemetryBatchSize: DEFAULT_TELEMETRY_CONFIG.batchSize,
+      telemetryFlushIntervalMs: DEFAULT_TELEMETRY_CONFIG.flushIntervalMs,
+      telemetryMaxRetries: DEFAULT_TELEMETRY_CONFIG.maxRetries,
+      telemetryBackoffBaseMs: DEFAULT_TELEMETRY_CONFIG.backoffBaseMs,
+      telemetryBackoffMaxMs: DEFAULT_TELEMETRY_CONFIG.backoffMaxMs,
+      telemetryBackoffJitterMs: DEFAULT_TELEMETRY_CONFIG.backoffJitterMs,
+      telemetryAuthenticatedExport: DEFAULT_TELEMETRY_CONFIG.authenticatedExport,
+      telemetryCircuitBreakerThreshold: DEFAULT_TELEMETRY_CONFIG.circuitBreakerThreshold,
+      telemetryCircuitBreakerTimeout: DEFAULT_TELEMETRY_CONFIG.circuitBreakerTimeout,
+      telemetryMaxPendingMetrics: DEFAULT_TELEMETRY_CONFIG.maxPendingMetrics,
+      telemetryMaxErrorsPerStatement: DEFAULT_TELEMETRY_CONFIG.maxErrorsPerStatement,
+      telemetryStatementTtlMs: DEFAULT_TELEMETRY_CONFIG.statementTtlMs,
+      telemetryCloseTimeoutMs: DEFAULT_TELEMETRY_CONFIG.closeTimeoutMs,
+      telemetryMaxStatementMetrics: DEFAULT_TELEMETRY_CONFIG.maxStatementMetrics,
     };
   }
 
@@ -244,14 +296,38 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
   }
 
   /**
-   * Extract workspace ID from hostname.
-   * @param host - The host string (e.g., "workspace-id.cloud.databricks.com")
-   * @returns Workspace ID or host if extraction fails
+   * Extract the numeric workspace ID for telemetry.
+   *
+   * The only reliable carrier in the connection params today is the `?o=N`
+   * query parameter on `httpPath` — Databricks SQL warehouses are typically
+   * connected to via paths like `/sql/1.0/warehouses/<id>?o=12345678901234`.
+   *
+   * Host-based extraction was tried previously but produced confidently-wrong
+   * values:
+   *  - AWS `dbc-XXXXX-YYYY.cloud.databricks.com` → `dbc-XXXXX-YYYY`
+   *    is the deployment shard prefix, not the workspace ID.
+   *  - Azure `adb-NNNNNNNNNNNNN.NN.azuredatabricks.net` → the workspace ID is
+   *    the numeric portion after the `adb-` prefix (and before the form-factor
+   *    digit), not `adb-NNN`.
+   *
+   * Returns `undefined` when no workspace ID can be derived. Server-side
+   * attribution is better off seeing a missing field than a wrong value.
    */
-  private extractWorkspaceId(host: string): string {
-    // Extract workspace ID from hostname (first segment before first dot)
-    const parts = host.split('.');
-    return parts.length > 0 ? parts[0] : host;
+  private extractWorkspaceId(): string | undefined {
+    const {httpPath} = this;
+    if (!httpPath) {
+      return undefined;
+    }
+    const queryIdx = httpPath.indexOf('?');
+    if (queryIdx < 0) {
+      return undefined;
+    }
+    const query = httpPath.slice(queryIdx + 1);
+    // Match `o=<digits>` as the first param, an inner `&o=<digits>`, etc.
+    // Workspace IDs are decimal integers; reject anything else so a stray
+    // `o=tenant_42` doesn't ship as a workspace ID.
+    const match = query.match(/(?:^|&)o=(\d+)(?:&|$)/);
+    return match ? match[1] : undefined;
   }
 
   /**
@@ -457,6 +533,9 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
       this.telemetryClient = undefined;
       this.telemetryEmitter = undefined;
     }
+    // Re-arm: the new connection is a fresh client-config lineage even if
+    // the host is the same.
+    this.driverConfigShipped = false;
 
     // Store connection params for telemetry
     this.host = options.host;
@@ -468,24 +547,13 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
       this.config.enableMetricViewMetadata = options.enableMetricViewMetadata;
     }
 
-    // Override telemetry config if provided in options
-    const telemetryOverrides = [
-      'telemetryEnabled',
-      'telemetryBatchSize',
-      'telemetryFlushIntervalMs',
-      'telemetryMaxRetries',
-      'telemetryAuthenticatedExport',
-      'telemetryCircuitBreakerThreshold',
-      'telemetryCircuitBreakerTimeout',
-      'telemetryCloseTimeoutMs',
-      'telemetryMaxStatementMetrics',
-    ] as const;
-    for (const k of telemetryOverrides) {
-      if (options[k] !== undefined) {
-        // The narrow union forces a cast; values are validated at point of use.
-        (this.config as any)[k] = options[k];
-      }
-    }
+    // Override telemetry config if provided in options. Per-key narrowed copy
+    // preserves the structural type system: `ConnectionOptions` and
+    // `ClientConfig` declare identical types for these knobs, so a user
+    // passing `telemetryBatchSize: "100"` (string) gets a TS error instead of
+    // silently writing a string into a number field that `MetricsAggregator`
+    // would later read and break aggregation thresholds at runtime.
+    copyDefinedTelemetryOptions(options, this.config);
 
     // Persist userAgentEntry so telemetry and feature-flag call sites reuse
     // the same value as the primary Thrift connection's User-Agent.
@@ -533,7 +601,21 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
     // charge — avoiding the footgun where a sysadmin sets the var to "false"
     // expecting to enable telemetry.
     const envKill = process.env.DATABRICKS_TELEMETRY_DISABLED;
-    const envDisabled = typeof envKill === 'string' && /^(1|true|yes|on)$/i.test(envKill.trim());
+    const trimmedEnvKill = typeof envKill === 'string' ? envKill.trim() : '';
+    const envDisabled = trimmedEnvKill.length > 0 && /^(1|true|yes|on)$/i.test(trimmedEnvKill);
+    // Surface the misconfiguration: an ops engineer who sees the var name and
+    // tries to "set it to false to keep telemetry on" otherwise gets the
+    // opposite of what they expect (the var is then silently ignored, runtime
+    // config stays in charge — default `true`). Warn on any non-empty value
+    // that isn't recognized so the disable-failed shape is visible in logs.
+    if (trimmedEnvKill.length > 0 && !envDisabled) {
+      this.logger.log(
+        LogLevel.warn,
+        `DATABRICKS_TELEMETRY_DISABLED='${trimmedEnvKill}' was ignored. ` +
+          `To disable telemetry, set the variable to one of: 1, true, yes, on. ` +
+          `Telemetry remains controlled by the runtime config and feature flag.`,
+      );
+    }
     if (this.config.telemetryEnabled && !envDisabled) {
       await this.initializeTelemetry();
     }
@@ -577,12 +659,19 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
     });
     this.sessions.add(session);
 
-    // Emit connection.open telemetry event
+    // Emit connection.open telemetry event. The DriverConfiguration blob
+    // (~1KB: runtime/OS/locale/process info) is static for the lifetime of
+    // this DBSQLClient — ship it once, on the first openSession, and omit
+    // on subsequent sessions for the same client. Server-side correlation
+    // by sessionId still groups N sessions under the first event's config.
     safeEmit(this, (emitter) => {
       if (!this.host) return;
       const latencyMs = Date.now() - startTime;
-      const workspaceId = this.extractWorkspaceId(this.host);
-      const driverConfig = this.buildDriverConfiguration();
+      const workspaceId = this.extractWorkspaceId();
+      const driverConfig = this.driverConfigShipped ? undefined : this.buildDriverConfiguration();
+      if (driverConfig) {
+        this.driverConfigShipped = true;
+      }
       emitter.emitConnectionOpen({
         sessionId: session.id,
         workspaceId,
@@ -680,7 +769,30 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
   }
 
   /** @internal */
-  public getTelemetryAggregator() {
+  public getTelemetryAggregator(): MetricsAggregator | undefined {
     return this.telemetryClient?.getAggregator();
+  }
+
+  /**
+   * Operator-visible snapshot of the client's telemetry state: current
+   * buffer depth, in-flight statement aggregations, cumulative drops/
+   * evictions, and circuit-breaker state. Returns `undefined` when
+   * telemetry is disabled (config, env-kill, or feature-flag).
+   *
+   * Use this in health-check endpoints or shutdown banners to verify that
+   * telemetry is flowing. A non-zero `droppedMetrics` between observations
+   * means buffer overflow — raise `telemetryMaxPendingMetrics`.
+   */
+  public getTelemetryStats():
+    | {
+        host: string;
+        pendingMetricsCount: number;
+        inFlightStatements: number;
+        droppedMetrics: number;
+        evictedStatements: number;
+        circuitBreakerState: string;
+      }
+    | undefined {
+    return this.telemetryClient?.getTelemetryStats();
   }
 }

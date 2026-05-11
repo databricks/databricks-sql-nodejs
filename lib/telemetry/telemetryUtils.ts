@@ -14,6 +14,10 @@
  * limitations under the License.
  */
 
+import type IClientContext from '../contracts/IClientContext';
+import type TelemetryEventEmitter from './TelemetryEventEmitter';
+import { LogLevel } from '../contracts/IDBSQLLogger';
+
 /**
  * Hosts we always refuse to send authenticated telemetry to. Targeted at the
  * `/api/2.0/sql/telemetry-ext` exfil vector: an attacker-influenced `host`
@@ -135,6 +139,21 @@ const SECRET_PATTERNS: Array<[RegExp, string]> = [
   // application directory layout.
   [/\/(?:home|Users)\/[^/\s)\]]+\//g, '/<HOMEDIR>/'],
   [/[A-Za-z]:\\Users\\[^\\\s)\]]+\\/g, '<WINHOMEDIR>\\'],
+  // macOS temp/scratch directories (`/private/var/folders/<bucket>/<id>/...`)
+  // and `/var/folders/...`. The `<bucket>/<id>` segments are derived from the
+  // user identity so we redact through to the next path separator.
+  [/\/(?:private\/)?var\/folders\/[^/\s)\]]+\/[^/\s)\]]+\//g, '/<MACTMP>/'],
+  // Linux service / container layouts that routinely encode app or tenant
+  // names: `/var/lib/<service>/`, `/opt/<dir>/`, `/srv/<dir>/`, container
+  // `/app/<dir>/` (common on Lambda/k8s/Cloud Run). The replacement keeps
+  // the leading anchor so dashboards can still group by "var/lib vs opt".
+  [/\/var\/lib\/[^/\s)\]]+\//g, '/var/lib/<APP>/'],
+  [/\/opt\/[^/\s)\]]+\//g, '/opt/<APP>/'],
+  [/\/srv\/[^/\s)\]]+\//g, '/srv/<APP>/'],
+  [/\/app\/[^/\s)\]]+\//g, '/app/<APP>/'],
+  // Windows UNC paths `\\server\share\...` — the server and share names
+  // routinely leak internal hostnames or fileshare names.
+  [/\\\\[^\\/\s)\]]+\\[^\\/\s)\]]+\\/g, '\\\\<UNC>\\'],
 ];
 
 /**
@@ -239,16 +258,14 @@ export function sanitizeProcessName(name: string | undefined): string {
  * Run a telemetry emit at a call site, swallowing all exceptions and logging
  * at debug level. Replaces the copy-pasted try/catch + getTelemetryEmitter?.()
  * scaffold at every emit site. Telemetry must never break the driver.
+ *
+ * The type-only imports keep this helper free of runtime cycles:
+ * `IClientContext` imports `TelemetryEventEmitter` only as a type, and this
+ * helper does the same, so there's no value-level cycle. A typo like
+ * `emitter.emiitConnectionOpen(...)` is now a TS compile error instead of a
+ * swallowed runtime exception.
  */
-export function safeEmit(
-  // The any below is intentional: this helper is consumed by both `IClientContext`
-  // and the narrower per-call surface used in tests. Keeping it loose avoids
-  // a dependency cycle through IClientContext / TelemetryEventEmitter.
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  context: { getTelemetryEmitter?: () => any; getLogger: () => { log: (level: any, msg: string) => void } },
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  fn: (emitter: any) => void,
-): void {
+export function safeEmit(context: IClientContext, fn: (emitter: TelemetryEventEmitter) => void): void {
   try {
     const emitter = context.getTelemetryEmitter?.();
     if (emitter) {
@@ -256,9 +273,7 @@ export function safeEmit(
     }
   } catch (err: any) {
     try {
-      // LogLevel.debug = 'debug' — see lib/contracts/IDBSQLLogger.ts. Avoid
-      // an import here to keep this helper free of cyclic deps.
-      context.getLogger().log('debug', `Telemetry emit error: ${err?.message ?? err}`);
+      context.getLogger().log(LogLevel.debug, `Telemetry emit error: ${err?.message ?? err}`);
     } catch {
       // swallow logger errors too — telemetry never breaks the driver
     }

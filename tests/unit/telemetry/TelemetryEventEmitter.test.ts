@@ -198,7 +198,7 @@ describe('TelemetryEventEmitter', () => {
       });
 
       expect((logger.log as sinon.SinonStub).calledWith(LogLevel.debug)).to.be.true;
-      expect((logger.log as sinon.SinonStub).args[0][1]).to.include('Error emitting connection event');
+      expect((logger.log as sinon.SinonStub).args[0][1]).to.include('Error emitting connection.open');
     });
 
     it('should not log at warn or error level', () => {
@@ -272,7 +272,7 @@ describe('TelemetryEventEmitter', () => {
       expect(() => emitter.emitConnectionClose({ sessionId: 's', latencyMs: 1 })).to.not.throw();
       const logStub = logger.log as sinon.SinonStub;
       const debugCalls = logStub.getCalls().filter((c) => c.args[0] === LogLevel.debug);
-      expect(debugCalls.some((c) => /connection close/i.test(c.args[1]))).to.be.true;
+      expect(debugCalls.some((c) => /connection\.close/i.test(c.args[1]))).to.be.true;
     });
   });
 
@@ -341,7 +341,7 @@ describe('TelemetryEventEmitter', () => {
       });
 
       expect((logger.log as sinon.SinonStub).calledWith(LogLevel.debug)).to.be.true;
-      expect((logger.log as sinon.SinonStub).args[0][1]).to.include('Error emitting statement start');
+      expect((logger.log as sinon.SinonStub).args[0][1]).to.include('Error emitting statement.start');
     });
   });
 
@@ -419,7 +419,7 @@ describe('TelemetryEventEmitter', () => {
       });
 
       expect((logger.log as sinon.SinonStub).calledWith(LogLevel.debug)).to.be.true;
-      expect((logger.log as sinon.SinonStub).args[0][1]).to.include('Error emitting statement complete');
+      expect((logger.log as sinon.SinonStub).args[0][1]).to.include('Error emitting statement.complete');
     });
   });
 
@@ -497,7 +497,7 @@ describe('TelemetryEventEmitter', () => {
       });
 
       expect((logger.log as sinon.SinonStub).calledWith(LogLevel.debug)).to.be.true;
-      expect((logger.log as sinon.SinonStub).args[0][1]).to.include('Error emitting cloudfetch chunk');
+      expect((logger.log as sinon.SinonStub).args[0][1]).to.include('Error emitting cloudfetch.chunk');
     });
   });
 
@@ -575,7 +575,7 @@ describe('TelemetryEventEmitter', () => {
       });
 
       expect((logger.log as sinon.SinonStub).calledWith(LogLevel.debug)).to.be.true;
-      expect((logger.log as sinon.SinonStub).args[0][1]).to.include('Error emitting error event');
+      expect((logger.log as sinon.SinonStub).args[0][1]).to.include('Error emitting telemetry.error');
     });
   });
 

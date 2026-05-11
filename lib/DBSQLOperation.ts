@@ -546,7 +546,12 @@ export default class DBSQLOperation implements IOperation {
     safeEmit(this.context, (emitter) => {
       emitter.emitStatementStart({
         statementId: this.id,
-        sessionId: this.sessionId || '',
+        // Pass `undefined` when sessionId is unknown rather than `''`. All
+        // emit sites in this class use the same default so the aggregator's
+        // per-statement state doesn't end up split between `''` and
+        // `undefined` (which would synthesize two ghost sessions for a
+        // single operation that briefly lacked a sessionId).
+        sessionId: this.sessionId,
         operationType: mapOperationTypeToTelemetryType(this.operationHandle.operationType),
       });
     });
@@ -572,7 +577,7 @@ export default class DBSQLOperation implements IOperation {
 
       emitter.emitStatementComplete({
         statementId: this.id,
-        sessionId: this.sessionId || '',
+        sessionId: this.sessionId,
         latencyMs,
         resultFormat,
         pollCount: this.pollCount,

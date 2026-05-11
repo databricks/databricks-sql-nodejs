@@ -1,5 +1,11 @@
 import Int64 from 'node-int64';
-import { TFetchOrientation, TFetchResultsResp, TOperationHandle, TRowSet } from '../../thrift/TCLIService_types';
+import {
+  TColumn,
+  TFetchOrientation,
+  TFetchResultsResp,
+  TOperationHandle,
+  TRowSet,
+} from '../../thrift/TCLIService_types';
 import Status from '../dto/Status';
 import IClientContext from '../contracts/IClientContext';
 import { safeEmit } from '../telemetry/telemetryUtils';
@@ -9,6 +15,59 @@ import { getColumnValue } from './utils';
 export enum FetchType {
   Data = 0,
   Logs = 1,
+}
+
+/**
+ * Rough byte count for a single `TColumn`. Used only for telemetry — exact
+ * wire size isn't worth a deserialization pass. Fixed-width values are
+ * estimated by their TypeScript-side footprint; strings count their UTF-16
+ * length (close enough proxy for UTF-8 payload in most cases). The `nulls`
+ * bitmap buffer is included verbatim.
+ *
+ * Wire-side payload will be slightly different (Thrift's varint encodings,
+ * UTF-8 vs the JS engine's UTF-16) but dashboards aggregating
+ * `bytesDownloaded` for non-arrow result sets care about scale, not byte-
+ * perfect accuracy.
+ */
+function estimateColumnBytes(column: TColumn): number {
+  let bytes = 0;
+  if (column.boolVal) {
+    bytes += column.boolVal.values?.length ?? 0;
+    bytes += column.boolVal.nulls?.length ?? 0;
+  }
+  if (column.byteVal) {
+    bytes += column.byteVal.values?.length ?? 0;
+    bytes += column.byteVal.nulls?.length ?? 0;
+  }
+  if (column.i16Val) {
+    bytes += (column.i16Val.values?.length ?? 0) * 2;
+    bytes += column.i16Val.nulls?.length ?? 0;
+  }
+  if (column.i32Val) {
+    bytes += (column.i32Val.values?.length ?? 0) * 4;
+    bytes += column.i32Val.nulls?.length ?? 0;
+  }
+  if (column.i64Val) {
+    bytes += (column.i64Val.values?.length ?? 0) * 8;
+    bytes += column.i64Val.nulls?.length ?? 0;
+  }
+  if (column.doubleVal) {
+    bytes += (column.doubleVal.values?.length ?? 0) * 8;
+    bytes += column.doubleVal.nulls?.length ?? 0;
+  }
+  if (column.stringVal) {
+    for (const value of column.stringVal.values ?? []) {
+      bytes += value?.length ?? 0;
+    }
+    bytes += column.stringVal.nulls?.length ?? 0;
+  }
+  if (column.binaryVal) {
+    for (const value of column.binaryVal.values ?? []) {
+      bytes += value?.length ?? 0;
+    }
+    bytes += column.binaryVal.nulls?.length ?? 0;
+  }
+  return bytes;
 }
 
 function checkIfOperationHasMoreRows(response: TFetchResultsResp): boolean {
@@ -109,20 +168,44 @@ export default class RowSetProvider implements IResultsProvider<TRowSet | undefi
    * CRITICAL: All exceptions swallowed and logged at LogLevel.debug ONLY.
    */
   private emitChunkEvent(latencyMs: number, response: TFetchResultsResp): void {
-    if (!this.statementId) {
+    const {statementId} = this;
+    if (!statementId) {
       return;
     }
     safeEmit(this.context, (emitter) => {
+      // Aggregate byte counts across all wire shapes a `TFetchResultsResp`
+      // can carry. URL-based result sets (`resultLinks`) bypass this site
+      // entirely — they emit from `CloudFetchResultHandler.emitCloudFetchChunk`
+      // with the post-download byte count from the cloud-storage GET.
+      //
+      // Shapes counted here:
+      //   - `arrowBatches[i].batch`     — Arrow inline payload
+      //   - `binaryColumns`             — packed columnar binary blob
+      //   - `columns[i].*Val.values`    — COLUMN_BASED_SET, sum across columns
+      //   - `rows[i]`                   — legacy row-based set (rare; estimate)
       let bytes = 0;
-      const arrowBatches = response.results?.arrowBatches;
-      if (arrowBatches) {
-        for (const batch of arrowBatches) {
-          bytes += batch.batch?.length ?? 0;
+      const {results} = response;
+      if (results) {
+        const {arrowBatches} = results;
+        if (arrowBatches) {
+          for (const batch of arrowBatches) {
+            bytes += batch.batch?.length ?? 0;
+          }
+        }
+        const {binaryColumns} = results;
+        if (binaryColumns) {
+          bytes += binaryColumns.length;
+        }
+        const {columns} = results;
+        if (columns) {
+          for (const column of columns) {
+            bytes += estimateColumnBytes(column);
+          }
         }
       }
 
       emitter.emitCloudFetchChunk({
-        statementId: this.statementId,
+        statementId,
         chunkIndex: this.chunkIndex,
         latencyMs,
         bytes,

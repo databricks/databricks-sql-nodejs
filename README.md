@@ -73,6 +73,27 @@ is on. No SQL text, parameter values, or row data are ever included.
 See `TelemetryEvent` and `TelemetryMetric` in the package exports for the
 exact payload shapes.
 
+### Multi-tenant SaaS deployments — read this before enabling telemetry
+
+The telemetry layer shares one per-host `TelemetryClient` across every
+`DBSQLClient` connected to the same Databricks workspace host. The
+authenticated export path uses the **first-registered** client's auth
+provider, User-Agent, and `telemetryAuthenticatedExport` value — these
+fields are snapshotted at the host singleton and are **not** per-tenant.
+
+If you are operating a SaaS layer that fronts multiple tenants against the
+same Databricks workspace host with a shared driver process, telemetry from
+tenant B's queries can be POSTed under tenant A's auth headers, with
+tenant A's `userAgentEntry`. A tenant B that explicitly set
+`telemetryAuthenticatedExport: false` will still ride tenant A's
+authenticated pipeline.
+
+> **Recommendation for multi-tenant deployments**: set
+> `telemetryEnabled: false` on all `DBSQLClient` instances, or partition
+> by Databricks workspace host so each tenant owns its own
+> `TelemetryClient`. Subsequent registrants with diverging auth/UA values
+> emit a warn-level log so the leak is at least visible.
+
 ### Opting out
 
 Three independent ways to disable telemetry, in order of precedence:

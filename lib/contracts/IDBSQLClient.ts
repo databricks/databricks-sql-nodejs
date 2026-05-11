@@ -129,6 +129,15 @@ export type ConnectionOptions = {
    * Default 5000.
    */
   telemetryMaxStatementMetrics?: number;
+
+  /**
+   * Maximum number of telemetry metrics buffered in memory before the
+   * oldest non-error entry is dropped. Raise this when
+   * `getTelemetryStats().droppedMetrics` increases between observations,
+   * which indicates the buffer is filling faster than the flush interval
+   * can drain it. Default 500.
+   */
+  telemetryMaxPendingMetrics?: number;
 } & AuthOptions;
 
 export interface OpenSessionRequest {

@@ -587,19 +587,26 @@ export default class DBSQLSession implements IDBSQLSession {
     // Close owned operations one by one, removing successfully closed ones from the list
     await this.operations.closeAll();
 
+    // `latencyMs` on CONNECTION_CLOSE is the closeSession RPC duration, not the
+    // session lifetime. It's the symmetric counterpart of CREATE_SESSION's
+    // openSession RPC latency — both land under `operation_latency_ms`
+    // server-side and must measure the same kind of duration.
+    let closeStart = Date.now();
     const emitClose = () => {
       // Emit connection.close regardless of whether closeSession succeeded —
       // a failed close is the most diagnostic event for connection-failure rate.
+      const latencyMs = Date.now() - closeStart;
       safeEmit(this.context, (emitter) => {
         emitter.emitConnectionClose({
           sessionId: this.id,
-          latencyMs: Date.now() - this.openTime,
+          latencyMs,
         });
       });
     };
 
     try {
       const driver = await this.context.getDriver();
+      closeStart = Date.now();
       const response = await driver.closeSession({
         sessionHandle: this.sessionHandle,
       });

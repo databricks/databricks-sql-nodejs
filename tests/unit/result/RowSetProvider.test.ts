@@ -90,11 +90,13 @@ describe('RowSetProvider', () => {
       const emitCloudFetchChunk = sinon.stub();
       context.telemetryEmitter = { emitCloudFetchChunk } as any;
 
-      // Override the driver's response with arrow batches
+      // Override the driver's response with arrow batches only — no inline
+      // columns, no binary columns — so the assertion is on a single shape.
       context.driver.fetchResultsResp = {
         ...context.driver.fetchResultsResp,
         results: {
-          ...context.driver.fetchResultsResp.results!,
+          startRowOffset: new Int64(0),
+          rows: [],
           arrowBatches: [
             { batch: Buffer.from(new Uint8Array(100)), rowCount: new Int64(10) },
             { batch: Buffer.from(new Uint8Array(50)), rowCount: new Int64(5) },
@@ -107,6 +109,54 @@ describe('RowSetProvider', () => {
 
       expect(emitCloudFetchChunk.calledOnce).to.be.true;
       expect(emitCloudFetchChunk.firstCall.args[0].bytes).to.equal(150);
+    });
+
+    it('counts column-based result bytes (F10)', async () => {
+      const context = new ClientContextStub();
+      const emitCloudFetchChunk = sinon.stub();
+      context.telemetryEmitter = { emitCloudFetchChunk } as any;
+
+      // COLUMN_BASED_SET shape: string and i32 columns, no arrow batches.
+      // Before F10, this path emitted bytes:0 because the byte counter only
+      // looked at arrowBatches.
+      context.driver.fetchResultsResp = {
+        ...context.driver.fetchResultsResp,
+        results: {
+          startRowOffset: new Int64(0),
+          rows: [],
+          columns: [
+            { stringVal: { values: ['hello', 'world'], nulls: Buffer.from([0x00]) } },
+            { i32Val: { values: [1, 2, 3], nulls: Buffer.from([0x00, 0x00]) } },
+          ],
+        },
+      };
+
+      const provider = new RowSetProvider(context, makeOperationHandle(), [], false, 'stmt-1');
+      await provider.fetchNext({ limit: 100 });
+
+      expect(emitCloudFetchChunk.calledOnce).to.be.true;
+      // strings: "hello"(5) + "world"(5) + nulls(1) = 11; i32: 3*4 + nulls(2) = 14; total 25
+      expect(emitCloudFetchChunk.firstCall.args[0].bytes).to.equal(25);
+    });
+
+    it('counts binaryColumns bytes (F10)', async () => {
+      const context = new ClientContextStub();
+      const emitCloudFetchChunk = sinon.stub();
+      context.telemetryEmitter = { emitCloudFetchChunk } as any;
+
+      context.driver.fetchResultsResp = {
+        ...context.driver.fetchResultsResp,
+        results: {
+          startRowOffset: new Int64(0),
+          rows: [],
+          binaryColumns: Buffer.from(new Uint8Array(64)),
+        },
+      };
+
+      const provider = new RowSetProvider(context, makeOperationHandle(), [], false, 'stmt-1');
+      await provider.fetchNext({ limit: 100 });
+
+      expect(emitCloudFetchChunk.firstCall.args[0].bytes).to.equal(64);
     });
   });
 });

@@ -62,9 +62,14 @@ class TelemetryClientProvider {
   }
 
   /**
-   * @internal Reset for tests. Production code should never call this.
+   * Reset the process-wide singleton. Test-only — name-prefixed so
+   * production callsites can't reach for it accidentally via autocomplete.
+   * Resetting in production drops every host's circuit-breaker counters,
+   * feature-flag cache, exporter, and pending-metric buffer at once.
+   *
+   * @internal Test-only. Production code MUST NOT call this.
    */
-  static resetInstance(): void {
+  static __resetInstanceForTests(): void {
     TelemetryClientProvider.instance = undefined;
   }
 
