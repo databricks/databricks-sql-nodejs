@@ -71,18 +71,30 @@ function loadConfigOrSkip(suite: Mocha.Suite): TestConfig | null {
   return cfg as TestConfig;
 }
 
-describe('Telemetry Integration', function () {
+describe('Telemetry Integration', () => {
   let config: TestConfig | null = null;
 
+  // The e2e test runner executes many suites before this one; any earlier
+  // DBSQLClient connect leaves a TelemetryClient in the process-wide singleton
+  // for the test host. Reset before our first test so the FF cache and
+  // refcount spies in this suite observe a clean lineage.
   before(function () {
     config = loadConfigOrSkip(this.test!.parent!);
     if (!config) {
       this.skip();
+      return;
     }
+    TelemetryClientProvider.__resetInstanceForTests();
   });
 
   // Reset the process-wide singleton between tests so refcount + cached
-  // feature flags from one test don't leak into the next.
+  // feature flags from one test don't leak into the next. Combined with the
+  // `before` reset above, every test sees a fresh provider regardless of
+  // what other e2e suites did first.
+  beforeEach(() => {
+    TelemetryClientProvider.__resetInstanceForTests();
+  });
+
   afterEach(() => {
     TelemetryClientProvider.__resetInstanceForTests();
     sinon.restore();
@@ -222,7 +234,7 @@ describe('Telemetry Integration', function () {
       const client = new DBSQLClient();
 
       const releaseClientSpy = sinon.spy(TelemetryClientProvider.prototype, 'releaseClient');
-      const flushSpy = sinon.spy(MetricsAggregator.prototype, 'flush');
+      const aggregatorCloseSpy = sinon.spy(MetricsAggregator.prototype, 'close');
 
       try {
         await client.connect({
@@ -234,15 +246,19 @@ describe('Telemetry Integration', function () {
 
         await client.close();
 
-        // All three must happen on a clean close: releaseClient is the
-        // refcount surface; flush is the drain. Previously a disjunction
-        // (`||`) over multiple spies meant any single one firing satisfied
-        // the test — a regression that broke ONE of them would still pass.
+        // releaseClient is the refcount surface; MetricsAggregator.close is
+        // the cleanup the last refcount holder triggers. Both must fire on a
+        // clean close. We do NOT assert flush() was called because this test
+        // never `openSession`s, so the pending-metrics buffer is empty and
+        // the close-drain pattern legitimately skips the final flush. The
+        // previous disjunction (`releaseClient || flush || releaseContext`)
+        // over multiple spies meant a regression breaking one would still
+        // pass — these explicit asserts catch that.
         expect(releaseClientSpy.called, 'releaseClient should be called on close').to.be.true;
-        expect(flushSpy.called, 'aggregator flush should run on close').to.be.true;
+        expect(aggregatorCloseSpy.called, 'MetricsAggregator.close should run on close').to.be.true;
       } finally {
         releaseClientSpy.restore();
-        flushSpy.restore();
+        aggregatorCloseSpy.restore();
       }
     });
   });
