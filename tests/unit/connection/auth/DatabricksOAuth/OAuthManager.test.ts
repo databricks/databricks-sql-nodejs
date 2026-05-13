@@ -547,6 +547,14 @@ describe('AzureOAuthManager (tenant awareness)', () => {
       const url = call<string>(mgr, 'getOIDCConfigUrl');
       expect(url).to.equal(`https://login.microsoftonline.com/${tenant}/v2.0/.well-known/openid-configuration`);
     });
+
+    it('falls back to /organizations/ when azureTenantId is empty or whitespace', () => {
+      for (const tenant of ['', '   ']) {
+        const mgr = makeAzure({ azureTenantId: tenant });
+        const url = call<string>(mgr, 'getOIDCConfigUrl');
+        expect(url).to.equal('https://login.microsoftonline.com/organizations/v2.0/.well-known/openid-configuration');
+      }
+    });
   });
 
   describe('getScopes — resource ID is always the Azure Login App, never a tenant GUID', () => {

@@ -277,7 +277,9 @@ export class AzureOAuthManager extends OAuthManager {
   public static datatricksAzureApp = '2ff814a6-3304-4ab8-85cb-cd0e6f879c1d';
 
   protected getOIDCConfigUrl(): string {
-    const tenantPath = this.options.azureTenantId ?? 'organizations';
+    // Use logical OR so empty / whitespace-only azureTenantId also falls back to /organizations/
+    // (`??` only substitutes for null/undefined, leaving `''` to produce a malformed `//v2.0/...` URL).
+    const tenantPath = this.options.azureTenantId?.trim() || 'organizations';
     return `https://login.microsoftonline.com/${tenantPath}/v2.0/.well-known/openid-configuration`;
   }
 
