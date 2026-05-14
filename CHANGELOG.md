@@ -4,6 +4,12 @@
 
 - Fix Azure AD OAuth for tenant-specific and single-tenant Entra apps, and correct the scope resource: use the Databricks Azure Login App ID (not the tenant GUID) as the OAuth scope; route OIDC discovery to `login.microsoftonline.com/${azureTenantId}/` when `azureTenantId` is provided (fallback `/organizations/` preserved).
 
+## 1.14.0
+
+- Add statement-level query tag support (databricks/databricks-sql-nodejs#366 by @sreekanth-db)
+- Add AI coding agent detection to User-Agent header (databricks/databricks-sql-nodejs#333 by @vikrantpuppala)
+- Internal: telemetry infrastructure improvements — circuit breaker, feature flag cache, telemetry client management (off by default) (databricks/databricks-sql-nodejs#325, #326, #362)
+
 ## 1.13.0
 
 - Add token federation support with custom token providers (databricks/databricks-sql-nodejs#318, databricks/databricks-sql-nodejs#319, databricks/databricks-sql-nodejs#320 by @madhav-db)

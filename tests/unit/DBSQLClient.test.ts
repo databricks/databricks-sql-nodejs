@@ -636,4 +636,49 @@ describe('DBSQLClient.enableMetricViewMetadata', () => {
       'spark.sql.thriftserver.metadata.metricview.enabled': 'true',
     });
   });
+
+  it('should serialize queryTags dict and set in session configuration', async () => {
+    const client = new DBSQLClient();
+    const thriftClient = new ThriftClientStub();
+    sinon.stub(client, 'getClient').returns(Promise.resolve(thriftClient));
+
+    await client.openSession({
+      queryTags: { team: 'data-eng', project: 'etl' },
+    });
+
+    expect(thriftClient.openSessionReq?.configuration).to.deep.equal({
+      QUERY_TAGS: 'team:data-eng,project:etl',
+    });
+  });
+
+  it('should let queryTags take precedence over configuration.QUERY_TAGS', async () => {
+    const client = new DBSQLClient();
+    const thriftClient = new ThriftClientStub();
+    sinon.stub(client, 'getClient').returns(Promise.resolve(thriftClient));
+
+    await client.openSession({
+      queryTags: { team: 'new-team' },
+      configuration: { QUERY_TAGS: 'team:old-team,other:value', ansi_mode: 'true' },
+    });
+
+    expect(thriftClient.openSessionReq?.configuration).to.deep.equal({
+      QUERY_TAGS: 'team:new-team',
+      ansi_mode: 'true',
+    });
+  });
+
+  it('should remove QUERY_TAGS from configuration when queryTags is empty', async () => {
+    const client = new DBSQLClient();
+    const thriftClient = new ThriftClientStub();
+    sinon.stub(client, 'getClient').returns(Promise.resolve(thriftClient));
+
+    await client.openSession({
+      queryTags: {},
+      configuration: { QUERY_TAGS: 'team:old-team', ansi_mode: 'true' },
+    });
+
+    expect(thriftClient.openSessionReq?.configuration).to.deep.equal({
+      ansi_mode: 'true',
+    });
+  });
 });

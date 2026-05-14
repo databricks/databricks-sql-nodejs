@@ -60,6 +60,12 @@ export interface OpenSessionRequest {
   initialCatalog?: string;
   initialSchema?: string;
   configuration?: { [key: string]: string };
+  /**
+   * Session-level query tags as key-value pairs. Serialized and passed via session configuration
+   * as "QUERY_TAGS". Values may be null/undefined to include a key without a value.
+   * If both queryTags and configuration.QUERY_TAGS are specified, queryTags takes precedence.
+   */
+  queryTags?: Record<string, string | null | undefined>;
 }
 
 export default interface IDBSQLClient {
