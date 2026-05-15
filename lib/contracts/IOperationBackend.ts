@@ -1,5 +1,6 @@
 import { TGetOperationStatusResp, TGetResultSetMetadataResp } from '../../thrift/TCLIService_types';
 import Status from '../dto/Status';
+import { WaitUntilReadyOptions } from './IOperation';
 
 /**
  * What a `DBSQLOperation` needs from its backend. Returned by
@@ -14,10 +15,7 @@ export default interface IOperationBackend {
 
   hasMore(): Promise<boolean>;
 
-  waitUntilReady(options?: {
-    progress?: boolean;
-    callback?: (progress: TGetOperationStatusResp) => unknown;
-  }): Promise<void>;
+  waitUntilReady(options?: WaitUntilReadyOptions): Promise<void>;
 
   status(progress: boolean): Promise<TGetOperationStatusResp>;
 

@@ -74,6 +74,14 @@ export default class DBSQLSession implements IDBSQLSession {
     return this.backend.id;
   }
 
+  /**
+   * Fetches info
+   * @public
+   * @param infoType - One of the values TCLIService_types.TGetInfoType
+   * @returns Value corresponding to info type requested
+   * @example
+   * const response = await session.getInfo(thrift.TCLIService_types.TGetInfoType.CLI_DBMS_VER);
+   */
   public async getInfo(infoType: number): Promise<InfoValue> {
     await this.failIfClosed();
     const result = await this.backend.getInfo(infoType);
@@ -81,6 +89,15 @@ export default class DBSQLSession implements IDBSQLSession {
     return result;
   }
 
+  /**
+   * Executes statement
+   * @public
+   * @param statement - SQL statement to be executed
+   * @param options - maxRows field is used to specify Direct Results
+   * @returns DBSQLOperation
+   * @example
+   * const operation = await session.executeStatement(query);
+   */
   public async executeStatement(statement: string, options: ExecuteStatementOptions = {}): Promise<IOperation> {
     await this.failIfClosed();
     const opBackend = await this.backend.executeStatement(statement, options);
@@ -206,6 +223,12 @@ export default class DBSQLSession implements IDBSQLSession {
     }
   }
 
+  /**
+   * Information about supported data types
+   * @public
+   * @param request
+   * @returns DBSQLOperation
+   */
   public async getTypeInfo(request: TypeInfoRequest = {}): Promise<IOperation> {
     await this.failIfClosed();
     const opBackend = await this.backend.getTypeInfo(request);
@@ -213,6 +236,12 @@ export default class DBSQLSession implements IDBSQLSession {
     return this.wrapOperation(opBackend);
   }
 
+  /**
+   * Get list of catalogs
+   * @public
+   * @param request
+   * @returns DBSQLOperation
+   */
   public async getCatalogs(request: CatalogsRequest = {}): Promise<IOperation> {
     await this.failIfClosed();
     const opBackend = await this.backend.getCatalogs(request);
@@ -220,6 +249,12 @@ export default class DBSQLSession implements IDBSQLSession {
     return this.wrapOperation(opBackend);
   }
 
+  /**
+   * Get list of schemas
+   * @public
+   * @param request
+   * @returns DBSQLOperation
+   */
   public async getSchemas(request: SchemasRequest = {}): Promise<IOperation> {
     await this.failIfClosed();
     const opBackend = await this.backend.getSchemas(request);
@@ -227,6 +262,12 @@ export default class DBSQLSession implements IDBSQLSession {
     return this.wrapOperation(opBackend);
   }
 
+  /**
+   * Get list of tables
+   * @public
+   * @param request
+   * @returns DBSQLOperation
+   */
   public async getTables(request: TablesRequest = {}): Promise<IOperation> {
     await this.failIfClosed();
     const opBackend = await this.backend.getTables(request);
@@ -234,6 +275,12 @@ export default class DBSQLSession implements IDBSQLSession {
     return this.wrapOperation(opBackend);
   }
 
+  /**
+   * Get list of supported table types
+   * @public
+   * @param request
+   * @returns DBSQLOperation
+   */
   public async getTableTypes(request: TableTypesRequest = {}): Promise<IOperation> {
     await this.failIfClosed();
     const opBackend = await this.backend.getTableTypes(request);
@@ -241,6 +288,12 @@ export default class DBSQLSession implements IDBSQLSession {
     return this.wrapOperation(opBackend);
   }
 
+  /**
+   * Get full information about columns of the table
+   * @public
+   * @param request
+   * @returns DBSQLOperation
+   */
   public async getColumns(request: ColumnsRequest = {}): Promise<IOperation> {
     await this.failIfClosed();
     const opBackend = await this.backend.getColumns(request);
@@ -248,6 +301,12 @@ export default class DBSQLSession implements IDBSQLSession {
     return this.wrapOperation(opBackend);
   }
 
+  /**
+   * Get information about function
+   * @public
+   * @param request
+   * @returns DBSQLOperation
+   */
   public async getFunctions(request: FunctionsRequest): Promise<IOperation> {
     await this.failIfClosed();
     const opBackend = await this.backend.getFunctions(request);
@@ -262,6 +321,12 @@ export default class DBSQLSession implements IDBSQLSession {
     return this.wrapOperation(opBackend);
   }
 
+  /**
+   * Request information about foreign keys between two tables
+   * @public
+   * @param request
+   * @returns DBSQLOperation
+   */
   public async getCrossReference(request: CrossReferenceRequest): Promise<IOperation> {
     await this.failIfClosed();
     const opBackend = await this.backend.getCrossReference(request);
@@ -269,6 +334,11 @@ export default class DBSQLSession implements IDBSQLSession {
     return this.wrapOperation(opBackend);
   }
 
+  /**
+   * Closes the session
+   * @public
+   * @returns Operation status
+   */
   public async close(): Promise<Status> {
     if (!this.isOpen) {
       return Status.success();

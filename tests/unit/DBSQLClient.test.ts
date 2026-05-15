@@ -26,6 +26,19 @@ const connectOptions = {
   token: 'dapi********************************',
 } satisfies ConnectionOptions;
 
+// Test helper: build a DBSQLClient with `getClient` stubbed to return the given
+// ThriftClient stub, and pre-seed `client['backend']` with a ThriftBackend.
+// Used to avoid 12 copies of the same 4-line setup across the openSession tests.
+function makeStubbedClient(thriftClient: ThriftClientStub = new ThriftClientStub()): {
+  client: DBSQLClient;
+  thriftClient: ThriftClientStub;
+} {
+  const client = new DBSQLClient();
+  sinon.stub(client, 'getClient').returns(Promise.resolve(thriftClient));
+  client['backend'] = new ThriftBackend({ context: client, onConnectionEvent: () => {} });
+  return { client, thriftClient };
+}
+
 describe('DBSQLClient.connect', () => {
   it('should prepend "/" to path if it is missing', async () => {
     const client = new DBSQLClient();
@@ -104,20 +117,14 @@ describe('DBSQLClient.connect', () => {
 
 describe('DBSQLClient.openSession', () => {
   it('should successfully open session', async () => {
-    const client = new DBSQLClient();
-    const thriftClient = new ThriftClientStub();
-    sinon.stub(client, 'getClient').returns(Promise.resolve(thriftClient));
-    client['backend'] = new ThriftBackend({ context: client, onConnectionEvent: () => {} });
+    const { client } = makeStubbedClient();
 
     const session = await client.openSession();
     expect(session).instanceOf(DBSQLSession);
   });
 
   it('should use initial namespace options', async () => {
-    const client = new DBSQLClient();
-    const thriftClient = new ThriftClientStub();
-    sinon.stub(client, 'getClient').returns(Promise.resolve(thriftClient));
-    client['backend'] = new ThriftBackend({ context: client, onConnectionEvent: () => {} });
+    const { client, thriftClient } = makeStubbedClient();
 
     case1: {
       const initialCatalog = 'catalog1';
@@ -162,10 +169,7 @@ describe('DBSQLClient.openSession', () => {
   });
 
   it('should correctly pass server protocol version to session', async () => {
-    const client = new DBSQLClient();
-    const thriftClient = new ThriftClientStub();
-    sinon.stub(client, 'getClient').returns(Promise.resolve(thriftClient));
-    client['backend'] = new ThriftBackend({ context: client, onConnectionEvent: () => {} });
+    const { client, thriftClient } = makeStubbedClient();
 
     // Test with default protocol version (SPARK_CLI_SERVICE_PROTOCOL_V8)
     {
@@ -191,10 +195,7 @@ describe('DBSQLClient.openSession', () => {
   });
 
   it('should pass session configuration to OpenSessionReq', async () => {
-    const client = new DBSQLClient();
-    const thriftClient = new ThriftClientStub();
-    sinon.stub(client, 'getClient').returns(Promise.resolve(thriftClient));
-    client['backend'] = new ThriftBackend({ context: client, onConnectionEvent: () => {} });
+    const { client, thriftClient } = makeStubbedClient();
 
     const configuration = { QUERY_TAGS: 'team:engineering', ansi_mode: 'true' };
     await client.openSession({ configuration });
@@ -202,10 +203,7 @@ describe('DBSQLClient.openSession', () => {
   });
 
   it('should affect session behavior based on protocol version', async () => {
-    const client = new DBSQLClient();
-    const thriftClient = new ThriftClientStub();
-    sinon.stub(client, 'getClient').returns(Promise.resolve(thriftClient));
-    client['backend'] = new ThriftBackend({ context: client, onConnectionEvent: () => {} });
+    const { client, thriftClient } = makeStubbedClient();
 
     // With protocol version V6 - should support async metadata operations
     {
@@ -591,10 +589,7 @@ describe('DBSQLClient.enableMetricViewMetadata', () => {
   });
 
   it('should inject session parameter when enableMetricViewMetadata is true', async () => {
-    const client = new DBSQLClient();
-    const thriftClient = new ThriftClientStub();
-    sinon.stub(client, 'getClient').returns(Promise.resolve(thriftClient));
-    client['backend'] = new ThriftBackend({ context: client, onConnectionEvent: () => {} });
+    const { client, thriftClient } = makeStubbedClient();
 
     await client.connect({ ...connectOptions, enableMetricViewMetadata: true });
     await client.openSession();
@@ -606,10 +601,7 @@ describe('DBSQLClient.enableMetricViewMetadata', () => {
   });
 
   it('should not inject session parameter when enableMetricViewMetadata is false', async () => {
-    const client = new DBSQLClient();
-    const thriftClient = new ThriftClientStub();
-    sinon.stub(client, 'getClient').returns(Promise.resolve(thriftClient));
-    client['backend'] = new ThriftBackend({ context: client, onConnectionEvent: () => {} });
+    const { client, thriftClient } = makeStubbedClient();
 
     await client.connect({ ...connectOptions, enableMetricViewMetadata: false });
     await client.openSession();
@@ -620,10 +612,7 @@ describe('DBSQLClient.enableMetricViewMetadata', () => {
   });
 
   it('should not inject session parameter when enableMetricViewMetadata is not set', async () => {
-    const client = new DBSQLClient();
-    const thriftClient = new ThriftClientStub();
-    sinon.stub(client, 'getClient').returns(Promise.resolve(thriftClient));
-    client['backend'] = new ThriftBackend({ context: client, onConnectionEvent: () => {} });
+    const { client, thriftClient } = makeStubbedClient();
 
     await client.connect(connectOptions);
     await client.openSession();
@@ -634,10 +623,7 @@ describe('DBSQLClient.enableMetricViewMetadata', () => {
   });
 
   it('should preserve user-provided session configuration', async () => {
-    const client = new DBSQLClient();
-    const thriftClient = new ThriftClientStub();
-    sinon.stub(client, 'getClient').returns(Promise.resolve(thriftClient));
-    client['backend'] = new ThriftBackend({ context: client, onConnectionEvent: () => {} });
+    const { client, thriftClient } = makeStubbedClient();
 
     await client.connect({ ...connectOptions, enableMetricViewMetadata: true });
     const userConfig = { QUERY_TAGS: 'team:engineering', ansi_mode: 'true' };
@@ -650,10 +636,7 @@ describe('DBSQLClient.enableMetricViewMetadata', () => {
   });
 
   it('should serialize queryTags dict and set in session configuration', async () => {
-    const client = new DBSQLClient();
-    const thriftClient = new ThriftClientStub();
-    sinon.stub(client, 'getClient').returns(Promise.resolve(thriftClient));
-    client['backend'] = new ThriftBackend({ context: client, onConnectionEvent: () => {} });
+    const { client, thriftClient } = makeStubbedClient();
 
     await client.openSession({
       queryTags: { team: 'data-eng', project: 'etl' },
@@ -665,10 +648,7 @@ describe('DBSQLClient.enableMetricViewMetadata', () => {
   });
 
   it('should let queryTags take precedence over configuration.QUERY_TAGS', async () => {
-    const client = new DBSQLClient();
-    const thriftClient = new ThriftClientStub();
-    sinon.stub(client, 'getClient').returns(Promise.resolve(thriftClient));
-    client['backend'] = new ThriftBackend({ context: client, onConnectionEvent: () => {} });
+    const { client, thriftClient } = makeStubbedClient();
 
     await client.openSession({
       queryTags: { team: 'new-team' },
@@ -682,10 +662,7 @@ describe('DBSQLClient.enableMetricViewMetadata', () => {
   });
 
   it('should remove QUERY_TAGS from configuration when queryTags is empty', async () => {
-    const client = new DBSQLClient();
-    const thriftClient = new ThriftClientStub();
-    sinon.stub(client, 'getClient').returns(Promise.resolve(thriftClient));
-    client['backend'] = new ThriftBackend({ context: client, onConnectionEvent: () => {} });
+    const { client, thriftClient } = makeStubbedClient();
 
     await client.openSession({
       queryTags: {},
