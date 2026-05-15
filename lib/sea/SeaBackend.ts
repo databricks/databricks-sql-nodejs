@@ -14,156 +14,123 @@
 
 import IBackend from '../contracts/IBackend';
 import ISessionBackend from '../contracts/ISessionBackend';
-import IOperationBackend from '../contracts/IOperationBackend';
+import IClientContext from '../contracts/IClientContext';
 import { ConnectionOptions, OpenSessionRequest } from '../contracts/IDBSQLClient';
-import {
-  ExecuteStatementOptions,
-  TypeInfoRequest,
-  CatalogsRequest,
-  SchemasRequest,
-  TablesRequest,
-  TableTypesRequest,
-  ColumnsRequest,
-  FunctionsRequest,
-  PrimaryKeysRequest,
-  CrossReferenceRequest,
-} from '../contracts/IDBSQLSession';
-import Status from '../dto/Status';
-import InfoValue from '../dto/InfoValue';
 import HiveDriverError from '../errors/HiveDriverError';
-import { getSeaNative, SeaNativeBinding } from './SeaNativeLoader';
+import {
+  getSeaNative,
+  SeaNativeBinding,
+  SeaNativeConnection,
+} from './SeaNativeLoader';
+import { mapKernelErrorToJsError, KernelErrorShape } from './SeaErrorMapping';
 import { buildSeaConnectionOptions, SeaNativeConnectionOptions } from './SeaAuth';
-
-const NOT_IMPLEMENTED_SESSION =
-  'SEA session backend: method not implemented in sea-auth (M0); lands in sea-execution/sea-operation.';
+import SeaSessionBackend from './SeaSessionBackend';
 
 /**
- * Opaque handle to the napi binding's `Connection` class. The exact
- * shape lives in `native/sea/index.d.ts` (auto-generated). We type it as
- * a structural minimum here so the loader's pass-through typing doesn't
- * leak into every call site.
+ * Sentinel string the napi binding uses on `Error.reason` JSON envelopes.
+ * Keep in sync with `native/sea/src/error.rs` (`SENTINEL`).
  */
-interface NativeConnection {
-  close(): Promise<void>;
+const KERNEL_ERROR_SENTINEL = '__databricks_error__:';
+
+function rethrowKernelError(err: unknown): never {
+  if (err && typeof err === 'object' && 'message' in err) {
+    const reason = (err as { reason?: unknown }).reason;
+    if (typeof reason === 'string' && reason.startsWith(KERNEL_ERROR_SENTINEL)) {
+      try {
+        const payload = JSON.parse(reason.slice(KERNEL_ERROR_SENTINEL.length)) as KernelErrorShape;
+        throw mapKernelErrorToJsError(payload);
+      } catch (parseErr) {
+        if (parseErr !== err) {
+          throw parseErr;
+        }
+      }
+    }
+  }
+  throw err;
+}
+
+export interface SeaBackendOptions {
+  context: IClientContext;
+  /**
+   * Optional injection seam for unit tests. When provided, replaces the
+   * default `getSeaNative()` call so tests can swap in a mock napi
+   * binding without loading the `.node` artifact.
+   */
+  nativeBinding?: SeaNativeBinding;
 }
 
 /**
- * Minimal `ISessionBackend` that wraps the napi-binding's `Connection`.
+ * SEA-backed implementation of `IBackend`.
  *
- * For M0 (sea-auth) only `id` and `close()` are functional — they're the
- * subset required to round-trip a connect-open-close cycle. Every other
- * method throws a clear "not implemented in M0" `HiveDriverError`.
+ * **M0 dispatch model:** the napi binding's `openSession()` already
+ * builds a kernel `Session` from PAT + hostname + httpPath, so there is
+ * no "connect" round-trip before `openSession` — `connect()` only
+ * captures the `ConnectionOptions` and validates that PAT auth is in
+ * use. The actual session open happens inside `openSession()`.
  *
- * The `id` field is currently a synthetic counter-based string; the kernel
- * exposes a real session-id through a follow-on getter that
- * `sea-execution` will wire through.
- */
-export class SeaSessionBackend implements ISessionBackend {
-  private static seq = 0;
-
-  public readonly id: string;
-
-  private readonly connection: NativeConnection;
-
-  constructor(connection: NativeConnection) {
-    this.connection = connection;
-    SeaSessionBackend.seq += 1;
-    this.id = `sea-session-${SeaSessionBackend.seq}`;
-  }
-
-  /* eslint-disable @typescript-eslint/no-unused-vars */
-  public async getInfo(_infoType: number): Promise<InfoValue> {
-    throw new HiveDriverError(NOT_IMPLEMENTED_SESSION);
-  }
-
-  public async executeStatement(
-    _statement: string,
-    _options: ExecuteStatementOptions,
-  ): Promise<IOperationBackend> {
-    throw new HiveDriverError(NOT_IMPLEMENTED_SESSION);
-  }
-
-  public async getTypeInfo(_request: TypeInfoRequest): Promise<IOperationBackend> {
-    throw new HiveDriverError(NOT_IMPLEMENTED_SESSION);
-  }
-
-  public async getCatalogs(_request: CatalogsRequest): Promise<IOperationBackend> {
-    throw new HiveDriverError(NOT_IMPLEMENTED_SESSION);
-  }
-
-  public async getSchemas(_request: SchemasRequest): Promise<IOperationBackend> {
-    throw new HiveDriverError(NOT_IMPLEMENTED_SESSION);
-  }
-
-  public async getTables(_request: TablesRequest): Promise<IOperationBackend> {
-    throw new HiveDriverError(NOT_IMPLEMENTED_SESSION);
-  }
-
-  public async getTableTypes(_request: TableTypesRequest): Promise<IOperationBackend> {
-    throw new HiveDriverError(NOT_IMPLEMENTED_SESSION);
-  }
-
-  public async getColumns(_request: ColumnsRequest): Promise<IOperationBackend> {
-    throw new HiveDriverError(NOT_IMPLEMENTED_SESSION);
-  }
-
-  public async getFunctions(_request: FunctionsRequest): Promise<IOperationBackend> {
-    throw new HiveDriverError(NOT_IMPLEMENTED_SESSION);
-  }
-
-  public async getPrimaryKeys(_request: PrimaryKeysRequest): Promise<IOperationBackend> {
-    throw new HiveDriverError(NOT_IMPLEMENTED_SESSION);
-  }
-
-  public async getCrossReference(_request: CrossReferenceRequest): Promise<IOperationBackend> {
-    throw new HiveDriverError(NOT_IMPLEMENTED_SESSION);
-  }
-  /* eslint-enable @typescript-eslint/no-unused-vars */
-
-  public async close(): Promise<Status> {
-    await this.connection.close();
-    return Status.success();
-  }
-}
-
-/**
- * M0 SeaBackend — wires PAT auth + napi `openSession` end-to-end.
+ * **Auth validation:** delegates to `buildSeaConnectionOptions` from
+ * `SeaAuth`, which mirrors the existing DBSQLClient PAT validation
+ * pattern (slash-prepended httpPath, AuthenticationError on missing
+ * token, HiveDriverError on non-PAT authType naming M1 modes).
  *
- * Connect is a no-op at this layer (the napi binding has no notion of a
- * standalone "connect"; a session is opened directly). We capture the
- * validated PAT options and hand them to `openSession()` on demand.
- *
- * Subsequent milestones (`sea-execution`, `sea-operation`) replace the
- * stubbed `ISessionBackend` / `IOperationBackend` methods with real
- * napi-binding calls.
+ * **Why we don't use IClientContext's connectionProvider here:** that
+ * provider is the Thrift HTTP transport. The kernel owns its own
+ * reqwest+rustls stack inside the native binding, so there is no
+ * NodeJS-level connection state to manage on the SEA path. The
+ * `IClientContext` is still useful for logger + config access.
  */
 export default class SeaBackend implements IBackend {
+  private readonly context: IClientContext;
+
+  private readonly binding: SeaNativeBinding;
+
   private nativeOptions?: SeaNativeConnectionOptions;
 
-  private readonly native: SeaNativeBinding;
-
-  constructor(native: SeaNativeBinding = getSeaNative()) {
-    this.native = native;
+  constructor(options?: SeaBackendOptions) {
+    this.context = options?.context as IClientContext;
+    this.binding = options?.nativeBinding ?? getSeaNative();
   }
 
   public async connect(options: ConnectionOptions): Promise<void> {
     // Validate PAT auth + capture the napi-binding option shape.
-    // Any non-PAT mode (or a missing token) throws here, before we ever
-    // touch the native binding.
+    // Any non-PAT mode (or a missing/empty token) throws here, before
+    // we ever touch the native binding.
     this.nativeOptions = buildSeaConnectionOptions(options);
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  public async openSession(_request: OpenSessionRequest): Promise<ISessionBackend> {
+  public async openSession(request: OpenSessionRequest): Promise<ISessionBackend> {
     if (!this.nativeOptions) {
-      throw new HiveDriverError('SeaBackend: connect() must be called before openSession().');
+      throw new HiveDriverError('SeaBackend: not connected. Call connect() first.');
     }
-    const connection = (await this.native.openSession(this.nativeOptions)) as NativeConnection;
-    return new SeaSessionBackend(connection);
+
+    let nativeConnection: SeaNativeConnection;
+    try {
+      nativeConnection = (await this.binding.openSession(this.nativeOptions)) as SeaNativeConnection;
+    } catch (err) {
+      rethrowKernelError(err);
+    }
+
+    // Merge `request.configuration` (the existing public field for Spark
+    // conf) with any backend-specific session config. The SEA wire
+    // protocol applies these per-statement, but we capture them at
+    // session-open time and forward with every executeStatement to
+    // preserve session-config semantics.
+    const sessionConfig = request.configuration ? { ...request.configuration } : undefined;
+
+    return new SeaSessionBackend({
+      connection: nativeConnection!,
+      context: this.context,
+      defaults: {
+        initialCatalog: request.initialCatalog,
+        initialSchema: request.initialSchema,
+        sessionConfig,
+      },
+    });
   }
 
   public async close(): Promise<void> {
-    // Connection-level resources are owned by the session wrapper. No-op here.
+    // No backend-level resources to release — each `SeaSessionBackend`
+    // owns its own napi `Connection` lifecycle.
     this.nativeOptions = undefined;
   }
 }
