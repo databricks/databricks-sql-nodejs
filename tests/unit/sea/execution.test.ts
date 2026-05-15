@@ -171,7 +171,10 @@ describe('SeaBackend', () => {
       thrown = err;
     }
     expect(thrown).to.be.instanceOf(HiveDriverError);
-    expect((thrown as Error).message).to.match(/token is required/);
+    // After sea-integration merge, missing-token validation goes through
+    // SeaAuth.buildSeaConnectionOptions which throws AuthenticationError
+    // (extends HiveDriverError) with the "non-empty PAT" message.
+    expect((thrown as Error).message).to.match(/non-empty PAT/);
   });
 
   it('openSession() throws if connect() was not called', async () => {
@@ -448,15 +451,9 @@ describe('SeaOperationBackend', () => {
     await op.waitUntilReady();
   });
 
-  it('fetchChunk() throws M1-deferred error (owned by sea-results)', async () => {
-    const op = makeOperation();
-    let thrown: unknown;
-    try {
-      await op.fetchChunk({ limit: 100 });
-    } catch (err) {
-      thrown = err;
-    }
-    expect(thrown).to.be.instanceOf(HiveDriverError);
-    expect((thrown as Error).message).to.match(/sea-results/);
-  });
+  // Note: after sea-integration merge, fetchChunk is no longer a stub —
+  // the sea-results SeaResultsProvider + ArrowResultConverter pipeline
+  // implements the real fetch path. Full coverage lives in
+  // tests/unit/sea/SeaOperationBackend.test.ts and the parity-gate e2e
+  // at tests/integration/sea/results-e2e.test.ts.
 });
