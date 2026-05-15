@@ -76,7 +76,13 @@ describe('SeaAuth — edge cases (input validation + ambiguity)', () => {
       }
     });
 
-    it('rejects mixed-case reserved literals on oauthClientSecret too', () => {
+    // Post round-3 NF-N3: a blank/reserved-literal `oauthClientSecret`
+    // routes the connection to the U2M arm rather than rejecting on
+    // the M2M arm. When `oauthClientId` is ALSO set, the U2M arm's
+    // dedicated "not supported on U2M" rejection fires — which is more
+    // actionable than the M2M "secret must be non-empty" message
+    // because it tells the user the U2M flow exists and how to use it.
+    it('routes mixed-case reserved-literal oauthClientSecret to U2M; rejects with U2M-id error', () => {
       const opts: ConnectionOptions = {
         host: 'example.cloud.databricks.com',
         path: '/sql/1.0/warehouses/abc',
@@ -86,8 +92,8 @@ describe('SeaAuth — edge cases (input validation + ambiguity)', () => {
       };
 
       expect(() => buildSeaConnectionOptions(opts)).to.throw(
-        AuthenticationError,
-        /oauthClientSecret.*non-empty non-whitespace/,
+        HiveDriverError,
+        /oauthClientId.*not supported on the OAuth U2M flow/,
       );
     });
 
@@ -106,7 +112,7 @@ describe('SeaAuth — edge cases (input validation + ambiguity)', () => {
       );
     });
 
-    it('rejects whitespace-only oauthClientSecret on M2M', () => {
+    it('routes whitespace-only oauthClientSecret to U2M; with oauthClientId set, rejects U2M+id', () => {
       const opts: ConnectionOptions = {
         host: 'example.cloud.databricks.com',
         path: '/sql/1.0/warehouses/abc',
@@ -116,8 +122,8 @@ describe('SeaAuth — edge cases (input validation + ambiguity)', () => {
       };
 
       expect(() => buildSeaConnectionOptions(opts)).to.throw(
-        AuthenticationError,
-        /oauthClientSecret.*non-empty non-whitespace/,
+        HiveDriverError,
+        /oauthClientId.*not supported on the OAuth U2M flow/,
       );
     });
 
@@ -136,7 +142,7 @@ describe('SeaAuth — edge cases (input validation + ambiguity)', () => {
       );
     });
 
-    it('rejects literal "undefined" as oauthClientSecret on M2M', () => {
+    it('routes literal "undefined" as oauthClientSecret to U2M; with oauthClientId set, rejects U2M+id', () => {
       const opts: ConnectionOptions = {
         host: 'example.cloud.databricks.com',
         path: '/sql/1.0/warehouses/abc',
@@ -146,8 +152,8 @@ describe('SeaAuth — edge cases (input validation + ambiguity)', () => {
       };
 
       expect(() => buildSeaConnectionOptions(opts)).to.throw(
-        AuthenticationError,
-        /oauthClientSecret.*non-empty non-whitespace/,
+        HiveDriverError,
+        /oauthClientId.*not supported on the OAuth U2M flow/,
       );
     });
   });
@@ -216,6 +222,46 @@ describe('SeaAuth — edge cases (input validation + ambiguity)', () => {
         HiveDriverError,
         /cannot supply `token` alongside `authType: 'databricks-oauth'`/,
       );
+    });
+
+    // NF-N3: a blank `oauthClientSecret` (the
+    // `process.env.MY_SECRET || ''` shape) should route to U2M, not
+    // to the M2M arm with an "empty secret" rejection. M2M's error
+    // message would never mention U2M, leaving the user stuck.
+    it('routes blank oauthClientSecret to U2M (not to an M2M-blank-secret rejection)', () => {
+      const opts: ConnectionOptions = {
+        host: 'example.cloud.databricks.com',
+        path: '/sql/1.0/warehouses/abc',
+        authType: 'databricks-oauth',
+        oauthClientSecret: '',
+      };
+
+      const native = buildSeaConnectionOptions(opts);
+      expect(native.authMode).to.equal('OAuthU2m');
+    });
+
+    it('routes whitespace-only oauthClientSecret to U2M too', () => {
+      const opts: ConnectionOptions = {
+        host: 'example.cloud.databricks.com',
+        path: '/sql/1.0/warehouses/abc',
+        authType: 'databricks-oauth',
+        oauthClientSecret: '   \t  ',
+      };
+
+      const native = buildSeaConnectionOptions(opts);
+      expect(native.authMode).to.equal('OAuthU2m');
+    });
+
+    it('routes literal-"undefined" oauthClientSecret to U2M too', () => {
+      const opts: ConnectionOptions = {
+        host: 'example.cloud.databricks.com',
+        path: '/sql/1.0/warehouses/abc',
+        authType: 'databricks-oauth',
+        oauthClientSecret: 'undefined',
+      };
+
+      const native = buildSeaConnectionOptions(opts);
+      expect(native.authMode).to.equal('OAuthU2m');
     });
   });
 
@@ -370,10 +416,12 @@ describe('SeaBackend — kernel error envelope decoding (DA-F1)', () => {
     expect((caught as Error).message).to.contain('not valid json');
   });
 
-  // NF-4: preserve all 7 kernel envelope fields on the decoded JS error
-  // as non-enumerable own-properties so callers can read them without
-  // polluting JSON.stringify(error).
-  it('preserves errorCode + vendorCode + httpStatus + retryable + queryId on the decoded error', async () => {
+  // NF-4 / NF-N1: preserve the 5 optional kernel envelope fields on the
+  // decoded JS error under a single `kernelMetadata` namespace.
+  // Namespaced to avoid the collision with `OperationStateError.errorCode`
+  // and `RetryError.errorCode` (both pre-existing enum fields switched
+  // on at `DBSQLOperation.ts:209`).
+  it('preserves errorCode + vendorCode + httpStatus + retryable + queryId under kernelMetadata namespace', async () => {
     const binding = bindingRejectingWith(
       '{"code":"Unavailable","message":"upstream timed out",' +
         '"sqlState":"08006","errorCode":"UPSTREAM_TIMEOUT","vendorCode":1234,' +
@@ -388,25 +436,21 @@ describe('SeaBackend — kernel error envelope decoding (DA-F1)', () => {
     } catch (e) {
       caught = e;
     }
-    const err = caught as {
-      sqlState?: string;
-      errorCode?: string;
-      vendorCode?: number;
-      httpStatus?: number;
-      retryable?: boolean;
-      queryId?: string;
-    };
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const err = caught as any;
     expect(err.sqlState).to.equal('08006');
-    expect(err.errorCode).to.equal('UPSTREAM_TIMEOUT');
-    expect(err.vendorCode).to.equal(1234);
-    expect(err.httpStatus).to.equal(503);
-    expect(err.retryable).to.equal(true);
-    expect(err.queryId).to.equal('query-abc-123');
+    expect(err.kernelMetadata).to.deep.equal({
+      errorCode: 'UPSTREAM_TIMEOUT',
+      vendorCode: 1234,
+      httpStatus: 503,
+      retryable: true,
+      queryId: 'query-abc-123',
+    });
   });
 
-  it('keeps the metadata properties non-enumerable (matches sqlState pattern)', async () => {
+  it('keeps sqlState and kernelMetadata non-enumerable (matches Node `.code` pattern)', async () => {
     const binding = bindingRejectingWith(
-      '{"code":"NetworkError","message":"x","httpStatus":502}',
+      '{"code":"NetworkError","message":"x","sqlState":"08000","httpStatus":502}',
     );
     const backend = new SeaBackend(binding);
     await backend.connect(validConnectArgs);
@@ -417,9 +461,91 @@ describe('SeaBackend — kernel error envelope decoding (DA-F1)', () => {
     } catch (e) {
       caught = e;
     }
-    expect(Object.keys(caught as object)).to.not.include('httpStatus');
+    expect(Object.keys(caught as object)).to.not.include('sqlState');
+    expect(Object.keys(caught as object)).to.not.include('kernelMetadata');
     // But direct access still works.
-    expect((caught as { httpStatus?: number }).httpStatus).to.equal(502);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const err = caught as any;
+    expect(err.sqlState).to.equal('08000');
+    expect(err.kernelMetadata?.httpStatus).to.equal(502);
+  });
+
+  // NF-N1: namespace must NOT clobber a pre-existing `errorCode` enum
+  // field on OperationStateError / RetryError. Cancelled envelopes map
+  // to OperationStateError(Canceled), and DBSQLOperation.ts:209 switches
+  // on `err.errorCode === OperationStateErrorCode.Canceled` — that must
+  // continue to read the enum 'CANCELED', not the kernel's textual
+  // errorCode.
+  it('does not clobber OperationStateError.errorCode enum when kernel envelope sends a textual errorCode', async () => {
+    const binding = bindingRejectingWith(
+      '{"code":"Cancelled","message":"user-cancel","errorCode":"USER_REQUESTED_CANCEL"}',
+    );
+    const backend = new SeaBackend(binding);
+    await backend.connect(validConnectArgs);
+
+    let caught: unknown;
+    try {
+      await backend.openSession({});
+    } catch (e) {
+      caught = e;
+    }
+    // The enum-typed top-level errorCode is untouched (still the
+    // CANCELED enum string from OperationStateError's constructor).
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const err = caught as any;
+    expect(err.errorCode).to.equal('CANCELED');
+    // The kernel's textual errorCode survives under the namespace.
+    expect(err.kernelMetadata?.errorCode).to.equal('USER_REQUESTED_CANCEL');
+  });
+
+  // NF-N4: per-field type guards. If the kernel sends a wrong-typed
+  // field (e.g. `retryable: "true"` string instead of `true` boolean),
+  // the decoder should drop that field rather than propagate the
+  // wrong type.
+  it('drops envelope fields with the wrong runtime type instead of passing them through', async () => {
+    // errorCode wrong-type (number instead of string), vendorCode
+    // wrong-type (string instead of number), httpStatus correct,
+    // retryable wrong-type (string instead of boolean), queryId null.
+    // Only httpStatus should survive the type-guard.
+    const binding = bindingRejectingWith(
+      '{"code":"NetworkError","message":"x","errorCode":42,"vendorCode":"not-a-number","httpStatus":502,"retryable":"true","queryId":null}',
+    );
+    const backend = new SeaBackend(binding);
+    await backend.connect(validConnectArgs);
+
+    let caught: unknown;
+    try {
+      await backend.openSession({});
+    } catch (e) {
+      caught = e;
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const err = caught as any;
+    // Only the well-typed httpStatus survives.
+    expect(err.kernelMetadata).to.deep.equal({ httpStatus: 502 });
+  });
+
+  it('omits the kernelMetadata namespace entirely when no envelope fields survive validation', async () => {
+    // A minimal envelope (just code + message + sqlState) yields an
+    // empty metadata object — and we should NOT attach a `{}`-shaped
+    // namespace because that's pure noise. The sqlState top-level
+    // field is unaffected.
+    const binding = bindingRejectingWith(
+      '{"code":"Internal","message":"x","sqlState":"08001"}',
+    );
+    const backend = new SeaBackend(binding);
+    await backend.connect(validConnectArgs);
+
+    let caught: unknown;
+    try {
+      await backend.openSession({});
+    } catch (e) {
+      caught = e;
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const err = caught as any;
+    expect(err.sqlState).to.equal('08001');
+    expect(err.kernelMetadata).to.equal(undefined);
   });
 
   // NF-1: SeaSessionBackend.close() must wrap the napi call too.

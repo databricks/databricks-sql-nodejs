@@ -15,6 +15,7 @@
 import { expect } from 'chai';
 import { DBSQLClient } from '../../../lib';
 import AuthenticationError from '../../../lib/errors/AuthenticationError';
+import { isBlankOrReserved } from '../../../lib/sea/SeaAuth';
 
 /**
  * sea-auth M1 OAuth M2M end-to-end:
@@ -50,16 +51,15 @@ describe('sea-auth e2e — OAuth M2M through DBSQLClient ↔ SeaBackend ↔ napi
   this.timeout(120_000);
 
   before(function gate() {
-    // Reject not just absent env vars but also literal `'undefined'` /
-    // `'null'` / whitespace-only values from buggy shell exports — these
+    // Reject not just absent env vars but also blank/whitespace/literal-
+    // `'undefined'`/`'null'` values from buggy shell exports — these
     // would otherwise reach the workspace as bogus creds and yield an
     // `invalid_client` indistinguishable from a real SP-not-registered
-    // issue.
-    const looksReal = (s: string | undefined): s is string => {
-      if (typeof s !== 'string') return false;
-      const t = s.trim();
-      return t.length > 0 && t !== 'undefined' && t !== 'null';
-    };
+    // issue. Reuse the production `isBlankOrReserved` predicate so the
+    // test gate stays in lockstep with the case-insensitive variant
+    // shipped in round-2 (B-3 fix).
+    const looksReal = (s: string | undefined): s is string =>
+      typeof s === 'string' && !isBlankOrReserved(s);
     if (!looksReal(host) || !looksReal(path) || !looksReal(oauthClientId) || !looksReal(oauthClientSecret)) {
       // eslint-disable-next-line no-invalid-this
       this.skip();

@@ -84,8 +84,11 @@ function prependSlash(str: string): string {
  * shell exports (e.g. `export FOO="$UNSET_VAR"`) produce. Surfacing
  * these here means an OAuth flow's `invalid_client` from the workspace
  * is always a real credential mismatch, never a malformed-input passthrough.
+ *
+ * Exported so the integration-test env-gate can reuse the same predicate
+ * and stay in lockstep with production (B-3 fix).
  */
-function isBlankOrReserved(s: string): boolean {
+export function isBlankOrReserved(s: string): boolean {
   const normalized = s.trim().toLowerCase();
   return normalized.length === 0 || normalized === 'undefined' || normalized === 'null';
 }
@@ -180,7 +183,14 @@ export function buildSeaConnectionOptions(options: ConnectionOptions): SeaNative
 
     // Flow selector mirrors thrift's `DBSQLClient.createAuthProvider`
     // (`DBSQLClient.ts:143`): `oauthClientSecret defined ? M2M : U2M`.
-    if (oauth.oauthClientSecret === undefined) {
+    // Blank or buggy-shell-export secrets route to U2M (rather than
+    // M2M-with-bad-secret) so the error message correctly points the user
+    // at the right flow. `oauthClientSecret: process.env.MY_SECRET || ''`
+    // is a common shape; routing it to the M2M arm would surface an
+    // M2M-specific error that never mentions U2M.
+    const secretIsBlank =
+      typeof oauth.oauthClientSecret === 'string' && isBlankOrReserved(oauth.oauthClientSecret);
+    if (oauth.oauthClientSecret === undefined || secretIsBlank) {
       // U2M.
       if (oauth.oauthClientId !== undefined) {
         // The kernel hardcodes `client_id = "databricks-cli"` for U2M;
