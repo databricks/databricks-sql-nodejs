@@ -13,36 +13,35 @@
 // limitations under the License.
 
 import { v4 as uuidv4 } from 'uuid';
-import { TGetOperationStatusResp, TGetResultSetMetadataResp, TOperationState } from '../../thrift/TCLIService_types';
+import {
+  TGetOperationStatusResp,
+  TGetResultSetMetadataResp,
+  TOperationState,
+  TSparkRowSetType,
+  TStatusCode,
+  TTableSchema,
+} from '../../thrift/TCLIService_types';
 import IOperationBackend from '../contracts/IOperationBackend';
 import IClientContext from '../contracts/IClientContext';
 import Status from '../dto/Status';
+import ArrowResultConverter from '../result/ArrowResultConverter';
+import ResultSlicer from '../result/ResultSlicer';
+import SeaResultsProvider from './SeaResultsProvider';
+import { arrowSchemaToThriftSchema, decodeIpcSchema } from './SeaArrowIpc';
 import { SeaNativeStatement } from './SeaNativeLoader';
 import { mapKernelErrorToJsError, KernelErrorShape } from './SeaErrorMapping';
-import HiveDriverError from '../errors/HiveDriverError';
 
 /**
  * Constructor options for `SeaOperationBackend`.
- *
- * `statement` is the opaque napi `Statement` handle returned by
- * `Connection.executeStatement(...)`. The kernel has already internalized
- * async polling — by the time we hold a `Statement`, the SQL is at least
- * accepted by the server.
- *
- * `id` is captured at construction so `IOperationBackend.id` can return a
- * stable string without async work. The napi binding does not currently
- * expose the server-side `statement_id`, so the M0 shim generates a
- * synthetic UUIDv4. Once the binding surfaces the kernel statement id,
- * this is the only line that needs to change.
  */
 export interface SeaOperationBackendOptions {
+  /** The opaque napi `Statement` handle returned by `Connection.executeStatement(...)`. */
   statement: SeaNativeStatement;
   context: IClientContext;
   /**
    * Optional override for `id`. When not provided a fresh UUIDv4 is used.
-   * Reserved for the sea-results / sea-integration features which may
-   * thread the kernel-side statement id through once the napi binding
-   * surfaces it.
+   * The kernel does not yet surface its internal statement-id at the napi
+   * boundary; once it does, the JS layer can thread it through here.
    */
   id?: string;
 }
@@ -53,14 +52,6 @@ export interface SeaOperationBackendOptions {
  */
 const KERNEL_ERROR_SENTINEL = '__databricks_error__:';
 
-/**
- * Inspect a thrown error from the napi binding. If it carries the
- * sentinel-prefixed JSON envelope, parse and re-throw as the mapped JS
- * driver error class; otherwise re-throw verbatim.
- *
- * Used by every method body that crosses the napi boundary so that
- * kernel `ErrorCode` + SQLSTATE are preserved on the JS error surface.
- */
 function rethrowKernelError(err: unknown): never {
   if (err && typeof err === 'object' && 'message' in err) {
     const reason = (err as { reason?: unknown }).reason;
@@ -69,8 +60,6 @@ function rethrowKernelError(err: unknown): never {
         const payload = JSON.parse(reason.slice(KERNEL_ERROR_SENTINEL.length)) as KernelErrorShape;
         throw mapKernelErrorToJsError(payload);
       } catch (parseErr) {
-        // If JSON.parse failed, fall through to the raw error. The
-        // `parseErr` itself is the mapped error if we successfully threw above.
         if (parseErr !== err) {
           throw parseErr;
         }
@@ -81,36 +70,54 @@ function rethrowKernelError(err: unknown): never {
 }
 
 /**
- * SEA-backed implementation of `IOperationBackend`.
+ * `IOperationBackend` over the napi-bound kernel `Statement`. Adapts
+ * the kernel's Arrow IPC stream onto the existing thrift-shaped result
+ * pipeline (`ArrowResultConverter` + `ResultSlicer`) so the M0 row
+ * shape is byte-identical to the thrift path for every M0 datatype.
  *
- * **M0 scope:** carries the napi `Statement` handle and supports
- * `cancel()` + `close()` (both pass-through to the kernel). The
- * row-fetch / status / result-metadata methods are owned by the
- * `sea-results` feature — until that lands, calling them throws an
- * explicit `M1`-deferred error so consumers fail loudly rather than
- * silently. The `sea-integration` round will reconcile this shim with
- * the real implementation from `sea-results`.
+ * Pipeline:
+ *   napi.Statement.fetchNextBatch()  (IPC bytes per batch)
+ *     -> SeaResultsProvider          (adapts to IResultsProvider<ArrowBatch>)
+ *     -> ArrowResultConverter        (Phase 1 + Phase 2; reused unchanged)
+ *     -> ResultSlicer                (chunk-size normalisation; reused unchanged)
  *
- * **Why a thin shim now:** `sea-execution` (this feature) needs to
- * return an `IOperationBackend` from `SeaSessionBackend.executeStatement`
- * to keep the abstraction's type contract. Splitting the row-fetch
- * implementation into `sea-results` lets the two features land
- * independently in a stacked-PR workflow without one blocking the other.
+ * The kernel exposes only the `Arrow` `ResultBatch` variant for M0 —
+ * both CloudFetch (external links) and inline batches flow through
+ * `ResultStream::next_batch` and surface as a single Arrow IPC stream
+ * per call. One backend therefore covers both fetch modes without
+ * dispatching on `TSparkRowSetType`.
+ *
+ * **Lifecycle:** `cancel()` and `close()` are idempotent (a second
+ * call is a no-op). Cancel-after-close is a no-op; close-after-cancel
+ * still goes through to the binding because the kernel's close is the
+ * only way to release the server-side handle. Cancelled flag is set
+ * _before_ awaiting the napi call so a concurrent `fetchChunk` issued
+ * mid-cancel sees the flag when its await yields.
  */
 export default class SeaOperationBackend implements IOperationBackend {
   private readonly statement: SeaNativeStatement;
 
-  // Retained for symmetry with ThriftOperationBackend — logger access happens
-  // via `context.getLogger()`. The integration round will lean on this to
-  // emit per-operation lifecycle events.
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   private readonly context: IClientContext;
 
   private readonly _id: string;
 
-  private closed = false;
+  private resultSlicer?: ResultSlicer<any>;
+
+  private resultsProvider?: SeaResultsProvider;
+
+  private metadata?: TGetResultSetMetadataResp;
+
+  private metadataPromise?: Promise<TGetResultSetMetadataResp>;
+
+  // Tracks the operation's terminal state. The kernel does not expose
+  // pending/running observability at the napi surface today; `execute`
+  // resolves only after the statement has reached a result-fetching
+  // state, so we treat the backend as FINISHED until `close()`/`cancel()`.
+  private state: TOperationState = TOperationState.FINISHED_STATE;
 
   private cancelled = false;
+
+  private closed = false;
 
   constructor({ statement, context, id }: SeaOperationBackendOptions) {
     this.statement = statement;
@@ -123,79 +130,94 @@ export default class SeaOperationBackend implements IOperationBackend {
   }
 
   public get hasResultSet(): boolean {
-    // SEA's `Statement::execute` only returns a handle for successfully
-    // started statements; rows may be empty but the result-set channel is
-    // always available (the kernel's `ResultStream::next_batch` resolves
-    // to `None` when exhausted). M0 mirrors the JDBC SEA driver which
-    // treats every executed statement as result-set-bearing.
+    // M0 only routes through SeaOperationBackend for executeStatement
+    // calls. DDL/DML without a result set is not exercised through SEA
+    // for M0; the napi Statement still produces a schema (empty) in
+    // that case, which the converter renders as zero rows. Reporting
+    // `true` keeps the facade's fetch path enabled for M0 parity.
     return true;
   }
 
-  /**
-   * Pull the next batch of rows. **Owned by sea-results.** Returning a
-   * deferred error here keeps the build green while the row-decoding
-   * pipeline (Arrow IPC → JS objects) lands separately.
-   */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  public async fetchChunk(_options: { limit: number; disableBuffering?: boolean }): Promise<Array<object>> {
-    throw new HiveDriverError(
-      'SeaOperationBackend.fetchChunk: not implemented yet (lands in sea-results feature)',
-    );
+  public async fetchChunk({
+    limit,
+    disableBuffering,
+  }: {
+    limit: number;
+    disableBuffering?: boolean;
+  }): Promise<Array<object>> {
+    const slicer = await this.getResultSlicer();
+    return slicer.fetchNext({ limit, disableBuffering });
   }
 
   public async hasMore(): Promise<boolean> {
-    throw new HiveDriverError(
-      'SeaOperationBackend.hasMore: not implemented yet (lands in sea-results feature)',
-    );
+    const slicer = await this.getResultSlicer();
+    return slicer.hasMore();
   }
 
-  /**
-   * Wait until the operation reaches a terminal state. The kernel
-   * already internalises async polling inside `Statement::execute`, so
-   * by the time we hold a `Statement` handle the operation is at least
-   * RUNNING or FINISHED. M0 treats this as a no-op; the JDBC SEA driver
-   * does the same when the kernel has already absorbed the polling
-   * loop. The sea-results feature may override if status callbacks need
-   * to fire.
-   */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  public async waitUntilReady(_options?: {
+  public async waitUntilReady(options?: {
     progress?: boolean;
     callback?: (progress: TGetOperationStatusResp) => unknown;
   }): Promise<void> {
-    // No-op — kernel has already polled to readiness internally.
+    // The kernel's `executeStatement` resolves once results are
+    // available; there's no pending/running state to observe here. We
+    // synthesise an immediate FINISHED status for the optional callback.
+    if (options?.callback) {
+      await Promise.resolve(options.callback(await this.status(Boolean(options.progress))));
+    }
   }
 
-  /**
-   * Single-shot status. M0 synthesises a "finished" response because the
-   * kernel surfaces only terminal-or-running statements through its
-   * public API. The sea-results feature will tighten this up with the
-   * real kernel `StatementStatus` mapping.
-   */
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   public async status(_progress: boolean): Promise<TGetOperationStatusResp> {
     return {
-      status: { statusCode: 0 },
-      operationState: TOperationState.FINISHED_STATE,
-    } as TGetOperationStatusResp;
+      status: { statusCode: TStatusCode.SUCCESS_STATUS },
+      operationState: this.state,
+      hasResultSet: true,
+    };
   }
 
   public async getResultMetadata(): Promise<TGetResultSetMetadataResp> {
-    throw new HiveDriverError(
-      'SeaOperationBackend.getResultMetadata: not implemented yet (lands in sea-results feature)',
-    );
+    if (this.metadata) {
+      return this.metadata;
+    }
+    if (this.metadataPromise) {
+      return this.metadataPromise;
+    }
+    this.metadataPromise = (async () => {
+      const arrowSchemaIpc = await this.statement.schema();
+      const arrowSchema = decodeIpcSchema(arrowSchemaIpc.ipcBytes);
+      const thriftSchema: TTableSchema = arrowSchemaToThriftSchema(arrowSchema);
+      const meta: TGetResultSetMetadataResp = {
+        status: { statusCode: TStatusCode.SUCCESS_STATUS },
+        schema: thriftSchema,
+        // SEA inline + CloudFetch both surface to JS as Arrow batches;
+        // both flow through the same converter that handles the
+        // ARROW_BASED_SET path on the thrift side.
+        resultFormat: TSparkRowSetType.ARROW_BASED_SET,
+        lz4Compressed: false,
+        isStagingOperation: false,
+      };
+      this.metadata = meta;
+      return meta;
+    })();
+    try {
+      return await this.metadataPromise;
+    } finally {
+      this.metadataPromise = undefined;
+    }
   }
 
   public async cancel(): Promise<Status> {
     if (this.cancelled || this.closed) {
       return Status.success();
     }
+    // Set the flag _before_ awaiting so a concurrent fetchChunk
+    // observing the flag short-circuits when its await yields.
+    this.cancelled = true;
     try {
       await this.statement.cancel();
     } catch (err) {
       rethrowKernelError(err);
     }
-    this.cancelled = true;
+    this.state = TOperationState.CANCELED_STATE;
     return Status.success();
   }
 
@@ -203,12 +225,24 @@ export default class SeaOperationBackend implements IOperationBackend {
     if (this.closed) {
       return Status.success();
     }
+    this.closed = true;
     try {
       await this.statement.close();
     } catch (err) {
       rethrowKernelError(err);
     }
-    this.closed = true;
+    this.state = TOperationState.CLOSED_STATE;
     return Status.success();
+  }
+
+  private async getResultSlicer(): Promise<ResultSlicer<any>> {
+    if (this.resultSlicer) {
+      return this.resultSlicer;
+    }
+    const metadata = await this.getResultMetadata();
+    this.resultsProvider = new SeaResultsProvider(this.statement);
+    const converter = new ArrowResultConverter(this.context, this.resultsProvider, metadata);
+    this.resultSlicer = new ResultSlicer(this.context, converter);
+    return this.resultSlicer;
   }
 }
