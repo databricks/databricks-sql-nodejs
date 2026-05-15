@@ -80,14 +80,14 @@ function prependSlash(str: string): string {
 /**
  * Reject inputs that pass `typeof === 'string' && length > 0` but are
  * structurally useless as credentials: whitespace-only strings, and the
- * literal strings `'undefined'` / `'null'` that buggy shell exports
- * (e.g. `export FOO="$UNSET_VAR"`) produce. Surfacing these here means
- * an OAuth flow's `invalid_client` from the workspace is always a real
- * credential mismatch, never a malformed-input passthrough.
+ * literal strings `'undefined'` / `'null'` (case-insensitive) that buggy
+ * shell exports (e.g. `export FOO="$UNSET_VAR"`) produce. Surfacing
+ * these here means an OAuth flow's `invalid_client` from the workspace
+ * is always a real credential mismatch, never a malformed-input passthrough.
  */
 function isBlankOrReserved(s: string): boolean {
-  const trimmed = s.trim();
-  return trimmed.length === 0 || trimmed === 'undefined' || trimmed === 'null';
+  const normalized = s.trim().toLowerCase();
+  return normalized.length === 0 || normalized === 'undefined' || normalized === 'null';
 }
 
 /**
@@ -182,6 +182,16 @@ export function buildSeaConnectionOptions(options: ConnectionOptions): SeaNative
     // (`DBSQLClient.ts:143`): `oauthClientSecret defined ? M2M : U2M`.
     if (oauth.oauthClientSecret === undefined) {
       // U2M.
+      if (oauth.oauthClientId !== undefined) {
+        // The kernel hardcodes `client_id = "databricks-cli"` for U2M;
+        // there's no JS-side override knob. Silently dropping a
+        // user-supplied id would hide that the kernel ignored it.
+        throw new HiveDriverError(
+          'SEA backend: `oauthClientId` is not supported on the OAuth U2M flow; ' +
+            "the kernel uses the built-in 'databricks-cli' client. " +
+            'Omit `oauthClientId` for U2M, or supply `oauthClientSecret` for the M2M flow.',
+        );
+      }
       if (oauth.persistence !== undefined) {
         throw new HiveDriverError(
           'SEA backend: `persistence` (custom OAuth token store) is not yet wired through ' +

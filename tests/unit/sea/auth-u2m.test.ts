@@ -37,14 +37,12 @@ describe('SeaAuth + SeaBackend — OAuth U2M auth flow', () => {
       });
     });
 
-    it('drops the supplied oauthClientId on the U2M path (kernel uses its own default)', () => {
-      // The thrift parity story: thrift's getClientId() falls back to
-      // `databricks-cli` when undefined. Here we tell the kernel to do
-      // the same via `client_id: None`. If a user supplies a clientId
-      // alongside no secret, we treat that as U2M and use kernel default
-      // — explicitly NOT propagating the supplied id, because the kernel
-      // surface for U2M client_id is None-or-Some-with-no-default-rewrite,
-      // and exposing the override here is out-of-scope-for-this-task.
+    it('rejects oauthClientId on the U2M path with a clear "not supported" error', () => {
+      // The kernel hardcodes `client_id = "databricks-cli"` for U2M; there's
+      // no JS-side override knob. Silently dropping a user-supplied id would
+      // hide that the kernel ignored it, so we surface the limitation
+      // explicitly. Earlier revisions of this code silently dropped — flipped
+      // to raise based on devils-advocate-auth-u2m-1 round-1 (NF-2).
       const opts: ConnectionOptions = {
         host: 'example.cloud.databricks.com',
         path: '/sql/1.0/warehouses/abc',
@@ -52,10 +50,10 @@ describe('SeaAuth + SeaBackend — OAuth U2M auth flow', () => {
         oauthClientId: 'custom-client',
       };
 
-      const native = buildSeaConnectionOptions(opts);
-      expect(native.authMode).to.equal('OAuthU2m');
-      // Custom clientId is intentionally not forwarded — see comment above.
-      expect(native).to.not.have.property('oauthClientId');
+      expect(() => buildSeaConnectionOptions(opts)).to.throw(
+        HiveDriverError,
+        /oauthClientId.*not supported on the OAuth U2M flow/,
+      );
     });
 
     it('prepends `/` to the path on the U2M branch too', () => {
