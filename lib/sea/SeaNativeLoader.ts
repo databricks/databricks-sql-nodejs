@@ -35,9 +35,31 @@
 // eslint-disable-next-line @typescript-eslint/no-var-requires, import/no-dynamic-require, global-require
 const native = require('../../native/sea/index.js');
 
+/**
+ * Public surface of the native binding exposed to the rest of the
+ * NodeJS driver. Round 2 lands `openSession` + opaque `Connection` /
+ * `Statement` classes (the binding-generated `.d.ts` is the source of
+ * truth for their method signatures — see `native/sea/index.d.ts`).
+ *
+ * We deliberately keep this typed loosely (`unknown` for the class
+ * shapes) so the loader layer doesn't have to import the binding's
+ * generated types and the JS adapter layer can introduce its own
+ * higher-level wrappers without conflicting with the binding's TS
+ * declarations.
+ */
 export interface SeaNativeBinding {
   /** Returns the native crate version (smoke test for the binding's load path). */
   version(): string;
+  /** Open a session over PAT auth. Returns an opaque Connection. */
+  openSession(opts: {
+    hostName: string;
+    httpPath: string;
+    token: string;
+  }): Promise<unknown>;
+  /** Opaque Connection class — instance methods on the binding-generated d.ts. */
+  Connection: Function;
+  /** Opaque Statement class — instance methods on the binding-generated d.ts. */
+  Statement: Function;
 }
 
 /**

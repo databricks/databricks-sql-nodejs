@@ -12,88 +12,79 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! Opaque `Database` wrapper around the kernel's `Session` handle.
-//!
-//! Round 1b: scaffold only — `constructor` stores options and returns
-//! immediately. Round 2 will add `open()` (calling `Session::open`),
-//! `statement()`, `close()`, etc.
+//! `openSession()` — the binding's session-construction entry point.
 //!
 //! The kernel collapses ADBC's `Database` + `Connection` into a single
-//! `Session`. We keep the wrapper name `Database` on the JS side
-//! because that matches the existing Node driver's mental model; the
-//! actual session lives inside this struct.
+//! `Session`. The TS adapter layer reconstructs a `DBSQLClient` /
+//! `Database` wrapper on top of this binding, so the napi surface itself
+//! stays flat: one free function, one opaque `Connection` class.
+//!
+//! Rationale for a free function over a static class method:
+//! - napi-rs v2's static-method codegen for async functions returning a
+//!   `#[napi]` struct is fragile — the runtime registration sometimes
+//!   omits the method from the class object. Free `#[napi]` functions
+//!   go through a different, more stable codegen path.
+//! - There is no kernel-side `Database` state to wrap; everything
+//!   meaningful lives on `Session`. A wrapper class with no fields adds
+//!   a JS object allocation per session for no benefit.
 
-use databricks_sql_kernel::Session;
+use std::sync::Arc;
+use tokio::sync::Mutex;
 
+use databricks_sql_kernel::{AuthConfig, Session};
+
+use crate::connection::Connection;
+use crate::error::napi_err_from_kernel;
 use crate::runtime;
+use crate::util::guarded;
 
-/// JS-visible constructor options. Round 2 will populate this with
-/// real fields (host, warehouseId, auth, …); for the scaffold it is
-/// intentionally empty so the JS smoke test can call `new Database({})`
-/// without TypeScript complaining about unknown properties.
-#[napi(object)]
-pub struct DatabaseOptions {
-    /// Workspace host URL (e.g. `https://workspace.databricks.com`).
-    /// Optional in Round 1b; Round 2 makes it required.
-    pub host: Option<String>,
-    /// Warehouse id. Optional in Round 1b; Round 2 makes it required.
-    pub warehouse_id: Option<String>,
-}
-
-/// Opaque database handle on the JS side.
+/// JS-visible options for opening a Databricks SQL session over PAT.
 ///
-/// Holds `Option<Session>` so `close()` (Round 2) can `.take()` the
-/// session out and `.await` an async close, leaving `inner = None`.
-/// The `Drop` impl checks `inner` to decide whether to schedule a
-/// fire-and-forget close on the captured tokio runtime.
-#[napi]
-pub struct Database {
-    // TODO(round-2): populate this from `Session::open(config).await`
-    // inside an `open()` async method (or directly inside the
-    // constructor via a factory pattern). For now it stays `None` so
-    // Drop has nothing to clean up.
-    inner: Option<Session>,
+/// M0 supports PAT only — `token` is required. OAuth M2M / U2M variants
+/// land in M1 along with a discriminated-union shape on the JS side.
+#[napi(object)]
+pub struct ConnectionOptions {
+    /// Workspace host, e.g. `adb-…azuredatabricks.net`. The kernel
+    /// normalises this — bare hostnames get `https://` prepended.
+    pub host_name: String,
+    /// JDBC-style HTTP path, e.g. `/sql/1.0/warehouses/abc123`. The
+    /// kernel parses out the warehouse id.
+    pub http_path: String,
+    /// Personal access token. Must be non-empty (the kernel rejects
+    /// empty PATs at session construction).
+    pub token: String,
 }
 
+/// Open a Databricks SQL session over PAT auth and return an opaque
+/// `Connection` wrapping the kernel `Session`.
+///
+/// The JS-visible name is `openSession` (napi-rs converts snake_case
+/// to camelCase for free functions).
 #[napi]
-impl Database {
-    /// Construct a new database handle. Round 1b: the options are
-    /// stashed for diagnostic purposes only — no network call.
-    #[napi(constructor)]
-    pub fn new(_options: DatabaseOptions) -> Self {
-        Database { inner: None }
-    }
-}
+pub async fn open_session(options: ConnectionOptions) -> napi::Result<Connection> {
+    guarded(async move {
+        // Cache the napi-rs tokio Handle on the very first async call
+        // so Drop impls (which run on the V8 GC thread, outside any
+        // tokio context) can still `spawn` cleanup tasks onto the
+        // runtime that's driving this future.
+        let _ = runtime::get_handle();
 
-impl Drop for Database {
-    fn drop(&mut self) {
-        // Pattern #5 from the napi-rs patterns doc: spawn cleanup on
-        // the captured runtime handle. We only enter this branch if
-        // the JS user dropped the handle without calling `close()`
-        // first (which Round 2 will provide). For Round 1b there is
-        // nothing to clean up, but the pattern is in place so the
-        // Round-2 work is a one-line addition.
-        let Some(session) = self.inner.take() else {
-            return;
-        };
-        let Some(handle) = runtime::try_get_handle() else {
-            // No async entry point has ever run, so there cannot be a
-            // live `Session` either — but the destructor of `Session`
-            // itself uses the kernel's own borrowed handle, so we
-            // simply let it run.
-            drop(session);
-            return;
-        };
-        // The kernel's `SessionInner::Drop` already spawns a
-        // fire-and-forget `delete_session` on its own captured runtime
-        // handle. To stay on napi-rs's runtime explicitly (so Round 2
-        // can add binding-side cleanup steps before the kernel drop),
-        // hop onto a tokio task and let the kernel destructor run
-        // there. We do NOT call `Session::close().await` because that
-        // method enters a tracing span (`EnteredSpan` is `!Send`) and
-        // therefore cannot cross an `await` boundary inside a `spawn`.
-        handle.spawn(async move {
-            drop(session);
-        });
-    }
+        // SessionConfig is `#[non_exhaustive]` — go through the
+        // builder, which is the only public path that constructs it.
+        // `http_path()` is the convenience setter that maps a bare
+        // hostname + `/sql/1.0/warehouses/{id}` path into the kernel's
+        // `ConnectionConfig`.
+        let session = Session::builder()
+            .http_path(options.host_name, options.http_path)
+            .auth(AuthConfig::Pat {
+                token: options.token,
+            })
+            .open()
+            .await
+            .map_err(napi_err_from_kernel)?;
+        Ok(Connection {
+            inner: Arc::new(Mutex::new(Some(session))),
+        })
+    })
+    .await
 }
