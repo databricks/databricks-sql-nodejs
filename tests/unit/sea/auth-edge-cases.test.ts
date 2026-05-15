@@ -61,6 +61,36 @@ describe('SeaAuth — edge cases (input validation + ambiguity)', () => {
       );
     });
 
+    it('rejects mixed-case "UNDEFINED" / "Null" / "NULL" as PAT (case-insensitive)', () => {
+      for (const reserved of ['UNDEFINED', 'Undefined', 'Null', 'NULL', 'nUlL']) {
+        const opts: ConnectionOptions = {
+          host: 'example.cloud.databricks.com',
+          path: '/sql/1.0/warehouses/abc',
+          token: reserved,
+        };
+
+        expect(() => buildSeaConnectionOptions(opts), `for token=${reserved}`).to.throw(
+          AuthenticationError,
+          /non-empty PAT/,
+        );
+      }
+    });
+
+    it('rejects mixed-case reserved literals on oauthClientSecret too', () => {
+      const opts: ConnectionOptions = {
+        host: 'example.cloud.databricks.com',
+        path: '/sql/1.0/warehouses/abc',
+        authType: 'databricks-oauth',
+        oauthClientId: 'client-uuid',
+        oauthClientSecret: 'NULL',
+      };
+
+      expect(() => buildSeaConnectionOptions(opts)).to.throw(
+        AuthenticationError,
+        /oauthClientSecret.*non-empty non-whitespace/,
+      );
+    });
+
     it('rejects whitespace-only oauthClientId on M2M', () => {
       const opts: ConnectionOptions = {
         host: 'example.cloud.databricks.com',
@@ -338,5 +368,92 @@ describe('SeaBackend — kernel error envelope decoding (DA-F1)', () => {
     // the original Error so the operator sees the raw payload.
     expect(caught).to.be.instanceOf(Error);
     expect((caught as Error).message).to.contain('not valid json');
+  });
+
+  // NF-4: preserve all 7 kernel envelope fields on the decoded JS error
+  // as non-enumerable own-properties so callers can read them without
+  // polluting JSON.stringify(error).
+  it('preserves errorCode + vendorCode + httpStatus + retryable + queryId on the decoded error', async () => {
+    const binding = bindingRejectingWith(
+      '{"code":"Unavailable","message":"upstream timed out",' +
+        '"sqlState":"08006","errorCode":"UPSTREAM_TIMEOUT","vendorCode":1234,' +
+        '"httpStatus":503,"retryable":true,"queryId":"query-abc-123"}',
+    );
+    const backend = new SeaBackend(binding);
+    await backend.connect(validConnectArgs);
+
+    let caught: unknown;
+    try {
+      await backend.openSession({});
+    } catch (e) {
+      caught = e;
+    }
+    const err = caught as {
+      sqlState?: string;
+      errorCode?: string;
+      vendorCode?: number;
+      httpStatus?: number;
+      retryable?: boolean;
+      queryId?: string;
+    };
+    expect(err.sqlState).to.equal('08006');
+    expect(err.errorCode).to.equal('UPSTREAM_TIMEOUT');
+    expect(err.vendorCode).to.equal(1234);
+    expect(err.httpStatus).to.equal(503);
+    expect(err.retryable).to.equal(true);
+    expect(err.queryId).to.equal('query-abc-123');
+  });
+
+  it('keeps the metadata properties non-enumerable (matches sqlState pattern)', async () => {
+    const binding = bindingRejectingWith(
+      '{"code":"NetworkError","message":"x","httpStatus":502}',
+    );
+    const backend = new SeaBackend(binding);
+    await backend.connect(validConnectArgs);
+
+    let caught: unknown;
+    try {
+      await backend.openSession({});
+    } catch (e) {
+      caught = e;
+    }
+    expect(Object.keys(caught as object)).to.not.include('httpStatus');
+    // But direct access still works.
+    expect((caught as { httpStatus?: number }).httpStatus).to.equal(502);
+  });
+
+  // NF-1: SeaSessionBackend.close() must wrap the napi call too.
+  it('SeaSessionBackend.close() decodes kernel-error envelopes from native.close()', async () => {
+    const { binding } = makeFakeBinding();
+    // Make openSession return a fake Connection whose close() throws
+    // a kernel-shaped envelope.
+    const failingClose = {
+      async executeStatement() {
+        throw new Error('unused');
+      },
+      async close() {
+        throw new Error(
+          '__databricks_error__:{"code":"Internal","message":"server-side close failed"}',
+        );
+      },
+    };
+    binding.openSession = (async () => failingClose as unknown) as typeof binding.openSession;
+
+    const backend = new SeaBackend(binding);
+    await backend.connect(validConnectArgs);
+    const session = await backend.openSession({});
+
+    let caught: unknown;
+    try {
+      await session.close();
+    } catch (e) {
+      caught = e;
+    }
+    // Before the NF-1 fix, this would surface as a raw Error whose
+    // message starts with `__databricks_error__:`. After the fix, the
+    // sentinel is stripped and the typed class is dispatched.
+    expect(caught).to.be.instanceOf(HiveDriverError);
+    expect((caught as Error).message).to.equal('server-side close failed');
+    expect((caught as Error).message).to.not.contain('__databricks_error__');
   });
 });

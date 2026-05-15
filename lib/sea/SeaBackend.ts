@@ -69,9 +69,11 @@ export interface SeaBackendOptions {
  * use. The actual session open happens inside `openSession()`.
  *
  * **Auth validation:** delegates to `buildSeaConnectionOptions` from
- * `SeaAuth`, which mirrors the existing DBSQLClient PAT validation
- * pattern (slash-prepended httpPath, AuthenticationError on missing
- * token, HiveDriverError on non-PAT authType naming M1 modes).
+ * `SeaAuth`, which mirrors the existing DBSQLClient validation pattern
+ * (slash-prepended httpPath, AuthenticationError on missing token or
+ * blank OAuth credentials, HiveDriverError on unsupported authType /
+ * Azure-direct / ambiguous credential combinations). M2M and U2M
+ * routing key off `oauthClientId` presence; see SeaAuth.ts.
  *
  * **Why we don't use IClientContext's connectionProvider here:** that
  * provider is the Thrift HTTP transport. The kernel owns its own
