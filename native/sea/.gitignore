@@ -1,0 +1,7 @@
+# Rust build artifacts
+target/
+Cargo.lock
+
+# Platform-specific `.node` binaries are produced per-platform by the
+# bundling feature; not committed.
+*.node
