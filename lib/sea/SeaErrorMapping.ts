@@ -4,6 +4,15 @@ import OperationStateError, { OperationStateErrorCode } from '../errors/Operatio
 import ParameterError from '../errors/ParameterError';
 
 /**
+ * Sentinel prefix the napi binding's `napi_err_from_kernel` puts on
+ * `Error.message` when the underlying failure was a structured kernel
+ * `Error` rather than a plain napi `InvalidArg` from binding-side
+ * validation. Defined here (and in `native/sea/src/error.rs:44`) — the
+ * two MUST stay in lockstep.
+ */
+const ERROR_SENTINEL = '__databricks_error__:';
+
+/**
  * Shape of the kernel error surfaced by the napi-binding's `napi_err_from_kernel`.
  *
  * The Rust kernel's `kernel_error::Error` is exposed as a `JsError` whose
@@ -138,4 +147,58 @@ export function mapKernelErrorToJsError(kErr: KernelErrorShape): ErrorWithSqlSta
   }
 
   return attachSqlState(error, sqlstate);
+}
+
+/**
+ * Decode a napi-binding error into the typed JS error class.
+ *
+ * Two paths:
+ *  - Structured kernel error: `Error.message` starts with
+ *    {@link ERROR_SENTINEL} followed by a JSON envelope. We strip the
+ *    sentinel, parse the JSON, and route through
+ *    {@link mapKernelErrorToJsError}.
+ *  - Binding-side error (e.g. `napi::Error::new(InvalidArg, "openSession:
+ *    \`token\` is required for the requested auth mode")` produced by
+ *    the binding's own validation): returned unchanged. These don't
+ *    carry kernel `code` info, so we surface them as-is.
+ *
+ * Non-`Error` values (e.g. a `Promise.reject('string')`) pass through
+ * wrapped in `HiveDriverError` so callers always see an `Error`
+ * subclass.
+ */
+export function decodeNapiKernelError(err: unknown): Error {
+  if (!(err instanceof Error)) {
+    return new HiveDriverError(typeof err === 'string' ? err : 'SEA backend: unknown error');
+  }
+
+  const { message } = err;
+  if (typeof message !== 'string' || !message.startsWith(ERROR_SENTINEL)) {
+    return err;
+  }
+
+  const jsonStr = message.slice(ERROR_SENTINEL.length);
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(jsonStr);
+  } catch {
+    // Corrupted envelope — surface the raw message rather than
+    // silently dropping the original error.
+    return err;
+  }
+
+  if (
+    typeof parsed !== 'object' ||
+    parsed === null ||
+    typeof (parsed as { code?: unknown }).code !== 'string' ||
+    typeof (parsed as { message?: unknown }).message !== 'string'
+  ) {
+    return err;
+  }
+
+  const kErr = parsed as { code: string; message: string; sqlState?: string };
+  return mapKernelErrorToJsError({
+    code: kErr.code,
+    message: kErr.message,
+    sqlstate: kErr.sqlState,
+  });
 }
