@@ -101,7 +101,11 @@ impl Connection {
             }
 
             let executed = stmt.execute().await.map_err(napi_err_from_kernel)?;
-            Ok(Statement::from_executed(executed))
+            // Pass the parent kernel `Statement` into the JS wrapper.
+            // Dropping it here would invalidate the executed handle
+            // via the shared ValidityFlag — see `StatementInner` docs
+            // in `statement.rs` for the rationale.
+            Ok(Statement::from_executed(stmt, executed))
         })
         .await
     }
