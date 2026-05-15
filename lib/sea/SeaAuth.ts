@@ -78,6 +78,19 @@ function prependSlash(str: string): string {
 }
 
 /**
+ * Reject inputs that pass `typeof === 'string' && length > 0` but are
+ * structurally useless as credentials: whitespace-only strings, and the
+ * literal strings `'undefined'` / `'null'` that buggy shell exports
+ * (e.g. `export FOO="$UNSET_VAR"`) produce. Surfacing these here means
+ * an OAuth flow's `invalid_client` from the workspace is always a real
+ * credential mismatch, never a malformed-input passthrough.
+ */
+function isBlankOrReserved(s: string): boolean {
+  const trimmed = s.trim();
+  return trimmed.length === 0 || trimmed === 'undefined' || trimmed === 'null';
+}
+
+/**
  * Validate the user-supplied `ConnectionOptions` and build the
  * napi-binding's connection-options shape.
  *
@@ -87,9 +100,7 @@ function prependSlash(str: string): string {
  *     `DBSQLClient.createAuthProvider`).
  *   - OAuth M2M: `authType: 'databricks-oauth'` + `oauthClientId` +
  *     `oauthClientSecret`. Kernel handles OIDC discovery, client_credentials
- *     exchange, and re-auth on expiry internally (no caching needed — M2M
- *     never has a refresh token; see `auth/oauth/m2m.rs` and the thrift
- *     parity note at `OAuthManager.ts:178-181`).
+ *     exchange, and re-auth on expiry internally.
  *   - OAuth U2M: `authType: 'databricks-oauth'` + NO `oauthClientSecret`.
  *     Kernel runs the PKCE auth-code dance (opens a browser, listens on
  *     localhost:8030, exchanges the code, persists to
@@ -99,20 +110,24 @@ function prependSlash(str: string): string {
  *
  * Out of scope on the OAuth paths (rejected with a clear error):
  *   - `azureTenantId` / `useDatabricksOAuthInAzure` → Microsoft Entra
- *     direct flow with `<tenantId>/.default` scope rewrite. The kernel
- *     uses workspace-OIDC discovery (which works against Azure workspaces
- *     too — they serve `/oidc/.well-known/...`); Entra-direct is a
- *     follow-on M1 Phase 2 task.
- *   - `persistence` on either flavor — for M2M the kernel doesn't cache
- *     (re-issuing is cheap; M2M has no refresh token). For U2M, custom
- *     persistence requires the kernel to expose `AuthConfig::External`
- *     (M1 Phase 2 task). The kernel-internal disk cache works for the
- *     standard flow today.
+ *     direct flow. The kernel uses workspace-OIDC discovery (which works
+ *     against Azure workspaces too — they serve `/oidc/.well-known/...`)
+ *     and does not implement the Entra-direct scope-rewrite path.
+ *   - `persistence` on M2M → M2M tokens are not cached (re-issuing is
+ *     cheap; no refresh token).
+ *   - `persistence` on U2M → custom token store is a parity gap;
+ *     requires kernel-side `AuthConfig::External` plumbing. The kernel's
+ *     auto-disk-cache works for the standard flow today.
+ *
+ * Ambiguity:
+ *   - PAT path: rejects when OAuth fields (`oauthClientId` /
+ *     `oauthClientSecret`) are simultaneously set.
+ *   - OAuth path: rejects when `token` is set alongside OAuth fields.
  *
  * Throws:
- *   - `AuthenticationError` for missing required credentials.
+ *   - `AuthenticationError` for missing/blank required credentials.
  *   - `HiveDriverError` for unsupported auth modes / Azure-direct /
- *     custom persistence.
+ *     custom persistence / ambiguous combinations.
  */
 export function buildSeaConnectionOptions(options: ConnectionOptions): SeaNativeConnectionOptions {
   const { authType } = options as { authType?: string };
@@ -122,30 +137,44 @@ export function buildSeaConnectionOptions(options: ConnectionOptions): SeaNative
     httpPath: prependSlash(options.path),
   };
 
+  const oauth = options as {
+    oauthClientId?: string;
+    oauthClientSecret?: string;
+    azureTenantId?: string;
+    useDatabricksOAuthInAzure?: boolean;
+    persistence?: unknown;
+  };
+
   if (authType === undefined || authType === 'access-token') {
     const { token } = options as { token?: string };
-    if (typeof token !== 'string' || token.length === 0) {
+    if (typeof token !== 'string' || isBlankOrReserved(token)) {
       throw new AuthenticationError(
         'SEA backend: a non-empty PAT must be supplied via `token` when using `authType: \'access-token\'`.',
+      );
+    }
+    if (oauth.oauthClientId !== undefined || oauth.oauthClientSecret !== undefined) {
+      throw new HiveDriverError(
+        'SEA backend: cannot supply both `token` and `oauthClientId`/`oauthClientSecret` ' +
+          "on the same connection. Pick one: 'access-token' (PAT) uses `token`; " +
+          "'databricks-oauth' uses the OAuth fields.",
       );
     }
     return { ...base, authMode: 'Pat', token };
   }
 
   if (authType === 'databricks-oauth') {
-    const oauth = options as {
-      oauthClientId?: string;
-      oauthClientSecret?: string;
-      azureTenantId?: string;
-      useDatabricksOAuthInAzure?: boolean;
-      persistence?: unknown;
-    };
+    if ((options as { token?: string }).token !== undefined) {
+      throw new HiveDriverError(
+        "SEA backend: cannot supply `token` alongside `authType: 'databricks-oauth'`. " +
+          "Use `authType: 'access-token'` for PAT, or omit `token` to use OAuth.",
+      );
+    }
 
     if (oauth.azureTenantId !== undefined || oauth.useDatabricksOAuthInAzure === true) {
       throw new HiveDriverError(
         'SEA backend: Azure-direct OAuth (azureTenantId / useDatabricksOAuthInAzure) ' +
-          'is a later M1 task; the kernel uses workspace-OIDC discovery today, ' +
-          'which works against Azure workspaces with no extra options.',
+          'is not supported. The workspace-OIDC discovery path handles Azure workspaces ' +
+          'today without these options.',
       );
     }
 
@@ -156,7 +185,7 @@ export function buildSeaConnectionOptions(options: ConnectionOptions): SeaNative
       if (oauth.persistence !== undefined) {
         throw new HiveDriverError(
           'SEA backend: `persistence` (custom OAuth token store) is not yet wired through ' +
-            'to the kernel — requires `AuthConfig::External` plumbing planned for M1 Phase 2. ' +
+            'to the kernel — requires `AuthConfig::External` plumbing. ' +
             'Today the kernel auto-persists U2M tokens to ' +
             '`~/.config/databricks-sql-kernel/oauth/` which works for the standard flow; ' +
             "the JS-supplied hook (matching thrift's `OAuthPersistence` interface) lands " +
@@ -171,12 +200,14 @@ export function buildSeaConnectionOptions(options: ConnectionOptions): SeaNative
     }
 
     // M2M.
-    if (typeof oauth.oauthClientId !== 'string' || oauth.oauthClientId.length === 0) {
-      throw new AuthenticationError('SEA backend: `oauthClientId` is required for OAuth M2M.');
-    }
-    if (typeof oauth.oauthClientSecret !== 'string' || oauth.oauthClientSecret.length === 0) {
+    if (typeof oauth.oauthClientId !== 'string' || isBlankOrReserved(oauth.oauthClientId)) {
       throw new AuthenticationError(
-        'SEA backend: `oauthClientSecret` must be a non-empty string for OAuth M2M.',
+        'SEA backend: `oauthClientId` is required (non-empty, non-whitespace) for OAuth M2M.',
+      );
+    }
+    if (typeof oauth.oauthClientSecret !== 'string' || isBlankOrReserved(oauth.oauthClientSecret)) {
+      throw new AuthenticationError(
+        'SEA backend: `oauthClientSecret` must be a non-empty non-whitespace string for OAuth M2M.',
       );
     }
     if (oauth.persistence !== undefined) {
@@ -195,7 +226,7 @@ export function buildSeaConnectionOptions(options: ConnectionOptions): SeaNative
 
   throw new HiveDriverError(
     `SEA backend: unsupported auth mode '${authType}'. ` +
-      `Supported modes today: 'access-token' (PAT), 'databricks-oauth' (M2M + U2M). ` +
-      `Other modes (token-provider, external-token, static-token, custom) are M1+ follow-ups.`,
+      "Supported modes on the SEA backend today: 'access-token' (PAT) and 'databricks-oauth' " +
+      '(M2M with oauthClientId+oauthClientSecret, or U2M with neither).',
   );
 }
