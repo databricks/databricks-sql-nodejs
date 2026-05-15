@@ -79,7 +79,7 @@ describe('SeaAuth + SeaBackend — OAuth U2M auth flow', () => {
 
       expect(() => buildSeaConnectionOptions(opts)).to.throw(
         HiveDriverError,
-        /Azure-direct OAuth.*later M1 task/,
+        /Azure-direct OAuth.*is not supported/,
       );
     });
 
@@ -93,11 +93,11 @@ describe('SeaAuth + SeaBackend — OAuth U2M auth flow', () => {
 
       expect(() => buildSeaConnectionOptions(opts)).to.throw(
         HiveDriverError,
-        /Azure-direct OAuth.*later M1 task/,
+        /Azure-direct OAuth.*is not supported/,
       );
     });
 
-    it('rejects a `persistence` hook on U2M with the AuthConfig::External M1-Phase-2 message', () => {
+    it('rejects a `persistence` hook on U2M citing the AuthConfig::External kernel-plumbing gap', () => {
       const opts: ConnectionOptions = {
         host: 'example.cloud.databricks.com',
         path: '/sql/1.0/warehouses/abc',
@@ -110,7 +110,7 @@ describe('SeaAuth + SeaBackend — OAuth U2M auth flow', () => {
 
       expect(() => buildSeaConnectionOptions(opts)).to.throw(
         HiveDriverError,
-        /AuthConfig::External.*plumbing planned for M1 Phase 2/,
+        /AuthConfig::External.*plumbing/,
       );
     });
   });

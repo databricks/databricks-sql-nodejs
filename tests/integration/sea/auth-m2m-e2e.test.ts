@@ -14,6 +14,7 @@
 
 import { expect } from 'chai';
 import { DBSQLClient } from '../../../lib';
+import AuthenticationError from '../../../lib/errors/AuthenticationError';
 
 /**
  * sea-auth M1 OAuth M2M end-to-end:
@@ -49,7 +50,17 @@ describe('sea-auth e2e — OAuth M2M through DBSQLClient ↔ SeaBackend ↔ napi
   this.timeout(120_000);
 
   before(function gate() {
-    if (!host || !path || !oauthClientId || !oauthClientSecret) {
+    // Reject not just absent env vars but also literal `'undefined'` /
+    // `'null'` / whitespace-only values from buggy shell exports — these
+    // would otherwise reach the workspace as bogus creds and yield an
+    // `invalid_client` indistinguishable from a real SP-not-registered
+    // issue.
+    const looksReal = (s: string | undefined): s is string => {
+      if (typeof s !== 'string') return false;
+      const t = s.trim();
+      return t.length > 0 && t !== 'undefined' && t !== 'null';
+    };
+    if (!looksReal(host) || !looksReal(path) || !looksReal(oauthClientId) || !looksReal(oauthClientSecret)) {
       // eslint-disable-next-line no-invalid-this
       this.skip();
     }
@@ -74,6 +85,34 @@ describe('sea-auth e2e — OAuth M2M through DBSQLClient ↔ SeaBackend ↔ napi
 
     const status = await session.close();
     expect(status.isSuccess).to.equal(true);
+
+    await client.close();
+  });
+
+  // Negative path — proves the kernel-side OAuth error path is intact
+  // and surfaces as the typed `AuthenticationError` (DA-F1 + DA-F6).
+  // Distinguishes "creds wrong" (this test passes with bogus secret)
+  // from "all code broken" (this test fails with a non-AuthenticationError).
+  it('rejects with AuthenticationError when oauthClientSecret is deliberately wrong', async () => {
+    const client = new DBSQLClient();
+
+    await client.connect({
+      host: host as string,
+      path: path as string,
+      authType: 'databricks-oauth',
+      oauthClientId: oauthClientId as string,
+      oauthClientSecret: 'definitely-not-the-real-secret-deadbeef',
+      useSEA: true,
+    });
+
+    let caught: unknown;
+    try {
+      await client.openSession();
+    } catch (e) {
+      caught = e;
+    }
+    expect(caught).to.be.instanceOf(AuthenticationError);
+    expect((caught as Error).message).to.match(/invalid_client/i);
 
     await client.close();
   });

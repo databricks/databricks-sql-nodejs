@@ -110,7 +110,7 @@ describe('SeaAuth + SeaBackend — OAuth M2M auth flow', () => {
 
       expect(() => buildSeaConnectionOptions(opts)).to.throw(
         HiveDriverError,
-        /Azure-direct OAuth.*later M1 task/,
+        /Azure-direct OAuth.*is not supported/,
       );
     });
 
@@ -126,7 +126,7 @@ describe('SeaAuth + SeaBackend — OAuth M2M auth flow', () => {
 
       expect(() => buildSeaConnectionOptions(opts)).to.throw(
         HiveDriverError,
-        /Azure-direct OAuth.*later M1 task/,
+        /Azure-direct OAuth.*is not supported/,
       );
     });
 
