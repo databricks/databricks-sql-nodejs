@@ -15,9 +15,10 @@
 //! `databricks-sea-native` — napi-rs binding crate for the Databricks
 //! SQL Node.js driver's SEA (Statement Execution API) path.
 //!
-//! Round 1b scaffold: module skeletons + a single working `version()`
-//! `#[napi]` function that proves the binding loads end-to-end. Round 2
-//! adds `Database::open` / `Statement::execute` / fetch / cancel.
+//! Round 2 surface: `Database.open` → `Connection.execute_statement`
+//! → `Statement.fetch_next_batch` / `schema` / `cancel` / `close`.
+//! Results cross the FFI as Arrow IPC bytes (see `result.rs`); the
+//! TS adapter decodes them via `apache-arrow`.
 
 #![deny(unsafe_op_in_unsafe_fn)]
 
@@ -31,12 +32,12 @@ pub(crate) mod logger;
 pub(crate) mod result;
 pub(crate) mod runtime;
 pub(crate) mod statement;
+pub(crate) mod util;
 
 /// Returns the native binding's crate version (`CARGO_PKG_VERSION`).
 ///
-/// Acts as the round-1b smoke test: a JS `require()` of the `.node`
-/// artifact that successfully calls `version()` proves the binding's
-/// build + load + dispatch path is wired correctly.
+/// Originally the round-1b smoke test; kept as a cheap "is the binding
+/// loaded?" probe for the JS-side loader's structured diagnostics.
 #[napi]
 pub fn version() -> String {
     env!("CARGO_PKG_VERSION").to_string()

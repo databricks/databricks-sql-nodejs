@@ -35,8 +35,9 @@ napi-derive = "2"
 databricks-sql-kernel = { path = "../../../../databricks-sql-kernel-sea-WT/async-public-api" }
 
 # Tokio is a transitive dep via the kernel and via napi's `async` feature;
-# declared explicitly so we can name `tokio::runtime::Handle` directly.
-tokio = { version = "1", default-features = false, features = ["rt"] }
+# declared explicitly so we can name `tokio::runtime::Handle` and
+# `tokio::sync::Mutex` directly.
+tokio = { version = "1", default-features = false, features = ["rt", "sync"] }
 
 # Lazy `OnceCell` for the captured tokio Handle.
 once_cell = "1"
@@ -45,6 +46,20 @@ once_cell = "1"
 # in Round 3 via the ThreadsafeFunction logger bridge.
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", default-features = false, features = ["fmt"] }
+
+# `catch_unwind` wrapper around async futures (pattern #8 of the
+# napi-rs patterns doc). Transitively a dep of the kernel already, but
+# declared here so we can `use FutureExt;` directly.
+futures = { version = "0.3", default-features = false, features = ["std"] }
+
+# Arrow IPC encoding of result batches across the napi boundary.
+# `arrow-array` / `arrow-schema` come in via the kernel's public types
+# (`RecordBatch`, `SchemaRef`); `arrow-ipc` is for the `StreamWriter`
+# we use on the encode side. Versions kept in lock-step with the
+# kernel's `arrow-*` deps to avoid two arrow versions in the dep graph.
+arrow-array = "57"
+arrow-schema = "57"
+arrow-ipc = "57"
 
 [build-dependencies]
 napi-build = "2"

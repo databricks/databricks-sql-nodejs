@@ -18,23 +18,21 @@ import { version, getSeaNative } from '../../lib/sea/SeaNativeLoader';
 describe('SEA native binding — smoke test', () => {
   it('loads the .node artifact and returns version()', () => {
     const v = version();
-    // Round 1b: the native crate is at 0.1.0. Match the shape rather
-    // than the literal so the test does not need updating on every
-    // version bump.
     expect(v).to.match(/^\d+\.\d+\.\d+$/);
   });
 
-  it('exposes the Database opaque class', () => {
-    const binding = getSeaNative() as unknown as { Database: new (opts: object) => object };
-    expect(typeof binding.Database).to.equal('function');
-    const db = new binding.Database({});
-    expect(db).to.be.an('object');
+  it('exposes the openSession factory function', () => {
+    const binding = getSeaNative() as unknown as { openSession: Function };
+    expect(typeof binding.openSession).to.equal('function');
   });
 
   it('exposes the Connection opaque class', () => {
-    const binding = getSeaNative() as unknown as { Connection: new (opts: object) => object };
+    const binding = getSeaNative() as unknown as { Connection: Function };
     expect(typeof binding.Connection).to.equal('function');
-    const conn = new binding.Connection({});
-    expect(conn).to.be.an('object');
+  });
+
+  it('exposes the Statement opaque class', () => {
+    const binding = getSeaNative() as unknown as { Statement: Function };
+    expect(typeof binding.Statement).to.equal('function');
   });
 });
