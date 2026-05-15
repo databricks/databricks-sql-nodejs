@@ -232,14 +232,14 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
     // doesn't ship in the public `.d.ts`. Mirrors Python's `kwargs.get("use_sea")`
     // pattern (see databricks-sql-python/src/databricks/sql/session.py).
     const internalOptions = options as ConnectionOptions & InternalConnectionOptions;
-
     if (internalOptions.useSEA) {
       // The SEA backend authenticates inside the native binding; the
       // Thrift auth/connection providers are never read on this path, so
       // we don't build them (avoids validating the PAT twice and
       // constructing a throwaway OAuth provider for an OAuth+useSEA call).
+      // The backend reads logger/config off the IClientContext it's given.
       this.logger.log(LogLevel.info, 'Connecting via the SEA (native) backend');
-      this.backend = new SeaBackend(undefined, this.logger);
+      this.backend = new SeaBackend({ context: this });
     } else {
       this.authProvider = this.createAuthProvider(options, authProvider);
       this.connectionProvider = this.createConnectionProvider(options);

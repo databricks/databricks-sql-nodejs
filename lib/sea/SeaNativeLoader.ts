@@ -46,6 +46,23 @@ export type SeaArrowSchema = NativeArrowSchema;
 export type SeaConnection = NativeConnection;
 export type SeaStatement = NativeStatement;
 
+// Back-compat aliases for the downstream SEA stack branches that landed
+// against the pre-rename loader. The merged kernel (@databricks/sql-kernel)
+// moved per-statement catalog/schema/sessionConfig to session-level
+// `openSession`, so `ExecuteOptions` no longer exists on the binding;
+// `SeaExecuteOptions` is kept as a deprecated shim describing the old
+// per-statement shape so the stack keeps compiling. Per-statement options
+// are now applied at session creation — see native/sea/README.md.
+export type SeaNativeConnection = NativeConnection;
+export type SeaNativeStatement = NativeStatement;
+export type SeaNativeConnectionOptions = NativeConnectionOptions;
+/** @deprecated per-statement options moved to session-level `openSession`. */
+export interface SeaExecuteOptions {
+  initialCatalog?: string;
+  initialSchema?: string;
+  sessionConfig?: Record<string, string>;
+}
+
 /**
  * The full native binding surface, derived from the generated module
  * so it can never drift from the `.d.ts` contract: when the kernel
