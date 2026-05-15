@@ -12,7 +12,25 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-//! ResultStream wrapper.
+//! Arrow IPC payload types crossed across the napi boundary.
 //!
-//! Round 2 work. Empty in Round 1b — see `statement.rs` for the same
-//! reasoning.
+//! Per sea-design.md Layer 2: "The binding ships the batch across the
+//! FFI as Arrow IPC bytes. The adapter converts those bytes into
+//! JavaScript rows…" — so the napi boundary is intentionally narrow:
+//! one envelope per batch, one envelope per schema.
+
+use napi::bindgen_prelude::Buffer;
+
+/// A single Arrow IPC stream payload encoding one record batch (plus
+/// the schema header so the JS-side reader is stateless).
+#[napi(object)]
+pub struct ArrowBatch {
+    pub ipc_bytes: Buffer,
+}
+
+/// An Arrow IPC stream payload encoding just the result schema (no
+/// record-batch messages). Returned by `Statement.schema()`.
+#[napi(object)]
+pub struct ArrowSchema {
+    pub ipc_bytes: Buffer,
+}

@@ -310,8 +310,9 @@ if (!nativeBinding) {
   throw new Error(`Failed to load native binding`)
 }
 
-const { Connection, Database, version } = nativeBinding
+const { Connection, openSession, Statement, version } = nativeBinding
 
 module.exports.Connection = Connection
-module.exports.Database = Database
+module.exports.openSession = openSession
+module.exports.Statement = Statement
 module.exports.version = version
