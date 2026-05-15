@@ -96,12 +96,13 @@ export interface SeaSessionBackendOptions {
  * `initialSchema`) are emulated by forwarding the same defaults with
  * every `executeStatement` call. Per-statement overrides on
  * `ExecuteStatementOptions` are reserved for M1; M0 carries only the
- * defaults captured at session-open time.
+ * defaults captured at session-open time plus the `useCloudFetch`
+ * boolean projected onto `sessionConfig.use_cloud_fetch` for the
+ * kernel.
  */
 export default class SeaSessionBackend implements ISessionBackend {
   private readonly connection: SeaNativeConnection;
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   private readonly context: IClientContext;
 
   private readonly defaults: SeaSessionDefaults;
@@ -128,20 +129,16 @@ export default class SeaSessionBackend implements ISessionBackend {
   /**
    * Execute a SQL statement through the napi binding. Merges the
    * session-level defaults (`initialCatalog` / `initialSchema` /
-   * `sessionConfig`) with any per-call overrides — per-call overrides
-   * win when both are present.
+   * `sessionConfig`) with the per-call `useCloudFetch` override.
    *
-   * M0 intentionally ignores `queryTimeout`, `maxRows`, `useCloudFetch`,
-   * `useLZ4Compression`, `namedParameters`, `ordinalParameters`,
-   * `stagingAllowedLocalPath`, and `queryTags` — those defer to M1 per
-   * the execution plan. The Thrift backend remains the path for
-   * consumers that need any of those today.
+   * M0 intentionally rejects `queryTimeout`, `namedParameters`, and
+   * `ordinalParameters` with explicit deferred-to-M1 errors. The Thrift
+   * backend remains the path for consumers that need any of those today.
    */
   public async executeStatement(statement: string, options: ExecuteStatementOptions): Promise<IOperationBackend> {
     this.failIfClosed();
 
     // M0 surfaces a clear error rather than silently dropping M1-only knobs.
-    // Tracking via the execution plan's M1 scope.
     if (options.namedParameters !== undefined || options.ordinalParameters !== undefined) {
       throw new HiveDriverError(
         'SEA executeStatement: query parameters are not supported in M0 (deferred to M1)',
@@ -153,10 +150,19 @@ export default class SeaSessionBackend implements ISessionBackend {
       );
     }
 
+    // Merge session-level sessionConfig with per-statement useCloudFetch.
+    // The kernel accepts only string-valued conf values; booleans are
+    // String()'d to "true"/"false" matching the existing Thrift conf
+    // convention.
+    const sessionConfig: Record<string, string> = { ...(this.defaults.sessionConfig ?? {}) };
+    if (options.useCloudFetch !== undefined) {
+      sessionConfig.use_cloud_fetch = String(options.useCloudFetch);
+    }
+
     const executeOptions: SeaExecuteOptions = {
       initialCatalog: this.defaults.initialCatalog,
       initialSchema: this.defaults.initialSchema,
-      sessionConfig: this.defaults.sessionConfig,
+      sessionConfig: Object.keys(sessionConfig).length > 0 ? sessionConfig : undefined,
     };
 
     let nativeStatement;
