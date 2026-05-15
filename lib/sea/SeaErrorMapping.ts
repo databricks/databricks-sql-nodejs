@@ -52,31 +52,52 @@ export type KernelErrorCode =
   | 'SqlError';
 
 /**
- * An `Error` with a preserved SQLSTATE on the `sqlState` property. Used as the
- * narrowed return type of {@link mapKernelErrorToJsError} so callers that need
- * the SQLSTATE can `error.sqlState` without an `any` cast.
+ * Optional metadata fields the kernel may attach via the
+ * `__databricks_error__:` envelope (per `native/sea/src/error.rs:50-89`).
+ *
+ * `errorCode` is namespaced under `kernelMetadata` rather than placed at
+ * the top level because two existing JS-side error classes
+ * (`OperationStateError`, `RetryError`) already declare a top-level
+ * `errorCode: enum` field, and `DBSQLOperation.ts:209` switches on it
+ * (`err.errorCode === OperationStateErrorCode.Canceled`). Top-level
+ * defineProperty would clobber that enum with a kernel string and break
+ * cancel/close detection.
  */
-export interface ErrorWithSqlState extends Error {
-  sqlState?: string;
+export interface KernelMetadata {
+  errorCode?: string;
+  vendorCode?: number;
+  httpStatus?: number;
+  retryable?: boolean;
+  queryId?: string;
 }
 
 /**
- * Attach the kernel's SQLSTATE to the JS error object via the `sqlState` property.
- * The driver has no pre-existing `sqlState` convention (no other error class
- * sets it today) so this single helper defines it for the SEA path.
+ * An `Error` carrying optional SEA-side kernel context. `sqlState` is
+ * exposed at the top level (no collision in the existing driver error
+ * tree); the remaining envelope fields live under a `kernelMetadata`
+ * namespace to avoid clobbering pre-existing `errorCode` semantics on
+ * `OperationStateError` / `RetryError`.
  */
-function attachSqlState(error: ErrorWithSqlState, sqlstate?: string): ErrorWithSqlState {
-  if (sqlstate !== undefined) {
-    // Using Object.defineProperty so the property is non-enumerable but still
-    // visible via direct access — matches the way Node attaches `.code` to system errors.
-    Object.defineProperty(error, 'sqlState', {
-      value: sqlstate,
-      writable: true,
-      enumerable: false,
-      configurable: true,
-    });
-  }
-  return error;
+export interface ErrorWithSqlState extends Error {
+  sqlState?: string;
+  kernelMetadata?: KernelMetadata;
+}
+
+/**
+ * Attach a non-enumerable own-property to the error. The shape matches
+ * Node's convention for attaching `.code` to system errors:
+ * non-enumerable (clean `JSON.stringify`) but readable via direct
+ * property access and `Object.getOwnPropertyDescriptor`. One helper for
+ * both the top-level `sqlState` and the namespaced `kernelMetadata`
+ * object so the `defineProperty` flags live in exactly one place.
+ */
+function defineErrorMetadata<K extends string, V>(error: Error, key: K, value: V): void {
+  Object.defineProperty(error, key, {
+    value,
+    writable: true,
+    enumerable: false,
+    configurable: true,
+  });
 }
 
 /**
@@ -146,37 +167,37 @@ export function mapKernelErrorToJsError(kErr: KernelErrorShape): ErrorWithSqlSta
       break;
   }
 
-  return attachSqlState(error, sqlstate);
+  if (sqlstate !== undefined) {
+    defineErrorMetadata(error, 'sqlState', sqlstate);
+  }
+  return error;
 }
 
 /**
- * Optional metadata fields the kernel may attach via the
- * `__databricks_error__:` envelope (per `native/sea/src/error.rs:50-89`).
- * Attached to the decoded JS error as non-enumerable own-properties so
- * callers can read them (e.g. `error.httpStatus`) without polluting
- * `JSON.stringify(error)` output. Matches the way Node attaches
- * `.code` to system errors and the way `attachSqlState` works above.
+ * Build a {@link KernelMetadata} object from a parsed envelope, applying
+ * per-field type validation. A kernel-side bug that emits, say,
+ * `retryable: "true"` (string) instead of `true` (boolean) would
+ * otherwise leak the wrong-typed value through to JS callers; the
+ * type-guard discards the malformed field rather than passing it through.
  */
-interface KernelErrorMetadata {
-  errorCode?: string;
-  vendorCode?: number;
-  httpStatus?: number;
-  retryable?: boolean;
-  queryId?: string;
-}
-
-function attachMetadata(error: Error, meta: KernelErrorMetadata): void {
-  for (const key of ['errorCode', 'vendorCode', 'httpStatus', 'retryable', 'queryId'] as const) {
-    const value = meta[key];
-    if (value !== undefined) {
-      Object.defineProperty(error, key, {
-        value,
-        writable: true,
-        enumerable: false,
-        configurable: true,
-      });
-    }
+function buildKernelMetadata(parsed: Record<string, unknown>): KernelMetadata {
+  const meta: KernelMetadata = {};
+  if (typeof parsed.errorCode === 'string') {
+    meta.errorCode = parsed.errorCode;
   }
+  if (typeof parsed.vendorCode === 'number') {
+    meta.vendorCode = parsed.vendorCode;
+  }
+  if (typeof parsed.httpStatus === 'number') {
+    meta.httpStatus = parsed.httpStatus;
+  }
+  if (typeof parsed.retryable === 'boolean') {
+    meta.retryable = parsed.retryable;
+  }
+  if (typeof parsed.queryId === 'string') {
+    meta.queryId = parsed.queryId;
+  }
+  return meta;
 }
 
 /**
@@ -186,11 +207,12 @@ function attachMetadata(error: Error, meta: KernelErrorMetadata): void {
  *  - Structured kernel error: `Error.message` starts with
  *    {@link ERROR_SENTINEL} followed by a JSON envelope. We strip the
  *    sentinel, parse the JSON, route the {@link KernelErrorShape}
- *    through {@link mapKernelErrorToJsError}, and attach all remaining
- *    envelope fields (`errorCode`, `vendorCode`, `httpStatus`,
- *    `retryable`, `queryId`) as non-enumerable own-properties on the
- *    returned error. Thrift parity demand: thrift errors carry these
- *    fields, so SEA errors must too.
+ *    through {@link mapKernelErrorToJsError}, and attach the remaining
+ *    envelope fields under a single non-enumerable `kernelMetadata`
+ *    namespace. Namespacing avoids the collision with
+ *    `OperationStateError.errorCode` (an enum) and `RetryError.errorCode`
+ *    (an enum), each of which is already switched on at the JS layer
+ *    (see `DBSQLOperation.ts:209`).
  *  - Binding-side error (e.g. `napi::Error::new(InvalidArg, "openSession:
  *    \`token\` is required for the requested auth mode")` produced by
  *    the binding's own validation): returned unchanged. These don't
@@ -229,28 +251,25 @@ export function decodeNapiKernelError(err: unknown): Error {
     return err;
   }
 
-  const kErr = parsed as {
-    code: string;
-    message: string;
-    sqlState?: string;
-    errorCode?: string;
-    vendorCode?: number;
-    httpStatus?: number;
-    retryable?: boolean;
-    queryId?: string;
-  };
+  const envelope = parsed as Record<string, unknown>;
+  const code = envelope.code as string;
+  const msg = envelope.message as string;
+  const sqlState = typeof envelope.sqlState === 'string' ? envelope.sqlState : undefined;
 
-  const jsErr = mapKernelErrorToJsError({
-    code: kErr.code,
-    message: kErr.message,
-    sqlstate: kErr.sqlState,
-  });
-  attachMetadata(jsErr, {
-    errorCode: kErr.errorCode,
-    vendorCode: kErr.vendorCode,
-    httpStatus: kErr.httpStatus,
-    retryable: kErr.retryable,
-    queryId: kErr.queryId,
-  });
+  const jsErr = mapKernelErrorToJsError({ code, message: msg, sqlstate: sqlState });
+
+  const meta = buildKernelMetadata(envelope);
+  // Skip the namespace attachment entirely when no fields validated
+  // through — keeps `err.kernelMetadata` absent rather than `{}` for
+  // simple envelopes (the common case).
+  if (
+    meta.errorCode !== undefined ||
+    meta.vendorCode !== undefined ||
+    meta.httpStatus !== undefined ||
+    meta.retryable !== undefined ||
+    meta.queryId !== undefined
+  ) {
+    defineErrorMetadata(jsErr, 'kernelMetadata', meta);
+  }
   return jsErr;
 }
