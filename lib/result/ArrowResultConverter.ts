@@ -23,6 +23,143 @@ const { isArrowBigNumSymbol, bigNumToBigInt } = arrowUtils;
 type ArrowSchema = Schema<TypeMap>;
 type ArrowSchemaField = Field<DataType<Type, TypeMap>>;
 
+/**
+ * Metadata key carrying the original Arrow `Duration` time unit on
+ * fields that were rewritten to `Int64` by the SEA IPC pre-processor
+ * (`lib/sea/SeaArrowIpcDurationFix.ts`). We re-declare the constant
+ * here (rather than importing it) so the converter has no compile-time
+ * dependency on the SEA module — it's reused unchanged by the
+ * thrift-path which has no SEA awareness.
+ */
+const DURATION_UNIT_METADATA_KEY = 'databricks.arrow.duration_unit';
+
+/**
+ * Format an Arrow `Interval[YearMonth]` or `Interval[DayTime]` value
+ * into the canonical thrift string the JDBC/ODBC server emits:
+ *   YEAR-MONTH → `"Y-M"`         (e.g. 1 year 2 months  → `"1-2"`)
+ *   DAY-TIME   → `"D HH:mm:ss.fffffffff"`
+ *                                (e.g. 1 day 02:03:04   → `"1 02:03:04.000000000"`)
+ *
+ * Arrow surfaces these as `Int32Array(2)` via the `GetVisitor`
+ * (`apache-arrow/visitor/get.js:177-185`):
+ *   YEAR-MONTH: `[years, months]` (years/months derived from a single
+ *               int32 holding total months)
+ *   DAY-TIME:   `[days, milliseconds]` (legacy two-int32 form)
+ *
+ * Negative intervals: the FULL interval is emitted with a leading `-`
+ * (Spark convention), and individual fields are unsigned. We mirror
+ * Spark's display.
+ */
+function formatArrowInterval(value: any, valueType: any): string {
+  // `value` is an Int32Array of length 2.
+  const a = Number(value[0]);
+  const b = Number(value[1]);
+  // unit 0 = YEAR_MONTH, unit 1 = DAY_TIME, unit 2 = MONTH_DAY_NANO
+  const unit = valueType?.unit;
+  if (unit === 0) {
+    return formatYearMonth(a, b);
+  }
+  // DAY_TIME: a = days, b = milliseconds (within the day, can be ≥0 or <0)
+  // We re-normalise: total milliseconds = a * 86_400_000 + b, then split into
+  // days, hours, minutes, seconds, nanoseconds (nanoseconds is always 0
+  // because the legacy IntervalDayTime carries only millisecond precision).
+  const totalMs = BigInt(a) * BigInt(86_400_000) + BigInt(b);
+  return formatDayTimeFromTotal(totalMs * BigInt(1_000_000) /* → ns */, 'NANOSECOND');
+}
+
+/**
+ * Format the (years, months) decomposition into `"Y-M"` (or `"-Y-M"`
+ * for negative intervals). Arrow's `getIntervalYearMonth` (in
+ * `apache-arrow/visitor/get.js:179`) decomposes a signed total-months
+ * int32 via integer truncation, so years and months always share the
+ * same sign. We render the absolute values with a single leading `-`
+ * to match the Spark display format used on the thrift path.
+ */
+function formatYearMonth(years: number, months: number): string {
+  const total = years * 12 + months;
+  if (total < 0) {
+    const abs = -total;
+    const y = Math.trunc(abs / 12);
+    const m = abs % 12;
+    return `-${y}-${m}`;
+  }
+  return `${years}-${months}`;
+}
+
+/**
+ * Format an Arrow `Duration` value (rewritten by the SEA IPC
+ * pre-processor to `Int64`) into the thrift INTERVAL DAY-TIME string.
+ *
+ * @param value     the duration value as `bigint` (signed nanos/micros/
+ *                  millis/seconds depending on `unit`)
+ * @param unit      one of `SECOND` / `MILLISECOND` / `MICROSECOND` /
+ *                  `NANOSECOND` (the original Arrow time unit, captured
+ *                  by `SeaArrowIpcDurationFix.ts`)
+ */
+function formatDurationToIntervalDayTime(value: bigint | number, unit: string): string {
+  const bi = typeof value === 'bigint' ? value : BigInt(value);
+  const nanos = toNanoseconds(bi, unit);
+  return formatDayTimeFromTotal(nanos, unit);
+}
+
+/**
+ * Scale a duration value to nanoseconds based on its unit.
+ *
+ *   SECOND      → ×1_000_000_000
+ *   MILLISECOND → ×    1_000_000
+ *   MICROSECOND → ×        1_000
+ *   NANOSECOND  → ×            1
+ */
+function toNanoseconds(value: bigint, unit: string): bigint {
+  switch (unit) {
+    case 'SECOND':
+      return value * BigInt(1_000_000_000);
+    case 'MILLISECOND':
+      return value * BigInt(1_000_000);
+    case 'MICROSECOND':
+      return value * BigInt(1_000);
+    case 'NANOSECOND':
+    default:
+      return value;
+  }
+}
+
+/**
+ * Format a signed total-nanoseconds value as `"D HH:mm:ss.fffffffff"`.
+ * Always emits 9 fractional digits to match the thrift driver's wire
+ * format (`"1 02:03:04.000000000"` — 9 digits regardless of the
+ * server-side storage precision). Negative values get a single
+ * leading `-`.
+ *
+ * The `unit` parameter is currently unused for formatting (the value
+ * is already in nanoseconds by the time we get here) but is retained
+ * for future use if a unit-aware precision is ever needed.
+ */
+function formatDayTimeFromTotal(totalNanos: bigint, _unit: string): string {
+  const ZERO = BigInt(0);
+  const sign = totalNanos < ZERO ? '-' : '';
+  const abs = totalNanos < ZERO ? -totalNanos : totalNanos;
+
+  const NS_PER_SEC = BigInt(1_000_000_000);
+  const NS_PER_MIN = NS_PER_SEC * BigInt(60);
+  const NS_PER_HOUR = NS_PER_MIN * BigInt(60);
+  const NS_PER_DAY = NS_PER_HOUR * BigInt(24);
+
+  const days = abs / NS_PER_DAY;
+  let rem = abs % NS_PER_DAY;
+  const hours = rem / NS_PER_HOUR;
+  rem %= NS_PER_HOUR;
+  const minutes = rem / NS_PER_MIN;
+  rem %= NS_PER_MIN;
+  const seconds = rem / NS_PER_SEC;
+  const subSeconds = rem % NS_PER_SEC;
+
+  const pad2 = (n: bigint): string => n.toString().padStart(2, '0');
+  const fraction = `.${subSeconds.toString().padStart(9, '0')}`;
+
+  return `${sign}${days.toString()} ${pad2(hours)}:${pad2(minutes)}:${pad2(seconds)}${fraction}`;
+}
+
 export default class ArrowResultConverter implements IResultsProvider<Array<any>> {
   private readonly context: IClientContext;
 
@@ -142,37 +279,52 @@ export default class ArrowResultConverter implements IResultsProvider<Array<any>
   private getRows(schema: ArrowSchema, rows: Array<StructRow | MapRow>): Array<any> {
     return rows.map((row) => {
       // First, convert native Arrow values to corresponding plain JS objects
-      const record = this.convertArrowTypes(row, undefined, schema.fields);
+      const record = this.convertArrowTypes(row, undefined, schema.fields, undefined);
       // Second, cast all the values to original Thrift types
       return this.convertThriftTypes(record);
     });
   }
 
-  private convertArrowTypes(value: any, valueType: DataType | undefined, fields: Array<ArrowSchemaField> = []): any {
+  private convertArrowTypes(
+    value: any,
+    valueType: DataType | undefined,
+    fields: Array<ArrowSchemaField> = [],
+    field?: ArrowSchemaField,
+  ): any {
     if (value === null) {
       return value;
     }
 
     const fieldsMap: Record<string, ArrowSchemaField> = {};
-    for (const field of fields) {
-      fieldsMap[field.name] = field;
+    for (const f of fields) {
+      fieldsMap[f.name] = f;
     }
 
     // Convert structures to plain JS object and process all its fields recursively
     if (value instanceof StructRow) {
       const result = value.toJSON();
       for (const key of Object.keys(result)) {
-        const field: ArrowSchemaField | undefined = fieldsMap[key];
-        result[key] = this.convertArrowTypes(result[key], field?.type, field?.type.children || []);
+        const childField: ArrowSchemaField | undefined = fieldsMap[key];
+        result[key] = this.convertArrowTypes(
+          result[key],
+          childField?.type,
+          childField?.type.children || [],
+          childField,
+        );
       }
       return result;
     }
     if (value instanceof MapRow) {
       const result = value.toJSON();
       // Map type consists of its key and value types. We need only value type here, key will be cast to string anyway
-      const field = fieldsMap.entries?.type.children.find((item) => item.name === 'value');
+      const valueField = fieldsMap.entries?.type.children.find((item) => item.name === 'value');
       for (const key of Object.keys(result)) {
-        result[key] = this.convertArrowTypes(result[key], field?.type, field?.type.children || []);
+        result[key] = this.convertArrowTypes(
+          result[key],
+          valueField?.type,
+          valueField?.type.children || [],
+          valueField,
+        );
       }
       return result;
     }
@@ -181,12 +333,26 @@ export default class ArrowResultConverter implements IResultsProvider<Array<any>
     if (value instanceof Vector) {
       const result = value.toJSON();
       // Array type contains the only child which defines a type of each array's element
-      const field = fieldsMap.element;
-      return result.map((item) => this.convertArrowTypes(item, field?.type, field?.type.children || []));
+      const elementField = fieldsMap.element;
+      return result.map((item) =>
+        this.convertArrowTypes(item, elementField?.type, elementField?.type.children || [], elementField),
+      );
     }
 
     if (DataType.isTimestamp(valueType)) {
       return new Date(value);
+    }
+
+    // INTERVAL — Spark/Databricks SEA emits two flavours: native Arrow
+    // `Interval[YearMonth]` / `Interval[DayTime]` (handled here) and
+    // `Duration` (transparently rewritten to `Int64` upstream by
+    // `SeaArrowIpcDurationFix.ts`; handled in the bigint/Int64 branch
+    // below). In every case we coerce to the canonical thrift string
+    // form so the SEA path is byte-identical with the thrift path:
+    //   YEAR-MONTH → `"Y-M"`
+    //   DAY-TIME   → `"D HH:mm:ss.fffffffff"`
+    if (DataType.isInterval(valueType)) {
+      return formatArrowInterval(value, valueType);
     }
 
     // Convert big number values to BigInt
@@ -196,16 +362,38 @@ export default class ArrowResultConverter implements IResultsProvider<Array<any>
       if (DataType.isDecimal(valueType)) {
         return Number(result) / 10 ** valueType.scale;
       }
+      // Duration columns rewritten to Int64 — detect via metadata.
+      const durationUnit = field?.metadata.get(DURATION_UNIT_METADATA_KEY);
+      if (durationUnit) {
+        return formatDurationToIntervalDayTime(result, durationUnit);
+      }
       return result;
     }
 
     // Convert binary data to Buffer
     if (value instanceof Uint8Array) {
+      // INTERVAL DAY-TIME / YEAR-MONTH that apache-arrow surfaced as
+      // an Int32Array (size 2). `Uint8Array.isInstanceOf` is true for
+      // every TypedArray subclass, so we have to check the parent type
+      // first. The `DataType.isInterval` branch above already handles
+      // the case where Arrow knew the field was an interval — this
+      // fallback covers schemas where the interval surfaced as bare
+      // bytes (defensive; not exercised in M0).
       return Buffer.from(value);
     }
 
+    // Bigint fallback — for raw bigints (not BigNum wrappers), the
+    // duration_unit metadata also gates the INTERVAL DAY-TIME format.
+    if (typeof value === 'bigint') {
+      const durationUnit = field?.metadata.get(DURATION_UNIT_METADATA_KEY);
+      if (durationUnit) {
+        return formatDurationToIntervalDayTime(value, durationUnit);
+      }
+      return Number(value);
+    }
+
     // Return other values as is
-    return typeof value === 'bigint' ? Number(value) : value;
+    return value;
   }
 
   private convertThriftTypes(record: Record<string, any>): any {
