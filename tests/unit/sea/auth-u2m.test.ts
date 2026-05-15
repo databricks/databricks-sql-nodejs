@@ -15,36 +15,9 @@
 import { expect } from 'chai';
 import SeaBackend from '../../../lib/sea/SeaBackend';
 import { buildSeaConnectionOptions } from '../../../lib/sea/SeaAuth';
-import { SeaNativeBinding } from '../../../lib/sea/SeaNativeLoader';
 import { ConnectionOptions } from '../../../lib/contracts/IDBSQLClient';
 import HiveDriverError from '../../../lib/errors/HiveDriverError';
-
-function makeFakeBinding() {
-  const calls: Array<{ method: string; args: unknown[] }> = [];
-
-  const fakeConnection = {
-    async executeStatement() {
-      throw new Error('not used in this test');
-    },
-    async close() {
-      calls.push({ method: 'connection.close', args: [] });
-    },
-  };
-
-  const binding: SeaNativeBinding = {
-    version() {
-      return 'fake-binding';
-    },
-    async openSession(opts: Parameters<SeaNativeBinding['openSession']>[0]) {
-      calls.push({ method: 'openSession', args: [opts] });
-      return fakeConnection as unknown;
-    },
-    Connection: function FakeConnection() {} as unknown as Function,
-    Statement: function FakeStatement() {} as unknown as Function,
-  };
-
-  return { binding, calls };
-}
+import { makeFakeBinding } from './_helpers/fakeBinding';
 
 describe('SeaAuth + SeaBackend — OAuth U2M auth flow', () => {
   describe('buildSeaConnectionOptions', () => {

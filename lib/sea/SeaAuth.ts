@@ -17,14 +17,6 @@ import AuthenticationError from '../errors/AuthenticationError';
 import HiveDriverError from '../errors/HiveDriverError';
 
 /**
- * Auth-mode discriminant value crossing the napi boundary. The string
- * literals are what napi-rs emits from the `#[napi(string_enum)] AuthMode`
- * enum at `native/sea/src/database.rs` — they MUST match the variant
- * names verbatim (`'Pat'`, `'OAuthM2m'`, `'OAuthU2m'`).
- */
-export type SeaAuthMode = 'Pat' | 'OAuthM2m' | 'OAuthU2m';
-
-/**
  * Default local listener port for the U2M authorization-code callback.
  * Hardcoded here so the override of the kernel default (8020) to the
  * thrift default (8030) is invariant for SEA callers — preserving parity
@@ -47,6 +39,15 @@ const U2M_DEFAULT_REDIRECT_PORT = 8030;
  * - `'OAuthU2m'`  → `oauthRedirectPort` overrides the kernel default;
  *                   everything else (client_id, scopes, callback timeout,
  *                   token_url_override) uses kernel defaults.
+ *
+ * The `authMode` string literals MUST match the napi-emitted `AuthMode`
+ * variant names verbatim (`'Pat'`, `'OAuthM2m'`, `'OAuthU2m'` — napi-rs's
+ * `#[napi(string_enum)]` without an explicit case option emits the
+ * Rust variant identifier as-is). We duplicate the values here instead
+ * of importing `AuthMode` from `native/sea/index.d.ts` because that
+ * file declares `AuthMode` as `export const enum`, which is
+ * incompatible with `isolatedModules` and a runtime-coupling hazard.
+ * The Rust source of truth lives at `native/sea/src/database.rs`.
  */
 export type SeaNativeConnectionOptions =
   | {
