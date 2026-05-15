@@ -27,6 +27,8 @@
  * forwards to the binding's `installLogger()` once that surface lands.
  */
 
+import type { SeaNativeConnectionOptions } from './SeaAuth';
+
 // The path is relative to this file at runtime (`dist/sea/SeaNativeLoader.js`)
 // resolving to `dist/sea/../../native/sea/index.js` once `tsc` has emitted
 // to `dist/`. We use a require-time path resolution because the napi
@@ -93,21 +95,14 @@ export interface SeaNativeBinding {
   version(): string;
   /**
    * Open a session over PAT, OAuth M2M, or OAuth U2M auth. Returns an
-   * opaque Connection. The discriminated payload mirrors the
-   * auto-generated `ConnectionOptions` in `native/sea/index.d.ts`; we
-   * keep the static type permissive (all fields optional except the
-   * discriminant) so the JS adapter layer's union narrows correctly
-   * without three overloads.
+   * opaque Connection. The discriminated `SeaNativeConnectionOptions`
+   * union from `SeaAuth` is the source of truth for the per-mode
+   * required fields, so the loader-seam enforces the same compile-time
+   * check the adapter applies — a caller can't bypass
+   * `buildSeaConnectionOptions` and pass, say, `{ authMode: 'Pat' }`
+   * with no token.
    */
-  openSession(opts: {
-    hostName: string;
-    httpPath: string;
-    authMode: 'Pat' | 'OAuthM2m' | 'OAuthU2m';
-    token?: string;
-    oauthClientId?: string;
-    oauthClientSecret?: string;
-    oauthRedirectPort?: number;
-  }): Promise<SeaNativeConnection>;
+  openSession(opts: SeaNativeConnectionOptions): Promise<SeaNativeConnection>;
   /** Opaque Connection class — instance methods on the binding-generated d.ts. */
   Connection: Function;
   /** Opaque Statement class — instance methods on the binding-generated d.ts. */

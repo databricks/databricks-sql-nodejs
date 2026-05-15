@@ -99,10 +99,8 @@ describe('SeaAuth — PAT auth options builder', () => {
         host: 'example.cloud.databricks.com',
         path: '/sql/1.0/warehouses/abc',
         authType: 'token-provider',
-        tokenProvider: { getToken: async () => 'tok' } as unknown as ConnectionOptions extends infer T
-          ? // eslint-disable-next-line @typescript-eslint/no-explicit-any
-            any
-          : never,
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        tokenProvider: { getToken: async () => 'tok' } as any,
       };
 
       expect(() => buildSeaConnectionOptions(opts)).to.throw(

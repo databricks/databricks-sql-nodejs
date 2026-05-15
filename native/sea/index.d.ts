@@ -22,11 +22,22 @@ export interface ExecuteOptions {
 /**
  * JS-visible auth-mode discriminant.
  *
- * Crosses the FFI as the string value (napi-rs string-enums emit the
- * Rust variant name verbatim on the JS side — `'Pat'`, `'OAuthM2m'`,
- * `'OAuthU2m'`). Keeping the discriminant explicit instead of inferring
- * it from "which Option is set" makes the napi-side validation
- * single-pass and the JS-side schema typed.
+ * Crosses the FFI as the variant name verbatim — napi-rs's
+ * `#[napi(string_enum)]` without an explicit case option emits the
+ * Rust variant identifier as-is, so this enum becomes
+ * `AuthMode.Pat = 'Pat'` / `AuthMode.OAuthM2m = 'OAuthM2m'` /
+ * `AuthMode.OAuthU2m = 'OAuthU2m'` in the auto-generated
+ * `native/sea/index.d.ts`. The JS adapter
+ * (`SeaNativeConnectionOptions` in `lib/sea/SeaAuth.ts`) must use the
+ * PascalCase literals verbatim.
+ *
+ * Keeping the discriminant explicit instead of inferring it from
+ * "which Option is set" makes the napi-side validation single-pass
+ * and the JS-side schema typed.
+ *
+ * Note: adding a variant here requires extending `open_session()`'s
+ * `match` — Rust will fail the build if the match is non-exhaustive,
+ * but the cross-reference shortens the review loop.
  */
 export const enum AuthMode {
   Pat = 'Pat',
