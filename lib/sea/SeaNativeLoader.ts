@@ -91,8 +91,23 @@ export interface SeaNativeConnection {
 export interface SeaNativeBinding {
   /** Returns the native crate version (smoke test for the binding's load path). */
   version(): string;
-  /** Open a session over PAT auth. Returns an opaque Connection. */
-  openSession(opts: { hostName: string; httpPath: string; token: string }): Promise<SeaNativeConnection>;
+  /**
+   * Open a session over PAT, OAuth M2M, or OAuth U2M auth. Returns an
+   * opaque Connection. The discriminated payload mirrors the
+   * auto-generated `ConnectionOptions` in `native/sea/index.d.ts`; we
+   * keep the static type permissive (all fields optional except the
+   * discriminant) so the JS adapter layer's union narrows correctly
+   * without three overloads.
+   */
+  openSession(opts: {
+    hostName: string;
+    httpPath: string;
+    authMode: 'Pat' | 'OAuthM2m' | 'OAuthU2m';
+    token?: string;
+    oauthClientId?: string;
+    oauthClientSecret?: string;
+    oauthRedirectPort?: number;
+  }): Promise<SeaNativeConnection>;
   /** Opaque Connection class — instance methods on the binding-generated d.ts. */
   Connection: Function;
   /** Opaque Statement class — instance methods on the binding-generated d.ts. */
