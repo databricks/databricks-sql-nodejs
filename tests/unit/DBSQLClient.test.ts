@@ -2,6 +2,7 @@ import { expect, AssertionError } from 'chai';
 import sinon from 'sinon';
 import DBSQLClient, { ThriftLibrary } from '../../lib/DBSQLClient';
 import DBSQLSession from '../../lib/DBSQLSession';
+import ThriftBackend from '../../lib/thrift-backend/ThriftBackend';
 
 import PlainHttpAuthentication from '../../lib/connection/auth/PlainHttpAuthentication';
 import DatabricksOAuth from '../../lib/connection/auth/DatabricksOAuth';
@@ -106,6 +107,7 @@ describe('DBSQLClient.openSession', () => {
     const client = new DBSQLClient();
     const thriftClient = new ThriftClientStub();
     sinon.stub(client, 'getClient').returns(Promise.resolve(thriftClient));
+    client['backend'] = new ThriftBackend({ context: client, onConnectionEvent: () => {} });
 
     const session = await client.openSession();
     expect(session).instanceOf(DBSQLSession);
@@ -115,6 +117,7 @@ describe('DBSQLClient.openSession', () => {
     const client = new DBSQLClient();
     const thriftClient = new ThriftClientStub();
     sinon.stub(client, 'getClient').returns(Promise.resolve(thriftClient));
+    client['backend'] = new ThriftBackend({ context: client, onConnectionEvent: () => {} });
 
     case1: {
       const initialCatalog = 'catalog1';
@@ -144,6 +147,7 @@ describe('DBSQLClient.openSession', () => {
 
   it('should throw an exception when not connected', async () => {
     const client = new DBSQLClient();
+    client['backend'] = undefined;
     client['connectionProvider'] = undefined;
 
     try {
@@ -161,12 +165,13 @@ describe('DBSQLClient.openSession', () => {
     const client = new DBSQLClient();
     const thriftClient = new ThriftClientStub();
     sinon.stub(client, 'getClient').returns(Promise.resolve(thriftClient));
+    client['backend'] = new ThriftBackend({ context: client, onConnectionEvent: () => {} });
 
     // Test with default protocol version (SPARK_CLI_SERVICE_PROTOCOL_V8)
     {
       const session = await client.openSession();
       expect(session).instanceOf(DBSQLSession);
-      expect((session as DBSQLSession)['serverProtocolVersion']).to.equal(
+      expect(((session as DBSQLSession)['backend'] as any)['serverProtocolVersion']).to.equal(
         TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V8,
       );
     }
@@ -179,7 +184,7 @@ describe('DBSQLClient.openSession', () => {
 
       const session = await client.openSession();
       expect(session).instanceOf(DBSQLSession);
-      expect((session as DBSQLSession)['serverProtocolVersion']).to.equal(
+      expect(((session as DBSQLSession)['backend'] as any)['serverProtocolVersion']).to.equal(
         TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V7,
       );
     }
@@ -189,6 +194,7 @@ describe('DBSQLClient.openSession', () => {
     const client = new DBSQLClient();
     const thriftClient = new ThriftClientStub();
     sinon.stub(client, 'getClient').returns(Promise.resolve(thriftClient));
+    client['backend'] = new ThriftBackend({ context: client, onConnectionEvent: () => {} });
 
     const configuration = { QUERY_TAGS: 'team:engineering', ansi_mode: 'true' };
     await client.openSession({ configuration });
@@ -199,6 +205,7 @@ describe('DBSQLClient.openSession', () => {
     const client = new DBSQLClient();
     const thriftClient = new ThriftClientStub();
     sinon.stub(client, 'getClient').returns(Promise.resolve(thriftClient));
+    client['backend'] = new ThriftBackend({ context: client, onConnectionEvent: () => {} });
 
     // With protocol version V6 - should support async metadata operations
     {
@@ -360,6 +367,7 @@ describe('DBSQLClient.close', () => {
     client['client'] = thriftClient;
     client['connectionProvider'] = new ConnectionProviderStub();
     client['authProvider'] = new AuthProviderStub();
+    client['backend'] = new ThriftBackend({ context: client, onConnectionEvent: () => {} });
 
     const session = await client.openSession();
     if (!(session instanceof DBSQLSession)) {
@@ -586,6 +594,7 @@ describe('DBSQLClient.enableMetricViewMetadata', () => {
     const client = new DBSQLClient();
     const thriftClient = new ThriftClientStub();
     sinon.stub(client, 'getClient').returns(Promise.resolve(thriftClient));
+    client['backend'] = new ThriftBackend({ context: client, onConnectionEvent: () => {} });
 
     await client.connect({ ...connectOptions, enableMetricViewMetadata: true });
     await client.openSession();
@@ -600,6 +609,7 @@ describe('DBSQLClient.enableMetricViewMetadata', () => {
     const client = new DBSQLClient();
     const thriftClient = new ThriftClientStub();
     sinon.stub(client, 'getClient').returns(Promise.resolve(thriftClient));
+    client['backend'] = new ThriftBackend({ context: client, onConnectionEvent: () => {} });
 
     await client.connect({ ...connectOptions, enableMetricViewMetadata: false });
     await client.openSession();
@@ -613,6 +623,7 @@ describe('DBSQLClient.enableMetricViewMetadata', () => {
     const client = new DBSQLClient();
     const thriftClient = new ThriftClientStub();
     sinon.stub(client, 'getClient').returns(Promise.resolve(thriftClient));
+    client['backend'] = new ThriftBackend({ context: client, onConnectionEvent: () => {} });
 
     await client.connect(connectOptions);
     await client.openSession();
@@ -626,6 +637,7 @@ describe('DBSQLClient.enableMetricViewMetadata', () => {
     const client = new DBSQLClient();
     const thriftClient = new ThriftClientStub();
     sinon.stub(client, 'getClient').returns(Promise.resolve(thriftClient));
+    client['backend'] = new ThriftBackend({ context: client, onConnectionEvent: () => {} });
 
     await client.connect({ ...connectOptions, enableMetricViewMetadata: true });
     const userConfig = { QUERY_TAGS: 'team:engineering', ansi_mode: 'true' };
@@ -641,6 +653,7 @@ describe('DBSQLClient.enableMetricViewMetadata', () => {
     const client = new DBSQLClient();
     const thriftClient = new ThriftClientStub();
     sinon.stub(client, 'getClient').returns(Promise.resolve(thriftClient));
+    client['backend'] = new ThriftBackend({ context: client, onConnectionEvent: () => {} });
 
     await client.openSession({
       queryTags: { team: 'data-eng', project: 'etl' },
@@ -655,6 +668,7 @@ describe('DBSQLClient.enableMetricViewMetadata', () => {
     const client = new DBSQLClient();
     const thriftClient = new ThriftClientStub();
     sinon.stub(client, 'getClient').returns(Promise.resolve(thriftClient));
+    client['backend'] = new ThriftBackend({ context: client, onConnectionEvent: () => {} });
 
     await client.openSession({
       queryTags: { team: 'new-team' },
@@ -671,6 +685,7 @@ describe('DBSQLClient.enableMetricViewMetadata', () => {
     const client = new DBSQLClient();
     const thriftClient = new ThriftClientStub();
     sinon.stub(client, 'getClient').returns(Promise.resolve(thriftClient));
+    client['backend'] = new ThriftBackend({ context: client, onConnectionEvent: () => {} });
 
     await client.openSession({
       queryTags: {},
