@@ -3,6 +3,7 @@ import IOperation, {
   FetchOptions,
   FinishedOptions,
   GetSchemaOptions,
+  WaitUntilReadyOptions,
   IteratorOptions,
   IOperationChunksIterator,
   IOperationRowsIterator,
@@ -87,6 +88,15 @@ export default class DBSQLOperation implements IOperation {
     return Readable.from(iterable, options?.streamOptions);
   }
 
+  /**
+   * Fetches all data
+   * @public
+   * @param options - maxRows property can be set to limit chunk size
+   * @returns Array of data with length equal to option.maxRows
+   * @throws {StatusError}
+   * @example
+   * const result = await queryOperation.fetchAll();
+   */
   public async fetchAll(options?: FetchOptions): Promise<Array<object>> {
     const data: Array<Array<object>> = [];
 
@@ -105,6 +115,15 @@ export default class DBSQLOperation implements IOperation {
     return data.flat();
   }
 
+  /**
+   * Fetches chunk of data
+   * @public
+   * @param options - maxRows property sets chunk size
+   * @returns Array of data with length equal to option.maxRows
+   * @throws {StatusError}
+   * @example
+   * const result = await queryOperation.fetchChunk({maxRows: 1000});
+   */
   public async fetchChunk(options?: FetchOptions): Promise<Array<object>> {
     await this.failIfClosed();
 
@@ -124,12 +143,21 @@ export default class DBSQLOperation implements IOperation {
     return result;
   }
 
+  /**
+   * Requests operation status
+   * @param progress
+   * @throws {StatusError}
+   */
   public async status(progress: boolean = false): Promise<TGetOperationStatusResp> {
     await this.failIfClosed();
     this.context.getLogger().log(LogLevel.debug, `Fetching status for operation with id: ${this.id}`);
     return this.backend.status(progress);
   }
 
+  /**
+   * Cancels operation
+   * @throws {StatusError}
+   */
   public async cancel(): Promise<Status> {
     if (this.closed || this.cancelled) {
       return Status.success();
@@ -140,6 +168,10 @@ export default class DBSQLOperation implements IOperation {
     return result;
   }
 
+  /**
+   * Closes operation
+   * @throws {StatusError}
+   */
   public async close(): Promise<Status> {
     if (this.closed || this.cancelled) {
       return Status.success();
@@ -196,10 +228,7 @@ export default class DBSQLOperation implements IOperation {
     }
   }
 
-  private async waitUntilReadyThroughBackend(options?: {
-    progress?: boolean;
-    callback?: (p: TGetOperationStatusResp) => unknown;
-  }) {
+  private async waitUntilReadyThroughBackend(options?: WaitUntilReadyOptions) {
     try {
       await this.backend.waitUntilReady(options);
     } catch (err) {
