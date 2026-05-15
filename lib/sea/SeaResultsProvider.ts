@@ -14,7 +14,7 @@
 
 import IResultsProvider, { ResultsProviderFetchNextOptions } from '../result/IResultsProvider';
 import { ArrowBatch } from '../result/utils';
-import { decodeIpcBatch } from './SeaArrowIpc';
+import { decodeIpcBatch, patchIpcBytes } from './SeaArrowIpc';
 
 /**
  * The minimal slice of the napi-binding `Statement` class that we
@@ -97,7 +97,13 @@ export default class SeaResultsProvider implements IResultsProvider<ArrowBatch> 
       this.exhausted = true;
       return;
     }
-    const { ipcBytes } = next;
+    // Patch the raw bytes once: rewrite any Arrow `Duration` field to
+    // `Int64` with a `databricks.arrow.duration_unit` marker, so that
+    // apache-arrow@13 (which predates Duration support) can decode the
+    // stream. `decodeIpcBatch` and the downstream
+    // `RecordBatchReader.from` inside `ArrowResultConverter` both see
+    // the patched buffer. See `SeaArrowIpcDurationFix.ts`.
+    const ipcBytes = patchIpcBytes(next.ipcBytes);
     const { rowCount } = decodeIpcBatch(ipcBytes);
     if (rowCount === 0) {
       // Skip empty batches — the converter handles them but pre-filtering

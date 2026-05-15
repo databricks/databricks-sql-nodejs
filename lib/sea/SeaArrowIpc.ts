@@ -14,6 +14,7 @@
 
 import { RecordBatchReader, Schema, Field, DataType, TypeMap } from 'apache-arrow';
 import { TTableSchema, TTypeId, TPrimitiveTypeEntry } from '../../thrift/TCLIService_types';
+import { rewriteDurationToInt64, DURATION_UNIT_METADATA_KEY } from './SeaArrowIpcDurationFix';
 
 /**
  * Field metadata key used by the kernel to attach the original Databricks
@@ -44,7 +45,8 @@ const DATABRICKS_TYPE_NAME = 'databricks.type_name';
  * double-parse cost is negligible for M0.
  */
 export function decodeIpcBatch(ipcBytes: Buffer): { schema: Schema<TypeMap>; rowCount: number } {
-  const reader = RecordBatchReader.from<TypeMap>(ipcBytes);
+  const patched = rewriteDurationToInt64(ipcBytes);
+  const reader = RecordBatchReader.from<TypeMap>(patched);
   // Eagerly open so `schema` is populated.
   reader.open();
   const { schema } = reader;
@@ -62,9 +64,28 @@ export function decodeIpcBatch(ipcBytes: Buffer): { schema: Schema<TypeMap>; row
  * apache-arrow Schema object.
  */
 export function decodeIpcSchema(ipcBytes: Buffer): Schema<TypeMap> {
-  const reader = RecordBatchReader.from<TypeMap>(ipcBytes);
+  const patched = rewriteDurationToInt64(ipcBytes);
+  const reader = RecordBatchReader.from<TypeMap>(patched);
   reader.open();
   return reader.schema;
+}
+
+/**
+ * Pre-process raw IPC bytes from the kernel so they're consumable by
+ * `apache-arrow@13`. The current transformation is `Duration → Int64`
+ * with the original duration unit preserved in field metadata (see
+ * `SeaArrowIpcDurationFix.ts`). Returned bytes are byte-identical to
+ * the input when no transformation is needed.
+ *
+ * Exposed so callers can pre-patch the buffer **once** and pass the
+ * result through both `decodeIpcBatch` (for row-count extraction in
+ * `SeaResultsProvider`) and `ArrowResultConverter.fetchNext` (which
+ * re-decodes the same bytes via `RecordBatchReader.from`). Without
+ * this, the converter would re-throw on `Duration` because it never
+ * sees the patched bytes.
+ */
+export function patchIpcBytes(ipcBytes: Buffer): Buffer {
+  return rewriteDurationToInt64(ipcBytes);
 }
 
 /**
@@ -160,6 +181,13 @@ function arrowTypeToTTypeId(field: Field<DataType>): TTypeId {
   const arrowType = field.type;
   if (DataType.isBool(arrowType)) return TTypeId.BOOLEAN_TYPE;
   if (DataType.isInt(arrowType)) {
+    // Duration columns are rewritten to Int64 with a
+    // `databricks.arrow.duration_unit` metadata marker (see
+    // `SeaArrowIpcDurationFix.ts`). Surface them as INTERVAL_DAY_TIME
+    // so the converter formats them back into the thrift string form.
+    if (arrowType.bitWidth === 64 && field.metadata.has(DURATION_UNIT_METADATA_KEY)) {
+      return TTypeId.INTERVAL_DAY_TIME_TYPE;
+    }
     switch (arrowType.bitWidth) {
       case 8:
         return TTypeId.TINYINT_TYPE;
@@ -182,6 +210,15 @@ function arrowTypeToTTypeId(field: Field<DataType>): TTypeId {
   if (DataType.isBinary(arrowType)) return TTypeId.BINARY_TYPE;
   if (DataType.isDate(arrowType)) return TTypeId.DATE_TYPE;
   if (DataType.isTimestamp(arrowType)) return TTypeId.TIMESTAMP_TYPE;
+  // Native Arrow Interval types. The server-side INTERVAL YEAR-MONTH
+  // (and the legacy IntervalDayTime variant) come through with type
+  // id 11 / -25 / -26 — apache-arrow@13 surfaces them as `Int32Array`
+  // pairs which the converter formats to thrift's `"Y-M"` / day-time
+  // strings.
+  if (DataType.isInterval(arrowType)) {
+    // unit 0 = YEAR_MONTH, unit 1 = DAY_TIME, unit 2 = MONTH_DAY_NANO
+    return arrowType.unit === 0 ? TTypeId.INTERVAL_YEAR_MONTH_TYPE : TTypeId.INTERVAL_DAY_TIME_TYPE;
+  }
   if (DataType.isList(arrowType)) return TTypeId.ARRAY_TYPE;
   if (DataType.isMap(arrowType)) return TTypeId.MAP_TYPE;
   if (DataType.isStruct(arrowType)) return TTypeId.STRUCT_TYPE;
