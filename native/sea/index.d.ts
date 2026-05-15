@@ -20,10 +20,34 @@ export interface ExecuteOptions {
   sessionConfig?: Record<string, string>
 }
 /**
- * JS-visible options for opening a Databricks SQL session over PAT.
+ * JS-visible auth-mode discriminant.
  *
- * M0 supports PAT only — `token` is required. OAuth M2M / U2M variants
- * land in M1 along with a discriminated-union shape on the JS side.
+ * Crosses the FFI as the string value (napi-rs string-enums emit the
+ * Rust variant name verbatim on the JS side — `'Pat'`, `'OAuthM2m'`,
+ * `'OAuthU2m'`). Keeping the discriminant explicit instead of inferring
+ * it from "which Option is set" makes the napi-side validation
+ * single-pass and the JS-side schema typed.
+ */
+export const enum AuthMode {
+  Pat = 'Pat',
+  OAuthM2m = 'OAuthM2m',
+  OAuthU2m = 'OAuthU2m'
+}
+/**
+ * JS-visible options for opening a Databricks SQL session.
+ *
+ * Discriminated by `auth_mode`:
+ * - `AuthMode::Pat`      → requires `token`; ignores oauth_*.
+ * - `AuthMode::OAuthM2m` → requires `oauth_client_id` + `oauth_client_secret`.
+ * - `AuthMode::OAuthU2m` → kernel handles the auth-code flow with
+ *   default client_id (`databricks-cli`), scopes
+ *   (`["all-apis","offline_access"]`), and OIDC discovery; the JS
+ *   adapter hardcodes `oauth_redirect_port` to 8030 to override the
+ *   kernel default of 8020 (thrift uses 8030 — preserves parity).
+ *
+ * Scopes / token_url_override / client_id / callback_timeout are not
+ * exposed — kernel defaults match thrift parity and the public driver
+ * surface has no demand to override them.
  */
 export interface ConnectionOptions {
   /**
@@ -36,15 +60,24 @@ export interface ConnectionOptions {
    * kernel parses out the warehouse id.
    */
   httpPath: string
+  /** Auth-mode discriminant. Required. */
+  authMode: AuthMode
+  /** Personal access token. Required iff `auth_mode == Pat`. */
+  token?: string
+  /** OAuth client id. Required iff `auth_mode == OAuthM2m`. */
+  oauthClientId?: string
+  /** OAuth client secret. Required iff `auth_mode == OAuthM2m`. */
+  oauthClientSecret?: string
   /**
-   * Personal access token. Must be non-empty (the kernel rejects
-   * empty PATs at session construction).
+   * Local listener port for the U2M authorization-code callback.
+   * Forwarded verbatim to the kernel; the JS adapter hardcodes 8030
+   * for thrift parity.
    */
-  token: string
+  oauthRedirectPort?: number
 }
 /**
- * Open a Databricks SQL session over PAT auth and return an opaque
- * `Connection` wrapping the kernel `Session`.
+ * Open a Databricks SQL session and return an opaque `Connection`
+ * wrapping the kernel `Session`. Supports PAT, OAuth M2M, and OAuth U2M.
  *
  * The JS-visible name is `openSession` (napi-rs converts snake_case
  * to camelCase for free functions).

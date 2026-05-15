@@ -31,6 +31,7 @@ describe('SeaAuth — PAT auth options builder', () => {
       expect(native).to.deep.equal({
         hostName: 'example.cloud.databricks.com',
         httpPath: '/sql/1.0/warehouses/abc',
+        authMode: 'Pat',
         token: 'dapi-fake-pat',
       });
     });
@@ -44,7 +45,10 @@ describe('SeaAuth — PAT auth options builder', () => {
       };
 
       const native = buildSeaConnectionOptions(opts);
-      expect(native.token).to.equal('dapi-fake-pat');
+      expect(native.authMode).to.equal('Pat');
+      if (native.authMode === 'Pat') {
+        expect(native.token).to.equal('dapi-fake-pat');
+      }
     });
 
     it('prepends `/` to a path missing the leading slash', () => {
@@ -79,20 +83,18 @@ describe('SeaAuth — PAT auth options builder', () => {
       expect(() => buildSeaConnectionOptions(opts)).to.throw(AuthenticationError, /non-empty PAT/);
     });
 
-    it('rejects OAuth with a clear M0-scope error', () => {
+    it('accepts databricks-oauth without oauthClientSecret as the U2M happy path', () => {
       const opts: ConnectionOptions = {
         host: 'example.cloud.databricks.com',
         path: '/sql/1.0/warehouses/abc',
         authType: 'databricks-oauth',
       };
 
-      expect(() => buildSeaConnectionOptions(opts)).to.throw(
-        HiveDriverError,
-        /M0\) supports only PAT.*databricks-oauth.*M1/,
-      );
+      const native = buildSeaConnectionOptions(opts);
+      expect(native.authMode).to.equal('OAuthU2m');
     });
 
-    it('rejects token-provider with a clear M0-scope error', () => {
+    it('rejects token-provider with a clear unsupported-mode error', () => {
       const opts: ConnectionOptions = {
         host: 'example.cloud.databricks.com',
         path: '/sql/1.0/warehouses/abc',
@@ -103,7 +105,10 @@ describe('SeaAuth — PAT auth options builder', () => {
           : never,
       };
 
-      expect(() => buildSeaConnectionOptions(opts)).to.throw(HiveDriverError, /token-provider.*M1/);
+      expect(() => buildSeaConnectionOptions(opts)).to.throw(
+        HiveDriverError,
+        /unsupported auth mode 'token-provider'/,
+      );
     });
 
     it('rejects external-token, static-token, and custom auth modes', () => {
@@ -115,7 +120,10 @@ describe('SeaAuth — PAT auth options builder', () => {
           path: '/p',
           authType,
         } as any;
-        expect(() => buildSeaConnectionOptions(opts)).to.throw(HiveDriverError, /M0\) supports only PAT/);
+        expect(() => buildSeaConnectionOptions(opts)).to.throw(
+          HiveDriverError,
+          /unsupported auth mode/,
+        );
       }
     });
   });
@@ -124,4 +132,7 @@ describe('SeaAuth — PAT auth options builder', () => {
   // moved to tests/unit/sea/execution.test.ts during the sea-integration
   // merge (the execution branch's SeaBackend constructor signature
   // {context, nativeBinding} supersedes the auth-only (binding) shape).
+  // OAuth-specific flow-dispatch tests live in auth-m2m.test.ts and
+  // auth-u2m.test.ts; M2M end-to-end against a live workspace lives in
+  // tests/integration/sea/auth-m2m-e2e.test.ts.
 });
