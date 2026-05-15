@@ -150,13 +150,47 @@ export function mapKernelErrorToJsError(kErr: KernelErrorShape): ErrorWithSqlSta
 }
 
 /**
+ * Optional metadata fields the kernel may attach via the
+ * `__databricks_error__:` envelope (per `native/sea/src/error.rs:50-89`).
+ * Attached to the decoded JS error as non-enumerable own-properties so
+ * callers can read them (e.g. `error.httpStatus`) without polluting
+ * `JSON.stringify(error)` output. Matches the way Node attaches
+ * `.code` to system errors and the way `attachSqlState` works above.
+ */
+interface KernelErrorMetadata {
+  errorCode?: string;
+  vendorCode?: number;
+  httpStatus?: number;
+  retryable?: boolean;
+  queryId?: string;
+}
+
+function attachMetadata(error: Error, meta: KernelErrorMetadata): void {
+  for (const key of ['errorCode', 'vendorCode', 'httpStatus', 'retryable', 'queryId'] as const) {
+    const value = meta[key];
+    if (value !== undefined) {
+      Object.defineProperty(error, key, {
+        value,
+        writable: true,
+        enumerable: false,
+        configurable: true,
+      });
+    }
+  }
+}
+
+/**
  * Decode a napi-binding error into the typed JS error class.
  *
  * Two paths:
  *  - Structured kernel error: `Error.message` starts with
  *    {@link ERROR_SENTINEL} followed by a JSON envelope. We strip the
- *    sentinel, parse the JSON, and route through
- *    {@link mapKernelErrorToJsError}.
+ *    sentinel, parse the JSON, route the {@link KernelErrorShape}
+ *    through {@link mapKernelErrorToJsError}, and attach all remaining
+ *    envelope fields (`errorCode`, `vendorCode`, `httpStatus`,
+ *    `retryable`, `queryId`) as non-enumerable own-properties on the
+ *    returned error. Thrift parity demand: thrift errors carry these
+ *    fields, so SEA errors must too.
  *  - Binding-side error (e.g. `napi::Error::new(InvalidArg, "openSession:
  *    \`token\` is required for the requested auth mode")` produced by
  *    the binding's own validation): returned unchanged. These don't
@@ -195,10 +229,28 @@ export function decodeNapiKernelError(err: unknown): Error {
     return err;
   }
 
-  const kErr = parsed as { code: string; message: string; sqlState?: string };
-  return mapKernelErrorToJsError({
+  const kErr = parsed as {
+    code: string;
+    message: string;
+    sqlState?: string;
+    errorCode?: string;
+    vendorCode?: number;
+    httpStatus?: number;
+    retryable?: boolean;
+    queryId?: string;
+  };
+
+  const jsErr = mapKernelErrorToJsError({
     code: kErr.code,
     message: kErr.message,
     sqlstate: kErr.sqlState,
   });
+  attachMetadata(jsErr, {
+    errorCode: kErr.errorCode,
+    vendorCode: kErr.vendorCode,
+    httpStatus: kErr.httpStatus,
+    retryable: kErr.retryable,
+    queryId: kErr.queryId,
+  });
+  return jsErr;
 }
