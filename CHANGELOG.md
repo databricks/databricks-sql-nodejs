@@ -1,9 +1,5 @@
 # Release History
 
-## Unreleased
-
-- Fix Azure AD OAuth for tenant-specific and single-tenant Entra apps, and correct the scope resource: use the Databricks Azure Login App ID (not the tenant GUID) as the OAuth scope; route OIDC discovery to `login.microsoftonline.com/${azureTenantId}/` when `azureTenantId` is provided (fallback `/organizations/` preserved).
-
 ## 1.14.0
 
 - Add statement-level query tag support (databricks/databricks-sql-nodejs#366 by @sreekanth-db)
