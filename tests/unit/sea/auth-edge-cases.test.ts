@@ -381,7 +381,7 @@ describe('SeaBackend — kernel error envelope decoding (DA-F1)', () => {
     const binding = bindingRejectingWith(
       '{"code":"Unauthenticated","message":"OAuth M2M token exchange failed: invalid_client"}',
     );
-    const backend = new SeaBackend(binding);
+    const backend = new SeaBackend({ nativeBinding: binding });
     await backend.connect(validConnectArgs);
 
     let caught: unknown;
@@ -398,7 +398,7 @@ describe('SeaBackend — kernel error envelope decoding (DA-F1)', () => {
     const binding = bindingRejectingWith(
       '{"code":"NetworkError","message":"OIDC discovery failed: connection refused"}',
     );
-    const backend = new SeaBackend(binding);
+    const backend = new SeaBackend({ nativeBinding: binding });
     await backend.connect(validConnectArgs);
 
     let caught: unknown;
@@ -415,7 +415,7 @@ describe('SeaBackend — kernel error envelope decoding (DA-F1)', () => {
     const binding = bindingRejectingWith(
       '{"code":"Unauthenticated","message":"forbidden","sqlState":"28000"}',
     );
-    const backend = new SeaBackend(binding);
+    const backend = new SeaBackend({ nativeBinding: binding });
     await backend.connect(validConnectArgs);
 
     let caught: unknown;
@@ -433,7 +433,7 @@ describe('SeaBackend — kernel error envelope decoding (DA-F1)', () => {
     binding.openSession = (async () => {
       throw new Error('openSession: `token` is required for the requested auth mode');
     }) as typeof binding.openSession;
-    const backend = new SeaBackend(binding);
+    const backend = new SeaBackend({ nativeBinding: binding });
     await backend.connect(validConnectArgs);
 
     let caught: unknown;
@@ -448,7 +448,7 @@ describe('SeaBackend — kernel error envelope decoding (DA-F1)', () => {
 
   it('falls back to original Error for a corrupted envelope, stripping the internal sentinel', async () => {
     const binding = bindingRejectingWith('not valid json');
-    const backend = new SeaBackend(binding);
+    const backend = new SeaBackend({ nativeBinding: binding });
     await backend.connect(validConnectArgs);
 
     let caught: unknown;
@@ -479,7 +479,7 @@ describe('SeaBackend — kernel error envelope decoding (DA-F1)', () => {
         '"sqlState":"08006","errorCode":"UPSTREAM_TIMEOUT","vendorCode":1234,' +
         '"httpStatus":503,"retryable":true,"queryId":"query-abc-123"}',
     );
-    const backend = new SeaBackend(binding);
+    const backend = new SeaBackend({ nativeBinding: binding });
     await backend.connect(validConnectArgs);
 
     let caught: unknown;
@@ -504,7 +504,7 @@ describe('SeaBackend — kernel error envelope decoding (DA-F1)', () => {
     const binding = bindingRejectingWith(
       '{"code":"NetworkError","message":"x","sqlState":"08000","httpStatus":502}',
     );
-    const backend = new SeaBackend(binding);
+    const backend = new SeaBackend({ nativeBinding: binding });
     await backend.connect(validConnectArgs);
 
     let caught: unknown;
@@ -532,7 +532,7 @@ describe('SeaBackend — kernel error envelope decoding (DA-F1)', () => {
     const binding = bindingRejectingWith(
       '{"code":"Cancelled","message":"user-cancel","errorCode":"USER_REQUESTED_CANCEL"}',
     );
-    const backend = new SeaBackend(binding);
+    const backend = new SeaBackend({ nativeBinding: binding });
     await backend.connect(validConnectArgs);
 
     let caught: unknown;
@@ -562,7 +562,7 @@ describe('SeaBackend — kernel error envelope decoding (DA-F1)', () => {
     const binding = bindingRejectingWith(
       '{"code":"NetworkError","message":"x","errorCode":42,"vendorCode":"not-a-number","httpStatus":502,"retryable":"true","queryId":null}',
     );
-    const backend = new SeaBackend(binding);
+    const backend = new SeaBackend({ nativeBinding: binding });
     await backend.connect(validConnectArgs);
 
     let caught: unknown;
@@ -585,7 +585,7 @@ describe('SeaBackend — kernel error envelope decoding (DA-F1)', () => {
     const binding = bindingRejectingWith(
       '{"code":"Internal","message":"x","sqlState":"08001"}',
     );
-    const backend = new SeaBackend(binding);
+    const backend = new SeaBackend({ nativeBinding: binding });
     await backend.connect(validConnectArgs);
 
     let caught: unknown;
@@ -617,7 +617,7 @@ describe('SeaBackend — kernel error envelope decoding (DA-F1)', () => {
     };
     binding.openSession = (async () => failingClose as unknown) as typeof binding.openSession;
 
-    const backend = new SeaBackend(binding);
+    const backend = new SeaBackend({ nativeBinding: binding });
     await backend.connect(validConnectArgs);
     const session = await backend.openSession({});
 

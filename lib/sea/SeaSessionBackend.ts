@@ -32,27 +32,8 @@ import Status from '../dto/Status';
 import InfoValue from '../dto/InfoValue';
 import HiveDriverError from '../errors/HiveDriverError';
 import { SeaNativeConnection, SeaExecuteOptions } from './SeaNativeLoader';
-import { mapKernelErrorToJsError, KernelErrorShape } from './SeaErrorMapping';
+import { decodeNapiKernelError } from './SeaErrorMapping';
 import SeaOperationBackend from './SeaOperationBackend';
-
-const KERNEL_ERROR_SENTINEL = '__databricks_error__:';
-
-function rethrowKernelError(err: unknown): never {
-  if (err && typeof err === 'object' && 'message' in err) {
-    const reason = (err as { reason?: unknown }).reason;
-    if (typeof reason === 'string' && reason.startsWith(KERNEL_ERROR_SENTINEL)) {
-      try {
-        const payload = JSON.parse(reason.slice(KERNEL_ERROR_SENTINEL.length)) as KernelErrorShape;
-        throw mapKernelErrorToJsError(payload);
-      } catch (parseErr) {
-        if (parseErr !== err) {
-          throw parseErr;
-        }
-      }
-    }
-  }
-  throw err;
-}
 
 /**
  * Per-session defaults that apply to every `executeStatement` issued
@@ -169,7 +150,7 @@ export default class SeaSessionBackend implements ISessionBackend {
     try {
       nativeStatement = await this.connection.executeStatement(statement, executeOptions);
     } catch (err) {
-      rethrowKernelError(err);
+      throw decodeNapiKernelError(err);
     }
     return new SeaOperationBackend({
       statement: nativeStatement!,
@@ -220,7 +201,7 @@ export default class SeaSessionBackend implements ISessionBackend {
     try {
       await this.connection.close();
     } catch (err) {
-      rethrowKernelError(err);
+      throw decodeNapiKernelError(err);
     }
     this.closed = true;
     return Status.success();
