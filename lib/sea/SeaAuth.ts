@@ -182,20 +182,26 @@ export function buildSeaConnectionOptions(options: ConnectionOptions): SeaNative
     }
 
     // Flow selector mirrors thrift's `DBSQLClient.createAuthProvider`
-    // (`DBSQLClient.ts:143`): `oauthClientSecret defined ? M2M : U2M`.
-    // Blank or buggy-shell-export secrets route to U2M (rather than
-    // M2M-with-bad-secret) so the error message correctly points the user
-    // at the right flow. `oauthClientSecret: process.env.MY_SECRET || ''`
-    // is a common shape; routing it to the M2M arm would surface an
-    // M2M-specific error that never mentions U2M.
+    // (`DBSQLClient.ts:143`): presence of `oauthClientId` indicates M2M
+    // intent, otherwise U2M. Routing decision is based on `oauthClientId`
+    // (the "do I have an id?" signal) rather than the secret, so a
+    // user who set an id but typoed/forgot the secret gets the M2M
+    // "secret is required" error instead of a U2M error that hides
+    // their actual intent. The U2M arm still defends against an id
+    // sneaking through (e.g. caller bypasses shape inference).
+    const idIsBlank =
+      oauth.oauthClientId === undefined ||
+      (typeof oauth.oauthClientId === 'string' && isBlankOrReserved(oauth.oauthClientId));
     const secretIsBlank =
-      typeof oauth.oauthClientSecret === 'string' && isBlankOrReserved(oauth.oauthClientSecret);
-    if (oauth.oauthClientSecret === undefined || secretIsBlank) {
-      // U2M.
+      oauth.oauthClientSecret === undefined ||
+      (typeof oauth.oauthClientSecret === 'string' && isBlankOrReserved(oauth.oauthClientSecret));
+
+    if (idIsBlank && secretIsBlank) {
+      // U2M — neither id nor secret supplied.
       if (oauth.oauthClientId !== undefined) {
+        // Defense-in-depth: id was set but blank/reserved literal.
         // The kernel hardcodes `client_id = "databricks-cli"` for U2M;
-        // there's no JS-side override knob. Silently dropping a
-        // user-supplied id would hide that the kernel ignored it.
+        // there's no JS-side override knob.
         throw new HiveDriverError(
           'SEA backend: `oauthClientId` is not supported on the OAuth U2M flow; ' +
             "the kernel uses the built-in 'databricks-cli' client. " +

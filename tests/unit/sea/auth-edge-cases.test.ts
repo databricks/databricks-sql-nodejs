@@ -76,13 +76,13 @@ describe('SeaAuth — edge cases (input validation + ambiguity)', () => {
       }
     });
 
-    // Post round-3 NF-N3: a blank/reserved-literal `oauthClientSecret`
-    // routes the connection to the U2M arm rather than rejecting on
-    // the M2M arm. When `oauthClientId` is ALSO set, the U2M arm's
-    // dedicated "not supported on U2M" rejection fires — which is more
-    // actionable than the M2M "secret must be non-empty" message
-    // because it tells the user the U2M flow exists and how to use it.
-    it('routes mixed-case reserved-literal oauthClientSecret to U2M; rejects with U2M-id error', () => {
+    // Round-4 NF3-2: presence of `oauthClientId` signals M2M intent.
+    // A blank/reserved-literal `oauthClientSecret` is then a missing-secret
+    // typo, not a request to fall back to U2M. Surface the M2M "secret
+    // required" AuthenticationError so the user fixes the real problem
+    // rather than swap class to a HiveDriverError pointing at a flow
+    // they didn't intend to use.
+    it('rejects mixed-case reserved-literal oauthClientSecret with AuthenticationError when id is set', () => {
       const opts: ConnectionOptions = {
         host: 'example.cloud.databricks.com',
         path: '/sql/1.0/warehouses/abc',
@@ -92,8 +92,8 @@ describe('SeaAuth — edge cases (input validation + ambiguity)', () => {
       };
 
       expect(() => buildSeaConnectionOptions(opts)).to.throw(
-        HiveDriverError,
-        /oauthClientId.*not supported on the OAuth U2M flow/,
+        AuthenticationError,
+        /oauthClientSecret.*non-empty.*OAuth M2M/,
       );
     });
 
@@ -112,7 +112,7 @@ describe('SeaAuth — edge cases (input validation + ambiguity)', () => {
       );
     });
 
-    it('routes whitespace-only oauthClientSecret to U2M; with oauthClientId set, rejects U2M+id', () => {
+    it('rejects whitespace-only oauthClientSecret with AuthenticationError when oauthClientId is set (M2M intent)', () => {
       const opts: ConnectionOptions = {
         host: 'example.cloud.databricks.com',
         path: '/sql/1.0/warehouses/abc',
@@ -122,8 +122,8 @@ describe('SeaAuth — edge cases (input validation + ambiguity)', () => {
       };
 
       expect(() => buildSeaConnectionOptions(opts)).to.throw(
-        HiveDriverError,
-        /oauthClientId.*not supported on the OAuth U2M flow/,
+        AuthenticationError,
+        /oauthClientSecret.*non-empty.*OAuth M2M/,
       );
     });
 
@@ -142,7 +142,7 @@ describe('SeaAuth — edge cases (input validation + ambiguity)', () => {
       );
     });
 
-    it('routes literal "undefined" as oauthClientSecret to U2M; with oauthClientId set, rejects U2M+id', () => {
+    it('rejects literal "undefined" as oauthClientSecret with AuthenticationError when id is set (M2M intent)', () => {
       const opts: ConnectionOptions = {
         host: 'example.cloud.databricks.com',
         path: '/sql/1.0/warehouses/abc',
@@ -152,9 +152,36 @@ describe('SeaAuth — edge cases (input validation + ambiguity)', () => {
       };
 
       expect(() => buildSeaConnectionOptions(opts)).to.throw(
-        HiveDriverError,
-        /oauthClientId.*not supported on the OAuth U2M flow/,
+        AuthenticationError,
+        /oauthClientSecret.*non-empty.*OAuth M2M/,
       );
+    });
+
+    // Round-4 NF3-2: pin the exact class — must be `AuthenticationError`,
+    // not the bare `HiveDriverError` superclass. The round-3 NF-N3 fix
+    // swapped this silently by routing M2M-with-empty-secret through the
+    // U2M arm, which raised a plain `HiveDriverError`. Guard against that
+    // regression by pinning the constructor name (since
+    // `AuthenticationError extends HiveDriverError`, `instanceof` alone
+    // can't distinguish the two).
+    it('M2M-with-empty-secret throws AuthenticationError, not bare HiveDriverError (class pin)', () => {
+      const opts: ConnectionOptions = {
+        host: 'example.cloud.databricks.com',
+        path: '/sql/1.0/warehouses/abc',
+        authType: 'databricks-oauth',
+        oauthClientId: 'x',
+        oauthClientSecret: '',
+      };
+
+      let caught: unknown;
+      try {
+        buildSeaConnectionOptions(opts);
+      } catch (e) {
+        caught = e;
+      }
+      expect(caught).to.be.instanceOf(AuthenticationError);
+      expect((caught as Error).constructor.name).to.equal('AuthenticationError');
+      expect((caught as Error).message).to.match(/oauthClientSecret.*non-empty.*OAuth M2M/);
     });
   });
 
@@ -399,7 +426,7 @@ describe('SeaBackend — kernel error envelope decoding (DA-F1)', () => {
     expect((caught as Error).message).to.match(/`token` is required/);
   });
 
-  it('falls back to original Error for a corrupted envelope', async () => {
+  it('falls back to original Error for a corrupted envelope, stripping the internal sentinel', async () => {
     const binding = bindingRejectingWith('not valid json');
     const backend = new SeaBackend(binding);
     await backend.connect(validConnectArgs);
@@ -414,6 +441,11 @@ describe('SeaBackend — kernel error envelope decoding (DA-F1)', () => {
     // the original Error so the operator sees the raw payload.
     expect(caught).to.be.instanceOf(Error);
     expect((caught as Error).message).to.contain('not valid json');
+    // Round-4 NF3-3: the `__databricks_error__:` prefix is an internal
+    // JS<->binding framing marker; it must not leak to the user-facing
+    // message even on the corrupted-envelope fallback path.
+    expect((caught as Error).message).to.not.match(/^__databricks_error__:/);
+    expect((caught as Error).message).to.equal('not valid json');
   });
 
   // NF-4 / NF-N1: preserve the 5 optional kernel envelope fields on the
