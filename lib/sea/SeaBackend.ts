@@ -22,35 +22,19 @@ import {
   SeaNativeBinding,
   SeaNativeConnection,
 } from './SeaNativeLoader';
-import { mapKernelErrorToJsError, KernelErrorShape } from './SeaErrorMapping';
+import { decodeNapiKernelError } from './SeaErrorMapping';
 import { buildSeaConnectionOptions, SeaNativeConnectionOptions } from './SeaAuth';
 import SeaSessionBackend from './SeaSessionBackend';
 
-/**
- * Sentinel string the napi binding uses on `Error.reason` JSON envelopes.
- * Keep in sync with `native/sea/src/error.rs` (`SENTINEL`).
- */
-const KERNEL_ERROR_SENTINEL = '__databricks_error__:';
-
-function rethrowKernelError(err: unknown): never {
-  if (err && typeof err === 'object' && 'message' in err) {
-    const reason = (err as { reason?: unknown }).reason;
-    if (typeof reason === 'string' && reason.startsWith(KERNEL_ERROR_SENTINEL)) {
-      try {
-        const payload = JSON.parse(reason.slice(KERNEL_ERROR_SENTINEL.length)) as KernelErrorShape;
-        throw mapKernelErrorToJsError(payload);
-      } catch (parseErr) {
-        if (parseErr !== err) {
-          throw parseErr;
-        }
-      }
-    }
-  }
-  throw err;
-}
-
 export interface SeaBackendOptions {
-  context: IClientContext;
+  /**
+   * Optional in the type so unit tests that only exercise the auth-
+   * routing surface (which doesn't touch context) can pass
+   * `{ nativeBinding }`. The constructor downcasts undefined to
+   * `IClientContext` because runtime callers from `DBSQLClient` always
+   * supply one — see `lib/DBSQLClient.ts` SEA seam.
+   */
+  context?: IClientContext;
   /**
    * Optional injection seam for unit tests. When provided, replaces the
    * default `getSeaNative()` call so tests can swap in a mock napi
@@ -109,7 +93,7 @@ export default class SeaBackend implements IBackend {
     try {
       nativeConnection = (await this.binding.openSession(this.nativeOptions)) as SeaNativeConnection;
     } catch (err) {
-      rethrowKernelError(err);
+      throw decodeNapiKernelError(err);
     }
 
     // Merge `request.configuration` (the existing public field for Spark
