@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { SeaNativeBinding } from '../../../../lib/sea/SeaNativeLoader';
+import { SeaNativeBinding, SeaNativeConnection } from '../../../../lib/sea/SeaNativeLoader';
 
 export interface RecordedCall {
   method: string;
@@ -50,7 +50,7 @@ export function makeFakeBinding(): FakeBinding {
     },
     async openSession(opts: Parameters<SeaNativeBinding['openSession']>[0]) {
       calls.push({ method: 'openSession', args: [opts] });
-      return fakeConnection as unknown;
+      return fakeConnection as unknown as SeaNativeConnection;
     },
     Connection: function FakeConnection() {} as unknown as Function,
     Statement: function FakeStatement() {} as unknown as Function,

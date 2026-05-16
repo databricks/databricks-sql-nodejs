@@ -136,7 +136,13 @@ describe('SeaBackend', () => {
     expect(binding.openSessionStub.called).to.equal(false);
   });
 
-  it('connect() rejects non-PAT auth (M0 PAT-only)', async () => {
+  // sea-auth-u2m: `databricks-oauth` with no id/secret is now the U2M happy
+  // path (M0 was PAT-only, but the OAuth M2M+U2M feature on sea-auth-u2m
+  // accepts the full set of `databricks-oauth` variants). M2M/U2M flow-
+  // dispatch coverage lives in auth-m2m.test.ts / auth-u2m.test.ts;
+  // out-of-scope auth modes are now whatever neither PAT nor
+  // `databricks-oauth` covers (e.g. `token-provider`, `external-token`).
+  it('connect() rejects unsupported auth modes (non-PAT, non-OAuth)', async () => {
     const connection = new FakeNativeConnection();
     const binding = makeBinding(connection);
     const backend = new SeaBackend({ context: makeContext(), nativeBinding: binding });
@@ -146,13 +152,14 @@ describe('SeaBackend', () => {
       await backend.connect({
         host: 'example.databricks.com',
         path: '/sql/1.0/warehouses/abc',
-        authType: 'databricks-oauth',
-      } as ConnectionOptions);
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        authType: 'token-provider',
+      } as any);
     } catch (err) {
       thrown = err;
     }
     expect(thrown).to.be.instanceOf(HiveDriverError);
-    expect((thrown as Error).message).to.match(/access-token/);
+    expect((thrown as Error).message).to.match(/unsupported auth mode/);
   });
 
   it('connect() rejects missing token', async () => {
@@ -207,9 +214,12 @@ describe('SeaBackend', () => {
 
     expect(binding.openSessionStub.calledOnce).to.equal(true);
     const args = binding.openSessionStub.firstCall.args[0];
+    // sea-auth-u2m introduced the discriminated SeaNativeConnectionOptions
+    // shape with a leading `authMode` tag — `'Pat'` for the PAT branch.
     expect(args).to.deep.equal({
       hostName: 'workspace.example',
       httpPath: '/sql/1.0/warehouses/xyz',
+      authMode: 'Pat',
       token: 'dapi-token',
     });
   });

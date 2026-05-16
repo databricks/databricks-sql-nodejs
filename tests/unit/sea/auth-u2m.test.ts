@@ -123,7 +123,7 @@ describe('SeaAuth + SeaBackend — OAuth U2M auth flow', () => {
   describe('SeaBackend.connect + openSession (U2M)', () => {
     it('round-trips U2M options through to the napi binding', async () => {
       const { binding, calls } = makeFakeBinding();
-      const backend = new SeaBackend(binding);
+      const backend = new SeaBackend({ nativeBinding: binding });
 
       await backend.connect({
         host: 'example.cloud.databricks.com',
@@ -132,7 +132,11 @@ describe('SeaAuth + SeaBackend — OAuth U2M auth flow', () => {
       });
 
       const session = await backend.openSession({});
-      expect(session.id).to.match(/^sea-session-\d+$/);
+      // Post-integration: SeaSessionBackend generates UUIDv4 ids; the
+      // earlier auth-only counter-id scheme was superseded.
+      expect(session.id).to.match(
+        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
+      );
 
       expect(calls).to.have.lengthOf(1);
       expect(calls[0].method).to.equal('openSession');
