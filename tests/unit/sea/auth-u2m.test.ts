@@ -16,6 +16,7 @@ import { expect } from 'chai';
 import SeaBackend from '../../../lib/sea/SeaBackend';
 import { buildSeaConnectionOptions } from '../../../lib/sea/SeaAuth';
 import { ConnectionOptions } from '../../../lib/contracts/IDBSQLClient';
+import AuthenticationError from '../../../lib/errors/AuthenticationError';
 import HiveDriverError from '../../../lib/errors/HiveDriverError';
 import { makeFakeBinding } from './_helpers/fakeBinding';
 
@@ -37,12 +38,18 @@ describe('SeaAuth + SeaBackend — OAuth U2M auth flow', () => {
       });
     });
 
-    it('rejects oauthClientId on the U2M path with a clear "not supported" error', () => {
-      // The kernel hardcodes `client_id = "databricks-cli"` for U2M; there's
-      // no JS-side override knob. Silently dropping a user-supplied id would
-      // hide that the kernel ignored it, so we surface the limitation
-      // explicitly. Earlier revisions of this code silently dropped — flipped
-      // to raise based on devils-advocate-auth-u2m-1 round-1 (NF-2).
+    it('rejects oauthClientId without oauthClientSecret as M2M-with-missing-secret', () => {
+      // Round-4 NF3-2: presence of `oauthClientId` signals M2M intent.
+      // Routing now keys off the id (the "do I have an id?" signal),
+      // not the secret. A caller who supplies id but no secret gets the
+      // M2M "secret is required" error — the actionable message for the
+      // real problem (typo'd env var, forgot to export it, etc.).
+      //
+      // The U2M arm still has a defense-in-depth rejection of a stray
+      // `oauthClientId` (the kernel hardcodes `databricks-cli` for U2M);
+      // see [NF-2 / round-1 history]. That defense fires only when
+      // BOTH id and secret are blank — the M2M arm's stricter checks
+      // catch this typical caller-error shape first.
       const opts: ConnectionOptions = {
         host: 'example.cloud.databricks.com',
         path: '/sql/1.0/warehouses/abc',
@@ -51,8 +58,8 @@ describe('SeaAuth + SeaBackend — OAuth U2M auth flow', () => {
       };
 
       expect(() => buildSeaConnectionOptions(opts)).to.throw(
-        HiveDriverError,
-        /oauthClientId.*not supported on the OAuth U2M flow/,
+        AuthenticationError,
+        /oauthClientSecret.*non-empty.*OAuth M2M/,
       );
     });
 

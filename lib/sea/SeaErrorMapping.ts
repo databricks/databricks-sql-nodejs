@@ -56,12 +56,12 @@ export type KernelErrorCode =
  * `__databricks_error__:` envelope (per `native/sea/src/error.rs:50-89`).
  *
  * `errorCode` is namespaced under `kernelMetadata` rather than placed at
- * the top level because two existing JS-side error classes
- * (`OperationStateError`, `RetryError`) already declare a top-level
+ * the top level because `OperationStateError` already declares a top-level
  * `errorCode: enum` field, and `DBSQLOperation.ts:209` switches on it
  * (`err.errorCode === OperationStateErrorCode.Canceled`). Top-level
  * defineProperty would clobber that enum with a kernel string and break
- * cancel/close detection.
+ * cancel/close detection. (`RetryError.errorCode` is the same shape and
+ * is reserved here for future kernel→`RetryError` mappings.)
  */
 export interface KernelMetadata {
   errorCode?: string;
@@ -76,7 +76,7 @@ export interface KernelMetadata {
  * exposed at the top level (no collision in the existing driver error
  * tree); the remaining envelope fields live under a `kernelMetadata`
  * namespace to avoid clobbering pre-existing `errorCode` semantics on
- * `OperationStateError` / `RetryError`.
+ * `OperationStateError` (and, reserved for future use, `RetryError`).
  */
 export interface ErrorWithSqlState extends Error {
   sqlState?: string;
@@ -210,9 +210,10 @@ function buildKernelMetadata(parsed: Record<string, unknown>): KernelMetadata {
  *    through {@link mapKernelErrorToJsError}, and attach the remaining
  *    envelope fields under a single non-enumerable `kernelMetadata`
  *    namespace. Namespacing avoids the collision with
- *    `OperationStateError.errorCode` (an enum) and `RetryError.errorCode`
- *    (an enum), each of which is already switched on at the JS layer
- *    (see `DBSQLOperation.ts:209`).
+ *    `OperationStateError.errorCode` (an enum already switched on at the
+ *    JS layer — see `DBSQLOperation.ts:209`). `RetryError.errorCode`
+ *    shares the shape and is reserved for future kernel→`RetryError`
+ *    mappings.
  *  - Binding-side error (e.g. `napi::Error::new(InvalidArg, "openSession:
  *    \`token\` is required for the requested auth mode")` produced by
  *    the binding's own validation): returned unchanged. These don't
@@ -237,8 +238,12 @@ export function decodeNapiKernelError(err: unknown): Error {
   try {
     parsed = JSON.parse(jsonStr);
   } catch {
-    // Corrupted envelope — surface the raw message rather than
-    // silently dropping the original error.
+    // Corrupted envelope — surface the raw post-sentinel payload rather
+    // than silently dropping the original error. Strip the internal
+    // `__databricks_error__:` prefix; it's a binding/JS-side framing
+    // marker, not user-actionable, and leaking it makes the message
+    // confusing to operators triaging a malformed kernel response.
+    err.message = jsonStr;
     return err;
   }
 
