@@ -83,7 +83,7 @@ describe('SeaAuth + SeaBackend — OAuth M2M auth flow', () => {
       );
     });
 
-    it('routes empty oauthClientSecret to the U2M arm (round-3 NF-N3), where oauthClientId being set then rejects', () => {
+    it('rejects empty oauthClientSecret with AuthenticationError when oauthClientId is set (M2M intent)', () => {
       const opts: ConnectionOptions = {
         host: 'example.cloud.databricks.com',
         path: '/sql/1.0/warehouses/abc',
@@ -92,11 +92,13 @@ describe('SeaAuth + SeaBackend — OAuth M2M auth flow', () => {
         oauthClientSecret: '',
       };
 
-      // Blank secret → U2M arm; oauthClientId set on U2M then raises
-      // the dedicated "not supported on U2M" error.
+      // Presence of `oauthClientId` signals M2M intent; an empty secret
+      // is a typo/missing-env, not a request to fall back to U2M.
+      // Surface the M2M "secret required" error so the user knows the
+      // real problem instead of getting routed to a different flow.
       expect(() => buildSeaConnectionOptions(opts)).to.throw(
-        HiveDriverError,
-        /oauthClientId.*not supported on the OAuth U2M flow/,
+        AuthenticationError,
+        /oauthClientSecret.*non-empty.*OAuth M2M/,
       );
     });
 
