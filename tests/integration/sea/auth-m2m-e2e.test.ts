@@ -33,20 +33,20 @@ import { isBlankOrReserved } from '../../../lib/sea/SeaAuth';
  * `auth-pat-e2e.test.ts`). If kernel-side OAuth fails, `openSession()`
  * raises before returning.
  *
- * Required env (exported by `~/.zshrc` on the developer machine):
+ * Required env (exported by `/home/madhavendra.rathore/.zshrc` on the developer machine):
  *   - DATABRICKS_PECOTESTING_SERVER_HOSTNAME
- *   - DATABRICKS_PECOTESTING_HTTP_PATH
- *   - DATABRICKS_PECO_CLIENT_ID
- *   - DATABRICKS_PECO_CLIENT_SECRET
+ *   - DATABRICKS_PECOTESTING_HTTP_PATH2          (second pecotesting warehouse — AAD SP registered here)
+ *   - DATABRICKS_PECOTESTING_AAD_CLIENT_ID       (Azure AD SP registered on pecotesting)
+ *   - DATABRICKS_PECOTESTING_AAD_CLIENT_SECRET   (matching secret)
  *
  * Skipped (not failed) when any of the four env vars is missing, so CI
  * machines without OAuth credentials don't fail-flap.
  */
 describe('sea-auth e2e — OAuth M2M through DBSQLClient ↔ SeaBackend ↔ napi binding', function suite() {
   const host = process.env.DATABRICKS_PECOTESTING_SERVER_HOSTNAME;
-  const path = process.env.DATABRICKS_PECOTESTING_HTTP_PATH;
-  const oauthClientId = process.env.DATABRICKS_PECO_CLIENT_ID;
-  const oauthClientSecret = process.env.DATABRICKS_PECO_CLIENT_SECRET;
+  const path = process.env.DATABRICKS_PECOTESTING_HTTP_PATH2;
+  const oauthClientId = process.env.DATABRICKS_PECOTESTING_AAD_CLIENT_ID;
+  const oauthClientSecret = process.env.DATABRICKS_PECOTESTING_AAD_CLIENT_SECRET;
 
   this.timeout(120_000);
 
