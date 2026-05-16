@@ -157,13 +157,17 @@ describe('SeaAuth — edge cases (input validation + ambiguity)', () => {
       );
     });
 
-    // Round-4 NF3-2: pin the exact class — must be `AuthenticationError`,
-    // not the bare `HiveDriverError` superclass. The round-3 NF-N3 fix
-    // swapped this silently by routing M2M-with-empty-secret through the
-    // U2M arm, which raised a plain `HiveDriverError`. Guard against that
-    // regression by pinning the constructor name (since
-    // `AuthenticationError extends HiveDriverError`, `instanceof` alone
-    // can't distinguish the two).
+    // Round-4 NF3-2: pin the exact class against the round-3 NF-N3
+    // regression where M2M-with-empty-secret was routed through the U2M
+    // arm and raised a bare `HiveDriverError`. `instanceof
+    // AuthenticationError` correctly returns `false` for a bare
+    // `HiveDriverError` instance (instanceof is a one-way subclass
+    // check), so the subclass check IS sufficient to catch the
+    // regression. We don't add an `error.name` or `constructor.name`
+    // belt — the former requires `this.name` on the subclass (LE4-1
+    // handles that separately for downstream-consumer benefit, not for
+    // this test), and the latter is bundler-fragile (terser/esbuild
+    // strip class names without `keep_classnames`).
     it('M2M-with-empty-secret throws AuthenticationError, not bare HiveDriverError (class pin)', () => {
       const opts: ConnectionOptions = {
         host: 'example.cloud.databricks.com',
@@ -173,15 +177,31 @@ describe('SeaAuth — edge cases (input validation + ambiguity)', () => {
         oauthClientSecret: '',
       };
 
-      let caught: unknown;
-      try {
-        buildSeaConnectionOptions(opts);
-      } catch (e) {
-        caught = e;
-      }
-      expect(caught).to.be.instanceOf(AuthenticationError);
-      expect((caught as Error).constructor.name).to.equal('AuthenticationError');
-      expect((caught as Error).message).to.match(/oauthClientSecret.*non-empty.*OAuth M2M/);
+      expect(() => buildSeaConnectionOptions(opts)).to.throw(
+        AuthenticationError,
+        /oauthClientSecret.*non-empty.*OAuth M2M/,
+      );
+    });
+
+    // Round-5 DA4-2: the round-3 → round-4 test flips left the U2M-arm
+    // defense-in-depth U2M+id rejection without coverage. It's still
+    // reachable: when `oauthClientId` is a blank-reserved literal
+    // (whitespace, `"null"`, `"undefined"`) AND `oauthClientSecret` is
+    // absent/blank, BOTH `idIsBlank` and `secretIsBlank` are true so
+    // U2M wins routing — but a non-undefined id signals ambiguity that
+    // U2M cannot honor (the kernel hardcodes `databricks-cli`).
+    it('routes a whitespace oauthClientId with no oauthClientSecret to the U2M defense-in-depth rejection', () => {
+      const opts: ConnectionOptions = {
+        host: 'example.cloud.databricks.com',
+        path: '/sql/1.0/warehouses/abc',
+        authType: 'databricks-oauth',
+        oauthClientId: '   ',
+      } as unknown as ConnectionOptions;
+
+      expect(() => buildSeaConnectionOptions(opts)).to.throw(
+        HiveDriverError,
+        /oauthClientId.*not supported on the OAuth U2M flow/,
+      );
     });
   });
 
