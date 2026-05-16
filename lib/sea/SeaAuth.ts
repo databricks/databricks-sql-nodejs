@@ -104,12 +104,14 @@ export function isBlankOrReserved(s: string): boolean {
  *   - OAuth M2M: `authType: 'databricks-oauth'` + `oauthClientId` +
  *     `oauthClientSecret`. Kernel handles OIDC discovery, client_credentials
  *     exchange, and re-auth on expiry internally.
- *   - OAuth U2M: `authType: 'databricks-oauth'` + NO `oauthClientSecret`.
- *     Kernel runs the PKCE auth-code dance (opens a browser, listens on
- *     localhost:8030, exchanges the code, persists to
- *     `~/.config/databricks-sql-kernel/oauth/{sha256}.json`). The flow
- *     selector matches thrift at `DBSQLClient.ts:143` —
- *     `oauthClientSecret defined ? M2M : U2M`.
+ *   - OAuth U2M: `authType: 'databricks-oauth'` + NO `oauthClientId` and
+ *     NO `oauthClientSecret`. Kernel runs the PKCE auth-code dance (opens
+ *     a browser, listens on localhost:8030, exchanges the code, persists
+ *     to `~/.config/databricks-sql-kernel/oauth/{sha256}.json`). The flow
+ *     selector keys off `oauthClientId` presence: present → M2M, absent →
+ *     U2M. (Round-4 NF3-2 fix; previously secret-keyed — that variant
+ *     routed a typo'd-secret M2M call to the U2M arm and swallowed the
+ *     actionable error.) Mirrors thrift's intent at `DBSQLClient.ts:143`.
  *
  * Out of scope on the OAuth paths (rejected with a clear error):
  *   - `azureTenantId` / `useDatabricksOAuthInAzure` → Microsoft Entra
@@ -188,7 +190,12 @@ export function buildSeaConnectionOptions(options: ConnectionOptions): SeaNative
     // user who set an id but typoed/forgot the secret gets the M2M
     // "secret is required" error instead of a U2M error that hides
     // their actual intent. The U2M arm still defends against an id
-    // sneaking through (e.g. caller bypasses shape inference).
+    // sneaking through: fires only when `oauthClientId` is provided as
+    // a blank-reserved literal (e.g., whitespace, `"null"`, `"undefined"`)
+    // alongside an absent/blank secret — both `idIsBlank` and
+    // `secretIsBlank` are true so U2M wins routing, but the caller's
+    // intent to use U2M with a partially-set id is ambiguous and
+    // rejected explicitly.
     const idIsBlank =
       oauth.oauthClientId === undefined ||
       (typeof oauth.oauthClientId === 'string' && isBlankOrReserved(oauth.oauthClientId));

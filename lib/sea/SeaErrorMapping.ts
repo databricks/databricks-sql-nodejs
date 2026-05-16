@@ -60,8 +60,7 @@ export type KernelErrorCode =
  * `errorCode: enum` field, and `DBSQLOperation.ts:209` switches on it
  * (`err.errorCode === OperationStateErrorCode.Canceled`). Top-level
  * defineProperty would clobber that enum with a kernel string and break
- * cancel/close detection. (`RetryError.errorCode` is the same shape and
- * is reserved here for future kernel→`RetryError` mappings.)
+ * cancel/close detection.
  */
 export interface KernelMetadata {
   errorCode?: string;
@@ -76,7 +75,7 @@ export interface KernelMetadata {
  * exposed at the top level (no collision in the existing driver error
  * tree); the remaining envelope fields live under a `kernelMetadata`
  * namespace to avoid clobbering pre-existing `errorCode` semantics on
- * `OperationStateError` (and, reserved for future use, `RetryError`).
+ * `OperationStateError`.
  */
 export interface ErrorWithSqlState extends Error {
   sqlState?: string;
@@ -211,9 +210,7 @@ function buildKernelMetadata(parsed: Record<string, unknown>): KernelMetadata {
  *    envelope fields under a single non-enumerable `kernelMetadata`
  *    namespace. Namespacing avoids the collision with
  *    `OperationStateError.errorCode` (an enum already switched on at the
- *    JS layer — see `DBSQLOperation.ts:209`). `RetryError.errorCode`
- *    shares the shape and is reserved for future kernel→`RetryError`
- *    mappings.
+ *    JS layer — see `DBSQLOperation.ts:209`).
  *  - Binding-side error (e.g. `napi::Error::new(InvalidArg, "openSession:
  *    \`token\` is required for the requested auth mode")` produced by
  *    the binding's own validation): returned unchanged. These don't
@@ -243,8 +240,20 @@ export function decodeNapiKernelError(err: unknown): Error {
     // `__databricks_error__:` prefix; it's a binding/JS-side framing
     // marker, not user-actionable, and leaking it makes the message
     // confusing to operators triaging a malformed kernel response.
-    err.message = jsonStr;
-    return err;
+    //
+    // Mutate in place when possible so the napi-binding's original
+    // stack survives — that stack is the only useful triage signal on
+    // a malformed-envelope path (where did a sentinel-prefixed
+    // non-JSON message come from?). Fall back to a fresh
+    // `HiveDriverError` only if a future napi-rs revision makes
+    // `Error.message` non-writable (no such guarantee today, but the
+    // descriptor contract is implementation-defined).
+    try {
+      err.message = jsonStr;
+      return err;
+    } catch {
+      return new HiveDriverError(jsonStr);
+    }
   }
 
   if (
