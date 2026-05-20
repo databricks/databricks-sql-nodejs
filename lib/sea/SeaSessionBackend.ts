@@ -255,15 +255,15 @@ export default class SeaSessionBackend implements ISessionBackend {
 
   public async getPrimaryKeys(request: PrimaryKeysRequest): Promise<IOperationBackend> {
     this.failIfClosed();
+    if (!request.catalogName) {
+      throw new HiveDriverError(
+        'SeaSessionBackend.getPrimaryKeys: catalogName is required on the SEA path (kernel rejects empty identifiers; Thrift backend silently resolves to session default)',
+      );
+    }
     let nativeStatement;
     try {
-      // The napi getPrimaryKeys requires all three args as non-optional
-      // strings (napi-rs maps Rust `Identifier` → `string`, not
-      // `Option<Identifier>` → `string | null`). An absent catalogName
-      // becomes '' here; the kernel returns InvalidArgument for an empty
-      // identifier, which decodeNapiKernelError surfaces as HiveDriverError.
       nativeStatement = await this.connection.getPrimaryKeys(
-        request.catalogName ?? '',
+        request.catalogName,
         request.schemaName,
         request.tableName,
       );
@@ -275,6 +275,21 @@ export default class SeaSessionBackend implements ISessionBackend {
 
   public async getCrossReference(request: CrossReferenceRequest): Promise<IOperationBackend> {
     this.failIfClosed();
+    if (!request.foreignCatalogName) {
+      throw new HiveDriverError(
+        'SeaSessionBackend.getCrossReference: foreignCatalogName is required on the SEA path (kernel rejects empty identifiers)',
+      );
+    }
+    if (!request.foreignSchemaName) {
+      throw new HiveDriverError(
+        'SeaSessionBackend.getCrossReference: foreignSchemaName is required on the SEA path',
+      );
+    }
+    if (!request.foreignTableName) {
+      throw new HiveDriverError(
+        'SeaSessionBackend.getCrossReference: foreignTableName is required on the SEA path',
+      );
+    }
     let nativeStatement;
     try {
       nativeStatement = await this.connection.getCrossReference(

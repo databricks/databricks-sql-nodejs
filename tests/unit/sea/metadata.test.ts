@@ -371,15 +371,17 @@ describe('SeaSessionBackend metadata methods', () => {
       expect(conn.calls[0].args).to.deep.equal(['cat', 'myschema', 'orders']);
     });
 
-    it('passes empty string for absent catalogName (napi requires string, not undefined)', async () => {
+    it('throws HiveDriverError when catalogName is absent', async () => {
       const conn = new FakeMetadataConnection();
-      await makeSession(conn).getPrimaryKeys({ schemaName: 'sch', tableName: 'tbl' });
-      expect(conn.calls[0].args).to.deep.equal(['', 'sch', 'tbl']);
+      let thrown: unknown;
+      try { await makeSession(conn).getPrimaryKeys({ schemaName: 'sch', tableName: 'tbl' }); } catch (e) { thrown = e; }
+      expect(thrown).to.be.instanceOf(HiveDriverError);
+      expect((thrown as Error).message).to.match(/catalogName is required/);
     });
 
-    it('returns SeaOperationBackend', async () => {
+    it('returns SeaOperationBackend when all args present', async () => {
       const conn = new FakeMetadataConnection();
-      const op = await makeSession(conn).getPrimaryKeys({ schemaName: 's', tableName: 't' });
+      const op = await makeSession(conn).getPrimaryKeys({ catalogName: 'cat', schemaName: 's', tableName: 't' });
       expect(op).to.be.instanceOf(SeaOperationBackend);
     });
 
@@ -388,7 +390,7 @@ describe('SeaSessionBackend metadata methods', () => {
       const session = makeSession(conn);
       await session.close();
       let thrown: unknown;
-      try { await session.getPrimaryKeys({ schemaName: 's', tableName: 't' }); } catch (e) { thrown = e; }
+      try { await session.getPrimaryKeys({ catalogName: 'cat', schemaName: 's', tableName: 't' }); } catch (e) { thrown = e; }
       expect(thrown).to.be.instanceOf(HiveDriverError);
     });
 
@@ -396,7 +398,7 @@ describe('SeaSessionBackend metadata methods', () => {
       const conn = new FakeMetadataConnection();
       conn.throwNextCall = new Error('kernel-pk-error');
       let thrown: unknown;
-      try { await makeSession(conn).getPrimaryKeys({ schemaName: 's', tableName: 't' }); } catch (e) { thrown = e; }
+      try { await makeSession(conn).getPrimaryKeys({ catalogName: 'cat', schemaName: 's', tableName: 't' }); } catch (e) { thrown = e; }
       expect(thrown).to.be.instanceOf(Error);
     });
   });
@@ -429,6 +431,45 @@ describe('SeaSessionBackend metadata methods', () => {
         foreignTableName: 'ft',
       });
       expect(op).to.be.instanceOf(SeaOperationBackend);
+    });
+
+    it('throws HiveDriverError when foreignCatalogName is absent', async () => {
+      const conn = new FakeMetadataConnection();
+      let thrown: unknown;
+      try {
+        await makeSession(conn).getCrossReference({
+          parentCatalogName: 'pc', parentSchemaName: 'ps', parentTableName: 'pt',
+          foreignCatalogName: '', foreignSchemaName: 'fs', foreignTableName: 'ft',
+        });
+      } catch (e) { thrown = e; }
+      expect(thrown).to.be.instanceOf(HiveDriverError);
+      expect((thrown as Error).message).to.match(/foreignCatalogName is required/);
+    });
+
+    it('throws HiveDriverError when foreignSchemaName is absent', async () => {
+      const conn = new FakeMetadataConnection();
+      let thrown: unknown;
+      try {
+        await makeSession(conn).getCrossReference({
+          parentCatalogName: 'pc', parentSchemaName: 'ps', parentTableName: 'pt',
+          foreignCatalogName: 'fc', foreignSchemaName: '', foreignTableName: 'ft',
+        });
+      } catch (e) { thrown = e; }
+      expect(thrown).to.be.instanceOf(HiveDriverError);
+      expect((thrown as Error).message).to.match(/foreignSchemaName is required/);
+    });
+
+    it('throws HiveDriverError when foreignTableName is absent', async () => {
+      const conn = new FakeMetadataConnection();
+      let thrown: unknown;
+      try {
+        await makeSession(conn).getCrossReference({
+          parentCatalogName: 'pc', parentSchemaName: 'ps', parentTableName: 'pt',
+          foreignCatalogName: 'fc', foreignSchemaName: 'fs', foreignTableName: '',
+        });
+      } catch (e) { thrown = e; }
+      expect(thrown).to.be.instanceOf(HiveDriverError);
+      expect((thrown as Error).message).to.match(/foreignTableName is required/);
     });
 
     it('rejects when session is closed', async () => {
