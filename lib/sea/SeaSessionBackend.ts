@@ -31,7 +31,7 @@ import {
 import Status from '../dto/Status';
 import InfoValue from '../dto/InfoValue';
 import HiveDriverError from '../errors/HiveDriverError';
-import { SeaNativeConnection, SeaExecuteOptions } from './SeaNativeLoader';
+import { SeaNativeConnection, SeaExecuteOptions, SeaNativeInfoValue } from './SeaNativeLoader';
 import { decodeNapiKernelError } from './SeaErrorMapping';
 import SeaOperationBackend from './SeaOperationBackend';
 
@@ -104,8 +104,20 @@ export default class SeaSessionBackend implements ISessionBackend {
     return this._id;
   }
 
-  public async getInfo(_infoType: number): Promise<InfoValue> {
-    throw new HiveDriverError('SeaSessionBackend.getInfo: not implemented yet (deferred to M1)');
+  public async getInfo(infoType: number): Promise<InfoValue> {
+    this.failIfClosed();
+    let raw: SeaNativeInfoValue;
+    try {
+      raw = await this.connection.getInfo(infoType);
+    } catch (err) {
+      throw decodeNapiKernelError(err);
+    }
+    // SeaNativeInfoValue is structurally compatible with TGetInfoValue:
+    // both carry the same optional variant fields (stringValue,
+    // smallIntValue, integerBitmask, integerFlag). Cast so InfoValue
+    // can wrap it without importing the thrift type here.
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    return new InfoValue(raw as any);
   }
 
   /**
