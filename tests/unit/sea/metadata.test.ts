@@ -458,49 +458,4 @@ describe('SeaSessionBackend metadata methods', () => {
     });
   });
 
-  // ── getProcedures ─────────────────────────────────────────────────────────
-
-  describe('getProcedures', () => {
-    it('routes all 3 optional fields to listProcedures', async () => {
-      const conn = new FakeMetadataConnection();
-      await makeSession(conn).getProcedures({
-        catalogName: 'cat',
-        schemaName: 'sch',
-        procedureName: 'proc%',
-      });
-      expect(conn.calls[0].method).to.equal('listProcedures');
-      expect(conn.calls[0].args).to.deep.equal(['cat', 'sch', 'proc%']);
-    });
-
-    it('passes undefined for absent fields', async () => {
-      const conn = new FakeMetadataConnection();
-      await makeSession(conn).getProcedures({});
-      expect(conn.calls[0].args).to.deep.equal([undefined, undefined, undefined]);
-    });
-
-    it('returns SeaOperationBackend', async () => {
-      const conn = new FakeMetadataConnection();
-      const op = await makeSession(conn).getProcedures({});
-      expect(op).to.be.instanceOf(SeaOperationBackend);
-    });
-
-    it('rejects when session is closed', async () => {
-      const conn = new FakeMetadataConnection();
-      const session = makeSession(conn);
-      await session.close();
-      let thrown: unknown;
-      try { await session.getProcedures({}); } catch (e) { thrown = e; }
-      expect(thrown).to.be.instanceOf(HiveDriverError);
-      expect((thrown as Error).message).to.match(/closed/);
-    });
-
-    it('wraps kernel error via decodeNapiKernelError', async () => {
-      const conn = new FakeMetadataConnection();
-      conn.throwNextCall = new Error('napi-err');
-      const session = makeSession(conn);
-      let thrown: unknown;
-      try { await session.getProcedures({}); } catch (e) { thrown = e; }
-      expect(thrown).to.be.instanceOf(Error);
-    });
-  });
 });

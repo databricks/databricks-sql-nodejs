@@ -8,7 +8,6 @@ import {
   TableTypesRequest,
   ColumnsRequest,
   FunctionsRequest,
-  ProceduresRequest,
   PrimaryKeysRequest,
   CrossReferenceRequest,
 } from './IDBSQLSession';
@@ -33,7 +32,6 @@ export default interface ISessionBackend {
   getTableTypes(request: TableTypesRequest): Promise<IOperationBackend>;
   getColumns(request: ColumnsRequest): Promise<IOperationBackend>;
   getFunctions(request: FunctionsRequest): Promise<IOperationBackend>;
-  getProcedures(request: ProceduresRequest): Promise<IOperationBackend>;
   getPrimaryKeys(request: PrimaryKeysRequest): Promise<IOperationBackend>;
   getCrossReference(request: CrossReferenceRequest): Promise<IOperationBackend>;
 

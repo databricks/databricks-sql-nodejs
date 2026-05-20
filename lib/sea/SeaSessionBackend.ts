@@ -25,7 +25,6 @@ import {
   TableTypesRequest,
   ColumnsRequest,
   FunctionsRequest,
-  ProceduresRequest,
   PrimaryKeysRequest,
   CrossReferenceRequest,
 } from '../contracts/IDBSQLSession';
@@ -254,7 +253,15 @@ export default class SeaSessionBackend implements ISessionBackend {
     return new SeaOperationBackend({ statement: nativeStatement, context: this.context });
   }
 
-  public async getProcedures(request: ProceduresRequest): Promise<IOperationBackend> {
+  // listProcedures is available on the napi binding (Connection.listProcedures) but
+  // getProcedures is intentionally NOT added to IDBSQLSession / ISessionBackend yet.
+  // Thrift NodeJS driver has no getProcedures, so exposing it publicly requires a
+  // parity decision. Wire it to the public interface when IDBSQLSession is extended.
+  public async getProcedures(request: {
+    catalogName?: string;
+    schemaName?: string;
+    procedureName?: string;
+  }): Promise<IOperationBackend> {
     this.failIfClosed();
     let nativeStatement;
     try {
