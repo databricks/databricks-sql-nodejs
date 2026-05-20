@@ -66,8 +66,15 @@ export interface SeaSessionBackendOptions {
 /**
  * SEA-backed implementation of `ISessionBackend`.
  *
- * **M1 scope:** `executeStatement`, all 10 metadata methods, and
- * `close`. All metadata methods delegate directly to the corresponding
+ * **M1 scope:** `executeStatement`, 9 of the 10 `IDBSQLSession`
+ * metadata methods, and `close`. The implemented nine are:
+ * `getTypeInfo`, `getCatalogs`, `getSchemas`, `getTables`,
+ * `getTableTypes`, `getColumns`, `getFunctions`, `getPrimaryKeys`,
+ * `getCrossReference`. `getInfo` is a stub-throw (deferred — the
+ * kernel `Metadata` API does not expose it yet); `getProcedures` is
+ * not on `IDBSQLSession` (see `SeaNativeLoader.ts` NOTE comment).
+ *
+ * All implemented metadata methods delegate directly to the corresponding
  * napi `Connection` method — the kernel performs SHOW/information_schema
  * queries and returns JDBC-shaped Arrow batches through a `Statement`
  * handle identical to `executeStatement`. The JS layer wraps each
