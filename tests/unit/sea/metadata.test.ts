@@ -18,7 +18,6 @@ import SeaOperationBackend from '../../../lib/sea/SeaOperationBackend';
 import {
   SeaNativeConnection,
   SeaNativeStatement,
-  SeaNativeInfoValue,
   SeaExecuteOptions,
 } from '../../../lib/sea/SeaNativeLoader';
 import IClientContext, { ClientConfig } from '../../../lib/contracts/IClientContext';
@@ -111,17 +110,17 @@ class FakeMetadataConnection implements SeaNativeConnection {
   }
 
   public async getPrimaryKeys(
-    catalog: string | undefined,
-    schema: string | undefined,
+    catalog: string,
+    schema: string,
     table: string,
   ): Promise<SeaNativeStatement> {
     return this.record('getPrimaryKeys', [catalog, schema, table]);
   }
 
   public async getCrossReference(
-    parentCatalog: string | undefined,
-    parentSchema: string | undefined,
-    parentTable: string | undefined,
+    parentCatalog: string | undefined | null,
+    parentSchema: string | undefined | null,
+    parentTable: string | undefined | null,
     foreignCatalog: string,
     foreignSchema: string,
     foreignTable: string,
@@ -130,16 +129,6 @@ class FakeMetadataConnection implements SeaNativeConnection {
       parentCatalog, parentSchema, parentTable,
       foreignCatalog, foreignSchema, foreignTable,
     ]);
-  }
-
-  public async getInfo(infoType: number): Promise<SeaNativeInfoValue> {
-    if (this.throwNextCall) {
-      const err = this.throwNextCall;
-      this.throwNextCall = null;
-      throw err;
-    }
-    this.calls.push({ method: 'getInfo', args: [infoType], returnStatement: new FakeNativeStatement() });
-    return { stringValue: `info-for-${infoType}` };
   }
 
   public async close(): Promise<void> {}
@@ -382,10 +371,10 @@ describe('SeaSessionBackend metadata methods', () => {
       expect(conn.calls[0].args).to.deep.equal(['cat', 'myschema', 'orders']);
     });
 
-    it('passes undefined catalogName when absent', async () => {
+    it('passes empty string for absent catalogName (napi requires string, not undefined)', async () => {
       const conn = new FakeMetadataConnection();
       await makeSession(conn).getPrimaryKeys({ schemaName: 'sch', tableName: 'tbl' });
-      expect(conn.calls[0].args).to.deep.equal([undefined, 'sch', 'tbl']);
+      expect(conn.calls[0].args).to.deep.equal(['', 'sch', 'tbl']);
     });
 
     it('returns SeaOperationBackend', async () => {

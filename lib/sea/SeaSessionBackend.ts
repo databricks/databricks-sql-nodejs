@@ -257,8 +257,13 @@ export default class SeaSessionBackend implements ISessionBackend {
     this.failIfClosed();
     let nativeStatement;
     try {
+      // The napi getPrimaryKeys requires all three args as non-optional
+      // strings (napi-rs maps Rust `Identifier` → `string`, not
+      // `Option<Identifier>` → `string | null`). An absent catalogName
+      // becomes '' here; the kernel returns InvalidArgument for an empty
+      // identifier, which decodeNapiKernelError surfaces as HiveDriverError.
       nativeStatement = await this.connection.getPrimaryKeys(
-        request.catalogName,
+        request.catalogName ?? '',
         request.schemaName,
         request.tableName,
       );

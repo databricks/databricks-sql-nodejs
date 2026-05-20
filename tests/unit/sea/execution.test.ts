@@ -21,7 +21,6 @@ import {
   SeaNativeBinding,
   SeaNativeConnection,
   SeaNativeStatement,
-  SeaNativeInfoValue,
   SeaExecuteOptions,
 } from '../../../lib/sea/SeaNativeLoader';
 import IClientContext, { ClientConfig } from '../../../lib/contracts/IClientContext';
@@ -109,23 +108,19 @@ class FakeNativeConnection implements SeaNativeConnection {
   public async listTypeInfo() { return new FakeNativeStatement(); }
 
   public async getPrimaryKeys(
-    _catalog: string | undefined,
-    _schema: string | undefined,
+    _catalog: string,
+    _schema: string,
     _table: string,
   ) { return new FakeNativeStatement(); }
 
   public async getCrossReference(
-    _parentCatalog: string | undefined,
-    _parentSchema: string | undefined,
-    _parentTable: string | undefined,
+    _parentCatalog: string | undefined | null,
+    _parentSchema: string | undefined | null,
+    _parentTable: string | undefined | null,
     _foreignCatalog: string,
     _foreignSchema: string,
     _foreignTable: string,
   ) { return new FakeNativeStatement(); }
-
-  public async getInfo(_infoType: number): Promise<SeaNativeInfoValue> {
-    return { stringValue: 'fake-info' };
-  }
 
   public async close(): Promise<void> {
     this.closed = true;
