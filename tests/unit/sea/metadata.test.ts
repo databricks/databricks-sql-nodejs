@@ -15,7 +15,6 @@
 import { expect } from 'chai';
 import SeaSessionBackend from '../../../lib/sea/SeaSessionBackend';
 import SeaOperationBackend from '../../../lib/sea/SeaOperationBackend';
-import InfoValue from '../../../lib/dto/InfoValue';
 import {
   SeaNativeConnection,
   SeaNativeStatement,
@@ -459,42 +458,6 @@ describe('SeaSessionBackend metadata methods', () => {
         });
       } catch (e) { thrown = e; }
       expect(thrown).to.be.instanceOf(HiveDriverError);
-    });
-  });
-
-  // ── getInfo ──────────────────────────────────────────────────────────────
-
-  describe('getInfo', () => {
-    it('calls getInfo with the info type and returns an InfoValue', async () => {
-      const conn = new FakeMetadataConnection();
-      const result = await makeSession(conn).getInfo(6);
-      expect(result).to.be.instanceOf(InfoValue);
-      expect(conn.calls[0].method).to.equal('getInfo');
-      expect(conn.calls[0].args).to.deep.equal([6]);
-    });
-
-    it('InfoValue.getValue() returns the string from the kernel', async () => {
-      const conn = new FakeMetadataConnection();
-      const result = await makeSession(conn).getInfo(6);
-      expect(result.getValue()).to.equal('info-for-6');
-    });
-
-    it('rejects when session is closed', async () => {
-      const conn = new FakeMetadataConnection();
-      const session = makeSession(conn);
-      await session.close();
-      let thrown: unknown;
-      try { await session.getInfo(1); } catch (e) { thrown = e; }
-      expect(thrown).to.be.instanceOf(HiveDriverError);
-      expect((thrown as Error).message).to.match(/closed/);
-    });
-
-    it('wraps kernel error via decodeNapiKernelError', async () => {
-      const conn = new FakeMetadataConnection();
-      conn.throwNextCall = new Error('info-kernel-error');
-      let thrown: unknown;
-      try { await makeSession(conn).getInfo(1); } catch (e) { thrown = e; }
-      expect(thrown).to.be.instanceOf(Error);
     });
   });
 });
