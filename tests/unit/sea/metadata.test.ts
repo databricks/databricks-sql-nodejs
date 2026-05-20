@@ -101,14 +101,6 @@ class FakeMetadataConnection implements SeaNativeConnection {
     return this.record('listFunctions', [catalog, schemaPattern, functionPattern]);
   }
 
-  public async listProcedures(
-    catalog: string | undefined,
-    schemaPattern: string | undefined,
-    procedurePattern: string | undefined,
-  ): Promise<SeaNativeStatement> {
-    return this.record('listProcedures', [catalog, schemaPattern, procedurePattern]);
-  }
-
   public async listTableTypes(): Promise<SeaNativeStatement> {
     return this.record('listTableTypes', []);
   }
@@ -457,5 +449,4 @@ describe('SeaSessionBackend metadata methods', () => {
       expect(thrown).to.be.instanceOf(HiveDriverError);
     });
   });
-
 });

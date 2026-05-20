@@ -126,11 +126,6 @@ export interface SeaNativeConnection {
   // NodeJS driver doesn't expose `getProcedures` either, and extending
   // the public driver interface needs a separate spec entry + parity
   // decision. Re-enable here when that decision is made.
-  listProcedures(
-    catalog?: string | undefined | null,
-    schemaPattern?: string | undefined | null,
-    procedurePattern?: string | undefined | null,
-  ): Promise<SeaNativeStatement>;
 
   /** All supported table types. No wire call — static result. */
   listTableTypes(): Promise<SeaNativeStatement>;

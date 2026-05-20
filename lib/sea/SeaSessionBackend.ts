@@ -253,26 +253,6 @@ export default class SeaSessionBackend implements ISessionBackend {
     return new SeaOperationBackend({ statement: nativeStatement, context: this.context });
   }
 
-  // Not on IDBSQLSession — see SeaNativeLoader.SeaNativeConnection.listProcedures for the deferral note.
-  public async getProcedures(request: {
-    catalogName?: string;
-    schemaName?: string;
-    procedureName?: string;
-  }): Promise<IOperationBackend> {
-    this.failIfClosed();
-    let nativeStatement;
-    try {
-      nativeStatement = await this.connection.listProcedures(
-        request.catalogName,
-        request.schemaName,
-        request.procedureName,
-      );
-    } catch (err) {
-      throw decodeNapiKernelError(err);
-    }
-    return new SeaOperationBackend({ statement: nativeStatement, context: this.context });
-  }
-
   public async getPrimaryKeys(request: PrimaryKeysRequest): Promise<IOperationBackend> {
     this.failIfClosed();
     let nativeStatement;
