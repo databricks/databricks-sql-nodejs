@@ -120,7 +120,15 @@ export interface SeaNativeConnection {
     functionPattern?: string | undefined | null,
   ): Promise<SeaNativeStatement>;
 
-  /** Procedures filtered by catalog (exact), schema and procedure name LIKE patterns. */
+  /**
+   * Procedures filtered by catalog (exact), schema and procedure name LIKE patterns.
+   *
+   * `listProcedures` is exposed on the napi binding (pyo3 parity) but
+   * intentionally not surfaced on IDBSQLSession in this pass — the existing
+   * Thrift NodeJS driver has no getProcedures, and extending the public
+   * interface needs a separate spec entry + parity decision. Re-enable in
+   * SeaSessionBackend / IDBSQLSession when that decision is made.
+   */
   listProcedures(
     catalog?: string | undefined | null,
     schemaPattern?: string | undefined | null,

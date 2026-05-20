@@ -253,10 +253,7 @@ export default class SeaSessionBackend implements ISessionBackend {
     return new SeaOperationBackend({ statement: nativeStatement, context: this.context });
   }
 
-  // listProcedures is available on the napi binding (Connection.listProcedures) but
-  // getProcedures is intentionally NOT added to IDBSQLSession / ISessionBackend yet.
-  // Thrift NodeJS driver has no getProcedures, so exposing it publicly requires a
-  // parity decision. Wire it to the public interface when IDBSQLSession is extended.
+  // Not on IDBSQLSession — see SeaNativeLoader.SeaNativeConnection.listProcedures for the deferral note.
   public async getProcedures(request: {
     catalogName?: string;
     schemaName?: string;
