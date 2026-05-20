@@ -253,12 +253,37 @@ export default class SeaSessionBackend implements ISessionBackend {
     return new SeaOperationBackend({ statement: nativeStatement, context: this.context });
   }
 
-  public async getPrimaryKeys(_request: PrimaryKeysRequest): Promise<IOperationBackend> {
-    throw new HiveDriverError('SeaSessionBackend.getPrimaryKeys: not implemented yet (deferred to M1)');
+  public async getPrimaryKeys(request: PrimaryKeysRequest): Promise<IOperationBackend> {
+    this.failIfClosed();
+    let nativeStatement;
+    try {
+      nativeStatement = await this.connection.getPrimaryKeys(
+        request.catalogName,
+        request.schemaName,
+        request.tableName,
+      );
+    } catch (err) {
+      throw decodeNapiKernelError(err);
+    }
+    return new SeaOperationBackend({ statement: nativeStatement, context: this.context });
   }
 
-  public async getCrossReference(_request: CrossReferenceRequest): Promise<IOperationBackend> {
-    throw new HiveDriverError('SeaSessionBackend.getCrossReference: not implemented yet (deferred to M1)');
+  public async getCrossReference(request: CrossReferenceRequest): Promise<IOperationBackend> {
+    this.failIfClosed();
+    let nativeStatement;
+    try {
+      nativeStatement = await this.connection.getCrossReference(
+        request.parentCatalogName,
+        request.parentSchemaName,
+        request.parentTableName,
+        request.foreignCatalogName,
+        request.foreignSchemaName,
+        request.foreignTableName,
+      );
+    } catch (err) {
+      throw decodeNapiKernelError(err);
+    }
+    return new SeaOperationBackend({ statement: nativeStatement, context: this.context });
   }
 
   public async close(): Promise<Status> {

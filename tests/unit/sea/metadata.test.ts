@@ -367,4 +367,97 @@ describe('SeaSessionBackend metadata methods', () => {
       expect(thrown).to.be.instanceOf(HiveDriverError);
     });
   });
+
+  // ── getPrimaryKeys ───────────────────────────────────────────────────────
+
+  describe('getPrimaryKeys', () => {
+    it('routes catalogName, schemaName, tableName to getPrimaryKeys', async () => {
+      const conn = new FakeMetadataConnection();
+      await makeSession(conn).getPrimaryKeys({
+        catalogName: 'cat',
+        schemaName: 'myschema',
+        tableName: 'orders',
+      });
+      expect(conn.calls[0].method).to.equal('getPrimaryKeys');
+      expect(conn.calls[0].args).to.deep.equal(['cat', 'myschema', 'orders']);
+    });
+
+    it('passes undefined catalogName when absent', async () => {
+      const conn = new FakeMetadataConnection();
+      await makeSession(conn).getPrimaryKeys({ schemaName: 'sch', tableName: 'tbl' });
+      expect(conn.calls[0].args).to.deep.equal([undefined, 'sch', 'tbl']);
+    });
+
+    it('returns SeaOperationBackend', async () => {
+      const conn = new FakeMetadataConnection();
+      const op = await makeSession(conn).getPrimaryKeys({ schemaName: 's', tableName: 't' });
+      expect(op).to.be.instanceOf(SeaOperationBackend);
+    });
+
+    it('rejects when session is closed', async () => {
+      const conn = new FakeMetadataConnection();
+      const session = makeSession(conn);
+      await session.close();
+      let thrown: unknown;
+      try { await session.getPrimaryKeys({ schemaName: 's', tableName: 't' }); } catch (e) { thrown = e; }
+      expect(thrown).to.be.instanceOf(HiveDriverError);
+    });
+
+    it('wraps kernel error via decodeNapiKernelError', async () => {
+      const conn = new FakeMetadataConnection();
+      conn.throwNextCall = new Error('kernel-pk-error');
+      let thrown: unknown;
+      try { await makeSession(conn).getPrimaryKeys({ schemaName: 's', tableName: 't' }); } catch (e) { thrown = e; }
+      expect(thrown).to.be.instanceOf(Error);
+    });
+  });
+
+  // ── getCrossReference ────────────────────────────────────────────────────
+
+  describe('getCrossReference', () => {
+    it('routes all 6 fields to getCrossReference in the right order', async () => {
+      const conn = new FakeMetadataConnection();
+      await makeSession(conn).getCrossReference({
+        parentCatalogName: 'pc',
+        parentSchemaName: 'ps',
+        parentTableName: 'pt',
+        foreignCatalogName: 'fc',
+        foreignSchemaName: 'fs',
+        foreignTableName: 'ft',
+      });
+      expect(conn.calls[0].method).to.equal('getCrossReference');
+      expect(conn.calls[0].args).to.deep.equal(['pc', 'ps', 'pt', 'fc', 'fs', 'ft']);
+    });
+
+    it('returns SeaOperationBackend', async () => {
+      const conn = new FakeMetadataConnection();
+      const op = await makeSession(conn).getCrossReference({
+        parentCatalogName: 'pc',
+        parentSchemaName: 'ps',
+        parentTableName: 'pt',
+        foreignCatalogName: 'fc',
+        foreignSchemaName: 'fs',
+        foreignTableName: 'ft',
+      });
+      expect(op).to.be.instanceOf(SeaOperationBackend);
+    });
+
+    it('rejects when session is closed', async () => {
+      const conn = new FakeMetadataConnection();
+      const session = makeSession(conn);
+      await session.close();
+      let thrown: unknown;
+      try {
+        await session.getCrossReference({
+          parentCatalogName: 'pc',
+          parentSchemaName: 'ps',
+          parentTableName: 'pt',
+          foreignCatalogName: 'fc',
+          foreignSchemaName: 'fs',
+          foreignTableName: 'ft',
+        });
+      } catch (e) { thrown = e; }
+      expect(thrown).to.be.instanceOf(HiveDriverError);
+    });
+  });
 });
