@@ -103,6 +103,12 @@ class FakeNativeConnection implements SeaNativeConnection {
     _functionPattern: string | undefined,
   ) { return new FakeNativeStatement(); }
 
+  public async listProcedures(
+    _catalog: string | undefined,
+    _schemaPattern: string | undefined,
+    _procedurePattern: string | undefined,
+  ) { return new FakeNativeStatement(); }
+
   public async listTableTypes() { return new FakeNativeStatement(); }
 
   public async listTypeInfo() { return new FakeNativeStatement(); }

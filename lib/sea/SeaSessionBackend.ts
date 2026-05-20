@@ -25,6 +25,7 @@ import {
   TableTypesRequest,
   ColumnsRequest,
   FunctionsRequest,
+  ProceduresRequest,
   PrimaryKeysRequest,
   CrossReferenceRequest,
 } from '../contracts/IDBSQLSession';
@@ -246,6 +247,21 @@ export default class SeaSessionBackend implements ISessionBackend {
         request.catalogName,
         request.schemaName,
         request.functionName,
+      );
+    } catch (err) {
+      throw decodeNapiKernelError(err);
+    }
+    return new SeaOperationBackend({ statement: nativeStatement, context: this.context });
+  }
+
+  public async getProcedures(request: ProceduresRequest): Promise<IOperationBackend> {
+    this.failIfClosed();
+    let nativeStatement;
+    try {
+      nativeStatement = await this.connection.listProcedures(
+        request.catalogName,
+        request.schemaName,
+        request.procedureName,
       );
     } catch (err) {
       throw decodeNapiKernelError(err);

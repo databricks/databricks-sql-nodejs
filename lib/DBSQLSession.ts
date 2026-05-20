@@ -13,6 +13,7 @@ import IDBSQLSession, {
   TableTypesRequest,
   ColumnsRequest,
   FunctionsRequest,
+  ProceduresRequest,
   PrimaryKeysRequest,
   CrossReferenceRequest,
 } from './contracts/IDBSQLSession';
@@ -310,6 +311,13 @@ export default class DBSQLSession implements IDBSQLSession {
   public async getFunctions(request: FunctionsRequest): Promise<IOperation> {
     await this.failIfClosed();
     const opBackend = await this.backend.getFunctions(request);
+    await this.failIfClosed();
+    return this.wrapOperation(opBackend);
+  }
+
+  public async getProcedures(request: ProceduresRequest = {}): Promise<IOperation> {
+    await this.failIfClosed();
+    const opBackend = await this.backend.getProcedures(request);
     await this.failIfClosed();
     return this.wrapOperation(opBackend);
   }

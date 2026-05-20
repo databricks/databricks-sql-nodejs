@@ -22,12 +22,14 @@ import {
   TableTypesRequest,
   ColumnsRequest,
   FunctionsRequest,
+  ProceduresRequest,
   PrimaryKeysRequest,
   CrossReferenceRequest,
 } from '../contracts/IDBSQLSession';
 import Status from '../dto/Status';
 import InfoValue from '../dto/InfoValue';
 import { definedOrError, LZ4, ProtocolVersion, serializeQueryTags } from '../utils';
+import HiveDriverError from '../errors/HiveDriverError';
 import ParameterError from '../errors/ParameterError';
 import { DBSQLParameter, DBSQLParameterValue } from '../DBSQLParameter';
 import ThriftOperationBackend from './ThriftOperationBackend';
@@ -279,6 +281,10 @@ export default class ThriftSessionBackend implements ISessionBackend {
       ...getDirectResultsOptions(request.maxRows, this.context.getConfig()),
     });
     return this.createOperationBackend(response);
+  }
+
+  public async getProcedures(_request: ProceduresRequest): Promise<IOperationBackend> {
+    throw new HiveDriverError('ThriftSessionBackend.getProcedures: not supported on the Thrift path');
   }
 
   public async getPrimaryKeys(request: PrimaryKeysRequest): Promise<IOperationBackend> {

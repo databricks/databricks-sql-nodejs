@@ -120,6 +120,13 @@ export interface SeaNativeConnection {
     functionPattern?: string | undefined | null,
   ): Promise<SeaNativeStatement>;
 
+  /** Procedures filtered by catalog (exact), schema and procedure name LIKE patterns. */
+  listProcedures(
+    catalog?: string | undefined | null,
+    schemaPattern?: string | undefined | null,
+    procedurePattern?: string | undefined | null,
+  ): Promise<SeaNativeStatement>;
+
   /** All supported table types. No wire call — static result. */
   listTableTypes(): Promise<SeaNativeStatement>;
 

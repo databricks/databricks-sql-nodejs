@@ -98,6 +98,17 @@ export type FunctionsRequest = {
   maxRows?: number | bigint | Int64 | null;
 };
 
+export type ProceduresRequest = {
+  catalogName?: string;
+  schemaName?: string;
+  procedureName?: string;
+  /**
+   * @deprecated This option is no longer supported and will be removed in future releases
+   */
+  runAsync?: boolean;
+  maxRows?: number | bigint | Int64 | null;
+};
+
 export type PrimaryKeysRequest = {
   catalogName?: string;
   schemaName: string;
@@ -205,6 +216,13 @@ export default interface IDBSQLSession {
    * @param request
    */
   getCrossReference(request: CrossReferenceRequest): Promise<IOperation>;
+
+  /**
+   * Get information about stored procedures
+   *
+   * @param request
+   */
+  getProcedures(request?: ProceduresRequest): Promise<IOperation>;
 
   /**
    * closes the session
