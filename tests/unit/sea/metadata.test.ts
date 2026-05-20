@@ -21,6 +21,7 @@ import {
   SeaNativeStatement,
   SeaExecuteOptions,
 } from '../../../lib/sea/SeaNativeLoader';
+import IOperationBackend from '../../../lib/contracts/IOperationBackend';
 import IClientContext, { ClientConfig } from '../../../lib/contracts/IClientContext';
 import IDBSQLLogger, { LogLevel } from '../../../lib/contracts/IDBSQLLogger';
 import HiveDriverError from '../../../lib/errors/HiveDriverError';
@@ -563,5 +564,43 @@ describe('SeaSessionBackend metadata methods', () => {
       } catch (e) { thrown = e; }
       expect(thrown).to.be.instanceOf(HiveDriverError);
     });
+  });
+});
+
+// ─── SeaTableTypeFilter behavior ─────────────────────────────────────────────
+
+describe('SeaTableTypeFilter fetchChunk row reduction', () => {
+  const MIXED_ROWS = [
+    { TABLE_TYPE: 'TABLE', TABLE_NAME: 't1' },
+    { TABLE_TYPE: 'VIEW', TABLE_NAME: 'v1' },
+    { TABLE_TYPE: 'TABLE', TABLE_NAME: 't2' },
+    { TABLE_TYPE: 'SYSTEM TABLE', TABLE_NAME: 's1' },
+  ];
+
+  function makeInner(rows: object[]): IOperationBackend {
+    return {
+      id: 'fake',
+      hasResultSet: true,
+      async fetchChunk() { return rows; },
+      async hasMore() { return false; },
+      async waitUntilReady() {},
+      async status() { return {} as any; },
+      async getResultMetadata() { return {} as any; },
+      async cancel() { return {} as any; },
+      async close() { return {} as any; },
+    };
+  }
+
+  it('keeps only rows whose TABLE_TYPE is in the allowed set', async () => {
+    const filter = new SeaTableTypeFilter(makeInner(MIXED_ROWS), new Set(['TABLE']));
+    const rows = await filter.fetchChunk({ limit: 100 });
+    expect(rows).to.have.length(2);
+    expect(rows.every((r) => (r as Record<string, unknown>).TABLE_TYPE === 'TABLE')).to.be.true;
+  });
+
+  it('returns empty array when allowedTypes is an empty set', async () => {
+    const filter = new SeaTableTypeFilter(makeInner(MIXED_ROWS), new Set());
+    const rows = await filter.fetchChunk({ limit: 100 });
+    expect(rows).to.have.length(0);
   });
 });
