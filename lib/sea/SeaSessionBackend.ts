@@ -162,7 +162,7 @@ export default class SeaSessionBackend implements ISessionBackend {
       throw decodeNapiKernelError(err);
     }
     return new SeaOperationBackend({
-      statement: nativeStatement!,
+      statement: nativeStatement,
       context: this.context,
     });
   }
