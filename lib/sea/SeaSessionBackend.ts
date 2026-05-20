@@ -34,6 +34,7 @@ import HiveDriverError from '../errors/HiveDriverError';
 import { SeaNativeConnection, SeaExecuteOptions } from './SeaNativeLoader';
 import { decodeNapiKernelError } from './SeaErrorMapping';
 import SeaOperationBackend from './SeaOperationBackend';
+import SeaTableTypeFilter from './SeaTableTypeFilter';
 
 /**
  * Per-session defaults that apply to every `executeStatement` issued
@@ -208,7 +209,13 @@ export default class SeaSessionBackend implements ISessionBackend {
     } catch (err) {
       throw decodeNapiKernelError(err);
     }
-    return new SeaOperationBackend({ statement: nativeStatement, context: this.context });
+    const backend = new SeaOperationBackend({ statement: nativeStatement, context: this.context });
+    // The server does not honour tableTypes server-side (advisory only).
+    // Apply client-side filter when the caller supplied a non-null list.
+    if (request.tableTypes != null) {
+      return new SeaTableTypeFilter(backend, new Set(request.tableTypes));
+    }
+    return backend;
   }
 
   public async getTableTypes(_request: TableTypesRequest): Promise<IOperationBackend> {

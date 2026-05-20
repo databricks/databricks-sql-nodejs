@@ -15,6 +15,7 @@
 import { expect } from 'chai';
 import SeaSessionBackend from '../../../lib/sea/SeaSessionBackend';
 import SeaOperationBackend from '../../../lib/sea/SeaOperationBackend';
+import SeaTableTypeFilter from '../../../lib/sea/SeaTableTypeFilter';
 import {
   SeaNativeConnection,
   SeaNativeStatement,
@@ -238,10 +239,22 @@ describe('SeaSessionBackend metadata methods', () => {
       expect(conn.calls[0].args).to.deep.equal([undefined, undefined, undefined, undefined]);
     });
 
-    it('returns SeaOperationBackend', async () => {
+    it('returns SeaOperationBackend when tableTypes is absent', async () => {
       const conn = new FakeMetadataConnection();
       const op = await makeSession(conn).getTables({});
       expect(op).to.be.instanceOf(SeaOperationBackend);
+    });
+
+    it('wraps in SeaTableTypeFilter when tableTypes is provided', async () => {
+      const conn = new FakeMetadataConnection();
+      const op = await makeSession(conn).getTables({ tableTypes: ['TABLE'] });
+      expect(op).to.be.instanceOf(SeaTableTypeFilter);
+    });
+
+    it('wraps in SeaTableTypeFilter when tableTypes is empty array', async () => {
+      const conn = new FakeMetadataConnection();
+      const op = await makeSession(conn).getTables({ tableTypes: [] });
+      expect(op).to.be.instanceOf(SeaTableTypeFilter);
     });
 
     it('rejects when session is closed', async () => {
