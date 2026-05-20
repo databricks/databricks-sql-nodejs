@@ -48,10 +48,10 @@ interface RecordedMetadataCall {
 class FakeMetadataConnection implements SeaNativeConnection {
   public readonly calls: RecordedMetadataCall[] = [];
 
-  public throwNextCall: Error | null = null;
+  public throwNextCall: unknown = null;
 
   private record(method: string, args: unknown[]): FakeNativeStatement {
-    if (this.throwNextCall) {
+    if (this.throwNextCall !== null) {
       const err = this.throwNextCall;
       this.throwNextCall = null;
       throw err;
@@ -179,11 +179,11 @@ describe('SeaSessionBackend metadata methods', () => {
 
     it('wraps kernel error via decodeNapiKernelError', async () => {
       const conn = new FakeMetadataConnection();
-      conn.throwNextCall = new Error('napi-err');
+      conn.throwNextCall = 'napi-err';
       const session = makeSession(conn);
       let thrown: unknown;
       try { await session.getCatalogs({}); } catch (e) { thrown = e; }
-      expect(thrown).to.be.instanceOf(Error);
+      expect(thrown).to.be.instanceOf(HiveDriverError);
     });
   });
 
@@ -217,10 +217,10 @@ describe('SeaSessionBackend metadata methods', () => {
 
     it('wraps kernel error via decodeNapiKernelError', async () => {
       const conn = new FakeMetadataConnection();
-      conn.throwNextCall = new Error('napi-err');
+      conn.throwNextCall = 'napi-err';
       let thrown: unknown;
       try { await makeSession(conn).getSchemas({}); } catch (e) { thrown = e; }
-      expect(thrown).to.be.instanceOf(Error);
+      expect(thrown).to.be.instanceOf(HiveDriverError);
     });
   });
 
@@ -276,10 +276,10 @@ describe('SeaSessionBackend metadata methods', () => {
 
     it('wraps kernel error via decodeNapiKernelError', async () => {
       const conn = new FakeMetadataConnection();
-      conn.throwNextCall = new Error('napi-err');
+      conn.throwNextCall = 'napi-err';
       let thrown: unknown;
       try { await makeSession(conn).getTables({}); } catch (e) { thrown = e; }
-      expect(thrown).to.be.instanceOf(Error);
+      expect(thrown).to.be.instanceOf(HiveDriverError);
     });
   });
 
@@ -306,10 +306,10 @@ describe('SeaSessionBackend metadata methods', () => {
 
     it('wraps kernel error via decodeNapiKernelError', async () => {
       const conn = new FakeMetadataConnection();
-      conn.throwNextCall = new Error('napi-err');
+      conn.throwNextCall = 'napi-err';
       let thrown: unknown;
       try { await makeSession(conn).getTableTypes({}); } catch (e) { thrown = e; }
-      expect(thrown).to.be.instanceOf(Error);
+      expect(thrown).to.be.instanceOf(HiveDriverError);
     });
   });
 
@@ -334,10 +334,10 @@ describe('SeaSessionBackend metadata methods', () => {
 
     it('wraps kernel error via decodeNapiKernelError', async () => {
       const conn = new FakeMetadataConnection();
-      conn.throwNextCall = new Error('napi-err');
+      conn.throwNextCall = 'napi-err';
       let thrown: unknown;
       try { await makeSession(conn).getTypeInfo({}); } catch (e) { thrown = e; }
-      expect(thrown).to.be.instanceOf(Error);
+      expect(thrown).to.be.instanceOf(HiveDriverError);
     });
   });
 
@@ -373,10 +373,10 @@ describe('SeaSessionBackend metadata methods', () => {
 
     it('wraps kernel error via decodeNapiKernelError', async () => {
       const conn = new FakeMetadataConnection();
-      conn.throwNextCall = new Error('napi-err');
+      conn.throwNextCall = 'napi-err';
       let thrown: unknown;
       try { await makeSession(conn).getColumns({}); } catch (e) { thrown = e; }
-      expect(thrown).to.be.instanceOf(Error);
+      expect(thrown).to.be.instanceOf(HiveDriverError);
     });
   });
 
@@ -411,10 +411,10 @@ describe('SeaSessionBackend metadata methods', () => {
 
     it('wraps kernel error via decodeNapiKernelError', async () => {
       const conn = new FakeMetadataConnection();
-      conn.throwNextCall = new Error('napi-err');
+      conn.throwNextCall = 'napi-err';
       let thrown: unknown;
       try { await makeSession(conn).getFunctions({ functionName: 'f' }); } catch (e) { thrown = e; }
-      expect(thrown).to.be.instanceOf(Error);
+      expect(thrown).to.be.instanceOf(HiveDriverError);
     });
   });
 
@@ -457,10 +457,10 @@ describe('SeaSessionBackend metadata methods', () => {
 
     it('wraps kernel error via decodeNapiKernelError', async () => {
       const conn = new FakeMetadataConnection();
-      conn.throwNextCall = new Error('kernel-pk-error');
+      conn.throwNextCall = 'kernel-pk-error';
       let thrown: unknown;
       try { await makeSession(conn).getPrimaryKeys({ catalogName: 'cat', schemaName: 's', tableName: 't' }); } catch (e) { thrown = e; }
-      expect(thrown).to.be.instanceOf(Error);
+      expect(thrown).to.be.instanceOf(HiveDriverError);
     });
   });
 
@@ -553,7 +553,7 @@ describe('SeaSessionBackend metadata methods', () => {
 
     it('wraps kernel error via decodeNapiKernelError', async () => {
       const conn = new FakeMetadataConnection();
-      conn.throwNextCall = new Error('napi-err');
+      conn.throwNextCall = 'napi-err';
       let thrown: unknown;
       try {
         await makeSession(conn).getCrossReference({
@@ -561,7 +561,7 @@ describe('SeaSessionBackend metadata methods', () => {
           foreignCatalogName: 'fc', foreignSchemaName: 'fs', foreignTableName: 'ft',
         });
       } catch (e) { thrown = e; }
-      expect(thrown).to.be.instanceOf(Error);
+      expect(thrown).to.be.instanceOf(HiveDriverError);
     });
   });
 });
