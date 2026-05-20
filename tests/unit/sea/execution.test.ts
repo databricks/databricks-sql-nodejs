@@ -21,6 +21,7 @@ import {
   SeaNativeBinding,
   SeaNativeConnection,
   SeaNativeStatement,
+  SeaNativeInfoValue,
   SeaExecuteOptions,
 } from '../../../lib/sea/SeaNativeLoader';
 import IClientContext, { ClientConfig } from '../../../lib/contracts/IClientContext';
@@ -74,6 +75,56 @@ class FakeNativeConnection implements SeaNativeConnection {
     this.lastSql = sql;
     this.lastOptions = options;
     return this.statementToReturn;
+  }
+
+  // Metadata stubs — return a fresh statement so callers can test wrapping.
+  public async listCatalogs() { return new FakeNativeStatement(); }
+
+  public async listSchemas(_catalog: string | undefined, _schemaPattern: string | undefined) {
+    return new FakeNativeStatement();
+  }
+
+  public async listTables(
+    _catalog: string | undefined,
+    _schemaPattern: string | undefined,
+    _tablePattern: string | undefined,
+    _tableTypes: string[] | undefined,
+  ) { return new FakeNativeStatement(); }
+
+  public async listColumns(
+    _catalog: string | undefined,
+    _schemaPattern: string | undefined,
+    _tablePattern: string | undefined,
+    _columnPattern: string | undefined,
+  ) { return new FakeNativeStatement(); }
+
+  public async listFunctions(
+    _catalog: string | undefined,
+    _schemaPattern: string | undefined,
+    _functionPattern: string | undefined,
+  ) { return new FakeNativeStatement(); }
+
+  public async listTableTypes() { return new FakeNativeStatement(); }
+
+  public async listTypeInfo() { return new FakeNativeStatement(); }
+
+  public async getPrimaryKeys(
+    _catalog: string | undefined,
+    _schema: string | undefined,
+    _table: string,
+  ) { return new FakeNativeStatement(); }
+
+  public async getCrossReference(
+    _parentCatalog: string | undefined,
+    _parentSchema: string | undefined,
+    _parentTable: string | undefined,
+    _foreignCatalog: string,
+    _foreignSchema: string,
+    _foreignTable: string,
+  ) { return new FakeNativeStatement(); }
+
+  public async getInfo(_infoType: number): Promise<SeaNativeInfoValue> {
+    return { stringValue: 'fake-info' };
   }
 
   public async close(): Promise<void> {
@@ -357,31 +408,13 @@ describe('SeaSessionBackend', () => {
     expect((thrown as Error).message).to.match(/queryTimeout/);
   });
 
-  it('metadata methods throw deferred-M1 errors', async () => {
+  // Metadata-method happy-path and arg-routing coverage lives in
+  // tests/unit/sea/metadata.test.ts (sea-execution-metadata milestone).
+  it('metadata methods return SeaOperationBackend (wired to napi)', async () => {
     const connection = new FakeNativeConnection();
     const session = makeSession(connection);
-    for (const method of [
-      'getInfo',
-      'getTypeInfo',
-      'getCatalogs',
-      'getSchemas',
-      'getTables',
-      'getTableTypes',
-      'getColumns',
-      'getFunctions',
-      'getPrimaryKeys',
-      'getCrossReference',
-    ] as const) {
-      let thrown: unknown;
-      try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await (session as any)[method]({});
-      } catch (err) {
-        thrown = err;
-      }
-      expect(thrown, `expected ${method} to throw`).to.be.instanceOf(HiveDriverError);
-      expect((thrown as Error).message).to.match(/M1|not implemented/);
-    }
+    const op = await session.getCatalogs({});
+    expect(op).to.be.instanceOf(SeaOperationBackend);
   });
 
   it('close() forwards to the native connection', async () => {

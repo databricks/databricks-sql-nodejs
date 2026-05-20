@@ -77,10 +77,100 @@ export interface SeaNativeStatement {
 }
 
 /**
+ * Raw `getInfo` return value from the napi binding. The kernel packs a
+ * single variant field — only one of the optional properties will be
+ * set. Mirrors the subset of `TGetInfoValue` that the SEA path can
+ * synthesise from server responses.
+ *
+ * Shape is a best-guess pending `metadata-rust-impl` finalising the
+ * `Connection.getInfo` napi signature. Reconcile against
+ * `native/sea/index.d.ts` once their commit lands.
+ */
+export interface SeaNativeInfoValue {
+  stringValue?: string;
+  smallIntValue?: number;
+  integerBitmask?: number;
+  integerFlag?: number;
+}
+
+/**
  * Typed surface for the opaque napi `Connection` handle.
+ *
+ * The 9 metadata-returning methods below (`listCatalogs`, `listSchemas`,
+ * etc.) are added by `metadata-rust-impl` on the
+ * `msrathore/krn-napi-metadata-exposure` branch. Signatures here are
+ * derived from the pyo3 parallel (`napi-binding/pyo3/src/metadata.rs`)
+ * and the kernel `Metadata` API (`src/metadata_v0.rs`). Reconcile
+ * against the generated `native/sea/index.d.ts` when that commit lands.
  */
 export interface SeaNativeConnection {
   executeStatement(sql: string, options: SeaExecuteOptions): Promise<SeaNativeStatement>;
+
+  // ── Metadata methods ──────────────────────────────────────────────────
+  /** All catalogs visible to the session. */
+  listCatalogs(): Promise<SeaNativeStatement>;
+
+  /** Schemas filtered by catalog (exact) and schema name LIKE pattern. */
+  listSchemas(catalog: string | undefined, schemaPattern: string | undefined): Promise<SeaNativeStatement>;
+
+  /** Tables filtered by catalog (exact), schema and table LIKE patterns, and optional type list. */
+  listTables(
+    catalog: string | undefined,
+    schemaPattern: string | undefined,
+    tablePattern: string | undefined,
+    tableTypes: string[] | undefined,
+  ): Promise<SeaNativeStatement>;
+
+  /** Columns filtered by catalog (exact), schema/table/column LIKE patterns. */
+  listColumns(
+    catalog: string | undefined,
+    schemaPattern: string | undefined,
+    tablePattern: string | undefined,
+    columnPattern: string | undefined,
+  ): Promise<SeaNativeStatement>;
+
+  /** Functions filtered by catalog (exact), schema and name LIKE patterns. */
+  listFunctions(
+    catalog: string | undefined,
+    schemaPattern: string | undefined,
+    functionPattern: string | undefined,
+  ): Promise<SeaNativeStatement>;
+
+  /** All supported table types. No wire call — static result. */
+  listTableTypes(): Promise<SeaNativeStatement>;
+
+  /** All supported SQL data types. No wire call — static result. */
+  listTypeInfo(): Promise<SeaNativeStatement>;
+
+  /**
+   * Primary keys for the given table. Catalog and schema are optional;
+   * the kernel requires them to be non-empty strings if supplied.
+   */
+  getPrimaryKeys(
+    catalog: string | undefined,
+    schema: string | undefined,
+    table: string,
+  ): Promise<SeaNativeStatement>;
+
+  /**
+   * Foreign-key relationships (getCrossReference in JDBC terms). Foreign
+   * side is required; parent side is optional.
+   */
+  getCrossReference(
+    parentCatalog: string | undefined,
+    parentSchema: string | undefined,
+    parentTable: string | undefined,
+    foreignCatalog: string,
+    foreignSchema: string,
+    foreignTable: string,
+  ): Promise<SeaNativeStatement>;
+
+  /**
+   * General server info for the given info type. Returns a raw value
+   * object; the JS adapter wraps it in `InfoValue`.
+   */
+  getInfo(infoType: number): Promise<SeaNativeInfoValue>;
+
   close(): Promise<void>;
 }
 
