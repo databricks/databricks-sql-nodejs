@@ -214,6 +214,14 @@ describe('SeaSessionBackend metadata methods', () => {
       try { await session.getSchemas({}); } catch (e) { thrown = e; }
       expect(thrown).to.be.instanceOf(HiveDriverError);
     });
+
+    it('wraps kernel error via decodeNapiKernelError', async () => {
+      const conn = new FakeMetadataConnection();
+      conn.throwNextCall = new Error('napi-err');
+      let thrown: unknown;
+      try { await makeSession(conn).getSchemas({}); } catch (e) { thrown = e; }
+      expect(thrown).to.be.instanceOf(Error);
+    });
   });
 
   // ── getTables ────────────────────────────────────────────────────────────
@@ -265,6 +273,14 @@ describe('SeaSessionBackend metadata methods', () => {
       try { await session.getTables({}); } catch (e) { thrown = e; }
       expect(thrown).to.be.instanceOf(HiveDriverError);
     });
+
+    it('wraps kernel error via decodeNapiKernelError', async () => {
+      const conn = new FakeMetadataConnection();
+      conn.throwNextCall = new Error('napi-err');
+      let thrown: unknown;
+      try { await makeSession(conn).getTables({}); } catch (e) { thrown = e; }
+      expect(thrown).to.be.instanceOf(Error);
+    });
   });
 
   // ── getTableTypes ────────────────────────────────────────────────────────
@@ -287,6 +303,14 @@ describe('SeaSessionBackend metadata methods', () => {
       try { await session.getTableTypes({}); } catch (e) { thrown = e; }
       expect(thrown).to.be.instanceOf(HiveDriverError);
     });
+
+    it('wraps kernel error via decodeNapiKernelError', async () => {
+      const conn = new FakeMetadataConnection();
+      conn.throwNextCall = new Error('napi-err');
+      let thrown: unknown;
+      try { await makeSession(conn).getTableTypes({}); } catch (e) { thrown = e; }
+      expect(thrown).to.be.instanceOf(Error);
+    });
   });
 
   // ── getTypeInfo ──────────────────────────────────────────────────────────
@@ -306,6 +330,14 @@ describe('SeaSessionBackend metadata methods', () => {
       let thrown: unknown;
       try { await session.getTypeInfo({}); } catch (e) { thrown = e; }
       expect(thrown).to.be.instanceOf(HiveDriverError);
+    });
+
+    it('wraps kernel error via decodeNapiKernelError', async () => {
+      const conn = new FakeMetadataConnection();
+      conn.throwNextCall = new Error('napi-err');
+      let thrown: unknown;
+      try { await makeSession(conn).getTypeInfo({}); } catch (e) { thrown = e; }
+      expect(thrown).to.be.instanceOf(Error);
     });
   });
 
@@ -338,6 +370,14 @@ describe('SeaSessionBackend metadata methods', () => {
       try { await session.getColumns({}); } catch (e) { thrown = e; }
       expect(thrown).to.be.instanceOf(HiveDriverError);
     });
+
+    it('wraps kernel error via decodeNapiKernelError', async () => {
+      const conn = new FakeMetadataConnection();
+      conn.throwNextCall = new Error('napi-err');
+      let thrown: unknown;
+      try { await makeSession(conn).getColumns({}); } catch (e) { thrown = e; }
+      expect(thrown).to.be.instanceOf(Error);
+    });
   });
 
   // ── getFunctions ─────────────────────────────────────────────────────────
@@ -367,6 +407,14 @@ describe('SeaSessionBackend metadata methods', () => {
       let thrown: unknown;
       try { await session.getFunctions({ functionName: 'f' }); } catch (e) { thrown = e; }
       expect(thrown).to.be.instanceOf(HiveDriverError);
+    });
+
+    it('wraps kernel error via decodeNapiKernelError', async () => {
+      const conn = new FakeMetadataConnection();
+      conn.throwNextCall = new Error('napi-err');
+      let thrown: unknown;
+      try { await makeSession(conn).getFunctions({ functionName: 'f' }); } catch (e) { thrown = e; }
+      expect(thrown).to.be.instanceOf(Error);
     });
   });
 
@@ -501,6 +549,19 @@ describe('SeaSessionBackend metadata methods', () => {
         });
       } catch (e) { thrown = e; }
       expect(thrown).to.be.instanceOf(HiveDriverError);
+    });
+
+    it('wraps kernel error via decodeNapiKernelError', async () => {
+      const conn = new FakeMetadataConnection();
+      conn.throwNextCall = new Error('napi-err');
+      let thrown: unknown;
+      try {
+        await makeSession(conn).getCrossReference({
+          parentCatalogName: 'pc', parentSchemaName: 'ps', parentTableName: 'pt',
+          foreignCatalogName: 'fc', foreignSchemaName: 'fs', foreignTableName: 'ft',
+        });
+      } catch (e) { thrown = e; }
+      expect(thrown).to.be.instanceOf(Error);
     });
   });
 });
