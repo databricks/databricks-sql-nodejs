@@ -331,6 +331,27 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
   }
 
   /**
+   * Build the customHeaders map applied to telemetry POSTs and feature-flag
+   * GETs (SPOG / Single Panel of Glass support). When `httpPath` carries
+   * `?o=<workspaceId>` — account-level vanity URL routing — endpoints that
+   * don't include the workspace in their path need the workspace conveyed via
+   * the `x-databricks-org-id` header instead. A user-supplied value in
+   * `options.customHeaders` (case-insensitively keyed) wins over the parsed
+   * value.
+   */
+  private buildCustomHeaders(options: ConnectionOptions): Record<string, string> | undefined {
+    const merged: Record<string, string> = { ...(options.customHeaders ?? {}) };
+    const hasOrgIdAlready = Object.keys(merged).some((k) => k.toLowerCase() === 'x-databricks-org-id');
+    if (!hasOrgIdAlready) {
+      const orgId = this.extractWorkspaceId();
+      if (orgId) {
+        merged['x-databricks-org-id'] = orgId;
+      }
+    }
+    return Object.keys(merged).length > 0 ? merged : undefined;
+  }
+
+  /**
    * Build driver configuration for telemetry reporting.
    * @returns DriverConfiguration object with current driver settings
    */
@@ -560,6 +581,11 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
     if (options.userAgentEntry !== undefined) {
       this.config.userAgentEntry = options.userAgentEntry;
     }
+
+    // SPOG: parse `?o=<workspaceId>` out of httpPath and stash it as
+    // `x-databricks-org-id` for the telemetry + feature-flag clients, which
+    // hit endpoints that don't carry the workspace in their URL path.
+    this.config.customHeaders = this.buildCustomHeaders(options);
 
     this.authProvider = this.createAuthProvider(options, authProvider);
 

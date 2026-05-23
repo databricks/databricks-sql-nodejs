@@ -103,6 +103,18 @@ describe('DBSQLClient.connect', () => {
 
     logSpy.restore();
   });
+
+  it('populates config.customHeaders with org-id parsed from ?o= (SPOG)', async () => {
+    const client = new DBSQLClient();
+    await client.connect({ ...connectOptions, path: '/sql/1.0/warehouses/abc?o=12345678901234' });
+    expect(client.getConfig().customHeaders).to.deep.equal({ 'x-databricks-org-id': '12345678901234' });
+  });
+
+  it('leaves config.customHeaders undefined when path has no ?o= and none supplied', async () => {
+    const client = new DBSQLClient();
+    await client.connect({ ...connectOptions, path: '/sql/1.0/warehouses/abc' });
+    expect(client.getConfig().customHeaders).to.be.undefined;
+  });
 });
 
 describe('DBSQLClient.openSession', () => {
@@ -782,6 +794,49 @@ describe('DBSQLClient telemetry paths', () => {
     it('returns undefined when httpPath is unset', () => {
       const client = new DBSQLClient();
       expect((client as any).extractWorkspaceId()).to.be.undefined;
+    });
+  });
+
+  describe('buildCustomHeaders (SPOG)', () => {
+    it('injects x-databricks-org-id from ?o= in httpPath', () => {
+      const client = new DBSQLClient();
+      (client as any).httpPath = '/sql/1.0/warehouses/abc?o=12345678901234';
+      const headers = (client as any).buildCustomHeaders({ path: '/sql/1.0/warehouses/abc?o=12345678901234' });
+      expect(headers).to.deep.equal({ 'x-databricks-org-id': '12345678901234' });
+    });
+
+    it('returns undefined when no ?o= and no user-supplied customHeaders', () => {
+      const client = new DBSQLClient();
+      (client as any).httpPath = '/sql/1.0/warehouses/abc';
+      const headers = (client as any).buildCustomHeaders({ path: '/sql/1.0/warehouses/abc' });
+      expect(headers).to.be.undefined;
+    });
+
+    it('preserves user-supplied customHeaders alongside parsed org-id', () => {
+      const client = new DBSQLClient();
+      (client as any).httpPath = '/sql/1.0/warehouses/abc?o=42';
+      const headers = (client as any).buildCustomHeaders({
+        path: '/sql/1.0/warehouses/abc?o=42',
+        customHeaders: { 'x-trace-id': 'tid-001' },
+      });
+      expect(headers).to.deep.equal({ 'x-trace-id': 'tid-001', 'x-databricks-org-id': '42' });
+    });
+
+    it('user-supplied x-databricks-org-id wins over ?o= parsed value (case-insensitive)', () => {
+      const client = new DBSQLClient();
+      (client as any).httpPath = '/sql/1.0/warehouses/abc?o=42';
+      const headers = (client as any).buildCustomHeaders({
+        path: '/sql/1.0/warehouses/abc?o=42',
+        customHeaders: { 'X-Databricks-Org-Id': '999' },
+      });
+      expect(headers).to.deep.equal({ 'X-Databricks-Org-Id': '999' });
+    });
+
+    it('does not inject org-id when ?o= value is non-numeric', () => {
+      const client = new DBSQLClient();
+      (client as any).httpPath = '/sql/1.0/warehouses/abc?o=tenant_xyz';
+      const headers = (client as any).buildCustomHeaders({ path: '/sql/1.0/warehouses/abc?o=tenant_xyz' });
+      expect(headers).to.be.undefined;
     });
   });
 

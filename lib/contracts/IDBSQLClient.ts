@@ -56,6 +56,17 @@ export type ConnectionOptions = {
   enableMetricViewMetadata?: boolean;
 
   /**
+   * Extra HTTP headers attached to driver-owned out-of-band requests
+   * (telemetry POSTs and feature-flag GETs). Not applied to the primary
+   * Thrift transport or to OAuth/OIDC token requests.
+   *
+   * When `path` contains `?o=<workspaceId>` (SPOG account-level routing),
+   * the driver automatically injects an `x-databricks-org-id` header unless
+   * one is already present in this map.
+   */
+  customHeaders?: Record<string, string>;
+
+  /**
    * Whether the driver emits telemetry events (connection / statement /
    * cloud-fetch / error). Defaults to `true`.
    *

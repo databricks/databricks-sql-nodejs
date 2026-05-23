@@ -140,6 +140,7 @@ export default class FeatureFlagCache {
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
         'User-Agent': this.userAgent,
+        ...(this.context.getConfig().customHeaders ?? {}),
         ...(await this.getAuthHeaders()),
       };
 
