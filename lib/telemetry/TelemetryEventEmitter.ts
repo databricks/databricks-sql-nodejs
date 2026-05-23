@@ -18,6 +18,23 @@ import { EventEmitter } from 'events';
 import IClientContext from '../contracts/IClientContext';
 import { LogLevel } from '../contracts/IDBSQLLogger';
 import { TelemetryEvent, TelemetryEventType, DriverConfiguration } from './types';
+import { redactSensitive } from './telemetryUtils';
+
+/**
+ * Typed map of event-type → listener payload shape. Keeps `on`/`off` calls
+ * structurally typed: `emitter.on(TelemetryEventType.ERROR, (e) => …)` infers
+ * `e: TelemetryEvent` instead of `any`. Avoids the EventEmitter-default
+ * `(...args: any[]) => void` trap where a typo in the event name silently
+ * registers a listener that never fires.
+ */
+export interface TelemetryEventMap {
+  [TelemetryEventType.CONNECTION_OPEN]: (event: TelemetryEvent) => void;
+  [TelemetryEventType.CONNECTION_CLOSE]: (event: TelemetryEvent) => void;
+  [TelemetryEventType.STATEMENT_START]: (event: TelemetryEvent) => void;
+  [TelemetryEventType.STATEMENT_COMPLETE]: (event: TelemetryEvent) => void;
+  [TelemetryEventType.CLOUDFETCH_CHUNK]: (event: TelemetryEvent) => void;
+  [TelemetryEventType.ERROR]: (event: TelemetryEvent) => void;
+}
 
 /**
  * EventEmitter for driver telemetry.
@@ -26,8 +43,9 @@ import { TelemetryEvent, TelemetryEventType, DriverConfiguration } from './types
  * CRITICAL REQUIREMENT: ALL exceptions must be caught and logged at LogLevel.debug ONLY
  * (never warn/error) to avoid customer anxiety. NO console logging allowed - only IDBSQLLogger.
  *
- * All emit methods are wrapped in try-catch blocks that swallow exceptions completely.
- * Event emission respects the telemetryEnabled flag from context config.
+ * All emit methods funnel through `emitWrapped`, which holds the
+ * try/catch/debug-log scaffold. The per-method bodies do nothing but build
+ * the event shape — adding a new event type is a one-method change.
  */
 export default class TelemetryEventEmitter extends EventEmitter {
   private enabled: boolean;
@@ -40,95 +58,100 @@ export default class TelemetryEventEmitter extends EventEmitter {
     this.enabled = config.telemetryEnabled ?? false;
   }
 
-  /**
-   * Emit a connection open event.
-   *
-   * @param data Connection event data including sessionId, workspaceId, and driverConfig
-   */
-  emitConnectionOpen(data: { sessionId: string; workspaceId: string; driverConfig: DriverConfiguration }): void {
-    if (!this.enabled) return;
+  // Typed event subscription. EventEmitter's native types use `any` payloads;
+  // these overrides give consumers a typed `event` parameter without forcing
+  // a wholesale rewrite of the EventEmitter contract.
+  on<K extends keyof TelemetryEventMap>(eventName: K, listener: TelemetryEventMap[K]): this {
+    return super.on(eventName, listener as (...args: unknown[]) => void);
+  }
 
-    const logger = this.context.getLogger();
-    try {
-      const event: TelemetryEvent = {
-        eventType: TelemetryEventType.CONNECTION_OPEN,
-        timestamp: Date.now(),
-        sessionId: data.sessionId,
-        workspaceId: data.workspaceId,
-        driverConfig: data.driverConfig,
-      };
-      this.emit(TelemetryEventType.CONNECTION_OPEN, event);
-    } catch (error: any) {
-      // Swallow all exceptions - log at debug level only
-      logger.log(LogLevel.debug, `Error emitting connection event: ${error.message}`);
-    }
+  off<K extends keyof TelemetryEventMap>(eventName: K, listener: TelemetryEventMap[K]): this {
+    return super.off(eventName, listener as (...args: unknown[]) => void);
+  }
+
+  once<K extends keyof TelemetryEventMap>(eventName: K, listener: TelemetryEventMap[K]): this {
+    return super.once(eventName, listener as (...args: unknown[]) => void);
   }
 
   /**
-   * Emit a statement start event.
-   *
-   * @param data Statement start data including statementId, sessionId, and operationType
+   * Build-and-emit helper. The per-event `build` callback constructs the
+   * payload; everything else (enabled check, try/catch, swallow-and-log)
+   * lives here so the wrapping cannot drift between event types.
    */
-  emitStatementStart(data: { statementId: string; sessionId: string; operationType?: string }): void {
+  private emitWrapped(eventType: TelemetryEventType, build: () => TelemetryEvent): void {
     if (!this.enabled) return;
-
     const logger = this.context.getLogger();
     try {
-      const event: TelemetryEvent = {
-        eventType: TelemetryEventType.STATEMENT_START,
-        timestamp: Date.now(),
-        statementId: data.statementId,
-        sessionId: data.sessionId,
-        operationType: data.operationType,
-      };
-      this.emit(TelemetryEventType.STATEMENT_START, event);
+      this.emit(eventType, build());
     } catch (error: any) {
-      // Swallow all exceptions - log at debug level only
-      logger.log(LogLevel.debug, `Error emitting statement start: ${error.message}`);
+      logger.log(LogLevel.debug, `Error emitting ${eventType}: ${error?.message ?? error}`);
     }
   }
 
-  /**
-   * Emit a statement complete event.
-   *
-   * @param data Statement completion data including latency, result format, and metrics
-   */
+  emitConnectionOpen(data: {
+    sessionId: string;
+    workspaceId?: string;
+    /**
+     * The full driver-configuration block (~1KB). Static for the process —
+     * emit sites SHOULD pass it once per client and pass `undefined` on
+     * subsequent CONNECTION_OPEN events (one client may open many sessions).
+     * The aggregator and exporter both treat `undefined` as "no change since
+     * the last metric on the same session lineage".
+     */
+    driverConfig?: DriverConfiguration;
+    latencyMs: number;
+  }): void {
+    this.emitWrapped(TelemetryEventType.CONNECTION_OPEN, () => ({
+      eventType: TelemetryEventType.CONNECTION_OPEN,
+      timestamp: Date.now(),
+      sessionId: data.sessionId,
+      workspaceId: data.workspaceId,
+      driverConfig: data.driverConfig,
+      latencyMs: data.latencyMs,
+    }));
+  }
+
+  emitConnectionClose(data: { sessionId: string; latencyMs: number }): void {
+    this.emitWrapped(TelemetryEventType.CONNECTION_CLOSE, () => ({
+      eventType: TelemetryEventType.CONNECTION_CLOSE,
+      timestamp: Date.now(),
+      sessionId: data.sessionId,
+      latencyMs: data.latencyMs,
+    }));
+  }
+
+  emitStatementStart(data: { statementId: string; sessionId?: string; operationType?: string }): void {
+    this.emitWrapped(TelemetryEventType.STATEMENT_START, () => ({
+      eventType: TelemetryEventType.STATEMENT_START,
+      timestamp: Date.now(),
+      statementId: data.statementId,
+      sessionId: data.sessionId,
+      operationType: data.operationType,
+    }));
+  }
+
   emitStatementComplete(data: {
     statementId: string;
-    sessionId: string;
+    sessionId?: string;
     latencyMs?: number;
     resultFormat?: string;
     chunkCount?: number;
     bytesDownloaded?: number;
     pollCount?: number;
   }): void {
-    if (!this.enabled) return;
-
-    const logger = this.context.getLogger();
-    try {
-      const event: TelemetryEvent = {
-        eventType: TelemetryEventType.STATEMENT_COMPLETE,
-        timestamp: Date.now(),
-        statementId: data.statementId,
-        sessionId: data.sessionId,
-        latencyMs: data.latencyMs,
-        resultFormat: data.resultFormat,
-        chunkCount: data.chunkCount,
-        bytesDownloaded: data.bytesDownloaded,
-        pollCount: data.pollCount,
-      };
-      this.emit(TelemetryEventType.STATEMENT_COMPLETE, event);
-    } catch (error: any) {
-      // Swallow all exceptions - log at debug level only
-      logger.log(LogLevel.debug, `Error emitting statement complete: ${error.message}`);
-    }
+    this.emitWrapped(TelemetryEventType.STATEMENT_COMPLETE, () => ({
+      eventType: TelemetryEventType.STATEMENT_COMPLETE,
+      timestamp: Date.now(),
+      statementId: data.statementId,
+      sessionId: data.sessionId,
+      latencyMs: data.latencyMs,
+      resultFormat: data.resultFormat,
+      chunkCount: data.chunkCount,
+      bytesDownloaded: data.bytesDownloaded,
+      pollCount: data.pollCount,
+    }));
   }
 
-  /**
-   * Emit a CloudFetch chunk download event.
-   *
-   * @param data CloudFetch chunk data including chunk index, latency, bytes, and compression
-   */
   emitCloudFetchChunk(data: {
     statementId: string;
     chunkIndex: number;
@@ -136,30 +159,30 @@ export default class TelemetryEventEmitter extends EventEmitter {
     bytes: number;
     compressed?: boolean;
   }): void {
-    if (!this.enabled) return;
-
-    const logger = this.context.getLogger();
-    try {
-      const event: TelemetryEvent = {
-        eventType: TelemetryEventType.CLOUDFETCH_CHUNK,
-        timestamp: Date.now(),
-        statementId: data.statementId,
-        chunkIndex: data.chunkIndex,
-        latencyMs: data.latencyMs,
-        bytes: data.bytes,
-        compressed: data.compressed,
-      };
-      this.emit(TelemetryEventType.CLOUDFETCH_CHUNK, event);
-    } catch (error: any) {
-      // Swallow all exceptions - log at debug level only
-      logger.log(LogLevel.debug, `Error emitting cloudfetch chunk: ${error.message}`);
-    }
+    this.emitWrapped(TelemetryEventType.CLOUDFETCH_CHUNK, () => ({
+      eventType: TelemetryEventType.CLOUDFETCH_CHUNK,
+      timestamp: Date.now(),
+      statementId: data.statementId,
+      chunkIndex: data.chunkIndex,
+      latencyMs: data.latencyMs,
+      bytes: data.bytes,
+      compressed: data.compressed,
+    }));
   }
 
   /**
    * Emit an error event.
    *
-   * @param data Error event data including error details and terminal status
+   * Redaction happens HERE — not at the exporter — so any in-process listener
+   * (this class extends `EventEmitter` and `getTelemetryEmitter()` is reachable
+   * from any consumer of `@databricks/sql`) sees the same redacted strings
+   * the export pipeline does. `redactSensitive` strips Bearer/Basic, Databricks
+   * token prefixes, JWTs, JSON-encoded secrets, URL userinfo, and common
+   * username-bearing filesystem paths, then caps length.
+   *
+   * `errorMessage` is also redacted, not only `errorStack` — operation error
+   * messages can carry query fragments, table names, parameter values that the
+   * SECRET_PATTERNS regex must scrub before they're emitted anywhere.
    */
   emitError(data: {
     statementId?: string;
@@ -169,24 +192,15 @@ export default class TelemetryEventEmitter extends EventEmitter {
     errorStack?: string;
     isTerminal: boolean;
   }): void {
-    if (!this.enabled) return;
-
-    const logger = this.context.getLogger();
-    try {
-      const event: TelemetryEvent = {
-        eventType: TelemetryEventType.ERROR,
-        timestamp: Date.now(),
-        statementId: data.statementId,
-        sessionId: data.sessionId,
-        errorName: data.errorName,
-        errorMessage: data.errorMessage,
-        errorStack: data.errorStack,
-        isTerminal: data.isTerminal,
-      };
-      this.emit(TelemetryEventType.ERROR, event);
-    } catch (error: any) {
-      // Swallow all exceptions - log at debug level only
-      logger.log(LogLevel.debug, `Error emitting error event: ${error.message}`);
-    }
+    this.emitWrapped(TelemetryEventType.ERROR, () => ({
+      eventType: TelemetryEventType.ERROR,
+      timestamp: Date.now(),
+      statementId: data.statementId,
+      sessionId: data.sessionId,
+      errorName: data.errorName,
+      errorMessage: redactSensitive(data.errorMessage),
+      errorStack: data.errorStack === undefined ? undefined : redactSensitive(data.errorStack),
+      isTerminal: data.isTerminal,
+    }));
   }
 }

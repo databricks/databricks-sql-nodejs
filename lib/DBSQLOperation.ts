@@ -34,11 +34,15 @@ import { definedOrError } from './utils';
 import { OperationChunksIterator, OperationRowsIterator } from './utils/OperationIterator';
 import HiveDriverError from './errors/HiveDriverError';
 import IClientContext from './contracts/IClientContext';
+import { mapOperationTypeToTelemetryType, mapResultFormatToTelemetryType } from './telemetry/telemetryTypeMappers';
+import ExceptionClassifier from './telemetry/ExceptionClassifier';
+import { safeEmit } from './telemetry/telemetryUtils';
 
 interface DBSQLOperationConstructorOptions {
   handle: TOperationHandle;
   directResults?: TSparkDirectResults;
   context: IClientContext;
+  sessionId?: string;
 }
 
 async function delay(ms?: number): Promise<void> {
@@ -76,9 +80,17 @@ export default class DBSQLOperation implements IOperation {
 
   private resultHandler?: ResultSlicer<any>;
 
-  constructor({ handle, directResults, context }: DBSQLOperationConstructorOptions) {
+  // Telemetry tracking fields
+  private startTime: number = Date.now();
+
+  private pollCount: number = 0;
+
+  private sessionId?: string;
+
+  constructor({ handle, directResults, context, sessionId }: DBSQLOperationConstructorOptions) {
     this.operationHandle = handle;
     this.context = context;
+    this.sessionId = sessionId;
 
     const useOnlyPrefetchedResults = Boolean(directResults?.closeOperation);
 
@@ -92,9 +104,13 @@ export default class DBSQLOperation implements IOperation {
       this.operationHandle,
       [directResults?.resultSet],
       useOnlyPrefetchedResults,
+      this.id,
     );
     this.closeOperation = directResults?.closeOperation;
     this.context.getLogger().log(LogLevel.debug, `Operation created with id: ${this.id}`);
+
+    // Emit statement.start telemetry event
+    this.emitStatementStart();
   }
 
   public iterateChunks(options?: IteratorOptions): IOperationChunksIterator {
@@ -166,6 +182,10 @@ export default class DBSQLOperation implements IOperation {
    * const result = await queryOperation.fetchChunk({maxRows: 1000});
    */
   public async fetchChunk(options?: FetchOptions): Promise<Array<object>> {
+    return this.withErrorTelemetry(() => this.fetchChunkInternal(options));
+  }
+
+  private async fetchChunkInternal(options?: FetchOptions): Promise<Array<object>> {
     await this.failIfClosed();
 
     if (!this.operationHandle.hasResultSet) {
@@ -225,6 +245,9 @@ export default class DBSQLOperation implements IOperation {
       return this.operationStatus;
     }
 
+    // Track poll count for telemetry
+    this.pollCount += 1;
+
     const driver = await this.context.getDriver();
     const response = await driver.getOperationStatus({
       operationHandle: this.operationHandle,
@@ -239,6 +262,10 @@ export default class DBSQLOperation implements IOperation {
    * @throws {StatusError}
    */
   public async cancel(): Promise<Status> {
+    return this.withErrorTelemetry(() => this.cancelInternal());
+  }
+
+  private async cancelInternal(): Promise<Status> {
     if (this.closed || this.cancelled) {
       return Status.success();
     }
@@ -263,6 +290,10 @@ export default class DBSQLOperation implements IOperation {
    * @throws {StatusError}
    */
   public async close(): Promise<Status> {
+    return this.withErrorTelemetry(() => this.closeInternal());
+  }
+
+  private async closeInternal(): Promise<Status> {
     if (this.closed || this.cancelled) {
       return Status.success();
     }
@@ -279,50 +310,75 @@ export default class DBSQLOperation implements IOperation {
     this.closed = true;
     const result = new Status(response.status);
 
+    // Emit statement.complete telemetry event
+    await this.emitStatementComplete();
+
     this.onClose?.();
     return result;
   }
 
   public async finished(options?: FinishedOptions): Promise<void> {
-    await this.failIfClosed();
-    await this.waitUntilReady(options);
+    return this.withErrorTelemetry(async () => {
+      await this.failIfClosed();
+      await this.waitUntilReady(options);
+    });
   }
 
   public async hasMoreRows(): Promise<boolean> {
-    // If operation is closed or cancelled - we should not try to get data from it
-    if (this.closed || this.cancelled) {
-      return false;
-    }
+    return this.withErrorTelemetry(async () => {
+      // If operation is closed or cancelled - we should not try to get data from it
+      if (this.closed || this.cancelled) {
+        return false;
+      }
 
-    // Wait for operation to finish before checking for more rows
-    // This ensures metadata can be fetched successfully
-    if (this.operationHandle.hasResultSet) {
-      await this.waitUntilReady();
-    }
+      // Wait for operation to finish before checking for more rows
+      // This ensures metadata can be fetched successfully
+      if (this.operationHandle.hasResultSet) {
+        await this.waitUntilReady();
+      }
 
-    // If we fetched all the data from server - check if there's anything buffered in result handler
-    const resultHandler = await this.getResultHandler();
-    return resultHandler.hasMore();
+      // If we fetched all the data from server - check if there's anything buffered in result handler
+      const resultHandler = await this.getResultHandler();
+      return resultHandler.hasMore();
+    });
   }
 
   public async getSchema(options?: GetSchemaOptions): Promise<TTableSchema | null> {
-    await this.failIfClosed();
+    return this.withErrorTelemetry(async () => {
+      await this.failIfClosed();
 
-    if (!this.operationHandle.hasResultSet) {
-      return null;
-    }
+      if (!this.operationHandle.hasResultSet) {
+        return null;
+      }
 
-    await this.waitUntilReady(options);
+      await this.waitUntilReady(options);
 
-    this.context.getLogger().log(LogLevel.debug, `Fetching schema for operation with id: ${this.id}`);
-    const metadata = await this.fetchMetadata();
-    return metadata.schema ?? null;
+      this.context.getLogger().log(LogLevel.debug, `Fetching schema for operation with id: ${this.id}`);
+      const metadata = await this.fetchMetadata();
+      return metadata.schema ?? null;
+    });
   }
 
   public async getMetadata(): Promise<TGetResultSetMetadataResp> {
-    await this.failIfClosed();
-    await this.waitUntilReady();
-    return this.fetchMetadata();
+    return this.withErrorTelemetry(async () => {
+      await this.failIfClosed();
+      await this.waitUntilReady();
+      return this.fetchMetadata();
+    });
+  }
+
+  /**
+   * Wrap a public IOperation method so any thrown error is captured as an
+   * error telemetry event before being rethrown to the caller. Telemetry
+   * never alters the throw semantics.
+   */
+  private async withErrorTelemetry<T>(fn: () => Promise<T>): Promise<T> {
+    try {
+      return await fn();
+    } catch (err: any) {
+      this.emitErrorEvent(err);
+      throw err;
+    }
   }
 
   private async failIfClosed(): Promise<void> {
@@ -441,7 +497,7 @@ export default class DBSQLOperation implements IOperation {
         case TSparkRowSetType.URL_BASED_SET:
           resultSource = new ArrowResultConverter(
             this.context,
-            new CloudFetchResultHandler(this.context, this._data, metadata),
+            new CloudFetchResultHandler(this.context, this._data, metadata, this.id),
             metadata,
           );
           break;
@@ -480,5 +536,74 @@ export default class DBSQLOperation implements IOperation {
     }
 
     return response;
+  }
+
+  /**
+   * Emit statement.start telemetry event.
+   * CRITICAL: All exceptions swallowed and logged at LogLevel.debug ONLY.
+   */
+  private emitStatementStart(): void {
+    safeEmit(this.context, (emitter) => {
+      emitter.emitStatementStart({
+        statementId: this.id,
+        // Pass `undefined` when sessionId is unknown rather than `''`. All
+        // emit sites in this class use the same default so the aggregator's
+        // per-statement state doesn't end up split between `''` and
+        // `undefined` (which would synthesize two ghost sessions for a
+        // single operation that briefly lacked a sessionId).
+        sessionId: this.sessionId,
+        operationType: mapOperationTypeToTelemetryType(this.operationHandle.operationType),
+      });
+    });
+  }
+
+  /**
+   * Emit statement.complete telemetry event and complete aggregation.
+   * CRITICAL: All exceptions swallowed and logged at LogLevel.debug ONLY.
+   */
+  private async emitStatementComplete(): Promise<void> {
+    safeEmit(this.context, (emitter) => {
+      const aggregator = this.context.getTelemetryAggregator?.();
+      if (!aggregator) return;
+
+      // Use whatever metadata was already fetched by the result-handling
+      // path. Do NOT trigger a `getMetadata()` here — that issues a Thrift
+      // RPC on every close (doubles close latency for short DDL/DML) AND
+      // throws if the operation is already in an error/closed state, which
+      // would then fire spurious error telemetry from `getMetadata`'s error
+      // wrapper.
+      const resultFormat = mapResultFormatToTelemetryType(this.metadata?.resultFormat);
+      const latencyMs = Date.now() - this.startTime;
+
+      emitter.emitStatementComplete({
+        statementId: this.id,
+        sessionId: this.sessionId,
+        latencyMs,
+        resultFormat,
+        pollCount: this.pollCount,
+      });
+
+      aggregator.completeStatement(this.id);
+    });
+  }
+
+  /**
+   * Emit a telemetry error event for an exception thrown by an operation.
+   * Terminal errors (per `ExceptionClassifier`) trigger an immediate flush
+   * in the aggregator; retryable errors are buffered until the statement
+   * completes. All exceptions from this method itself are swallowed at
+   * debug level — telemetry must never break the driver.
+   */
+  private emitErrorEvent(error: Error): void {
+    safeEmit(this.context, (emitter) => {
+      emitter.emitError({
+        statementId: this.id,
+        sessionId: this.sessionId,
+        errorName: error.name || 'Error',
+        errorMessage: error.message || 'Unknown error',
+        errorStack: error.stack,
+        isTerminal: ExceptionClassifier.isTerminal(error),
+      });
+    });
   }
 }

@@ -23,10 +23,20 @@ import { LogLevel } from './contracts/IDBSQLLogger';
 // Re-export types for TypeScript users
 export type { default as ITokenProvider } from './connection/auth/tokenProvider/ITokenProvider';
 
-// Re-export telemetry error classes so consumers can instanceof-check rather
-// than string-matching error messages.
 export { CircuitBreakerOpenError, CIRCUIT_BREAKER_OPEN_CODE } from './telemetry/CircuitBreaker';
 export { TelemetryTerminalError } from './telemetry/DatabricksTelemetryExporter';
+
+// Telemetry event/metric/config shapes for consumers that want to inspect
+// telemetry payloads or pre-validate config. The emitter, aggregator, and
+// per-host client are deliberately not re-exported — they are internal.
+export { TelemetryEventType, DEFAULT_TELEMETRY_CONFIG } from './telemetry/types';
+export type {
+  TelemetryEvent,
+  TelemetryMetric,
+  TelemetryConfiguration,
+  StatementMetrics,
+  DriverConfiguration,
+} from './telemetry/types';
 
 export const auth = {
   PlainHttpAuthentication,

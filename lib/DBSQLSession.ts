@@ -39,6 +39,7 @@ import StagingError from './errors/StagingError';
 import { DBSQLParameter, DBSQLParameterValue } from './DBSQLParameter';
 import ParameterError from './errors/ParameterError';
 import IClientContext, { ClientConfig } from './contracts/IClientContext';
+import { safeEmit } from './telemetry/telemetryUtils';
 
 // Explicitly promisify a callback-style `pipeline` because `node:stream/promises` is not available in Node 14
 const pipeline = util.promisify(stream.pipeline);
@@ -151,6 +152,8 @@ export default class DBSQLSession implements IDBSQLSession {
 
   private isOpen = true;
 
+  private openTime: number;
+
   private serverProtocolVersion?: TProtocolVersion;
 
   public onClose?: () => void;
@@ -169,6 +172,7 @@ export default class DBSQLSession implements IDBSQLSession {
   constructor({ handle, context, serverProtocolVersion }: DBSQLSessionConstructorOptions) {
     this.sessionHandle = handle;
     this.context = context;
+    this.openTime = Date.now();
     // Get the server protocol version from the provided parameter (from TOpenSessionResp)
     this.serverProtocolVersion = serverProtocolVersion;
     this.context.getLogger().log(LogLevel.debug, `Session created with id: ${this.id}`);
@@ -588,19 +592,43 @@ export default class DBSQLSession implements IDBSQLSession {
     // Close owned operations one by one, removing successfully closed ones from the list
     await this.operations.closeAll();
 
-    const driver = await this.context.getDriver();
-    const response = await driver.closeSession({
-      sessionHandle: this.sessionHandle,
-    });
-    // check status for being successful
-    Status.assert(response.status);
+    // `latencyMs` on CONNECTION_CLOSE is the closeSession RPC duration, not the
+    // session lifetime. It's the symmetric counterpart of CREATE_SESSION's
+    // openSession RPC latency — both land under `operation_latency_ms`
+    // server-side and must measure the same kind of duration.
+    let closeStart = Date.now();
+    const emitClose = () => {
+      // Emit connection.close regardless of whether closeSession succeeded —
+      // a failed close is the most diagnostic event for connection-failure rate.
+      const latencyMs = Date.now() - closeStart;
+      safeEmit(this.context, (emitter) => {
+        emitter.emitConnectionClose({
+          sessionId: this.id,
+          latencyMs,
+        });
+      });
+    };
 
-    // notify owner connection
-    this.onClose?.();
-    this.isOpen = false;
+    try {
+      const driver = await this.context.getDriver();
+      closeStart = Date.now();
+      const response = await driver.closeSession({
+        sessionHandle: this.sessionHandle,
+      });
+      Status.assert(response.status);
 
-    this.context.getLogger().log(LogLevel.debug, `Session closed with id: ${this.id}`);
-    return new Status(response.status);
+      this.onClose?.();
+      this.isOpen = false;
+      emitClose();
+
+      this.context.getLogger().log(LogLevel.debug, `Session closed with id: ${this.id}`);
+      return new Status(response.status);
+    } catch (err) {
+      this.onClose?.();
+      this.isOpen = false;
+      emitClose();
+      throw err;
+    }
   }
 
   private createOperation(response: OperationResponseShape): DBSQLOperation {
@@ -610,6 +638,7 @@ export default class DBSQLSession implements IDBSQLSession {
       handle,
       directResults: response.directResults,
       context: this.context,
+      sessionId: this.id,
     });
 
     this.operations.add(operation);
