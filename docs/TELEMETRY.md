@@ -32,16 +32,16 @@ See the JSDoc on `IDBSQLClientConnectionOptions` in
 [`lib/contracts/IDBSQLClient.ts`](../lib/contracts/IDBSQLClient.ts) for the authoritative
 defaults and full descriptions.
 
-| Option | Purpose |
-| --- | --- |
-| `telemetryEnabled` | Master switch. `false` is a hard opt-out; `true` requests telemetry (still subject to the server flag). |
-| `telemetryAuthenticatedExport` | When `true`, exports go to the authenticated `/telemetry-ext` endpoint with full event context. When `false`, only error names go to the unauthenticated endpoint. |
-| `telemetryBatchSize` | Events accumulated before a flush. |
-| `telemetryFlushIntervalMs` | Periodic flush interval. |
-| `telemetryMaxRetries` | Retries per failed export. |
-| `telemetryCircuitBreakerThreshold` | Consecutive failures before the per-host breaker opens. |
-| `telemetryCircuitBreakerTimeout` | How long the breaker stays open before re-probing. |
-| `telemetryCloseTimeoutMs` | Upper bound on the final flush during `client.close()`. |
+| Option                             | Purpose                                                                                                                                                            |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `telemetryEnabled`                 | Master switch. `false` is a hard opt-out; `true` requests telemetry (still subject to the server flag).                                                            |
+| `telemetryAuthenticatedExport`     | When `true`, exports go to the authenticated `/telemetry-ext` endpoint with full event context. When `false`, only error names go to the unauthenticated endpoint. |
+| `telemetryBatchSize`               | Events accumulated before a flush.                                                                                                                                 |
+| `telemetryFlushIntervalMs`         | Periodic flush interval.                                                                                                                                           |
+| `telemetryMaxRetries`              | Retries per failed export.                                                                                                                                         |
+| `telemetryCircuitBreakerThreshold` | Consecutive failures before the per-host breaker opens.                                                                                                            |
+| `telemetryCircuitBreakerTimeout`   | How long the breaker stays open before re-probing.                                                                                                                 |
+| `telemetryCloseTimeoutMs`          | Upper bound on the final flush during `client.close()`.                                                                                                            |
 
 ### Basic example
 
