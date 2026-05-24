@@ -169,8 +169,10 @@ class TelemetryClient implements IClientContext {
 
   /**
    * Remove a `DBSQLClient`'s context from the pool. Called by
-   * `TelemetryClientProvider.releaseClient` before refcount decrement so the
-   * exporter doesn't keep trying to use a closed context.
+   * `TelemetryClientProvider.releaseClient` in the multi-refcount case so the
+   * exporter doesn't keep trying to use a closing context. Deliberately
+   * NOT called on the last refcount release: `close()` needs the snapshot
+   * pair to resolve auth/connection providers for the final flush.
    *
    * Uses the cached snapshot pair (`context`, `authProvider`) from register
    * time, not a fresh `context.getAuthProvider?.()` call. If the underlying

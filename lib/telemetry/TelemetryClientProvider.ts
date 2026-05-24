@@ -133,22 +133,35 @@ class TelemetryClientProvider {
       return;
     }
 
-    holder.client.unregisterContext(context);
+    if (holder.refCount > 1) {
+      // Other registrants remain — drop this context now so subsequent
+      // flushes by surviving consumers don't try to authenticate via a
+      // context whose underlying DBSQLClient is closing.
+      holder.client.unregisterContext(context);
+      holder.refCount -= 1;
+      logger.log(LogLevel.debug, `TelemetryClient reference count for ${host}: ${holder.refCount}`);
+      return;
+    }
+
+    // Last refcount holder. Keep the context registered through close()
+    // so the final flush can still resolve `getAuthProvider()` and
+    // `getConnectionProvider()` from the FIFO snapshot — otherwise the
+    // exporter drops the final batch with "missing Authorization header".
+    // The TelemetryClient is fully closed below, so the lingering FIFO
+    // entry has no further effect.
     holder.refCount -= 1;
     logger.log(LogLevel.debug, `TelemetryClient reference count for ${host}: ${holder.refCount}`);
 
-    if (holder.refCount <= 0) {
-      // Remove from map BEFORE awaiting close so a concurrent
-      // getOrCreateClient creates a fresh instance rather than receiving
-      // this closing one.
-      this.clients.delete(key);
-      try {
-        await holder.client.close();
-        logger.log(LogLevel.debug, `Closed and removed TelemetryClient for host: ${host}`);
-      } catch (error) {
-        const msg = error instanceof Error ? error.message : String(error);
-        logger.log(LogLevel.debug, `Error releasing TelemetryClient: ${msg}`);
-      }
+    // Remove from map BEFORE awaiting close so a concurrent
+    // getOrCreateClient creates a fresh instance rather than receiving
+    // this closing one.
+    this.clients.delete(key);
+    try {
+      await holder.client.close();
+      logger.log(LogLevel.debug, `Closed and removed TelemetryClient for host: ${host}`);
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : String(error);
+      logger.log(LogLevel.debug, `Error releasing TelemetryClient: ${msg}`);
     }
   }
 
