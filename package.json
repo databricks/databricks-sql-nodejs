@@ -17,8 +17,7 @@
     "test": "nyc --report-dir=${NYC_REPORT_DIR:-coverage_unit} mocha --config tests/unit/.mocharc.js",
     "update-version": "node bin/update-version.js && prettier --write ./lib/version.ts",
     "build": "npm run update-version && tsc --project tsconfig.build.json",
-    "build:native": "bash -c 'cd ${DATABRICKS_SQL_KERNEL_REPO:-../../databricks-sql-kernel-sea-WT/napi-binding}/napi && npx --yes @napi-rs/cli@2 build --platform --release && cp index.* $OLDPWD/native/sea/'",
-    "build:native:debug": "bash -c 'cd ${DATABRICKS_SQL_KERNEL_REPO:-../../databricks-sql-kernel-sea-WT/napi-binding}/napi && npx --yes @napi-rs/cli@2 build --platform && cp index.* $OLDPWD/native/sea/'",
+    "build:native": "bash -c 'cd ${DATABRICKS_SQL_KERNEL_REPO:-../../databricks-sql-kernel/napi-binding}/napi && npx --no-install @napi-rs/cli build --platform ${BUILD_PROFILE:---release} && cp index.* $OLDPWD/native/sea/'",
     "watch": "tsc --project tsconfig.build.json --watch",
     "type-check": "tsc --noEmit",
     "prettier": "prettier . --check",
@@ -49,6 +48,7 @@
   ],
   "license": "Apache 2.0",
   "devDependencies": {
+    "@napi-rs/cli": "2.18.4",
     "@types/chai": "^4.3.14",
     "@types/http-proxy": "^1.17.14",
     "@types/lz4": "^0.6.4",
@@ -91,6 +91,7 @@
     "winston": "^3.8.2"
   },
   "optionalDependencies": {
-    "lz4": "^0.6.5"
+    "lz4": "^0.6.5",
+    "@databricks/sea-native-linux-x64-gnu": "0.1.0"
   }
 }
