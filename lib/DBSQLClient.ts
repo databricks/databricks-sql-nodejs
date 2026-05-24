@@ -15,6 +15,7 @@ import IConnectionOptions from './connection/contracts/IConnectionOptions';
 import HiveDriverError from './errors/HiveDriverError';
 import { buildUserAgentString } from './utils';
 import IBackend from './contracts/IBackend';
+import { InternalConnectionOptions } from './contracts/InternalConnectionOptions';
 import ThriftBackend from './thrift-backend/ThriftBackend';
 import SeaBackend from './sea/SeaBackend';
 import PlainHttpAuthentication from './connection/auth/PlainHttpAuthentication';
@@ -237,7 +238,11 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
 
     this.connectionProvider = this.createConnectionProvider(options);
 
-    this.backend = options.useSEA
+    // M0: `useSEA` is consumed via a non-exported internal-options cast so it
+    // doesn't ship in the public `.d.ts`. Mirrors Python's `kwargs.get("use_sea")`
+    // pattern (see databricks-sql-python/src/databricks/sql/session.py).
+    const internalOptions = options as ConnectionOptions & InternalConnectionOptions;
+    this.backend = internalOptions.useSEA
       ? new SeaBackend()
       : new ThriftBackend({
           context: this,
@@ -272,6 +277,10 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
       case 'timeout':
         this.logger.log(LogLevel.debug, 'Connection timed out.');
         this.emit('timeout');
+        // Explicit return mirrors the other cases and protects against
+        // fall-through if a new event is added below.
+        // eslint-disable-next-line no-useless-return
+        return;
       // no default
     }
   }

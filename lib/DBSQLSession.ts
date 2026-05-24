@@ -3,7 +3,6 @@ import * as path from 'path';
 import stream from 'node:stream';
 import util from 'node:util';
 import fetch, { HeadersInit } from 'node-fetch';
-import { TSessionHandle, TProtocolVersion } from '../thrift/TCLIService_types';
 import IDBSQLSession, {
   ExecuteStatementOptions,
   TypeInfoRequest,
@@ -27,7 +26,6 @@ import StagingError from './errors/StagingError';
 import IClientContext from './contracts/IClientContext';
 import ISessionBackend from './contracts/ISessionBackend';
 import IOperationBackend from './contracts/IOperationBackend';
-import ThriftSessionBackend from './thrift-backend/ThriftSessionBackend';
 
 // Explicitly promisify a callback-style `pipeline` because `node:stream/promises` is not available in Node 14
 const pipeline = util.promisify(stream.pipeline);
@@ -35,16 +33,10 @@ const pipeline = util.promisify(stream.pipeline);
 // Re-export for back-compat with existing imports.
 export { numberToInt64 } from './thrift-backend/ThriftSessionBackend';
 
-type DBSQLSessionConstructorOptions =
-  | {
-      handle: TSessionHandle;
-      context: IClientContext;
-      serverProtocolVersion?: TProtocolVersion;
-    }
-  | {
-      backend: ISessionBackend;
-      context: IClientContext;
-    };
+interface DBSQLSessionConstructorOptions {
+  backend: ISessionBackend;
+  context: IClientContext;
+}
 
 export default class DBSQLSession implements IDBSQLSession {
   private readonly context: IClientContext;
@@ -59,14 +51,7 @@ export default class DBSQLSession implements IDBSQLSession {
 
   constructor(options: DBSQLSessionConstructorOptions) {
     this.context = options.context;
-    this.backend =
-      'backend' in options
-        ? options.backend
-        : new ThriftSessionBackend({
-            handle: options.handle,
-            context: options.context,
-            serverProtocolVersion: options.serverProtocolVersion,
-          });
+    this.backend = options.backend;
     this.context.getLogger().log(LogLevel.debug, `Session created with id: ${this.id}`);
   }
 
@@ -106,7 +91,7 @@ export default class DBSQLSession implements IDBSQLSession {
 
     // Staging detection: only run when stagingAllowedLocalPath is provided.
     if (options.stagingAllowedLocalPath !== undefined) {
-      const metadata = await operation.getMetadata();
+      const metadata = await operation.getResultMetadata();
       if (metadata.isStagingOperation) {
         const allowedLocalPath = Array.isArray(options.stagingAllowedLocalPath)
           ? options.stagingAllowedLocalPath

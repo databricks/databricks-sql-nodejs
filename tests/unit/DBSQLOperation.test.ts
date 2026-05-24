@@ -21,6 +21,7 @@ import CloudFetchResultHandler from '../../lib/result/CloudFetchResultHandler';
 import ResultSlicer from '../../lib/result/ResultSlicer';
 
 import ClientContextStub from './.stubs/ClientContextStub';
+import { createOperationForTest } from './.stubs/createOperationForTest';
 import { Type } from 'apache-arrow';
 
 function operationHandleStub(overrides: Partial<TOperationHandle>): TOperationHandle {
@@ -47,7 +48,7 @@ describe('DBSQLOperation', () => {
   describe('status', () => {
     it('should pick up state from operation handle', async () => {
       const context = new ClientContextStub();
-      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
+      const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: true }), context });
 
       expect((operation['backend'] as any)['state']).to.equal(TOperationState.INITIALIZED_STATE);
       expect((operation['backend'] as any)['operationHandle'].hasResultSet).to.be.true;
@@ -55,7 +56,7 @@ describe('DBSQLOperation', () => {
 
     it('should pick up state from directResults', async () => {
       const context = new ClientContextStub();
-      const operation = new DBSQLOperation({
+      const operation = createOperationForTest({
         handle: operationHandleStub({ hasResultSet: true }),
         context,
         directResults: {
@@ -77,7 +78,7 @@ describe('DBSQLOperation', () => {
       driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
       driver.getOperationStatusResp.hasResultSet = true;
 
-      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: false }), context });
+      const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: false }), context });
 
       expect((operation['backend'] as any)['state']).to.equal(TOperationState.INITIALIZED_STATE);
       expect((operation['backend'] as any)['operationHandle'].hasResultSet).to.be.false;
@@ -95,7 +96,7 @@ describe('DBSQLOperation', () => {
       const driver = sinon.spy(context.driver);
       driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
 
-      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: false }), context });
+      const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: false }), context });
       await operation.status(true);
 
       expect(driver.getOperationStatus.called).to.be.true;
@@ -108,7 +109,7 @@ describe('DBSQLOperation', () => {
       const driver = sinon.spy(context.driver);
       driver.getOperationStatusResp.hasResultSet = true;
 
-      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: false }), context });
+      const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: false }), context });
 
       expect((operation['backend'] as any)['state']).to.equal(TOperationState.INITIALIZED_STATE);
       expect((operation['backend'] as any)['operationHandle'].hasResultSet).to.be.false;
@@ -144,7 +145,7 @@ describe('DBSQLOperation', () => {
       driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
       driver.getOperationStatusResp.hasResultSet = true;
 
-      const operation = new DBSQLOperation({
+      const operation = createOperationForTest({
         handle: operationHandleStub({ hasResultSet: false }),
         context,
         directResults: {
@@ -173,7 +174,7 @@ describe('DBSQLOperation', () => {
       driver.getOperationStatusResp.operationState = TOperationState.RUNNING_STATE;
       driver.getOperationStatusResp.hasResultSet = true;
 
-      const operation = new DBSQLOperation({
+      const operation = createOperationForTest({
         handle: operationHandleStub({ hasResultSet: false }),
         context,
         directResults: {
@@ -199,7 +200,7 @@ describe('DBSQLOperation', () => {
     it('should throw an error in case of a status error', async () => {
       const context = new ClientContextStub();
       context.driver.getOperationStatusResp.status.statusCode = TStatusCode.ERROR_STATUS;
-      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
+      const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: true }), context });
 
       try {
         await operation.status(false);
@@ -217,7 +218,7 @@ describe('DBSQLOperation', () => {
     it('should cancel operation and update state', async () => {
       const context = new ClientContextStub();
       const driver = sinon.spy(context.driver);
-      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
+      const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: true }), context });
 
       expect(operation['cancelled']).to.be.false;
       expect(operation['closed']).to.be.false;
@@ -232,7 +233,7 @@ describe('DBSQLOperation', () => {
     it('should return immediately if already cancelled', async () => {
       const context = new ClientContextStub();
       const driver = sinon.spy(context.driver);
-      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
+      const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: true }), context });
 
       expect(operation['cancelled']).to.be.false;
       expect(operation['closed']).to.be.false;
@@ -251,7 +252,7 @@ describe('DBSQLOperation', () => {
     it('should return immediately if already closed', async () => {
       const context = new ClientContextStub();
       const driver = sinon.spy(context.driver);
-      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
+      const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: true }), context });
 
       expect(operation['cancelled']).to.be.false;
       expect(operation['closed']).to.be.false;
@@ -270,7 +271,7 @@ describe('DBSQLOperation', () => {
     it('should throw an error in case of a status error and keep state', async () => {
       const context = new ClientContextStub();
       context.driver.cancelOperationResp.status.statusCode = TStatusCode.ERROR_STATUS;
-      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
+      const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: true }), context });
 
       expect(operation['cancelled']).to.be.false;
       expect(operation['closed']).to.be.false;
@@ -290,7 +291,7 @@ describe('DBSQLOperation', () => {
 
     it('should reject all methods once cancelled', async () => {
       const context = new ClientContextStub();
-      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
+      const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: true }), context });
 
       await operation.cancel();
       expect(operation['cancelled']).to.be.true;
@@ -307,7 +308,7 @@ describe('DBSQLOperation', () => {
     it('should close operation and update state', async () => {
       const context = new ClientContextStub();
       const driver = sinon.spy(context.driver);
-      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
+      const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: true }), context });
 
       expect(operation['cancelled']).to.be.false;
       expect(operation['closed']).to.be.false;
@@ -322,7 +323,7 @@ describe('DBSQLOperation', () => {
     it('should return immediately if already closed', async () => {
       const context = new ClientContextStub();
       const driver = sinon.spy(context.driver);
-      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
+      const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: true }), context });
 
       expect(operation['cancelled']).to.be.false;
       expect(operation['closed']).to.be.false;
@@ -341,7 +342,7 @@ describe('DBSQLOperation', () => {
     it('should return immediately if already cancelled', async () => {
       const context = new ClientContextStub();
       const driver = sinon.spy(context.driver);
-      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
+      const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: true }), context });
 
       expect(operation['cancelled']).to.be.false;
       expect(operation['closed']).to.be.false;
@@ -361,7 +362,7 @@ describe('DBSQLOperation', () => {
       const context = new ClientContextStub();
       const driver = sinon.spy(context.driver);
 
-      const operation = new DBSQLOperation({
+      const operation = createOperationForTest({
         handle: operationHandleStub({ hasResultSet: true }),
         context,
         directResults: {
@@ -385,7 +386,7 @@ describe('DBSQLOperation', () => {
     it('should throw an error in case of a status error and keep state', async () => {
       const context = new ClientContextStub();
       context.driver.closeOperationResp.status.statusCode = TStatusCode.ERROR_STATUS;
-      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
+      const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: true }), context });
 
       expect(operation['cancelled']).to.be.false;
       expect(operation['closed']).to.be.false;
@@ -405,7 +406,7 @@ describe('DBSQLOperation', () => {
 
     it('should reject all methods once closed', async () => {
       const context = new ClientContextStub();
-      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
+      const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: true }), context });
 
       await operation.close();
       expect(operation['closed']).to.be.true;
@@ -437,7 +438,7 @@ describe('DBSQLOperation', () => {
               return getOperationStatusStub.wrappedMethod.apply(context.driver, args);
             });
 
-          const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
+          const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: true }), context });
 
           expect((operation['backend'] as any)['state']).to.equal(TOperationState.INITIALIZED_STATE);
 
@@ -463,7 +464,7 @@ describe('DBSQLOperation', () => {
           return getOperationStatusStub.wrappedMethod.apply(context.driver, args);
         });
 
-      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
+      const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: true }), context });
       await operation.finished({ progress: true });
 
       expect(getOperationStatusStub.called).to.be.true;
@@ -487,7 +488,7 @@ describe('DBSQLOperation', () => {
           return getOperationStatusStub.wrappedMethod.apply(context.driver, args);
         });
 
-      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
+      const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: true }), context });
 
       const callback = sinon.stub();
 
@@ -503,7 +504,7 @@ describe('DBSQLOperation', () => {
       driver.getOperationStatusResp.status.statusCode = TStatusCode.SUCCESS_STATUS;
       driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
 
-      const operation = new DBSQLOperation({
+      const operation = createOperationForTest({
         handle: operationHandleStub({ hasResultSet: true }),
         context,
         directResults: {
@@ -526,7 +527,7 @@ describe('DBSQLOperation', () => {
 
       context.driver.getOperationStatusResp.status.statusCode = TStatusCode.ERROR_STATUS;
       context.driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
-      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
+      const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: true }), context });
 
       try {
         await operation.finished();
@@ -551,7 +552,7 @@ describe('DBSQLOperation', () => {
 
         context.driver.getOperationStatusResp.status.statusCode = TStatusCode.SUCCESS_STATUS;
         context.driver.getOperationStatusResp.operationState = operationState;
-        const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
+        const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: true }), context });
 
         try {
           await operation.finished();
@@ -573,7 +574,7 @@ describe('DBSQLOperation', () => {
       context.driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
       context.driver.getOperationStatusResp.hasResultSet = false;
 
-      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: false }), context });
+      const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: false }), context });
 
       const schema = await operation.getSchema();
 
@@ -597,7 +598,7 @@ describe('DBSQLOperation', () => {
 
       context.driver.getResultSetMetadataResp.schema = { columns: [] };
 
-      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
+      const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: true }), context });
 
       const schema = await operation.getSchema();
 
@@ -620,7 +621,7 @@ describe('DBSQLOperation', () => {
           return getOperationStatusStub.wrappedMethod.apply(context.driver, args);
         });
 
-      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
+      const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: true }), context });
       await operation.getSchema({ progress: true });
 
       expect(getOperationStatusStub.called).to.be.true;
@@ -644,7 +645,7 @@ describe('DBSQLOperation', () => {
           return getOperationStatusStub.wrappedMethod.apply(context.driver, args);
         });
 
-      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
+      const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: true }), context });
 
       const callback = sinon.stub();
 
@@ -660,7 +661,7 @@ describe('DBSQLOperation', () => {
       driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
       driver.getOperationStatusResp.hasResultSet = true;
 
-      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
+      const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: true }), context });
 
       const schema = await operation.getSchema();
       expect(schema).to.deep.equal(driver.getResultSetMetadataResp.schema);
@@ -673,7 +674,7 @@ describe('DBSQLOperation', () => {
       driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
       driver.getOperationStatusResp.hasResultSet = true;
 
-      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
+      const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: true }), context });
 
       const schema1 = await operation.getSchema();
       expect(schema1).to.deep.equal(context.driver.getResultSetMetadataResp.schema);
@@ -710,7 +711,7 @@ describe('DBSQLOperation', () => {
           },
         },
       };
-      const operation = new DBSQLOperation({
+      const operation = createOperationForTest({
         handle: operationHandleStub({ hasResultSet: true }),
         context,
         directResults,
@@ -728,7 +729,7 @@ describe('DBSQLOperation', () => {
       context.driver.getOperationStatusResp.hasResultSet = true;
       context.driver.getResultSetMetadataResp.status.statusCode = TStatusCode.ERROR_STATUS;
 
-      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
+      const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: true }), context });
 
       try {
         await operation.getSchema();
@@ -751,7 +752,7 @@ describe('DBSQLOperation', () => {
         driver.getResultSetMetadataResp.resultFormat = TSparkRowSetType.COLUMN_BASED_SET;
         driver.getResultSetMetadata.resetHistory();
 
-        const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
+        const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: true }), context });
         const resultHandler = await (operation['backend'] as any)['getResultHandler']();
         expect(driver.getResultSetMetadata.called).to.be.true;
         expect(resultHandler).to.be.instanceOf(ResultSlicer);
@@ -762,7 +763,7 @@ describe('DBSQLOperation', () => {
         driver.getResultSetMetadataResp.resultFormat = TSparkRowSetType.ARROW_BASED_SET;
         driver.getResultSetMetadata.resetHistory();
 
-        const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
+        const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: true }), context });
         const resultHandler = await (operation['backend'] as any)['getResultHandler']();
         expect(driver.getResultSetMetadata.called).to.be.true;
         expect(resultHandler).to.be.instanceOf(ResultSlicer);
@@ -777,7 +778,7 @@ describe('DBSQLOperation', () => {
         driver.getResultSetMetadataResp.resultFormat = TSparkRowSetType.URL_BASED_SET;
         driver.getResultSetMetadata.resetHistory();
 
-        const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
+        const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: true }), context });
         const resultHandler = await (operation['backend'] as any)['getResultHandler']();
         expect(driver.getResultSetMetadata.called).to.be.true;
         expect(resultHandler).to.be.instanceOf(ResultSlicer);
@@ -795,7 +796,7 @@ describe('DBSQLOperation', () => {
       const context = new ClientContextStub();
       const driver = sinon.spy(context.driver);
 
-      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: false }), context });
+      const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: false }), context });
 
       const results = await operation.fetchChunk({ disableBuffering: true });
 
@@ -822,7 +823,7 @@ describe('DBSQLOperation', () => {
       context.driver.fetchResultsResp.hasMoreRows = false;
       context.driver.fetchResultsResp.results!.columns = [];
 
-      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
+      const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: true }), context });
 
       const results = await operation.fetchChunk({ disableBuffering: true });
 
@@ -849,7 +850,7 @@ describe('DBSQLOperation', () => {
       context.driver.fetchResultsResp.hasMoreRows = false;
       context.driver.fetchResultsResp.results!.columns = [];
 
-      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
+      const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: true }), context });
       await operation.fetchChunk({ progress: true, disableBuffering: true });
 
       expect(getOperationStatusStub.called).to.be.true;
@@ -877,7 +878,7 @@ describe('DBSQLOperation', () => {
       context.driver.fetchResultsResp.hasMoreRows = false;
       context.driver.fetchResultsResp.results!.columns = [];
 
-      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
+      const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: true }), context });
 
       const callback = sinon.stub();
 
@@ -893,7 +894,7 @@ describe('DBSQLOperation', () => {
       driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
       driver.getOperationStatusResp.hasResultSet = true;
 
-      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
+      const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: true }), context });
 
       const results = await operation.fetchChunk({ disableBuffering: true });
 
@@ -907,7 +908,7 @@ describe('DBSQLOperation', () => {
       const driver = sinon.spy(context.driver);
       driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
 
-      const operation = new DBSQLOperation({
+      const operation = createOperationForTest({
         handle: operationHandleStub({ hasResultSet: true }),
         context,
         directResults: {
@@ -943,7 +944,7 @@ describe('DBSQLOperation', () => {
       driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
       driver.getOperationStatusResp.hasResultSet = true;
 
-      const operation = new DBSQLOperation({
+      const operation = createOperationForTest({
         handle: operationHandleStub({ hasResultSet: true }),
         context,
         directResults: {
@@ -986,7 +987,7 @@ describe('DBSQLOperation', () => {
       context.driver.getResultSetMetadataResp.resultFormat = TSparkRowSetType.ROW_BASED_SET;
       context.driver.getResultSetMetadataResp.schema = { columns: [] };
 
-      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
+      const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: true }), context });
 
       try {
         await operation.fetchChunk({ disableBuffering: true });
@@ -1003,7 +1004,7 @@ describe('DBSQLOperation', () => {
   describe('fetchAll', () => {
     it('should fetch data while available and return it all', async () => {
       const context = new ClientContextStub();
-      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
+      const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: true }), context });
 
       const originalData = [1, 2, 3, 4, 5, 6, 7, 8, 9, 0];
 
@@ -1038,7 +1039,7 @@ describe('DBSQLOperation', () => {
       context.driver.getOperationStatusResp.hasResultSet = true;
       context.driver.fetchResultsResp.hasMoreRows = false;
       context.driver.fetchResultsResp.results = undefined;
-      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
+      const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: true }), context });
 
       expect(await operation.hasMoreRows()).to.be.true;
       expect((operation['backend'] as any)['_data']['hasMoreRowsFlag']).to.be.undefined;
@@ -1053,7 +1054,7 @@ describe('DBSQLOperation', () => {
       context.driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
       context.driver.getOperationStatusResp.hasResultSet = true;
       context.driver.fetchResultsResp.hasMoreRows = true;
-      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
+      const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: true }), context });
 
       expect(await operation.hasMoreRows()).to.be.true;
       await operation.fetchChunk({ disableBuffering: true });
@@ -1068,7 +1069,7 @@ describe('DBSQLOperation', () => {
       context.driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
       context.driver.getOperationStatusResp.hasResultSet = true;
       context.driver.fetchResultsResp.hasMoreRows = true;
-      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
+      const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: true }), context });
 
       expect(await operation.hasMoreRows()).to.be.true;
       await operation.fetchChunk({ disableBuffering: true });
@@ -1083,7 +1084,7 @@ describe('DBSQLOperation', () => {
       context.driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
       context.driver.getOperationStatusResp.hasResultSet = true;
       context.driver.fetchResultsResp.hasMoreRows = true;
-      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
+      const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: true }), context });
 
       expect(await operation.hasMoreRows()).to.be.true;
       expect((operation['backend'] as any)['_data']['hasMoreRowsFlag']).to.be.undefined;
@@ -1098,7 +1099,7 @@ describe('DBSQLOperation', () => {
       context.driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
       context.driver.getOperationStatusResp.hasResultSet = true;
       context.driver.fetchResultsResp.hasMoreRows = false;
-      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
+      const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: true }), context });
 
       expect(await operation.hasMoreRows()).to.be.true;
       expect((operation['backend'] as any)['_data']['hasMoreRowsFlag']).to.be.undefined;
@@ -1113,7 +1114,7 @@ describe('DBSQLOperation', () => {
       context.driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
       context.driver.getOperationStatusResp.hasResultSet = true;
       context.driver.fetchResultsResp.hasMoreRows = undefined;
-      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
+      const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: true }), context });
 
       expect(await operation.hasMoreRows()).to.be.true;
       expect((operation['backend'] as any)['_data']['hasMoreRowsFlag']).to.be.undefined;
@@ -1129,7 +1130,7 @@ describe('DBSQLOperation', () => {
       context.driver.getOperationStatusResp.hasResultSet = true;
       context.driver.fetchResultsResp.hasMoreRows = false;
       context.driver.fetchResultsResp.results = undefined;
-      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
+      const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: true }), context });
 
       expect(await operation.hasMoreRows()).to.be.true;
       expect((operation['backend'] as any)['_data']['hasMoreRowsFlag']).to.be.undefined;
@@ -1147,7 +1148,7 @@ describe('DBSQLOperation', () => {
       driver.getOperationStatusResp.hasResultSet = true;
 
       // Create operation without direct results to force metadata fetching
-      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
+      const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: true }), context });
 
       // Trigger multiple concurrent metadata fetches
       const results = await Promise.all([operation.hasMoreRows(), operation.hasMoreRows(), operation.hasMoreRows()]);
@@ -1165,7 +1166,7 @@ describe('DBSQLOperation', () => {
       driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
       driver.getOperationStatusResp.hasResultSet = true;
 
-      const operation = new DBSQLOperation({ handle: operationHandleStub({ hasResultSet: true }), context });
+      const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: true }), context });
 
       // First call should fetch metadata
       await operation.hasMoreRows();

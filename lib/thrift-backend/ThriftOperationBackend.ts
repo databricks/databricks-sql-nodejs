@@ -10,6 +10,9 @@ import {
 } from '../../thrift/TCLIService_types';
 import IOperationBackend from '../contracts/IOperationBackend';
 import IClientContext from '../contracts/IClientContext';
+import { WaitUntilReadyOptions } from '../contracts/IOperation';
+import { OperationStatus, OperationState } from '../contracts/OperationStatus';
+import { ResultMetadata, ResultFormat } from '../contracts/ResultMetadata';
 import Status from '../dto/Status';
 import { LogLevel } from '../contracts/IDBSQLLogger';
 import OperationStateError, { OperationStateErrorCode } from '../errors/OperationStateError';
@@ -33,6 +36,41 @@ async function delay(ms?: number): Promise<void> {
   return new Promise((resolve) => {
     setTimeout(resolve, ms);
   });
+}
+
+function thriftStateToOperationState(state: TOperationState | undefined | null): OperationState {
+  switch (state) {
+    case TOperationState.INITIALIZED_STATE:
+    case TOperationState.PENDING_STATE:
+      return OperationState.Pending;
+    case TOperationState.RUNNING_STATE:
+      return OperationState.Running;
+    case TOperationState.FINISHED_STATE:
+      return OperationState.Succeeded;
+    case TOperationState.CANCELED_STATE:
+      return OperationState.Cancelled;
+    case TOperationState.CLOSED_STATE:
+      return OperationState.Closed;
+    case TOperationState.ERROR_STATE:
+    case TOperationState.TIMEDOUT_STATE:
+      return OperationState.Failed;
+    case TOperationState.UKNOWN_STATE:
+    default:
+      return OperationState.Unknown;
+  }
+}
+
+function thriftRowSetTypeToResultFormat(type: TSparkRowSetType): ResultFormat {
+  switch (type) {
+    case TSparkRowSetType.COLUMN_BASED_SET:
+      return ResultFormat.ColumnBased;
+    case TSparkRowSetType.ARROW_BASED_SET:
+      return ResultFormat.ArrowBased;
+    case TSparkRowSetType.URL_BASED_SET:
+      return ResultFormat.UrlBased;
+    default:
+      throw new HiveDriverError(`Unsupported result format: ${TSparkRowSetType[type]}`);
+  }
 }
 
 export default class ThriftOperationBackend implements IOperationBackend {
@@ -114,7 +152,24 @@ export default class ThriftOperationBackend implements IOperationBackend {
     return resultHandler.hasMore();
   }
 
-  public async status(progress: boolean): Promise<TGetOperationStatusResp> {
+  public async status(progress: boolean): Promise<OperationStatus> {
+    const response = await this.thriftStatusResponse(progress);
+    return this.adaptOperationStatus(response);
+  }
+
+  /**
+   * Thrift-specific accessor that returns the raw `TGetOperationStatusResp`.
+   *
+   * Used internally to drive the Thrift state machine + attach the wire
+   * response to `OperationStateError`. Also called by the public
+   * `DBSQLOperation.status()` facade (zero-loss fast path) so existing user
+   * code that reads `taskStatus`, `numModifiedRows`, etc. continues to work
+   * verbatim against the Thrift backend.
+   *
+   * Not declared on `IOperationBackend` — non-Thrift backends do not
+   * implement it. The facade reaches it via `instanceof ThriftOperationBackend`.
+   */
+  public async thriftStatusResponse(progress: boolean): Promise<TGetOperationStatusResp> {
     if (this.operationStatus) {
       return this.operationStatus;
     }
@@ -128,10 +183,7 @@ export default class ThriftOperationBackend implements IOperationBackend {
     return this.processOperationStatusResponse(response);
   }
 
-  public async waitUntilReady(options?: {
-    progress?: boolean;
-    callback?: (progress: TGetOperationStatusResp) => unknown;
-  }): Promise<void> {
+  public async waitUntilReady(options?: WaitUntilReadyOptions): Promise<void> {
     if (this.state === TOperationState.FINISHED_STATE) {
       return;
     }
@@ -140,9 +192,12 @@ export default class ThriftOperationBackend implements IOperationBackend {
 
     while (!isReady) {
       // eslint-disable-next-line no-await-in-loop
-      const response = await this.status(Boolean(options?.progress));
+      const response = await this.thriftStatusResponse(Boolean(options?.progress));
 
       if (options?.callback) {
+        // The public `OperationStatusCallback` is Thrift-shaped; pass the
+        // wire response verbatim. Non-Thrift backends synthesize via
+        // `synthesizeThriftStatus` in their own `waitUntilReady` impls.
         // eslint-disable-next-line no-await-in-loop
         await Promise.resolve(options.callback(response));
       }
@@ -179,7 +234,22 @@ export default class ThriftOperationBackend implements IOperationBackend {
     }
   }
 
-  public async getResultMetadata(): Promise<TGetResultSetMetadataResp> {
+  public async getResultMetadata(): Promise<ResultMetadata> {
+    return this.adaptResultMetadata(await this.thriftResultMetadataResponse());
+  }
+
+  /**
+   * Thrift-specific accessor for the raw `TGetResultSetMetadataResp`.
+   *
+   * Used internally by `getResultHandler` (dispatches on Thrift `resultFormat`
+   * and passes the full Thrift response to the JSON / Arrow / CloudFetch
+   * result handlers). Also called by the public `DBSQLOperation.getMetadata()`
+   * facade (zero-loss fast path).
+   *
+   * Not declared on `IOperationBackend` — non-Thrift backends do not implement
+   * it. The facade reaches it via `instanceof ThriftOperationBackend`.
+   */
+  public async thriftResultMetadataResponse(): Promise<TGetResultSetMetadataResp> {
     if (this.metadata) {
       return this.metadata;
     }
@@ -228,7 +298,7 @@ export default class ThriftOperationBackend implements IOperationBackend {
   }
 
   private async getResultHandler(): Promise<ResultSlicer<any>> {
-    const metadata = await this.getResultMetadata();
+    const metadata = await this.thriftResultMetadataResponse();
     const resultFormat = definedOrError(metadata.resultFormat);
 
     if (!this.resultHandler) {
@@ -287,5 +357,26 @@ export default class ThriftOperationBackend implements IOperationBackend {
     }
 
     return response;
+  }
+
+  private adaptOperationStatus(response: TGetOperationStatusResp): OperationStatus {
+    return {
+      state: thriftStateToOperationState(response.operationState),
+      hasResultSet: typeof response.hasResultSet === 'boolean' ? response.hasResultSet : undefined,
+      errorMessage: response.errorMessage ?? response.displayMessage ?? undefined,
+      sqlState: response.sqlState ?? undefined,
+      progressUpdateResponse: response.progressUpdateResponse,
+    };
+  }
+
+  // eslint-disable-next-line class-methods-use-this
+  private adaptResultMetadata(response: TGetResultSetMetadataResp): ResultMetadata {
+    return {
+      schema: response.schema,
+      resultFormat: thriftRowSetTypeToResultFormat(definedOrError(response.resultFormat)),
+      lz4Compressed: response.lz4Compressed,
+      arrowSchema: response.arrowSchema,
+      isStagingOperation: Boolean(response.isStagingOperation),
+    };
   }
 }

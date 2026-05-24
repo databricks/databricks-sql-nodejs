@@ -54,12 +54,6 @@ export type ConnectionOptions = {
   socketTimeout?: number;
   proxy?: ProxyOptions;
   enableMetricViewMetadata?: boolean;
-  /**
-   * Opt-in flag to dispatch through the Statement Execution API (SEA) backend
-   * instead of the default Thrift backend. Defaults to `false`.
-   * @internal Not stable; M0 stub only.
-   */
-  useSEA?: boolean;
 } & AuthOptions;
 
 export interface OpenSessionRequest {

@@ -30,6 +30,7 @@ import InfoValue from '../dto/InfoValue';
 import { definedOrError, LZ4, ProtocolVersion, serializeQueryTags } from '../utils';
 import ParameterError from '../errors/ParameterError';
 import { DBSQLParameter, DBSQLParameterValue } from '../DBSQLParameter';
+import { LogLevel } from '../contracts/IDBSQLLogger';
 import ThriftOperationBackend from './ThriftOperationBackend';
 
 interface OperationResponseShape {
@@ -143,6 +144,7 @@ export default class ThriftSessionBackend implements ISessionBackend {
     this.sessionHandle = handle;
     this.context = context;
     this.serverProtocolVersion = serverProtocolVersion;
+    this.context.getLogger().log(LogLevel.debug, `Server protocol version: ${this.serverProtocolVersion}`);
   }
 
   private getRunAsyncForMetadataOperations(): boolean | undefined {

@@ -54,6 +54,10 @@ export default class OperationStub implements IOperation {
     return Promise.reject(new Error('Not implemented'));
   }
 
+  public async getResultMetadata() {
+    return Promise.reject(new Error('Not implemented'));
+  }
+
   public iterateChunks(options?: IteratorOptions): IOperationChunksIterator {
     return new OperationChunksIterator(this, options);
   }

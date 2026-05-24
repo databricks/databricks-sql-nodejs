@@ -11,10 +11,8 @@ import IOperation, {
 } from './contracts/IOperation';
 import {
   TGetOperationStatusResp,
-  TOperationHandle,
-  TTableSchema,
-  TSparkDirectResults,
   TGetResultSetMetadataResp,
+  TTableSchema,
 } from '../thrift/TCLIService_types';
 import Status from './dto/Status';
 import { LogLevel } from './contracts/IDBSQLLogger';
@@ -22,18 +20,14 @@ import OperationStateError, { OperationStateErrorCode } from './errors/Operation
 import { OperationChunksIterator, OperationRowsIterator } from './utils/OperationIterator';
 import IClientContext from './contracts/IClientContext';
 import IOperationBackend from './contracts/IOperationBackend';
+import { ResultMetadata } from './contracts/ResultMetadata';
 import ThriftOperationBackend from './thrift-backend/ThriftOperationBackend';
+import { synthesizeThriftStatus, synthesizeThriftResultSetMetadata } from './utils/thriftWireSynthesis';
 
-type DBSQLOperationConstructorOptions =
-  | {
-      handle: TOperationHandle;
-      directResults?: TSparkDirectResults;
-      context: IClientContext;
-    }
-  | {
-      backend: IOperationBackend;
-      context: IClientContext;
-    };
+interface DBSQLOperationConstructorOptions {
+  backend: IOperationBackend;
+  context: IClientContext;
+}
 
 export default class DBSQLOperation implements IOperation {
   private readonly context: IClientContext;
@@ -48,14 +42,7 @@ export default class DBSQLOperation implements IOperation {
 
   constructor(options: DBSQLOperationConstructorOptions) {
     this.context = options.context;
-    this.backend =
-      'backend' in options
-        ? options.backend
-        : new ThriftOperationBackend({
-            handle: options.handle,
-            directResults: options.directResults,
-            context: options.context,
-          });
+    this.backend = options.backend;
     this.context.getLogger().log(LogLevel.debug, `Operation created with id: ${this.id}`);
   }
 
@@ -144,14 +131,27 @@ export default class DBSQLOperation implements IOperation {
   }
 
   /**
-   * Requests operation status
+   * Requests operation status. Returns the Thrift wire response for
+   * back-compat with existing user code. On the Thrift backend the response
+   * is returned verbatim; on any other backend (e.g. SEA) the response is
+   * synthesized from the neutral {@link IOperationBackend.status} result,
+   * with Thrift-only fields (`taskStatus`, `numModifiedRows`, etc.) left
+   * undefined.
+   *
    * @param progress
    * @throws {StatusError}
    */
   public async status(progress: boolean = false): Promise<TGetOperationStatusResp> {
     await this.failIfClosed();
     this.context.getLogger().log(LogLevel.debug, `Fetching status for operation with id: ${this.id}`);
-    return this.backend.status(progress);
+    if (this.backend instanceof ThriftOperationBackend) {
+      // Zero-loss path: the Thrift backend has the wire response on hand.
+      return this.backend.thriftStatusResponse(progress);
+    }
+    // Non-Thrift backend: synthesize the Thrift-shaped response from the
+    // neutral OperationStatus DTO.
+    const status = await this.backend.status(progress);
+    return synthesizeThriftStatus(status);
   }
 
   /**
@@ -213,10 +213,29 @@ export default class DBSQLOperation implements IOperation {
     return metadata.schema ?? null;
   }
 
-  public async getMetadata(): Promise<TGetResultSetMetadataResp> {
+  public async getResultMetadata(): Promise<ResultMetadata> {
     await this.failIfClosed();
     await this.waitUntilReadyThroughBackend();
     return this.backend.getResultMetadata();
+  }
+
+  /**
+   * Fetch result-set metadata as the Thrift wire response. Kept for
+   * back-compat with existing user code. On the Thrift backend the wire
+   * response is returned verbatim; on any other backend the response is
+   * synthesized from the neutral {@link ResultMetadata}, with Thrift-only
+   * fields (`cacheLookupResult`, `uncompressedBytes`, `compressedBytes`,
+   * `status`) left undefined / defaulted.
+   *
+   * Prefer {@link DBSQLOperation.getResultMetadata} in new code.
+   */
+  public async getMetadata(): Promise<TGetResultSetMetadataResp> {
+    await this.failIfClosed();
+    await this.waitUntilReadyThroughBackend();
+    if (this.backend instanceof ThriftOperationBackend) {
+      return this.backend.thriftResultMetadataResponse();
+    }
+    return synthesizeThriftResultSetMetadata(await this.backend.getResultMetadata());
   }
 
   private async failIfClosed(): Promise<void> {
