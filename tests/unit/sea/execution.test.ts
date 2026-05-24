@@ -21,7 +21,6 @@ import {
   SeaNativeBinding,
   SeaNativeConnection,
   SeaNativeStatement,
-  SeaExecuteOptions,
 } from '../../../lib/sea/SeaNativeLoader';
 import IClientContext, { ClientConfig } from '../../../lib/contracts/IClientContext';
 import IDBSQLLogger, { LogLevel } from '../../../lib/contracts/IDBSQLLogger';
@@ -82,8 +81,6 @@ class FakeNativeConnection implements SeaNativeConnection {
 
   public lastSql?: string;
 
-  public lastOptions?: SeaExecuteOptions;
-
   public throwOnExecute: Error | null = null;
 
   public statementToReturn: FakeNativeStatement = new FakeNativeStatement();
@@ -91,16 +88,13 @@ class FakeNativeConnection implements SeaNativeConnection {
   // Mirrors the kernel `Connection.sessionId` getter.
   public readonly sessionId = '01ef-fake-session-id';
 
-  // `options` is optional so this stays structurally assignable to the
-  // merged binding's `executeStatement(sql)` while still recording any
-  // per-statement options the caller forwards (the kernel now applies
-  // those at session level — see the session-level options migration).
-  public async executeStatement(sql: string, options?: SeaExecuteOptions): Promise<SeaNativeStatement> {
+  // Session-level migration: per-statement options were removed, so the
+  // binding's executeStatement takes only `sql`.
+  public async executeStatement(sql: string): Promise<SeaNativeStatement> {
     if (this.throwOnExecute) {
       throw this.throwOnExecute;
     }
     this.lastSql = sql;
-    this.lastOptions = options;
     return this.statementToReturn;
   }
 
@@ -270,7 +264,7 @@ describe('SeaBackend', () => {
     expect(sessionBackend.id).to.be.a('string').and.have.length.greaterThan(0);
   });
 
-  it('openSession() propagates initialCatalog / initialSchema / sessionConfig through to executeStatement', async () => {
+  it('openSession() forwards initialCatalog / initialSchema / configuration to the napi openSession call (not per-statement)', async () => {
     const connection = new FakeNativeConnection();
     const binding = makeBinding(connection);
     const backend = new SeaBackend({ context: makeContext(), nativeBinding: binding });
@@ -287,14 +281,22 @@ describe('SeaBackend', () => {
       configuration: { 'spark.sql.execution.arrow.enabled': 'true' },
     });
 
-    await session.executeStatement('SELECT 1', {});
-
-    expect(connection.lastSql).to.equal('SELECT 1');
-    expect(connection.lastOptions).to.deep.equal({
-      initialCatalog: 'main',
-      initialSchema: 'default',
-      sessionConfig: { 'spark.sql.execution.arrow.enabled': 'true' },
+    // The defaults reach the kernel via `Session::builder().defaults()` +
+    // `.session_conf()`, applied on `CreateSession`. Assert they were
+    // folded into the napi `openSession` arg.
+    expect(binding.openSessionStub.calledOnce).to.equal(true);
+    expect(binding.openSessionStub.firstCall.args[0]).to.deep.include({
+      authMode: 'Pat',
+      token: 't',
+      catalog: 'main',
+      schema: 'default',
+      sessionConf: { 'spark.sql.execution.arrow.enabled': 'true' },
     });
+
+    // And the SQL still threads through executeStatement (now with no
+    // per-statement options).
+    await session.executeStatement('SELECT 1', {});
+    expect(connection.lastSql).to.equal('SELECT 1');
   });
 
   it('close() clears connection state without throwing', async () => {
@@ -315,8 +317,8 @@ describe('SeaBackend', () => {
 });
 
 describe('SeaSessionBackend', () => {
-  function makeSession(connection: SeaNativeConnection, defaults = {}) {
-    return new SeaSessionBackend({ connection, context: makeContext(), defaults });
+  function makeSession(connection: SeaNativeConnection) {
+    return new SeaSessionBackend({ connection, context: makeContext() });
   }
 
   it('executeStatement passes sql through verbatim', async () => {
@@ -332,21 +334,6 @@ describe('SeaSessionBackend', () => {
     const op = await session.executeStatement('SELECT 1', {});
     expect(op).to.be.instanceOf(SeaOperationBackend);
     expect(op.id).to.be.a('string').and.have.length.greaterThan(0);
-  });
-
-  it('executeStatement merges session defaults into ExecuteOptions', async () => {
-    const connection = new FakeNativeConnection();
-    const session = makeSession(connection, {
-      initialCatalog: 'main',
-      initialSchema: 'default',
-      sessionConfig: { foo: 'bar' },
-    });
-    await session.executeStatement('SELECT 1', {});
-    expect(connection.lastOptions).to.deep.equal({
-      initialCatalog: 'main',
-      initialSchema: 'default',
-      sessionConfig: { foo: 'bar' },
-    });
   });
 
   it('executeStatement rejects namedParameters (M1)', async () => {
