@@ -31,34 +31,15 @@ import {
 import Status from '../dto/Status';
 import InfoValue from '../dto/InfoValue';
 import HiveDriverError from '../errors/HiveDriverError';
-import { SeaNativeConnection, SeaExecuteOptions } from './SeaNativeLoader';
+import { SeaNativeConnection } from './SeaNativeLoader';
 import { decodeNapiKernelError } from './SeaErrorMapping';
 import SeaOperationBackend from './SeaOperationBackend';
 import SeaTableTypeFilter from './SeaTableTypeFilter';
-
-/**
- * Per-session defaults that apply to every `executeStatement` issued
- * through this backend. Captured at `SeaBackend.openSession()` time from
- * the `OpenSessionRequest` — `initialCatalog` / `initialSchema` /
- * `sessionConfig`.
- *
- * The napi binding routes these to the kernel's `statement_conf` map,
- * which the SEA wire treats as session-scoped parameters. They are
- * forwarded with every `executeStatement` call so the JDBC-style
- * "session config" semantics are preserved even though SEA's wire
- * protocol is statement-scoped.
- */
-export interface SeaSessionDefaults {
-  initialCatalog?: string;
-  initialSchema?: string;
-  sessionConfig?: Record<string, string>;
-}
 
 export interface SeaSessionBackendOptions {
   /** The opaque napi `Connection` handle returned by `openSession`. */
   connection: SeaNativeConnection;
   context: IClientContext;
-  defaults?: SeaSessionDefaults;
   /** Optional override for `id`. Defaults to a fresh UUIDv4. */
   id?: string;
 }
@@ -82,29 +63,26 @@ export interface SeaSessionBackendOptions {
  * metadata results through the same `IOperationBackend` interface they
  * use for SQL results.
  *
- * **Session config flow:** the SEA wire protocol is statement-scoped,
- * so "session config" semantics (Spark conf, `initialCatalog`,
- * `initialSchema`) are emulated by forwarding the same defaults with
- * every `executeStatement` call. Per-statement overrides on
- * `ExecuteStatementOptions` are reserved for M1; the `useCloudFetch`
- * boolean is projected onto `sessionConfig.use_cloud_fetch` for the
- * kernel.
+ * **Session config flow:** catalog / schema / sessionConf are applied
+ * once at session creation (kernel `Session::builder().defaults()` +
+ * `.session_conf()` → SEA `CreateSession.catalog` / `.schema` /
+ * `.session_confs`) and remain in effect for every statement run on
+ * the resulting napi `Connection`. No per-statement forwarding is
+ * needed — that pattern was removed when the napi binding moved these
+ * onto `openSession` to match pyo3.
  */
 export default class SeaSessionBackend implements ISessionBackend {
   private readonly connection: SeaNativeConnection;
 
   private readonly context: IClientContext;
 
-  private readonly defaults: SeaSessionDefaults;
-
   private readonly _id: string;
 
   private closed = false;
 
-  constructor({ connection, context, defaults, id }: SeaSessionBackendOptions) {
+  constructor({ connection, context, id }: SeaSessionBackendOptions) {
     this.connection = connection;
     this.context = context;
-    this.defaults = defaults ?? {};
     this._id = id ?? uuidv4();
   }
 
@@ -117,13 +95,21 @@ export default class SeaSessionBackend implements ISessionBackend {
   }
 
   /**
-   * Execute a SQL statement through the napi binding. Merges the
-   * session-level defaults (`initialCatalog` / `initialSchema` /
-   * `sessionConfig`) with the per-call `useCloudFetch` override.
+   * Execute a SQL statement through the napi binding.
+   *
+   * Catalog / schema / sessionConf were applied at session open, so
+   * there are no per-statement options to thread through.
    *
    * M0 intentionally rejects `queryTimeout`, `namedParameters`, and
-   * `ordinalParameters` with explicit deferred-to-M1 errors. The Thrift
-   * backend remains the path for consumers that need any of those today.
+   * `ordinalParameters` with explicit deferred-to-M1 errors. `useCloudFetch`
+   * is a no-op on the SEA path — the kernel hardcodes the SEA
+   * `disposition` to `INLINE_OR_EXTERNAL_LINKS`, and per-statement
+   * conf overrides have no reader on the kernel; cloud-fetch behaviour
+   * is governed entirely by the kernel's `ResultConfig` (M1 binding
+   * surface).
+   *
+   * The Thrift backend remains the path for consumers that need any
+   * of those today.
    */
   public async executeStatement(statement: string, options: ExecuteStatementOptions): Promise<IOperationBackend> {
     this.failIfClosed();
@@ -140,24 +126,9 @@ export default class SeaSessionBackend implements ISessionBackend {
       );
     }
 
-    // Merge session-level sessionConfig with per-statement useCloudFetch.
-    // The kernel accepts only string-valued conf values; booleans are
-    // String()'d to "true"/"false" matching the existing Thrift conf
-    // convention.
-    const sessionConfig: Record<string, string> = { ...(this.defaults.sessionConfig ?? {}) };
-    if (options.useCloudFetch !== undefined) {
-      sessionConfig.use_cloud_fetch = String(options.useCloudFetch);
-    }
-
-    const executeOptions: SeaExecuteOptions = {
-      initialCatalog: this.defaults.initialCatalog,
-      initialSchema: this.defaults.initialSchema,
-      sessionConfig: Object.keys(sessionConfig).length > 0 ? sessionConfig : undefined,
-    };
-
     let nativeStatement;
     try {
-      nativeStatement = await this.connection.executeStatement(statement, executeOptions);
+      nativeStatement = await this.connection.executeStatement(statement);
     } catch (err) {
       throw decodeNapiKernelError(err);
     }

@@ -49,26 +49,47 @@ const U2M_DEFAULT_REDIRECT_PORT = 8030;
  * incompatible with `isolatedModules` and a runtime-coupling hazard.
  * The Rust source of truth lives at `native/sea/src/database.rs`.
  */
-export type SeaNativeConnectionOptions =
-  | {
-      hostName: string;
-      httpPath: string;
-      authMode: 'Pat';
-      token: string;
-    }
-  | {
-      hostName: string;
-      httpPath: string;
-      authMode: 'OAuthM2m';
-      oauthClientId: string;
-      oauthClientSecret: string;
-    }
-  | {
-      hostName: string;
-      httpPath: string;
-      authMode: 'OAuthU2m';
-      oauthRedirectPort: number;
-    };
+/**
+ * Session-level defaults shared across all auth-mode variants.
+ *
+ * Mirrors `ConnectionOptions.catalog` / `.schema` / `.sessionConf` on
+ * the napi binding (kernel `Session::builder().defaults(DefaultOpts)`
+ * and `.session_conf(HashMap)` — the routes that actually populate SEA
+ * `CreateSession.catalog` / `.schema` / `.session_confs`).
+ *
+ * Per-statement overrides do not exist on the kernel surface; both
+ * pyo3 and napi expose catalog / schema / sessionConf only at session
+ * creation. Mirror that here so the adapter doesn't promise a
+ * capability the binding can't honour.
+ */
+export interface SeaSessionDefaults {
+  catalog?: string;
+  schema?: string;
+  sessionConf?: Record<string, string>;
+}
+
+export type SeaNativeConnectionOptions = SeaSessionDefaults &
+  (
+    | {
+        hostName: string;
+        httpPath: string;
+        authMode: 'Pat';
+        token: string;
+      }
+    | {
+        hostName: string;
+        httpPath: string;
+        authMode: 'OAuthM2m';
+        oauthClientId: string;
+        oauthClientSecret: string;
+      }
+    | {
+        hostName: string;
+        httpPath: string;
+        authMode: 'OAuthU2m';
+        oauthRedirectPort: number;
+      }
+  );
 
 function prependSlash(str: string): string {
   if (str.length > 0 && str.charAt(0) !== '/') {

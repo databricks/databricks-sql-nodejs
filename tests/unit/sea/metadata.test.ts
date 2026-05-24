@@ -19,7 +19,6 @@ import SeaTableTypeFilter from '../../../lib/sea/SeaTableTypeFilter';
 import {
   SeaNativeConnection,
   SeaNativeStatement,
-  SeaExecuteOptions,
 } from '../../../lib/sea/SeaNativeLoader';
 import IOperationBackend from '../../../lib/contracts/IOperationBackend';
 import IClientContext, { ClientConfig } from '../../../lib/contracts/IClientContext';
@@ -62,8 +61,8 @@ class FakeMetadataConnection implements SeaNativeConnection {
     return returnStatement;
   }
 
-  public async executeStatement(_sql: string, _options: SeaExecuteOptions): Promise<SeaNativeStatement> {
-    return this.record('executeStatement', [_sql, _options]);
+  public async executeStatement(_sql: string): Promise<SeaNativeStatement> {
+    return this.record('executeStatement', [_sql]);
   }
 
   public async listCatalogs(): Promise<SeaNativeStatement> {

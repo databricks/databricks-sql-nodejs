@@ -89,28 +89,36 @@ export default class SeaBackend implements IBackend {
       throw new HiveDriverError('SeaBackend: not connected. Call connect() first.');
     }
 
+    // Fold session-level defaults from the OpenSessionRequest into the
+    // napi `ConnectionOptions`. The kernel routes these through
+    // `Session::builder().defaults(DefaultOpts)` + `.session_conf(...)`
+    // so they land on the SEA `CreateSession` wire fields, not on each
+    // per-statement request. Matches pyo3's `Session.__new__` shape.
+    //
+    // Only set the optional keys when present so the napi call shape
+    // stays minimal — keeps wire snapshots / test assertions stable
+    // for callers who pass no defaults.
+    const sessionOptions: SeaNativeConnectionOptions = { ...this.nativeOptions };
+    if (request.initialCatalog !== undefined) {
+      sessionOptions.catalog = request.initialCatalog;
+    }
+    if (request.initialSchema !== undefined) {
+      sessionOptions.schema = request.initialSchema;
+    }
+    if (request.configuration !== undefined) {
+      sessionOptions.sessionConf = { ...request.configuration };
+    }
+
     let nativeConnection: SeaNativeConnection;
     try {
-      nativeConnection = (await this.binding.openSession(this.nativeOptions)) as SeaNativeConnection;
+      nativeConnection = (await this.binding.openSession(sessionOptions)) as SeaNativeConnection;
     } catch (err) {
       throw decodeNapiKernelError(err);
     }
 
-    // Merge `request.configuration` (the existing public field for Spark
-    // conf) with any backend-specific session config. The SEA wire
-    // protocol applies these per-statement, but we capture them at
-    // session-open time and forward with every executeStatement to
-    // preserve session-config semantics.
-    const sessionConfig = request.configuration ? { ...request.configuration } : undefined;
-
     return new SeaSessionBackend({
       connection: nativeConnection!,
       context: this.context,
-      defaults: {
-        initialCatalog: request.initialCatalog,
-        initialSchema: request.initialSchema,
-        sessionConfig,
-      },
     });
   }
 
