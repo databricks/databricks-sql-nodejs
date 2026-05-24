@@ -6,7 +6,11 @@
     "sourceMap": true,
     "strict": true,
     "esModuleInterop": true,
-    "forceConsistentCasingInFileNames": true
+    "forceConsistentCasingInFileNames": true,
+    "baseUrl": "./",
+    "paths": {
+      "@sea-native": ["./native/sea/index.d.ts"]
+    }
   },
   "exclude": ["./dist/**/*"]
 }

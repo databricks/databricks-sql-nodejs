@@ -13,69 +13,105 @@
 // limitations under the License.
 
 /**
- * Loader for the SEA (Statement Execution API) native binding.
+ * Lazy loader for the SEA (Statement Execution API) native binding.
  *
- * Round 1b: minimal pass-through to the napi-rs auto-generated
- * `index.js` shim in `native/sea/`. The shim itself picks the right
- * per-platform `.node` artifact (linux-x64-gnu today; more triples in
- * the bundling feature).
- *
- * Round 2+ will extend this with: lazy require to defer the `.node`
- * load until the first SEA call, structured load-error diagnostics
- * (which platform/arch was attempted, whether the package was
- * installed at all), and a JS-side `DBSQLLogger` install path that
- * forwards to the binding's `installLogger()` once that surface lands.
+ * Mirrors the load-failure-tolerant pattern of `lib/utils/lz4.ts`: the
+ * `.node` artifact ships via per-platform optional dependencies
+ * (`@databricks/sea-native-<triple>`), so its absence must not crash
+ * a Thrift-only consumer of the driver. Callers that actually need
+ * SEA invoke `getSeaNative()`, which throws a structured error if
+ * the binding could not be loaded.
  */
 
-// The path is relative to this file at runtime (`dist/sea/SeaNativeLoader.js`)
-// resolving to `dist/sea/../../native/sea/index.js` once `tsc` has emitted
-// to `dist/`. We use a require-time path resolution because the napi
-// shim is plain CommonJS and not part of the TS source tree.
-//
-// eslint-disable-next-line @typescript-eslint/no-var-requires, import/no-dynamic-require, global-require
-const native = require('../../native/sea/index.js');
+import type {
+  Connection as NativeConnection,
+  Statement as NativeStatement,
+  ConnectionOptions,
+  ExecuteOptions,
+  ArrowBatch,
+  ArrowSchema,
+} from '@sea-native';
 
-/**
- * Public surface of the native binding exposed to the rest of the
- * NodeJS driver. Round 2 lands `openSession` + opaque `Connection` /
- * `Statement` classes (the binding-generated `.d.ts` is the source of
- * truth for their method signatures — see `native/sea/index.d.ts`).
- *
- * We deliberately keep this typed loosely (`unknown` for the class
- * shapes) so the loader layer doesn't have to import the binding's
- * generated types and the JS adapter layer can introduce its own
- * higher-level wrappers without conflicting with the binding's TS
- * declarations.
- */
+export type { ConnectionOptions, ExecuteOptions, ArrowBatch, ArrowSchema };
+export type Connection = NativeConnection;
+export type Statement = NativeStatement;
+
 export interface SeaNativeBinding {
-  /** Returns the native crate version (smoke test for the binding's load path). */
   version(): string;
-  /** Open a session over PAT auth. Returns an opaque Connection. */
-  openSession(opts: {
-    hostName: string;
-    httpPath: string;
-    token: string;
-  }): Promise<unknown>;
-  /** Opaque Connection class — instance methods on the binding-generated d.ts. */
-  Connection: Function;
-  /** Opaque Statement class — instance methods on the binding-generated d.ts. */
-  Statement: Function;
+  openSession(options: ConnectionOptions): Promise<NativeConnection>;
+  Connection: typeof NativeConnection;
+  Statement: typeof NativeStatement;
+}
+
+const MIN_NODE_MAJOR = 18;
+
+function detectNodeMajor(): number {
+  // `process.version` is `vX.Y.Z`; parseInt stops at the first non-digit.
+  return parseInt(process.version.slice(1), 10);
+}
+
+function loadFailureHint(err: NodeJS.ErrnoException): string {
+  const platform = `${process.platform}-${process.arch}`;
+  const installHint = `Install the matching optional dependency (e.g. @databricks/sea-native-${platform}).`;
+  if (err.code === 'MODULE_NOT_FOUND') {
+    return `SEA native binding not installed for platform ${platform} on Node ${process.version}. ${installHint}`;
+  }
+  if (err.code === 'ERR_DLOPEN_FAILED') {
+    return `SEA native binding present but failed to dlopen on platform ${platform} / Node ${process.version} — likely a libc or Node ABI mismatch. The binding requires Node >=${MIN_NODE_MAJOR}.`;
+  }
+  return `SEA native binding failed to load on platform ${platform} / Node ${process.version}: ${err.message}`;
+}
+
+let cached: SeaNativeBinding | null | undefined;
+let cachedError: Error | undefined;
+
+function tryLoad(): SeaNativeBinding | undefined {
+  const nodeMajor = detectNodeMajor();
+  if (Number.isFinite(nodeMajor) && nodeMajor < MIN_NODE_MAJOR) {
+    cachedError = new Error(
+      `SEA native binding requires Node >=${MIN_NODE_MAJOR}; running Node ${process.version}. Continue using the Thrift backend on this runtime.`,
+    );
+    return undefined;
+  }
+
+  try {
+    // The require path resolves to `native/sea/index.js` (the napi-rs
+    // router). `.js` is omitted so eslint's `import/extensions` rule
+    // accepts the call.
+    // eslint-disable-next-line @typescript-eslint/no-var-requires, global-require
+    return require('../../native/sea') as SeaNativeBinding;
+  } catch (err) {
+    if (err instanceof Error && 'code' in err) {
+      cachedError = new Error(loadFailureHint(err as NodeJS.ErrnoException));
+      return undefined;
+    }
+    cachedError = new Error(`SEA native binding failed to load with non-standard error: ${String(err)}`);
+    return undefined;
+  }
 }
 
 /**
- * Returns the loaded native binding. Throws if the platform-specific
- * `.node` artifact cannot be found (napi-rs's auto-generated shim
- * surfaces a descriptive error in that case).
+ * Returns the loaded native binding. Throws a structured error if
+ * the binding is unavailable on this platform / Node version.
  */
 export function getSeaNative(): SeaNativeBinding {
-  return native as SeaNativeBinding;
+  if (cached === undefined) {
+    cached = tryLoad() ?? null;
+  }
+  if (cached === null) {
+    throw cachedError ?? new Error('SEA native binding unavailable');
+  }
+  return cached;
 }
 
 /**
- * Convenience accessor for the smoke-test path. Equivalent to
- * `getSeaNative().version()` but reads more naturally in tests and
- * REPLs.
+ * Returns the loaded binding or `undefined` if it could not be
+ * loaded. Use this for capability-detection at startup; use
+ * `getSeaNative()` at the point where SEA is actually required.
  */
-export function version(): string {
-  return getSeaNative().version();
+export function tryGetSeaNative(): SeaNativeBinding | undefined {
+  if (cached === undefined) {
+    cached = tryLoad() ?? null;
+  }
+  return cached ?? undefined;
 }

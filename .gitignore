@@ -10,3 +10,10 @@ coverage_unit
 dist
 *.DS_Store
 lib/version.ts
+
+# SEA native binding — copied/generated from kernel workspace by `npm run build:native`.
+# The committed contract is `native/sea/index.d.ts` (TypeScript declarations).
+# Everything else under native/sea/ is a build artifact and must not be committed.
+native/sea/index.js
+native/sea/index.node
+native/sea/index.*.node
