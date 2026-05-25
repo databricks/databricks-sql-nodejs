@@ -101,6 +101,47 @@ export interface SeaNativeExecuteOptions {
 }
 
 /**
+ * Server-side execution status returned by
+ * `AsyncStatement.status()`. Mirrors the kernel `StatementStatus`
+ * enum collapsed to its variant name. `'Unknown'` is the
+ * forward-compat arm for kernel variants the binding doesn't
+ * recognise.
+ */
+export type SeaNativeStatementStatus =
+  | 'Pending'
+  | 'Running'
+  | 'Succeeded'
+  | 'Failed'
+  | 'Cancelled'
+  | 'Closed'
+  | 'Unknown';
+
+/**
+ * Typed surface for the opaque napi `AsyncResultHandle`. Returned
+ * by `AsyncStatement.awaitResult()`; same fetch-side surface as
+ * `SeaNativeStatement` but without `cancel()` / `close()` (the
+ * parent `AsyncStatement` owns server-side lifecycle).
+ */
+export interface SeaNativeAsyncResultHandle {
+  readonly statementId: string;
+  fetchNextBatch(): Promise<SeaArrowBatch | null>;
+  schema(): Promise<SeaArrowSchema>;
+}
+
+/**
+ * Typed surface for the opaque napi `AsyncStatement`. Returned by
+ * `Connection.submitStatement(...)`. JS drives polling via
+ * `status()` or blocks via `awaitResult()`.
+ */
+export interface SeaNativeAsyncStatement {
+  readonly statementId: string;
+  status(): Promise<SeaNativeStatementStatus>;
+  awaitResult(): Promise<SeaNativeAsyncResultHandle>;
+  cancel(): Promise<void>;
+  close(): Promise<void>;
+}
+
+/**
  * Typed surface for the opaque napi `Connection` handle.
  */
 export interface SeaNativeConnection {
@@ -113,6 +154,16 @@ export interface SeaNativeConnection {
    * (per-statement Spark conf overlay) and `queryTags`.
    */
   executeStatement(sql: string, options?: SeaNativeExecuteOptions): Promise<SeaNativeStatement>;
+  /**
+   * Submit a SQL statement asynchronously and return an
+   * `AsyncStatement` handle. The kernel sends `wait_timeout=0s` so
+   * the server returns immediately with a `statement_id` while the
+   * query is still Pending/Running. Drive polling via the returned
+   * handle's `status()` / `awaitResult()` methods. Drop-cancel
+   * during `awaitResult()` is handled by the kernel's
+   * `AwaitResultCancelGuard`.
+   */
+  submitStatement(sql: string, options?: SeaNativeExecuteOptions): Promise<SeaNativeAsyncStatement>;
   close(): Promise<void>;
 }
 

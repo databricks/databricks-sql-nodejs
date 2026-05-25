@@ -96,10 +96,57 @@ export interface ArrowBatch {
 }
 /**
  * An Arrow IPC stream payload encoding just the result schema (no
- * record-batch messages). Returned by `Statement.schema()`.
+ * record-batch messages). Returned by `Statement.schema()` or
+ * `AsyncResultHandle.schema()`.
  */
 export interface ArrowSchema {
   ipcBytes: Buffer
+}
+/**
+ * Opaque async-statement handle returned by
+ * `Connection.submitStatement(...)`. The kernel sent
+ * `wait_timeout=0s`, so the server is still Pending/Running when
+ * this handle is constructed; JS drives polling via `status()` or
+ * blocks via `awaitResult()`. Drop-cancel during `awaitResult()`
+ * is handled by the kernel's `AwaitResultCancelGuard`.
+ */
+export declare class AsyncStatement {
+  /** Server-issued statement id. Cached at construction. */
+  get statementId(): string
+  /**
+   * One-shot status check. Returns
+   * `'Pending' | 'Running' | 'Succeeded' | 'Failed' | 'Cancelled' |
+   *  'Closed' | 'Unknown'`. Returns `KernelError(InvalidStatementHandle)`
+   * if the statement has been explicitly `close()`d.
+   */
+  status(): Promise<string>
+  /**
+   * Block until the server reaches a terminal state, then return an
+   * `AsyncResultHandle` that wraps the materialised result stream.
+   */
+  awaitResult(): Promise<AsyncResultHandle>
+  /** Server-side cancel. */
+  cancel(): Promise<void>
+  /** Explicit close. Idempotent. */
+  close(): Promise<void>
+}
+/**
+ * Opaque result-fetch handle returned by
+ * `AsyncStatement.awaitResult()`. Wraps a kernel `ResultStream`.
+ * No `cancel()` / `close()` — the parent `AsyncStatement` owns
+ * server-side lifecycle.
+ */
+export declare class AsyncResultHandle {
+  /** Server-issued statement id. Matches the parent `AsyncStatement`. */
+  get statementId(): string
+  /**
+   * Pull the next batch of results. Returns `null` when the stream
+   * is exhausted. Byte-identical IPC payload to the sync
+   * `Statement.fetchNextBatch()` for the same query.
+   */
+  fetchNextBatch(): Promise<ArrowBatch | null>
+  /** Result schema as a schema-only Arrow IPC payload. */
+  schema(): Promise<ArrowSchema>
 }
 /**
  * Returns the native binding's crate version (`CARGO_PKG_VERSION`).
@@ -131,6 +178,14 @@ export declare class Connection {
    * `serializeQueryTags` wire shape).
    */
   executeStatement(sql: string, options?: ExecuteOptions | undefined | null): Promise<Statement>
+  /**
+   * Submit a SQL statement asynchronously and return an
+   * `AsyncStatement` handle. The kernel `Statement::submit()` sends
+   * `wait_timeout=0s`, so the server returns immediately with a
+   * statement_id while the query is still Pending/Running. Drive
+   * polling via the returned handle.
+   */
+  submitStatement(sql: string, options?: ExecuteOptions | undefined | null): Promise<AsyncStatement>
   /**
    * Explicit close. Marks the connection wrapper as closed so
    * subsequent calls on this `Connection` return `InvalidArg`, then
