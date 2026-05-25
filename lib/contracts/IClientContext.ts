@@ -52,6 +52,17 @@ export interface ClientConfig {
    */
   telemetryFlushOnExit?: boolean;
   userAgentEntry?: string;
+
+  /**
+   * Extra HTTP headers attached to driver-owned out-of-band requests
+   * (telemetry, feature flags). Populated by `DBSQLClient.connect()` from
+   * `ConnectionOptions.customHeaders` plus an `x-databricks-org-id` header
+   * derived from the `?o=` query parameter on `httpPath` when present, to
+   * support SPOG (Single Panel of Glass) account-level routing on endpoints
+   * that don't carry `?o=` in their URL path. NOT applied to Thrift or
+   * OAuth/OIDC requests.
+   */
+  customHeaders?: Record<string, string>;
 }
 
 export default interface IClientContext {

@@ -133,7 +133,11 @@ class TelemetryClientProvider {
       return;
     }
 
-    holder.client.unregisterContext(context);
+    // Skip unregister on the last release so close()'s final flush can still
+    // resolve auth/connection providers from the FIFO snapshot.
+    if (holder.refCount > 1) {
+      holder.client.unregisterContext(context);
+    }
     holder.refCount -= 1;
     logger.log(LogLevel.debug, `TelemetryClient reference count for ${host}: ${holder.refCount}`);
 

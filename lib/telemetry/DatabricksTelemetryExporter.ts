@@ -249,6 +249,7 @@ export default class DatabricksTelemetryExporter {
     let headers: Record<string, string> = {
       'Content-Type': 'application/json',
       'User-Agent': userAgent,
+      ...(config.customHeaders ?? {}),
     };
 
     if (authenticatedExport) {

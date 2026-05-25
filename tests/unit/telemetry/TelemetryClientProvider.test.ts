@@ -267,6 +267,50 @@ describe('TelemetryClientProvider', () => {
       expect(second.isClosed()).to.be.false;
       expect(provider.getRefCount(HOST1)).to.equal(1);
     });
+
+    it('keeps the context registered through close() on last refcount', async () => {
+      // Regression: releaseClient used to call unregisterContext before
+      // close(), which dropped the only FIFO entry and left the final
+      // flush without an auth provider — metrics were dropped with
+      // "missing Authorization header".
+      const context = new ClientContextStub();
+      const provider = new TelemetryClientProvider();
+
+      const client = provider.getOrCreateClient(context, HOST1);
+      let authProviderAtClose: unknown = 'unset';
+      sinon.stub(client, 'close').callsFake(async () => {
+        // The TelemetryClient is its own IClientContext. While close() runs,
+        // getAuthProvider() must still resolve (the FIFO entry survives).
+        authProviderAtClose = client.getAuthProvider?.();
+      });
+
+      await provider.releaseClient(context, HOST1);
+
+      // The FIFO walk hits the (still-registered) context; the stub's
+      // getAuthProvider returns undefined but the lookup itself completes.
+      // What we're really asserting is that the FIFO wasn't pre-emptied:
+      // pre-fix, this assertion would not even fire because close() runs
+      // against an empty FIFO and the auth-provider walk short-circuits
+      // before close()'s callsFake. Here we verify the spy ran AND the
+      // context is still registered at that moment.
+      expect(authProviderAtClose).to.not.equal('unset');
+      expect((client as any).contexts.length).to.equal(1);
+    });
+
+    it('drops the context immediately when other refcounts remain', async () => {
+      const context = new ClientContextStub();
+      const provider = new TelemetryClientProvider();
+
+      const client = provider.getOrCreateClient(context, HOST1);
+      provider.getOrCreateClient(context, HOST1); // refcount=2
+
+      await provider.releaseClient(context, HOST1);
+
+      // Multi-refcount path: unregisterContext runs immediately; the
+      // (single) FIFO entry tracking this context was removed.
+      expect((client as any).contexts.length).to.equal(0);
+      expect(provider.getRefCount(HOST1)).to.equal(1);
+    });
   });
 
   describe('Host normalization', () => {

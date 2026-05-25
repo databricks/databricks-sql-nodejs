@@ -298,9 +298,9 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
   /**
    * Extract the numeric workspace ID for telemetry.
    *
-   * The only reliable carrier in the connection params today is the `?o=N`
-   * query parameter on `httpPath` — Databricks SQL warehouses are typically
-   * connected to via paths like `/sql/1.0/warehouses/<id>?o=12345678901234`.
+   * Two URL shapes carry the workspace ID today:
+   *  - Warehouse, query form: `/sql/1.0/warehouses/<id>?o=<wsId>`
+   *  - All-purpose cluster, path form: `sql/protocolv1/o/<wsId>/<cluster-id>`
    *
    * Host-based extraction was tried previously but produced confidently-wrong
    * values:
@@ -313,21 +313,84 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
    * Returns `undefined` when no workspace ID can be derived. Server-side
    * attribution is better off seeing a missing field than a wrong value.
    */
-  private extractWorkspaceId(): string | undefined {
-    const { httpPath } = this;
+  private static extractWorkspaceId(httpPath: string | undefined): string | undefined {
     if (!httpPath) {
       return undefined;
     }
     const queryIdx = httpPath.indexOf('?');
-    if (queryIdx < 0) {
-      return undefined;
+    // Warehouse form: `?o=<digits>` in the query string.
+    if (queryIdx >= 0) {
+      const query = httpPath.slice(queryIdx + 1);
+      // Match `o=<digits>` as the first param, an inner `&o=<digits>`, etc.
+      // Workspace IDs are decimal integers; reject anything else so a stray
+      // `o=tenant_42` doesn't ship as a workspace ID.
+      const queryMatch = query.match(/(?:^|&)o=(\d+)(?:&|$)/);
+      if (queryMatch) {
+        return queryMatch[1];
+      }
     }
-    const query = httpPath.slice(queryIdx + 1);
-    // Match `o=<digits>` as the first param, an inner `&o=<digits>`, etc.
-    // Workspace IDs are decimal integers; reject anything else so a stray
-    // `o=tenant_42` doesn't ship as a workspace ID.
-    const match = query.match(/(?:^|&)o=(\d+)(?:&|$)/);
-    return match ? match[1] : undefined;
+    // All-purpose cluster form: `/o/<digits>/<cluster-id>` as a path segment.
+    const pathOnly = queryIdx >= 0 ? httpPath.slice(0, queryIdx) : httpPath;
+    const pathMatch = pathOnly.match(/(?:^|\/)o\/(\d+)(?:\/|$)/);
+    return pathMatch ? pathMatch[1] : undefined;
+  }
+
+  // Detects an `o=<value>` or `/o/<value>` where `<value>` is present but
+  // non-numeric, so the caller can warn instead of silently dropping a
+  // malformed workspace param.
+  private static hasMalformedOrgParam(httpPath: string | undefined): boolean {
+    if (!httpPath) {
+      return false;
+    }
+    const queryIdx = httpPath.indexOf('?');
+    if (queryIdx >= 0) {
+      const query = httpPath.slice(queryIdx + 1);
+      const hasOrg = /(?:^|&)o=/.test(query);
+      const hasNumericOrg = /(?:^|&)o=\d+(?:&|$)/.test(query);
+      if (hasOrg && !hasNumericOrg) {
+        return true;
+      }
+    }
+    const pathOnly = queryIdx >= 0 ? httpPath.slice(0, queryIdx) : httpPath;
+    const hasPathOrg = /(?:^|\/)o\/[^/]+/.test(pathOnly);
+    const hasNumericPathOrg = /(?:^|\/)o\/\d+(?:\/|$)/.test(pathOnly);
+    return hasPathOrg && !hasNumericPathOrg;
+  }
+
+  /**
+   * Build the customHeaders map applied to telemetry POSTs and feature-flag
+   * GETs (SPOG / Single Panel of Glass support). When `httpPath` carries a
+   * workspace ID — either as a `?o=<wsId>` query (warehouse) or a
+   * `/o/<wsId>/<cluster-id>` path segment (all-purpose cluster) — endpoints
+   * that don't include the workspace in their URL path need it conveyed via
+   * the `x-databricks-org-id` header instead. A user-supplied value in
+   * `userHeaders` (case-insensitively keyed) wins over the parsed value.
+   *
+   * `httpPath` is passed explicitly (rather than read off `this.httpPath`) so
+   * the SPOG-routing dependency is visible in the signature — a future
+   * refactor that reorders connect() can't silently break injection.
+   */
+  private buildCustomHeaders(
+    httpPath: string | undefined,
+    userHeaders: Record<string, string> | undefined,
+  ): Record<string, string> | undefined {
+    const merged: Record<string, string> = { ...(userHeaders ?? {}) };
+    const hasOrgIdAlready = Object.keys(merged).some((k) => k.toLowerCase() === 'x-databricks-org-id');
+    if (hasOrgIdAlready) {
+      this.logger.log(LogLevel.debug, 'SPOG: x-databricks-org-id supplied by caller; not extracting from httpPath');
+    } else {
+      const orgId = DBSQLClient.extractWorkspaceId(httpPath);
+      if (orgId) {
+        merged['x-databricks-org-id'] = orgId;
+        this.logger.log(LogLevel.debug, `SPOG: injecting x-databricks-org-id=${orgId} (extracted from httpPath)`);
+      } else if (DBSQLClient.hasMalformedOrgParam(httpPath)) {
+        this.logger.log(
+          LogLevel.warn,
+          'SPOG: httpPath contains non-numeric workspace ID; x-databricks-org-id not injected',
+        );
+      }
+    }
+    return Object.keys(merged).length > 0 ? merged : undefined;
   }
 
   /**
@@ -561,6 +624,11 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
       this.config.userAgentEntry = options.userAgentEntry;
     }
 
+    // SPOG: parse `?o=<workspaceId>` out of httpPath and stash it as
+    // `x-databricks-org-id` for the telemetry + feature-flag clients, which
+    // hit endpoints that don't carry the workspace in their URL path.
+    this.config.customHeaders = this.buildCustomHeaders(options.path, options.customHeaders);
+
     this.authProvider = this.createAuthProvider(options, authProvider);
 
     this.connectionProvider = this.createConnectionProvider(options);
@@ -677,7 +745,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
     safeEmit(this, (emitter) => {
       if (!this.host) return;
       const latencyMs = Date.now() - startTime;
-      const workspaceId = this.extractWorkspaceId();
+      const workspaceId = DBSQLClient.extractWorkspaceId(this.httpPath);
       const driverConfig = this.driverConfigShipped ? undefined : this.buildDriverConfiguration();
       if (driverConfig) {
         this.driverConfigShipped = true;
