@@ -49,6 +49,19 @@ export interface ConnectionOptions {
    * `session_confs`. Unknown keys are rejected server-side.
    */
   sessionConf?: Record<string, string>
+  /**
+   * Maximum number of pooled HTTP connections per host. Routes
+   * through the kernel's `HttpConfig::pool_max_idle_per_host`.
+   * Tunes the underlying `reqwest` connection pool — higher values
+   * reduce reconnect overhead when many statements run
+   * concurrently against the same warehouse. `None` falls back to
+   * the kernel default (100). Mirrors the Python connector's
+   * `max_connections` kwarg on the SEA backend.
+   *
+   * Napi-rs serialises `u32` as JS `number`; values up to
+   * `2^32 - 1` round-trip safely (any reasonable pool size fits).
+   */
+  maxConnections?: number
 }
 /**
  * Open a Databricks SQL session over PAT auth and return an opaque

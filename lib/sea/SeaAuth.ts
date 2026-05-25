@@ -66,6 +66,15 @@ export interface SeaSessionDefaults {
   catalog?: string;
   schema?: string;
   sessionConf?: Record<string, string>;
+  /**
+   * Maximum pooled HTTP connections per host. Forwarded to the
+   * napi `ConnectionOptions.maxConnections` field, which the kernel
+   * threads into `HttpConfig::pool_max_idle_per_host`. Connection-
+   * level (not session-level), but grouped with the session defaults
+   * here because both flow through the same napi `openSession` call.
+   * Omitted → kernel default (100) applies.
+   */
+  maxConnections?: number;
 }
 
 export type SeaNativeConnectionOptions = SeaSessionDefaults &
@@ -158,10 +167,22 @@ export function isBlankOrReserved(s: string): boolean {
 export function buildSeaConnectionOptions(options: ConnectionOptions): SeaNativeConnectionOptions {
   const { authType } = options as { authType?: string };
 
-  const base = {
+  const base: { hostName: string; httpPath: string; maxConnections?: number } = {
     hostName: options.host,
     httpPath: prependSlash(options.path),
   };
+  // Connection-level pool size — forwarded to the napi binding,
+  // ignored when undefined so the kernel default (100) applies.
+  // Validate at the JS layer (positive integer) so a misuse fails
+  // here instead of inside the kernel with a cryptic message.
+  if (options.maxConnections !== undefined) {
+    if (!Number.isInteger(options.maxConnections) || options.maxConnections < 1) {
+      throw new HiveDriverError(
+        `SEA backend: \`maxConnections\` must be a positive integer; got ${options.maxConnections}.`,
+      );
+    }
+    base.maxConnections = options.maxConnections;
+  }
 
   const oauth = options as {
     oauthClientId?: string;

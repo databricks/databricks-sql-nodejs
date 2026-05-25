@@ -54,6 +54,14 @@ export type ConnectionOptions = {
   socketTimeout?: number;
   proxy?: ProxyOptions;
   enableMetricViewMetadata?: boolean;
+  /**
+   * Maximum number of pooled HTTP connections per host. SEA backend
+   * only — Thrift backend currently ignores this. Mirrors the Python
+   * connector's `max_connections` kwarg (default 100 in the kernel's
+   * connection pool). Tune up when many statements run concurrently
+   * against the same warehouse to reduce reconnect overhead.
+   */
+  maxConnections?: number;
 } & AuthOptions;
 
 export interface OpenSessionRequest {
