@@ -34,8 +34,22 @@
  */
 
 import { expect } from 'chai';
-import { tableFromIPC } from 'apache-arrow';
-import { getSeaNative } from '../../../lib/sea/SeaNativeLoader';
+import { tableFromIPC, Type as ArrowType } from 'apache-arrow';
+import * as fs from 'fs';
+import * as path from 'path';
+import { createRequire } from 'module';
+
+// Prerequisites for the live e2e:
+//   1. `DATABRICKS_PECOTESTING_*` env vars set (host, http_path, token)
+//   2. `yarn build:native` has produced `native/sea/index.linux-x64-gnu.node`
+//
+// SeaNativeLoader.ts does a module-level `const native =
+// require('../../native/sea/index.js')` which crashes file evaluation
+// (MODULE_NOT_FOUND) when the `.node` artifact is absent, BEFORE mocha
+// can run the `before()` skip-gate. So we (a) verify both prereqs from
+// the suite's `before()` and skip-and-explain, and (b) defer the
+// `getSeaNative` import to inside the test bodies via a synchronous
+// import-on-demand. DA round-1 H1 fixup.
 
 interface NativeBinding {
   openSession(opts: {
@@ -71,11 +85,46 @@ describe('SEA complex types — native Arrow default', function suite() {
     if (!hostName || !httpPath || !token) {
       // eslint-disable-next-line no-invalid-this
       this.skip();
+      return;
+    }
+    // Verify the native artifact exists before any test in the suite
+    // attempts to import `getSeaNative` from SeaNativeLoader (whose
+    // module-level require would crash the whole file load on
+    // MODULE_NOT_FOUND). Skip-with-message so a developer sees the
+    // actionable instruction instead of a cryptic crash.
+    //
+    // Use `process.cwd()` instead of `__dirname` because mocha may
+    // reparse this file as ESM (MODULE_TYPELESS_PACKAGE_JSON path)
+    // where `__dirname` is undefined. mocha always runs with cwd at
+    // the package root, so this resolves consistently.
+    const nodeArtifact = path.resolve(
+      process.cwd(),
+      'native/sea/index.linux-x64-gnu.node',
+    );
+    if (!fs.existsSync(nodeArtifact)) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[sea complex-types e2e] skipping: native binary not built. ` +
+          `Run \`yarn build:native\` (or set DATABRICKS_SQL_KERNEL_REPO + yarn build:native) first.`,
+      );
+      // eslint-disable-next-line no-invalid-this
+      this.skip();
     }
   });
 
+  // Build a `require` function from this module's URL so the call
+  // works under both CJS and ESM reparse paths. mocha 11+ may reparse
+  // ts-node-emitted files as ESM (MODULE_TYPELESS_PACKAGE_JSON), in
+  // which case the bare `require` symbol is undefined.
+  // eslint-disable-next-line @typescript-eslint/naming-convention
+  const requireFromHere = createRequire(import.meta.url);
+
+  function loadBinding(): NativeBinding {
+    return requireFromHere('../../../native/sea/index.js') as NativeBinding;
+  }
+
   it('ARRAY / MAP / STRUCT come back as native Arrow shapes', async () => {
-    const binding = getSeaNative() as unknown as NativeBinding;
+    const binding = loadBinding();
     const connection = await binding.openSession({
       hostName: hostName as string,
       httpPath: httpPath as string,
@@ -109,22 +158,56 @@ describe('SEA complex types — native Arrow default', function suite() {
       expect(structField, 'c_struct field present').to.not.equal(undefined);
       expect(arrStructField, 'c_arr_struct field present').to.not.equal(undefined);
 
-      // Arrow type ids per arrow-js — these are the structural checks
-      // that distinguish "native Arrow" from "JSON Utf8". Arrow type
-      // names are stable across arrow-js minor versions.
-      expect(arrField!.type.toString()).to.match(/List/i, 'c_arr should be List');
-      expect(mapField!.type.toString()).to.match(/Map|List/i, 'c_map should be Map (or List of Struct of key/value)');
-      expect(structField!.type.toString()).to.match(/Struct/i, 'c_struct should be Struct');
-      expect(arrStructField!.type.toString()).to.match(/List/i, 'c_arr_struct should be List of Struct');
+      // Strict typeId checks (DA round-1 M2 fixup — prior regex
+      // assertions matched too permissively, e.g. `/List/i` would
+      // accept LargeList or FixedSizeList too. Arrow `Type` is a
+      // numeric enum from arrow-js; comparing typeId is stable
+      // across arrow-js minor versions and a structural match.
+      //
+      // The server returns ARRAY columns as Arrow `List` (typeId 12),
+      // MAP as Arrow `Map` (typeId 17), STRUCT as Arrow `Struct`
+      // (typeId 13). Nested ARRAY<STRUCT> is `List` whose child is
+      // `Struct`.
+      expect(arrField!.type.typeId).to.equal(
+        ArrowType.List,
+        `c_arr typeId should be List(${ArrowType.List}), got ${arrField!.type.typeId} (${arrField!.type})`,
+      );
+      expect(mapField!.type.typeId).to.equal(
+        ArrowType.Map,
+        `c_map typeId should be Map(${ArrowType.Map}), got ${mapField!.type.typeId} (${mapField!.type})`,
+      );
+      expect(structField!.type.typeId).to.equal(
+        ArrowType.Struct,
+        `c_struct typeId should be Struct(${ArrowType.Struct}), got ${structField!.type.typeId} (${structField!.type})`,
+      );
+      expect(arrStructField!.type.typeId).to.equal(
+        ArrowType.List,
+        `c_arr_struct typeId should be List(${ArrowType.List}), got ${arrStructField!.type.typeId} (${arrStructField!.type})`,
+      );
 
-      // Sanity-check: NONE of the complex columns should be Utf8 — that
-      // would indicate complex_types_as_json was inadvertently enabled.
+      // Nested-structural check: c_arr_struct should be List<Struct>.
+      // Drilling into `children[0].type.typeId` catches a regression
+      // where the kernel might wrap a Struct in something else (e.g.
+      // FixedSizeList).
+      const arrStructChildType = arrStructField!.type.children[0].type;
+      expect(arrStructChildType.typeId).to.equal(
+        ArrowType.Struct,
+        `c_arr_struct child typeId should be Struct(${ArrowType.Struct}), got ${arrStructChildType.typeId}`,
+      );
+
+      // Negative assertion: NONE of the complex columns should be Utf8
+      // — that would indicate `complex_types_as_json` was inadvertently
+      // enabled on the kernel side. Using typeId here too rather than
+      // a string regex.
       for (const f of [arrField!, mapField!, structField!, arrStructField!]) {
-        expect(f.type.toString()).to.not.match(
-          /^Utf8$/,
-          `${f.name} must not be a JSON string column`,
+        expect(f.type.typeId).to.not.equal(
+          ArrowType.Utf8,
+          `${f.name} must not be a JSON string column (Utf8 typeId)`,
         );
       }
+
+      // Row-count sanity: SELECT-of-literals yields exactly one row.
+      expect(table.numRows).to.equal(1, 'literal SELECT should yield one row');
     } finally {
       if (statement !== null) {
         try {
