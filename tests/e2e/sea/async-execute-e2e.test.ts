@@ -40,8 +40,8 @@
 
 import { expect } from 'chai';
 import { tableFromIPC } from 'apache-arrow';
-import * as fs from 'fs';
-import * as path from 'path';
+import { existsSync } from 'fs';
+import { resolve as resolvePath } from 'path';
 import { createRequire } from 'module';
 
 // `createRequire(import.meta.url)` so the require works under both
@@ -97,11 +97,11 @@ describe('SEA async execute — submit / status / awaitResult / cancel', functio
     // loadBinding(). Skip-with-message if absent. DA round-1 H1 fixup
     // (skip-gate must not crash MODULE_NOT_FOUND when build:native not
     // run).
-    const nodeArtifact = path.resolve(
+    const nodeArtifact = resolvePath(
       process.cwd(),
       'native/sea/index.linux-x64-gnu.node',
     );
-    if (!fs.existsSync(nodeArtifact)) {
+    if (!existsSync(nodeArtifact)) {
       // eslint-disable-next-line no-console
       console.warn(
         `[sea async-execute e2e] skipping: native binary not built. ` +
