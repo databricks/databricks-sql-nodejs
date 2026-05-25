@@ -788,27 +788,22 @@ describe('DBSQLClient telemetry paths', () => {
     });
 
     it('returns the numeric workspace id from all-purpose cluster path form', () => {
-      expect(
-        (DBSQLClient as any).extractWorkspaceId('sql/protocolv1/o/99999999999999/0101-000000-aaaaaaaa'),
-      ).to.equal('99999999999999');
+      expect((DBSQLClient as any).extractWorkspaceId('sql/protocolv1/o/99999999999999/0101-000000-aaaaaaaa')).to.equal(
+        '99999999999999',
+      );
     });
 
     it('returns the numeric workspace id from all-purpose cluster path with leading slash', () => {
-      expect(
-        (DBSQLClient as any).extractWorkspaceId('/sql/protocolv1/o/12345/0101-000000-aaaaaaaa'),
-      ).to.equal('12345');
+      expect((DBSQLClient as any).extractWorkspaceId('/sql/protocolv1/o/12345/0101-000000-aaaaaaaa')).to.equal('12345');
     });
 
     it('returns undefined when all-purpose cluster path has non-numeric workspace segment', () => {
-      expect(
-        (DBSQLClient as any).extractWorkspaceId('sql/protocolv1/o/tenant_xyz/0101-000000-aaaaaaaa'),
-      ).to.be.undefined;
+      expect((DBSQLClient as any).extractWorkspaceId('sql/protocolv1/o/tenant_xyz/0101-000000-aaaaaaaa')).to.be
+        .undefined;
     });
 
     it('prefers ?o= query form over /o/ path form when both are present', () => {
-      expect(
-        (DBSQLClient as any).extractWorkspaceId('sql/protocolv1/o/111/cluster?o=222'),
-      ).to.equal('222');
+      expect((DBSQLClient as any).extractWorkspaceId('sql/protocolv1/o/111/cluster?o=222')).to.equal('222');
     });
   });
 

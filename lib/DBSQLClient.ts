@@ -377,10 +377,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
     const merged: Record<string, string> = { ...(userHeaders ?? {}) };
     const hasOrgIdAlready = Object.keys(merged).some((k) => k.toLowerCase() === 'x-databricks-org-id');
     if (hasOrgIdAlready) {
-      this.logger.log(
-        LogLevel.debug,
-        'SPOG: x-databricks-org-id supplied by caller; not extracting from httpPath',
-      );
+      this.logger.log(LogLevel.debug, 'SPOG: x-databricks-org-id supplied by caller; not extracting from httpPath');
     } else {
       const orgId = DBSQLClient.extractWorkspaceId(httpPath);
       if (orgId) {
