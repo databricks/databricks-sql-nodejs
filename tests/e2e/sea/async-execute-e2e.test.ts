@@ -40,6 +40,15 @@
 
 import { expect } from 'chai';
 import { tableFromIPC } from 'apache-arrow';
+import * as fs from 'fs';
+import * as path from 'path';
+import { createRequire } from 'module';
+
+// `createRequire(import.meta.url)` so the require works under both
+// CJS and the ESM-reparse path mocha 11+ may use
+// (MODULE_TYPELESS_PACKAGE_JSON reparse-as-ESM).
+// eslint-disable-next-line @typescript-eslint/naming-convention
+const requireFromHere = createRequire(import.meta.url);
 
 interface NativeBinding {
   openSession(opts: {
@@ -82,18 +91,34 @@ describe('SEA async execute — submit / status / awaitResult / cancel', functio
     if (!hostName || !httpPath || !token) {
       // eslint-disable-next-line no-invalid-this
       this.skip();
+      return;
+    }
+    // Verify the native artifact exists before any test calls
+    // loadBinding(). Skip-with-message if absent. DA round-1 H1 fixup
+    // (skip-gate must not crash MODULE_NOT_FOUND when build:native not
+    // run).
+    const nodeArtifact = path.resolve(
+      process.cwd(),
+      'native/sea/index.linux-x64-gnu.node',
+    );
+    if (!fs.existsSync(nodeArtifact)) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[sea async-execute e2e] skipping: native binary not built. ` +
+          `Run \`yarn build:native\` first.`,
+      );
+      // eslint-disable-next-line no-invalid-this
+      this.skip();
     }
   });
 
   /**
    * Lazy-load the native binding so the test file is requirable in
    * environments where the `.node` artifact isn't built yet — the
-   * `before()` gate will skip the suite before we touch the binding.
-   * Loading at `require`-time would crash test discovery.
+   * `before()` gate skips the suite before we touch the binding.
    */
   function loadBinding(): NativeBinding {
-    // eslint-disable-next-line global-require, @typescript-eslint/no-var-requires
-    return require('../../../native/sea/index.js') as NativeBinding;
+    return requireFromHere('../../../native/sea/index.js') as NativeBinding;
   }
 
   it('submit returns immediately with a statement_id; awaitResult drains', async () => {
