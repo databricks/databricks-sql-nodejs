@@ -767,76 +767,145 @@ describe('DBSQLClient telemetry paths', () => {
 
   describe('extractWorkspaceId', () => {
     it('returns the numeric o= param from httpPath', () => {
-      const client = new DBSQLClient();
-      (client as any).httpPath = '/sql/1.0/warehouses/abc?o=12345678901234';
-      const id = (client as any).extractWorkspaceId();
+      const id = (DBSQLClient as any).extractWorkspaceId('/sql/1.0/warehouses/abc?o=12345678901234');
       expect(id).to.equal('12345678901234');
     });
 
     it('returns undefined when no query string', () => {
-      const client = new DBSQLClient();
-      (client as any).httpPath = '/sql/1.0/warehouses/abc';
-      expect((client as any).extractWorkspaceId()).to.be.undefined;
+      expect((DBSQLClient as any).extractWorkspaceId('/sql/1.0/warehouses/abc')).to.be.undefined;
     });
 
     it('returns undefined when o= is not numeric', () => {
-      const client = new DBSQLClient();
-      (client as any).httpPath = '/sql/1.0/warehouses/abc?o=tenant_xyz';
-      expect((client as any).extractWorkspaceId()).to.be.undefined;
+      expect((DBSQLClient as any).extractWorkspaceId('/sql/1.0/warehouses/abc?o=tenant_xyz')).to.be.undefined;
     });
 
     it('handles o= as a non-first param', () => {
-      const client = new DBSQLClient();
-      (client as any).httpPath = '/sql/1.0/warehouses/abc?foo=bar&o=42&baz=qux';
-      expect((client as any).extractWorkspaceId()).to.equal('42');
+      expect((DBSQLClient as any).extractWorkspaceId('/sql/1.0/warehouses/abc?foo=bar&o=42&baz=qux')).to.equal('42');
     });
 
     it('returns undefined when httpPath is unset', () => {
-      const client = new DBSQLClient();
-      expect((client as any).extractWorkspaceId()).to.be.undefined;
+      expect((DBSQLClient as any).extractWorkspaceId(undefined)).to.be.undefined;
+    });
+
+    it('returns the numeric workspace id from all-purpose cluster path form', () => {
+      expect(
+        (DBSQLClient as any).extractWorkspaceId('sql/protocolv1/o/99999999999999/0101-000000-aaaaaaaa'),
+      ).to.equal('99999999999999');
+    });
+
+    it('returns the numeric workspace id from all-purpose cluster path with leading slash', () => {
+      expect(
+        (DBSQLClient as any).extractWorkspaceId('/sql/protocolv1/o/12345/0101-000000-aaaaaaaa'),
+      ).to.equal('12345');
+    });
+
+    it('returns undefined when all-purpose cluster path has non-numeric workspace segment', () => {
+      expect(
+        (DBSQLClient as any).extractWorkspaceId('sql/protocolv1/o/tenant_xyz/0101-000000-aaaaaaaa'),
+      ).to.be.undefined;
+    });
+
+    it('prefers ?o= query form over /o/ path form when both are present', () => {
+      expect(
+        (DBSQLClient as any).extractWorkspaceId('sql/protocolv1/o/111/cluster?o=222'),
+      ).to.equal('222');
     });
   });
 
   describe('buildCustomHeaders (SPOG)', () => {
     it('injects x-databricks-org-id from ?o= in httpPath', () => {
       const client = new DBSQLClient();
-      (client as any).httpPath = '/sql/1.0/warehouses/abc?o=12345678901234';
-      const headers = (client as any).buildCustomHeaders({ path: '/sql/1.0/warehouses/abc?o=12345678901234' });
+      const headers = (client as any).buildCustomHeaders('/sql/1.0/warehouses/abc?o=12345678901234', undefined);
       expect(headers).to.deep.equal({ 'x-databricks-org-id': '12345678901234' });
     });
 
     it('returns undefined when no ?o= and no user-supplied customHeaders', () => {
       const client = new DBSQLClient();
-      (client as any).httpPath = '/sql/1.0/warehouses/abc';
-      const headers = (client as any).buildCustomHeaders({ path: '/sql/1.0/warehouses/abc' });
+      const headers = (client as any).buildCustomHeaders('/sql/1.0/warehouses/abc', undefined);
       expect(headers).to.be.undefined;
     });
 
     it('preserves user-supplied customHeaders alongside parsed org-id', () => {
       const client = new DBSQLClient();
-      (client as any).httpPath = '/sql/1.0/warehouses/abc?o=42';
-      const headers = (client as any).buildCustomHeaders({
-        path: '/sql/1.0/warehouses/abc?o=42',
-        customHeaders: { 'x-trace-id': 'tid-001' },
-      });
+      const headers = (client as any).buildCustomHeaders('/sql/1.0/warehouses/abc?o=42', { 'x-trace-id': 'tid-001' });
       expect(headers).to.deep.equal({ 'x-trace-id': 'tid-001', 'x-databricks-org-id': '42' });
     });
 
     it('user-supplied x-databricks-org-id wins over ?o= parsed value (case-insensitive)', () => {
       const client = new DBSQLClient();
-      (client as any).httpPath = '/sql/1.0/warehouses/abc?o=42';
-      const headers = (client as any).buildCustomHeaders({
-        path: '/sql/1.0/warehouses/abc?o=42',
-        customHeaders: { 'X-Databricks-Org-Id': '999' },
+      const headers = (client as any).buildCustomHeaders('/sql/1.0/warehouses/abc?o=42', {
+        'X-Databricks-Org-Id': '999',
       });
       expect(headers).to.deep.equal({ 'X-Databricks-Org-Id': '999' });
     });
 
     it('does not inject org-id when ?o= value is non-numeric', () => {
       const client = new DBSQLClient();
-      (client as any).httpPath = '/sql/1.0/warehouses/abc?o=tenant_xyz';
-      const headers = (client as any).buildCustomHeaders({ path: '/sql/1.0/warehouses/abc?o=tenant_xyz' });
+      const headers = (client as any).buildCustomHeaders('/sql/1.0/warehouses/abc?o=tenant_xyz', undefined);
       expect(headers).to.be.undefined;
+    });
+
+    it('injects x-databricks-org-id from all-purpose cluster path form', () => {
+      const client = new DBSQLClient();
+      const headers = (client as any).buildCustomHeaders(
+        'sql/protocolv1/o/99999999999999/0101-000000-aaaaaaaa',
+        undefined,
+      );
+      expect(headers).to.deep.equal({ 'x-databricks-org-id': '99999999999999' });
+    });
+
+    it('logs a warning when workspace ID segment is non-numeric (path form)', () => {
+      const client = new DBSQLClient();
+      const logSpy = sinon.spy((client as any).logger, 'log');
+      try {
+        (client as any).buildCustomHeaders('sql/protocolv1/o/tenant_xyz/cluster', undefined);
+        const warnCalls = logSpy.getCalls().filter((c) => c.args[0] === LogLevel.warn);
+        expect(warnCalls).to.have.lengthOf(1);
+        expect(warnCalls[0].args[1]).to.match(/non-numeric workspace ID/);
+      } finally {
+        logSpy.restore();
+      }
+    });
+
+    it('logs a warning when ?o= is present but non-numeric', () => {
+      const client = new DBSQLClient();
+      const logSpy = sinon.spy((client as any).logger, 'log');
+      try {
+        (client as any).buildCustomHeaders('/sql/1.0/warehouses/abc?o=tenant_xyz', undefined);
+        const warnCalls = logSpy.getCalls().filter((c) => c.args[0] === LogLevel.warn);
+        expect(warnCalls).to.have.lengthOf(1);
+        expect(warnCalls[0].args[1]).to.match(/non-numeric workspace ID/);
+      } finally {
+        logSpy.restore();
+      }
+    });
+
+    it('logs a debug line when injecting org-id from httpPath', () => {
+      const client = new DBSQLClient();
+      const logSpy = sinon.spy((client as any).logger, 'log');
+      try {
+        (client as any).buildCustomHeaders('/sql/1.0/warehouses/abc?o=42', undefined);
+        const injectLog = logSpy
+          .getCalls()
+          .find((c) => c.args[0] === LogLevel.debug && /injecting x-databricks-org-id=42/.test(String(c.args[1])));
+        expect(injectLog, 'expected SPOG inject debug log').to.exist;
+      } finally {
+        logSpy.restore();
+      }
+    });
+
+    it('logs a debug line when caller supplies x-databricks-org-id', () => {
+      const client = new DBSQLClient();
+      const logSpy = sinon.spy((client as any).logger, 'log');
+      try {
+        (client as any).buildCustomHeaders('/sql/1.0/warehouses/abc?o=42', { 'x-databricks-org-id': '999' });
+        const callerLog = logSpy
+          .getCalls()
+          .find((c) => c.args[0] === LogLevel.debug && /supplied by caller/.test(String(c.args[1])));
+        expect(callerLog, 'expected SPOG caller-supplied debug log').to.exist;
+      } finally {
+        logSpy.restore();
+      }
     });
   });
 
