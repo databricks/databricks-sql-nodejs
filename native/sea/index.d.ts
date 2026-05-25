@@ -72,6 +72,22 @@ export interface ConnectionOptions {
  */
 export declare function openSession(options: ConnectionOptions): Promise<Connection>
 /**
+ * Per-statement options for `Connection.executeStatement`.
+ * Mirrors the napi-rs-generated `ExecuteOptions` in
+ * `napi/src/connection.rs`. Today carries:
+ * - `statementConf` — per-statement Spark conf overlay merged on top
+ *   of the session-level `sessionConf` at execute time. Map wins on
+ *   key collisions.
+ * - `queryTags` — JSON-encoded into `statementConf["query_tags"]`
+ *   matching NodeJS Thrift's `serializeQueryTags` shape. Passing both
+ *   `queryTags` and an explicit `statementConf["query_tags"]` raises
+ *   `InvalidArgument`.
+ */
+export interface ExecuteOptions {
+  statementConf?: Record<string, string>
+  queryTags?: Record<string, string>
+}
+/**
  * A single Arrow IPC stream payload encoding one record batch (plus
  * the schema header so the JS-side reader is stateless).
  */
@@ -108,11 +124,13 @@ export declare class Connection {
    * Execute a SQL statement and return a Statement handle that
    * streams batches via `fetchNextBatch()`.
    *
-   * No per-statement options: catalog / schema / sessionConf are
-   * session-level (`openSession`). Positional / named parameters
-   * land in M1 via `Statement::spec().param(…)` on the kernel.
+   * Catalog / schema / sessionConf are session-level (`openSession`).
+   * `options` carries per-statement knobs: `statementConf`
+   * (per-statement Spark conf overlay) and `queryTags` (serialised
+   * into `statementConf["query_tags"]` matching NodeJS Thrift's
+   * `serializeQueryTags` wire shape).
    */
-  executeStatement(sql: string): Promise<Statement>
+  executeStatement(sql: string, options?: ExecuteOptions | undefined | null): Promise<Statement>
   /**
    * Explicit close. Marks the connection wrapper as closed so
    * subsequent calls on this `Connection` return `InvalidArg`, then

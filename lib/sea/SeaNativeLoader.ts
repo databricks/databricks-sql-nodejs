@@ -77,15 +77,42 @@ export interface SeaNativeStatement {
 }
 
 /**
+ * Per-statement options for the napi `Connection.executeStatement`.
+ * Mirrors the napi-rs-generated `ExecuteOptions` in
+ * `native/sea/index.d.ts`. Declared locally to avoid coupling the
+ * JS-side adapter to the auto-generated file.
+ *
+ * - `statementConf` — per-statement Spark conf overlay merged on top
+ *   of the session-level `sessionConf` at execute time. The map wins
+ *   on key collisions.
+ * - `queryTags` — the napi binding accepts a `Record<string, string>`
+ *   and serialises it into `statementConf["query_tags"]` matching
+ *   NodeJS Thrift's `serializeQueryTags` wire shape. The JS-side
+ *   adapter today pre-serialises via the existing
+ *   `serializeQueryTags` helper and writes the result into
+ *   `statementConf` directly (so null-valued tags carry through),
+ *   so this field is not used by the SEA backend's adapter call
+ *   site; it is declared because the napi binding exports it and
+ *   alternate consumers may use it.
+ */
+export interface SeaNativeExecuteOptions {
+  statementConf?: Record<string, string>;
+  queryTags?: Record<string, string>;
+}
+
+/**
  * Typed surface for the opaque napi `Connection` handle.
  */
 export interface SeaNativeConnection {
   /**
    * Execute a SQL statement. Catalog / schema / sessionConf are
    * session-level — set on `openSession`, applied to every statement
-   * executed on the resulting `Connection`. No per-statement options.
+   * executed on the resulting `Connection`.
+   *
+   * `options` is optional; today carries `statementConf`
+   * (per-statement Spark conf overlay) and `queryTags`.
    */
-  executeStatement(sql: string): Promise<SeaNativeStatement>;
+  executeStatement(sql: string, options?: SeaNativeExecuteOptions): Promise<SeaNativeStatement>;
   close(): Promise<void>;
 }
 
