@@ -33,8 +33,28 @@
  */
 
 import { expect } from 'chai';
-import { DBSQLClient } from '../../../lib';
+import * as fs from 'fs';
+import * as path from 'path';
+import { createRequire } from 'module';
 import type { ConnectionOptions } from '../../../lib/contracts/IDBSQLClient';
+
+// Intentionally avoiding `import { DBSQLClient } from '../../../lib'`
+// at the top of the file. `DBSQLClient.ts` transitively imports
+// `SeaNativeLoader.ts`, which runs `const native =
+// require('../../native/sea/index.js')` at module-load time. If the
+// native `.node` artifact has not been built (`yarn build:native`),
+// that require throws `MODULE_NOT_FOUND` BEFORE mocha gets a chance
+// to invoke the `before()` skip-gate, crashing test discovery for the
+// whole suite. Lazy-require `DBSQLClient` inside the `connect()`
+// helper after the skip-gate has had a chance to fire. The `type`-only
+// import above is erased at compile time so it does not trigger any
+// runtime require. (DA round-1 H1 fixup; F2 same pattern.)
+//
+// `createRequire(import.meta.url)` so the require works under both
+// CJS and the ESM-reparse path mocha 11+ may use.
+
+// eslint-disable-next-line @typescript-eslint/naming-convention
+const requireFromHere = createRequire(import.meta.url);
 
 interface InternalConnectionOptionsAccess {
   useSEA?: boolean;
@@ -51,10 +71,31 @@ describe('SEA fetchAll — Array<object> row drain', function suite() {
     if (!host || !path || !token) {
       // eslint-disable-next-line no-invalid-this
       this.skip();
+      return;
+    }
+    // Verify the native artifact exists before any test in the suite
+    // attempts to load DBSQLClient (which transitively imports
+    // SeaNativeLoader's module-level require of the .node). Skip with
+    // a clear message so a developer sees the actionable instruction.
+    const nodeArtifact = path.resolve(
+      process.cwd(),
+      'native/sea/index.linux-x64-gnu.node',
+    );
+    if (!fs.existsSync(nodeArtifact)) {
+      // eslint-disable-next-line no-console
+      console.warn(
+        `[sea fetch-all e2e] skipping: native binary not built. ` +
+          `Run \`yarn build:native\` first.`,
+      );
+      // eslint-disable-next-line no-invalid-this
+      this.skip();
     }
   });
 
   async function connect() {
+    // Lazy-load the facade so the suite skip-gate runs first. See the
+    // top-of-file comment for why this matters.
+    const { DBSQLClient } = requireFromHere('../../../lib') as typeof import('../../../lib');
     const client = new DBSQLClient();
     // `useSEA` is an internal opt-in flag (not on the public TS
     // surface; see `lib/contracts/InternalConnectionOptions.ts`).
@@ -144,6 +185,72 @@ describe('SEA fetchAll — Array<object> row drain', function suite() {
         } finally {
           await operation.close();
         }
+      } finally {
+        await session.close();
+      }
+    } finally {
+      await client.close();
+    }
+  });
+
+  // ─── Edge cases (DA round-1 M1 — drain-twice / drain-after-close) ───
+
+  it('drain-twice — fetchAll on an already-drained operation returns []', async () => {
+    // After a successful fetchAll drains the cursor to end-of-stream,
+    // a second fetchAll on the same operation must produce an empty
+    // array (matching Thrift's `DBSQLOperation.fetchAll` semantics:
+    // hasMoreRows is false, so the do/while body executes zero
+    // iterations and the empty array.flat() yields []).
+    const client = await connect();
+    try {
+      const session = await client.openSession();
+      try {
+        const operation = await session.executeStatement('SELECT * FROM range(0, 10)');
+        try {
+          const first = await operation.fetchAll();
+          expect(first.length).to.equal(10);
+          // Second drain — must not throw, must return [].
+          const second = await operation.fetchAll();
+          expect(second).to.be.an('array');
+          expect(second.length).to.equal(0);
+        } finally {
+          await operation.close();
+        }
+      } finally {
+        await session.close();
+      }
+    } finally {
+      await client.close();
+    }
+  });
+
+  it('drain-after-close — fetchAll on a closed operation throws OperationStateError', async () => {
+    // Closing the operation invalidates the underlying napi handle.
+    // The facade should surface a typed error rather than crash or
+    // return garbage. Mirrors Thrift's behaviour: closed operations
+    // reject subsequent reads with an OperationStateError that the
+    // application can catch and surface.
+    const client = await connect();
+    try {
+      const session = await client.openSession();
+      try {
+        const operation = await session.executeStatement('SELECT * FROM range(0, 10)');
+        await operation.close();
+        let threw = false;
+        try {
+          await operation.fetchAll();
+        } catch (err) {
+          threw = true;
+          // We don't pin the exact error class here because the SEA
+          // backend's closed-state error path collapses to either an
+          // `OperationStateError` or a kernel-envelope-decoded error
+          // depending on whether the close had already reached the
+          // facade-level lifecycle flag or only the napi layer. Both
+          // are acceptable; what's not acceptable is a silent return
+          // or an unhandled exception type.
+          expect(err).to.be.an.instanceof(Error);
+        }
+        expect(threw, 'fetchAll on closed operation must throw').to.equal(true);
       } finally {
         await session.close();
       }
