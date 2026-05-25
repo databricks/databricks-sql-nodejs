@@ -173,12 +173,21 @@ export function buildSeaConnectionOptions(options: ConnectionOptions): SeaNative
   };
   // Connection-level pool size — forwarded to the napi binding,
   // ignored when undefined so the kernel default (100) applies.
-  // Validate at the JS layer (positive integer) so a misuse fails
-  // here instead of inside the kernel with a cryptic message.
+  // Validate at the JS layer (positive integer, ≤ 2^32 - 1 since the
+  // napi binding accepts `u32`) so a misuse fails here with a clear
+  // `HiveDriverError` instead of either silently truncating at the
+  // FFI boundary or surfacing a cryptic kernel-side error. Upper-
+  // bound check addresses DA round-1 M1 finding.
+  const MAX_U32 = 0xff_ff_ff_ff; // 4_294_967_295
   if (options.maxConnections !== undefined) {
     if (!Number.isInteger(options.maxConnections) || options.maxConnections < 1) {
       throw new HiveDriverError(
         `SEA backend: \`maxConnections\` must be a positive integer; got ${options.maxConnections}.`,
+      );
+    }
+    if (options.maxConnections > MAX_U32) {
+      throw new HiveDriverError(
+        `SEA backend: \`maxConnections\` exceeds the napi u32 limit (${MAX_U32}); got ${options.maxConnections}. Typical pool sizes are 10-500.`,
       );
     }
     base.maxConnections = options.maxConnections;
