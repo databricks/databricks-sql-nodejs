@@ -33,8 +33,8 @@
  */
 
 import { expect } from 'chai';
-import * as fs from 'fs';
-import * as path from 'path';
+import { existsSync } from 'fs';
+import { resolve as resolvePath } from 'path';
 import { createRequire } from 'module';
 import type { ConnectionOptions } from '../../../lib/contracts/IDBSQLClient';
 
@@ -77,11 +77,11 @@ describe('SEA fetchAll — Array<object> row drain', function suite() {
     // attempts to load DBSQLClient (which transitively imports
     // SeaNativeLoader's module-level require of the .node). Skip with
     // a clear message so a developer sees the actionable instruction.
-    const nodeArtifact = path.resolve(
+    const nodeArtifact = resolvePath(
       process.cwd(),
       'native/sea/index.linux-x64-gnu.node',
     );
-    if (!fs.existsSync(nodeArtifact)) {
+    if (!existsSync(nodeArtifact)) {
       // eslint-disable-next-line no-console
       console.warn(
         `[sea fetch-all e2e] skipping: native binary not built. ` +
