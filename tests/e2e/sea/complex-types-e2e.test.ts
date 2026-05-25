@@ -145,7 +145,7 @@ describe('SEA complex types — native Arrow default', function suite() {
       expect(batchEnvelope).to.not.equal(null);
 
       const table = tableFromIPC(batchEnvelope!.ipcBytes);
-      const schema = table.schema;
+      const { schema } = table;
 
       // Each complex column should be a native Arrow nested type, not Utf8.
       const arrField = schema.fields.find((f) => f.name === 'c_arr');

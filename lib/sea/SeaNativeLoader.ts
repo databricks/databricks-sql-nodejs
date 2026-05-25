@@ -15,27 +15,39 @@
 /**
  * Loader for the SEA (Statement Execution API) native binding.
  *
- * Round 1b: minimal pass-through to the napi-rs auto-generated
- * `index.js` shim in `native/sea/`. The shim itself picks the right
- * per-platform `.node` artifact (linux-x64-gnu today; more triples in
- * the bundling feature).
+ * The napi shim is required LAZILY on first `getSeaNative()` call so
+ * importing this module is free for callers that never reach a SEA
+ * code path. Concretely: a test or build that exercises only the
+ * Thrift backend, or a Mocha file evaluation that only checks an
+ * env-var skip-gate, does not need the platform-specific `.node`
+ * artifact at module-load time. The eager `require()` we previously
+ * had at the top of this file crashed test discovery with
+ * `MODULE_NOT_FOUND` before `before()` skip-gates could fire — a
+ * defect that propagated forward into every e2e file that imported
+ * anything from this module (DA round-1 H1 against F2 and F4).
  *
- * Round 2+ will extend this with: lazy require to defer the `.node`
- * load until the first SEA call, structured load-error diagnostics
- * (which platform/arch was attempted, whether the package was
- * installed at all), and a JS-side `DBSQLLogger` install path that
- * forwards to the binding's `installLogger()` once that surface lands.
+ * The require result is memoised on first call so subsequent
+ * `getSeaNative()` calls are O(1). Failures are surfaced verbatim:
+ * the napi-rs auto-generated shim already produces a descriptive
+ * `MODULE_NOT_FOUND` listing the platform-arch tuple it tried, which
+ * is the actionable diagnostic for "run `yarn build:native` first."
+ * The structured platform/arch diagnostics planned in the file's
+ * earlier doc-comment remain a follow-on; the lazy-load addresses
+ * the immediate defect.
  */
 
 import type { SeaNativeConnectionOptions } from './SeaAuth';
 
-// The path is relative to this file at runtime (`dist/sea/SeaNativeLoader.js`)
-// resolving to `dist/sea/../../native/sea/index.js` once `tsc` has emitted
-// to `dist/`. We use a require-time path resolution because the napi
-// shim is plain CommonJS and not part of the TS source tree.
+// Memoised require slot. `undefined` = not yet loaded; on first
+// `getSeaNative()` we resolve and cache. `null` is not used —
+// failures throw out of the require call rather than yielding null.
 //
-// eslint-disable-next-line @typescript-eslint/no-var-requires, import/no-dynamic-require, global-require
-const native = require('../../native/sea/index.js');
+// The path is relative to this file at runtime
+// (`dist/sea/SeaNativeLoader.js`) resolving to
+// `dist/sea/../../native/sea/index.js` once `tsc` has emitted to
+// `dist/`. The napi shim is plain CommonJS, not part of the TS source
+// tree, so the path is require-time resolved.
+let nativeBindingCache: SeaNativeBinding | undefined;
 
 /**
  * Arrow IPC payload returned by `Statement.fetchNextBatch()`. Carries a
@@ -106,9 +118,24 @@ export interface SeaNativeBinding {
  * Returns the loaded native binding. Throws if the platform-specific
  * `.node` artifact cannot be found (napi-rs's auto-generated shim
  * surfaces a descriptive error in that case).
+ *
+ * Lazy + memoised: the first call resolves
+ * `../../native/sea/index.js` and caches the result; subsequent calls
+ * are O(1). Importing this module no longer eagerly loads the .node
+ * artifact, so callers that never reach a SEA code path don't pay the
+ * load cost or crash if the artifact is absent (DA round-1 H1 fixup).
  */
 export function getSeaNative(): SeaNativeBinding {
-  return native as SeaNativeBinding;
+  if (nativeBindingCache === undefined) {
+    // The `.js` extension is required: the napi-rs shim is plain
+    // CommonJS, not a TS source file, so the extension cannot be
+    // resolved away. The full eslint disable comment covers the
+    // file-extension, dynamic-require, var-requires, and global-require
+    // rules that all flag this otherwise-necessary pattern.
+    // eslint-disable-next-line @typescript-eslint/no-var-requires, import/no-dynamic-require, global-require, import/extensions
+    nativeBindingCache = require('../../native/sea/index.js') as SeaNativeBinding;
+  }
+  return nativeBindingCache;
 }
 
 /**
