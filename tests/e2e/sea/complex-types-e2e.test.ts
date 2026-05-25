@@ -35,8 +35,8 @@
 
 import { expect } from 'chai';
 import { tableFromIPC, Type as ArrowType } from 'apache-arrow';
-import * as fs from 'fs';
-import * as path from 'path';
+import { existsSync } from 'fs';
+import { resolve as resolvePath } from 'path';
 import { createRequire } from 'module';
 
 // Prerequisites for the live e2e:
@@ -97,11 +97,11 @@ describe('SEA complex types — native Arrow default', function suite() {
     // reparse this file as ESM (MODULE_TYPELESS_PACKAGE_JSON path)
     // where `__dirname` is undefined. mocha always runs with cwd at
     // the package root, so this resolves consistently.
-    const nodeArtifact = path.resolve(
+    const nodeArtifact = resolvePath(
       process.cwd(),
       'native/sea/index.linux-x64-gnu.node',
     );
-    if (!fs.existsSync(nodeArtifact)) {
+    if (!existsSync(nodeArtifact)) {
       // eslint-disable-next-line no-console
       console.warn(
         `[sea complex-types e2e] skipping: native binary not built. ` +
