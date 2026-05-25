@@ -57,6 +57,7 @@ class FakeNativeStatement implements SeaNativeStatement {
 
 function makeFakeContext(): IClientContext {
   const logger: IDBSQLLogger = {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     log(_level: LogLevel, _message: string): void {
       // no-op
     },
@@ -84,6 +85,7 @@ describe('SeaSessionBackend — query tags threading', () => {
 
   beforeEach(() => {
     const stmt = new FakeNativeStatement();
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
     executeSpy = sinon.spy(async (_sql: string, _options?: SeaNativeExecuteOptions) => stmt);
     connection = {
       executeStatement: executeSpy,
