@@ -34,6 +34,7 @@ import HiveDriverError from '../errors/HiveDriverError';
 import { SeaNativeConnection } from './SeaNativeLoader';
 import { decodeNapiKernelError } from './SeaErrorMapping';
 import SeaOperationBackend from './SeaOperationBackend';
+import { serializeQueryTags } from '../utils';
 
 export interface SeaSessionBackendOptions {
   /** The opaque napi `Connection` handle returned by `openSession`. */
@@ -116,9 +117,22 @@ export default class SeaSessionBackend implements ISessionBackend {
       );
     }
 
+    // Build the per-statement conf overlay. Today only `queryTags` is
+    // surfaced on the public `ExecuteStatementOptions` (mirrors Thrift);
+    // pre-serialise on the JS side via the existing
+    // `serializeQueryTags` helper so the kernel-side conf overlay
+    // shape exactly matches the Thrift wire bytes for the same input.
+    // Doing the serialisation here (instead of inside the napi `queryTags`
+    // field) is what carries null-valued tags through correctly — napi's
+    // `HashMap<String, String>` can't represent nulls.
+    const serializedQueryTags = serializeQueryTags(options.queryTags);
+    const statementConf =
+      serializedQueryTags !== undefined ? { query_tags: serializedQueryTags } : undefined;
+    const nativeOptions = statementConf !== undefined ? { statementConf } : undefined;
+
     let nativeStatement;
     try {
-      nativeStatement = await this.connection.executeStatement(statement);
+      nativeStatement = await this.connection.executeStatement(statement, nativeOptions);
     } catch (err) {
       throw decodeNapiKernelError(err);
     }
