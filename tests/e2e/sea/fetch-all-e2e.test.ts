@@ -258,4 +258,41 @@ describe('SEA fetchAll — Array<object> row drain', function suite() {
       await client.close();
     }
   });
+
+  it('drains a single inline result-set row (SELECT 1)', async () => {
+    // `SELECT 1` returns a single row inline, exercising the
+    // small-batch code path the other tests don't hit. `range(0, n)`
+    // queries go through the row-set generator; `range(0, 0)` is
+    // the empty branch. A literal scalar pin-points the inline-batch
+    // path inside SeaOperationBackend.fetchChunk → ResultSlicer →
+    // ArrowResultConverter, which is otherwise untested here.
+    const client = await connect();
+    try {
+      const session = await client.openSession();
+      try {
+        const operation = await session.executeStatement('SELECT 1 AS x');
+        try {
+          const rows = await operation.fetchAll();
+          expect(rows).to.be.an('array');
+          expect(rows.length).to.equal(1);
+          const row = rows[0] as Record<string, unknown>;
+          expect(row).to.have.property('x');
+          // SEA-side converter promotes a literal int to a number
+          // primitive; Thrift on the same query produces the same
+          // shape. We don't pin the exact JS type beyond "not null/
+          // undefined" to keep the test forward-compatible with
+          // converter changes — the load-bearing assertion is the
+          // single-row inline-batch drain.
+          expect(row.x).to.not.equal(null);
+          expect(row.x).to.not.equal(undefined);
+        } finally {
+          await operation.close();
+        }
+      } finally {
+        await session.close();
+      }
+    } finally {
+      await client.close();
+    }
+  });
 });
