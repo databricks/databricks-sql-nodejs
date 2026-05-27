@@ -68,10 +68,6 @@ interface DatabricksTelemetryLog {
         enable_direct_results?: boolean;
         socket_timeout?: number;
         enable_metric_view_metadata?: boolean;
-        cloud_fetch_enabled?: boolean;
-        lz4_enabled?: boolean;
-        retry_max_attempts?: number;
-        cloud_fetch_concurrent_downloads?: number;
       };
       operation_latency_ms?: number;
       sql_operation?: {
@@ -419,10 +415,6 @@ export default class DatabricksTelemetryExporter {
           enable_direct_results: metric.driverConfig.directResultsEnabled,
           socket_timeout: metric.driverConfig.socketTimeout,
           enable_metric_view_metadata: metric.driverConfig.enableMetricViewMetadata,
-          cloud_fetch_enabled: metric.driverConfig.cloudFetchEnabled,
-          lz4_enabled: metric.driverConfig.lz4Enabled,
-          retry_max_attempts: metric.driverConfig.retryMaxAttempts,
-          cloud_fetch_concurrent_downloads: metric.driverConfig.cloudFetchConcurrentDownloads,
         };
       }
     } else if (metric.metricType === 'statement') {
