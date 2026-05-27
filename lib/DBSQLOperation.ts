@@ -19,10 +19,10 @@ import { LogLevel } from './contracts/IDBSQLLogger';
 import OperationStateError, { OperationStateErrorCode } from './errors/OperationStateError';
 import { OperationChunksIterator, OperationRowsIterator } from './utils/OperationIterator';
 import IClientContext from './contracts/IClientContext';
-import IOperationBackend from './contracts/IOperationBackend';
+import IOperationBackend, { IOperationBackendWaitOptions } from './contracts/IOperationBackend';
 import { ResultMetadata } from './contracts/ResultMetadata';
 import ThriftOperationBackend from './thrift-backend/ThriftOperationBackend';
-import { synthesizeThriftStatus, synthesizeThriftResultSetMetadata } from './utils/thriftWireSynthesis';
+import { synthesizeThriftStatus, synthesizeThriftResultSetMetadata } from './thrift-backend/wireSynthesis';
 
 interface DBSQLOperationConstructorOptions {
   backend: IOperationBackend;
@@ -114,7 +114,7 @@ export default class DBSQLOperation implements IOperation {
   public async fetchChunk(options?: FetchOptions): Promise<Array<object>> {
     await this.failIfClosed();
 
-    if (!this.backend.hasResultSet) {
+    if (!this.backend.hasResultSet()) {
       return [];
     }
 
@@ -123,7 +123,11 @@ export default class DBSQLOperation implements IOperation {
 
     const defaultMaxRows = this.context.getConfig().fetchChunkDefaultMaxRows;
     const limit = options?.maxRows ?? defaultMaxRows;
-    const result = await this.backend.fetchChunk({ limit, disableBuffering: options?.disableBuffering });
+    const result = await this.backend.fetchChunk({
+      limit,
+      disableBuffering: options?.disableBuffering,
+      isClosed: () => this.closed || this.cancelled,
+    });
     await this.failIfClosed();
 
     this.context.getLogger().log(LogLevel.debug, `Fetched chunk of size: ${limit} from operation with id: ${this.id}`);
@@ -192,7 +196,7 @@ export default class DBSQLOperation implements IOperation {
       return false;
     }
 
-    if (this.backend.hasResultSet) {
+    if (this.backend.hasResultSet()) {
       await this.waitUntilReadyThroughBackend();
     }
 
@@ -202,7 +206,7 @@ export default class DBSQLOperation implements IOperation {
   public async getSchema(options?: GetSchemaOptions): Promise<TTableSchema | null> {
     await this.failIfClosed();
 
-    if (!this.backend.hasResultSet) {
+    if (!this.backend.hasResultSet()) {
       return null;
     }
 
@@ -227,7 +231,9 @@ export default class DBSQLOperation implements IOperation {
    * fields (`cacheLookupResult`, `uncompressedBytes`, `compressedBytes`,
    * `status`) left undefined / defaulted.
    *
-   * Prefer {@link DBSQLOperation.getResultMetadata} in new code.
+   * @deprecated Use {@link DBSQLOperation.getResultMetadata}; this method
+   * synthesizes Thrift-only fields as `undefined` on non-Thrift backends and
+   * couples callers to the Thrift wire shape.
    */
   public async getMetadata(): Promise<TGetResultSetMetadataResp> {
     await this.failIfClosed();
@@ -248,8 +254,21 @@ export default class DBSQLOperation implements IOperation {
   }
 
   private async waitUntilReadyThroughBackend(options?: WaitUntilReadyOptions) {
+    // The backend-facing `waitUntilReady` takes a neutral
+    // `IOperationBackendWaitOptions` whose `callback` receives an
+    // `OperationStatus`. The public `WaitUntilReadyOptions.callback` is
+    // Thrift-shaped — synthesize the wire response from the neutral status
+    // at this boundary so the backend impl doesn't have to know about Thrift
+    // IDL.
+    const userCallback = options?.callback;
+    const backendOptions: IOperationBackendWaitOptions = {
+      progress: options?.progress,
+      callback: userCallback
+        ? (status) => userCallback(synthesizeThriftStatus(status))
+        : undefined,
+    };
     try {
-      await this.backend.waitUntilReady(options);
+      await this.backend.waitUntilReady(backendOptions);
     } catch (err) {
       // Reflect terminal states back into facade flags so subsequent calls
       // short-circuit via failIfClosed().

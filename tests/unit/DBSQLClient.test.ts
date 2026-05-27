@@ -113,6 +113,38 @@ describe('DBSQLClient.connect', () => {
 
     logSpy.restore();
   });
+
+  it('useSEA: true routes to SeaBackend and leaves `backend` unset when connect() throws', async () => {
+    const client = new DBSQLClient();
+
+    // `useSEA` is on a non-exported InternalConnectionOptions; cast through any.
+    const seaOptions = { ...connectOptions, useSEA: true } as any;
+
+    try {
+      await client.connect(seaOptions);
+      expect.fail('SeaBackend.connect should throw until M1 wires the binding');
+    } catch (error) {
+      if (error instanceof AssertionError || !(error instanceof Error)) {
+        throw error;
+      }
+      expect(error.message).to.match(/not implemented/);
+    }
+
+    // The partial-init guard (L2 fix) means backend stays undefined after a
+    // failed connect, so the next openSession surfaces "not connected" rather
+    // than the SeaBackend's "not implemented" error.
+    expect((client as any).backend).to.equal(undefined);
+
+    try {
+      await client.openSession();
+      expect.fail('openSession on an unconnected client should throw');
+    } catch (error) {
+      if (error instanceof AssertionError || !(error instanceof Error)) {
+        throw error;
+      }
+      expect(error.message).to.match(/not connected/);
+    }
+  });
 });
 
 describe('DBSQLClient.openSession', () => {

@@ -242,14 +242,31 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
     // doesn't ship in the public `.d.ts`. Mirrors Python's `kwargs.get("use_sea")`
     // pattern (see databricks-sql-python/src/databricks/sql/session.py).
     const internalOptions = options as ConnectionOptions & InternalConnectionOptions;
-    this.backend = internalOptions.useSEA
+    const backend = internalOptions.useSEA
       ? new SeaBackend()
       : new ThriftBackend({
           context: this,
           onConnectionEvent: (event, payload) => this.forwardConnectionEvent(event, payload),
         });
 
-    await this.backend.connect(options);
+    // Publish `this.backend` only after a successful `connect()`. Otherwise a
+    // failed connect would leave a half-initialized backend in place, and the
+    // next `openSession()` would slip past the `!this.backend` guard and
+    // surface a misleading "backend not implemented" / partial-state error
+    // instead of the accurate "DBSQLClient: not connected".
+    try {
+      await backend.connect(options);
+    } catch (err) {
+      // `IBackend.close()` is documented as safe on a partially-initialized
+      // backend; best-effort cleanup so we don't leak sockets / state.
+      try {
+        await backend.close();
+      } catch (closeErr) {
+        // Swallow; the original error is what the caller needs to see.
+      }
+      throw err;
+    }
+    this.backend = backend;
 
     return this;
   }
@@ -257,7 +274,11 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
   private forwardConnectionEvent(event: 'error' | 'reconnecting' | 'close' | 'timeout', payload?: unknown): void {
     switch (event) {
       case 'error': {
-        const error = payload as Error;
+        // `payload` is typed `unknown` because the cross-backend
+        // `IBackend.onConnectionEvent` doesn't constrain the error shape.
+        // Normalize to `Error` so the stack/name/message access below is safe
+        // for any backend that emits a non-Error value (e.g. a bare string).
+        const error = payload instanceof Error ? payload : new Error(String(payload));
         this.logger.log(LogLevel.error, error.stack || `${error.name}: ${error.message}`);
         try {
           this.emit('error', error);

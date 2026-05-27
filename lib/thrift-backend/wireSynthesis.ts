@@ -8,9 +8,32 @@ import {
 } from '../../thrift/TCLIService_types';
 import { OperationState, OperationStatus } from '../contracts/OperationStatus';
 import { ResultFormat, ResultMetadata } from '../contracts/ResultMetadata';
+import HiveDriverError from '../errors/HiveDriverError';
 
 function synthesizeOkStatus(): TStatus {
   return { statusCode: TStatusCode.SUCCESS_STATUS } as TStatus;
+}
+
+/**
+ * Map a neutral `OperationStatus` to the Thrift `TStatus` shape consumed by
+ * `Status.assert` and other legacy callers. Terminal failure / cancellation
+ * states surface as `ERROR_STATUS` so existing user code that branches on
+ * `resp.status.statusCode` continues to detect failure on non-Thrift backends;
+ * progress / success states pass through as `SUCCESS_STATUS`.
+ */
+function synthesizeStatusFromOperation(status: OperationStatus): TStatus {
+  switch (status.state) {
+    case OperationState.Failed:
+    case OperationState.Cancelled:
+    case OperationState.Closed:
+      return {
+        statusCode: TStatusCode.ERROR_STATUS,
+        errorMessage: status.errorMessage,
+        sqlState: status.sqlState,
+      } as TStatus;
+    default:
+      return synthesizeOkStatus();
+  }
 }
 
 function operationStateToThrift(state: OperationState): TOperationState {
@@ -42,7 +65,10 @@ function resultFormatToThrift(format: ResultFormat): TSparkRowSetType {
     case ResultFormat.UrlBased:
       return TSparkRowSetType.URL_BASED_SET;
     default:
-      return TSparkRowSetType.COLUMN_BASED_SET;
+      // Aliasing an unknown format to COLUMN_BASED_SET would silently route
+      // results through JsonResultHandler and surface garbled rows; refuse
+      // instead so a new ResultFormat member added later trips loudly.
+      throw new HiveDriverError(`Unknown ResultFormat: ${format as string}`);
   }
 }
 
@@ -58,7 +84,7 @@ function resultFormatToThrift(format: ResultFormat): TSparkRowSetType {
  */
 export function synthesizeThriftStatus(status: OperationStatus): TGetOperationStatusResp {
   return {
-    status: synthesizeOkStatus(),
+    status: synthesizeStatusFromOperation(status),
     operationState: operationStateToThrift(status.state),
     sqlState: status.sqlState,
     errorMessage: status.errorMessage,
