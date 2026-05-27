@@ -122,6 +122,8 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
 
   private authType?: string;
 
+  private useProxy?: boolean;
+
   private telemetryClient?: TelemetryClient;
 
   private telemetryEmitter?: TelemetryEventEmitter;
@@ -425,6 +427,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
       // Connection parameters
       httpPath: this.httpPath,
       enableMetricViewMetadata: this.config.enableMetricViewMetadata,
+      useProxy: this.useProxy,
     };
   }
 
@@ -604,6 +607,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
     this.host = options.host;
     this.httpPath = options.path;
     this.authType = this.mapAuthType(options);
+    this.useProxy = Boolean(options.proxy);
 
     // Store enableMetricViewMetadata configuration
     if (options.enableMetricViewMetadata !== undefined) {

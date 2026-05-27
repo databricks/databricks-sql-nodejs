@@ -64,6 +64,8 @@ interface DatabricksTelemetryLog {
       driver_connection_params?: {
         host_info?: { host_url?: string };
         http_path?: string;
+        mode?: string;
+        use_proxy?: boolean;
         enable_arrow?: boolean;
         enable_direct_results?: boolean;
         socket_timeout?: number;
@@ -411,6 +413,8 @@ export default class DatabricksTelemetryExporter {
         log.entry.sql_driver_log.driver_connection_params = {
           host_info: { host_url: this.host },
           http_path: metric.driverConfig.httpPath,
+          mode: 'THRIFT',
+          use_proxy: metric.driverConfig.useProxy,
           enable_arrow: metric.driverConfig.arrowEnabled,
           enable_direct_results: metric.driverConfig.directResultsEnabled,
           socket_timeout: metric.driverConfig.socketTimeout,
