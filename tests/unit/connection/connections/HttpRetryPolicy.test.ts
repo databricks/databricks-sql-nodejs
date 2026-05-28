@@ -1,6 +1,6 @@
 import { expect, AssertionError } from 'chai';
 import sinon from 'sinon';
-import { Request, Response, HeadersInit } from 'node-fetch';
+import { Request, Response, HeadersInit, FetchError } from 'node-fetch';
 import HttpRetryPolicy from '../../../../lib/connection/connections/HttpRetryPolicy';
 import RetryError, { RetryErrorCode } from '../../../../lib/errors/RetryError';
 
@@ -285,6 +285,119 @@ describe('HttpRetryPolicy', () => {
         expect(error).to.be.instanceOf(RetryError);
         expect(policy.shouldRetry.callCount).to.equal(expectedAttempts);
         expect(operation.callCount).to.equal(expectedAttempts);
+      }
+    });
+
+    it('should retry transient network errors (FetchError ECONNRESET / socket hang up)', async () => {
+      const context = new ClientContextStub({
+        retryDelayMin: 1,
+        retryDelayMax: 2,
+        retryMaxAttempts: 20,
+      });
+      const policy = new HttpRetryPolicy(context);
+
+      function fetchError(): Error {
+        // node-fetch FetchError for a low-level socket failure carries
+        // `type: 'system'` and the underlying errno on `code`.
+        return new FetchError('request to https://example.com failed, reason: socket hang up', 'system', {
+          code: 'ECONNRESET',
+        } as unknown as NodeJS.ErrnoException);
+      }
+
+      const expectedAttempts = 3;
+      const operation = sinon.stub();
+      for (let i = 0; i < expectedAttempts - 1; i += 1) {
+        operation.onCall(i).rejects(fetchError());
+      }
+      operation.onCall(expectedAttempts - 1).resolves({
+        request: new Request('http://localhost'),
+        response: new Response(undefined, { status: 200 }),
+      });
+
+      const result = await policy.invokeWithRetry(operation);
+      expect(result.response.status).to.equal(200);
+      expect(operation.callCount).to.equal(expectedAttempts);
+    });
+
+    it('should retry "Premature close" body-stream errors', async () => {
+      const context = new ClientContextStub({
+        retryDelayMin: 1,
+        retryDelayMax: 2,
+        retryMaxAttempts: 20,
+      });
+      const policy = new HttpRetryPolicy(context);
+
+      const operation = sinon.stub();
+      // First call: body stream closes early — node-fetch surfaces this via
+      // `response.buffer()` / `response.arrayBuffer()` as a plain Error whose
+      // message contains "Premature close". With our fix the operation is
+      // expected to consume the body inline and re-throw this as a retryable
+      // failure.
+      operation.onCall(0).rejects(new Error('Premature close'));
+      operation.onCall(1).resolves({
+        request: new Request('http://localhost'),
+        response: new Response(undefined, { status: 200 }),
+      });
+
+      const result = await policy.invokeWithRetry(operation);
+      expect(result.response.status).to.equal(200);
+      expect(operation.callCount).to.equal(2);
+    });
+
+    it('should not retry non-transient errors (programmer errors, etc.)', async () => {
+      const context = new ClientContextStub({
+        retryDelayMin: 1,
+        retryDelayMax: 2,
+        retryMaxAttempts: 20,
+      });
+      const policy = new HttpRetryPolicy(context);
+
+      // A regular Error with no `code`/`type` hints and no matching message
+      // pattern must not be retried — those are programmer errors, not
+      // transient network failures, and silently retrying would mask bugs.
+      const operation = sinon.stub().rejects(new TypeError('cannot read property of undefined'));
+
+      try {
+        await policy.invokeWithRetry(operation);
+        expect.fail('It should re-throw the error');
+      } catch (error) {
+        if (error instanceof AssertionError) {
+          throw error;
+        }
+        expect(error).to.be.instanceOf(TypeError);
+        expect(operation.callCount).to.equal(1);
+      }
+    });
+
+    it('should stop retrying network errors once max attempts is reached', async () => {
+      const context = new ClientContextStub({
+        retryDelayMin: 1,
+        retryDelayMax: 2,
+        retryMaxAttempts: 3,
+      });
+      const clientConfig = context.getConfig();
+      const policy = new HttpRetryPolicy(context);
+
+      const fetchError = new FetchError('socket hang up', 'system', {
+        code: 'ECONNRESET',
+      } as unknown as NodeJS.ErrnoException);
+      const operation = sinon.stub().rejects(fetchError);
+
+      try {
+        await policy.invokeWithRetry(operation);
+        expect.fail('It should throw a RetryError after exhausting retries');
+      } catch (error) {
+        if (error instanceof AssertionError) {
+          throw error;
+        }
+        // Once attempts are exhausted we surface a RetryError carrying the
+        // underlying network failure as the payload — matches the existing
+        // semantics for HTTP-status-driven exhaustion so callers have one
+        // consistent terminal exception shape regardless of failure mode.
+        expect(error).to.be.instanceOf(RetryError);
+        expect((error as RetryError).errorCode).to.equal(RetryErrorCode.AttemptsExceeded);
+        expect((error as RetryError).payload).to.equal(fetchError);
+        expect(operation.callCount).to.equal(clientConfig.retryMaxAttempts);
       }
     });
   });
