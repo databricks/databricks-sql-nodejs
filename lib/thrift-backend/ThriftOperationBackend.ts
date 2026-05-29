@@ -121,6 +121,10 @@ export default class ThriftOperationBackend implements IOperationBackend {
     return this.operationHandle.operationType;
   }
 
+  public get dataProvider() {
+    return this._data;
+  }
+
   public hasResultSet(): boolean {
     return Boolean(this.operationHandle.hasResultSet);
   }

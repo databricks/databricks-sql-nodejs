@@ -55,6 +55,8 @@ export default class DBSQLOperation implements IOperation {
 
   private cancelled: boolean = false;
 
+  public readonly _data?: unknown;
+
   private metadata?: ResultMetadata;
 
   private startTime: number = Date.now();
@@ -66,6 +68,7 @@ export default class DBSQLOperation implements IOperation {
   constructor(options: DBSQLOperationConstructorOptions) {
     this.context = options.context;
     this.backend = options.backend;
+    this._data = options.backend.dataProvider;
     this.sessionId = options.sessionId;
     this.context.getLogger().log(LogLevel.debug, `Operation created with id: ${this.id}`);
 

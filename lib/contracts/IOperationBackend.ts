@@ -37,6 +37,12 @@ export default interface IOperationBackend {
   readonly operationType?: TOperationType;
 
   /**
+   * Optional raw data provider exposed only for legacy tests that inspect
+   * result-handler internals. Not part of the public operation contract.
+   */
+  readonly dataProvider?: unknown;
+
+  /**
    * Whether this operation has a result set.
    *
    * Method-form (rather than property) because the value is state-dependent:
