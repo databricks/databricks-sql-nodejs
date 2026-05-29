@@ -33,6 +33,11 @@ export type ExecuteStatementOptions = {
    * forwarded via the Thrift `confOverlay`. Applies to a single statement only;
    * does not persist across queries.
    *
+   * Setting `false` is equivalent to omitting the option — both leave
+   * `confOverlay` untouched and the server's session default applies. The
+   * option is opt-in only; there is no way to explicitly clear a server
+   * default from the client.
+   *
    * Equivalent SEA wiring will route the same key through napi `statementConf`
    * once the kernel statement-options surface lands — until then this knob is
    * honored only on the Thrift backend.
