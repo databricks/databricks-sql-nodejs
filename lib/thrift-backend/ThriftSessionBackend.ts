@@ -188,6 +188,13 @@ export default class ThriftSessionBackend implements ISessionBackend {
       request.confOverlay = { ...request.confOverlay, query_tags: serializedQueryTags };
     }
 
+    if (options.metricViewMetadata === true) {
+      request.confOverlay = {
+        ...request.confOverlay,
+        'spark.databricks.optimizer.enableMetricViewMetadata': 'true',
+      };
+    }
+
     if (ProtocolVersion.supportsCloudFetch(this.serverProtocolVersion)) {
       request.canDownloadResult = options.useCloudFetch ?? clientConfig.useCloudFetch;
     }

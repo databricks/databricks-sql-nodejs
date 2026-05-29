@@ -298,6 +298,64 @@ describe('DBSQLSession', () => {
     });
   });
 
+  describe('executeStatement with metricViewMetadata', () => {
+    const metricViewConfKey = 'spark.databricks.optimizer.enableMetricViewMetadata';
+
+    it('should forward the metric-view conf via confOverlay when metricViewMetadata is true', async () => {
+      const context = new ClientContextStub();
+      const driver = sinon.spy(context.driver);
+      const session = new DBSQLSession({ handle: sessionHandleStub, context });
+
+      await session.executeStatement('SELECT * FROM my_metric_view', { metricViewMetadata: true });
+
+      expect(driver.executeStatement.callCount).to.eq(1);
+      const req = driver.executeStatement.firstCall.args[0];
+      expect(req.confOverlay).to.deep.include({ [metricViewConfKey]: 'true' });
+    });
+
+    it('should not set the metric-view conf when metricViewMetadata is omitted', async () => {
+      const context = new ClientContextStub();
+      const driver = sinon.spy(context.driver);
+      const session = new DBSQLSession({ handle: sessionHandleStub, context });
+
+      await session.executeStatement('SELECT 1');
+
+      expect(driver.executeStatement.callCount).to.eq(1);
+      const req = driver.executeStatement.firstCall.args[0];
+      expect(req.confOverlay?.[metricViewConfKey]).to.be.undefined;
+    });
+
+    it('should not set the metric-view conf when metricViewMetadata is false', async () => {
+      const context = new ClientContextStub();
+      const driver = sinon.spy(context.driver);
+      const session = new DBSQLSession({ handle: sessionHandleStub, context });
+
+      await session.executeStatement('SELECT 1', { metricViewMetadata: false });
+
+      expect(driver.executeStatement.callCount).to.eq(1);
+      const req = driver.executeStatement.firstCall.args[0];
+      expect(req.confOverlay?.[metricViewConfKey]).to.be.undefined;
+    });
+
+    it('should coexist with queryTags in the same confOverlay', async () => {
+      const context = new ClientContextStub();
+      const driver = sinon.spy(context.driver);
+      const session = new DBSQLSession({ handle: sessionHandleStub, context });
+
+      await session.executeStatement('SELECT 1', {
+        metricViewMetadata: true,
+        queryTags: { team: 'eng' },
+      });
+
+      expect(driver.executeStatement.callCount).to.eq(1);
+      const req = driver.executeStatement.firstCall.args[0];
+      expect(req.confOverlay).to.deep.include({
+        [metricViewConfKey]: 'true',
+        query_tags: 'team:eng',
+      });
+    });
+  });
+
   describe('getTypeInfo', () => {
     it('should run operation', async () => {
       const session = createSessionForTest({ handle: sessionHandleStub, context: new ClientContextStub() });

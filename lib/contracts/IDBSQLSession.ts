@@ -27,6 +27,17 @@ export type ExecuteStatementOptions = {
    * These tags apply only to this statement and do not persist across queries.
    */
   queryTags?: Record<string, string | null | undefined>;
+  /**
+   * Enable metric-view metadata expansion for this statement. When `true`, the
+   * Spark conf `spark.databricks.optimizer.enableMetricViewMetadata=true` is
+   * forwarded via the Thrift `confOverlay`. Applies to a single statement only;
+   * does not persist across queries.
+   *
+   * Equivalent SEA wiring will route the same key through napi `statementConf`
+   * once the kernel statement-options surface lands — until then this knob is
+   * honored only on the Thrift backend.
+   */
+  metricViewMetadata?: boolean;
 };
 
 export type TypeInfoRequest = {
