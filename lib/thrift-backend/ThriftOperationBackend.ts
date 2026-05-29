@@ -314,7 +314,7 @@ export default class ThriftOperationBackend implements IOperationBackend {
     return new Status(response.status);
   }
 
-  private async getResultHandler(): Promise<ResultSlicer<any>> {
+  public async getResultHandler(): Promise<ResultSlicer<any>> {
     const metadata = await this.thriftResultMetadataResponse();
     const resultFormat = definedOrError(metadata.resultFormat);
 

@@ -15,7 +15,11 @@ interface CreateSessionForTestArgs {
  * shape by constructing a `ThriftSessionBackend` explicitly. Keeps the
  * facade decoupled from concrete backend imports.
  */
-export function createSessionForTest({ handle, context, serverProtocolVersion }: CreateSessionForTestArgs): DBSQLSession {
+export function createSessionForTest({
+  handle,
+  context,
+  serverProtocolVersion,
+}: CreateSessionForTestArgs): DBSQLSession {
   const backend = new ThriftSessionBackend({ handle, context, serverProtocolVersion });
   return new DBSQLSession({ backend, context });
 }

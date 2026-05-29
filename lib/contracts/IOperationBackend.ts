@@ -61,11 +61,7 @@ export default interface IOperationBackend {
    * returning `[]` is the correct way to bail — the user-visible error is
    * still raised by the facade.
    */
-  fetchChunk(options: {
-    limit: number;
-    disableBuffering?: boolean;
-    isClosed?: () => boolean;
-  }): Promise<Array<object>>;
+  fetchChunk(options: { limit: number; disableBuffering?: boolean; isClosed?: () => boolean }): Promise<Array<object>>;
 
   /** Whether more rows are available beyond what has been fetched. */
   hasMore(): Promise<boolean>;

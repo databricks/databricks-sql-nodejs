@@ -1,15 +1,8 @@
 import { expect } from 'chai';
-import {
-  TOperationState,
-  TSparkRowSetType,
-  TStatusCode,
-} from '../../../thrift/TCLIService_types';
+import { TOperationState, TSparkRowSetType, TStatusCode } from '../../../thrift/TCLIService_types';
 import { OperationState, OperationStatus } from '../../../lib/contracts/OperationStatus';
 import { ResultFormat, ResultMetadata } from '../../../lib/contracts/ResultMetadata';
-import {
-  synthesizeThriftStatus,
-  synthesizeThriftResultSetMetadata,
-} from '../../../lib/thrift-backend/wireSynthesis';
+import { synthesizeThriftStatus, synthesizeThriftResultSetMetadata } from '../../../lib/thrift-backend/wireSynthesis';
 import HiveDriverError from '../../../lib/errors/HiveDriverError';
 
 describe('wireSynthesis', () => {
@@ -90,9 +83,9 @@ describe('wireSynthesis', () => {
       expect(
         synthesizeThriftResultSetMetadata({ ...base, resultFormat: ResultFormat.ArrowBased }).resultFormat,
       ).to.equal(TSparkRowSetType.ARROW_BASED_SET);
-      expect(
-        synthesizeThriftResultSetMetadata({ ...base, resultFormat: ResultFormat.UrlBased }).resultFormat,
-      ).to.equal(TSparkRowSetType.URL_BASED_SET);
+      expect(synthesizeThriftResultSetMetadata({ ...base, resultFormat: ResultFormat.UrlBased }).resultFormat).to.equal(
+        TSparkRowSetType.URL_BASED_SET,
+      );
     });
 
     it('throws HiveDriverError on an unknown ResultFormat instead of silently aliasing', () => {

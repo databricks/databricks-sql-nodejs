@@ -9,11 +9,7 @@ import IOperation, {
   IOperationRowsIterator,
   NodeStreamOptions,
 } from './contracts/IOperation';
-import {
-  TGetOperationStatusResp,
-  TGetResultSetMetadataResp,
-  TTableSchema,
-} from '../thrift/TCLIService_types';
+import { TGetOperationStatusResp, TGetResultSetMetadataResp, TTableSchema } from '../thrift/TCLIService_types';
 import Status from './dto/Status';
 import { LogLevel } from './contracts/IDBSQLLogger';
 import OperationStateError, { OperationStateErrorCode } from './errors/OperationStateError';
@@ -270,9 +266,26 @@ export default class DBSQLOperation implements IOperation {
       await this.waitUntilReadyThroughBackend(options);
 
       this.context.getLogger().log(LogLevel.debug, `Fetching schema for operation with id: ${this.id}`);
+      if (this.backend instanceof ThriftOperationBackend) {
+        const metadata = await this.backend.thriftResultMetadataResponse();
+        return metadata.schema ?? null;
+      }
       const metadata = await this.getResultMetadata();
       return metadata.schema ?? null;
     });
+  }
+
+  /**
+   * Thrift-only compatibility hook used by existing e2e tests to assert the
+   * concrete result handler selected for a result format.
+   *
+   * Not part of the public `IOperation` contract.
+   */
+  public async getResultHandler(): Promise<unknown> {
+    if (this.backend instanceof ThriftOperationBackend) {
+      return this.backend.getResultHandler();
+    }
+    throw new Error('DBSQLOperation.getResultHandler is only available for the Thrift backend');
   }
 
   public async getResultMetadata(): Promise<ResultMetadata> {
