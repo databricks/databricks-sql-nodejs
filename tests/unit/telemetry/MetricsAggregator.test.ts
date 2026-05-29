@@ -121,6 +121,79 @@ describe('MetricsAggregator', () => {
 
       expect(() => aggregator.completeStatement('unknown-stmt')).to.not.throw();
     });
+
+    it('aggregates chunk timing — initial is first-seen, slowest is max, sum accumulates', () => {
+      const context = new ClientContextStub();
+      const exporter = makeExporterStub();
+      const aggregator = new MetricsAggregator(context, exporter as any);
+
+      aggregator.processEvent(statementEvent(TelemetryEventType.STATEMENT_START));
+      aggregator.processEvent(statementEvent(TelemetryEventType.CLOUDFETCH_CHUNK, { latencyMs: 100, bytes: 10 }));
+      aggregator.processEvent(statementEvent(TelemetryEventType.CLOUDFETCH_CHUNK, { latencyMs: 250, bytes: 10 }));
+      aggregator.processEvent(statementEvent(TelemetryEventType.CLOUDFETCH_CHUNK, { latencyMs: 75, bytes: 10 }));
+
+      aggregator.completeStatement('stmt-1');
+      aggregator.flush();
+
+      const stmtMetric = exporter.export.firstCall.args[0][0];
+      expect(stmtMetric.chunkInitialLatencyMs).to.equal(100);
+      expect(stmtMetric.chunkSlowestLatencyMs).to.equal(250);
+      expect(stmtMetric.chunkSumLatencyMs).to.equal(425);
+    });
+
+    it('chunks with non-positive latency do not contribute to timing fields', () => {
+      const context = new ClientContextStub();
+      const exporter = makeExporterStub();
+      const aggregator = new MetricsAggregator(context, exporter as any);
+
+      aggregator.processEvent(statementEvent(TelemetryEventType.STATEMENT_START));
+      // latency=0 (cached/prefetched page) — must be ignored entirely.
+      aggregator.processEvent(statementEvent(TelemetryEventType.CLOUDFETCH_CHUNK, { latencyMs: 0, bytes: 5 }));
+      // latency undefined — emitter didn't set it, must be ignored.
+      aggregator.processEvent(statementEvent(TelemetryEventType.CLOUDFETCH_CHUNK, { bytes: 5 }));
+      // First *positive* latency wins for `initial`, even though earlier chunks already arrived.
+      aggregator.processEvent(statementEvent(TelemetryEventType.CLOUDFETCH_CHUNK, { latencyMs: 60, bytes: 5 }));
+
+      aggregator.completeStatement('stmt-1');
+      aggregator.flush();
+
+      const stmtMetric = exporter.export.firstCall.args[0][0];
+      expect(stmtMetric.chunkInitialLatencyMs).to.equal(60);
+      expect(stmtMetric.chunkSlowestLatencyMs).to.equal(60);
+      expect(stmtMetric.chunkSumLatencyMs).to.equal(60);
+      expect(stmtMetric.chunkCount).to.equal(3); // chunkCount counts all chunks regardless of latency
+    });
+  });
+
+  describe('processEvent() - CONNECTION_CLOSE', () => {
+    it('emits a DELETE_SESSION connection metric immediately', () => {
+      const context = new ClientContextStub();
+      const exporter = makeExporterStub();
+      const aggregator = new MetricsAggregator(context, exporter as any);
+
+      aggregator.processEvent(connectionEvent({ eventType: TelemetryEventType.CONNECTION_CLOSE, latencyMs: 42 }));
+      aggregator.flush();
+
+      expect(exporter.export.calledOnce).to.be.true;
+      const metric = exporter.export.firstCall.args[0][0];
+      expect(metric.metricType).to.equal('connection');
+      expect(metric.operationType).to.equal('DELETE_SESSION');
+      expect(metric.latencyMs).to.equal(42);
+    });
+
+    it('CONNECTION_OPEN and CONNECTION_CLOSE produce distinct operation types in the same batch', () => {
+      const context = new ClientContextStub();
+      const exporter = makeExporterStub();
+      const aggregator = new MetricsAggregator(context, exporter as any);
+
+      aggregator.processEvent(connectionEvent({ eventType: TelemetryEventType.CONNECTION_OPEN, latencyMs: 100 }));
+      aggregator.processEvent(connectionEvent({ eventType: TelemetryEventType.CONNECTION_CLOSE, latencyMs: 5 }));
+      aggregator.flush();
+
+      const batch = exporter.export.firstCall.args[0];
+      expect(batch).to.have.lengthOf(2);
+      expect(batch.map((m: any) => m.operationType)).to.deep.equal(['CREATE_SESSION', 'DELETE_SESSION']);
+    });
   });
 
   describe('processEvent() - error events', () => {

@@ -1,4 +1,5 @@
 import Status from '../dto/Status';
+import { TOperationType } from '../../thrift/TCLIService_types';
 import { OperationStatus } from './OperationStatus';
 import { ResultMetadata } from './ResultMetadata';
 
@@ -31,6 +32,9 @@ export interface IOperationBackendWaitOptions {
 export default interface IOperationBackend {
   /** Operation identifier. */
   readonly id: string;
+
+  /** Optional Thrift operation type used for statement telemetry classification. */
+  readonly operationType?: TOperationType;
 
   /**
    * Whether this operation has a result set.

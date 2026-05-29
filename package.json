@@ -1,6 +1,6 @@
 {
   "name": "@databricks/sql",
-  "version": "1.14.0",
+  "version": "1.15.0",
   "description": "Driver for connection to Databricks SQL via Thrift API.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -45,7 +45,7 @@
     "hive",
     "hive js"
   ],
-  "license": "Apache 2.0",
+  "license": "Apache-2.0",
   "devDependencies": {
     "@types/chai": "^4.3.14",
     "@types/http-proxy": "^1.17.14",

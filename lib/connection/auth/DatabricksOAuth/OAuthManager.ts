@@ -277,7 +277,10 @@ export class AzureOAuthManager extends OAuthManager {
   public static datatricksAzureApp = '2ff814a6-3304-4ab8-85cb-cd0e6f879c1d';
 
   protected getOIDCConfigUrl(): string {
-    return 'https://login.microsoftonline.com/organizations/v2.0/.well-known/openid-configuration';
+    // Use logical OR so empty / whitespace-only azureTenantId also falls back to /organizations/
+    // (`??` only substitutes for null/undefined, leaving `''` to produce a malformed `//v2.0/...` URL).
+    const tenantPath = this.options.azureTenantId?.trim() || 'organizations';
+    return `https://login.microsoftonline.com/${tenantPath}/v2.0/.well-known/openid-configuration`;
   }
 
   protected getAuthorizationUrl(): string {
@@ -293,17 +296,18 @@ export class AzureOAuthManager extends OAuthManager {
   }
 
   protected getScopes(requestedScopes: OAuthScopes): OAuthScopes {
-    // There is no corresponding scopes in Azure, instead, access control will be delegated to Databricks
-    const tenantId = this.options.azureTenantId ?? AzureOAuthManager.datatricksAzureApp;
+    // There is no corresponding scopes in Azure, instead, access control will be delegated to Databricks.
+    // Scope must be the Azure *resource* ID (the Databricks Azure Login App), NOT the tenant ID.
+    const resourceId = AzureOAuthManager.datatricksAzureApp;
 
     const azureScopes = [];
 
     switch (this.options.flow) {
       case OAuthFlow.U2M:
-        azureScopes.push(`${tenantId}/user_impersonation`);
+        azureScopes.push(`${resourceId}/user_impersonation`);
         break;
       case OAuthFlow.M2M:
-        azureScopes.push(`${tenantId}/.default`);
+        azureScopes.push(`${resourceId}/.default`);
         break;
       // no default
     }

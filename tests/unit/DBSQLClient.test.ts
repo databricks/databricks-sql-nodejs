@@ -18,6 +18,10 @@ import IAuthentication from '../../lib/connection/contracts/IAuthentication';
 import AuthProviderStub from './.stubs/AuthProviderStub';
 import ConnectionProviderStub from './.stubs/ConnectionProviderStub';
 import { TProtocolVersion } from '../../thrift/TCLIService_types';
+import TelemetryClientProvider from '../../lib/telemetry/TelemetryClientProvider';
+import FeatureFlagCache from '../../lib/telemetry/FeatureFlagCache';
+import TelemetryEventEmitter from '../../lib/telemetry/TelemetryEventEmitter';
+import { LogLevel } from '../../lib/contracts/IDBSQLLogger';
 
 const connectOptions = {
   host: '127.0.0.1',
@@ -144,6 +148,18 @@ describe('DBSQLClient.connect', () => {
       }
       expect(error.message).to.match(/not connected/);
     }
+  });
+
+  it('populates config.customHeaders with org-id parsed from ?o= (SPOG)', async () => {
+    const client = new DBSQLClient();
+    await client.connect({ ...connectOptions, path: '/sql/1.0/warehouses/abc?o=12345678901234' });
+    expect(client.getConfig().customHeaders).to.deep.equal({ 'x-databricks-org-id': '12345678901234' });
+  });
+
+  it('leaves config.customHeaders undefined when path has no ?o= and none supplied', async () => {
+    const client = new DBSQLClient();
+    await client.connect({ ...connectOptions, path: '/sql/1.0/warehouses/abc' });
+    expect(client.getConfig().customHeaders).to.be.undefined;
   });
 });
 
@@ -703,6 +719,298 @@ describe('DBSQLClient.enableMetricViewMetadata', () => {
 
     expect(thriftClient.openSessionReq?.configuration).to.deep.equal({
       ansi_mode: 'true',
+    });
+  });
+});
+
+describe('DBSQLClient telemetry paths', () => {
+  // Reset the process-wide singleton between tests so refcount + cached
+  // feature flags from one test don't leak into the next. Mirrors the e2e
+  // suite's afterEach pattern but scoped to unit-level state.
+  afterEach(() => {
+    TelemetryClientProvider.__resetInstanceForTests();
+    sinon.restore();
+  });
+
+  describe('DATABRICKS_TELEMETRY_DISABLED env-var parser', () => {
+    let savedEnv: string | undefined;
+    beforeEach(() => {
+      savedEnv = process.env.DATABRICKS_TELEMETRY_DISABLED;
+    });
+    afterEach(() => {
+      if (savedEnv === undefined) {
+        delete process.env.DATABRICKS_TELEMETRY_DISABLED;
+      } else {
+        process.env.DATABRICKS_TELEMETRY_DISABLED = savedEnv;
+      }
+    });
+
+    const recognizedTruthy = ['1', 'true', 'TRUE', 'yes', 'YES', 'on', 'ON', ' true ', 'On'];
+    const unrecognized = ['0', 'false', 'no', 'off', 'False', 'OFF'];
+
+    for (const val of recognizedTruthy) {
+      it(`DISABLES telemetry when value is '${val}'`, async () => {
+        process.env.DATABRICKS_TELEMETRY_DISABLED = val;
+        const client = new DBSQLClient();
+        // Stub out initializeTelemetry so we can detect it not being called.
+        const initSpy = sinon.spy(client as any, 'initializeTelemetry');
+        await client.connect(connectOptions);
+        expect(initSpy.callCount).to.equal(0);
+      });
+    }
+
+    for (const val of unrecognized) {
+      it(`WARNS and does NOT disable when value is '${val}'`, async () => {
+        process.env.DATABRICKS_TELEMETRY_DISABLED = val;
+        const client = new DBSQLClient();
+        const logger = (client as any).logger as { log: (l: LogLevel, m: string) => void };
+        const logSpy = sinon.spy(logger, 'log');
+        // Suppress the actual telemetry init network calls by stubbing.
+        sinon.stub(client as any, 'initializeTelemetry').resolves();
+        await client.connect(connectOptions);
+        const warnCalls = logSpy
+          .getCalls()
+          .filter((c) => c.args[0] === LogLevel.warn && /DATABRICKS_TELEMETRY_DISABLED/.test(c.args[1] as string));
+        expect(warnCalls.length, 'expected a warn-level log about ignored env value').to.be.at.least(1);
+      });
+    }
+
+    it('treats empty / unset env var as no-op (no warn)', async () => {
+      delete process.env.DATABRICKS_TELEMETRY_DISABLED;
+      const client = new DBSQLClient();
+      const logger = (client as any).logger as { log: (l: LogLevel, m: string) => void };
+      const logSpy = sinon.spy(logger, 'log');
+      sinon.stub(client as any, 'initializeTelemetry').resolves();
+      await client.connect(connectOptions);
+      const warnCalls = logSpy
+        .getCalls()
+        .filter((c) => c.args[0] === LogLevel.warn && /DATABRICKS_TELEMETRY_DISABLED/.test(c.args[1] as string));
+      expect(warnCalls.length).to.equal(0);
+    });
+  });
+
+  describe('extractWorkspaceId', () => {
+    it('returns the numeric o= param from httpPath', () => {
+      const id = (DBSQLClient as any).extractWorkspaceId('/sql/1.0/warehouses/abc?o=12345678901234');
+      expect(id).to.equal('12345678901234');
+    });
+
+    it('returns undefined when no query string', () => {
+      expect((DBSQLClient as any).extractWorkspaceId('/sql/1.0/warehouses/abc')).to.be.undefined;
+    });
+
+    it('returns undefined when o= is not numeric', () => {
+      expect((DBSQLClient as any).extractWorkspaceId('/sql/1.0/warehouses/abc?o=tenant_xyz')).to.be.undefined;
+    });
+
+    it('handles o= as a non-first param', () => {
+      expect((DBSQLClient as any).extractWorkspaceId('/sql/1.0/warehouses/abc?foo=bar&o=42&baz=qux')).to.equal('42');
+    });
+
+    it('returns undefined when httpPath is unset', () => {
+      expect((DBSQLClient as any).extractWorkspaceId(undefined)).to.be.undefined;
+    });
+
+    it('returns the numeric workspace id from all-purpose cluster path form', () => {
+      expect((DBSQLClient as any).extractWorkspaceId('sql/protocolv1/o/99999999999999/0101-000000-aaaaaaaa')).to.equal(
+        '99999999999999',
+      );
+    });
+
+    it('returns the numeric workspace id from all-purpose cluster path with leading slash', () => {
+      expect((DBSQLClient as any).extractWorkspaceId('/sql/protocolv1/o/12345/0101-000000-aaaaaaaa')).to.equal('12345');
+    });
+
+    it('returns undefined when all-purpose cluster path has non-numeric workspace segment', () => {
+      expect((DBSQLClient as any).extractWorkspaceId('sql/protocolv1/o/tenant_xyz/0101-000000-aaaaaaaa')).to.be
+        .undefined;
+    });
+
+    it('prefers ?o= query form over /o/ path form when both are present', () => {
+      expect((DBSQLClient as any).extractWorkspaceId('sql/protocolv1/o/111/cluster?o=222')).to.equal('222');
+    });
+  });
+
+  describe('buildCustomHeaders (SPOG)', () => {
+    it('injects x-databricks-org-id from ?o= in httpPath', () => {
+      const client = new DBSQLClient();
+      const headers = (client as any).buildCustomHeaders('/sql/1.0/warehouses/abc?o=12345678901234', undefined);
+      expect(headers).to.deep.equal({ 'x-databricks-org-id': '12345678901234' });
+    });
+
+    it('returns undefined when no ?o= and no user-supplied customHeaders', () => {
+      const client = new DBSQLClient();
+      const headers = (client as any).buildCustomHeaders('/sql/1.0/warehouses/abc', undefined);
+      expect(headers).to.be.undefined;
+    });
+
+    it('preserves user-supplied customHeaders alongside parsed org-id', () => {
+      const client = new DBSQLClient();
+      const headers = (client as any).buildCustomHeaders('/sql/1.0/warehouses/abc?o=42', { 'x-trace-id': 'tid-001' });
+      expect(headers).to.deep.equal({ 'x-trace-id': 'tid-001', 'x-databricks-org-id': '42' });
+    });
+
+    it('user-supplied x-databricks-org-id wins over ?o= parsed value (case-insensitive)', () => {
+      const client = new DBSQLClient();
+      const headers = (client as any).buildCustomHeaders('/sql/1.0/warehouses/abc?o=42', {
+        'X-Databricks-Org-Id': '999',
+      });
+      expect(headers).to.deep.equal({ 'X-Databricks-Org-Id': '999' });
+    });
+
+    it('does not inject org-id when ?o= value is non-numeric', () => {
+      const client = new DBSQLClient();
+      const headers = (client as any).buildCustomHeaders('/sql/1.0/warehouses/abc?o=tenant_xyz', undefined);
+      expect(headers).to.be.undefined;
+    });
+
+    it('injects x-databricks-org-id from all-purpose cluster path form', () => {
+      const client = new DBSQLClient();
+      const headers = (client as any).buildCustomHeaders(
+        'sql/protocolv1/o/99999999999999/0101-000000-aaaaaaaa',
+        undefined,
+      );
+      expect(headers).to.deep.equal({ 'x-databricks-org-id': '99999999999999' });
+    });
+
+    it('logs a warning when workspace ID segment is non-numeric (path form)', () => {
+      const client = new DBSQLClient();
+      const logSpy = sinon.spy((client as any).logger, 'log');
+      try {
+        (client as any).buildCustomHeaders('sql/protocolv1/o/tenant_xyz/cluster', undefined);
+        const warnCalls = logSpy.getCalls().filter((c) => c.args[0] === LogLevel.warn);
+        expect(warnCalls).to.have.lengthOf(1);
+        expect(warnCalls[0].args[1]).to.match(/non-numeric workspace ID/);
+      } finally {
+        logSpy.restore();
+      }
+    });
+
+    it('logs a warning when ?o= is present but non-numeric', () => {
+      const client = new DBSQLClient();
+      const logSpy = sinon.spy((client as any).logger, 'log');
+      try {
+        (client as any).buildCustomHeaders('/sql/1.0/warehouses/abc?o=tenant_xyz', undefined);
+        const warnCalls = logSpy.getCalls().filter((c) => c.args[0] === LogLevel.warn);
+        expect(warnCalls).to.have.lengthOf(1);
+        expect(warnCalls[0].args[1]).to.match(/non-numeric workspace ID/);
+      } finally {
+        logSpy.restore();
+      }
+    });
+
+    it('logs a debug line when injecting org-id from httpPath', () => {
+      const client = new DBSQLClient();
+      const logSpy = sinon.spy((client as any).logger, 'log');
+      try {
+        (client as any).buildCustomHeaders('/sql/1.0/warehouses/abc?o=42', undefined);
+        const injectLog = logSpy
+          .getCalls()
+          .find((c) => c.args[0] === LogLevel.debug && /injecting x-databricks-org-id=42/.test(String(c.args[1])));
+        expect(injectLog, 'expected SPOG inject debug log').to.exist;
+      } finally {
+        logSpy.restore();
+      }
+    });
+
+    it('logs a debug line when caller supplies x-databricks-org-id', () => {
+      const client = new DBSQLClient();
+      const logSpy = sinon.spy((client as any).logger, 'log');
+      try {
+        (client as any).buildCustomHeaders('/sql/1.0/warehouses/abc?o=42', { 'x-databricks-org-id': '999' });
+        const callerLog = logSpy
+          .getCalls()
+          .find((c) => c.args[0] === LogLevel.debug && /supplied by caller/.test(String(c.args[1])));
+        expect(callerLog, 'expected SPOG caller-supplied debug log').to.exist;
+      } finally {
+        logSpy.restore();
+      }
+    });
+  });
+
+  describe('telemetry refcount on reconnect', () => {
+    it('releases the prior refcount when connect() is called twice', async () => {
+      const client = new DBSQLClient();
+      // Stub out feature-flag fetch to return true so the telemetry path runs.
+      sinon.stub(FeatureFlagCache.prototype, 'isTelemetryEnabled').resolves(true);
+      const releaseSpy = sinon.spy(TelemetryClientProvider.prototype, 'releaseClient');
+
+      await client.connect(connectOptions);
+      // Sanity: refcount on host should be 1 after first connect.
+      expect(TelemetryClientProvider.getInstance().getRefCount(connectOptions.host)).to.equal(1);
+
+      // Second connect to a different host should release the prior refcount.
+      await client.connect({ ...connectOptions, host: '127.0.0.2' });
+      expect(releaseSpy.called, 'releaseClient should fire on reconnect').to.be.true;
+      // The old host should have decremented to 0 (closed and removed).
+      expect(TelemetryClientProvider.getInstance().getRefCount(connectOptions.host)).to.equal(0);
+
+      await client.close();
+    });
+  });
+
+  describe('telemetry refcount release path on init failure', () => {
+    it('releases refcount when feature flag fetch throws', async () => {
+      const client = new DBSQLClient();
+      sinon.stub(FeatureFlagCache.prototype, 'isTelemetryEnabled').rejects(new Error('boom'));
+      const releaseSpy = sinon.spy(TelemetryClientProvider.prototype, 'releaseClient');
+
+      await client.connect(connectOptions);
+
+      // The init failure should release the refcount it just acquired so the
+      // per-host TelemetryClient doesn't leak its flush timer for the
+      // lifetime of the process.
+      expect(releaseSpy.called, 'releaseClient should run on init failure').to.be.true;
+      expect(TelemetryClientProvider.getInstance().getRefCount(connectOptions.host)).to.equal(0);
+    });
+  });
+
+  describe('CONNECTION_OPEN driverConfig de-duplication (F15)', () => {
+    it('ships driverConfig on the first openSession only', async () => {
+      const client = new DBSQLClient();
+      const thriftClient = new ThriftClientStub();
+      sinon.stub(client, 'getClient').returns(Promise.resolve(thriftClient));
+      // Need a working emitter so we can spy on emitConnectionOpen.
+      sinon.stub(FeatureFlagCache.prototype, 'isTelemetryEnabled').resolves(true);
+
+      const emitSpy = sinon.spy(TelemetryEventEmitter.prototype, 'emitConnectionOpen');
+
+      await client.connect(connectOptions);
+      await client.openSession();
+      await client.openSession();
+      await client.openSession();
+
+      // 3 sessions → 3 emitConnectionOpen calls, but only the first one
+      // should carry a non-undefined driverConfig blob.
+      const calls = emitSpy.getCalls();
+      expect(calls.length, 'three openSession should emit three CONNECTION_OPEN events').to.equal(3);
+      expect(calls[0].args[0].driverConfig, 'first session ships full driverConfig').to.not.be.undefined;
+      expect(calls[1].args[0].driverConfig, 'second session omits driverConfig').to.be.undefined;
+      expect(calls[2].args[0].driverConfig, 'third session omits driverConfig').to.be.undefined;
+
+      await client.close();
+    });
+  });
+
+  describe('getTelemetryStats', () => {
+    it('returns undefined when telemetry is disabled', async () => {
+      const client = new DBSQLClient();
+      await client.connect({ ...connectOptions, telemetryEnabled: false });
+      expect(client.getTelemetryStats()).to.be.undefined;
+    });
+
+    it('returns a populated snapshot when telemetry is enabled', async () => {
+      const client = new DBSQLClient();
+      sinon.stub(FeatureFlagCache.prototype, 'isTelemetryEnabled').resolves(true);
+      await client.connect(connectOptions);
+      const stats = client.getTelemetryStats();
+      expect(stats, 'stats should be populated when telemetry is on').to.not.be.undefined;
+      expect(stats!.host).to.equal(connectOptions.host);
+      expect(stats!.pendingMetricsCount).to.be.a('number');
+      expect(stats!.droppedMetrics).to.be.a('number');
+      expect(stats!.evictedStatements).to.be.a('number');
+      expect(stats!.circuitBreakerState).to.be.oneOf(['CLOSED', 'OPEN', 'HALF_OPEN']);
+      await client.close();
     });
   });
 });

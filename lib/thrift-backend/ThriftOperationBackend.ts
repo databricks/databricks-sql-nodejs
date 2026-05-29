@@ -107,6 +107,7 @@ export default class ThriftOperationBackend implements IOperationBackend {
       this.operationHandle,
       [directResults?.resultSet],
       useOnlyPrefetchedResults,
+      this.id,
     );
     this.closeOperation = directResults?.closeOperation;
   }
@@ -114,6 +115,10 @@ export default class ThriftOperationBackend implements IOperationBackend {
   public get id(): string {
     const operationId = this.operationHandle?.operationId?.guid;
     return operationId ? stringify(operationId) : NIL;
+  }
+
+  public get operationType() {
+    return this.operationHandle.operationType;
   }
 
   public hasResultSet(): boolean {
@@ -330,7 +335,7 @@ export default class ThriftOperationBackend implements IOperationBackend {
         case TSparkRowSetType.URL_BASED_SET:
           resultSource = new ArrowResultConverter(
             this.context,
-            new CloudFetchResultHandler(this.context, this._data, metadata),
+            new CloudFetchResultHandler(this.context, this._data, metadata, this.id),
             metadata,
           );
           break;

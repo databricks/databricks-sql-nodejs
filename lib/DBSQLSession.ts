@@ -27,6 +27,7 @@ import IClientContext from './contracts/IClientContext';
 import ISessionBackend from './contracts/ISessionBackend';
 import IOperationBackend from './contracts/IOperationBackend';
 import { numberToInt64 as numberToInt64Impl } from './thrift-backend/ThriftSessionBackend';
+import { safeEmit } from './telemetry/telemetryUtils';
 
 // Explicitly promisify a callback-style `pipeline` because `node:stream/promises` is not available in Node 14
 const pipeline = util.promisify(stream.pipeline);
@@ -321,17 +322,48 @@ export default class DBSQLSession implements IDBSQLSession {
 
     await this.operations.closeAll();
 
-    const status = await this.backend.close();
+    // `latencyMs` on CONNECTION_CLOSE is the closeSession RPC duration, not the
+    // session lifetime. It's the symmetric counterpart of CREATE_SESSION's
+    // openSession RPC latency — both land under `operation_latency_ms`
+    // server-side and must measure the same kind of duration.
+    let closeStart = Date.now();
+    const emitClose = () => {
+      // Emit connection.close regardless of whether closeSession succeeded —
+      // a failed close is the most diagnostic event for connection-failure rate.
+      const latencyMs = Date.now() - closeStart;
+      safeEmit(this.context, (emitter) => {
+        emitter.emitConnectionClose({
+          sessionId: this.id,
+          latencyMs,
+        });
+      });
+    };
 
-    this.onClose?.();
-    this.isOpen = false;
+    try {
+      closeStart = Date.now();
+      const status = await this.backend.close();
 
-    this.context.getLogger().log(LogLevel.debug, `Session closed with id: ${this.id}`);
-    return status;
+      this.onClose?.();
+      this.isOpen = false;
+      emitClose();
+
+      this.context.getLogger().log(LogLevel.debug, `Session closed with id: ${this.id}`);
+      return status;
+    } catch (err) {
+      this.onClose?.();
+      this.isOpen = false;
+      emitClose();
+      throw err;
+    }
   }
 
   private wrapOperation(backend: IOperationBackend): DBSQLOperation {
-    const operation = new DBSQLOperation({ backend, context: this.context });
+    const operation = new DBSQLOperation({
+      backend,
+      context: this.context,
+      sessionId: this.id,
+    });
+
     this.operations.add(operation);
     return operation;
   }

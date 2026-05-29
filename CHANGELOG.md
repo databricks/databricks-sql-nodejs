@@ -1,5 +1,12 @@
 # Release History
 
+## 1.15.0
+
+- Add SPOG routing support: parse `?o=<workspaceId>` from `httpPath` and inject `x-databricks-org-id` on Thrift, telemetry, and feature-flag requests. Expose `customHeaders` on `ConnectionOptions` for caller-supplied headers (databricks/databricks-sql-nodejs#391 by @samikshya-db)
+- Telemetry: enable by default with feature-flag-controlled priority, and fix final-flush dropping on `client.close()` due to a close-ordering bug (databricks/databricks-sql-nodejs#327, #391 by @samikshya-db)
+- Fix Azure AD OAuth: tenant-aware discovery URL and correct scope resource (databricks/databricks-sql-nodejs#363 by @msrathore-db)
+- Fix: use a valid SPDX license identifier in `package.json` (databricks/databricks-sql-nodejs#389 by @sreekanth-db)
+
 ## 1.14.0
 
 - Add statement-level query tag support (databricks/databricks-sql-nodejs#366 by @sreekanth-db)
@@ -12,6 +19,13 @@
 - Add metric view metadata support (databricks/databricks-sql-nodejs#312 by @shivam2680)
 - Fix: Avoid calling require('lz4') if it's really not required (databricks/databricks-sql-nodejs#316 by @ikkala)
 - Add telemetry foundation (off by default) (databricks/databricks-sql-nodejs#324 by @samikshya-db)
+- Telemetry event emission and per-host aggregation (databricks/databricks-sql-nodejs#327 by @samikshya-db).
+  **Default change:** `telemetryEnabled` now defaults to `true` (gated by a remote feature flag).
+  To opt out programmatically, pass `telemetryEnabled: false` to `connect()`.
+  To disable globally without code changes, set the environment variable
+  `DATABRICKS_TELEMETRY_DISABLED` to one of `1`, `true`, `yes`, or `on`
+  (case-insensitive). Other values (empty, `0`, `false`, etc.) are ignored
+  — the runtime config takes precedence.
 
 ## 1.12.0
 

@@ -120,6 +120,46 @@ describe('DatabricksTelemetryExporter', () => {
       }
       expect(threw).to.be.false;
     });
+
+    it('should attach config.customHeaders to the POST (SPOG)', async () => {
+      const context = new ClientContextStub({
+        customHeaders: { 'x-databricks-org-id': '12345678901234' },
+      } as any);
+      const registry = new CircuitBreakerRegistry(context);
+      const exporter = new DatabricksTelemetryExporter(context, 'host.example.com', registry, fakeAuthProvider);
+      const sendRequestStub = sinon.stub(exporter as any, 'sendRequest').returns(makeOkResponse());
+
+      await exporter.export([makeMetric()]);
+
+      const init = sendRequestStub.firstCall.args[1] as { headers: Record<string, string> };
+      expect(init.headers['x-databricks-org-id']).to.equal('12345678901234');
+    });
+
+    it('auth headers win over customHeaders on key collision', async () => {
+      const context = new ClientContextStub({
+        customHeaders: { Authorization: 'Bearer not-the-real-token' },
+      } as any);
+      const registry = new CircuitBreakerRegistry(context);
+      const exporter = new DatabricksTelemetryExporter(context, 'host.example.com', registry, fakeAuthProvider);
+      const sendRequestStub = sinon.stub(exporter as any, 'sendRequest').returns(makeOkResponse());
+
+      await exporter.export([makeMetric()]);
+
+      const init = sendRequestStub.firstCall.args[1] as { headers: Record<string, string> };
+      expect(init.headers.Authorization).to.equal('Bearer test-token');
+    });
+
+    it('does not attach customHeaders when none are configured', async () => {
+      const context = new ClientContextStub();
+      const registry = new CircuitBreakerRegistry(context);
+      const exporter = new DatabricksTelemetryExporter(context, 'host.example.com', registry, fakeAuthProvider);
+      const sendRequestStub = sinon.stub(exporter as any, 'sendRequest').returns(makeOkResponse());
+
+      await exporter.export([makeMetric()]);
+
+      const init = sendRequestStub.firstCall.args[1] as { headers: Record<string, string> };
+      expect(init.headers).to.not.have.property('x-databricks-org-id');
+    });
   });
 
   describe('export() - retry logic', () => {

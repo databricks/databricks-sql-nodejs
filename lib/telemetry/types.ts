@@ -24,6 +24,7 @@ export const DRIVER_NAME = 'nodejs-sql-driver';
  */
 export enum TelemetryEventType {
   CONNECTION_OPEN = 'connection.open',
+  CONNECTION_CLOSE = 'connection.close',
   STATEMENT_START = 'statement.start',
   STATEMENT_COMPLETE = 'statement.complete',
   CLOUDFETCH_CHUNK = 'cloudfetch.chunk',
@@ -72,13 +73,24 @@ export interface TelemetryConfiguration {
 
   /** TTL in ms after which abandoned statement aggregations are evicted */
   statementTtlMs?: number;
+
+  /**
+   * Maximum wall-clock time `close()` will wait for the final flush HTTP POST
+   * before abandoning it and returning. Bounds shutdown latency so callers
+   * doing `await client.close(); process.exit(0)` are not held up by a
+   * misbehaving telemetry endpoint.
+   */
+  closeTimeoutMs?: number;
+
+  /** Hard cap on per-statement aggregation map size; oldest evicted on overflow. */
+  maxStatementMetrics?: number;
 }
 
 /**
  * Default telemetry configuration values
  */
 export const DEFAULT_TELEMETRY_CONFIG: Readonly<Required<TelemetryConfiguration>> = Object.freeze({
-  enabled: false,
+  enabled: true, // Enabled by default, gated by feature flag
   batchSize: 100,
   flushIntervalMs: 5000,
   maxRetries: 3,
@@ -91,6 +103,8 @@ export const DEFAULT_TELEMETRY_CONFIG: Readonly<Required<TelemetryConfiguration>
   maxPendingMetrics: 500,
   maxErrorsPerStatement: 50,
   statementTtlMs: 60 * 60 * 1000, // 1 hour
+  closeTimeoutMs: 2000, // 2s — caps client.close() shutdown latency
+  maxStatementMetrics: 5000, // hard cap for the per-statement aggregation map
 });
 
 /**
@@ -186,11 +200,14 @@ export interface TelemetryMetric {
   /** Workspace ID */
   workspaceId?: string;
 
-  /** Driver configuration (for connection metrics) */
+  /** Driver configuration (included in all metrics for context) */
   driverConfig?: DriverConfiguration;
 
   /** Execution latency in milliseconds */
   latencyMs?: number;
+
+  /** Type of operation (SELECT, INSERT, etc.) */
+  operationType?: string;
 
   /** Result format (inline, cloudfetch, arrow) */
   resultFormat?: string;
@@ -198,11 +215,23 @@ export interface TelemetryMetric {
   /** Number of result chunks */
   chunkCount?: number;
 
+  /** Latency of the first chunk fetch in milliseconds */
+  chunkInitialLatencyMs?: number;
+
+  /** Latency of the slowest chunk fetch in milliseconds */
+  chunkSlowestLatencyMs?: number;
+
+  /** Sum of all chunk fetch latencies in milliseconds */
+  chunkSumLatencyMs?: number;
+
   /** Total bytes downloaded */
   bytesDownloaded?: number;
 
   /** Number of poll operations */
   pollCount?: number;
+
+  /** Whether compression was used */
+  compressed?: boolean;
 
   /** Error name/type */
   errorName?: string;
@@ -258,6 +287,9 @@ export interface DriverConfiguration {
    */
   processName: string;
 
+  /** Authentication type (pat, external-browser, oauth-m2m, custom) */
+  authType: string;
+
   // Feature flags
   /** Whether CloudFetch is enabled */
   cloudFetchEnabled: boolean;
@@ -280,6 +312,13 @@ export interface DriverConfiguration {
 
   /** Number of concurrent CloudFetch downloads */
   cloudFetchConcurrentDownloads: number;
+
+  // Connection parameters for telemetry
+  /** HTTP path for API calls */
+  httpPath?: string;
+
+  /** Whether metric view metadata is enabled */
+  enableMetricViewMetadata?: boolean;
 }
 
 /**
@@ -312,6 +351,15 @@ export interface StatementMetrics {
 
   /** Number of CloudFetch chunks downloaded */
   chunkCount: number;
+
+  /** Latency of the first chunk fetch in milliseconds */
+  chunkInitialLatencyMs?: number;
+
+  /** Latency of the slowest chunk fetch in milliseconds */
+  chunkSlowestLatencyMs?: number;
+
+  /** Sum of all chunk fetch latencies in milliseconds */
+  chunkSumLatencyMs?: number;
 
   /** Total bytes downloaded */
   totalBytesDownloaded: number;

@@ -3,7 +3,10 @@ import IConnectionProvider from '../../../lib/connection/contracts/IConnectionPr
 import IDriver from '../../../lib/contracts/IDriver';
 import IThriftClient from '../../../lib/contracts/IThriftClient';
 import IDBSQLLogger from '../../../lib/contracts/IDBSQLLogger';
+import IAuthentication from '../../../lib/connection/contracts/IAuthentication';
 import DBSQLClient from '../../../lib/DBSQLClient';
+import TelemetryEventEmitter from '../../../lib/telemetry/TelemetryEventEmitter';
+import MetricsAggregator from '../../../lib/telemetry/MetricsAggregator';
 
 import LoggerStub from './LoggerStub';
 import ThriftClientStub from './ThriftClientStub';
@@ -20,6 +23,12 @@ export default class ClientContextStub implements IClientContext {
   public driver = new DriverStub();
 
   public connectionProvider = new ConnectionProviderStub();
+
+  // Tests can assign a stub emitter / aggregator to assert on emit calls.
+  // Defaults to undefined so optional-chaining `?.()` no-ops in unrelated tests.
+  public telemetryEmitter?: TelemetryEventEmitter;
+
+  public telemetryAggregator?: MetricsAggregator;
 
   constructor(configOverrides: Partial<ClientConfig> = {}) {
     this.configOverrides = configOverrides;
@@ -47,5 +56,17 @@ export default class ClientContextStub implements IClientContext {
 
   public async getDriver(): Promise<IDriver> {
     return this.driver;
+  }
+
+  public getAuthProvider(): IAuthentication | undefined {
+    return undefined;
+  }
+
+  public getTelemetryEmitter(): TelemetryEventEmitter | undefined {
+    return this.telemetryEmitter;
+  }
+
+  public getTelemetryAggregator(): MetricsAggregator | undefined {
+    return this.telemetryAggregator;
   }
 }
