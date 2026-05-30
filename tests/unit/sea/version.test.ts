@@ -15,14 +15,29 @@
 import { expect } from 'chai';
 import { tryGetSeaNative } from '../../../lib/sea/SeaNativeLoader';
 
+// On a CI runner whose triple is supposed to have a published binding
+// (M0 = linux-x64-gnu) a missing binding is a hard failure — a silent
+// skip there would mask a broken build / packaging regression. On every
+// other platform (and on dev machines) the binding is optional, so we
+// skip.
+function bindingIsExpected(): boolean {
+  return process.env.CI === 'true' && process.platform === 'linux' && process.arch === 'x64';
+}
+
 describe('SEA native binding — smoke test', function smoke() {
   const binding = tryGetSeaNative();
+
   if (binding === undefined) {
-    // The binding is an optional dependency. On platforms where the
-    // .node artifact isn't installed (CI matrix entries without a
-    // corresponding sea-native package, dev machines that haven't
-    // run `npm run build:native`, etc.), skip the suite rather than
-    // fail the build.
+    if (bindingIsExpected()) {
+      it('fails loudly: the binding must load on the linux-x64 CI runner', () => {
+        expect.fail(
+          'SEA native binding failed to load on a linux-x64 CI runner where ' +
+            '@databricks/sql-kernel-linux-x64-gnu is expected. Run `npm run build:native` or check packaging.',
+        );
+      });
+      return;
+    }
+    // Optional dependency absent on this platform — skip rather than fail.
     // eslint-disable-next-line no-invalid-this
     this.pending = true;
     it.skip('SEA native binding not available on this platform');
@@ -31,5 +46,14 @@ describe('SEA native binding — smoke test', function smoke() {
 
   it('returns a semver version()', () => {
     expect(binding.version()).to.match(/^\d+\.\d+\.\d+$/);
+  });
+
+  it('exposes the full binding surface the driver depends on', () => {
+    // Guards against kernel-side renames: if the kernel drops/renames a
+    // free function or class, this fails instead of staying green.
+    expect(binding.version, 'version()').to.be.a('function');
+    expect(binding.openSession, 'openSession()').to.be.a('function');
+    expect(binding.Connection, 'Connection class').to.be.a('function');
+    expect(binding.Statement, 'Statement class').to.be.a('function');
   });
 });

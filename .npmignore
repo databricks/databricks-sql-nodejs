@@ -4,7 +4,7 @@
 !thrift/**/*
 
 # SEA napi-rs router shim + TypeScript declarations. The router (index.js)
-# selects the per-platform `.node` artifact from `@databricks/sea-native-*`
+# selects the per-platform `.node` artifact from `@databricks/sql-kernel-*`
 # optionalDependencies (populated when the kernel CI publishes them);
 # the .d.ts is the consumer-facing type contract.
 !native/sea/index.js
