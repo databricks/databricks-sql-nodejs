@@ -14,7 +14,8 @@
 
 import { expect } from 'chai';
 import { tableFromIPC } from 'apache-arrow';
-import { tryGetSeaNative, Connection, Statement } from '../../../lib/sea/SeaNativeLoader';
+import { tryGetSeaNative, SeaConnection, SeaStatement } from '../../../lib/sea/SeaNativeLoader';
+import config from '../utils/config';
 
 // End-to-end smoke test against a live warehouse:
 //   1. Open a kernel `Session` over PAT.
@@ -22,24 +23,10 @@ import { tryGetSeaNative, Connection, Statement } from '../../../lib/sea/SeaNati
 //   3. Exercise lifecycle negative paths (drain-past-null, double-close).
 //   4. Close the statement, then the connection.
 //
-// Required env vars:
-//   - DATABRICKS_PECOTESTING_SERVER_HOSTNAME
-//   - DATABRICKS_PECOTESTING_HTTP_PATH
-//   - DATABRICKS_PECOTESTING_TOKEN_PERSONAL
-//
-// On dev machines without the secrets the suite is skipped. In CI
-// (process.env.CI === 'true') missing secrets are fatal — a silent
-// skip would let credential-rotation regressions reach prod.
-
-const REQUIRED_ENV = [
-  'DATABRICKS_PECOTESTING_SERVER_HOSTNAME',
-  'DATABRICKS_PECOTESTING_HTTP_PATH',
-  'DATABRICKS_PECOTESTING_TOKEN_PERSONAL',
-] as const;
-
-function missingEnvVars(): string[] {
-  return REQUIRED_ENV.filter((name) => !process.env[name]);
-}
+// Credentials come from the shared e2e config (tests/e2e/utils/config.ts:
+// E2E_HOST / E2E_PATH / E2E_ACCESS_TOKEN) — the single credential source
+// used by every other e2e test, so `npm run e2e` has one consistent
+// skip/fail contract rather than two.
 
 describe('SEA native binding — end-to-end smoke', function smoke() {
   // Live-warehouse tests can take >2s through warm-up.
@@ -47,35 +34,20 @@ describe('SEA native binding — end-to-end smoke', function smoke() {
 
   const binding = tryGetSeaNative();
   if (binding === undefined) {
-    // Optional dependency absent — never reach the live path.
+    // Optional dependency absent on this platform — never reach the live path.
     it.skip('SEA native binding not available on this platform');
     return;
   }
 
-  const missing = missingEnvVars();
-  if (missing.length > 0) {
-    if (process.env.CI === 'true') {
-      // Fail loudly so credential-rotation regressions surface in CI.
-      it('fails when required env vars are missing in CI', () => {
-        expect.fail(`Missing required env vars in CI: ${missing.join(', ')}. Set CI=false to skip locally.`);
-      });
-      return;
-    }
-    it.skip(`skipped — missing env vars: ${missing.join(', ')}`);
-    return;
-  }
-
-  const hostName = process.env.DATABRICKS_PECOTESTING_SERVER_HOSTNAME as string;
-  const httpPath = process.env.DATABRICKS_PECOTESTING_HTTP_PATH as string;
-  const token = process.env.DATABRICKS_PECOTESTING_TOKEN_PERSONAL as string;
+  const { host: hostName, path: httpPath, token } = config;
 
   it('opens a session, runs SELECT 1, decodes the IPC payload to 1', async () => {
-    const connection: Connection = await binding.openSession({ hostName, httpPath, token });
+    const connection: SeaConnection = await binding.openSession({ hostName, httpPath, token });
     expect(connection).to.be.an('object');
 
-    let statement: Statement | null = null;
+    let statement: SeaStatement | null = null;
     try {
-      statement = await connection.executeStatement('SELECT 1', {});
+      statement = await connection.executeStatement('SELECT 1');
       expect(statement).to.be.an('object');
 
       const batch = await statement.fetchNextBatch();
@@ -104,11 +76,12 @@ describe('SEA native binding — end-to-end smoke', function smoke() {
   });
 
   it('returns a schema IPC payload before any batch is fetched', async () => {
-    const connection: Connection = await binding.openSession({ hostName, httpPath, token });
+    const connection: SeaConnection = await binding.openSession({ hostName, httpPath, token });
     try {
-      const statement = await connection.executeStatement('SELECT 1', {});
+      const statement = await connection.executeStatement('SELECT 1');
       try {
-        const schema = await statement.schema();
+        // schema() is synchronous on the binding (cached at construction).
+        const schema = statement.schema();
         expect(schema.ipcBytes).to.be.instanceOf(Buffer);
         expect(schema.ipcBytes.length).to.be.greaterThan(0);
       } finally {

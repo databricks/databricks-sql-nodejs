@@ -1,14 +1,15 @@
 # `native/sea/` — consumer-side directory for the Rust napi binding
 
 **The Rust binding source lives in the kernel repo** at
-`databricks-sql-kernel/napi-binding/napi/`. Building it requires a
-local checkout of that repo — see "Build for local dev" below.
+`databricks-sql-kernel/napi/`. Building it requires a local checkout
+of that repo — see "Build for local dev" below. The published npm
+package is `@databricks/sql-kernel-<triple>`.
 
 ## Workspace topology
 
 The napi crate is a **standalone Cargo workspace** (`[workspace]
-members = ["."]` in `napi-binding/napi/Cargo.toml`), **not** a
-sibling of `pyo3/` in the kernel root workspace.
+members = ["."]` in `napi/Cargo.toml`), **not** a sibling of `pyo3/`
+in the kernel root workspace.
 
 The reason is Cargo feature unification. pyo3 builds the kernel with
 the default `tls-native` feature (system OpenSSL via `native-tls`).
@@ -32,31 +33,55 @@ and reintroduce the same clash. Standalone-workspace is the fix.
 - `index.js` — napi-rs's per-platform router shim. Gitignored;
   populated by `npm run build:native` for local dev. In published
   tarballs it ships alongside the `.d.ts` and `require()`s the
-  right `@databricks/sea-native-<triple>` optional dependency.
+  right `@databricks/sql-kernel-<triple>` optional dependency.
 - `index.*.node` — the actual native binary, one per platform.
   Gitignored. In production these live in the per-triple optional
-  dependencies (`@databricks/sea-native-linux-x64-gnu`, etc.); for
+  dependencies (`@databricks/sql-kernel-linux-x64-gnu`, etc.); for
   local dev `npm run build:native` copies one into this directory.
 
 ## Build for local dev
 
 ```bash
 # From the nodejs repo root:
-export DATABRICKS_SQL_KERNEL_REPO=/path/to/your/databricks-sql-kernel/napi-binding
+export DATABRICKS_SQL_KERNEL_REPO=/path/to/your/databricks-sql-kernel
 npm run build:native           # release build (default)
 BUILD_PROFILE=  npm run build:native  # debug build (empty BUILD_PROFILE drops --release)
 ```
 
-`DATABRICKS_SQL_KERNEL_REPO` is required when your kernel checkout
-isn't at `../../databricks-sql-kernel/napi-binding` relative to the
+`DATABRICKS_SQL_KERNEL_REPO` points at the kernel repo root (the
+directory containing `napi/`) and is required when your kernel
+checkout isn't at `../../databricks-sql-kernel` relative to the
 nodejs repo.
 
 ## Production load path
 
 At release time the kernel's CI publishes
-`@databricks/sea-native-<triple>` npm packages — one per supported
+`@databricks/sql-kernel-<triple>` npm packages — one per supported
 platform — each containing a single `.node` binary. The nodejs
 driver lists them as `optionalDependencies`; npm installs only the
 one matching the consumer's `process.platform` / `process.arch`.
 `native/sea/index.js` (the napi-rs router) then `require()`s the
 installed package at load time.
+
+## Supported platforms (M0)
+
+M0 publishes a **single** triple: **`linux-x64-gnu`** (package
+`@databricks/sql-kernel-linux-x64-gnu`). It is the only entry in the
+driver's `optionalDependencies`.
+
+On every other platform (macOS, Windows, linux-arm64, linux-x64-musl
+/ Alpine, …) the SEA binding is simply absent: `SeaNativeLoader`
+returns `undefined` from `tryGet()` / throws a structured
+`MODULE_NOT_FOUND` hint from `get()`, and the driver continues to use
+the Thrift backend exclusively. This is expected, not a regression —
+additional triples are added to `optionalDependencies` as the kernel
+CI starts publishing them in later milestones.
+
+## Supply-chain note
+
+The unpublished triple names (`@databricks/sql-kernel-darwin-arm64`,
+`…-win32-x64-msvc`, etc.) referenced by the router are **not**
+squat-able: `@databricks` is a Databricks-owned npm scope, and npm
+only allows org members to publish under a scope it owns. A third
+party therefore cannot register `@databricks/sql-kernel-*` and have
+the router autoload it. No placeholder packages are required.
