@@ -6,6 +6,19 @@ name: Trigger Integration Tests
 # Matches the label-gated / merge-queue pattern used by the Python connector:
 # normal PR events get an immediate green check, maintainers can preview with
 # the `integration-test` label, and merge queue runs the real required gate.
+#
+# Required external setup:
+#
+#   1. `integration-test` label exists in this repo.
+#   2. `INTEGRATION_TEST_APP_ID` / `INTEGRATION_TEST_PRIVATE_KEY` repo secrets
+#      are installed in this repo for the dispatcher GitHub App.
+#   3. The app is installed/granted on `databricks-driver-test` so this workflow
+#      can send `repository_dispatch`.
+#   4. The same app is installed/granted on `databricks-sql-nodejs` with
+#      checks:write so driver-test can report the final `Node.js Integration
+#      Tests` check back to this PR/merge-queue commit.
+#   5. Merge queue branch protection lists `Node.js Integration Tests` as a
+#      required status check.
 
 on:
   pull_request:
