@@ -1,0 +1,350 @@
+name: Trigger Integration Tests
+
+# Dispatches the proxy-based Node.js integration suite in
+# databricks/databricks-driver-test to run against this PR's commit.
+#
+# Matches the label-gated / merge-queue pattern used by the Python connector:
+# normal PR events get an immediate green check, maintainers can preview with
+# the `integration-test` label, and merge queue runs the real required gate.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, labeled]
+  merge_group:
+
+jobs:
+  remove-label-on-new-commit:
+    if: github.event_name == 'pull_request' && github.event.action == 'synchronize'
+    runs-on:
+      group: databricks-protected-runner-group
+      labels: linux-ubuntu-latest
+    permissions:
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Check if integration-test label exists
+        id: check-label
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
+        with:
+          script: |
+            const labels = context.payload.pull_request.labels.map((label) => label.name);
+            const hasLabel = labels.includes('integration-test');
+            console.log(`integration-test label exists: ${hasLabel}`);
+            return hasLabel;
+
+      - name: Remove integration-test label
+        if: steps.check-label.outputs.result == 'true'
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
+        with:
+          script: |
+            try {
+              await github.rest.issues.removeLabel({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                issue_number: context.issue.number,
+                name: 'integration-test'
+              });
+              console.log('Removed integration-test label');
+            } catch (error) {
+              if (error.status === 404) {
+                console.log('Label already removed or does not exist');
+              } else {
+                throw error;
+              }
+            }
+
+      - name: Comment on PR about label removal
+        if: steps.check-label.outputs.result == 'true'
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
+        with:
+          script: |
+            const pr = context.payload.pull_request;
+            const isFromFork = pr.head.repo.full_name !== pr.base.repo.full_name;
+            const repoType = isFromFork ? '**fork PR**' : 'PR';
+
+            const body = [
+              'Integration test approval reset.',
+              '',
+              `New commits were pushed to this ${repoType}. The \`integration-test\` label has been automatically removed for security.`,
+              '',
+              '**A maintainer must re-review the changes and re-add the label to trigger tests again.**',
+              '',
+              `Latest commit: ${pr.head.sha.substring(0, 7)}`
+            ].join('\n');
+
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body
+            });
+
+  skip-integration-tests-pr:
+    if: github.event_name == 'pull_request' && github.event.action != 'labeled'
+    runs-on:
+      group: databricks-protected-runner-group
+      labels: linux-ubuntu-latest
+    permissions:
+      checks: write
+    steps:
+      - name: Skip Node.js Integration Tests
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            await github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: 'Node.js Integration Tests',
+              head_sha: context.payload.pull_request.head.sha,
+              status: 'completed',
+              conclusion: 'success',
+              completed_at: new Date().toISOString(),
+              output: {
+                title: 'Skipped on PR - runs in merge queue',
+                summary: 'Node.js integration tests are skipped on ordinary PR events and run as a required gate in the merge queue. Add the `integration-test` label to preview them on this PR.'
+              }
+            });
+
+  trigger-tests-pr:
+    if: |
+      github.event_name == 'pull_request' &&
+      github.event.action == 'labeled' &&
+      contains(github.event.pull_request.labels.*.name, 'integration-test')
+    runs-on:
+      group: databricks-protected-runner-group
+      labels: linux-ubuntu-latest
+    permissions:
+      issues: write
+      pull-requests: write
+      checks: write
+    steps:
+      - name: Detect changed driver paths
+        id: changed
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
+        with:
+          script: |
+            const { data: files } = await github.rest.pulls.listFiles({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.payload.pull_request.number,
+              per_page: 100
+            });
+
+            const names = files.map((file) => file.filename);
+            const sourceChanged = names.some((file) =>
+              file.startsWith('bin/') ||
+              file.startsWith('lib/') ||
+              file.startsWith('spec/') ||
+              file.startsWith('thrift/') ||
+              file.startsWith('tests/e2e/') ||
+              file.startsWith('tests/integration/') ||
+              file === 'package.json' ||
+              file === 'package-lock.json' ||
+              file === 'tsconfig.json' ||
+              file === 'tsconfig.build.json'
+            );
+            const workflowChanged = names.some((file) => file.startsWith('.github/workflows/'));
+            const runNode = sourceChanged || workflowChanged;
+
+            if (workflowChanged) console.log('Workflow files changed - triggering Node.js integration tests');
+            if (sourceChanged) console.log('Driver source files changed - triggering Node.js integration tests');
+            core.setOutput('nodejs', runNode.toString());
+
+      - name: Generate GitHub App Token (driver-test repo)
+        id: app-token
+        if: steps.changed.outputs.nodejs == 'true'
+        uses: actions/create-github-app-token@f8d387b68d61c58ab83c6c016672934102569859 # v3.0.0
+        with:
+          app-id: ${{ secrets.INTEGRATION_TEST_APP_ID }}
+          private-key: ${{ secrets.INTEGRATION_TEST_PRIVATE_KEY }}
+          owner: databricks
+          repositories: databricks-driver-test
+
+      - name: Sanitize PR title
+        id: sanitize
+        if: steps.changed.outputs.nodejs == 'true'
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
+        with:
+          result-encoding: string
+          script: |
+            const title = context.payload.pull_request.title || '';
+            return title.replace(/[\\"\n\r\t]/g, ' ').substring(0, 200);
+
+      - name: Dispatch Node.js tests to driver-test
+        if: steps.changed.outputs.nodejs == 'true'
+        uses: peter-evans/repository-dispatch@ff45666b9427631e3450c54a1bcbee4d9ff4d7c0 # v3.0.0
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          repository: databricks/databricks-driver-test
+          event-type: nodejs-pr-test
+          client-payload: |
+            {
+              "pr_number": "${{ github.event.pull_request.number }}",
+              "commit_sha": "${{ github.event.pull_request.head.sha }}",
+              "pr_repo": "${{ github.repository }}",
+              "pr_url": "${{ github.event.pull_request.html_url }}",
+              "pr_title": "${{ steps.sanitize.outputs.result }}",
+              "pr_author": "${{ github.event.pull_request.user.login }}"
+            }
+
+      - name: Pass Node.js Integration Tests check (no driver changes)
+        if: steps.changed.outputs.nodejs != 'true'
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            await github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: 'Node.js Integration Tests',
+              head_sha: context.payload.pull_request.head.sha,
+              status: 'completed',
+              conclusion: 'success',
+              completed_at: new Date().toISOString(),
+              output: {
+                title: 'Skipped - no driver changes',
+                summary: 'No Node.js driver source files changed; skipping integration tests.'
+              }
+            });
+
+      - name: Fail check on dispatch error
+        if: failure() && steps.changed.outputs.nodejs == 'true'
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            await github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: 'Node.js Integration Tests',
+              head_sha: context.payload.pull_request.head.sha,
+              status: 'completed',
+              conclusion: 'failure',
+              completed_at: new Date().toISOString(),
+              output: {
+                title: 'Failed - error dispatching tests',
+                summary: 'An error occurred while dispatching Node.js integration tests. Check this workflow run for details.'
+              }
+            });
+
+      - name: Comment on PR
+        if: steps.changed.outputs.nodejs == 'true'
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
+        with:
+          script: |
+            await github.rest.issues.createComment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              issue_number: context.issue.number,
+              body: 'Node.js integration tests triggered. [View workflow run](https://github.com/databricks/databricks-driver-test/actions/workflows/databricks-nodejs-integration-tests.yml).'
+            });
+
+  merge-queue-nodejs:
+    if: github.event_name == 'merge_group'
+    runs-on:
+      group: databricks-protected-runner-group
+      labels: linux-ubuntu-latest
+    permissions:
+      contents: read
+      checks: write
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          fetch-depth: 0
+
+      - name: Check if driver files changed
+        id: changed
+        env:
+          BASE_SHA: ${{ github.event.merge_group.base_sha }}
+          HEAD_SHA: ${{ github.event.merge_group.head_sha }}
+        run: |
+          CHANGED=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
+          if echo "$CHANGED" | grep -qE "^(bin/|lib/|spec/|thrift/|tests/e2e/|tests/integration/|package\.json|package-lock\.json|tsconfig(\.build)?\.json|\.github/workflows/)"; then
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            echo "Driver files changed - will dispatch Node.js integration tests"
+          else
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No driver files changed - will auto-pass"
+          fi
+
+      - name: Auto-pass (no driver changes)
+        if: steps.changed.outputs.changed != 'true'
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            await github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: 'Node.js Integration Tests',
+              head_sha: '${{ github.event.merge_group.head_sha }}',
+              status: 'completed',
+              conclusion: 'success',
+              completed_at: new Date().toISOString(),
+              output: {
+                title: 'Skipped - no driver changes',
+                summary: 'No Node.js driver source files changed.'
+              }
+            });
+
+      - name: Extract PR number from merge queue ref
+        if: steps.changed.outputs.changed == 'true'
+        id: extract-pr
+        env:
+          MERGE_QUEUE_REF: ${{ github.event.merge_group.head_ref }}
+        run: |
+          if [[ "$MERGE_QUEUE_REF" =~ pr-([0-9]+) ]]; then
+            echo "pr_number=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
+          else
+            echo "Error: failed to extract PR number from merge group ref: '$MERGE_QUEUE_REF'" >&2
+            exit 1
+          fi
+
+      - name: Generate GitHub App Token (driver-test repo)
+        if: steps.changed.outputs.changed == 'true'
+        id: app-token
+        uses: actions/create-github-app-token@f8d387b68d61c58ab83c6c016672934102569859 # v3.0.0
+        with:
+          app-id: ${{ secrets.INTEGRATION_TEST_APP_ID }}
+          private-key: ${{ secrets.INTEGRATION_TEST_PRIVATE_KEY }}
+          owner: databricks
+          repositories: databricks-driver-test
+
+      - name: Dispatch Node.js tests
+        if: steps.changed.outputs.changed == 'true'
+        uses: peter-evans/repository-dispatch@ff45666b9427631e3450c54a1bcbee4d9ff4d7c0 # v3.0.0
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          repository: databricks/databricks-driver-test
+          event-type: nodejs-pr-test
+          client-payload: |
+            {
+              "pr_number": "${{ steps.extract-pr.outputs.pr_number }}",
+              "commit_sha": "${{ github.event.merge_group.head_sha }}",
+              "pr_repo": "${{ github.repository }}",
+              "pr_url": "${{ github.server_url }}/${{ github.repository }}/pull/${{ steps.extract-pr.outputs.pr_number }}",
+              "pr_title": "Merge queue validation",
+              "pr_author": "merge-queue"
+            }
+
+      - name: Fail check on dispatch error
+        if: failure() && steps.changed.outputs.changed == 'true'
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
+        with:
+          github-token: ${{ github.token }}
+          script: |
+            await github.rest.checks.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              name: 'Node.js Integration Tests',
+              head_sha: '${{ github.event.merge_group.head_sha }}',
+              status: 'completed',
+              conclusion: 'failure',
+              completed_at: new Date().toISOString(),
+              output: {
+                title: 'Failed - error dispatching tests',
+                summary: 'An error occurred while dispatching Node.js integration tests. Check this workflow run for details.'
+              }
+            });
