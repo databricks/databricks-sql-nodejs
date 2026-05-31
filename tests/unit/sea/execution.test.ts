@@ -20,6 +20,7 @@ import SeaOperationBackend from '../../../lib/sea/SeaOperationBackend';
 import {
   SeaNativeBinding,
   SeaNativeConnection,
+  SeaNativeExecuteOptions,
   SeaNativeStatement,
 } from '../../../lib/sea/SeaNativeLoader';
 import IClientContext, { ClientConfig } from '../../../lib/contracts/IClientContext';
@@ -60,15 +61,21 @@ class FakeNativeConnection implements SeaNativeConnection {
 
   public lastSql?: string;
 
+  public lastOptions?: SeaNativeExecuteOptions;
+
   public throwOnExecute: Error | null = null;
 
   public statementToReturn: FakeNativeStatement = new FakeNativeStatement();
 
-  public async executeStatement(sql: string): Promise<SeaNativeStatement> {
+  public async executeStatement(
+    sql: string,
+    options?: SeaNativeExecuteOptions,
+  ): Promise<SeaNativeStatement> {
     if (this.throwOnExecute) {
       throw this.throwOnExecute;
     }
     this.lastSql = sql;
+    this.lastOptions = options;
     return this.statementToReturn;
   }
 
@@ -355,7 +362,21 @@ describe('SeaSessionBackend', () => {
     expect(op.id).to.be.a('string').and.have.length.greaterThan(0);
   });
 
-  it('executeStatement rejects namedParameters (M1)', async () => {
+  it('executeStatement forwards ordinalParameters as napi positionalParams ({sqlType,value})', async () => {
+    const connection = new FakeNativeConnection();
+    const session = makeSession(connection);
+    await session.executeStatement('SELECT ?', { ordinalParameters: ['hello'] });
+    expect(connection.lastOptions?.positionalParams).to.deep.equal([{ sqlType: 'STRING', value: 'hello' }]);
+  });
+
+  it('executeStatement forwards queryTimeout as queryTimeoutSecs', async () => {
+    const connection = new FakeNativeConnection();
+    const session = makeSession(connection);
+    await session.executeStatement('SELECT 1', { queryTimeout: 30 });
+    expect(connection.lastOptions?.queryTimeoutSecs).to.equal(30);
+  });
+
+  it('executeStatement still rejects namedParameters (positional only on SEA)', async () => {
     const connection = new FakeNativeConnection();
     const session = makeSession(connection);
     let thrown: unknown;
@@ -365,32 +386,14 @@ describe('SeaSessionBackend', () => {
       thrown = err;
     }
     expect(thrown).to.be.instanceOf(HiveDriverError);
-    expect((thrown as Error).message).to.match(/parameters/);
+    expect((thrown as Error).message).to.match(/named parameters/);
   });
 
-  it('executeStatement rejects ordinalParameters (M1)', async () => {
+  it('executeStatement uses the no-options fast path when nothing is bound', async () => {
     const connection = new FakeNativeConnection();
     const session = makeSession(connection);
-    let thrown: unknown;
-    try {
-      await session.executeStatement('SELECT ?', { ordinalParameters: [1] });
-    } catch (err) {
-      thrown = err;
-    }
-    expect(thrown).to.be.instanceOf(HiveDriverError);
-  });
-
-  it('executeStatement rejects queryTimeout (M1)', async () => {
-    const connection = new FakeNativeConnection();
-    const session = makeSession(connection);
-    let thrown: unknown;
-    try {
-      await session.executeStatement('SELECT 1', { queryTimeout: 30 });
-    } catch (err) {
-      thrown = err;
-    }
-    expect(thrown).to.be.instanceOf(HiveDriverError);
-    expect((thrown as Error).message).to.match(/queryTimeout/);
+    await session.executeStatement('SELECT 1', {});
+    expect(connection.lastOptions).to.equal(undefined);
   });
 
   // Metadata-method happy-path and arg-routing coverage lives in

@@ -31,11 +31,12 @@ import {
 import Status from '../dto/Status';
 import InfoValue from '../dto/InfoValue';
 import HiveDriverError from '../errors/HiveDriverError';
-import { SeaNativeConnection } from './SeaNativeLoader';
+import { SeaNativeConnection, SeaNativeExecuteOptions } from './SeaNativeLoader';
 import { decodeNapiKernelError } from './SeaErrorMapping';
 import SeaOperationBackend from './SeaOperationBackend';
 import SeaTableTypeFilter from './SeaTableTypeFilter';
 import { seaServerInfoValue } from './SeaServerInfo';
+import { buildSeaPositionalParams } from './SeaPositionalParams';
 
 export interface SeaSessionBackendOptions {
   /** The opaque napi `Connection` handle returned by `openSession`. */
@@ -130,21 +131,37 @@ export default class SeaSessionBackend implements ISessionBackend {
   public async executeStatement(statement: string, options: ExecuteStatementOptions): Promise<IOperationBackend> {
     this.failIfClosed();
 
-    // M0 surfaces a clear error rather than silently dropping M1-only knobs.
-    if (options.namedParameters !== undefined || options.ordinalParameters !== undefined) {
+    // Named params aren't bindable on the SEA path yet — the kernel napi
+    // surface (ExecuteOptions.positionalParams) exposes positional only.
+    // Reject rather than silently ignore.
+    if (options.namedParameters !== undefined && Object.keys(options.namedParameters).length > 0) {
       throw new HiveDriverError(
-        'SEA executeStatement: query parameters are not supported in M0 (deferred to M1)',
-      );
-    }
-    if (options.queryTimeout !== undefined) {
-      throw new HiveDriverError(
-        'SEA executeStatement: queryTimeout is not supported in M0 (deferred to M1)',
+        'SEA executeStatement: named parameters are not supported yet (use positional `?` parameters).',
       );
     }
 
+    // Reduce positional `?` bindings to the napi `{ sqlType, value? }` inputs
+    // the kernel param codec accepts (DECIMAL → DECIMAL(p,s), NULL →
+    // value-less), reusing DBSQLParameter's stringification.
+    const positionalParams = buildSeaPositionalParams(options.ordinalParameters);
+
+    const nativeOptions: SeaNativeExecuteOptions = {};
+    if (positionalParams !== undefined) {
+      nativeOptions.positionalParams = positionalParams;
+    }
+    // JDBC `setQueryTimeout` is whole seconds; the kernel's
+    // `query_timeout_secs` (SEA wait timeout, on_wait_timeout = CANCEL) is
+    // the native equivalent. The SEA wire caps it at 50s server-side.
+    if (options.queryTimeout !== undefined) {
+      nativeOptions.queryTimeoutSecs = Number(options.queryTimeout);
+    }
+    const hasOptions = Object.keys(nativeOptions).length > 0;
+
     let nativeStatement;
     try {
-      nativeStatement = await this.connection.executeStatement(statement);
+      nativeStatement = hasOptions
+        ? await this.connection.executeStatement(statement, nativeOptions)
+        : await this.connection.executeStatement(statement);
     } catch (err) {
       throw decodeNapiKernelError(err);
     }

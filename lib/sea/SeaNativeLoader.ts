@@ -72,13 +72,39 @@ export interface SeaNativeStatement {
  * napi-rs emits `string | undefined | null` for every Rust `Option<String>`
  * parameter — both `undefined` and `null` are accepted at the call site.
  */
+/**
+ * A single positional bound parameter in the napi `{ sqlType, value? }`
+ * shape the kernel's param codec (`parse_typed_value`) accepts. `sqlType`
+ * is the Databricks SQL type name (`INT`, `STRING`, `TIMESTAMP`, … and the
+ * parenthesised `DECIMAL(p,s)`); a missing `value` is SQL NULL. Built by
+ * `SeaPositionalParams.buildSeaPositionalParams`.
+ */
+export interface SeaNativeTypedValueInput {
+  sqlType: string;
+  value?: string;
+}
+
+/**
+ * Per-statement options accepted by the napi `executeStatement`. Matches
+ * the kernel `ExecuteOptions`. All fields optional; an omitted/empty
+ * object is the no-options fast path.
+ */
+export interface SeaNativeExecuteOptions {
+  statementConf?: Record<string, string>;
+  queryTags?: Record<string, string>;
+  rowLimit?: number;
+  queryTimeoutSecs?: number;
+  positionalParams?: Array<SeaNativeTypedValueInput>;
+}
+
 export interface SeaNativeConnection {
   /**
    * Execute a SQL statement. Catalog / schema / sessionConf are
-   * session-level — set on `openSession`, applied to every statement
-   * executed on the resulting `Connection`. No per-statement options.
+   * session-level — set on `openSession`. Per-statement options (bound
+   * positional parameters, row limit, query timeout, tags) ride on the
+   * optional `options` argument.
    */
-  executeStatement(sql: string): Promise<SeaNativeStatement>;
+  executeStatement(sql: string, options?: SeaNativeExecuteOptions): Promise<SeaNativeStatement>;
 
   // ── Metadata methods ──────────────────────────────────────────────────
   /** All catalogs visible to the session. */
