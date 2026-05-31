@@ -31,52 +31,14 @@ import {
 import Status from '../dto/Status';
 import InfoValue from '../dto/InfoValue';
 import HiveDriverError from '../errors/HiveDriverError';
-import { SeaNativeConnection, SeaExecuteOptions } from './SeaNativeLoader';
-import { mapKernelErrorToJsError, KernelErrorShape } from './SeaErrorMapping';
+import { SeaNativeConnection } from './SeaNativeLoader';
+import { decodeNapiKernelError } from './SeaErrorMapping';
 import SeaOperationBackend from './SeaOperationBackend';
-
-const KERNEL_ERROR_SENTINEL = '__databricks_error__:';
-
-function rethrowKernelError(err: unknown): never {
-  if (err && typeof err === 'object' && 'message' in err) {
-    const reason = (err as { reason?: unknown }).reason;
-    if (typeof reason === 'string' && reason.startsWith(KERNEL_ERROR_SENTINEL)) {
-      try {
-        const payload = JSON.parse(reason.slice(KERNEL_ERROR_SENTINEL.length)) as KernelErrorShape;
-        throw mapKernelErrorToJsError(payload);
-      } catch (parseErr) {
-        if (parseErr !== err) {
-          throw parseErr;
-        }
-      }
-    }
-  }
-  throw err;
-}
-
-/**
- * Per-session defaults that apply to every `executeStatement` issued
- * through this backend. Captured at `SeaBackend.openSession()` time from
- * the `OpenSessionRequest` — `initialCatalog` / `initialSchema` /
- * `sessionConfig`.
- *
- * The napi binding routes these to the kernel's `statement_conf` map,
- * which the SEA wire treats as session-scoped parameters. They are
- * forwarded with every `executeStatement` call so the JDBC-style
- * "session config" semantics are preserved even though SEA's wire
- * protocol is statement-scoped.
- */
-export interface SeaSessionDefaults {
-  initialCatalog?: string;
-  initialSchema?: string;
-  sessionConfig?: Record<string, string>;
-}
 
 export interface SeaSessionBackendOptions {
   /** The opaque napi `Connection` handle returned by `openSession`. */
   connection: SeaNativeConnection;
   context: IClientContext;
-  defaults?: SeaSessionDefaults;
   /** Optional override for `id`. Defaults to a fresh UUIDv4. */
   id?: string;
 }
@@ -91,30 +53,22 @@ export interface SeaSessionBackendOptions {
  * backend continues to handle the metadata path by default (callers
  * opt into SEA via `ConnectionOptions.useSEA`).
  *
- * **Session config flow:** the SEA wire protocol is statement-scoped,
- * so "session config" semantics (Spark conf, `initialCatalog`,
- * `initialSchema`) are emulated by forwarding the same defaults with
- * every `executeStatement` call. Per-statement overrides on
- * `ExecuteStatementOptions` are reserved for M1; M0 carries only the
- * defaults captured at session-open time plus the `useCloudFetch`
- * boolean projected onto `sessionConfig.use_cloud_fetch` for the
- * kernel.
+ * **Session config flow:** catalog, schema, and session configuration are
+ * applied at native `openSession` time by `SeaBackend`. They are not
+ * per-statement options on the napi binding.
  */
 export default class SeaSessionBackend implements ISessionBackend {
   private readonly connection: SeaNativeConnection;
 
   private readonly context: IClientContext;
 
-  private readonly defaults: SeaSessionDefaults;
-
   private readonly _id: string;
 
   private closed = false;
 
-  constructor({ connection, context, defaults, id }: SeaSessionBackendOptions) {
+  constructor({ connection, context, id }: SeaSessionBackendOptions) {
     this.connection = connection;
     this.context = context;
-    this.defaults = defaults ?? {};
     this._id = id ?? uuidv4();
   }
 
@@ -127,13 +81,10 @@ export default class SeaSessionBackend implements ISessionBackend {
   }
 
   /**
-   * Execute a SQL statement through the napi binding. Merges the
-   * session-level defaults (`initialCatalog` / `initialSchema` /
-   * `sessionConfig`) with the per-call `useCloudFetch` override.
+   * Execute a SQL statement through the napi binding.
    *
-   * M0 intentionally rejects `queryTimeout`, `namedParameters`, and
-   * `ordinalParameters` with explicit deferred-to-M1 errors. The Thrift
-   * backend remains the path for consumers that need any of those today.
+   * M0 rejects options the SEA binding cannot honor yet so callers do not
+   * accidentally get a query with different semantics than the Thrift path.
    */
   public async executeStatement(statement: string, options: ExecuteStatementOptions): Promise<IOperationBackend> {
     this.failIfClosed();
@@ -149,31 +100,22 @@ export default class SeaSessionBackend implements ISessionBackend {
         'SEA executeStatement: queryTimeout is not supported in M0 (deferred to M1)',
       );
     }
-
-    // Merge session-level sessionConfig with per-statement useCloudFetch.
-    // The kernel accepts only string-valued conf values; booleans are
-    // String()'d to "true"/"false" matching the existing Thrift conf
-    // convention.
-    const sessionConfig: Record<string, string> = { ...(this.defaults.sessionConfig ?? {}) };
     if (options.useCloudFetch !== undefined) {
-      sessionConfig.use_cloud_fetch = String(options.useCloudFetch);
+      throw new HiveDriverError(
+        'SEA executeStatement: useCloudFetch is controlled by the kernel result configuration and is not a per-statement option on SEA',
+      );
     }
-
-    const executeOptions: SeaExecuteOptions = {
-      initialCatalog: this.defaults.initialCatalog,
-      initialSchema: this.defaults.initialSchema,
-      sessionConfig: Object.keys(sessionConfig).length > 0 ? sessionConfig : undefined,
-    };
 
     let nativeStatement;
     try {
-      nativeStatement = await this.connection.executeStatement(statement, executeOptions);
+      nativeStatement = await this.connection.executeStatement(statement);
     } catch (err) {
-      rethrowKernelError(err);
+      throw decodeNapiKernelError(err);
     }
     return new SeaOperationBackend({
       statement: nativeStatement!,
       context: this.context,
+      id: nativeStatement!.statementId,
     });
   }
 
@@ -220,7 +162,7 @@ export default class SeaSessionBackend implements ISessionBackend {
     try {
       await this.connection.close();
     } catch (err) {
-      rethrowKernelError(err);
+      throw decodeNapiKernelError(err);
     }
     this.closed = true;
     return Status.success();

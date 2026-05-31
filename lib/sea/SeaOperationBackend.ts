@@ -23,13 +23,15 @@ import {
 } from '../../thrift/TCLIService_types';
 import IOperationBackend from '../contracts/IOperationBackend';
 import IClientContext from '../contracts/IClientContext';
+import { OperationState, OperationStatus } from '../contracts/OperationStatus';
+import { ResultFormat, ResultMetadata } from '../contracts/ResultMetadata';
 import Status from '../dto/Status';
 import ArrowResultConverter from '../result/ArrowResultConverter';
 import ResultSlicer from '../result/ResultSlicer';
 import SeaResultsProvider from './SeaResultsProvider';
 import { arrowSchemaToThriftSchema, decodeIpcSchema } from './SeaArrowIpc';
 import { SeaNativeStatement } from './SeaNativeLoader';
-import { mapKernelErrorToJsError, KernelErrorShape } from './SeaErrorMapping';
+import { decodeNapiKernelError } from './SeaErrorMapping';
 
 /**
  * Constructor options for `SeaOperationBackend`.
@@ -44,29 +46,6 @@ export interface SeaOperationBackendOptions {
    * boundary; once it does, the JS layer can thread it through here.
    */
   id?: string;
-}
-
-/**
- * Sentinel string the napi binding uses on `Error.reason` JSON envelopes.
- * Keep in sync with `native/sea/src/error.rs` (`SENTINEL`).
- */
-const KERNEL_ERROR_SENTINEL = '__databricks_error__:';
-
-function rethrowKernelError(err: unknown): never {
-  if (err && typeof err === 'object' && 'message' in err) {
-    const reason = (err as { reason?: unknown }).reason;
-    if (typeof reason === 'string' && reason.startsWith(KERNEL_ERROR_SENTINEL)) {
-      try {
-        const payload = JSON.parse(reason.slice(KERNEL_ERROR_SENTINEL.length)) as KernelErrorShape;
-        throw mapKernelErrorToJsError(payload);
-      } catch (parseErr) {
-        if (parseErr !== err) {
-          throw parseErr;
-        }
-      }
-    }
-  }
-  throw err;
 }
 
 /**
@@ -162,19 +141,40 @@ export default class SeaOperationBackend implements IOperationBackend {
     // available; there's no pending/running state to observe here. We
     // synthesise an immediate FINISHED status for the optional callback.
     if (options?.callback) {
-      await Promise.resolve(options.callback(await this.status(Boolean(options.progress))));
+      await Promise.resolve(
+        options.callback({
+          status: { statusCode: TStatusCode.SUCCESS_STATUS },
+          operationState: this.state,
+          hasResultSet: true,
+        }),
+      );
     }
   }
 
-  public async status(_progress: boolean): Promise<TGetOperationStatusResp> {
+  public async status(_progress: boolean): Promise<OperationStatus> {
+    let state = OperationState.Succeeded;
+    if (this.state === TOperationState.CANCELED_STATE) {
+      state = OperationState.Cancelled;
+    } else if (this.state === TOperationState.CLOSED_STATE) {
+      state = OperationState.Closed;
+    }
     return {
-      status: { statusCode: TStatusCode.SUCCESS_STATUS },
-      operationState: this.state,
+      state,
       hasResultSet: true,
     };
   }
 
-  public async getResultMetadata(): Promise<TGetResultSetMetadataResp> {
+  public async getResultMetadata(): Promise<ResultMetadata> {
+    const metadata = await this.thriftResultMetadataResponse();
+    return {
+      schema: metadata.schema,
+      resultFormat: ResultFormat.ArrowBased,
+      lz4Compressed: metadata.lz4Compressed,
+      isStagingOperation: Boolean(metadata.isStagingOperation),
+    };
+  }
+
+  private async thriftResultMetadataResponse(): Promise<TGetResultSetMetadataResp> {
     if (this.metadata) {
       return this.metadata;
     }
@@ -215,7 +215,7 @@ export default class SeaOperationBackend implements IOperationBackend {
     try {
       await this.statement.cancel();
     } catch (err) {
-      rethrowKernelError(err);
+      throw decodeNapiKernelError(err);
     }
     this.state = TOperationState.CANCELED_STATE;
     return Status.success();
@@ -229,7 +229,7 @@ export default class SeaOperationBackend implements IOperationBackend {
     try {
       await this.statement.close();
     } catch (err) {
-      rethrowKernelError(err);
+      throw decodeNapiKernelError(err);
     }
     this.state = TOperationState.CLOSED_STATE;
     return Status.success();
@@ -239,7 +239,7 @@ export default class SeaOperationBackend implements IOperationBackend {
     if (this.resultSlicer) {
       return this.resultSlicer;
     }
-    const metadata = await this.getResultMetadata();
+    const metadata = await this.thriftResultMetadataResponse();
     this.resultsProvider = new SeaResultsProvider(this.statement);
     const converter = new ArrowResultConverter(this.context, this.resultsProvider, metadata);
     this.resultSlicer = new ResultSlicer(this.context, converter);
