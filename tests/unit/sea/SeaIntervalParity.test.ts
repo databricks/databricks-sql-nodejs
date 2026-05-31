@@ -85,7 +85,8 @@ class StatementStub {
     return { ipcBytes: this.batches.shift() as Buffer };
   }
 
-  public async schema(): Promise<{ ipcBytes: Buffer }> {
+  // schema() is synchronous on the merged-kernel binding.
+  public schema(): { ipcBytes: Buffer } {
     return { ipcBytes: this.schemaIpc };
   }
 

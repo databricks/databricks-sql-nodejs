@@ -69,7 +69,8 @@ interface NativeConnection {
 
 interface NativeStatement {
   fetchNextBatch(): Promise<{ ipcBytes: Buffer } | null>;
-  schema(): Promise<{ ipcBytes: Buffer }>;
+  // schema() is synchronous on the merged-kernel binding.
+  schema(): { ipcBytes: Buffer };
   cancel(): Promise<void>;
   close(): Promise<void>;
 }
