@@ -85,6 +85,17 @@ export interface SeaNativeTypedValueInput {
 }
 
 /**
+ * A single named bound parameter — a `SeaNativeTypedValueInput` plus its
+ * `:name`. Maps to the kernel's `param_named`. Built by
+ * `SeaPositionalParams.buildSeaNamedParams`.
+ */
+export interface SeaNativeNamedTypedValueInput {
+  name: string;
+  sqlType: string;
+  value?: string;
+}
+
+/**
  * Per-statement options accepted by the napi `executeStatement`. Matches
  * the kernel `ExecuteOptions`. All fields optional; an omitted/empty
  * object is the no-options fast path.
@@ -95,6 +106,7 @@ export interface SeaNativeExecuteOptions {
   rowLimit?: number;
   queryTimeoutSecs?: number;
   positionalParams?: Array<SeaNativeTypedValueInput>;
+  namedParams?: Array<SeaNativeNamedTypedValueInput>;
 }
 
 export interface SeaNativeConnection {

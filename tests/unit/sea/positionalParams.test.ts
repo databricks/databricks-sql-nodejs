@@ -13,7 +13,7 @@
 // limitations under the License.
 
 import { expect } from 'chai';
-import { buildSeaPositionalParams } from '../../../lib/sea/SeaPositionalParams';
+import { buildSeaPositionalParams, buildSeaNamedParams } from '../../../lib/sea/SeaPositionalParams';
 import { DBSQLParameter, DBSQLParameterType } from '../../../lib/DBSQLParameter';
 
 describe('SeaPositionalParams.buildSeaPositionalParams', () => {
@@ -53,5 +53,30 @@ describe('SeaPositionalParams.buildSeaPositionalParams', () => {
       { sqlType: 'DATE', value: '2024-01-15' },
       { sqlType: 'TIMESTAMP', value: '2024-01-15 10:30:00' },
     ]);
+  });
+});
+
+describe('SeaPositionalParams.buildSeaNamedParams', () => {
+  it('returns undefined for no named params', () => {
+    expect(buildSeaNamedParams(undefined)).to.equal(undefined);
+    expect(buildSeaNamedParams({})).to.equal(undefined);
+  });
+
+  it('emits {name, sqlType, value} triples, reusing the same type mapping', () => {
+    expect(
+      buildSeaNamedParams({
+        n: 42,
+        s: 'hello',
+        d: new DBSQLParameter({ type: DBSQLParameterType.DECIMAL, value: '99.99' }),
+      }),
+    ).to.deep.include.members([
+      { name: 'n', sqlType: 'INTEGER', value: '42' },
+      { name: 's', sqlType: 'STRING', value: 'hello' },
+      { name: 'd', sqlType: 'DECIMAL(4,2)', value: '99.99' },
+    ]);
+  });
+
+  it('maps a named NULL to a value-less VOID input (with the name)', () => {
+    expect(buildSeaNamedParams({ x: null })).to.deep.equal([{ name: 'x', sqlType: 'VOID' }]);
   });
 });

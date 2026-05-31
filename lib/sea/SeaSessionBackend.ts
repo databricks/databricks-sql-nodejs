@@ -36,7 +36,8 @@ import { decodeNapiKernelError } from './SeaErrorMapping';
 import SeaOperationBackend from './SeaOperationBackend';
 import SeaTableTypeFilter from './SeaTableTypeFilter';
 import { seaServerInfoValue } from './SeaServerInfo';
-import { buildSeaPositionalParams } from './SeaPositionalParams';
+import { buildSeaPositionalParams, buildSeaNamedParams } from './SeaPositionalParams';
+import ParameterError from '../errors/ParameterError';
 
 export interface SeaSessionBackendOptions {
   /** The opaque napi `Connection` handle returned by `openSession`. */
@@ -131,23 +132,22 @@ export default class SeaSessionBackend implements ISessionBackend {
   public async executeStatement(statement: string, options: ExecuteStatementOptions): Promise<IOperationBackend> {
     this.failIfClosed();
 
-    // Named params aren't bindable on the SEA path yet — the kernel napi
-    // surface (ExecuteOptions.positionalParams) exposes positional only.
-    // Reject rather than silently ignore.
-    if (options.namedParameters !== undefined && Object.keys(options.namedParameters).length > 0) {
-      throw new HiveDriverError(
-        'SEA executeStatement: named parameters are not supported yet (use positional `?` parameters).',
-      );
-    }
-
-    // Reduce positional `?` bindings to the napi `{ sqlType, value? }` inputs
-    // the kernel param codec accepts (DECIMAL → DECIMAL(p,s), NULL →
-    // value-less), reusing DBSQLParameter's stringification.
+    // Reduce `?` / `:name` bindings to the napi inputs the kernel param codec
+    // accepts (DECIMAL → DECIMAL(p,s), NULL → value-less), reusing
+    // DBSQLParameter's stringification. Positional and named are mutually
+    // exclusive at the SQL level (matches the Thrift backend).
     const positionalParams = buildSeaPositionalParams(options.ordinalParameters);
+    const namedParams = buildSeaNamedParams(options.namedParameters);
+    if (positionalParams !== undefined && namedParams !== undefined) {
+      throw new ParameterError('Driver does not support both ordinal and named parameters.');
+    }
 
     const nativeOptions: SeaNativeExecuteOptions = {};
     if (positionalParams !== undefined) {
       nativeOptions.positionalParams = positionalParams;
+    }
+    if (namedParams !== undefined) {
+      nativeOptions.namedParams = namedParams;
     }
     // JDBC `setQueryTimeout` is whole seconds; the kernel's
     // `query_timeout_secs` (SEA wait timeout, on_wait_timeout = CANCEL) is

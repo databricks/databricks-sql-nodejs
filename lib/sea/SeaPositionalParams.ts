@@ -13,8 +13,7 @@
 // limitations under the License.
 
 import { DBSQLParameter, DBSQLParameterValue } from '../DBSQLParameter';
-import ParameterError from '../errors/ParameterError';
-import { SeaNativeTypedValueInput } from './SeaNativeLoader';
+import { SeaNativeTypedValueInput, SeaNativeNamedTypedValueInput } from './SeaNativeLoader';
 
 /**
  * Derive `(precision,scale)` from a decimal value string for the SEA
@@ -64,13 +63,9 @@ function toTypedValueInput(value: DBSQLParameter | DBSQLParameterValue): SeaNati
 
 /**
  * Convert the public `ordinalParameters` option into the napi
- * `positionalParams` array. Returns `undefined` when no positional params
- * were supplied (so the caller can keep the minimal no-options call shape).
- *
- * Named parameters are not yet bindable on the SEA path — the kernel napi
- * surface (`ExecuteOptions.positionalParams`) exposes positional only — so a
- * caller passing `namedParameters` is rejected with a clear `ParameterError`
- * rather than silently ignored.
+ * `positionalParams` array (1-based `?` placeholders). Returns `undefined`
+ * when none were supplied, so the caller can keep the minimal no-options
+ * call shape.
  */
 export function buildSeaPositionalParams(
   ordinalParameters?: Array<DBSQLParameter | DBSQLParameterValue>,
@@ -79,4 +74,22 @@ export function buildSeaPositionalParams(
     return undefined;
   }
   return ordinalParameters.map(toTypedValueInput);
+}
+
+/**
+ * Convert the public `namedParameters` option (`Record<name, value>`) into
+ * the napi `namedParams` array (`:name` placeholders). Each value reuses the
+ * same `toTypedValueInput` mapping (DECIMAL → DECIMAL(p,s), NULL → VOID, …),
+ * then carries its name. Returns `undefined` when none were supplied.
+ */
+export function buildSeaNamedParams(
+  namedParameters?: Record<string, DBSQLParameter | DBSQLParameterValue>,
+): Array<SeaNativeNamedTypedValueInput> | undefined {
+  if (namedParameters === undefined || Object.keys(namedParameters).length === 0) {
+    return undefined;
+  }
+  return Object.keys(namedParameters).map((name) => ({
+    name,
+    ...toTypedValueInput(namedParameters[name]),
+  }));
 }

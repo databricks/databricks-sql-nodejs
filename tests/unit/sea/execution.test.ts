@@ -376,17 +376,25 @@ describe('SeaSessionBackend', () => {
     expect(connection.lastOptions?.queryTimeoutSecs).to.equal(30);
   });
 
-  it('executeStatement still rejects namedParameters (positional only on SEA)', async () => {
+  it('executeStatement forwards namedParameters as napi namedParams ({name,sqlType,value})', async () => {
+    const connection = new FakeNativeConnection();
+    const session = makeSession(connection);
+    await session.executeStatement('SELECT :x', { namedParameters: { x: 'hello' } });
+    expect(connection.lastOptions?.namedParams).to.deep.equal([{ name: 'x', sqlType: 'STRING', value: 'hello' }]);
+    expect(connection.lastOptions?.positionalParams).to.equal(undefined);
+  });
+
+  it('executeStatement rejects mixing ordinal and named parameters', async () => {
     const connection = new FakeNativeConnection();
     const session = makeSession(connection);
     let thrown: unknown;
     try {
-      await session.executeStatement('SELECT :x', { namedParameters: { x: 1 } });
+      await session.executeStatement('SELECT ? AND :x', { ordinalParameters: [1], namedParameters: { x: 2 } });
     } catch (err) {
       thrown = err;
     }
-    expect(thrown).to.be.instanceOf(HiveDriverError);
-    expect((thrown as Error).message).to.match(/named parameters/);
+    expect(thrown).to.be.instanceOf(Error);
+    expect((thrown as Error).message).to.match(/both ordinal and named/);
   });
 
   it('executeStatement uses the no-options fast path when nothing is bound', async () => {
