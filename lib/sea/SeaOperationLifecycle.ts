@@ -52,6 +52,7 @@ import Status from '../dto/Status';
 import { LogLevel } from '../contracts/IDBSQLLogger';
 import IClientContext from '../contracts/IClientContext';
 import { mapKernelErrorToJsError, KernelErrorShape } from './SeaErrorMapping';
+import OperationStateError, { OperationStateErrorCode } from '../errors/OperationStateError';
 
 /**
  * Minimal shape of the napi `Statement` that the lifecycle helpers
@@ -156,6 +157,7 @@ export async function seaCancel(
   try {
     await statement.cancel();
   } catch (err) {
+    state.isCancelled = false;
     rethrowKernelError(err);
   }
 
@@ -193,6 +195,7 @@ export async function seaClose(
   try {
     await statement.close();
   } catch (err) {
+    state.isClosed = false;
     rethrowKernelError(err);
   }
 
@@ -260,11 +263,9 @@ export async function seaFinished(
 
 /**
  * Pre-flight check used by fetch* methods on `SeaOperationBackend`.
- * If the operation has been cancelled or closed, throws the same
- * `HiveDriverError`-shaped failure that `DBSQLOperation.failIfClosed`
- * raises today (`lib/DBSQLOperation.ts:328-335`), via the kernel
- * error mapping so the SQLSTATE / message conventions stay
- * consistent.
+ * If the operation has been cancelled or closed, throw the same
+ * `OperationStateError` classes the facade uses. Keeping these typed lets
+ * callers branch on `OperationStateErrorCode` consistently for Thrift and SEA.
  *
  * Exported so impl-results can call it at the top of every fetch
  * call without duplicating the if/throw logic.
@@ -277,9 +278,6 @@ export function failIfNotActive(state: SeaOperationLifecycleState): void {
     });
   }
   if (state.isClosed) {
-    throw mapKernelErrorToJsError({
-      code: 'InvalidStatementHandle',
-      message: 'The operation was closed.',
-    });
+    throw new OperationStateError(OperationStateErrorCode.Closed);
   }
 }

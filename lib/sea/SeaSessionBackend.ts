@@ -116,6 +116,11 @@ export default class SeaSessionBackend implements ISessionBackend {
         'SEA executeStatement: queryTimeout is not supported in M0 (deferred to M1)',
       );
     }
+    if (options.useCloudFetch !== undefined) {
+      throw new HiveDriverError(
+        'SEA executeStatement: useCloudFetch is controlled by the kernel result configuration and is not a per-statement option on SEA',
+      );
+    }
 
     // Build the per-statement conf overlay. Today only `queryTags` is
     // surfaced on the public `ExecuteStatementOptions` (mirrors Thrift);
@@ -139,6 +144,7 @@ export default class SeaSessionBackend implements ISessionBackend {
     return new SeaOperationBackend({
       statement: nativeStatement!,
       context: this.context,
+      id: nativeStatement!.statementId,
     });
   }
 

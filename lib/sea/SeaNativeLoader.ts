@@ -70,6 +70,7 @@ export interface SeaArrowSchema {
  * `await` them without `any` casts.
  */
 export interface SeaNativeStatement {
+  readonly statementId: string;
   fetchNextBatch(): Promise<SeaArrowBatch | null>;
   schema(): Promise<SeaArrowSchema>;
   cancel(): Promise<void>;
@@ -145,6 +146,7 @@ export interface SeaNativeAsyncStatement {
  * Typed surface for the opaque napi `Connection` handle.
  */
 export interface SeaNativeConnection {
+  readonly sessionId: string;
   /**
    * Execute a SQL statement. Catalog / schema / sessionConf are
    * session-level — set on `openSession`, applied to every statement

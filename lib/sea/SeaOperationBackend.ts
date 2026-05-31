@@ -40,13 +40,14 @@ import { v4 as uuidv4 } from 'uuid';
 import {
   TGetOperationStatusResp,
   TGetResultSetMetadataResp,
-  TOperationState,
   TSparkRowSetType,
   TStatusCode,
   TTableSchema,
 } from '../../thrift/TCLIService_types';
 import IOperationBackend from '../contracts/IOperationBackend';
 import IClientContext from '../contracts/IClientContext';
+import { OperationState, OperationStatus } from '../contracts/OperationStatus';
+import { ResultFormat, ResultMetadata } from '../contracts/ResultMetadata';
 import Status from '../dto/Status';
 import ArrowResultConverter from '../result/ArrowResultConverter';
 import ResultSlicer from '../result/ResultSlicer';
@@ -108,7 +109,7 @@ export default class SeaOperationBackend implements IOperationBackend {
   constructor({ statement, context, id }: SeaOperationBackendOptions) {
     this.statement = statement;
     this.context = context;
-    this._id = id ?? uuidv4();
+    this._id = id ?? statement?.statementId ?? uuidv4();
   }
 
   public get id(): string {
@@ -148,7 +149,17 @@ export default class SeaOperationBackend implements IOperationBackend {
     return slicer.hasMore();
   }
 
-  public async getResultMetadata(): Promise<TGetResultSetMetadataResp> {
+  public async getResultMetadata(): Promise<ResultMetadata> {
+    const metadata = await this.thriftResultMetadataResponse();
+    return {
+      schema: metadata.schema,
+      resultFormat: ResultFormat.ArrowBased,
+      lz4Compressed: metadata.lz4Compressed,
+      isStagingOperation: Boolean(metadata.isStagingOperation),
+    };
+  }
+
+  private async thriftResultMetadataResponse(): Promise<TGetResultSetMetadataResp> {
     failIfNotActive(this.lifecycle);
     if (this.metadata) {
       return this.metadata;
@@ -187,28 +198,25 @@ export default class SeaOperationBackend implements IOperationBackend {
   // Status / lifecycle (owned by the sea-operation lifecycle helpers).
   // ---------------------------------------------------------------------------
 
-  public async status(_progress: boolean): Promise<TGetOperationStatusResp> {
+  public async status(_progress: boolean): Promise<OperationStatus> {
     // Synthesised — kernel only surfaces terminal-or-running statements
     // through its public API; we report CANCELED/CLOSED if the lifecycle
     // flag is set, else FINISHED. Matches the Thrift status shape so
     // facade-level callers see consistent telemetry across backends.
     if (this.lifecycle.isCancelled) {
       return {
-        status: { statusCode: TStatusCode.SUCCESS_STATUS },
-        operationState: TOperationState.CANCELED_STATE,
+        state: OperationState.Cancelled,
         hasResultSet: true,
       };
     }
     if (this.lifecycle.isClosed) {
       return {
-        status: { statusCode: TStatusCode.SUCCESS_STATUS },
-        operationState: TOperationState.CLOSED_STATE,
+        state: OperationState.Closed,
         hasResultSet: true,
       };
     }
     return {
-      status: { statusCode: TStatusCode.SUCCESS_STATUS },
-      operationState: TOperationState.FINISHED_STATE,
+      state: OperationState.Succeeded,
       hasResultSet: true,
     };
   }
@@ -245,7 +253,7 @@ export default class SeaOperationBackend implements IOperationBackend {
     if (!this.statement.fetchNextBatch) {
       throw new Error('SeaOperationBackend: statement.fetchNextBatch() is not available on this handle');
     }
-    const metadata = await this.getResultMetadata();
+    const metadata = await this.thriftResultMetadataResponse();
     // The lifecycle subset has cancel/close only; fetch methods exist on
     // the full napi Statement. Cast is safe here because we've just
     // verified `fetchNextBatch` is callable.
