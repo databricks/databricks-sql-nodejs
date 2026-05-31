@@ -29,6 +29,9 @@ function makeFakeBinding() {
   const calls: Array<{ method: string; args: unknown[] }> = [];
 
   const fakeConnection = {
+    // Mirrors the kernel `Connection.sessionId` getter; SeaSessionBackend
+    // surfaces this as its `id`.
+    sessionId: '01ef-fake-session-id',
     async executeStatement() {
       throw new Error('not used in this test');
     },
@@ -43,10 +46,17 @@ function makeFakeBinding() {
     },
     async openSession(opts: { hostName: string; httpPath: string; token: string }) {
       calls.push({ method: 'openSession', args: [opts] });
-      return fakeConnection as unknown;
+      // Cast through the binding's own member types: `SeaNativeBinding` is
+      // `typeof import('../../native/sea')`, so `openSession`'s resolved
+      // return type is the napi `Connection`. A bare `as unknown` stops
+      // short of that and fails to satisfy the annotation.
+      return fakeConnection as unknown as Awaited<ReturnType<SeaNativeBinding['openSession']>>;
     },
-    Connection: function FakeConnection() {} as unknown as Function,
-    Statement: function FakeStatement() {} as unknown as Function,
+    // `Connection`/`Statement` are exported as type aliases in
+    // SeaNativeLoader, so `typeof Connection` is illegal (TS2693); index
+    // the binding type instead to get the napi class constructor type.
+    Connection: function FakeConnection() {} as unknown as SeaNativeBinding['Connection'],
+    Statement: function FakeStatement() {} as unknown as SeaNativeBinding['Statement'],
   };
 
   return { binding, calls };
@@ -167,7 +177,8 @@ describe('SeaAuth + SeaBackend — PAT auth flow', () => {
 
       const session = await backend.openSession({});
       expect(session).to.exist;
-      expect(session.id).to.match(/^sea-session-\d+$/);
+      // id is the real server-issued session id (kernel `sessionId`).
+      expect(session.id).to.equal('01ef-fake-session-id');
 
       expect(calls).to.have.lengthOf(1);
       expect(calls[0].method).to.equal('openSession');

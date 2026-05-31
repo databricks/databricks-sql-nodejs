@@ -15,26 +15,17 @@
 import { ConnectionOptions } from '../contracts/IDBSQLClient';
 import AuthenticationError from '../errors/AuthenticationError';
 import HiveDriverError from '../errors/HiveDriverError';
+import prependSlash from '../utils/prependSlash';
+import { SeaConnectionOptions } from './SeaNativeLoader';
 
 /**
- * Shape consumed by the napi-binding's `openSession()` (see
- * `native/sea/index.d.ts`). M0 supports PAT only — `token` is required.
- *
- * Mirrors `ConnectionOptions` in the binding's `.d.ts`; declared locally
- * to avoid coupling the JS-side adapter to the auto-generated TS file.
+ * Shape consumed by the napi-binding's `openSession()`. M0 sends only the
+ * PAT triple, so we `Pick` those fields off the binding's generated
+ * `ConnectionOptions` (re-exported as `SeaConnectionOptions`) rather than
+ * re-declaring them — if the kernel renames `hostName`/`httpPath`/`token`
+ * this stops compiling instead of silently drifting.
  */
-export interface SeaNativeConnectionOptions {
-  hostName: string;
-  httpPath: string;
-  token: string;
-}
-
-function prependSlash(str: string): string {
-  if (str.length > 0 && str.charAt(0) !== '/') {
-    return `/${str}`;
-  }
-  return str;
-}
+export type SeaNativeConnectionOptions = Pick<SeaConnectionOptions, 'hostName' | 'httpPath' | 'token'>;
 
 /**
  * Validate that the user-supplied `ConnectionOptions` describe a PAT auth
@@ -72,6 +63,17 @@ export function buildSeaConnectionOptions(options: ConnectionOptions): SeaNative
   if (typeof token !== 'string' || token.length === 0) {
     throw new AuthenticationError(
       'SEA backend: a non-empty PAT must be supplied via `token` when using `authType: \'access-token\'`.',
+    );
+  }
+  // Reject whitespace / control characters in the PAT. The kernel's
+  // reqwest `HeaderValue` already hard-rejects CR/LF/NUL at build time so
+  // this isn't a header-injection fix — it's parity with the Python
+  // driver (auth_bridge.py rejects `[\x00-\x20\x7f]`) and catches
+  // copy-paste whitespace before a confusing downstream failure.
+  // eslint-disable-next-line no-control-regex
+  if (/[\x00-\x20\x7f]/.test(token)) {
+    throw new AuthenticationError(
+      'SEA backend: the PAT supplied via `token` must not contain whitespace or control characters.',
     );
   }
 

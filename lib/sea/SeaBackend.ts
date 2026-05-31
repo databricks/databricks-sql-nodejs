@@ -31,6 +31,7 @@ import {
 import Status from '../dto/Status';
 import InfoValue from '../dto/InfoValue';
 import HiveDriverError from '../errors/HiveDriverError';
+import IDBSQLLogger, { LogLevel } from '../contracts/IDBSQLLogger';
 import { getSeaNative, SeaNativeBinding } from './SeaNativeLoader';
 import { buildSeaConnectionOptions, SeaNativeConnectionOptions } from './SeaAuth';
 
@@ -44,6 +45,8 @@ const NOT_IMPLEMENTED_SESSION =
  * leak into every call site.
  */
 interface NativeConnection {
+  /** Server-issued session id (kernel `Connection.sessionId` getter). */
+  readonly sessionId: string;
   close(): Promise<void>;
 }
 
@@ -54,21 +57,22 @@ interface NativeConnection {
  * subset required to round-trip a connect-open-close cycle. Every other
  * method throws a clear "not implemented in M0" `HiveDriverError`.
  *
- * The `id` field is currently a synthetic counter-based string; the kernel
- * exposes a real session-id through a follow-on getter that
- * `sea-execution` will wire through.
+ * `id` is the server-issued session id read straight off the kernel
+ * `Connection` (its `sessionId` getter, readable even after close()), so
+ * the value logged by `DBSQLSession` correlates with kernel / server logs
+ * rather than being a process-local synthetic counter.
  */
 export class SeaSessionBackend implements ISessionBackend {
-  private static seq = 0;
-
   public readonly id: string;
 
   private readonly connection: NativeConnection;
 
-  constructor(connection: NativeConnection) {
+  private readonly logger?: IDBSQLLogger;
+
+  constructor(connection: NativeConnection, logger?: IDBSQLLogger) {
     this.connection = connection;
-    SeaSessionBackend.seq += 1;
-    this.id = `sea-session-${SeaSessionBackend.seq}`;
+    this.logger = logger;
+    this.id = connection.sessionId;
   }
 
   /* eslint-disable @typescript-eslint/no-unused-vars */
@@ -121,6 +125,7 @@ export class SeaSessionBackend implements ISessionBackend {
   /* eslint-enable @typescript-eslint/no-unused-vars */
 
   public async close(): Promise<Status> {
+    this.logger?.log(LogLevel.debug, `SEA session closing with id: ${this.id}`);
     await this.connection.close();
     return Status.success();
   }
@@ -140,16 +145,36 @@ export class SeaSessionBackend implements ISessionBackend {
 export default class SeaBackend implements IBackend {
   private nativeOptions?: SeaNativeConnectionOptions;
 
-  private readonly native: SeaNativeBinding;
+  private readonly injectedNative?: SeaNativeBinding;
 
-  constructor(native: SeaNativeBinding = getSeaNative()) {
-    this.native = native;
+  private cachedNative?: SeaNativeBinding;
+
+  private readonly logger?: IDBSQLLogger;
+
+  // `native` is injectable (tests pass a fake); production leaves it
+  // undefined and the binding is resolved lazily on first use so that
+  // constructing a SeaBackend never throws on a platform without the
+  // optional `.node` — the clearer auth/option validation in connect()
+  // runs first.
+  constructor(native?: SeaNativeBinding, logger?: IDBSQLLogger) {
+    this.injectedNative = native;
+    this.logger = logger;
+  }
+
+  private get native(): SeaNativeBinding {
+    if (!this.cachedNative) {
+      this.cachedNative = this.injectedNative ?? getSeaNative();
+    }
+    return this.cachedNative;
   }
 
   public async connect(options: ConnectionOptions): Promise<void> {
-    // Validate PAT auth + capture the napi-binding option shape.
-    // Any non-PAT mode (or a missing token) throws here, before we ever
-    // touch the native binding.
+    // Validate PAT auth + capture the napi-binding option shape. Any
+    // non-PAT mode (or a missing token) throws here, before we ever touch
+    // the native binding. NOTE: unlike Thrift, this performs no network
+    // round-trip — the session is opened lazily in openSession(), so a
+    // resolved connect() does not by itself prove the endpoint is
+    // reachable or the credential is valid.
     this.nativeOptions = buildSeaConnectionOptions(options);
   }
 
@@ -159,7 +184,9 @@ export default class SeaBackend implements IBackend {
       throw new HiveDriverError('SeaBackend: connect() must be called before openSession().');
     }
     const connection = (await this.native.openSession(this.nativeOptions)) as NativeConnection;
-    return new SeaSessionBackend(connection);
+    const session = new SeaSessionBackend(connection, this.logger);
+    this.logger?.log(LogLevel.info, `SEA session opened with id: ${session.id}`);
+    return session;
   }
 
   public async close(): Promise<void> {

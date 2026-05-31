@@ -14,6 +14,8 @@
 
 import { expect } from 'chai';
 import { DBSQLClient } from '../../../lib';
+import { ConnectionOptions } from '../../../lib/contracts/IDBSQLClient';
+import { InternalConnectionOptions } from '../../../lib/contracts/InternalConnectionOptions';
 
 /**
  * sea-auth M0 end-to-end:
@@ -58,8 +60,11 @@ describe('sea-auth e2e — PAT through DBSQLClient ↔ SeaBackend ↔ napi bindi
       host: host as string,
       path: path as string,
       token: token as string,
+      // `useSEA` is an internal opt-in (InternalConnectionOptions), not a
+      // public ConnectionOptions field — cast exactly as DBSQLClient.connect
+      // does internally so the literal passes excess-property checking.
       useSEA: true,
-    });
+    } as ConnectionOptions & InternalConnectionOptions);
     expect(connected).to.equal(client);
 
     const session = await client.openSession();

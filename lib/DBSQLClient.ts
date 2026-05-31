@@ -32,13 +32,7 @@ import IDBSQLLogger, { LogLevel } from './contracts/IDBSQLLogger';
 import DBSQLLogger from './DBSQLLogger';
 import CloseableCollection from './utils/CloseableCollection';
 import IConnectionProvider from './connection/contracts/IConnectionProvider';
-
-function prependSlash(str: string): string {
-  if (str.length > 0 && str.charAt(0) !== '/') {
-    return `/${str}`;
-  }
-  return str;
-}
+import prependSlash from './utils/prependSlash';
 
 export type ThriftLibrary = Pick<typeof thrift, 'createClient'>;
 
@@ -234,20 +228,26 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
       this.config.userAgentEntry = options.userAgentEntry;
     }
 
-    this.authProvider = this.createAuthProvider(options, authProvider);
-
-    this.connectionProvider = this.createConnectionProvider(options);
-
     // M0: `useSEA` is consumed via a non-exported internal-options cast so it
     // doesn't ship in the public `.d.ts`. Mirrors Python's `kwargs.get("use_sea")`
     // pattern (see databricks-sql-python/src/databricks/sql/session.py).
     const internalOptions = options as ConnectionOptions & InternalConnectionOptions;
-    this.backend = internalOptions.useSEA
-      ? new SeaBackend()
-      : new ThriftBackend({
-          context: this,
-          onConnectionEvent: (event, payload) => this.forwardConnectionEvent(event, payload),
-        });
+
+    if (internalOptions.useSEA) {
+      // The SEA backend authenticates inside the native binding; the
+      // Thrift auth/connection providers are never read on this path, so
+      // we don't build them (avoids validating the PAT twice and
+      // constructing a throwaway OAuth provider for an OAuth+useSEA call).
+      this.logger.log(LogLevel.info, 'Connecting via the SEA (native) backend');
+      this.backend = new SeaBackend(undefined, this.logger);
+    } else {
+      this.authProvider = this.createAuthProvider(options, authProvider);
+      this.connectionProvider = this.createConnectionProvider(options);
+      this.backend = new ThriftBackend({
+        context: this,
+        onConnectionEvent: (event, payload) => this.forwardConnectionEvent(event, payload),
+      });
+    }
 
     await this.backend.connect(options);
 
