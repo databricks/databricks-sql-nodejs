@@ -51,6 +51,8 @@ export interface ErrorWithSqlState extends Error {
   sqlState?: string;
 }
 
+const KERNEL_ERROR_SENTINEL = '__databricks_error__:';
+
 /**
  * Attach the kernel's SQLSTATE to the JS error object via the `sqlState` property.
  * The driver has no pre-existing `sqlState` convention (no other error class
@@ -138,4 +140,33 @@ export function mapKernelErrorToJsError(kErr: KernelErrorShape): ErrorWithSqlSta
   }
 
   return attachSqlState(error, sqlstate);
+}
+
+/**
+ * Decode a napi-rs error that may contain the kernel's sentinel-prefixed JSON
+ * envelope. Older generated bindings used `reason`; newer napi-rs errors put
+ * the same envelope in `message`, so check both. Malformed envelopes preserve
+ * the original error rather than replacing it with a JSON parse failure.
+ */
+export function decodeNapiKernelError(err: unknown): Error {
+  if (err instanceof Error) {
+    const candidates = [(err as { reason?: unknown }).reason, err.message];
+    for (const candidate of candidates) {
+      if (typeof candidate !== 'string') {
+        continue;
+      }
+      const idx = candidate.indexOf(KERNEL_ERROR_SENTINEL);
+      if (idx < 0) {
+        continue;
+      }
+      try {
+        const payload = JSON.parse(candidate.slice(idx + KERNEL_ERROR_SENTINEL.length)) as KernelErrorShape;
+        return mapKernelErrorToJsError(payload);
+      } catch {
+        return err;
+      }
+    }
+    return err;
+  }
+  return new HiveDriverError(String(err));
 }

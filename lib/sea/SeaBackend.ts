@@ -17,37 +17,10 @@ import ISessionBackend from '../contracts/ISessionBackend';
 import IClientContext from '../contracts/IClientContext';
 import { ConnectionOptions, OpenSessionRequest } from '../contracts/IDBSQLClient';
 import HiveDriverError from '../errors/HiveDriverError';
-import {
-  getSeaNative,
-  SeaNativeBinding,
-  SeaNativeConnection,
-} from './SeaNativeLoader';
-import { mapKernelErrorToJsError, KernelErrorShape } from './SeaErrorMapping';
+import { getSeaNative, SeaNativeBinding, SeaNativeConnection } from './SeaNativeLoader';
+import { decodeNapiKernelError } from './SeaErrorMapping';
 import { buildSeaConnectionOptions, SeaNativeConnectionOptions } from './SeaAuth';
 import SeaSessionBackend from './SeaSessionBackend';
-
-/**
- * Sentinel string the napi binding uses on `Error.reason` JSON envelopes.
- * Keep in sync with `native/sea/src/error.rs` (`SENTINEL`).
- */
-const KERNEL_ERROR_SENTINEL = '__databricks_error__:';
-
-function rethrowKernelError(err: unknown): never {
-  if (err && typeof err === 'object' && 'message' in err) {
-    const reason = (err as { reason?: unknown }).reason;
-    if (typeof reason === 'string' && reason.startsWith(KERNEL_ERROR_SENTINEL)) {
-      try {
-        const payload = JSON.parse(reason.slice(KERNEL_ERROR_SENTINEL.length)) as KernelErrorShape;
-        throw mapKernelErrorToJsError(payload);
-      } catch (parseErr) {
-        if (parseErr !== err) {
-          throw parseErr;
-        }
-      }
-    }
-  }
-  throw err;
-}
 
 export interface SeaBackendOptions {
   context: IClientContext;
@@ -103,28 +76,28 @@ export default class SeaBackend implements IBackend {
       throw new HiveDriverError('SeaBackend: not connected. Call connect() first.');
     }
 
-    let nativeConnection: SeaNativeConnection;
-    try {
-      nativeConnection = (await this.binding.openSession(this.nativeOptions)) as SeaNativeConnection;
-    } catch (err) {
-      rethrowKernelError(err);
+    const sessionOptions: SeaNativeConnectionOptions = { ...this.nativeOptions };
+    if (request.initialCatalog !== undefined) {
+      sessionOptions.catalog = request.initialCatalog;
+    }
+    if (request.initialSchema !== undefined) {
+      sessionOptions.schema = request.initialSchema;
+    }
+    if (request.configuration !== undefined) {
+      sessionOptions.sessionConf = { ...request.configuration };
     }
 
-    // Merge `request.configuration` (the existing public field for Spark
-    // conf) with any backend-specific session config. The SEA wire
-    // protocol applies these per-statement, but we capture them at
-    // session-open time and forward with every executeStatement to
-    // preserve session-config semantics.
-    const sessionConfig = request.configuration ? { ...request.configuration } : undefined;
+    let nativeConnection: SeaNativeConnection;
+    try {
+      nativeConnection = (await this.binding.openSession(sessionOptions)) as SeaNativeConnection;
+    } catch (err) {
+      throw decodeNapiKernelError(err);
+    }
 
     return new SeaSessionBackend({
       connection: nativeConnection!,
       context: this.context,
-      defaults: {
-        initialCatalog: request.initialCatalog,
-        initialSchema: request.initialSchema,
-        sessionConfig,
-      },
+      id: nativeConnection!.sessionId,
     });
   }
 

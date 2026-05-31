@@ -13,12 +13,14 @@
 // limitations under the License.
 
 import { v4 as uuidv4 } from 'uuid';
-import { TGetOperationStatusResp, TGetResultSetMetadataResp, TOperationState } from '../../thrift/TCLIService_types';
+import { TGetOperationStatusResp } from '../../thrift/TCLIService_types';
 import IOperationBackend from '../contracts/IOperationBackend';
 import IClientContext from '../contracts/IClientContext';
+import { OperationState, OperationStatus } from '../contracts/OperationStatus';
+import { ResultMetadata } from '../contracts/ResultMetadata';
 import Status from '../dto/Status';
 import { SeaNativeStatement } from './SeaNativeLoader';
-import { mapKernelErrorToJsError, KernelErrorShape } from './SeaErrorMapping';
+import { decodeNapiKernelError } from './SeaErrorMapping';
 import HiveDriverError from '../errors/HiveDriverError';
 
 /**
@@ -45,39 +47,6 @@ export interface SeaOperationBackendOptions {
    * surfaces it.
    */
   id?: string;
-}
-
-/**
- * Sentinel string the napi binding uses on `Error.reason` JSON envelopes.
- * Keep in sync with `native/sea/src/error.rs` (`SENTINEL`).
- */
-const KERNEL_ERROR_SENTINEL = '__databricks_error__:';
-
-/**
- * Inspect a thrown error from the napi binding. If it carries the
- * sentinel-prefixed JSON envelope, parse and re-throw as the mapped JS
- * driver error class; otherwise re-throw verbatim.
- *
- * Used by every method body that crosses the napi boundary so that
- * kernel `ErrorCode` + SQLSTATE are preserved on the JS error surface.
- */
-function rethrowKernelError(err: unknown): never {
-  if (err && typeof err === 'object' && 'message' in err) {
-    const reason = (err as { reason?: unknown }).reason;
-    if (typeof reason === 'string' && reason.startsWith(KERNEL_ERROR_SENTINEL)) {
-      try {
-        const payload = JSON.parse(reason.slice(KERNEL_ERROR_SENTINEL.length)) as KernelErrorShape;
-        throw mapKernelErrorToJsError(payload);
-      } catch (parseErr) {
-        // If JSON.parse failed, fall through to the raw error. The
-        // `parseErr` itself is the mapped error if we successfully threw above.
-        if (parseErr !== err) {
-          throw parseErr;
-        }
-      }
-    }
-  }
-  throw err;
 }
 
 /**
@@ -173,14 +142,14 @@ export default class SeaOperationBackend implements IOperationBackend {
    * real kernel `StatementStatus` mapping.
    */
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  public async status(_progress: boolean): Promise<TGetOperationStatusResp> {
+  public async status(_progress: boolean): Promise<OperationStatus> {
     return {
-      status: { statusCode: 0 },
-      operationState: TOperationState.FINISHED_STATE,
-    } as TGetOperationStatusResp;
+      state: OperationState.Succeeded,
+      hasResultSet: true,
+    };
   }
 
-  public async getResultMetadata(): Promise<TGetResultSetMetadataResp> {
+  public async getResultMetadata(): Promise<ResultMetadata> {
     throw new HiveDriverError(
       'SeaOperationBackend.getResultMetadata: not implemented yet (lands in sea-results feature)',
     );
@@ -193,7 +162,7 @@ export default class SeaOperationBackend implements IOperationBackend {
     try {
       await this.statement.cancel();
     } catch (err) {
-      rethrowKernelError(err);
+      throw decodeNapiKernelError(err);
     }
     this.cancelled = true;
     return Status.success();
@@ -206,7 +175,7 @@ export default class SeaOperationBackend implements IOperationBackend {
     try {
       await this.statement.close();
     } catch (err) {
-      rethrowKernelError(err);
+      throw decodeNapiKernelError(err);
     }
     this.closed = true;
     return Status.success();
