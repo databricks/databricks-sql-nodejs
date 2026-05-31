@@ -506,6 +506,33 @@ describe('SeaSessionBackend', () => {
     expect(connection.lastListSchemasArgs).to.deep.equal([undefined, '%']);
   });
 
+  it('executeStatement forwards rowLimit as napi rowLimit', async () => {
+    const connection = new FakeNativeConnection();
+    const session = makeSession(connection);
+    await session.executeStatement('SELECT 1', { rowLimit: 500 });
+    expect(connection.lastOptions?.rowLimit).to.equal(500);
+  });
+
+  it('executeStatement forwards statementConf verbatim as napi statementConf', async () => {
+    const connection = new FakeNativeConnection();
+    const session = makeSession(connection);
+    await session.executeStatement('SELECT 1', { statementConf: { 'spark.sql.ansi.enabled': 'true' } });
+    expect(connection.lastOptions?.statementConf).to.deep.equal({ 'spark.sql.ansi.enabled': 'true' });
+  });
+
+  it('executeStatement merges queryTags into a provided statementConf', async () => {
+    const connection = new FakeNativeConnection();
+    const session = makeSession(connection);
+    await session.executeStatement('SELECT 1', {
+      statementConf: { 'spark.sql.ansi.enabled': 'true' },
+      queryTags: { team: 'data' },
+    });
+    expect(connection.lastOptions?.statementConf).to.deep.equal({
+      'spark.sql.ansi.enabled': 'true',
+      query_tags: 'team:data',
+    });
+  });
+
   it('executeStatement uses the no-options fast path when nothing is bound', async () => {
     const connection = new FakeNativeConnection();
     const session = makeSession(connection);

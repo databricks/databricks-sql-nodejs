@@ -27,6 +27,20 @@ export type ExecuteStatementOptions = {
    * These tags apply only to this statement and do not persist across queries.
    */
   queryTags?: Record<string, string | null | undefined>;
+  /**
+   * Server-side cap on the number of rows the statement returns (SEA path only).
+   * Maps to the kernel's `row_limit` / SEA `row_limit`. The Thrift backend has no
+   * execute-time server cap, so this is a no-op there; use `maxRows` for the
+   * client-side per-fetch chunk size on both backends.
+   */
+  rowLimit?: number;
+  /**
+   * Arbitrary per-statement configuration overlay (SEA path only). Maps to the
+   * kernel's `statement_conf` / SEA `statement_conf`, the same mechanism the
+   * Thrift backend exposes as `confOverlay`. `queryTags` are merged into this map
+   * under the `query_tags` key, mirroring the Thrift wire shape.
+   */
+  statementConf?: Record<string, string>;
 };
 
 export type TypeInfoRequest = {

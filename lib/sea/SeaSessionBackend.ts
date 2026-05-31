@@ -117,19 +117,17 @@ export default class SeaSessionBackend implements ISessionBackend {
   /**
    * Execute a SQL statement through the napi binding.
    *
-   * Catalog / schema / sessionConf were applied at session open, so
-   * there are no per-statement options to thread through.
+   * Catalog / schema / sessionConf were applied at session open. The
+   * per-statement options threaded here mirror the Thrift backend:
+   * `ordinalParameters` / `namedParameters` (bound params), `queryTimeout`
+   * (server wait timeout), `queryTags` (serialised into the conf overlay's
+   * `query_tags` key), `statementConf` (arbitrary conf overlay), and
+   * `rowLimit` (SEA-only server-side row cap).
    *
-   * M0 intentionally rejects `queryTimeout`, `namedParameters`, and
-   * `ordinalParameters` with explicit deferred-to-M1 errors. `useCloudFetch`
-   * is a no-op on the SEA path — the kernel hardcodes the SEA
-   * `disposition` to `INLINE_OR_EXTERNAL_LINKS`, and per-statement
-   * conf overrides have no reader on the kernel; cloud-fetch behaviour
-   * is governed entirely by the kernel's `ResultConfig` (M1 binding
-   * surface).
-   *
-   * The Thrift backend remains the path for consumers that need any
-   * of those today.
+   * `useCloudFetch` is a no-op on the SEA path — the kernel hardcodes the
+   * SEA `disposition` to `INLINE_OR_EXTERNAL_LINKS`; cloud-fetch behaviour
+   * is governed by the kernel's `ResultConfig`. `maxRows` is the
+   * client-side per-fetch chunk size, applied by the facade, not here.
    */
   public async executeStatement(statement: string, options: ExecuteStatementOptions): Promise<IOperationBackend> {
     this.failIfClosed();
@@ -175,15 +173,26 @@ export default class SeaSessionBackend implements ISessionBackend {
     if (options.queryTimeout !== undefined) {
       nativeOptions.queryTimeoutSecs = Number(options.queryTimeout);
     }
-    // Query tags: serialise JS-side into the conf overlay's `query_tags` key
-    // (the same wire shape the Thrift backend produces via `serializeQueryTags`
-    // → `confOverlay`). Not forwarded via the napi `queryTags` field: that's a
-    // `HashMap<String,String>` which can't represent a null-valued tag, and the
-    // kernel rejects setting both the field and a `query_tags` conf key. A
-    // null-valued tag therefore round-trips as a key-only segment.
+    // Server-side row cap (SEA `row_limit`). SEA-only — the Thrift backend has
+    // no execute-time server cap, so there is no parity obligation here.
+    if (options.rowLimit !== undefined) {
+      nativeOptions.rowLimit = Number(options.rowLimit);
+    }
+    // Per-statement conf overlay (`statement_conf`) plus query tags. Tags are
+    // serialised JS-side into the `query_tags` key (the same wire shape the
+    // Thrift backend produces via `serializeQueryTags` → `confOverlay`), rather
+    // than via the napi `queryTags` field: napi's `HashMap<String,String>`
+    // can't represent a null-valued tag, and the kernel rejects setting both
+    // the `queryTags` field and a `query_tags` conf key.
     const serializedQueryTags = serializeQueryTags(options.queryTags);
-    if (serializedQueryTags !== undefined) {
-      nativeOptions.statementConf = { query_tags: serializedQueryTags };
+    if (options.statementConf !== undefined || serializedQueryTags !== undefined) {
+      const statementConf: Record<string, string> = { ...(options.statementConf ?? {}) };
+      if (serializedQueryTags !== undefined) {
+        statementConf.query_tags = serializedQueryTags;
+      }
+      if (Object.keys(statementConf).length > 0) {
+        nativeOptions.statementConf = statementConf;
+      }
     }
     const hasOptions = Object.keys(nativeOptions).length > 0;
 
