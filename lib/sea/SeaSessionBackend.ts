@@ -39,6 +39,7 @@ import { seaServerInfoValue } from './SeaServerInfo';
 import { buildSeaPositionalParams, buildSeaNamedParams } from './SeaPositionalParams';
 import ParameterError from '../errors/ParameterError';
 import { emptyToUndefined, countParameterMarkers } from './SeaInputValidation';
+import { serializeQueryTags } from '../utils';
 
 export interface SeaSessionBackendOptions {
   /** The opaque napi `Connection` handle returned by `openSession`. */
@@ -167,6 +168,16 @@ export default class SeaSessionBackend implements ISessionBackend {
     // the native equivalent. The SEA wire caps it at 50s server-side.
     if (options.queryTimeout !== undefined) {
       nativeOptions.queryTimeoutSecs = Number(options.queryTimeout);
+    }
+    // Query tags: serialise JS-side into the conf overlay's `query_tags` key
+    // (the same wire shape the Thrift backend produces via `serializeQueryTags`
+    // → `confOverlay`). Not forwarded via the napi `queryTags` field: that's a
+    // `HashMap<String,String>` which can't represent a null-valued tag, and the
+    // kernel rejects setting both the field and a `query_tags` conf key. A
+    // null-valued tag therefore round-trips as a key-only segment.
+    const serializedQueryTags = serializeQueryTags(options.queryTags);
+    if (serializedQueryTags !== undefined) {
+      nativeOptions.statementConf = { query_tags: serializedQueryTags };
     }
     const hasOptions = Object.keys(nativeOptions).length > 0;
 

@@ -379,6 +379,23 @@ describe('SeaSessionBackend', () => {
     expect(connection.lastOptions?.queryTimeoutSecs).to.equal(30);
   });
 
+  it('executeStatement serialises queryTags into statementConf.query_tags (Thrift wire shape)', async () => {
+    const connection = new FakeNativeConnection();
+    const session = makeSession(connection);
+    await session.executeStatement('SELECT 1', { queryTags: { team: 'data', env: 'prod' } });
+    expect(connection.lastOptions?.statementConf?.query_tags).to.equal('team:data,env:prod');
+    // Must NOT use the napi `queryTags` field (can't carry null tags; kernel
+    // rejects both field + conf key).
+    expect(connection.lastOptions?.queryTags).to.equal(undefined);
+  });
+
+  it('executeStatement carries a null-valued queryTag as a key-only segment', async () => {
+    const connection = new FakeNativeConnection();
+    const session = makeSession(connection);
+    await session.executeStatement('SELECT 1', { queryTags: { audited: null } });
+    expect(connection.lastOptions?.statementConf?.query_tags).to.equal('audited');
+  });
+
   it('executeStatement forwards namedParameters as napi namedParams ({name,sqlType,value})', async () => {
     const connection = new FakeNativeConnection();
     const session = makeSession(connection);
