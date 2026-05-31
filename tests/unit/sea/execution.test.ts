@@ -22,6 +22,9 @@ import {
   SeaNativeConnection,
   SeaNativeExecuteOptions,
   SeaNativeStatement,
+  SeaNativeAsyncStatement,
+  SeaNativeAsyncResultHandle,
+  SeaNativeStatementStatus,
 } from '../../../lib/sea/SeaNativeLoader';
 import IClientContext, { ClientConfig } from '../../../lib/contracts/IClientContext';
 import IDBSQLLogger, { LogLevel } from '../../../lib/contracts/IDBSQLLogger';
@@ -56,6 +59,44 @@ class FakeNativeStatement implements SeaNativeStatement {
   }
 }
 
+class FakeNativeAsyncResultHandle implements SeaNativeAsyncResultHandle {
+  public readonly statementId = 'fake-statement-id';
+
+  public async fetchNextBatch() {
+    return null;
+  }
+
+  public async schema() {
+    return { ipcBytes: Buffer.alloc(0) };
+  }
+}
+
+class FakeNativeAsyncStatement implements SeaNativeAsyncStatement {
+  public readonly statementId = 'fake-statement-id';
+
+  public cancelled = false;
+
+  public closed = false;
+
+  public statusToReturn: SeaNativeStatementStatus = 'Succeeded';
+
+  public async status() {
+    return this.statusToReturn;
+  }
+
+  public async awaitResult() {
+    return new FakeNativeAsyncResultHandle();
+  }
+
+  public async cancel() {
+    this.cancelled = true;
+  }
+
+  public async close() {
+    this.closed = true;
+  }
+}
+
 class FakeNativeConnection implements SeaNativeConnection {
   public closed = false;
 
@@ -67,6 +108,8 @@ class FakeNativeConnection implements SeaNativeConnection {
 
   public statementToReturn: FakeNativeStatement = new FakeNativeStatement();
 
+  public asyncStatementToReturn: FakeNativeAsyncStatement = new FakeNativeAsyncStatement();
+
   public async executeStatement(
     sql: string,
     options?: SeaNativeExecuteOptions,
@@ -77,6 +120,21 @@ class FakeNativeConnection implements SeaNativeConnection {
     this.lastSql = sql;
     this.lastOptions = options;
     return this.statementToReturn;
+  }
+
+  // Async-execution path used by `executeStatement` on the SEA backend
+  // (kernel submit + poll, mirroring Thrift `runAsync`). Records the same
+  // `lastSql` / `lastOptions` so option-forwarding assertions are shared.
+  public async submitStatement(
+    sql: string,
+    options?: SeaNativeExecuteOptions,
+  ): Promise<SeaNativeAsyncStatement> {
+    if (this.throwOnExecute) {
+      throw this.throwOnExecute;
+    }
+    this.lastSql = sql;
+    this.lastOptions = options;
+    return this.asyncStatementToReturn;
   }
 
   // Metadata stubs — return a fresh statement so callers can test wrapping.

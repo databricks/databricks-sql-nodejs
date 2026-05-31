@@ -181,16 +181,24 @@ export default class SeaSessionBackend implements ISessionBackend {
     }
     const hasOptions = Object.keys(nativeOptions).length > 0;
 
-    let nativeStatement;
+    // Submit asynchronously (kernel `wait_timeout=0s`): the server
+    // returns a pending `AsyncStatement` handle immediately while the
+    // query runs, exactly like the Thrift backend's always-async
+    // (`runAsync: true`) path. `SeaOperationBackend` polls `status()`
+    // to terminal in `waitUntilReady()` and materialises results via
+    // `awaitResult()`, so a long-running query can be cancelled
+    // mid-flight and `status()` reports real Pending/Running/Succeeded
+    // states — parity the blocking `executeStatement()` path can't offer.
+    let asyncStatement;
     try {
-      nativeStatement = hasOptions
-        ? await this.connection.executeStatement(statement, nativeOptions)
-        : await this.connection.executeStatement(statement);
+      asyncStatement = hasOptions
+        ? await this.connection.submitStatement(statement, nativeOptions)
+        : await this.connection.submitStatement(statement);
     } catch (err) {
       throw decodeNapiKernelError(err);
     }
     return new SeaOperationBackend({
-      statement: nativeStatement,
+      asyncStatement,
       context: this.context,
     });
   }

@@ -38,6 +38,8 @@ import {
 
 import SeaOperationBackend from '../../../lib/sea/SeaOperationBackend';
 import ClientContextStub from '../.stubs/ClientContextStub';
+import { TOperationState } from '../../../thrift/TCLIService_types';
+import { SeaNativeStatementStatus } from '../../../lib/sea/SeaNativeLoader';
 
 // Minimal stub of the napi `Statement` surface that emits a precomputed
 // Arrow IPC payload per `fetchNextBatch()` call. Used to feed
@@ -265,5 +267,176 @@ describe('SeaOperationBackend — M0 datatype round-trip via napi → ArrowResul
     expect(stub.cancelled).to.equal(true);
     await backend.close();
     expect(stub.closed).to.equal(true);
+  });
+});
+
+// Result-fetch surface returned by `AsyncStatement.awaitResult()`.
+class AsyncResultHandleStub {
+  public readonly statementId = 'stmt-async-1';
+
+  private readonly schemaIpc: Buffer;
+
+  private readonly batches: Buffer[];
+
+  constructor(schemaIpc: Buffer, batches: Buffer[]) {
+    this.schemaIpc = schemaIpc;
+    this.batches = [...batches];
+  }
+
+  public async fetchNextBatch(): Promise<{ ipcBytes: Buffer } | null> {
+    if (this.batches.length === 0) return null;
+    return { ipcBytes: this.batches.shift() as Buffer };
+  }
+
+  public async schema(): Promise<{ ipcBytes: Buffer }> {
+    return { ipcBytes: this.schemaIpc };
+  }
+}
+
+// Pending `AsyncStatement` whose `status()` walks a scripted sequence,
+// mirroring the kernel submit+poll path (server returns Pending/Running
+// before Succeeded). `awaitResult()` yields the result handle once the
+// scripted statuses are exhausted (or immediately for terminal states).
+class AsyncStatementStub {
+  public readonly statementId = 'stmt-async-1';
+
+  public statusCalls = 0;
+
+  public cancelled = false;
+
+  public closed = false;
+
+  public awaitResultCalls = 0;
+
+  private readonly statuses: SeaNativeStatementStatus[];
+
+  private readonly resultHandle: AsyncResultHandleStub | null;
+
+  private readonly awaitResultError: Error | null;
+
+  constructor(
+    statuses: SeaNativeStatementStatus[],
+    resultHandle: AsyncResultHandleStub | null,
+    awaitResultError: Error | null = null,
+  ) {
+    this.statuses = statuses;
+    this.resultHandle = resultHandle;
+    this.awaitResultError = awaitResultError;
+  }
+
+  public async status(): Promise<SeaNativeStatementStatus> {
+    this.statusCalls += 1;
+    const idx = Math.min(this.statusCalls - 1, this.statuses.length - 1);
+    return this.statuses[idx];
+  }
+
+  public async awaitResult(): Promise<AsyncResultHandleStub> {
+    this.awaitResultCalls += 1;
+    if (this.awaitResultError) {
+      throw this.awaitResultError;
+    }
+    return this.resultHandle as AsyncResultHandleStub;
+  }
+
+  public async cancel(): Promise<void> {
+    this.cancelled = true;
+  }
+
+  public async close(): Promise<void> {
+    this.closed = true;
+  }
+}
+
+describe('SeaOperationBackend — async submit+poll lifecycle (Thrift runAsync parity)', () => {
+  const schema = new Schema([withTypeName(new Field('x', new Int32(), true), 'INT')]);
+  const schemaIpc = ipcSchemaOnly(schema);
+
+  it('id defaults to the server-issued statementId', () => {
+    const stmt = new AsyncStatementStub(['Succeeded'], new AsyncResultHandleStub(schemaIpc, []));
+    const backend = new SeaOperationBackend({
+      asyncStatement: stmt as any,
+      context: new ClientContextStub(),
+    });
+    expect(backend.id).to.equal('stmt-async-1');
+  });
+
+  it('status() reports the real server state (RUNNING before terminal)', async () => {
+    const stmt = new AsyncStatementStub(['Running'], new AsyncResultHandleStub(schemaIpc, []));
+    const backend = new SeaOperationBackend({
+      asyncStatement: stmt as any,
+      context: new ClientContextStub(),
+    });
+    const resp = await backend.status(false);
+    expect(resp.operationState).to.equal(TOperationState.RUNNING_STATE);
+  });
+
+  it('waitUntilReady() polls status() to terminal, firing the callback each tick', async () => {
+    const data = ipcFromColumns(schema, { x: [7] });
+    const stmt = new AsyncStatementStub(
+      ['Pending', 'Running', 'Succeeded'],
+      new AsyncResultHandleStub(schemaIpc, [data]),
+    );
+    const backend = new SeaOperationBackend({
+      asyncStatement: stmt as any,
+      context: new ClientContextStub(),
+    });
+
+    const ticks: number[] = [];
+    await backend.waitUntilReady({ callback: (r) => ticks.push(r.operationState as number) });
+
+    // Polled Pending → Running → Succeeded (3 status RPCs, 3 callback ticks).
+    expect(stmt.statusCalls).to.equal(3);
+    expect(ticks).to.deep.equal([
+      TOperationState.PENDING_STATE,
+      TOperationState.RUNNING_STATE,
+      TOperationState.FINISHED_STATE,
+    ]);
+    // Result stream was materialised; the first fetch returns the row.
+    const rows = await backend.fetchChunk({ limit: 10 });
+    expect(rows).to.deep.equal([{ x: 7 }]);
+  });
+
+  it('waitUntilReady() throws on a Failed statement, surfacing the kernel error', async () => {
+    const kernelErr = new Error('DIVIDE_BY_ZERO');
+    const stmt = new AsyncStatementStub(['Running', 'Failed'], null, kernelErr);
+    const backend = new SeaOperationBackend({
+      asyncStatement: stmt as any,
+      context: new ClientContextStub(),
+    });
+
+    let thrown: unknown;
+    try {
+      await backend.waitUntilReady();
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).to.be.instanceOf(Error);
+    // On ERROR_STATE the backend drives awaitResult() to extract the real
+    // error envelope rather than a generic state error.
+    expect(stmt.awaitResultCalls).to.equal(1);
+    expect((thrown as Error).message).to.match(/DIVIDE_BY_ZERO/);
+  });
+
+  it('cancel() forwards to the async statement and aborts an in-flight wait', async () => {
+    // status stays Running forever; cancel() flips the lifecycle flag so the
+    // next poll iteration short-circuits with a Canceled OperationStateError.
+    const stmt = new AsyncStatementStub(['Running'], new AsyncResultHandleStub(schemaIpc, []));
+    const backend = new SeaOperationBackend({
+      asyncStatement: stmt as any,
+      context: new ClientContextStub(),
+    });
+
+    const waitPromise = backend.waitUntilReady();
+    await backend.cancel();
+    expect(stmt.cancelled).to.equal(true);
+
+    let thrown: unknown;
+    try {
+      await waitPromise;
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).to.be.instanceOf(Error);
+    expect((thrown as Error).message).to.match(/cancel/i);
   });
 });

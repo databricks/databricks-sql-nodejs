@@ -15,25 +15,39 @@
 /**
  * `IOperationBackend` implementation for the SEA path.
  *
- * Combines:
- * - **Fetch pipeline (from sea-results):**
- *   `napi.Statement.fetchNextBatch()` → `SeaResultsProvider` →
- *   `ArrowResultConverter` (Phase 1 + Phase 2; reused unchanged) →
- *   `ResultSlicer` (chunk-size normalisation; reused unchanged). The M0
- *   row shape is byte-identical to the thrift path for every M0
- *   datatype (parity gate exercised by `tests/integration/sea/results-e2e.test.ts`).
+ * Two construction shapes, sharing one fetch/lifecycle surface:
  *
- * - **Lifecycle (from sea-operation):** `cancel()` / `close()` /
- *   `finished()` (alias of `waitUntilReady`) delegate to the helpers
- *   in `SeaOperationLifecycle.ts`. The helpers handle idempotency,
- *   flag-set-before-await ordering (so cancel-mid-fetch propagates),
- *   logging via `IClientContext`, and kernel-error mapping.
+ * - **Async query path (`asyncStatement`)** — `executeStatement` submits
+ *   with the kernel's `wait_timeout=0s` and hands back a pending
+ *   `AsyncStatement`. `waitUntilReady()` polls `status()` to a terminal
+ *   state (firing the progress callback each tick, exactly like the
+ *   Thrift backend's `getOperationStatus` loop), then materialises the
+ *   result stream via `awaitResult()`. This is true Thrift-parity
+ *   async execution: `status()` reports real Pending/Running/Succeeded
+ *   states and a long-running query can be cancelled mid-flight.
  *
- * The lifecycle helpers route fetch-after-cancel / fetch-after-close
- * through `failIfNotActive`, which throws an `OperationStateError`
- * matching the Thrift `failIfClosed` semantics. We call it from
- * `fetchChunk`/`hasMore`/`getResultMetadata` so the cancel-mid-fetch
- * e2e (cancel < 200ms) drives against this backend cleanly.
+ *   The JS-side poll loop (rather than a single blocking `awaitResult()`)
+ *   is what keeps `cancel()` responsive: the kernel `AsyncStatement`
+ *   serialises its methods behind one mutex, so a single in-flight
+ *   `awaitResult()` would hold that mutex for the whole query and queue
+ *   `cancel()` behind it. Polling `status()` releases the mutex between
+ *   ticks, leaving gaps for `cancel()` to land.
+ *
+ * - **Blocking metadata path (`statement`)** — the metadata methods
+ *   (`listCatalogs`, `listTypeInfo`, …) return a kernel `Statement`
+ *   that has already run to a terminal state, so there is nothing to
+ *   poll: `waitUntilReady()` resolves immediately (one synthesized
+ *   FINISHED tick) and the handle itself is the result source.
+ *
+ * Fetch pipeline (shared): `fetchNextBatch()` → `SeaResultsProvider` →
+ * `ArrowResultConverter` → `ResultSlicer`, byte-identical to the Thrift
+ * path for every datatype.
+ *
+ * Lifecycle (shared): `cancel()` / `close()` delegate to the helpers in
+ * `SeaOperationLifecycle.ts` (idempotency, flag-set-before-await
+ * ordering, kernel-error mapping). `failIfNotActive` routes
+ * fetch-after-cancel / fetch-after-close through an `OperationStateError`
+ * matching the Thrift `failIfClosed` semantics.
  */
 
 import { v4 as uuidv4 } from 'uuid';
@@ -48,11 +62,19 @@ import {
 import IOperationBackend from '../contracts/IOperationBackend';
 import IClientContext from '../contracts/IClientContext';
 import Status from '../dto/Status';
+import OperationStateError, { OperationStateErrorCode } from '../errors/OperationStateError';
 import ArrowResultConverter from '../result/ArrowResultConverter';
 import ResultSlicer from '../result/ResultSlicer';
 import SeaResultsProvider from './SeaResultsProvider';
 import { arrowSchemaToThriftSchema, decodeIpcSchema } from './SeaArrowIpc';
-import { SeaNativeStatement } from './SeaNativeLoader';
+import {
+  SeaNativeStatement,
+  SeaNativeAsyncStatement,
+  SeaNativeStatementStatus,
+  SeaArrowSchema,
+  SeaArrowBatch,
+} from './SeaNativeLoader';
+import { decodeNapiKernelError } from './SeaErrorMapping';
 import {
   SeaStatementHandle,
   SeaOperationLifecycleState,
@@ -64,6 +86,20 @@ import {
 } from './SeaOperationLifecycle';
 
 /**
+ * Server-status poll cadence for the async path, in milliseconds.
+ * Matches the Thrift backend's `waitUntilReady` `delay(100)` so the
+ * two backends place the same GetStatementStatus / getOperationStatus
+ * load on the server for the same query.
+ */
+const STATUS_POLL_INTERVAL_MS = 100;
+
+function delay(ms: number): Promise<void> {
+  return new Promise((resolve) => {
+    setTimeout(resolve, ms);
+  });
+}
+
+/**
  * Structural union of the lifecycle surface (cancel/close) and the
  * fetch surface (fetchNextBatch/schema). The real napi `Statement`
  * implements both; lifecycle-only test stubs implement only the
@@ -73,23 +109,79 @@ import {
 export type SeaOperationStatement = SeaStatementHandle & Partial<SeaNativeStatement>;
 
 /**
- * Constructor options for `SeaOperationBackend`.
+ * Minimal result-fetch surface shared by the async `AsyncResultHandle`
+ * (from `awaitResult()`) and the blocking metadata `Statement`. Both
+ * expose `schema()` + `fetchNextBatch()`; only this slice is consumed
+ * by the fetch pipeline.
+ */
+interface SeaFetchHandle {
+  schema(): Promise<SeaArrowSchema>;
+  fetchNextBatch(): Promise<SeaArrowBatch | null>;
+}
+
+/**
+ * Constructor options for `SeaOperationBackend`. Exactly one of
+ * `asyncStatement` (query path) or `statement` (metadata path) must be
+ * provided.
  */
 export interface SeaOperationBackendOptions {
-  /** The opaque napi `Statement` handle returned by `Connection.executeStatement(...)`. */
-  statement: SeaOperationStatement;
+  /**
+   * The pending napi `AsyncStatement` returned by
+   * `Connection.submitStatement(...)`. Async query path.
+   */
+  asyncStatement?: SeaNativeAsyncStatement;
+  /**
+   * The terminal napi `Statement` returned by a metadata method
+   * (`listCatalogs`, `listTypeInfo`, …). Blocking metadata path.
+   */
+  statement?: SeaOperationStatement;
   context: IClientContext;
   /**
    * Optional override for `id`. When not provided a fresh UUIDv4 is
-   * generated upstream (in `SeaSessionBackend.executeStatement`); the
-   * kernel does not yet surface its internal statement-id at the napi
-   * boundary. Once it does, the JS layer can thread it through here.
+   * generated. For the async path the kernel surfaces a real
+   * server-issued `statementId`, which is used as the id when no
+   * explicit override is given.
    */
   id?: string;
 }
 
+/** Map the kernel's `StatementStatus` variant name to a Thrift `TOperationState`. */
+function statusToOperationState(status: SeaNativeStatementStatus): TOperationState {
+  switch (status) {
+    case 'Pending':
+      return TOperationState.PENDING_STATE;
+    case 'Running':
+      return TOperationState.RUNNING_STATE;
+    case 'Succeeded':
+      return TOperationState.FINISHED_STATE;
+    case 'Failed':
+      return TOperationState.ERROR_STATE;
+    case 'Cancelled':
+      return TOperationState.CANCELED_STATE;
+    case 'Closed':
+      return TOperationState.CLOSED_STATE;
+    case 'Unknown':
+    default:
+      return TOperationState.UKNOWN_STATE;
+  }
+}
+
+/** Synthesize the Thrift status response shape from an operation state. */
+function synthesizeStatus(operationState: TOperationState): TGetOperationStatusResp {
+  return {
+    status: { statusCode: TStatusCode.SUCCESS_STATUS },
+    operationState,
+    hasResultSet: true,
+  };
+}
+
 export default class SeaOperationBackend implements IOperationBackend {
-  private readonly statement: SeaOperationStatement;
+  private readonly asyncStatement?: SeaNativeAsyncStatement;
+
+  private readonly blockingStatement?: SeaOperationStatement;
+
+  /** cancel/close target — the async handle or the blocking statement. */
+  private readonly lifecycleHandle: SeaStatementHandle;
 
   private readonly context: IClientContext;
 
@@ -105,10 +197,24 @@ export default class SeaOperationBackend implements IOperationBackend {
 
   private metadataPromise?: Promise<TGetResultSetMetadataResp>;
 
-  constructor({ statement, context, id }: SeaOperationBackendOptions) {
-    this.statement = statement;
+  /**
+   * Memoised result-fetch handle. For the async path this is the
+   * `awaitResult()` promise (resolved once the statement is terminal);
+   * for the metadata path it resolves to the blocking statement itself.
+   */
+  private fetchHandlePromise?: Promise<SeaFetchHandle>;
+
+  constructor({ asyncStatement, statement, context, id }: SeaOperationBackendOptions) {
+    if ((asyncStatement === undefined) === (statement === undefined)) {
+      throw new Error(
+        'SeaOperationBackend: exactly one of `asyncStatement` or `statement` must be provided',
+      );
+    }
+    this.asyncStatement = asyncStatement;
+    this.blockingStatement = statement;
+    this.lifecycleHandle = (asyncStatement ?? statement) as SeaStatementHandle;
     this.context = context;
-    this._id = id ?? uuidv4();
+    this._id = id ?? asyncStatement?.statementId ?? uuidv4();
   }
 
   public get id(): string {
@@ -116,16 +222,14 @@ export default class SeaOperationBackend implements IOperationBackend {
   }
 
   public get hasResultSet(): boolean {
-    // M0 only routes through SeaOperationBackend for executeStatement
-    // calls. DDL/DML without a result set is not exercised through SEA
-    // for M0; the napi Statement still produces a schema (empty) in
-    // that case, which the converter renders as zero rows. Reporting
-    // `true` keeps the facade's fetch path enabled for M0 parity.
+    // The kernel statement always produces a schema (empty for DDL/DML),
+    // which the converter renders as zero rows. Reporting `true` keeps
+    // the facade's fetch path enabled for parity with the Thrift backend.
     return true;
   }
 
   // ---------------------------------------------------------------------------
-  // Fetch / metadata (owned by the sea-results pipeline).
+  // Fetch / metadata.
   // ---------------------------------------------------------------------------
 
   public async fetchChunk({
@@ -157,10 +261,8 @@ export default class SeaOperationBackend implements IOperationBackend {
       return this.metadataPromise;
     }
     this.metadataPromise = (async () => {
-      if (!this.statement.schema) {
-        throw new Error('SeaOperationBackend: statement.schema() is not available on this handle');
-      }
-      const arrowSchemaIpc = await this.statement.schema();
+      const handle = await this.getFetchHandle();
+      const arrowSchemaIpc = await handle.schema();
       const arrowSchema = decodeIpcSchema(arrowSchemaIpc.ipcBytes);
       const thriftSchema: TTableSchema = arrowSchemaToThriftSchema(arrowSchema);
       const meta: TGetResultSetMetadataResp = {
@@ -184,72 +286,177 @@ export default class SeaOperationBackend implements IOperationBackend {
   }
 
   // ---------------------------------------------------------------------------
-  // Status / lifecycle (owned by the sea-operation lifecycle helpers).
+  // Status / lifecycle.
   // ---------------------------------------------------------------------------
 
   public async status(_progress: boolean): Promise<TGetOperationStatusResp> {
-    // Synthesised — kernel only surfaces terminal-or-running statements
-    // through its public API; we report CANCELED/CLOSED if the lifecycle
-    // flag is set, else FINISHED. Matches the Thrift status shape so
-    // facade-level callers see consistent telemetry across backends.
+    // JS-initiated lifecycle wins — it may be ahead of the server.
     if (this.lifecycle.isCancelled) {
-      return {
-        status: { statusCode: TStatusCode.SUCCESS_STATUS },
-        operationState: TOperationState.CANCELED_STATE,
-        hasResultSet: true,
-      };
+      return synthesizeStatus(TOperationState.CANCELED_STATE);
     }
     if (this.lifecycle.isClosed) {
-      return {
-        status: { statusCode: TStatusCode.SUCCESS_STATUS },
-        operationState: TOperationState.CLOSED_STATE,
-        hasResultSet: true,
-      };
+      return synthesizeStatus(TOperationState.CLOSED_STATE);
     }
-    return {
-      status: { statusCode: TStatusCode.SUCCESS_STATUS },
-      operationState: TOperationState.FINISHED_STATE,
-      hasResultSet: true,
-    };
+    if (this.asyncStatement) {
+      // Real server status — single GetStatementStatus RPC, no polling.
+      const state = await this.asyncStatement.status();
+      return synthesizeStatus(statusToOperationState(state));
+    }
+    // Blocking metadata path: the statement is already terminal.
+    return synthesizeStatus(TOperationState.FINISHED_STATE);
   }
 
   public async waitUntilReady(options?: {
     progress?: boolean;
     callback?: (progress: TGetOperationStatusResp) => unknown;
   }): Promise<void> {
-    // Kernel's `Statement::execute().await` has already resolved by the
-    // time we hold a Statement handle — there is no pending/running
-    // state to poll for M0. seaFinished fires the progress callback
-    // once with a synthesised FINISHED response so progress-UI callers
-    // see the same one-shot completion tick the Thrift path emits at
-    // the end of its polling loop.
+    if (this.asyncStatement) {
+      return this.waitUntilReadyAsync(options);
+    }
+    // Blocking metadata path: the kernel statement has already resolved,
+    // so there is nothing to poll. Fire the progress callback once with
+    // a synthesized FINISHED tick, matching the Thrift path's final tick.
     return seaFinished(this.lifecycle, options);
   }
 
   public async cancel(): Promise<Status> {
-    return seaCancel(this.lifecycle, this.statement, this.context, this._id);
+    return seaCancel(this.lifecycle, this.lifecycleHandle, this.context, this._id);
   }
 
   public async close(): Promise<Status> {
-    return seaClose(this.lifecycle, this.statement, this.context, this._id);
+    return seaClose(this.lifecycle, this.lifecycleHandle, this.context, this._id);
   }
 
   // ---------------------------------------------------------------------------
   // Internals.
   // ---------------------------------------------------------------------------
 
+  /**
+   * Poll the kernel `AsyncStatement` to a terminal state, mirroring the
+   * Thrift backend's `getOperationStatus` loop. Fires the progress
+   * callback each tick; on FINISHED, materialises the result stream
+   * (so the first fetch is free); on a bad terminal state, throws the
+   * same `OperationStateError` the Thrift path raises.
+   */
+  private async waitUntilReadyAsync(options?: {
+    progress?: boolean;
+    callback?: (progress: TGetOperationStatusResp) => unknown;
+  }): Promise<void> {
+    // Already materialised → terminal-and-ready, nothing to wait for.
+    if (this.fetchHandlePromise) {
+      return;
+    }
+
+    for (;;) {
+      // JS-initiated cancel/close short-circuits before the next poll.
+      failIfNotActive(this.lifecycle);
+
+      // eslint-disable-next-line no-await-in-loop
+      const state = await this.asyncStatement!.status();
+      const operationState = statusToOperationState(state);
+
+      if (options?.callback) {
+        // eslint-disable-next-line no-await-in-loop
+        await Promise.resolve(options.callback(synthesizeStatus(operationState)));
+      }
+
+      switch (operationState) {
+        case TOperationState.INITIALIZED_STATE:
+        case TOperationState.PENDING_STATE:
+        case TOperationState.RUNNING_STATE:
+          break;
+
+        case TOperationState.FINISHED_STATE:
+          // Materialise the result stream now so the first fetch/metadata
+          // call doesn't pay an extra await_result round-trip.
+          // eslint-disable-next-line no-await-in-loop
+          await this.getFetchHandle();
+          return;
+
+        case TOperationState.CANCELED_STATE:
+          throw new OperationStateError(
+            OperationStateErrorCode.Canceled,
+            synthesizeStatus(operationState),
+          );
+
+        case TOperationState.CLOSED_STATE:
+          throw new OperationStateError(
+            OperationStateErrorCode.Closed,
+            synthesizeStatus(operationState),
+          );
+
+        case TOperationState.ERROR_STATE:
+          // `status()` collapses Failed to the variant name only; the
+          // real SQL-error envelope (sql_state / error_code / query_id)
+          // rides on `awaitResult()`'s rejection. Surface that.
+          // eslint-disable-next-line no-await-in-loop
+          await this.throwAsyncError(synthesizeStatus(operationState));
+          break;
+
+        case TOperationState.TIMEDOUT_STATE:
+          throw new OperationStateError(
+            OperationStateErrorCode.Timeout,
+            synthesizeStatus(operationState),
+          );
+
+        case TOperationState.UKNOWN_STATE:
+        default:
+          throw new OperationStateError(
+            OperationStateErrorCode.Unknown,
+            synthesizeStatus(operationState),
+          );
+      }
+
+      // eslint-disable-next-line no-await-in-loop
+      await delay(STATUS_POLL_INTERVAL_MS);
+    }
+  }
+
+  /**
+   * Drive `awaitResult()` to extract the kernel's typed error envelope
+   * for a Failed statement and re-throw it decoded. Falls back to a
+   * generic `OperationStateError` if `awaitResult()` unexpectedly
+   * resolves.
+   */
+  private async throwAsyncError(response: TGetOperationStatusResp): Promise<never> {
+    try {
+      await this.asyncStatement!.awaitResult();
+    } catch (err) {
+      throw decodeNapiKernelError(err);
+    }
+    throw new OperationStateError(OperationStateErrorCode.Error, response);
+  }
+
+  /**
+   * Resolve (and memoise) the result-fetch handle. Async path: the
+   * `awaitResult()` stream; metadata path: the blocking statement itself.
+   */
+  private getFetchHandle(): Promise<SeaFetchHandle> {
+    if (!this.fetchHandlePromise) {
+      if (this.asyncStatement) {
+        this.fetchHandlePromise = this.asyncStatement.awaitResult();
+      } else {
+        const stmt = this.blockingStatement!;
+        if (!stmt.schema || !stmt.fetchNextBatch) {
+          return Promise.reject(
+            new Error('SeaOperationBackend: fetch surface is not available on this handle'),
+          );
+        }
+        this.fetchHandlePromise = Promise.resolve(stmt as SeaFetchHandle);
+      }
+    }
+    return this.fetchHandlePromise;
+  }
+
   private async getResultSlicer(): Promise<ResultSlicer<any>> {
     if (this.resultSlicer) {
       return this.resultSlicer;
     }
-    if (!this.statement.fetchNextBatch) {
-      throw new Error('SeaOperationBackend: statement.fetchNextBatch() is not available on this handle');
-    }
     const metadata = await this.getResultMetadata();
-    // The lifecycle subset has cancel/close only; fetch methods exist on
-    // the full napi Statement. Cast is safe here because we've just
-    // verified `fetchNextBatch` is callable.
-    this.resultsProvider = new SeaResultsProvider(this.statement as SeaNativeStatement);
+    const handle = await this.getFetchHandle();
+    // SeaResultsProvider consumes only `fetchNextBatch`; the fetch handle
+    // (async result handle or blocking statement) satisfies that slice.
+    this.resultsProvider = new SeaResultsProvider(handle as unknown as SeaNativeStatement);
     const converter = new ArrowResultConverter(this.context, this.resultsProvider, metadata);
     this.resultSlicer = new ResultSlicer(this.context, converter);
     return this.resultSlicer;

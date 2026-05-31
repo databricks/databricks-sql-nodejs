@@ -19,6 +19,7 @@ import SeaTableTypeFilter from '../../../lib/sea/SeaTableTypeFilter';
 import {
   SeaNativeConnection,
   SeaNativeStatement,
+  SeaNativeAsyncStatement,
 } from '../../../lib/sea/SeaNativeLoader';
 import IOperationBackend from '../../../lib/contracts/IOperationBackend';
 import IClientContext, { ClientConfig } from '../../../lib/contracts/IClientContext';
@@ -63,6 +64,24 @@ class FakeMetadataConnection implements SeaNativeConnection {
 
   public async executeStatement(_sql: string): Promise<SeaNativeStatement> {
     return this.record('executeStatement', [_sql]);
+  }
+
+  // Metadata tests exercise the dedicated list* methods (blocking
+  // statements); the async query path isn't used here, but the interface
+  // requires it. Record the call and return a minimal async handle.
+  public async submitStatement(_sql: string): Promise<SeaNativeAsyncStatement> {
+    this.record('submitStatement', [_sql]);
+    return {
+      statementId: 'fake-statement-id',
+      status: async () => 'Succeeded' as const,
+      awaitResult: async () => ({
+        statementId: 'fake-statement-id',
+        fetchNextBatch: async () => null,
+        schema: async () => ({ ipcBytes: Buffer.alloc(0) }),
+      }),
+      cancel: async () => {},
+      close: async () => {},
+    };
   }
 
   public async listCatalogs(): Promise<SeaNativeStatement> {
