@@ -40,12 +40,15 @@ const DATABRICKS_TYPE_NAME = 'databricks.type_name';
  *
  * Re-parsing inside the converter is unavoidable because `RecordBatch`
  * instances created here cannot be passed across the converter's
- * `Buffer[]` boundary without rewriting the converter. The IPC bytes
- * themselves are small enough (one record batch per call) that the
- * double-parse cost is negligible for M0.
+ * `Buffer[]` boundary without rewriting the converter. Callers that already
+ * patched the IPC bytes can set `alreadyPatched` to avoid running the
+ * FlatBuffer rewrite twice on the hot fetch path.
  */
-export function decodeIpcBatch(ipcBytes: Buffer): { schema: Schema<TypeMap>; rowCount: number } {
-  const patched = rewriteDurationToInt64(ipcBytes);
+export function decodeIpcBatch(
+  ipcBytes: Buffer,
+  options: { alreadyPatched?: boolean } = {},
+): { schema: Schema<TypeMap>; rowCount: number } {
+  const patched = options.alreadyPatched ? ipcBytes : rewriteDurationToInt64(ipcBytes);
   const reader = RecordBatchReader.from<TypeMap>(patched);
   // Eagerly open so `schema` is populated.
   reader.open();

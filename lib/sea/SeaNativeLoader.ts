@@ -58,6 +58,7 @@ export interface SeaArrowSchema {
  * `await` them without `any` casts.
  */
 export interface SeaNativeStatement {
+  readonly statementId: string;
   fetchNextBatch(): Promise<SeaArrowBatch | null>;
   schema(): Promise<SeaArrowSchema>;
   cancel(): Promise<void>;
@@ -153,6 +154,7 @@ export interface SeaNativeExecuteOptions {
 }
 
 export interface SeaNativeConnection {
+  readonly sessionId: string;
   /**
    * Execute a SQL statement. Catalog / schema / sessionConf are
    * session-level — set on `openSession`. Per-statement options (bound

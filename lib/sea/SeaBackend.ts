@@ -135,6 +135,7 @@ export default class SeaBackend implements IBackend {
     return new SeaSessionBackend({
       connection: nativeConnection!,
       context: this.context,
+      id: nativeConnection!.sessionId,
     });
   }
 

@@ -214,7 +214,7 @@ export default class SeaOperationBackend implements IOperationBackend {
     this.blockingStatement = statement;
     this.lifecycleHandle = (asyncStatement ?? statement) as SeaStatementHandle;
     this.context = context;
-    this._id = id ?? asyncStatement?.statementId ?? uuidv4();
+    this._id = id ?? asyncStatement?.statementId ?? statement?.statementId ?? uuidv4();
   }
 
   public get id(): string {

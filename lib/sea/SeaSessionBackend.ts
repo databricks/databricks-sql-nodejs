@@ -134,6 +134,12 @@ export default class SeaSessionBackend implements ISessionBackend {
   public async executeStatement(statement: string, options: ExecuteStatementOptions): Promise<IOperationBackend> {
     this.failIfClosed();
 
+    if (options.useCloudFetch !== undefined) {
+      throw new HiveDriverError(
+        'SEA executeStatement: useCloudFetch is controlled by the kernel result configuration and is not a per-statement option on SEA',
+      );
+    }
+
     // Reduce `?` / `:name` bindings to the napi inputs the kernel param codec
     // accepts (DECIMAL → DECIMAL(p,s), NULL → value-less), reusing
     // DBSQLParameter's stringification. Positional and named are mutually

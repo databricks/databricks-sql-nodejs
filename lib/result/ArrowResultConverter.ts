@@ -32,6 +32,14 @@ type ArrowSchemaField = Field<DataType<Type, TypeMap>>;
  * thrift-path which has no SEA awareness.
  */
 const DURATION_UNIT_METADATA_KEY = 'databricks.arrow.duration_unit';
+const ZERO_BIGINT = BigInt(0);
+const NS_PER_MICRO = BigInt(1_000);
+const NS_PER_MILLI = BigInt(1_000_000);
+const NS_PER_SEC = BigInt(1_000_000_000);
+const MS_PER_DAY = BigInt(86_400_000);
+const NS_PER_MIN = NS_PER_SEC * BigInt(60);
+const NS_PER_HOUR = NS_PER_MIN * BigInt(60);
+const NS_PER_DAY = NS_PER_HOUR * BigInt(24);
 
 /**
  * Format an Arrow `Interval[YearMonth]` or `Interval[DayTime]` value
@@ -63,8 +71,8 @@ function formatArrowInterval(value: any, valueType: any): string {
   // We re-normalise: total milliseconds = a * 86_400_000 + b, then split into
   // days, hours, minutes, seconds, nanoseconds (nanoseconds is always 0
   // because the legacy IntervalDayTime carries only millisecond precision).
-  const totalMs = BigInt(a) * BigInt(86_400_000) + BigInt(b);
-  return formatDayTimeFromTotal(totalMs * BigInt(1_000_000) /* → ns */, 'NANOSECOND');
+  const totalMs = BigInt(a) * MS_PER_DAY + BigInt(b);
+  return formatDayTimeFromTotal(totalMs * NS_PER_MILLI /* → ns */, 'NANOSECOND');
 }
 
 /**
@@ -113,11 +121,11 @@ function formatDurationToIntervalDayTime(value: bigint | number, unit: string): 
 function toNanoseconds(value: bigint, unit: string): bigint {
   switch (unit) {
     case 'SECOND':
-      return value * BigInt(1_000_000_000);
+      return value * NS_PER_SEC;
     case 'MILLISECOND':
-      return value * BigInt(1_000_000);
+      return value * NS_PER_MILLI;
     case 'MICROSECOND':
-      return value * BigInt(1_000);
+      return value * NS_PER_MICRO;
     case 'NANOSECOND':
     default:
       return value;
@@ -136,14 +144,8 @@ function toNanoseconds(value: bigint, unit: string): bigint {
  * for future use if a unit-aware precision is ever needed.
  */
 function formatDayTimeFromTotal(totalNanos: bigint, _unit: string): string {
-  const ZERO = BigInt(0);
-  const sign = totalNanos < ZERO ? '-' : '';
-  const abs = totalNanos < ZERO ? -totalNanos : totalNanos;
-
-  const NS_PER_SEC = BigInt(1_000_000_000);
-  const NS_PER_MIN = NS_PER_SEC * BigInt(60);
-  const NS_PER_HOUR = NS_PER_MIN * BigInt(60);
-  const NS_PER_DAY = NS_PER_HOUR * BigInt(24);
+  const sign = totalNanos < ZERO_BIGINT ? '-' : '';
+  const abs = totalNanos < ZERO_BIGINT ? -totalNanos : totalNanos;
 
   const days = abs / NS_PER_DAY;
   let rem = abs % NS_PER_DAY;
