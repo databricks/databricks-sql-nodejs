@@ -251,62 +251,8 @@ function maybeRewriteSchemaMessage(schemaMessageBytes: Buffer): Buffer | null {
     return null;
   }
 
-  // Snapshot the (name, originalTypeType, durationUnit, originalCustomMetadata)
-  // for every field, then rebuild the schema using the flatbuffer builder.
-  type FieldSnapshot = {
-    name: string;
-    nullable: boolean;
-    isDuration: boolean;
-    durationUnit?: number; // FbTimeUnit
-    /** Preserved metadata key→value pairs (we add ours on top for Duration). */
-    metadata: Array<[string, string]>;
-    /** Raw bytes for the original field if no rewrite needed; we'll re-encode it. */
-    typeType: number;
-    /** Pre-decoded type sub-table bytes for non-Duration fields. */
-    // For M0 we only rewrite Duration; other fields we re-create with the
-    // same primitive type. To keep the rewriter narrow, we only support
-    // schemas where non-Duration fields use type sub-tables that can be
-    // round-tripped via Field.decode → re-encode through flatbuffers'
-    // SizedByteArray serialization. That's complex, so instead we use
-    // a different approach: copy the raw FlatBuffer field offset
-    // directly when no rewrite is needed (handled by the
-    // copy-field-by-reference path below).
-  };
-  // We can't simply "copy field by reference" across FlatBuffer
-  // builders, so we have to re-encode every field. For non-Duration
-  // fields, we re-encode using the apache-arrow `fb/*` accessors.
-  // That requires touching every existing supported type.
-  //
-  // To keep this rewriter narrow and DRY, we take a different
-  // approach: in-place patch. We do NOT rebuild the FlatBuffer.
-  // Instead, we mutate the field's `type_type` byte from Duration(18)
-  // to Int(2), and we point its `type` offset at a freshly-appended
-  // Int sub-table that we splice into the message bytes. Then we
-  // append a fresh `KeyValue` for `databricks.arrow.duration_unit`
-  // into the field's `custom_metadata` vector. This avoids re-encoding
-  // every other field.
-  //
-  // FlatBuffer in-place mutation is tricky because tables have vtables
-  // and offsets are 32-bit relative pointers. The fields we need to
-  // change are:
-  //   1. Field.type_type (1-byte enum at vtable slot for field #2):
-  //      mutate the byte from 18 → 2. Same width, safe to overwrite.
-  //   2. Field.type (4-byte relative offset to the type sub-table):
-  //      change the offset to point at our appended Int sub-table.
-  //      Same width, safe to overwrite.
-  //   3. Field.custom_metadata (4-byte relative offset to vector):
-  //      either rewrite the existing vector to add our entry, or
-  //      append a new vector and update the offset.
-  //
-  // Because relative offsets are forward-only in FlatBuffers (offset is
-  // distance from the storage location to the target), and our
-  // appended sub-tables live AFTER the storage location, the math
-  // works out. We append to a growing byte buffer and patch the
-  // existing offset fields to point at the new tail.
-
-  // Bail back to the full rebuild approach; in-place patching of
-  // arbitrary vtable layouts is fragile (vtables may share storage
-  // across fields). Re-encode the whole schema.
+  // Re-encode the whole schema. This is more verbose than an in-place
+  // FlatBuffer patch, but it avoids relying on vtable layout details.
   return rebuildSchemaWithDurationRewritten(message, fbSchema);
 }
 

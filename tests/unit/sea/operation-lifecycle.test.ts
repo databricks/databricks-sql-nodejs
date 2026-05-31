@@ -44,6 +44,7 @@ import SeaOperationBackend from '../../../lib/sea/SeaOperationBackend';
 import OperationStateError, {
   OperationStateErrorCode,
 } from '../../../lib/errors/OperationStateError';
+import { OperationState } from '../../../lib/contracts/OperationStatus';
 import HiveDriverError from '../../../lib/errors/HiveDriverError';
 
 class TestLogger implements IDBSQLLogger {
@@ -300,14 +301,17 @@ describe('SeaOperationLifecycle (helpers)', () => {
       }
     });
 
-    it('throws HiveDriverError when closed', () => {
+    it('throws OperationStateError(Closed) when closed', () => {
       const state = createLifecycleState();
       state.isClosed = true;
       try {
         failIfNotActive(state);
         expect.fail('expected throw');
       } catch (err) {
-        expect(err).to.be.instanceOf(HiveDriverError);
+        expect(err).to.be.instanceOf(OperationStateError);
+        expect((err as OperationStateError).errorCode).to.equal(
+          OperationStateErrorCode.Closed,
+        );
       }
     });
 
@@ -398,23 +402,23 @@ describe('SeaOperationBackend (lifecycle integration)', () => {
     expect(close.calledOnce).to.equal(true);
   });
 
-  it('status() reports FINISHED_STATE when active', async () => {
+  it('status() reports Succeeded when active', async () => {
     const ctx = makeContext();
     const { handle } = makeStatement();
     const op = new SeaOperationBackend({ statement: handle, context: ctx });
 
     const status = await op.status(false);
-    expect(status.operationState).to.equal(TOperationState.FINISHED_STATE);
+    expect(status.state).to.equal(OperationState.Succeeded);
   });
 
-  it('status() reports CANCELED_STATE after cancel', async () => {
+  it('status() reports Cancelled after cancel', async () => {
     const ctx = makeContext();
     const { handle } = makeStatement();
     const op = new SeaOperationBackend({ statement: handle, context: ctx });
 
     await op.cancel();
     const status = await op.status(false);
-    expect(status.operationState).to.equal(TOperationState.CANCELED_STATE);
+    expect(status.state).to.equal(OperationState.Cancelled);
   });
 
   it('id getter is stable', () => {

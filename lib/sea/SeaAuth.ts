@@ -19,13 +19,16 @@ import prependSlash from '../utils/prependSlash';
 import { SeaConnectionOptions } from './SeaNativeLoader';
 
 /**
- * Shape consumed by the napi-binding's `openSession()`. M0 sends only the
- * PAT triple, so we `Pick` those fields off the binding's generated
- * `ConnectionOptions` (re-exported as `SeaConnectionOptions`) rather than
- * re-declaring them — if the kernel renames `hostName`/`httpPath`/`token`
- * this stops compiling instead of silently drifting.
+ * Shape consumed by the napi-binding's `openSession()`. M0 sends the PAT
+ * triple plus optional session defaults, so we `Pick` those fields off the
+ * binding's generated `ConnectionOptions` (re-exported as
+ * `SeaConnectionOptions`) rather than re-declaring them — if the kernel renames
+ * one of these fields this stops compiling instead of silently drifting.
  */
-export type SeaNativeConnectionOptions = Pick<SeaConnectionOptions, 'hostName' | 'httpPath' | 'token'>;
+export type SeaNativeConnectionOptions = Pick<
+  SeaConnectionOptions,
+  'hostName' | 'httpPath' | 'token' | 'catalog' | 'schema' | 'sessionConf'
+>;
 
 /**
  * Validate that the user-supplied `ConnectionOptions` describe a PAT auth
