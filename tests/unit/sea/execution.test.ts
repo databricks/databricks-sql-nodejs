@@ -39,11 +39,15 @@ class FakeNativeStatement implements SeaNativeStatement {
 
   public cancelled = false;
 
+  // Mirrors the kernel `Statement.statementId` getter.
+  public readonly statementId = '01ef-fake-statement-id';
+
   public async fetchNextBatch() {
     return null;
   }
 
-  public async schema() {
+  // schema() is synchronous on the merged-kernel binding.
+  public schema() {
     return { ipcBytes: Buffer.alloc(0) };
   }
 
@@ -53,6 +57,23 @@ class FakeNativeStatement implements SeaNativeStatement {
 
   public async close() {
     this.closed = true;
+  }
+
+  // Status accessors added by the kernel's status-fields surface.
+  public async numModifiedRows(): Promise<number | null> {
+    return null;
+  }
+
+  public async displayMessage(): Promise<string | null> {
+    return null;
+  }
+
+  public async diagnosticInfo(): Promise<string | null> {
+    return null;
+  }
+
+  public async errorDetailsJson(): Promise<string | null> {
+    return null;
   }
 }
 
@@ -67,7 +88,14 @@ class FakeNativeConnection implements SeaNativeConnection {
 
   public statementToReturn: FakeNativeStatement = new FakeNativeStatement();
 
-  public async executeStatement(sql: string, options: SeaExecuteOptions): Promise<SeaNativeStatement> {
+  // Mirrors the kernel `Connection.sessionId` getter.
+  public readonly sessionId = '01ef-fake-session-id';
+
+  // `options` is optional so this stays structurally assignable to the
+  // merged binding's `executeStatement(sql)` while still recording any
+  // per-statement options the caller forwards (the kernel now applies
+  // those at session level — see the session-level options migration).
+  public async executeStatement(sql: string, options?: SeaExecuteOptions): Promise<SeaNativeStatement> {
     if (this.throwOnExecute) {
       throw this.throwOnExecute;
     }
@@ -88,8 +116,10 @@ function makeBinding(connection: SeaNativeConnection): SeaNativeBinding & {
   const binding: SeaNativeBinding = {
     version: () => 'test',
     openSession: openSessionStub,
-    Connection: function Connection() {},
-    Statement: function Statement() {},
+    // Index the binding type for the class constructor types; `typeof
+    // Connection` is illegal since they're exported as type aliases.
+    Connection: function Connection() {} as unknown as SeaNativeBinding['Connection'],
+    Statement: function Statement() {} as unknown as SeaNativeBinding['Statement'],
   };
   return Object.assign(binding, { openSessionStub });
 }

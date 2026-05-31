@@ -14,6 +14,8 @@
 
 import { expect } from 'chai';
 import { DBSQLClient } from '../../../lib';
+import { ConnectionOptions } from '../../../lib/contracts/IDBSQLClient';
+import { InternalConnectionOptions } from '../../../lib/contracts/InternalConnectionOptions';
 
 /**
  * sea-execution end-to-end test.
@@ -66,7 +68,7 @@ describe('SEA execution end-to-end', function e2eSuite() {
       path: httpPath as string,
       token: token as string,
       useSEA: true,
-    });
+    } as ConnectionOptions & InternalConnectionOptions);
 
     const session = await client.openSession({
       initialCatalog: 'main',
@@ -99,7 +101,7 @@ describe('SEA execution end-to-end', function e2eSuite() {
       path: httpPath as string,
       token: token as string,
       useSEA: true,
-    });
+    } as ConnectionOptions & InternalConnectionOptions);
 
     // Sanity-check that supplying session-level Spark conf does not
     // break openSession. The SEA wire applies these as `parameters` on
