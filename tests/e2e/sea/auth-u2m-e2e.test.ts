@@ -14,6 +14,8 @@
 
 import { expect } from 'chai';
 import { DBSQLClient } from '../../../lib';
+import { ConnectionOptions } from '../../../lib/contracts/IDBSQLClient';
+import { InternalConnectionOptions } from '../../../lib/contracts/InternalConnectionOptions';
 
 /**
  * sea-auth M1 OAuth U2M end-to-end — **SKIPPED pending browser harness**.
@@ -58,7 +60,7 @@ describe('sea-auth e2e — OAuth U2M through DBSQLClient ↔ SeaBackend ↔ napi
       path,
       authType: 'databricks-oauth',
       useSEA: true,
-    });
+    } as ConnectionOptions & InternalConnectionOptions);
     expect(connected).to.equal(client);
 
     const session = await client.openSession();

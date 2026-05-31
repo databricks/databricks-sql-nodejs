@@ -52,8 +52,11 @@ export function makeFakeBinding(): FakeBinding {
       calls.push({ method: 'openSession', args: [opts] });
       return fakeConnection as unknown as SeaNativeConnection;
     },
-    Connection: function FakeConnection() {} as unknown as Function,
-    Statement: function FakeStatement() {} as unknown as Function,
+    // Index the binding type for the napi class constructor types; the
+    // loader exports Connection/Statement as type aliases, so `typeof
+    // Connection` is illegal and bare `Function` has no construct signature.
+    Connection: function FakeConnection() {} as unknown as SeaNativeBinding['Connection'],
+    Statement: function FakeStatement() {} as unknown as SeaNativeBinding['Statement'],
   };
 
   return { binding, calls };

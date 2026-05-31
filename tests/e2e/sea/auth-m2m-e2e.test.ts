@@ -16,6 +16,8 @@ import { expect } from 'chai';
 import { DBSQLClient } from '../../../lib';
 import AuthenticationError from '../../../lib/errors/AuthenticationError';
 import { isBlankOrReserved } from '../../../lib/sea/SeaAuth';
+import { ConnectionOptions } from '../../../lib/contracts/IDBSQLClient';
+import { InternalConnectionOptions } from '../../../lib/contracts/InternalConnectionOptions';
 
 /**
  * sea-auth M1 OAuth M2M end-to-end:
@@ -76,7 +78,7 @@ describe('sea-auth e2e — OAuth M2M through DBSQLClient ↔ SeaBackend ↔ napi
       oauthClientId: oauthClientId as string,
       oauthClientSecret: oauthClientSecret as string,
       useSEA: true,
-    });
+    } as ConnectionOptions & InternalConnectionOptions);
     expect(connected).to.equal(client);
 
     const session = await client.openSession();
@@ -103,7 +105,7 @@ describe('sea-auth e2e — OAuth M2M through DBSQLClient ↔ SeaBackend ↔ napi
       oauthClientId: oauthClientId as string,
       oauthClientSecret: 'definitely-not-the-real-secret-deadbeef',
       useSEA: true,
-    });
+    } as ConnectionOptions & InternalConnectionOptions);
 
     let caught: unknown;
     try {
