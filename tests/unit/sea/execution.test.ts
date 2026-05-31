@@ -82,7 +82,10 @@ class FakeNativeConnection implements SeaNativeConnection {
   // Metadata stubs — return a fresh statement so callers can test wrapping.
   public async listCatalogs() { return new FakeNativeStatement(); }
 
-  public async listSchemas(_catalog: string | undefined, _schemaPattern: string | undefined) {
+  public lastListSchemasArgs?: [string | undefined | null, string | undefined | null];
+
+  public async listSchemas(catalog: string | undefined | null, schemaPattern: string | undefined | null) {
+    this.lastListSchemasArgs = [catalog, schemaPattern];
     return new FakeNativeStatement();
   }
 
@@ -395,6 +398,37 @@ describe('SeaSessionBackend', () => {
     }
     expect(thrown).to.be.instanceOf(Error);
     expect((thrown as Error).message).to.match(/both ordinal and named/);
+  });
+
+  it('executeStatement rejects an array-shaped ordinal parameter (DoS guard)', async () => {
+    const session = makeSession(new FakeNativeConnection());
+    let thrown: unknown;
+    try {
+      await session.executeStatement('SELECT ?', { ordinalParameters: [[1, 2, 3]] as never });
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).to.be.instanceOf(Error);
+    expect((thrown as Error).message).to.match(/array/);
+  });
+
+  it('executeStatement rejects an ordinal-parameter count mismatch', async () => {
+    const session = makeSession(new FakeNativeConnection());
+    let thrown: unknown;
+    try {
+      await session.executeStatement('SELECT ? AS only', { ordinalParameters: [1, 2] });
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).to.be.instanceOf(Error);
+    expect((thrown as Error).message).to.match(/does not match/);
+  });
+
+  it('getSchemas coerces empty-string args to undefined (Thrift-parity for the kernel)', async () => {
+    const connection = new FakeNativeConnection();
+    const session = makeSession(connection);
+    await session.getSchemas({ catalogName: '', schemaName: '%' });
+    expect(connection.lastListSchemasArgs).to.deep.equal([undefined, '%']);
   });
 
   it('executeStatement uses the no-options fast path when nothing is bound', async () => {

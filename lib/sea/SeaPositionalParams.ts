@@ -14,6 +14,7 @@
 
 import { DBSQLParameter, DBSQLParameterValue } from '../DBSQLParameter';
 import { SeaNativeTypedValueInput, SeaNativeNamedTypedValueInput } from './SeaNativeLoader';
+import { assertBindableValue } from './SeaInputValidation';
 
 /**
  * Derive `(precision,scale)` from a decimal value string for the SEA
@@ -73,7 +74,10 @@ export function buildSeaPositionalParams(
   if (ordinalParameters === undefined || ordinalParameters.length === 0) {
     return undefined;
   }
-  return ordinalParameters.map(toTypedValueInput);
+  return ordinalParameters.map((value, i) => {
+    assertBindableValue(value, `ordinalParameters[${i}]`);
+    return toTypedValueInput(value);
+  });
 }
 
 /**
@@ -88,8 +92,8 @@ export function buildSeaNamedParams(
   if (namedParameters === undefined || Object.keys(namedParameters).length === 0) {
     return undefined;
   }
-  return Object.keys(namedParameters).map((name) => ({
-    name,
-    ...toTypedValueInput(namedParameters[name]),
-  }));
+  return Object.keys(namedParameters).map((name) => {
+    assertBindableValue(namedParameters[name], `namedParameters[${name}]`);
+    return { name, ...toTypedValueInput(namedParameters[name]) };
+  });
 }

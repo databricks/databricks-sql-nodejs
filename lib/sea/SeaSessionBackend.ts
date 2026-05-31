@@ -38,6 +38,7 @@ import SeaTableTypeFilter from './SeaTableTypeFilter';
 import { seaServerInfoValue } from './SeaServerInfo';
 import { buildSeaPositionalParams, buildSeaNamedParams } from './SeaPositionalParams';
 import ParameterError from '../errors/ParameterError';
+import { emptyToUndefined, countParameterMarkers } from './SeaInputValidation';
 
 export interface SeaSessionBackendOptions {
   /** The opaque napi `Connection` handle returned by `openSession`. */
@@ -141,6 +142,18 @@ export default class SeaSessionBackend implements ISessionBackend {
     if (positionalParams !== undefined && namedParams !== undefined) {
       throw new ParameterError('Driver does not support both ordinal and named parameters.');
     }
+    // Arity check: positional params must match the `?` marker count, or the
+    // server silently binds the prefix and drops the rest (data-correctness
+    // footgun). Markers inside string literals / comments are not counted.
+    if (positionalParams !== undefined) {
+      const markerCount = countParameterMarkers(statement);
+      if (positionalParams.length !== markerCount) {
+        throw new ParameterError(
+          `ordinalParameters length ${positionalParams.length} does not match the ` +
+            `${markerCount} '?' placeholder(s) in the SQL`,
+        );
+      }
+    }
 
     const nativeOptions: SeaNativeExecuteOptions = {};
     if (positionalParams !== undefined) {
@@ -198,8 +211,8 @@ export default class SeaSessionBackend implements ISessionBackend {
     let nativeStatement;
     try {
       nativeStatement = await this.connection.listSchemas(
-        request.catalogName,
-        request.schemaName,
+        emptyToUndefined(request.catalogName),
+        emptyToUndefined(request.schemaName),
       );
     } catch (err) {
       throw decodeNapiKernelError(err);
@@ -212,9 +225,9 @@ export default class SeaSessionBackend implements ISessionBackend {
     let nativeStatement;
     try {
       nativeStatement = await this.connection.listTables(
-        request.catalogName,
-        request.schemaName,
-        request.tableName,
+        emptyToUndefined(request.catalogName),
+        emptyToUndefined(request.schemaName),
+        emptyToUndefined(request.tableName),
         request.tableTypes,
       );
     } catch (err) {
@@ -245,10 +258,10 @@ export default class SeaSessionBackend implements ISessionBackend {
     let nativeStatement;
     try {
       nativeStatement = await this.connection.listColumns(
-        request.catalogName,
-        request.schemaName,
-        request.tableName,
-        request.columnName,
+        emptyToUndefined(request.catalogName),
+        emptyToUndefined(request.schemaName),
+        emptyToUndefined(request.tableName),
+        emptyToUndefined(request.columnName),
       );
     } catch (err) {
       throw decodeNapiKernelError(err);
@@ -261,9 +274,9 @@ export default class SeaSessionBackend implements ISessionBackend {
     let nativeStatement;
     try {
       nativeStatement = await this.connection.listFunctions(
-        request.catalogName,
-        request.schemaName,
-        request.functionName,
+        emptyToUndefined(request.catalogName),
+        emptyToUndefined(request.schemaName),
+        emptyToUndefined(request.functionName),
       );
     } catch (err) {
       throw decodeNapiKernelError(err);
