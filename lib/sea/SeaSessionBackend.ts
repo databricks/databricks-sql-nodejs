@@ -35,6 +35,7 @@ import { SeaNativeConnection } from './SeaNativeLoader';
 import { decodeNapiKernelError } from './SeaErrorMapping';
 import SeaOperationBackend from './SeaOperationBackend';
 import SeaTableTypeFilter from './SeaTableTypeFilter';
+import { seaServerInfoValue } from './SeaServerInfo';
 
 export interface SeaSessionBackendOptions {
   /** The opaque napi `Connection` handle returned by `openSession`. */
@@ -90,8 +91,23 @@ export default class SeaSessionBackend implements ISessionBackend {
     return this._id;
   }
 
-  public async getInfo(_infoType: number): Promise<InfoValue> {
-    throw new HiveDriverError('SeaSessionBackend.getInfo: not implemented yet (deferred to M1)');
+  public async getInfo(infoType: number): Promise<InfoValue> {
+    this.failIfClosed();
+    // `getInfo` (TGetInfoReq) is a Thrift/JDBC concept with no SEA-protocol or
+    // kernel equivalent, so — like JDBC's DatabaseMetaData — we synthesize the
+    // values client-side. `seaServerInfoValue` returns matches for the three
+    // TGetInfoTypes the Thrift server answers (server name, DBMS name, DBMS
+    // version) and `undefined` for the rest, which we surface as an error to
+    // mirror the server's reject-unsupported-info-type behaviour.
+    const value = seaServerInfoValue(infoType);
+    if (value === undefined) {
+      throw new HiveDriverError(
+        `SEA getInfo: TGetInfoType ${infoType} is not supported. The SEA/kernel protocol ` +
+          'has no getInfo RPC; only CLI_SERVER_NAME, CLI_DBMS_NAME and CLI_DBMS_VER are ' +
+          'synthesised (matching the Thrift server, which also rejects all other info types).',
+      );
+    }
+    return new InfoValue(value);
   }
 
   /**

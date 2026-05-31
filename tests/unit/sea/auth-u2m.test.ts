@@ -35,6 +35,7 @@ describe('SeaAuth + SeaBackend — OAuth U2M auth flow', () => {
         httpPath: '/sql/1.0/warehouses/abc',
         authMode: 'OAuthU2m',
         oauthRedirectPort: 8030,
+        intervalsAsString: true,
       });
     });
 
@@ -145,6 +146,7 @@ describe('SeaAuth + SeaBackend — OAuth U2M auth flow', () => {
         httpPath: '/sql/1.0/warehouses/abc',
         authMode: 'OAuthU2m',
         oauthRedirectPort: 8030,
+        intervalsAsString: true,
       });
 
       await session.close();

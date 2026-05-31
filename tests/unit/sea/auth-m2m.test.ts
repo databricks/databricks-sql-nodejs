@@ -38,6 +38,7 @@ describe('SeaAuth + SeaBackend — OAuth M2M auth flow', () => {
         authMode: 'OAuthM2m',
         oauthClientId: 'client-uuid',
         oauthClientSecret: 'dose-fake-secret',
+        intervalsAsString: true,
       });
     });
 
@@ -182,6 +183,7 @@ describe('SeaAuth + SeaBackend — OAuth M2M auth flow', () => {
         authMode: 'OAuthM2m',
         oauthClientId: 'client-uuid',
         oauthClientSecret: 'dose-fake-secret',
+        intervalsAsString: true,
       });
 
       await session.close();

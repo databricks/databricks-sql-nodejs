@@ -112,6 +112,19 @@ export function patchIpcBytes(ipcBytes: Buffer): Buffer {
 function arrowTypeToTTypeId(field: Field<DataType>): TTypeId {
   const typeName = field.metadata.get(DATABRICKS_TYPE_NAME)?.toUpperCase();
 
+  // `intervals_as_string` (set by the SEA backend for Thrift parity)
+  // renders INTERVAL columns as physical Arrow `Utf8` while the kernel
+  // keeps the `INTERVAL …` type_name metadata. The Thrift driver reports
+  // such string-rendered intervals as STRING (type 7), so honour the
+  // physical type here rather than the semantic metadata — otherwise the
+  // SEA path would report INTERVAL (20/21) and diverge from Thrift on a
+  // column whose values are already identical strings. Native interval
+  // encodings (the kernel default) are Duration / MonthInterval, never
+  // Utf8, so this guard is inert unless `intervals_as_string` is on.
+  if (typeName?.startsWith('INTERVAL') && DataType.isUtf8(field.type)) {
+    return TTypeId.STRING_TYPE;
+  }
+
   switch (typeName) {
     case 'BOOLEAN':
       return TTypeId.BOOLEAN_TYPE;

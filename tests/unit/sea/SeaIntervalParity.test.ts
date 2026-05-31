@@ -40,9 +40,11 @@ import {
   RecordBatch,
   makeData,
   Struct,
+  Utf8,
   vectorFromArray,
   tableToIPC,
 } from 'apache-arrow';
+import { arrowSchemaToThriftSchema } from '../../../lib/sea/SeaArrowIpc';
 
 // eslint-disable-next-line import/no-internal-modules
 import { Message as FbMessage } from 'apache-arrow/fb/message';
@@ -361,5 +363,31 @@ describe('SeaOperationBackend — INTERVAL parity with thrift', () => {
     const rows = await backend.fetchChunk({ limit: 100 });
     expect(rows).to.have.length(1);
     expect((rows[0] as any).iv).to.equal('1 00:00:00.000000000');
+  });
+});
+
+describe('SeaArrowIpc interval-as-string type mapping (Thrift parity)', () => {
+  const { TTypeId } = require('../../../thrift/TCLIService_types'); // eslint-disable-line @typescript-eslint/no-var-requires, global-require, import/no-internal-modules
+
+  function thriftType(field: Field) {
+    const cols = arrowSchemaToThriftSchema(new Schema([field])).columns;
+    return cols[0].typeDesc?.types?.[0]?.primitiveEntry?.type;
+  }
+
+  it('Utf8 + INTERVAL DAY TO SECOND metadata → STRING (matches Thrift, not INTERVAL)', () => {
+    // intervals_as_string=true renders the column as physical Utf8 while the
+    // kernel keeps the INTERVAL type_name metadata; we must report STRING.
+    const f = new Field('dt', new Utf8(), true, new Map([['databricks.type_name', 'INTERVAL DAY TO SECOND']]));
+    expect(thriftType(f)).to.equal(TTypeId.STRING_TYPE);
+  });
+
+  it('Utf8 + INTERVAL YEAR TO MONTH metadata → STRING', () => {
+    const f = new Field('ym', new Utf8(), true, new Map([['databricks.type_name', 'INTERVAL YEAR TO MONTH']]));
+    expect(thriftType(f)).to.equal(TTypeId.STRING_TYPE);
+  });
+
+  it('native Arrow Interval + INTERVAL metadata still maps to INTERVAL_YEAR_MONTH (guard is inert without intervals_as_string)', () => {
+    const f = new Field('ym', new Interval(IntervalUnit.YEAR_MONTH), true, new Map([['databricks.type_name', 'INTERVAL YEAR TO MONTH']]));
+    expect(thriftType(f)).to.equal(TTypeId.INTERVAL_YEAR_MONTH_TYPE);
   });
 });

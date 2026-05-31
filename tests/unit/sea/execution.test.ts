@@ -263,6 +263,7 @@ describe('SeaBackend', () => {
       httpPath: '/sql/1.0/warehouses/xyz',
       authMode: 'Pat',
       token: 'dapi-token',
+      intervalsAsString: true,
     });
   });
 
@@ -399,6 +400,27 @@ describe('SeaSessionBackend', () => {
     const session = makeSession(connection);
     const op = await session.getCatalogs({});
     expect(op).to.be.instanceOf(SeaOperationBackend);
+  });
+
+  it('getInfo synthesizes Thrift-identical values for the three answered info types', async () => {
+    const session = makeSession(new FakeNativeConnection());
+    const { TGetInfoType } = require('../../../thrift/TCLIService_types'); // eslint-disable-line @typescript-eslint/no-var-requires, global-require, import/no-internal-modules
+    expect((await session.getInfo(TGetInfoType.CLI_DBMS_NAME)).getValue()).to.equal('Spark SQL');
+    expect((await session.getInfo(TGetInfoType.CLI_DBMS_VER)).getValue()).to.equal('3.1.1');
+    expect((await session.getInfo(TGetInfoType.CLI_SERVER_NAME)).getValue()).to.equal('Spark SQL');
+  });
+
+  it('getInfo throws for info types the Thrift server does not answer', async () => {
+    const session = makeSession(new FakeNativeConnection());
+    const { TGetInfoType } = require('../../../thrift/TCLIService_types'); // eslint-disable-line @typescript-eslint/no-var-requires, global-require, import/no-internal-modules
+    let thrown: unknown;
+    try {
+      await session.getInfo(TGetInfoType.CLI_MAX_DRIVER_CONNECTIONS);
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).to.be.instanceOf(HiveDriverError);
+    expect((thrown as Error).message).to.match(/not supported/);
   });
 
   it('close() forwards to the native connection', async () => {

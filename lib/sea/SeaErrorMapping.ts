@@ -147,6 +147,18 @@ export function mapKernelErrorToJsError(kErr: KernelErrorShape): ErrorWithSqlSta
       error = new ParameterError(message);
       break;
 
+    case 'SqlError':
+      // A server-side SQL execution failure (the statement reached an
+      // ERROR state on the warehouse — bad SQL, PERMISSION_DENIED,
+      // SCHEMA_ALREADY_EXISTS, …). The Thrift backend surfaces exactly
+      // this situation as an `OperationStateError(ERROR)` after polling
+      // the operation status, so we mirror that class here for
+      // drop-in parity (both extend HiveDriverError, so existing
+      // `catch (HiveDriverError)` callers are unaffected).
+      error = new OperationStateError(OperationStateErrorCode.Error);
+      error.message = message;
+      break;
+
     // All remaining kernel ErrorCode variants map to the base driver error class.
     // M0 intentionally does not introduce new error classes; M1 may add nuance.
     case 'NotFound':
@@ -156,7 +168,6 @@ export function mapKernelErrorToJsError(kErr: KernelErrorShape): ErrorWithSqlSta
     case 'Internal':
     case 'InvalidStatementHandle':
     case 'NetworkError':
-    case 'SqlError':
       error = new HiveDriverError(message);
       break;
 

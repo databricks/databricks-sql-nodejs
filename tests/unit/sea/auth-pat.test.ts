@@ -33,6 +33,7 @@ describe('SeaAuth — PAT auth options builder', () => {
         httpPath: '/sql/1.0/warehouses/abc',
         authMode: 'Pat',
         token: 'dapi-fake-pat',
+        intervalsAsString: true,
       });
     });
 

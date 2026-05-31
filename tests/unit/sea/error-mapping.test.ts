@@ -76,8 +76,15 @@ describe('SeaErrorMapping.mapKernelErrorToJsError', () => {
       expectedClass: HiveDriverError,
     },
     {
+      // Server-side SQL execution failures surface as OperationStateError(ERROR),
+      // mirroring the Thrift backend's operation-status-poll error path so the
+      // two drivers throw the same class. (OperationStateError extends
+      // HiveDriverError, so base-class catchers still match.)
       code: 'SqlError',
-      expectedClass: HiveDriverError,
+      expectedClass: OperationStateError,
+      extra: (err) => {
+        expect((err as OperationStateError).errorCode).to.equal(OperationStateErrorCode.Error);
+      },
     },
   ];
 

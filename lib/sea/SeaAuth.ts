@@ -66,6 +66,24 @@ export interface SeaSessionDefaults {
   catalog?: string;
   schema?: string;
   sessionConf?: Record<string, string>;
+  /**
+   * Render `INTERVAL` / `DURATION` result columns as strings
+   * (kernel `ResultConfig.intervals_as_string`). The kernel default is
+   * native Arrow `month_interval` / `duration[us]`, but the NodeJS
+   * Thrift driver surfaces intervals as strings — so the SEA path sets
+   * this `true` so its result shape is a byte-compatible drop-in for the
+   * Thrift backend. Omitting it falls back to the kernel's native types.
+   */
+  intervalsAsString?: boolean;
+  /**
+   * Render complex (`ARRAY` / `MAP` / `STRUCT` / `VARIANT`) result
+   * columns as JSON strings (kernel `ResultConfig.complex_types_as_json`).
+   * Left unset on the SEA path: native Arrow nested types already decode
+   * identically to the Thrift backend through the shared Arrow converter,
+   * so forcing JSON here would *introduce* a divergence rather than
+   * remove one.
+   */
+  complexTypesAsJson?: boolean;
 }
 
 export type SeaNativeConnectionOptions = SeaSessionDefaults &
@@ -161,6 +179,13 @@ export function buildSeaConnectionOptions(options: ConnectionOptions): SeaNative
   const base = {
     hostName: options.host,
     httpPath: prependSlash(options.path),
+    // Match the NodeJS Thrift driver, which surfaces INTERVAL columns as
+    // strings. The kernel defaults to native Arrow interval/duration
+    // types; forcing the string rendering here keeps the SEA path a
+    // byte-compatible drop-in. Complex types are intentionally left at
+    // the kernel default (native Arrow) — they already decode identically
+    // to Thrift via the shared Arrow converter.
+    intervalsAsString: true,
   };
 
   const oauth = options as {
