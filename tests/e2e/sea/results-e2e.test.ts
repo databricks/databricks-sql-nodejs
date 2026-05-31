@@ -16,6 +16,8 @@
 
 import { expect } from 'chai';
 import { DBSQLClient } from '../../../lib';
+import { ConnectionOptions } from '../../../lib/contracts/IDBSQLClient';
+import { InternalConnectionOptions } from '../../../lib/contracts/InternalConnectionOptions';
 
 // Integration suite: connect through both backends, run a probe query,
 // and assert byte-identical row output (the M0 parity gate). Requires
@@ -50,7 +52,7 @@ async function fetchProbeRows(useSEA: boolean, secrets: PecoSecrets): Promise<Ar
     path: secrets.path,
     token: secrets.token,
     useSEA,
-  });
+  } as ConnectionOptions & InternalConnectionOptions);
   try {
     const session = await client.openSession();
     try {

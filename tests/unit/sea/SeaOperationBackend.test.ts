@@ -58,12 +58,16 @@ class StatementStub {
     this.batches = [...batches];
   }
 
+  // Mirrors the kernel `Statement.statementId` getter.
+  public readonly statementId = '01ef-fake-statement-id';
+
   public async fetchNextBatch(): Promise<{ ipcBytes: Buffer } | null> {
     if (this.batches.length === 0) return null;
     return { ipcBytes: this.batches.shift() as Buffer };
   }
 
-  public async schema(): Promise<{ ipcBytes: Buffer }> {
+  // schema() is synchronous on the merged-kernel binding.
+  public schema(): { ipcBytes: Buffer } {
     return { ipcBytes: this.schemaIpc };
   }
 
@@ -73,6 +77,23 @@ class StatementStub {
 
   public async close(): Promise<void> {
     this.closed = true;
+  }
+
+  // Status accessors from the kernel's status-fields surface.
+  public async numModifiedRows(): Promise<number | null> {
+    return null;
+  }
+
+  public async displayMessage(): Promise<string | null> {
+    return null;
+  }
+
+  public async diagnosticInfo(): Promise<string | null> {
+    return null;
+  }
+
+  public async errorDetailsJson(): Promise<string | null> {
+    return null;
   }
 }
 
