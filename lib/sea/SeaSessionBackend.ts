@@ -115,6 +115,11 @@ export default class SeaSessionBackend implements ISessionBackend {
         'SEA executeStatement: queryTimeout is not supported in M0 (deferred to M1)',
       );
     }
+    if (options.useCloudFetch !== undefined) {
+      throw new HiveDriverError(
+        'SEA executeStatement: useCloudFetch is controlled by the kernel result configuration and is not a per-statement option on SEA',
+      );
+    }
 
     let nativeStatement;
     try {
@@ -125,6 +130,7 @@ export default class SeaSessionBackend implements ISessionBackend {
     return new SeaOperationBackend({
       statement: nativeStatement!,
       context: this.context,
+      id: nativeStatement!.statementId,
     });
   }
 
