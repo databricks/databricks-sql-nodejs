@@ -111,7 +111,15 @@ export default class SeaBackend implements IBackend {
 
     let nativeConnection: SeaNativeConnection;
     try {
-      nativeConnection = (await this.binding.openSession(sessionOptions)) as SeaNativeConnection;
+      // `SeaNativeConnectionOptions.authMode` is a string-literal union
+      // ('Pat' | 'OAuthM2m' | 'OAuthU2m') — deliberately not the binding's
+      // `const enum AuthMode` (see SeaAuth's note on why a const-enum import
+      // is avoided). The literal values are byte-identical to the enum's, so
+      // the only divergence is TS's const-enum strictness; cast to the
+      // binding's parameter type at this single boundary.
+      nativeConnection = (await this.binding.openSession(
+        sessionOptions as unknown as Parameters<SeaNativeBinding['openSession']>[0],
+      )) as SeaNativeConnection;
     } catch (err) {
       throw decodeNapiKernelError(err);
     }

@@ -37,15 +37,10 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
-import {
-  TGetOperationStatusResp,
-  TGetResultSetMetadataResp,
-  TOperationState,
-  TSparkRowSetType,
-  TStatusCode,
-  TTableSchema,
-} from '../../thrift/TCLIService_types';
+import { TGetOperationStatusResp, TTableSchema } from '../../thrift/TCLIService_types';
 import IOperationBackend from '../contracts/IOperationBackend';
+import { OperationStatus, OperationState } from '../contracts/OperationStatus';
+import { ResultMetadata, ResultFormat } from '../contracts/ResultMetadata';
 import IClientContext from '../contracts/IClientContext';
 import Status from '../dto/Status';
 import ArrowResultConverter from '../result/ArrowResultConverter';
@@ -101,9 +96,9 @@ export default class SeaOperationBackend implements IOperationBackend {
 
   private resultsProvider?: SeaResultsProvider;
 
-  private metadata?: TGetResultSetMetadataResp;
+  private metadata?: ResultMetadata;
 
-  private metadataPromise?: Promise<TGetResultSetMetadataResp>;
+  private metadataPromise?: Promise<ResultMetadata>;
 
   constructor({ statement, context, id }: SeaOperationBackendOptions) {
     this.statement = statement;
@@ -148,7 +143,7 @@ export default class SeaOperationBackend implements IOperationBackend {
     return slicer.hasMore();
   }
 
-  public async getResultMetadata(): Promise<TGetResultSetMetadataResp> {
+  public async getResultMetadata(): Promise<ResultMetadata> {
     failIfNotActive(this.lifecycle);
     if (this.metadata) {
       return this.metadata;
@@ -162,15 +157,17 @@ export default class SeaOperationBackend implements IOperationBackend {
       }
       const arrowSchemaIpc = await this.statement.schema();
       const arrowSchema = decodeIpcSchema(arrowSchemaIpc.ipcBytes);
+      // `ResultMetadata.schema` keeps the Thrift `TTableSchema` shape for
+      // back-compat with the public `IOperation.getSchema()` surface.
       const thriftSchema: TTableSchema = arrowSchemaToThriftSchema(arrowSchema);
-      const meta: TGetResultSetMetadataResp = {
-        status: { statusCode: TStatusCode.SUCCESS_STATUS },
+      const meta: ResultMetadata = {
         schema: thriftSchema,
         // SEA inline + CloudFetch both surface to JS as Arrow batches;
-        // both flow through the same converter that handles the
-        // ARROW_BASED_SET path on the thrift side.
-        resultFormat: TSparkRowSetType.ARROW_BASED_SET,
+        // both flow through the same Arrow result converter.
+        resultFormat: ResultFormat.ArrowBased,
         lz4Compressed: false,
+        // Carry the raw Arrow IPC schema bytes for ARROW_BASED consumers.
+        arrowSchema: arrowSchemaIpc.ipcBytes,
         isStagingOperation: false,
       };
       this.metadata = meta;
@@ -187,30 +184,20 @@ export default class SeaOperationBackend implements IOperationBackend {
   // Status / lifecycle (owned by the sea-operation lifecycle helpers).
   // ---------------------------------------------------------------------------
 
-  public async status(_progress: boolean): Promise<TGetOperationStatusResp> {
-    // Synthesised — kernel only surfaces terminal-or-running statements
-    // through its public API; we report CANCELED/CLOSED if the lifecycle
-    // flag is set, else FINISHED. Matches the Thrift status shape so
-    // facade-level callers see consistent telemetry across backends.
+  public async status(_progress: boolean): Promise<OperationStatus> {
+    // Synthesised — the kernel resolves `Statement::execute().await` before
+    // it hands back a Statement handle, so by the time a SeaOperationBackend
+    // exists the statement is terminal. Report Cancelled/Closed if the
+    // lifecycle flag is set, else Succeeded. Returns the backend-neutral
+    // OperationStatus the IOperationBackend contract expects, so the
+    // DBSQLOperation facade switches on `state` identically across backends.
     if (this.lifecycle.isCancelled) {
-      return {
-        status: { statusCode: TStatusCode.SUCCESS_STATUS },
-        operationState: TOperationState.CANCELED_STATE,
-        hasResultSet: true,
-      };
+      return { state: OperationState.Cancelled, hasResultSet: true };
     }
     if (this.lifecycle.isClosed) {
-      return {
-        status: { statusCode: TStatusCode.SUCCESS_STATUS },
-        operationState: TOperationState.CLOSED_STATE,
-        hasResultSet: true,
-      };
+      return { state: OperationState.Closed, hasResultSet: true };
     }
-    return {
-      status: { statusCode: TStatusCode.SUCCESS_STATUS },
-      operationState: TOperationState.FINISHED_STATE,
-      hasResultSet: true,
-    };
+    return { state: OperationState.Succeeded, hasResultSet: true };
   }
 
   public async waitUntilReady(options?: {

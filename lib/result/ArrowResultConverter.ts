@@ -13,7 +13,7 @@ import {
   RecordBatchReader,
   util as arrowUtils,
 } from 'apache-arrow';
-import { TGetResultSetMetadataResp, TColumnDesc } from '../../thrift/TCLIService_types';
+import { TTableSchema, TColumnDesc } from '../../thrift/TCLIService_types';
 import IClientContext from '../contracts/IClientContext';
 import IResultsProvider, { ResultsProviderFetchNextOptions } from './IResultsProvider';
 import { ArrowBatch, getSchemaColumns, convertThriftValue } from './utils';
@@ -179,7 +179,12 @@ export default class ArrowResultConverter implements IResultsProvider<Array<any>
   // actually return a non-empty result
   private prefetchedRecordBatch?: RecordBatch<TypeMap>;
 
-  constructor(context: IClientContext, source: IResultsProvider<ArrowBatch>, { schema }: TGetResultSetMetadataResp) {
+  // Only the column `schema` is consumed here. Typed as the minimal shape
+  // (not the full Thrift `TGetResultSetMetadataResp`) so both the Thrift
+  // operation backend and the SEA backend's neutral `ResultMetadata` —
+  // which both carry `schema?: TTableSchema` — can construct the converter
+  // without an adapter at the call site.
+  constructor(context: IClientContext, source: IResultsProvider<ArrowBatch>, { schema }: { schema?: TTableSchema }) {
     this.context = context;
     this.source = source;
     this.schema = getSchemaColumns(schema);
