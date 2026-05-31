@@ -233,6 +233,32 @@ export interface ConnectionOptions {
    * already renders identically to the Thrift path).
    */
   complexTypesAsJson?: boolean
+  /**
+   * Whether to verify the server's TLS certificate.
+   *
+   * Omitted / `false` ⇒ the driver matches the legacy NodeJS Thrift
+   * driver's permissive behaviour (`rejectUnauthorized: false`): it
+   * accepts self-signed / untrusted / expired certs AND skips the
+   * hostname-vs-SNI check. This is **insecure** (no protection
+   * against active MITM) but is the historical NodeJS-driver default
+   * since 2020, so the SEA backend matches it for drop-in parity.
+   *
+   * `true` ⇒ strict validation against the system / Mozilla trust
+   * store (full chain + expiry + hostname), matching JDBC / ODBC and
+   * every modern HTTPS client. Recommended.
+   *
+   * Maps onto the kernel [`TlsConfig::accept_self_signed`] +
+   * [`TlsConfig::skip_hostname_verification`] (both = `!check`).
+   */
+  checkServerCertificate?: boolean
+  /**
+   * PEM-encoded CA certificate bytes to add to the trust store on
+   * top of the system roots. Use for corporate TLS-inspecting
+   * proxies that re-sign TLS, or on-prem deployments with an
+   * internal CA. Honoured regardless of `check_server_certificate`.
+   * Maps onto the kernel [`TlsConfig::custom_ca_cert`].
+   */
+  customCaCert?: Buffer
 }
 /**
  * Open a Databricks SQL session and return an opaque `Connection`

@@ -86,7 +86,28 @@ export interface SeaSessionDefaults {
   complexTypesAsJson?: boolean;
 }
 
+/**
+ * TLS options shared across all auth-mode variants. Mirror the napi
+ * binding's `ConnectionOptions.checkServerCertificate` / `.customCaCert`
+ * (kernel `Session::builder().tls(TlsConfig)`).
+ *
+ * The napi shape takes `customCaCert` as a `Buffer` only; the public
+ * `ConnectionOptions` additionally accepts a PEM string, which
+ * `buildSeaConnectionOptions` normalises to a `Buffer` before crossing
+ * the FFI boundary.
+ */
+export interface SeaTlsOptions {
+  /**
+   * Verify the server cert. Omitted ⇒ napi default (permissive,
+   * thrift-compatible). See `ConnectionOptions.checkServerCertificate`.
+   */
+  checkServerCertificate?: boolean;
+  /** PEM-encoded CA bytes to add to the trust store. */
+  customCaCert?: Buffer;
+}
+
 export type SeaNativeConnectionOptions = SeaSessionDefaults &
+  SeaTlsOptions &
   (
     | {
         hostName: string;
@@ -130,6 +151,55 @@ function prependSlash(str: string): string {
 export function isBlankOrReserved(s: string): boolean {
   const normalized = s.trim().toLowerCase();
   return normalized.length === 0 || normalized === 'undefined' || normalized === 'null';
+}
+
+/**
+ * Normalise the public TLS options (`checkServerCertificate` /
+ * `customCaCert`) into the napi shape.
+ *
+ * - `checkServerCertificate` passes through verbatim (only when set; an
+ *   absent value leaves the napi default, which is permissive /
+ *   thrift-compatible).
+ * - `customCaCert` accepts a PEM string or `Buffer` on the public
+ *   surface; we convert a string to a `Buffer` here and do a light PEM
+ *   sanity check. The bytes are NOT parsed in JS — the kernel returns a
+ *   meaningful error if the PEM is malformed.
+ *
+ * Throws `HiveDriverError` when `customCaCert` is supplied but empty or
+ * (for strings) lacks a PEM certificate header.
+ */
+export function buildSeaTlsOptions(options: ConnectionOptions): SeaTlsOptions {
+  const { checkServerCertificate, customCaCert } = options as {
+    checkServerCertificate?: boolean;
+    customCaCert?: Buffer | string;
+  };
+
+  const tls: SeaTlsOptions = {};
+
+  if (checkServerCertificate !== undefined) {
+    tls.checkServerCertificate = checkServerCertificate;
+  }
+
+  if (customCaCert !== undefined) {
+    if (typeof customCaCert === 'string') {
+      if (!customCaCert.includes('-----BEGIN CERTIFICATE-----')) {
+        throw new HiveDriverError(
+          'SEA backend: `customCaCert` string does not look like a PEM certificate ' +
+            "(missing '-----BEGIN CERTIFICATE-----'). Pass PEM text or a Buffer of PEM bytes.",
+        );
+      }
+      tls.customCaCert = Buffer.from(customCaCert, 'utf8');
+    } else if (Buffer.isBuffer(customCaCert)) {
+      if (customCaCert.length === 0) {
+        throw new HiveDriverError('SEA backend: `customCaCert` Buffer is empty.');
+      }
+      tls.customCaCert = customCaCert;
+    } else {
+      throw new HiveDriverError('SEA backend: `customCaCert` must be a PEM string or a Buffer.');
+    }
+  }
+
+  return tls;
 }
 
 /**
@@ -186,6 +256,10 @@ export function buildSeaConnectionOptions(options: ConnectionOptions): SeaNative
     // the kernel default (native Arrow) — they already decode identically
     // to Thrift via the shared Arrow converter.
     intervalsAsString: true,
+    // TLS knobs (server-cert verification toggle + custom CA). Validated
+    // and normalised (string PEM → Buffer) here so the napi shape only
+    // ever sees a Buffer.
+    ...buildSeaTlsOptions(options),
   };
 
   const oauth = options as {
@@ -200,7 +274,7 @@ export function buildSeaConnectionOptions(options: ConnectionOptions): SeaNative
     const { token } = options as { token?: string };
     if (typeof token !== 'string' || isBlankOrReserved(token)) {
       throw new AuthenticationError(
-        'SEA backend: a non-empty PAT must be supplied via `token` when using `authType: \'access-token\'`.',
+        "SEA backend: a non-empty PAT must be supplied via `token` when using `authType: 'access-token'`.",
       );
     }
     if (oauth.oauthClientId !== undefined || oauth.oauthClientSecret !== undefined) {

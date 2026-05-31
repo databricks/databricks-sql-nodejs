@@ -60,6 +60,34 @@ export type ConnectionOptions = {
    * @internal Not stable; M0 stub only.
    */
   useSEA?: boolean;
+  /**
+   * Whether to verify the server's TLS certificate (SEA backend only).
+   *
+   * Defaults to `false`, which matches the legacy NodeJS Thrift driver's
+   * permissive behaviour (`rejectUnauthorized: false`): self-signed,
+   * untrusted, and expired certificates are accepted and the
+   * hostname-vs-certificate check is skipped. This is **insecure** — it
+   * provides no protection against active man-in-the-middle attacks — but
+   * is the historical NodeJS-driver default, so the SEA backend matches it
+   * for drop-in compatibility.
+   *
+   * Set to `true` for strict validation against the system trust store
+   * (full chain + expiry + hostname), matching the JDBC/ODBC drivers and
+   * every modern HTTPS client. Recommended for production.
+   *
+   * For corporate TLS-inspecting proxies or on-prem deployments with an
+   * internal CA, prefer `checkServerCertificate: true` together with
+   * `customCaCert` over disabling verification entirely.
+   */
+  checkServerCertificate?: boolean;
+  /**
+   * PEM-encoded CA certificate to add to the trust store on top of the
+   * system roots (SEA backend only). Accepts a PEM string or its raw
+   * `Buffer` bytes. Use this for a corporate proxy that re-signs TLS or an
+   * on-prem Databricks deployment that uses an internal CA. Honoured
+   * regardless of `checkServerCertificate`.
+   */
+  customCaCert?: Buffer | string;
 } & AuthOptions;
 
 export interface OpenSessionRequest {

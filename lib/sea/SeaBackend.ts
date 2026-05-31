@@ -16,12 +16,9 @@ import IBackend from '../contracts/IBackend';
 import ISessionBackend from '../contracts/ISessionBackend';
 import IClientContext from '../contracts/IClientContext';
 import { ConnectionOptions, OpenSessionRequest } from '../contracts/IDBSQLClient';
+import { LogLevel } from '../contracts/IDBSQLLogger';
 import HiveDriverError from '../errors/HiveDriverError';
-import {
-  getSeaNative,
-  SeaNativeBinding,
-  SeaNativeConnection,
-} from './SeaNativeLoader';
+import { getSeaNative, SeaNativeBinding, SeaNativeConnection } from './SeaNativeLoader';
 import { decodeNapiKernelError } from './SeaErrorMapping';
 import { buildSeaConnectionOptions, SeaNativeConnectionOptions } from './SeaAuth';
 import SeaSessionBackend from './SeaSessionBackend';
@@ -82,6 +79,25 @@ export default class SeaBackend implements IBackend {
     // Any non-PAT mode (or a missing/empty token) throws here, before
     // we ever touch the native binding.
     this.nativeOptions = buildSeaConnectionOptions(options);
+
+    // Server-cert verification defaults to OFF (thrift-compatible). When
+    // it's not explicitly enabled, emit a one-line DEBUG note so an
+    // insecure connection is discoverable in logs without being noisy on
+    // every connect — the default is deliberately permissive for thrift
+    // parity, so this stays at debug level rather than warn.
+    if (this.nativeOptions.checkServerCertificate !== true) {
+      this.context
+        ?.getLogger()
+        .log(
+          LogLevel.debug,
+          'SEA backend: TLS server-certificate verification is DISABLED ' +
+            '(checkServerCertificate is not set to true). The connection accepts ' +
+            'self-signed/untrusted/expired certs and skips the hostname check — this ' +
+            'matches the legacy Thrift driver but offers no protection against active ' +
+            'man-in-the-middle attacks. Set `checkServerCertificate: true` for strict ' +
+            'validation, optionally with `customCaCert` for corporate/on-prem CAs.',
+        );
+    }
   }
 
   public async openSession(request: OpenSessionRequest): Promise<ISessionBackend> {
