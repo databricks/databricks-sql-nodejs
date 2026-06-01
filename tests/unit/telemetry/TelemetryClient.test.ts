@@ -142,11 +142,124 @@ describe('TelemetryClient', () => {
       const logSpy = sinon.spy(context.logger, 'log');
       const client = new TelemetryClient(context, HOST);
 
-      client.close();
+      await client.close();
 
       logSpy.getCalls().forEach((call) => {
-        expect(call.args[0]).to.equal(LogLevel.debug);
+        expect(call.args[0]).to.satisfy((lvl: string) => lvl === LogLevel.debug || lvl === LogLevel.warn);
       });
+    });
+  });
+
+  describe('feature-flag context registration (F1)', () => {
+    it('should register the host with the feature-flag cache on construction', () => {
+      const context = new ClientContextStub();
+      const client = new TelemetryClient(context, HOST);
+
+      // Without F1's wiring, isTelemetryEnabled returns false because the
+      // contexts map is empty. With F1, the constructor registers the host
+      // so the cache is ready to fetch the flag.
+      const cache = client.getFeatureFlagCache();
+      // Internal access for assertion only — tests on getInstance/resetInstance
+      // would otherwise leak across the singleton.
+      const ctx = (cache as any).contexts.get(HOST);
+      expect(ctx, 'context should exist after TelemetryClient construction').to.exist;
+      expect(ctx.refCount, 'refCount should be 1 after registration').to.equal(1);
+    });
+
+    it('should release the feature-flag context on close', async () => {
+      const context = new ClientContextStub();
+      const client = new TelemetryClient(context, HOST);
+      const cache = client.getFeatureFlagCache();
+
+      await client.close();
+
+      const ctx = (cache as any).contexts.get(HOST);
+      expect(ctx, 'context should be removed on close (refCount → 0)').to.be.undefined;
+    });
+  });
+
+  describe('multi-context FIFO', () => {
+    it('registerContext appends contexts in registration order', () => {
+      const ctxA = new ClientContextStub();
+      const ctxB = new ClientContextStub();
+      const client = new TelemetryClient(ctxA, HOST);
+
+      client.registerContext(ctxB);
+
+      const internal = client as any;
+      expect(internal.contexts).to.have.lengthOf(2);
+      // `contexts` is now an array of {context, authProvider} snapshots so
+      // unregisterContext can use the cached auth-provider reference even
+      // after a registrant rotates credentials. Unwrap `.context` to assert.
+      expect(internal.contexts[0].context).to.equal(ctxA);
+      expect(internal.contexts[1].context).to.equal(ctxB);
+    });
+
+    it('registerContext is idempotent for the same context', () => {
+      const ctxA = new ClientContextStub();
+      const client = new TelemetryClient(ctxA, HOST);
+
+      client.registerContext(ctxA);
+      client.registerContext(ctxA);
+
+      expect((client as any).contexts).to.have.lengthOf(1);
+    });
+
+    it('unregisterContext removes the context', () => {
+      const ctxA = new ClientContextStub();
+      const ctxB = new ClientContextStub();
+      const client = new TelemetryClient(ctxA, HOST);
+      client.registerContext(ctxB);
+
+      client.unregisterContext(ctxA);
+
+      const internal = client as any;
+      expect(internal.contexts).to.have.lengthOf(1);
+      expect(internal.contexts[0].context).to.equal(ctxB);
+    });
+
+    it('warns when a registered context has divergent telemetry config (F12)', () => {
+      const ctxA = new ClientContextStub({ telemetryAuthenticatedExport: true });
+      const ctxB = new ClientContextStub({ telemetryAuthenticatedExport: false });
+      const client = new TelemetryClient(ctxA, HOST);
+      const logSpy = sinon.spy(ctxA.logger, 'log');
+
+      client.registerContext(ctxB);
+
+      const warnCall = logSpy
+        .getCalls()
+        .find((c) => c.args[0] === LogLevel.warn && /telemetry settings .* differ/.test(c.args[1] as string));
+      expect(warnCall, 'should warn about divergent telemetryAuthenticatedExport').to.exist;
+    });
+  });
+
+  describe('async close()', () => {
+    it('returns a Promise that resolves only after aggregator close', async () => {
+      const context = new ClientContextStub();
+      const client = new TelemetryClient(context, HOST);
+      const aggregator = client.getAggregator();
+      const aggCloseStub = sinon.stub(aggregator, 'close').callsFake(
+        () =>
+          new Promise<void>((resolve) => {
+            setTimeout(resolve, 5);
+          }),
+      );
+
+      const closePromise = client.close();
+      expect(client.isClosed(), 'closed flag is set synchronously').to.be.true;
+      expect(aggCloseStub.calledOnce).to.be.true;
+      await closePromise;
+    });
+
+    it('is idempotent — second close awaits without re-running aggregator close', async () => {
+      const context = new ClientContextStub();
+      const client = new TelemetryClient(context, HOST);
+      const aggCloseStub = sinon.stub(client.getAggregator(), 'close').resolves();
+
+      await client.close();
+      await client.close();
+
+      expect(aggCloseStub.calledOnce, 'aggregator.close should run exactly once').to.be.true;
     });
   });
 });

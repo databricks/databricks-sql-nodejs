@@ -29,7 +29,8 @@
       "files": ["*.test.js", "*.test.ts"],
       "rules": {
         "no-unused-expressions": "off",
-        "@typescript-eslint/no-unused-expressions": "off"
+        "@typescript-eslint/no-unused-expressions": "off",
+        "func-names": "off"
       }
     }
   ]

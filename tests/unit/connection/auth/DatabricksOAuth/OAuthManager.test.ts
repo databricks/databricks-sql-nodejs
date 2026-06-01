@@ -519,3 +519,65 @@ class OpenIDClientStub implements BaseClient {
     });
   });
 });
+
+describe('AzureOAuthManager (tenant awareness)', () => {
+  function makeAzure(overrides: Partial<OAuthManagerOptions> = {}) {
+    return new AzureOAuthManager({
+      host: 'adb-1234567890123456.1.azuredatabricks.net',
+      flow: OAuthFlow.M2M,
+      context: new ClientContextStub(),
+      ...overrides,
+    });
+  }
+
+  // Access protected methods for unit inspection.
+  const call = <T>(mgr: AzureOAuthManager, name: string, ...args: unknown[]): T =>
+    (mgr as unknown as Record<string, (...a: unknown[]) => T>)[name](...args);
+
+  describe('getOIDCConfigUrl', () => {
+    it('falls back to /organizations/ when azureTenantId is not set (baseline-compatible)', () => {
+      const mgr = makeAzure();
+      const url = call<string>(mgr, 'getOIDCConfigUrl');
+      expect(url).to.equal('https://login.microsoftonline.com/organizations/v2.0/.well-known/openid-configuration');
+    });
+
+    it('uses the caller-supplied tenant in the discovery URL when provided', () => {
+      const tenant = '9f37a392-f0ae-4280-9796-f1864a10effc';
+      const mgr = makeAzure({ azureTenantId: tenant });
+      const url = call<string>(mgr, 'getOIDCConfigUrl');
+      expect(url).to.equal(`https://login.microsoftonline.com/${tenant}/v2.0/.well-known/openid-configuration`);
+    });
+
+    it('falls back to /organizations/ when azureTenantId is empty or whitespace', () => {
+      for (const tenant of ['', '   ']) {
+        const mgr = makeAzure({ azureTenantId: tenant });
+        const url = call<string>(mgr, 'getOIDCConfigUrl');
+        expect(url).to.equal('https://login.microsoftonline.com/organizations/v2.0/.well-known/openid-configuration');
+      }
+    });
+  });
+
+  describe('getScopes — resource ID is always the Azure Login App, never a tenant GUID', () => {
+    it('M2M scope uses the Databricks Azure Login App resource ID even when azureTenantId is set', () => {
+      const tenant = '9f37a392-f0ae-4280-9796-f1864a10effc';
+      const mgr = makeAzure({ azureTenantId: tenant, flow: OAuthFlow.M2M });
+      const scopes = call<string[]>(mgr, 'getScopes', []);
+      expect(scopes).to.include(`${AzureOAuthManager.datatricksAzureApp}/.default`);
+      expect(scopes).to.not.include(`${tenant}/.default`);
+    });
+
+    it('U2M scope uses the Databricks Azure Login App resource ID even when azureTenantId is set', () => {
+      const tenant = '9f37a392-f0ae-4280-9796-f1864a10effc';
+      const mgr = makeAzure({ azureTenantId: tenant, flow: OAuthFlow.U2M });
+      const scopes = call<string[]>(mgr, 'getScopes', []);
+      expect(scopes).to.include(`${AzureOAuthManager.datatricksAzureApp}/user_impersonation`);
+      expect(scopes).to.not.include(`${tenant}/user_impersonation`);
+    });
+
+    it('preserves offline_access when requested alongside M2M', () => {
+      const mgr = makeAzure({ flow: OAuthFlow.M2M });
+      const scopes = call<string[]>(mgr, 'getScopes', [OAuthScope.offlineAccess]);
+      expect(scopes).to.include(OAuthScope.offlineAccess);
+    });
+  });
+});

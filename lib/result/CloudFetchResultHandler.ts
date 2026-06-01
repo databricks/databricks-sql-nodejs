@@ -6,6 +6,7 @@ import IResultsProvider, { ResultsProviderFetchNextOptions } from './IResultsPro
 import { ArrowBatch } from './utils';
 import { LZ4 } from '../utils';
 import { LogLevel } from '../contracts/IDBSQLLogger';
+import { safeEmit } from '../telemetry/telemetryUtils';
 
 export default class CloudFetchResultHandler implements IResultsProvider<ArrowBatch> {
   private readonly context: IClientContext;
@@ -14,18 +15,24 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
 
   private readonly isLZ4Compressed: boolean;
 
+  private readonly statementId?: string;
+
   private pendingLinks: Array<TSparkArrowResultLink> = [];
 
   private downloadTasks: Array<Promise<ArrowBatch>> = [];
 
+  private chunkIndex: number = 0;
+
   constructor(
     context: IClientContext,
     source: IResultsProvider<TRowSet | undefined>,
-    { lz4Compressed }: TGetResultSetMetadataResp,
+    metadata: TGetResultSetMetadataResp,
+    statementId?: string,
   ) {
     this.context = context;
     this.source = source;
-    this.isLZ4Compressed = lz4Compressed ?? false;
+    this.isLZ4Compressed = metadata.lz4Compressed ?? false;
+    this.statementId = statementId;
 
     if (this.isLZ4Compressed && !LZ4()) {
       throw new HiveDriverError('Cannot handle LZ4 compressed result: module `lz4` not installed');
@@ -106,6 +113,10 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
 
     this.logDownloadMetrics(link.fileLink, result.byteLength, downloadTimeMs);
 
+    // Emit cloudfetch.chunk telemetry event
+    this.emitCloudFetchChunk(this.chunkIndex, downloadTimeMs, result.byteLength);
+    this.chunkIndex += 1;
+
     return {
       batches: [Buffer.from(result)],
       rowCount: link.rowCount.toNumber(true),
@@ -123,5 +134,25 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
       return fetch(request).then((response) => ({ request, response }));
     });
     return result.response;
+  }
+
+  /**
+   * Emit cloudfetch.chunk telemetry event.
+   * CRITICAL: All exceptions swallowed and logged at LogLevel.debug ONLY.
+   */
+  private emitCloudFetchChunk(chunkIndex: number, latencyMs: number, bytes: number): void {
+    const { statementId } = this;
+    if (!statementId) {
+      return;
+    }
+    safeEmit(this.context, (emitter) => {
+      emitter.emitCloudFetchChunk({
+        statementId,
+        chunkIndex,
+        latencyMs,
+        bytes,
+        compressed: this.isLZ4Compressed,
+      });
+    });
   }
 }

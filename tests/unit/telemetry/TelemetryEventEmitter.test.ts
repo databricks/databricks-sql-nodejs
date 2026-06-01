@@ -17,187 +17,777 @@
 import { expect } from 'chai';
 import sinon from 'sinon';
 import TelemetryEventEmitter from '../../../lib/telemetry/TelemetryEventEmitter';
-import { TelemetryEventType } from '../../../lib/telemetry/types';
-import ClientContextStub from '../.stubs/ClientContextStub';
-import { LogLevel } from '../../../lib/contracts/IDBSQLLogger';
-
-function makeEmitter(enabled: boolean): TelemetryEventEmitter {
-  const context = new ClientContextStub({ telemetryEnabled: enabled } as any);
-  return new TelemetryEventEmitter(context);
-}
+import { TelemetryEventType, TelemetryEvent, DriverConfiguration } from '../../../lib/telemetry/types';
+import IClientContext from '../../../lib/contracts/IClientContext';
+import IDBSQLLogger, { LogLevel } from '../../../lib/contracts/IDBSQLLogger';
 
 describe('TelemetryEventEmitter', () => {
-  describe('when telemetry is disabled', () => {
-    it('should not emit any events', () => {
-      const emitter = makeEmitter(false);
-      const listener = sinon.stub();
-      emitter.on(TelemetryEventType.CONNECTION_OPEN, listener);
+  let context: IClientContext;
+  let logger: IDBSQLLogger;
+  let emitter: TelemetryEventEmitter;
 
-      emitter.emitConnectionOpen({ sessionId: 's1', workspaceId: 'w1', driverConfig: {} as any });
+  beforeEach(() => {
+    logger = {
+      log: sinon.stub(),
+    };
 
-      expect(listener.called).to.be.false;
+    context = {
+      getLogger: () => logger,
+      getConfig: () => ({
+        telemetryEnabled: true,
+        directResultsDefaultMaxRows: 10000,
+        fetchChunkDefaultMaxRows: 100000,
+        socketTimeout: 900000,
+        retryMaxAttempts: 30,
+        retriesTimeout: 900000,
+        retryDelayMin: 1000,
+        retryDelayMax: 30000,
+        useCloudFetch: true,
+        cloudFetchConcurrentDownloads: 10,
+        cloudFetchSpeedThresholdMBps: 0,
+        useLZ4Compression: true,
+      }),
+    } as any;
+
+    emitter = new TelemetryEventEmitter(context);
+  });
+
+  afterEach(() => {
+    sinon.restore();
+  });
+
+  describe('constructor', () => {
+    it('should create instance with telemetry enabled', () => {
+      expect(emitter).to.be.instanceOf(TelemetryEventEmitter);
     });
 
-    it('should not emit statement start', () => {
-      const emitter = makeEmitter(false);
-      const listener = sinon.stub();
-      emitter.on(TelemetryEventType.STATEMENT_START, listener);
+    it('should create instance with telemetry disabled', () => {
+      const disabledContext = {
+        getLogger: () => logger,
+        getConfig: () => ({
+          telemetryEnabled: false,
+          directResultsDefaultMaxRows: 10000,
+          fetchChunkDefaultMaxRows: 100000,
+          socketTimeout: 900000,
+          retryMaxAttempts: 30,
+          retriesTimeout: 900000,
+          retryDelayMin: 1000,
+          retryDelayMax: 30000,
+          useCloudFetch: true,
+          cloudFetchConcurrentDownloads: 10,
+          cloudFetchSpeedThresholdMBps: 0,
+          useLZ4Compression: true,
+        }),
+      } as any;
 
-      emitter.emitStatementStart({ statementId: 'st1', sessionId: 's1' });
-
-      expect(listener.called).to.be.false;
+      const disabledEmitter = new TelemetryEventEmitter(disabledContext);
+      expect(disabledEmitter).to.be.instanceOf(TelemetryEventEmitter);
     });
 
-    it('should not emit error events', () => {
-      const emitter = makeEmitter(false);
-      const listener = sinon.stub();
-      emitter.on(TelemetryEventType.ERROR, listener);
+    it('should default to disabled when telemetryEnabled is undefined', () => {
+      const defaultContext = {
+        getLogger: () => logger,
+        getConfig: () => ({
+          directResultsDefaultMaxRows: 10000,
+          fetchChunkDefaultMaxRows: 100000,
+          socketTimeout: 900000,
+          retryMaxAttempts: 30,
+          retriesTimeout: 900000,
+          retryDelayMin: 1000,
+          retryDelayMax: 30000,
+          useCloudFetch: true,
+          cloudFetchConcurrentDownloads: 10,
+          cloudFetchSpeedThresholdMBps: 0,
+          useLZ4Compression: true,
+        }),
+      } as any;
 
-      emitter.emitError({ errorName: 'SomeError', errorMessage: 'msg', isTerminal: false });
-
-      expect(listener.called).to.be.false;
+      const defaultEmitter = new TelemetryEventEmitter(defaultContext);
+      expect(defaultEmitter).to.be.instanceOf(TelemetryEventEmitter);
     });
   });
 
-  describe('emitConnectionOpen()', () => {
-    it('should emit a CONNECTION_OPEN event with correct fields', () => {
-      const emitter = makeEmitter(true);
-      const listener = sinon.stub();
-      emitter.on(TelemetryEventType.CONNECTION_OPEN, listener);
+  describe('emitConnectionOpen', () => {
+    it('should emit connection.open event with correct data', (done) => {
+      const driverConfig: DriverConfiguration = {
+        driverVersion: '1.0.0',
+        driverName: 'databricks-sql-nodejs',
+        nodeVersion: process.version,
+        platform: process.platform,
+        osVersion: 'test-os',
+        osArch: 'x64',
+        runtimeVendor: 'Node.js Foundation',
+        localeName: 'en_US',
+        charSetEncoding: 'UTF-8',
+        processName: 'node',
+        authType: 'pat',
+        cloudFetchEnabled: true,
+        lz4Enabled: true,
+        arrowEnabled: false,
+        directResultsEnabled: true,
+        socketTimeout: 900000,
+        retryMaxAttempts: 30,
+        cloudFetchConcurrentDownloads: 10,
+      };
 
-      emitter.emitConnectionOpen({ sessionId: 's1', workspaceId: 'w1', driverConfig: {} as any });
+      emitter.on(TelemetryEventType.CONNECTION_OPEN, (event: TelemetryEvent) => {
+        expect(event.eventType).to.equal(TelemetryEventType.CONNECTION_OPEN);
+        expect(event.sessionId).to.equal('session-123');
+        expect(event.workspaceId).to.equal('workspace-456');
+        expect(event.driverConfig).to.deep.equal(driverConfig);
+        expect(event.timestamp).to.be.a('number');
+        done();
+      });
 
-      expect(listener.calledOnce).to.be.true;
-      const event = listener.firstCall.args[0];
-      expect(event.eventType).to.equal(TelemetryEventType.CONNECTION_OPEN);
-      expect(event.sessionId).to.equal('s1');
-      expect(event.workspaceId).to.equal('w1');
-      expect(event.timestamp).to.be.a('number');
+      emitter.emitConnectionOpen({
+        sessionId: 'session-123',
+        workspaceId: 'workspace-456',
+        driverConfig,
+        latencyMs: 100,
+      });
     });
 
-    it('should swallow and log exceptions from listeners', () => {
-      const context = new ClientContextStub({ telemetryEnabled: true } as any);
-      const logSpy = sinon.spy(context.logger, 'log');
-      const emitter = new TelemetryEventEmitter(context);
+    it('should not emit when telemetry is disabled', () => {
+      const disabledContext = {
+        getLogger: () => logger,
+        getConfig: () => ({
+          telemetryEnabled: false,
+          directResultsDefaultMaxRows: 10000,
+          fetchChunkDefaultMaxRows: 100000,
+          socketTimeout: 900000,
+          retryMaxAttempts: 30,
+          retriesTimeout: 900000,
+          retryDelayMin: 1000,
+          retryDelayMax: 30000,
+          useCloudFetch: true,
+          cloudFetchConcurrentDownloads: 10,
+          cloudFetchSpeedThresholdMBps: 0,
+          useLZ4Compression: true,
+        }),
+      } as any;
 
+      const disabledEmitter = new TelemetryEventEmitter(disabledContext);
+      let eventEmitted = false;
+
+      disabledEmitter.on(TelemetryEventType.CONNECTION_OPEN, () => {
+        eventEmitted = true;
+      });
+
+      disabledEmitter.emitConnectionOpen({
+        sessionId: 'session-123',
+        workspaceId: 'workspace-456',
+        driverConfig: {} as DriverConfiguration,
+        latencyMs: 100,
+      });
+
+      expect(eventEmitted).to.be.false;
+    });
+
+    it('should swallow exceptions and log at debug level', () => {
+      // Force an exception by emitting before adding any listeners
+      // Then make emit throw by adding a throwing listener
       emitter.on(TelemetryEventType.CONNECTION_OPEN, () => {
+        throw new Error('Test error');
+      });
+
+      emitter.emitConnectionOpen({
+        sessionId: 'session-123',
+        workspaceId: 'workspace-456',
+        driverConfig: {} as DriverConfiguration,
+        latencyMs: 100,
+      });
+
+      expect((logger.log as sinon.SinonStub).calledWith(LogLevel.debug)).to.be.true;
+      expect((logger.log as sinon.SinonStub).args[0][1]).to.include('Error emitting connection.open');
+    });
+
+    it('should not log at warn or error level', () => {
+      emitter.on(TelemetryEventType.CONNECTION_OPEN, () => {
+        throw new Error('Test error');
+      });
+
+      emitter.emitConnectionOpen({
+        sessionId: 'session-123',
+        workspaceId: 'workspace-456',
+        driverConfig: {} as DriverConfiguration,
+        latencyMs: 100,
+      });
+
+      const logStub = logger.log as sinon.SinonStub;
+      for (let i = 0; i < logStub.callCount; i++) {
+        const level = logStub.args[i][0];
+        expect(level).to.not.equal(LogLevel.warn);
+        expect(level).to.not.equal(LogLevel.error);
+      }
+    });
+  });
+
+  describe('emitConnectionClose', () => {
+    it('emits connection.close with sessionId and latencyMs', (done) => {
+      emitter.on(TelemetryEventType.CONNECTION_CLOSE, (event: TelemetryEvent) => {
+        expect(event.eventType).to.equal(TelemetryEventType.CONNECTION_CLOSE);
+        expect(event.sessionId).to.equal('session-close-1');
+        expect(event.latencyMs).to.equal(7);
+        expect(event.timestamp).to.be.a('number');
+        done();
+      });
+
+      emitter.emitConnectionClose({ sessionId: 'session-close-1', latencyMs: 7 });
+    });
+
+    it('does not emit when telemetry is disabled', () => {
+      const disabledContext = {
+        getLogger: () => logger,
+        getConfig: () => ({
+          telemetryEnabled: false,
+          directResultsDefaultMaxRows: 10000,
+          fetchChunkDefaultMaxRows: 100000,
+          socketTimeout: 900000,
+          retryMaxAttempts: 30,
+          retriesTimeout: 900000,
+          retryDelayMin: 1000,
+          retryDelayMax: 30000,
+          useCloudFetch: true,
+          cloudFetchConcurrentDownloads: 10,
+          cloudFetchSpeedThresholdMBps: 0,
+          useLZ4Compression: true,
+        }),
+      } as any;
+
+      const disabledEmitter = new TelemetryEventEmitter(disabledContext);
+      let emitted = false;
+      disabledEmitter.on(TelemetryEventType.CONNECTION_CLOSE, () => {
+        emitted = true;
+      });
+
+      disabledEmitter.emitConnectionClose({ sessionId: 's', latencyMs: 1 });
+      expect(emitted).to.be.false;
+    });
+
+    it('swallows exceptions from listeners and logs at debug level', () => {
+      emitter.on(TelemetryEventType.CONNECTION_CLOSE, () => {
         throw new Error('listener boom');
       });
 
-      expect(() =>
-        emitter.emitConnectionOpen({ sessionId: 's1', workspaceId: 'w1', driverConfig: {} as any }),
-      ).to.not.throw();
-      expect(logSpy.calledWith(LogLevel.debug, sinon.match(/listener boom/))).to.be.true;
-
-      logSpy.restore();
+      expect(() => emitter.emitConnectionClose({ sessionId: 's', latencyMs: 1 })).to.not.throw();
+      const logStub = logger.log as sinon.SinonStub;
+      const debugCalls = logStub.getCalls().filter((c) => c.args[0] === LogLevel.debug);
+      expect(debugCalls.some((c) => /connection\.close/i.test(c.args[1]))).to.be.true;
     });
   });
 
-  describe('emitStatementStart()', () => {
-    it('should emit a STATEMENT_START event with correct fields', () => {
-      const emitter = makeEmitter(true);
-      const listener = sinon.stub();
-      emitter.on(TelemetryEventType.STATEMENT_START, listener);
-
-      emitter.emitStatementStart({ statementId: 'st1', sessionId: 's1', operationType: 'SELECT' });
-
-      expect(listener.calledOnce).to.be.true;
-      const event = listener.firstCall.args[0];
-      expect(event.eventType).to.equal(TelemetryEventType.STATEMENT_START);
-      expect(event.statementId).to.equal('st1');
-      expect(event.operationType).to.equal('SELECT');
-    });
-  });
-
-  describe('emitStatementComplete()', () => {
-    it('should emit a STATEMENT_COMPLETE event with correct fields', () => {
-      const emitter = makeEmitter(true);
-      const listener = sinon.stub();
-      emitter.on(TelemetryEventType.STATEMENT_COMPLETE, listener);
-
-      emitter.emitStatementComplete({
-        statementId: 'st1',
-        sessionId: 's1',
-        latencyMs: 123,
-        resultFormat: 'arrow',
-        chunkCount: 2,
-        bytesDownloaded: 1024,
-        pollCount: 3,
+  describe('emitStatementStart', () => {
+    it('should emit statement.start event with correct data', (done) => {
+      emitter.on(TelemetryEventType.STATEMENT_START, (event: TelemetryEvent) => {
+        expect(event.eventType).to.equal(TelemetryEventType.STATEMENT_START);
+        expect(event.statementId).to.equal('stmt-789');
+        expect(event.sessionId).to.equal('session-123');
+        expect(event.operationType).to.equal('SELECT');
+        expect(event.timestamp).to.be.a('number');
+        done();
       });
 
-      expect(listener.calledOnce).to.be.true;
-      const event = listener.firstCall.args[0];
-      expect(event.eventType).to.equal(TelemetryEventType.STATEMENT_COMPLETE);
-      expect(event.latencyMs).to.equal(123);
-      expect(event.chunkCount).to.equal(2);
+      emitter.emitStatementStart({
+        statementId: 'stmt-789',
+        sessionId: 'session-123',
+        operationType: 'SELECT',
+      });
+    });
+
+    it('should emit without operationType', (done) => {
+      emitter.on(TelemetryEventType.STATEMENT_START, (event: TelemetryEvent) => {
+        expect(event.eventType).to.equal(TelemetryEventType.STATEMENT_START);
+        expect(event.statementId).to.equal('stmt-789');
+        expect(event.sessionId).to.equal('session-123');
+        expect(event.operationType).to.be.undefined;
+        done();
+      });
+
+      emitter.emitStatementStart({
+        statementId: 'stmt-789',
+        sessionId: 'session-123',
+      });
+    });
+
+    it('should not emit when telemetry is disabled', () => {
+      const disabledContext = {
+        getLogger: () => logger,
+        getConfig: () => ({ telemetryEnabled: false }),
+      } as any;
+
+      const disabledEmitter = new TelemetryEventEmitter(disabledContext);
+      let eventEmitted = false;
+
+      disabledEmitter.on(TelemetryEventType.STATEMENT_START, () => {
+        eventEmitted = true;
+      });
+
+      disabledEmitter.emitStatementStart({
+        statementId: 'stmt-789',
+        sessionId: 'session-123',
+      });
+
+      expect(eventEmitted).to.be.false;
+    });
+
+    it('should swallow exceptions and log at debug level', () => {
+      emitter.on(TelemetryEventType.STATEMENT_START, () => {
+        throw new Error('Test error');
+      });
+
+      emitter.emitStatementStart({
+        statementId: 'stmt-789',
+        sessionId: 'session-123',
+      });
+
+      expect((logger.log as sinon.SinonStub).calledWith(LogLevel.debug)).to.be.true;
+      expect((logger.log as sinon.SinonStub).args[0][1]).to.include('Error emitting statement.start');
     });
   });
 
-  describe('emitCloudFetchChunk()', () => {
-    it('should emit a CLOUDFETCH_CHUNK event with correct fields', () => {
-      const emitter = makeEmitter(true);
-      const listener = sinon.stub();
-      emitter.on(TelemetryEventType.CLOUDFETCH_CHUNK, listener);
+  describe('emitStatementComplete', () => {
+    it('should emit statement.complete event with all data fields', (done) => {
+      emitter.on(TelemetryEventType.STATEMENT_COMPLETE, (event: TelemetryEvent) => {
+        expect(event.eventType).to.equal(TelemetryEventType.STATEMENT_COMPLETE);
+        expect(event.statementId).to.equal('stmt-789');
+        expect(event.sessionId).to.equal('session-123');
+        expect(event.latencyMs).to.equal(1500);
+        expect(event.resultFormat).to.equal('cloudfetch');
+        expect(event.chunkCount).to.equal(5);
+        expect(event.bytesDownloaded).to.equal(1024000);
+        expect(event.pollCount).to.equal(3);
+        expect(event.timestamp).to.be.a('number');
+        done();
+      });
 
-      emitter.emitCloudFetchChunk({ statementId: 'st1', chunkIndex: 0, bytes: 512, compressed: true });
+      emitter.emitStatementComplete({
+        statementId: 'stmt-789',
+        sessionId: 'session-123',
+        latencyMs: 1500,
+        resultFormat: 'cloudfetch',
+        chunkCount: 5,
+        bytesDownloaded: 1024000,
+        pollCount: 3,
+      });
+    });
 
-      expect(listener.calledOnce).to.be.true;
-      const event = listener.firstCall.args[0];
-      expect(event.eventType).to.equal(TelemetryEventType.CLOUDFETCH_CHUNK);
-      expect(event.bytes).to.equal(512);
-      expect(event.compressed).to.be.true;
+    it('should emit with minimal data', (done) => {
+      emitter.on(TelemetryEventType.STATEMENT_COMPLETE, (event: TelemetryEvent) => {
+        expect(event.eventType).to.equal(TelemetryEventType.STATEMENT_COMPLETE);
+        expect(event.statementId).to.equal('stmt-789');
+        expect(event.sessionId).to.equal('session-123');
+        expect(event.latencyMs).to.be.undefined;
+        expect(event.resultFormat).to.be.undefined;
+        done();
+      });
+
+      emitter.emitStatementComplete({
+        statementId: 'stmt-789',
+        sessionId: 'session-123',
+      });
+    });
+
+    it('should not emit when telemetry is disabled', () => {
+      const disabledContext = {
+        getLogger: () => logger,
+        getConfig: () => ({ telemetryEnabled: false }),
+      } as any;
+
+      const disabledEmitter = new TelemetryEventEmitter(disabledContext);
+      let eventEmitted = false;
+
+      disabledEmitter.on(TelemetryEventType.STATEMENT_COMPLETE, () => {
+        eventEmitted = true;
+      });
+
+      disabledEmitter.emitStatementComplete({
+        statementId: 'stmt-789',
+        sessionId: 'session-123',
+      });
+
+      expect(eventEmitted).to.be.false;
+    });
+
+    it('should swallow exceptions and log at debug level', () => {
+      emitter.on(TelemetryEventType.STATEMENT_COMPLETE, () => {
+        throw new Error('Test error');
+      });
+
+      emitter.emitStatementComplete({
+        statementId: 'stmt-789',
+        sessionId: 'session-123',
+      });
+
+      expect((logger.log as sinon.SinonStub).calledWith(LogLevel.debug)).to.be.true;
+      expect((logger.log as sinon.SinonStub).args[0][1]).to.include('Error emitting statement.complete');
     });
   });
 
-  describe('emitError()', () => {
-    it('should emit an ERROR event with correct fields', () => {
-      const emitter = makeEmitter(true);
-      const listener = sinon.stub();
-      emitter.on(TelemetryEventType.ERROR, listener);
+  describe('emitCloudFetchChunk', () => {
+    it('should emit cloudfetch.chunk event with correct data', (done) => {
+      emitter.on(TelemetryEventType.CLOUDFETCH_CHUNK, (event: TelemetryEvent) => {
+        expect(event.eventType).to.equal(TelemetryEventType.CLOUDFETCH_CHUNK);
+        expect(event.statementId).to.equal('stmt-789');
+        expect(event.chunkIndex).to.equal(2);
+        expect(event.latencyMs).to.equal(250);
+        expect(event.bytes).to.equal(204800);
+        expect(event.compressed).to.be.true;
+        expect(event.timestamp).to.be.a('number');
+        done();
+      });
+
+      emitter.emitCloudFetchChunk({
+        statementId: 'stmt-789',
+        chunkIndex: 2,
+        latencyMs: 250,
+        bytes: 204800,
+        compressed: true,
+      });
+    });
+
+    it('should emit without optional fields', (done) => {
+      emitter.on(TelemetryEventType.CLOUDFETCH_CHUNK, (event: TelemetryEvent) => {
+        expect(event.eventType).to.equal(TelemetryEventType.CLOUDFETCH_CHUNK);
+        expect(event.statementId).to.equal('stmt-789');
+        expect(event.chunkIndex).to.equal(0);
+        expect(event.bytes).to.equal(100000);
+        expect(event.latencyMs).to.be.undefined;
+        expect(event.compressed).to.be.undefined;
+        done();
+      });
+
+      emitter.emitCloudFetchChunk({
+        statementId: 'stmt-789',
+        chunkIndex: 0,
+        bytes: 100000,
+      });
+    });
+
+    it('should not emit when telemetry is disabled', () => {
+      const disabledContext = {
+        getLogger: () => logger,
+        getConfig: () => ({ telemetryEnabled: false }),
+      } as any;
+
+      const disabledEmitter = new TelemetryEventEmitter(disabledContext);
+      let eventEmitted = false;
+
+      disabledEmitter.on(TelemetryEventType.CLOUDFETCH_CHUNK, () => {
+        eventEmitted = true;
+      });
+
+      disabledEmitter.emitCloudFetchChunk({
+        statementId: 'stmt-789',
+        chunkIndex: 0,
+        bytes: 100000,
+      });
+
+      expect(eventEmitted).to.be.false;
+    });
+
+    it('should swallow exceptions and log at debug level', () => {
+      emitter.on(TelemetryEventType.CLOUDFETCH_CHUNK, () => {
+        throw new Error('Test error');
+      });
+
+      emitter.emitCloudFetchChunk({
+        statementId: 'stmt-789',
+        chunkIndex: 0,
+        bytes: 100000,
+      });
+
+      expect((logger.log as sinon.SinonStub).calledWith(LogLevel.debug)).to.be.true;
+      expect((logger.log as sinon.SinonStub).args[0][1]).to.include('Error emitting cloudfetch.chunk');
+    });
+  });
+
+  describe('emitError', () => {
+    it('should emit error event with all fields', (done) => {
+      emitter.on(TelemetryEventType.ERROR, (event: TelemetryEvent) => {
+        expect(event.eventType).to.equal(TelemetryEventType.ERROR);
+        expect(event.statementId).to.equal('stmt-789');
+        expect(event.sessionId).to.equal('session-123');
+        expect(event.errorName).to.equal('AuthenticationError');
+        expect(event.errorMessage).to.equal('Invalid credentials');
+        expect(event.isTerminal).to.be.true;
+        expect(event.timestamp).to.be.a('number');
+        done();
+      });
 
       emitter.emitError({
-        statementId: 'st1',
-        sessionId: 's1',
-        errorName: 'NetworkError',
-        errorMessage: 'timeout',
+        statementId: 'stmt-789',
+        sessionId: 'session-123',
+        errorName: 'AuthenticationError',
+        errorMessage: 'Invalid credentials',
+        isTerminal: true,
+      });
+    });
+
+    it('should emit error event with minimal fields', (done) => {
+      emitter.on(TelemetryEventType.ERROR, (event: TelemetryEvent) => {
+        expect(event.eventType).to.equal(TelemetryEventType.ERROR);
+        expect(event.errorName).to.equal('TimeoutError');
+        expect(event.errorMessage).to.equal('Request timed out');
+        expect(event.isTerminal).to.be.false;
+        expect(event.statementId).to.be.undefined;
+        expect(event.sessionId).to.be.undefined;
+        done();
+      });
+
+      emitter.emitError({
+        errorName: 'TimeoutError',
+        errorMessage: 'Request timed out',
+        isTerminal: false,
+      });
+    });
+
+    it('should not emit when telemetry is disabled', () => {
+      const disabledContext = {
+        getLogger: () => logger,
+        getConfig: () => ({ telemetryEnabled: false }),
+      } as any;
+
+      const disabledEmitter = new TelemetryEventEmitter(disabledContext);
+      let eventEmitted = false;
+
+      disabledEmitter.on(TelemetryEventType.ERROR, () => {
+        eventEmitted = true;
+      });
+
+      disabledEmitter.emitError({
+        errorName: 'Error',
+        errorMessage: 'Test',
         isTerminal: false,
       });
 
-      expect(listener.calledOnce).to.be.true;
-      const event = listener.firstCall.args[0];
-      expect(event.eventType).to.equal(TelemetryEventType.ERROR);
-      expect(event.errorName).to.equal('NetworkError');
-      expect(event.isTerminal).to.be.false;
+      expect(eventEmitted).to.be.false;
     });
 
-    it('should emit a terminal ERROR event', () => {
-      const emitter = makeEmitter(true);
-      const listener = sinon.stub();
-      emitter.on(TelemetryEventType.ERROR, listener);
+    it('should swallow exceptions and log at debug level', () => {
+      emitter.on(TelemetryEventType.ERROR, () => {
+        throw new Error('Test error');
+      });
 
-      emitter.emitError({ errorName: 'AuthenticationError', errorMessage: 'auth failed', isTerminal: true });
+      emitter.emitError({
+        errorName: 'Error',
+        errorMessage: 'Test',
+        isTerminal: false,
+      });
 
-      const event = listener.firstCall.args[0];
-      expect(event.isTerminal).to.be.true;
+      expect((logger.log as sinon.SinonStub).calledWith(LogLevel.debug)).to.be.true;
+      expect((logger.log as sinon.SinonStub).args[0][1]).to.include('Error emitting telemetry.error');
     });
   });
 
-  describe('logging level compliance', () => {
-    it('should never log at warn or error level', () => {
-      const context = new ClientContextStub({ telemetryEnabled: true } as any);
-      const logSpy = sinon.spy(context.logger, 'log');
-      const emitter = new TelemetryEventEmitter(context);
-
+  describe('exception swallowing', () => {
+    it('should never propagate exceptions to caller', () => {
       emitter.on(TelemetryEventType.CONNECTION_OPEN, () => {
-        throw new Error('boom');
+        throw new Error('Critical error');
       });
 
-      emitter.emitConnectionOpen({ sessionId: 's1', workspaceId: 'w1', driverConfig: {} as any });
+      expect(() => {
+        emitter.emitConnectionOpen({
+          sessionId: 'session-123',
+          workspaceId: 'workspace-456',
+          driverConfig: {} as DriverConfiguration,
+          latencyMs: 100,
+        });
+      }).to.not.throw();
+    });
 
-      expect(logSpy.neverCalledWith(LogLevel.error, sinon.match.any)).to.be.true;
-      expect(logSpy.neverCalledWith(LogLevel.warn, sinon.match.any)).to.be.true;
+    it('should swallow multiple listener exceptions', () => {
+      emitter.on(TelemetryEventType.STATEMENT_START, () => {
+        throw new Error('First listener error');
+      });
+      emitter.on(TelemetryEventType.STATEMENT_START, () => {
+        throw new Error('Second listener error');
+      });
 
-      logSpy.restore();
+      expect(() => {
+        emitter.emitStatementStart({
+          statementId: 'stmt-789',
+          sessionId: 'session-123',
+        });
+      }).to.not.throw();
+    });
+
+    it('should log only at debug level, never at warn or error', () => {
+      emitter.on(TelemetryEventType.STATEMENT_COMPLETE, () => {
+        throw new Error('Test error');
+      });
+      emitter.on(TelemetryEventType.CLOUDFETCH_CHUNK, () => {
+        throw new Error('Test error');
+      });
+      emitter.on(TelemetryEventType.ERROR, () => {
+        throw new Error('Test error');
+      });
+
+      emitter.emitStatementComplete({
+        statementId: 'stmt-1',
+        sessionId: 'session-1',
+      });
+      emitter.emitCloudFetchChunk({
+        statementId: 'stmt-1',
+        chunkIndex: 0,
+        bytes: 1000,
+      });
+      emitter.emitError({
+        errorName: 'Error',
+        errorMessage: 'Test',
+        isTerminal: false,
+      });
+
+      const logStub = logger.log as sinon.SinonStub;
+      for (let i = 0; i < logStub.callCount; i++) {
+        const level = logStub.args[i][0];
+        expect(level).to.equal(LogLevel.debug);
+      }
+    });
+  });
+
+  describe('no console logging', () => {
+    it('should not use console.log', () => {
+      const consoleSpy = sinon.spy(console, 'log');
+
+      emitter.on(TelemetryEventType.CONNECTION_OPEN, () => {
+        throw new Error('Test error');
+      });
+
+      emitter.emitConnectionOpen({
+        sessionId: 'session-123',
+        workspaceId: 'workspace-456',
+        driverConfig: {} as DriverConfiguration,
+        latencyMs: 100,
+      });
+
+      expect(consoleSpy.called).to.be.false;
+      consoleSpy.restore();
+    });
+
+    it('should not use console.debug', () => {
+      const consoleSpy = sinon.spy(console, 'debug');
+
+      emitter.on(TelemetryEventType.STATEMENT_START, () => {
+        throw new Error('Test error');
+      });
+
+      emitter.emitStatementStart({
+        statementId: 'stmt-789',
+        sessionId: 'session-123',
+      });
+
+      expect(consoleSpy.called).to.be.false;
+      consoleSpy.restore();
+    });
+
+    it('should not use console.error', () => {
+      const consoleSpy = sinon.spy(console, 'error');
+
+      emitter.on(TelemetryEventType.ERROR, () => {
+        throw new Error('Test error');
+      });
+
+      emitter.emitError({
+        errorName: 'Error',
+        errorMessage: 'Test',
+        isTerminal: true,
+      });
+
+      expect(consoleSpy.called).to.be.false;
+      consoleSpy.restore();
+    });
+  });
+
+  describe('respects telemetryEnabled flag', () => {
+    it('should respect flag from context.getConfig()', () => {
+      const customContext = {
+        getLogger: () => logger,
+        getConfig: () => ({
+          telemetryEnabled: true,
+          directResultsDefaultMaxRows: 10000,
+          fetchChunkDefaultMaxRows: 100000,
+          socketTimeout: 900000,
+          retryMaxAttempts: 30,
+          retriesTimeout: 900000,
+          retryDelayMin: 1000,
+          retryDelayMax: 30000,
+          useCloudFetch: true,
+          cloudFetchConcurrentDownloads: 10,
+          cloudFetchSpeedThresholdMBps: 0,
+          useLZ4Compression: true,
+        }),
+      } as any;
+
+      const customEmitter = new TelemetryEventEmitter(customContext);
+      let eventCount = 0;
+
+      customEmitter.on(TelemetryEventType.CONNECTION_OPEN, () => {
+        eventCount++;
+      });
+
+      customEmitter.emitConnectionOpen({
+        sessionId: 'session-123',
+        workspaceId: 'workspace-456',
+        driverConfig: {} as DriverConfiguration,
+        latencyMs: 100,
+      });
+
+      expect(eventCount).to.equal(1);
+    });
+
+    it('should not emit when explicitly disabled', () => {
+      const disabledContext = {
+        getLogger: () => logger,
+        getConfig: () => ({
+          telemetryEnabled: false,
+        }),
+      } as any;
+
+      const disabledEmitter = new TelemetryEventEmitter(disabledContext);
+      let eventCount = 0;
+
+      disabledEmitter.on(TelemetryEventType.CONNECTION_OPEN, () => {
+        eventCount++;
+      });
+      disabledEmitter.on(TelemetryEventType.STATEMENT_START, () => {
+        eventCount++;
+      });
+      disabledEmitter.on(TelemetryEventType.STATEMENT_COMPLETE, () => {
+        eventCount++;
+      });
+      disabledEmitter.on(TelemetryEventType.CLOUDFETCH_CHUNK, () => {
+        eventCount++;
+      });
+      disabledEmitter.on(TelemetryEventType.ERROR, () => {
+        eventCount++;
+      });
+
+      disabledEmitter.emitConnectionOpen({
+        sessionId: 'session-123',
+        workspaceId: 'workspace-456',
+        driverConfig: {} as DriverConfiguration,
+        latencyMs: 100,
+      });
+      disabledEmitter.emitStatementStart({
+        statementId: 'stmt-789',
+        sessionId: 'session-123',
+      });
+      disabledEmitter.emitStatementComplete({
+        statementId: 'stmt-789',
+        sessionId: 'session-123',
+      });
+      disabledEmitter.emitCloudFetchChunk({
+        statementId: 'stmt-789',
+        chunkIndex: 0,
+        bytes: 1000,
+      });
+      disabledEmitter.emitError({
+        errorName: 'Error',
+        errorMessage: 'Test',
+        isTerminal: false,
+      });
+
+      expect(eventCount).to.equal(0);
     });
   });
 });

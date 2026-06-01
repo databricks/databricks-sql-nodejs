@@ -15,11 +15,7 @@ interface CreateOperationForTestArgs {
  * shape by constructing a `ThriftOperationBackend` explicitly. Keeps the
  * facade decoupled from concrete backend imports.
  */
-export function createOperationForTest({
-  handle,
-  directResults,
-  context,
-}: CreateOperationForTestArgs): DBSQLOperation {
+export function createOperationForTest({ handle, directResults, context }: CreateOperationForTestArgs): DBSQLOperation {
   const backend = new ThriftOperationBackend({ handle, directResults, context });
   return new DBSQLOperation({ backend, context });
 }

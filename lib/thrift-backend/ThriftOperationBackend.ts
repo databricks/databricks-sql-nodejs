@@ -8,9 +8,8 @@ import {
   TCloseOperationResp,
   TOperationState,
 } from '../../thrift/TCLIService_types';
-import IOperationBackend from '../contracts/IOperationBackend';
+import IOperationBackend, { IOperationBackendWaitOptions } from '../contracts/IOperationBackend';
 import IClientContext from '../contracts/IClientContext';
-import { WaitUntilReadyOptions } from '../contracts/IOperation';
 import { OperationStatus, OperationState } from '../contracts/OperationStatus';
 import { ResultMetadata, ResultFormat } from '../contracts/ResultMetadata';
 import Status from '../dto/Status';
@@ -108,6 +107,7 @@ export default class ThriftOperationBackend implements IOperationBackend {
       this.operationHandle,
       [directResults?.resultSet],
       useOnlyPrefetchedResults,
+      this.id,
     );
     this.closeOperation = directResults?.closeOperation;
   }
@@ -117,16 +117,26 @@ export default class ThriftOperationBackend implements IOperationBackend {
     return operationId ? stringify(operationId) : NIL;
   }
 
-  public get hasResultSet(): boolean {
+  public get operationType() {
+    return this.operationHandle.operationType;
+  }
+
+  public get dataProvider() {
+    return this._data;
+  }
+
+  public hasResultSet(): boolean {
     return Boolean(this.operationHandle.hasResultSet);
   }
 
   public async fetchChunk({
     limit,
     disableBuffering,
+    isClosed,
   }: {
     limit: number;
     disableBuffering?: boolean;
+    isClosed?: () => boolean;
   }): Promise<Array<object>> {
     const resultHandler = await this.getResultHandler();
 
@@ -143,6 +153,16 @@ export default class ThriftOperationBackend implements IOperationBackend {
     await new Promise<void>((resolve) => {
       setTimeout(resolve, 0);
     });
+
+    // Mid-flight cancel/close probe. The pre-refactor facade had a
+    // `failIfClosed()` between metadata-prep and the data RPC; that guard moved
+    // out of the facade when fetchChunk became atomic at this layer. Restore it
+    // by polling the facade's flag here and bailing before the data RPC. The
+    // facade re-checks `failIfClosed()` after we return and raises the
+    // user-visible OperationStateError.
+    if (isClosed?.()) {
+      return [];
+    }
 
     return resultHandler.fetchNext({ limit, disableBuffering });
   }
@@ -183,7 +203,7 @@ export default class ThriftOperationBackend implements IOperationBackend {
     return this.processOperationStatusResponse(response);
   }
 
-  public async waitUntilReady(options?: WaitUntilReadyOptions): Promise<void> {
+  public async waitUntilReady(options?: IOperationBackendWaitOptions): Promise<void> {
     if (this.state === TOperationState.FINISHED_STATE) {
       return;
     }
@@ -195,11 +215,12 @@ export default class ThriftOperationBackend implements IOperationBackend {
       const response = await this.thriftStatusResponse(Boolean(options?.progress));
 
       if (options?.callback) {
-        // The public `OperationStatusCallback` is Thrift-shaped; pass the
-        // wire response verbatim. Non-Thrift backends synthesize via
-        // `synthesizeThriftStatus` in their own `waitUntilReady` impls.
+        // The backend-facing callback is neutral (OperationStatus). Adapt the
+        // Thrift wire response down to the neutral DTO; the facade's wrapper
+        // synthesizes back up to TGetOperationStatusResp for the user's
+        // public Thrift-shaped callback.
         // eslint-disable-next-line no-await-in-loop
-        await Promise.resolve(options.callback(response));
+        await Promise.resolve(options.callback(this.adaptOperationStatus(response)));
       }
 
       switch (response.operationState) {
@@ -297,7 +318,7 @@ export default class ThriftOperationBackend implements IOperationBackend {
     return new Status(response.status);
   }
 
-  private async getResultHandler(): Promise<ResultSlicer<any>> {
+  public async getResultHandler(): Promise<ResultSlicer<any>> {
     const metadata = await this.thriftResultMetadataResponse();
     const resultFormat = definedOrError(metadata.resultFormat);
 
@@ -318,7 +339,7 @@ export default class ThriftOperationBackend implements IOperationBackend {
         case TSparkRowSetType.URL_BASED_SET:
           resultSource = new ArrowResultConverter(
             this.context,
-            new CloudFetchResultHandler(this.context, this._data, metadata),
+            new CloudFetchResultHandler(this.context, this._data, metadata, this.id),
             metadata,
           );
           break;

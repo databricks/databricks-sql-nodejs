@@ -51,6 +51,18 @@ client
   });
 ```
 
+## Telemetry
+
+The driver emits connection, statement, and CloudFetch metrics plus
+redacted error events to help Databricks improve driver reliability. No
+SQL text, parameter values, or row data is ever collected. Emission is
+gated by a server-side feature flag and can be disabled per-connection
+with `telemetryEnabled: false` or globally with the
+`DATABRICKS_TELEMETRY_DISABLED` env var.
+
+See [docs/TELEMETRY.md](docs/TELEMETRY.md) for the full event payloads,
+tuning knobs, multi-tenant guidance, and troubleshooting.
+
 ## Run Tests
 
 ### Unit tests

@@ -21,7 +21,11 @@ import DatabricksTelemetryExporter from './DatabricksTelemetryExporter';
 
 interface StatementTelemetryDetails {
   statementId: string;
-  sessionId: string;
+  // sessionId is optional — emit sites pass `undefined` when no session is
+  // associated yet (e.g. an operation created before its session id wired up).
+  // The aggregator treats `undefined` as a single bucket rather than ghost
+  // sessions per emit site.
+  sessionId?: string;
   workspaceId?: string;
   operationType?: string;
   startTime: number;
@@ -31,6 +35,9 @@ interface StatementTelemetryDetails {
   bytesDownloaded: number;
   pollCount: number;
   compressionEnabled?: boolean;
+  chunkInitialLatencyMs?: number;
+  chunkSlowestLatencyMs?: number;
+  chunkSumLatencyMs: number;
   errors: TelemetryEvent[];
 }
 
@@ -49,6 +56,11 @@ export default class MetricsAggregator {
 
   private flushTimer: NodeJS.Timeout | null = null;
 
+  // Single in-flight flush serializer. Concurrent triggers (batch hit, periodic
+  // tick, terminal-error, manual flush) all share one HTTP POST so the user's
+  // socket pool can't be starved by a slow telemetry endpoint.
+  private flushInFlight: Promise<void> | null = null;
+
   private closed = false;
 
   private closing = false;
@@ -63,6 +75,30 @@ export default class MetricsAggregator {
 
   private statementTtlMs: number;
 
+  private maxStatementMetrics: number;
+
+  // `beforeExit` hook installed when `telemetryFlushOnExit` is true. Tracked
+  // so close() can detach the listener — leaving it attached would otherwise
+  // keep references alive past the client's lifetime in long-running hosts
+  // that create and destroy DBSQLClients (test runners, serverless cold
+  // re-uses).
+  private beforeExitHandler: (() => void) | null = null;
+
+  // Operator-visible counters. Bumped every time the aggregator drops or
+  // evicts a metric for capacity reasons. Surfaced via `getStats()` and
+  // logged at warn on each flush when non-zero so silent data loss is
+  // visible without forcing operators to grep debug logs.
+  private droppedMetrics = 0;
+
+  private evictedStatements = 0;
+
+  // Counters of dropped/evicted entries reported in the most recent
+  // warn-level summary. Compared against the running counter so each
+  // summary reports the delta, not a cumulative value that grows forever.
+  private lastReportedDrops = 0;
+
+  private lastReportedEvictions = 0;
+
   constructor(private context: IClientContext, private exporter: DatabricksTelemetryExporter) {
     try {
       const config = context.getConfig();
@@ -72,8 +108,34 @@ export default class MetricsAggregator {
       this.maxErrorsPerStatement =
         config.telemetryMaxErrorsPerStatement ?? DEFAULT_TELEMETRY_CONFIG.maxErrorsPerStatement;
       this.statementTtlMs = config.telemetryStatementTtlMs ?? DEFAULT_TELEMETRY_CONFIG.statementTtlMs;
+      this.maxStatementMetrics = config.telemetryMaxStatementMetrics ?? DEFAULT_TELEMETRY_CONFIG.maxStatementMetrics;
 
       this.startFlushTimer();
+
+      // Optional beforeExit hook for callers that can't easily reorder their
+      // shutdown to `await client.close()` before `process.exit`. This is
+      // best-effort — beforeExit doesn't fire on `process.exit()`, only on
+      // a natural drain — and `process.exit(0)` skips it entirely. Disabled
+      // by default; the test-runner override is the main reason callers opt out.
+      if (config.telemetryFlushOnExit) {
+        this.beforeExitHandler = () => {
+          // beforeExit is synchronous; we kick off the flush but cannot wait
+          // for the HTTP POST to complete. Synchronous Node.js APIs are not
+          // available for fetch. Best-effort.
+          this.flush(false).catch(() => {
+            // swallow — telemetry must never break shutdown
+          });
+        };
+        try {
+          process.on('beforeExit', this.beforeExitHandler);
+        } catch (err: any) {
+          // Hosted environments where `process.on` is locked down
+          this.context
+            .getLogger()
+            .log(LogLevel.debug, `MetricsAggregator beforeExit registration failed: ${err?.message ?? err}`);
+          this.beforeExitHandler = null;
+        }
+      }
     } catch (error: any) {
       const logger = this.context.getLogger();
       logger.log(LogLevel.debug, `MetricsAggregator constructor error: ${error.message}`);
@@ -83,6 +145,7 @@ export default class MetricsAggregator {
       this.maxPendingMetrics = DEFAULT_TELEMETRY_CONFIG.maxPendingMetrics;
       this.maxErrorsPerStatement = DEFAULT_TELEMETRY_CONFIG.maxErrorsPerStatement;
       this.statementTtlMs = DEFAULT_TELEMETRY_CONFIG.statementTtlMs;
+      this.maxStatementMetrics = DEFAULT_TELEMETRY_CONFIG.maxStatementMetrics;
     }
   }
 
@@ -92,7 +155,12 @@ export default class MetricsAggregator {
 
     try {
       if (event.eventType === TelemetryEventType.CONNECTION_OPEN) {
-        this.processConnectionEvent(event);
+        this.processConnectionEvent(event, 'CREATE_SESSION');
+        return;
+      }
+
+      if (event.eventType === TelemetryEventType.CONNECTION_CLOSE) {
+        this.processConnectionEvent(event, 'DELETE_SESSION');
         return;
       }
 
@@ -109,13 +177,15 @@ export default class MetricsAggregator {
     }
   }
 
-  private processConnectionEvent(event: TelemetryEvent): void {
+  private processConnectionEvent(event: TelemetryEvent, operationType: 'CREATE_SESSION' | 'DELETE_SESSION'): void {
     const metric: TelemetryMetric = {
       metricType: 'connection',
       timestamp: event.timestamp,
       sessionId: event.sessionId,
       workspaceId: event.workspaceId,
       driverConfig: event.driverConfig,
+      operationType,
+      latencyMs: event.latencyMs,
     };
 
     this.addPendingMetric(metric);
@@ -154,7 +224,7 @@ export default class MetricsAggregator {
       // stall on telemetry HTTP. Do NOT reset the periodic flush timer:
       // under burst failures that would keep the tail-drain timer from
       // ever firing.
-      Promise.resolve(this.flush(false)).catch((err: any) => {
+      this.flush(false).catch((err: any) => {
         logger.log(LogLevel.debug, `Terminal-error flush failed: ${err?.message ?? err}`);
       });
     } else if (event.statementId) {
@@ -182,16 +252,45 @@ export default class MetricsAggregator {
       case TelemetryEventType.STATEMENT_COMPLETE:
         details.executionLatencyMs = event.latencyMs;
         details.resultFormat = event.resultFormat;
-        details.chunkCount = event.chunkCount ?? 0;
-        details.bytesDownloaded = event.bytesDownloaded ?? 0;
-        details.pollCount = event.pollCount ?? 0;
+        // STATEMENT_COMPLETE may not carry chunk counts (the operation
+        // doesn't always know them at close time); only override when the
+        // emit explicitly supplied a value, otherwise the values accumulated
+        // from CLOUDFETCH_CHUNK survive.
+        if (event.chunkCount !== undefined) {
+          details.chunkCount = event.chunkCount;
+        }
+        if (event.bytesDownloaded !== undefined) {
+          details.bytesDownloaded = event.bytesDownloaded;
+        }
+        if (event.pollCount !== undefined) {
+          details.pollCount = event.pollCount;
+        }
         break;
 
       case TelemetryEventType.CLOUDFETCH_CHUNK:
         details.chunkCount += 1;
         details.bytesDownloaded += event.bytes ?? 0;
-        if (event.compressed !== undefined) {
-          details.compressionEnabled = event.compressed;
+        // `compressionEnabled` is a sticky OR across all chunks in the
+        // statement — any compressed chunk flips it true and it stays true.
+        // Previously we copied the last chunk's value, which silently lied
+        // for mixed-compression batches (compressed chunk 1, uncompressed
+        // chunk 2 → compressionEnabled=false). True-on-any matches the
+        // dashboard contract "did this statement benefit from compression".
+        if (event.compressed === true) {
+          details.compressionEnabled = true;
+        } else if (event.compressed === false && details.compressionEnabled === undefined) {
+          details.compressionEnabled = false;
+        }
+        // Per-chunk timing aggregation. Only record positive latencies — keeps
+        // prefetched/cached pages out of the timing stats.
+        if (event.latencyMs !== undefined && event.latencyMs > 0) {
+          if (details.chunkInitialLatencyMs === undefined) {
+            details.chunkInitialLatencyMs = event.latencyMs;
+          }
+          if (details.chunkSlowestLatencyMs === undefined || event.latencyMs > details.chunkSlowestLatencyMs) {
+            details.chunkSlowestLatencyMs = event.latencyMs;
+          }
+          details.chunkSumLatencyMs += event.latencyMs;
         }
         break;
 
@@ -204,19 +303,55 @@ export default class MetricsAggregator {
     const statementId = event.statementId!;
 
     if (!this.statementMetrics.has(statementId)) {
+      // Hard cap on map size — abandoned operations or buggy upstreams that
+      // emit errors with random fresh statementIds would otherwise grow this
+      // map unbounded for up to statementTtlMs.
+      if (this.statementMetrics.size >= this.maxStatementMetrics) {
+        this.evictOldestStatement();
+      }
       this.statementMetrics.set(statementId, {
         statementId,
-        sessionId: event.sessionId!,
+        sessionId: event.sessionId,
         workspaceId: event.workspaceId,
         startTime: event.timestamp,
         chunkCount: 0,
         bytesDownloaded: 0,
         pollCount: 0,
+        chunkSumLatencyMs: 0,
         errors: [],
       });
     }
 
     return this.statementMetrics.get(statementId)!;
+  }
+
+  /**
+   * Drop the oldest entry by insertion order to make room. Emits its buffered
+   * errors as standalone metrics first so the first-failure signal survives.
+   * Map iteration order is insertion order in JS.
+   */
+  private evictOldestStatement(): void {
+    const oldest = this.statementMetrics.keys().next();
+    if (oldest.done) return;
+    const id = oldest.value;
+    const details = this.statementMetrics.get(id)!;
+    for (const errorEvent of details.errors) {
+      this.addPendingMetric({
+        metricType: 'error',
+        timestamp: errorEvent.timestamp,
+        sessionId: details.sessionId,
+        statementId: details.statementId,
+        workspaceId: details.workspaceId,
+        errorName: errorEvent.errorName,
+        errorMessage: errorEvent.errorMessage,
+        errorStack: errorEvent.errorStack,
+      });
+    }
+    this.statementMetrics.delete(id);
+    this.evictedStatements += 1;
+    this.context
+      .getLogger()
+      .log(LogLevel.debug, `MetricsAggregator: evicted oldest statement ${id} (max=${this.maxStatementMetrics})`);
   }
 
   /**
@@ -247,10 +382,61 @@ export default class MetricsAggregator {
       }
     }
     if (evicted > 0) {
+      this.evictedStatements += evicted;
       this.context
         .getLogger()
         .log(LogLevel.debug, `Evicted ${evicted} abandoned statement(s) past ${this.statementTtlMs}ms TTL`);
     }
+  }
+
+  /**
+   * Operator-visible snapshot of aggregator state. Returned synchronously so
+   * a health-check endpoint or shutdown summary can include it without
+   * awaiting anything.
+   *
+   *   - `pendingMetricsCount`   : current buffer depth (0..maxPendingMetrics).
+   *   - `inFlightStatements`    : open statement aggregations (0..maxStatementMetrics).
+   *   - `droppedMetrics`        : cumulative count of metrics dropped due to
+   *                                 buffer overflow since start.
+   *   - `evictedStatements`     : cumulative count of statements evicted due
+   *                                 to TTL or map-cap, since start.
+   */
+  getStats(): {
+    pendingMetricsCount: number;
+    inFlightStatements: number;
+    droppedMetrics: number;
+    evictedStatements: number;
+  } {
+    return {
+      pendingMetricsCount: this.pendingMetrics.length,
+      inFlightStatements: this.statementMetrics.size,
+      droppedMetrics: this.droppedMetrics,
+      evictedStatements: this.evictedStatements,
+    };
+  }
+
+  /**
+   * Emit a warn-level summary if drops/evictions occurred since the last
+   * report. Operators running on `LogLevel.info` (the driver default) need
+   * to see capacity events without enabling debug.
+   */
+  private maybeWarnOnCapacityEvents(): void {
+    const dropsDelta = this.droppedMetrics - this.lastReportedDrops;
+    const evictionsDelta = this.evictedStatements - this.lastReportedEvictions;
+    if (dropsDelta === 0 && evictionsDelta === 0) {
+      return;
+    }
+    this.lastReportedDrops = this.droppedMetrics;
+    this.lastReportedEvictions = this.evictedStatements;
+    this.context
+      .getLogger()
+      .log(
+        LogLevel.warn,
+        `Telemetry capacity events since last flush: ` +
+          `dropped=${dropsDelta} (buffer cap=${this.maxPendingMetrics}); ` +
+          `evicted=${evictionsDelta} statements (map cap=${this.maxStatementMetrics}, ttl=${this.statementTtlMs}ms). ` +
+          `Raise telemetryMaxPendingMetrics / telemetryMaxStatementMetrics / telemetryStatementTtlMs if this is sustained.`,
+      );
   }
 
   completeStatement(statementId: string): void {
@@ -263,17 +449,28 @@ export default class MetricsAggregator {
         return;
       }
 
+      // Emit chunkSumLatencyMs alongside chunkCount whenever there are
+      // chunks. Dropping it when zero produced "5 chunks / 0ms total" rows in
+      // dashboards because some sources (pre-fetched / cached pages) emit
+      // chunks with latency=0. Aligning the omission rule with chunkCount
+      // keeps the two fields consistent: present together or absent together.
+      const hasChunks = details.chunkCount > 0;
       const metric: TelemetryMetric = {
         metricType: 'statement',
         timestamp: details.startTime,
         sessionId: details.sessionId,
         statementId: details.statementId,
         workspaceId: details.workspaceId,
+        operationType: details.operationType,
         latencyMs: details.executionLatencyMs,
         resultFormat: details.resultFormat,
         chunkCount: details.chunkCount,
+        chunkInitialLatencyMs: details.chunkInitialLatencyMs,
+        chunkSlowestLatencyMs: details.chunkSlowestLatencyMs,
+        chunkSumLatencyMs: hasChunks ? details.chunkSumLatencyMs : undefined,
         bytesDownloaded: details.bytesDownloaded,
         pollCount: details.pollCount,
+        compressed: details.compressionEnabled,
       };
 
       this.addPendingMetric(metric);
@@ -312,6 +509,7 @@ export default class MetricsAggregator {
     if (this.pendingMetrics.length > this.maxPendingMetrics) {
       const dropIndex = this.findDropIndex();
       this.pendingMetrics.splice(dropIndex, 1);
+      this.droppedMetrics += 1;
       const logger = this.context.getLogger();
       logger.log(
         LogLevel.debug,
@@ -323,7 +521,7 @@ export default class MetricsAggregator {
       // resetTimer=false so the periodic tail-drain keeps its cadence even
       // under sustained batch-size bursts.
       const logger = this.context.getLogger();
-      Promise.resolve(this.flush(false)).catch((err: any) => {
+      this.flush(false).catch((err: any) => {
         logger.log(LogLevel.debug, `Batch-trigger flush failed: ${err?.message ?? err}`);
       });
     }
@@ -344,7 +542,26 @@ export default class MetricsAggregator {
    * `process.exit()` after `client.close()` doesn't truncate the POST.
    */
   async flush(resetTimer: boolean = true): Promise<void> {
+    // Coalesce concurrent flush callers onto the in-flight promise so we
+    // never run two HTTP POSTs in parallel against the telemetry endpoint.
+    // Pending metrics arriving while flushInFlight is set will be picked up
+    // by the next caller.
+    if (this.flushInFlight) {
+      return this.flushInFlight;
+    }
+    this.flushInFlight = this.runFlush(resetTimer).finally(() => {
+      this.flushInFlight = null;
+    });
+    return this.flushInFlight;
+  }
+
+  private async runFlush(resetTimer: boolean): Promise<void> {
     const logger = this.context.getLogger();
+
+    // Surface capacity events (drops, evictions) once per flush at warn-level.
+    // Runs before the empty-buffer short-circuit so an evict-only cycle still
+    // emits the summary.
+    this.maybeWarnOnCapacityEvents();
 
     let exportPromise: Promise<void> | null = null;
     try {
@@ -395,7 +612,7 @@ export default class MetricsAggregator {
         } catch (err: any) {
           logger.log(LogLevel.debug, `evictExpiredStatements error: ${err?.message ?? err}`);
         }
-        Promise.resolve(this.flush(false)).catch((err: any) => {
+        this.flush(false).catch((err: any) => {
           logger.log(LogLevel.debug, `Periodic flush failed: ${err?.message ?? err}`);
         });
       }, this.flushIntervalMs);
@@ -414,6 +631,18 @@ export default class MetricsAggregator {
       // so no promises escape past the single awaited flush below.
       this.closing = true;
 
+      // Detach the beforeExit hook before clearing the timer — otherwise a
+      // long-running host that opens & closes many DBSQLClients accumulates
+      // dead listeners on the process object.
+      if (this.beforeExitHandler) {
+        try {
+          process.off('beforeExit', this.beforeExitHandler);
+        } catch (err: any) {
+          logger.log(LogLevel.debug, `MetricsAggregator beforeExit detach failed: ${err?.message ?? err}`);
+        }
+        this.beforeExitHandler = null;
+      }
+
       if (this.flushTimer) {
         clearInterval(this.flushTimer);
         this.flushTimer = null;
@@ -426,7 +655,37 @@ export default class MetricsAggregator {
       }
 
       this.closed = true;
-      await this.flush(false);
+      // Cap the wait on the final flush so a flapping telemetry endpoint
+      // can't hold up the user's process.exit(0). The in-flight POST is
+      // abandoned past the deadline; data loss is preferable to a hung exit.
+      const timeoutMs = this.context.getConfig().telemetryCloseTimeoutMs ?? 2000;
+      let timeoutHandle: NodeJS.Timeout | null = null;
+      const timeoutPromise = new Promise<void>((resolve) => {
+        timeoutHandle = setTimeout(() => {
+          logger.log(LogLevel.debug, `MetricsAggregator.close: flush timed out after ${timeoutMs}ms`);
+          resolve();
+        }, timeoutMs);
+        timeoutHandle.unref?.();
+      });
+      // Drain pattern: if a batch-trigger flush was already in-flight when
+      // close() ran, it captured a snapshot before completeStatement above
+      // appended the close-time metrics. Wait for that to finish and then
+      // run a fresh flush that picks up whatever's still in pendingMetrics.
+      const drain = async (): Promise<void> => {
+        if (this.flushInFlight) {
+          await this.flushInFlight;
+        }
+        if (this.pendingMetrics.length > 0) {
+          await this.flush(false);
+        }
+      };
+      try {
+        await Promise.race([drain(), timeoutPromise]);
+      } finally {
+        if (timeoutHandle) {
+          clearTimeout(timeoutHandle);
+        }
+      }
     } catch (error: any) {
       logger.log(LogLevel.debug, `MetricsAggregator.close error: ${error.message}`);
     }

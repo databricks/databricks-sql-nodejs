@@ -10,7 +10,6 @@ import {
   TStatusCode,
   TTypeId,
 } from '../../thrift/TCLIService_types';
-import DBSQLOperation from '../../lib/DBSQLOperation';
 import StatusError from '../../lib/errors/StatusError';
 import OperationStateError from '../../lib/errors/OperationStateError';
 import HiveDriverError from '../../lib/errors/HiveDriverError';
@@ -1176,6 +1175,83 @@ describe('DBSQLOperation', () => {
       await operation.hasMoreRows();
       await operation.hasMoreRows();
       expect(driver.getResultSetMetadata.callCount).to.equal(1);
+    });
+  });
+
+  describe('error-telemetry wrapper (F10/F17)', () => {
+    function makeContextWithEmitter() {
+      const context = new ClientContextStub();
+      const emitError = sinon.stub();
+      context.telemetryEmitter = {
+        emitError,
+        emitStatementStart: sinon.stub(),
+        emitStatementComplete: sinon.stub(),
+      } as any;
+      return { context, emitError };
+    }
+
+    it('emits ERROR telemetry when cancel rejects', async () => {
+      const { context, emitError } = makeContextWithEmitter();
+      context.driver.cancelOperationResp.status.statusCode = TStatusCode.ERROR_STATUS;
+      const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: true }), context });
+
+      await expectFailure(() => operation.cancel());
+
+      expect(emitError.calledOnce, 'emitError should fire once on rejected cancel').to.be.true;
+      expect(emitError.firstCall.args[0].errorName).to.match(/Status\s?Error/);
+    });
+
+    it('emits ERROR telemetry when close rejects', async () => {
+      const { context, emitError } = makeContextWithEmitter();
+      context.driver.closeOperationResp.status.statusCode = TStatusCode.ERROR_STATUS;
+      const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: true }), context });
+
+      await expectFailure(() => operation.close());
+
+      expect(emitError.calledOnce).to.be.true;
+    });
+
+    it('emits ERROR telemetry when getMetadata rejects', async () => {
+      const { context, emitError } = makeContextWithEmitter();
+      // Force the driver to fail metadata fetch
+      sinon.stub(context.driver, 'getResultSetMetadata').rejects(new Error('metadata-failed'));
+      const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: true }), context });
+
+      await expectFailure(() => operation.getMetadata());
+
+      expect(emitError.calledOnce).to.be.true;
+      expect(emitError.firstCall.args[0].errorMessage).to.equal('metadata-failed');
+    });
+
+    it('emits ERROR telemetry from finished/getSchema/hasMoreRows when called on a closed op (F10 — newly wrapped)', async () => {
+      // Smaller invariant: closed-op rejection (synchronous error) goes through
+      // the new wrappers' telemetry path. Avoids the polling loops that happen
+      // when state is ERROR_STATE — those would require driver-status mock
+      // sequencing that isn't worth the complexity for this assertion.
+      for (const fn of ['finished', 'getSchema', 'hasMoreRows'] as const) {
+        const { context, emitError } = makeContextWithEmitter();
+        const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: true }), context });
+        await operation.close();
+        emitError.resetHistory(); // close() also emits telemetry; we only want to assert on the new wrapper
+        if (fn === 'hasMoreRows') {
+          // hasMoreRows short-circuits to false on closed without throwing
+          const r = await operation.hasMoreRows();
+          expect(r).to.equal(false);
+        } else {
+          await expectFailure(() => (operation as any)[fn]());
+          expect(emitError.called, `${fn}() should fire emitError on closed op`).to.be.true;
+        }
+      }
+    });
+
+    it('does not throw when no telemetry emitter is wired', async () => {
+      const context = new ClientContextStub();
+      // emitter intentionally left undefined
+      context.driver.cancelOperationResp.status.statusCode = TStatusCode.ERROR_STATUS;
+      const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: true }), context });
+
+      // The cancel still rejects, but no extra error from the missing emitter
+      await expectFailure(() => operation.cancel());
     });
   });
 });

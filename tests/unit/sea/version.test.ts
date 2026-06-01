@@ -15,13 +15,18 @@
 import { expect } from 'chai';
 import { tryGetSeaNative } from '../../../lib/sea/SeaNativeLoader';
 
-// On a CI runner whose triple is supposed to have a published binding
-// (M0 = linux-x64-gnu) a missing binding is a hard failure — a silent
-// skip there would mask a broken build / packaging regression. On every
-// other platform (and on dev machines) the binding is optional, so we
-// skip.
+// Fail loudly only when the binding is actually expected to be present —
+// i.e. a CI step has provisioned it (a published `@databricks/sql-kernel-*`
+// optional dep installed, or `npm run build:native` was run) and opts in via
+// `SEA_NATIVE_EXPECTED=1`. A missing binding there is a real packaging / build
+// regression that a silent skip would mask.
+//
+// Until those binding packages are published, the standard CI cannot install
+// the optional dep and does not build the native binding, so the binding is
+// legitimately absent — default to a skip rather than a spurious hard failure.
+// (`npm ci` already skips the unpublished optional dep.)
 function bindingIsExpected(): boolean {
-  return process.env.CI === 'true' && process.platform === 'linux' && process.arch === 'x64';
+  return process.env.SEA_NATIVE_EXPECTED === '1';
 }
 
 describe('SEA native binding — smoke test', function smoke() {

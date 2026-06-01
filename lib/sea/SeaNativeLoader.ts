@@ -46,23 +46,6 @@ export type SeaArrowSchema = NativeArrowSchema;
 export type SeaConnection = NativeConnection;
 export type SeaStatement = NativeStatement;
 
-// Back-compat aliases for the downstream SEA stack branches that landed
-// against the pre-rename loader. The merged kernel (@databricks/sql-kernel)
-// moved per-statement catalog/schema/sessionConfig to session-level
-// `openSession`, so `ExecuteOptions` no longer exists on the binding;
-// `SeaExecuteOptions` is kept as a deprecated shim describing the old
-// per-statement shape so the stack keeps compiling. Per-statement options
-// are now applied at session creation — see native/sea/README.md.
-export type SeaNativeConnection = NativeConnection;
-export type SeaNativeStatement = NativeStatement;
-export type SeaNativeConnectionOptions = NativeConnectionOptions;
-/** @deprecated per-statement options moved to session-level `openSession`. */
-export interface SeaExecuteOptions {
-  initialCatalog?: string;
-  initialSchema?: string;
-  sessionConfig?: Record<string, string>;
-}
-
 /**
  * The full native binding surface, derived from the generated module
  * so it can never drift from the `.d.ts` contract: when the kernel
@@ -148,10 +131,20 @@ export class SeaNativeLoader {
 
   private cachedError: Error | undefined;
 
-  constructor(private readonly load: () => SeaNativeBinding = defaultRequire) {}
+  /**
+   * @param load        injectable module-require seam (stub a binding in tests)
+   * @param nodeMajor   injectable Node-major detector. Defaults to reading the
+   *                    live `process.version`; injected in unit tests so the
+   *                    load/shape branches are exercised independently of the
+   *                    runner's actual Node version (the matrix spans 14–20).
+   */
+  constructor(
+    private readonly load: () => SeaNativeBinding = defaultRequire,
+    private readonly nodeMajor: () => number = detectNodeMajor,
+  ) {}
 
   private tryLoad(): SeaNativeBinding | undefined {
-    const nodeMajor = detectNodeMajor();
+    const nodeMajor = this.nodeMajor();
     // Fail closed: if we cannot determine the Node major (NaN) or it is
     // below the floor, refuse the load and fall back to Thrift.
     if (!Number.isFinite(nodeMajor) || nodeMajor < MIN_NODE_MAJOR) {
