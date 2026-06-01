@@ -304,7 +304,7 @@ describe('DBSQLSession', () => {
     it('should forward the metric-view conf via confOverlay when metricViewMetadata is true', async () => {
       const context = new ClientContextStub();
       const driver = sinon.spy(context.driver);
-      const session = new DBSQLSession({ handle: sessionHandleStub, context });
+      const session = createSessionForTest({ handle: sessionHandleStub, context });
 
       await session.executeStatement('SELECT * FROM my_metric_view', { metricViewMetadata: true });
 
@@ -316,7 +316,7 @@ describe('DBSQLSession', () => {
     it('should not set the metric-view conf when metricViewMetadata is omitted', async () => {
       const context = new ClientContextStub();
       const driver = sinon.spy(context.driver);
-      const session = new DBSQLSession({ handle: sessionHandleStub, context });
+      const session = createSessionForTest({ handle: sessionHandleStub, context });
 
       await session.executeStatement('SELECT 1');
 
@@ -328,7 +328,7 @@ describe('DBSQLSession', () => {
     it('should not set the metric-view conf when metricViewMetadata is false', async () => {
       const context = new ClientContextStub();
       const driver = sinon.spy(context.driver);
-      const session = new DBSQLSession({ handle: sessionHandleStub, context });
+      const session = createSessionForTest({ handle: sessionHandleStub, context });
 
       await session.executeStatement('SELECT 1', { metricViewMetadata: false });
 
@@ -340,7 +340,7 @@ describe('DBSQLSession', () => {
     it('should coexist with queryTags in the same confOverlay', async () => {
       const context = new ClientContextStub();
       const driver = sinon.spy(context.driver);
-      const session = new DBSQLSession({ handle: sessionHandleStub, context });
+      const session = createSessionForTest({ handle: sessionHandleStub, context });
 
       await session.executeStatement('SELECT 1', {
         metricViewMetadata: true,
