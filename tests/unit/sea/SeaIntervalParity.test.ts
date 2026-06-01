@@ -61,6 +61,8 @@ import { TimeUnit as FbTimeUnit } from 'apache-arrow/fb/time-unit';
 
 import SeaOperationBackend from '../../../lib/sea/SeaOperationBackend';
 import ClientContextStub from '../.stubs/ClientContextStub';
+import { DURATION_UNIT_METADATA_KEY as CONVERTER_DURATION_KEY } from '../../../lib/result/ArrowResultConverter';
+import { DURATION_UNIT_METADATA_KEY as REWRITER_DURATION_KEY } from '../../../lib/sea/SeaArrowIpcDurationFix';
 
 // ---------------------------------------------------------------------------
 // Test helpers.
@@ -362,5 +364,29 @@ describe('SeaOperationBackend — INTERVAL parity with thrift', () => {
     const rows = await backend.fetchChunk({ limit: 100 });
     expect(rows).to.have.length(1);
     expect((rows[0] as any).iv).to.equal('1 00:00:00.000000000');
+  });
+
+  it('YEAR-MONTH negative sub-year (-1 month) → "-0-1"', async () => {
+    // |total| < 12 negatives are the trickiest formatYearMonth case (years
+    // truncates to 0, the sign must still lead). Verified live byte-identical
+    // to thrift.
+    const fields = [withTypeName(new Field('iv', new Interval(IntervalUnit.YEAR_MONTH), true), 'INTERVAL')];
+    const schema = new Schema(fields);
+    const schemaIpc = ipcSchemaOnly(schema);
+    const dataIpc = ipcFromColumns(schema, { iv: Int32Array.from([-1]) });
+
+    const stub = new StatementStub(schemaIpc, [dataIpc]);
+    const backend = new SeaOperationBackend({ statement: stub, context: new ClientContextStub() });
+    const rows = await backend.fetchChunk({ limit: 100 });
+    expect(rows).to.have.length(1);
+    expect((rows[0] as any).iv).to.equal('-0-1');
+  });
+
+  it('the duration_unit metadata key is identical in the rewriter and the converter', () => {
+    // Both modules declare the key independently (the converter avoids a
+    // compile-time dependency on lib/sea). Pin them equal so a rename/typo in
+    // one doesn't silently turn the converter's duration branch into a no-op.
+    expect(CONVERTER_DURATION_KEY).to.equal(REWRITER_DURATION_KEY);
+    expect(CONVERTER_DURATION_KEY).to.equal('databricks.arrow.duration_unit');
   });
 });

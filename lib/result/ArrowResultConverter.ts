@@ -6,6 +6,8 @@ import {
   TypeMap,
   DataType,
   Type,
+  Interval,
+  IntervalUnit,
   StructRow,
   MapRow,
   Vector,
@@ -15,6 +17,7 @@ import {
 } from 'apache-arrow';
 import { TTableSchema, TColumnDesc } from '../../thrift/TCLIService_types';
 import IClientContext from '../contracts/IClientContext';
+import HiveDriverError from '../errors/HiveDriverError';
 import IResultsProvider, { ResultsProviderFetchNextOptions } from './IResultsProvider';
 import { ArrowBatch, getSchemaColumns, convertThriftValue } from './utils';
 
@@ -24,55 +27,51 @@ type ArrowSchema = Schema<TypeMap>;
 type ArrowSchemaField = Field<DataType<Type, TypeMap>>;
 
 /**
- * Metadata key carrying the original Arrow `Duration` time unit on
- * fields that were rewritten to `Int64` by the SEA IPC pre-processor
- * (`lib/sea/SeaArrowIpcDurationFix.ts`). We re-declare the constant
- * here (rather than importing it) so the converter has no compile-time
- * dependency on the SEA module — it's reused unchanged by the
- * thrift-path which has no SEA awareness.
+ * Metadata key carrying the original Arrow `Duration` time unit on fields
+ * rewritten to `Int64` by the SEA IPC pre-processor
+ * (`lib/sea/SeaArrowIpcDurationFix.ts`). Re-declared here (rather than
+ * imported) to keep this generic `lib/result` converter free of a
+ * compile-time dependency on `lib/sea`.
+ *
+ * **SEA-gated by construction — NOT shared with Thrift.** This key (and the
+ * `DataType.isInterval` / duration branches below) only ever execute on the
+ * SEA path. The Thrift backend sets `intervalTypesAsArrow: false` and maps
+ * both INTERVAL `TTypeId`s to `ArrowString` (`lib/result/utils.ts`), so the
+ * server pre-formats intervals to strings and this logic is never reached.
+ * `export`ed so `SeaIntervalParity.test` can pin it equal to the SEA-side
+ * declaration and catch a rename/typo that would silently no-op the consumer.
  */
-const DURATION_UNIT_METADATA_KEY = 'databricks.arrow.duration_unit';
+export const DURATION_UNIT_METADATA_KEY = 'databricks.arrow.duration_unit';
 const ZERO_BIGINT = BigInt(0);
 const NS_PER_MICRO = BigInt(1_000);
 const NS_PER_MILLI = BigInt(1_000_000);
 const NS_PER_SEC = BigInt(1_000_000_000);
-const MS_PER_DAY = BigInt(86_400_000);
 const NS_PER_MIN = NS_PER_SEC * BigInt(60);
 const NS_PER_HOUR = NS_PER_MIN * BigInt(60);
 const NS_PER_DAY = NS_PER_HOUR * BigInt(24);
 
 /**
- * Format an Arrow `Interval[YearMonth]` or `Interval[DayTime]` value
- * into the canonical thrift string the JDBC/ODBC server emits:
- *   YEAR-MONTH → `"Y-M"`         (e.g. 1 year 2 months  → `"1-2"`)
- *   DAY-TIME   → `"D HH:mm:ss.fffffffff"`
- *                                (e.g. 1 day 02:03:04   → `"1 02:03:04.000000000"`)
+ * Format a native Arrow `Interval[YearMonth]` value into the canonical thrift
+ * string `"Y-M"` (e.g. 1 year 2 months → `"1-2"`, -1 month → `"-0-1"`).
  *
- * Arrow surfaces these as `Int32Array(2)` via the `GetVisitor`
- * (`apache-arrow/visitor/get.js:177-185`):
- *   YEAR-MONTH: `[years, months]` (years/months derived from a single
- *               int32 holding total months)
- *   DAY-TIME:   `[days, milliseconds]` (legacy two-int32 form)
+ * Arrow surfaces YEAR-MONTH as an `Int32Array(2)` `[years, months]` via the
+ * `GetVisitor` (years/months derived from a single int32 of total months).
  *
- * Negative intervals: the FULL interval is emitted with a leading `-`
- * (Spark convention), and individual fields are unsigned. We mirror
- * Spark's display.
+ * **Only YEAR_MONTH reaches here.** The kernel emits INTERVAL DAY-TIME as an
+ * Arrow `Duration` (rewritten to `Int64`), handled by
+ * `formatDurationToIntervalDayTime` — never as a native `Interval[DayTime]`.
+ * Any other unit (DAY_TIME / MONTH_DAY_NANO / undefined) is therefore
+ * unexpected; we throw rather than silently misread the value as `[days, ms]`
+ * and emit a confidently-wrong string (the old non-exhaustive default).
  */
-function formatArrowInterval(value: any, valueType: any): string {
-  // `value` is an Int32Array of length 2.
-  const a = Number(value[0]);
-  const b = Number(value[1]);
-  // unit 0 = YEAR_MONTH, unit 1 = DAY_TIME, unit 2 = MONTH_DAY_NANO
-  const unit = valueType?.unit;
-  if (unit === 0) {
-    return formatYearMonth(a, b);
+function formatArrowInterval(value: Int32Array, valueType: Interval): string {
+  if (valueType?.unit !== IntervalUnit.YEAR_MONTH) {
+    throw new HiveDriverError(
+      `SEA result converter: unsupported Arrow Interval unit ${valueType?.unit}. The kernel emits only ` +
+        `YEAR_MONTH as a native Arrow Interval (DAY-TIME arrives as Duration); MONTH_DAY_NANO is unsupported.`,
+    );
   }
-  // DAY_TIME: a = days, b = milliseconds (within the day, can be ≥0 or <0)
-  // We re-normalise: total milliseconds = a * 86_400_000 + b, then split into
-  // days, hours, minutes, seconds, nanoseconds (nanoseconds is always 0
-  // because the legacy IntervalDayTime carries only millisecond precision).
-  const totalMs = BigInt(a) * MS_PER_DAY + BigInt(b);
-  return formatDayTimeFromTotal(totalMs * NS_PER_MILLI /* → ns */, 'NANOSECOND');
+  return formatYearMonth(Number(value[0]), Number(value[1]));
 }
 
 /**
@@ -107,7 +106,7 @@ function formatYearMonth(years: number, months: number): string {
 function formatDurationToIntervalDayTime(value: bigint | number, unit: string): string {
   const bi = typeof value === 'bigint' ? value : BigInt(value);
   const nanos = toNanoseconds(bi, unit);
-  return formatDayTimeFromTotal(nanos, unit);
+  return formatDayTimeFromTotal(nanos);
 }
 
 /**
@@ -137,13 +136,9 @@ function toNanoseconds(value: bigint, unit: string): bigint {
  * Always emits 9 fractional digits to match the thrift driver's wire
  * format (`"1 02:03:04.000000000"` — 9 digits regardless of the
  * server-side storage precision). Negative values get a single
- * leading `-`.
- *
- * The `unit` parameter is currently unused for formatting (the value
- * is already in nanoseconds by the time we get here) but is retained
- * for future use if a unit-aware precision is ever needed.
+ * leading `-`. The caller has already scaled to nanoseconds.
  */
-function formatDayTimeFromTotal(totalNanos: bigint, _unit: string): string {
+function formatDayTimeFromTotal(totalNanos: bigint): string {
   const sign = totalNanos < ZERO_BIGINT ? '-' : '';
   const abs = totalNanos < ZERO_BIGINT ? -totalNanos : totalNanos;
 
@@ -369,23 +364,17 @@ export default class ArrowResultConverter implements IResultsProvider<Array<any>
       if (DataType.isDecimal(valueType)) {
         return Number(result) / 10 ** valueType.scale;
       }
-      // Duration columns rewritten to Int64 — detect via metadata.
-      const durationUnit = field?.metadata.get(DURATION_UNIT_METADATA_KEY);
-      if (durationUnit) {
-        return formatDurationToIntervalDayTime(result, durationUnit);
-      }
+      // A rewritten Duration Int64 surfaces as a raw `bigint`, not a BigNum
+      // wrapper, so it is handled in the bigint branch below — not here.
       return result;
     }
 
-    // Convert binary data to Buffer
+    // Convert binary data to Buffer.
     if (value instanceof Uint8Array) {
-      // INTERVAL DAY-TIME / YEAR-MONTH that apache-arrow surfaced as
-      // an Int32Array (size 2). `Uint8Array.isInstanceOf` is true for
-      // every TypedArray subclass, so we have to check the parent type
-      // first. The `DataType.isInterval` branch above already handles
-      // the case where Arrow knew the field was an interval — this
-      // fallback covers schemas where the interval surfaced as bare
-      // bytes (defensive; not exercised in M0).
+      // Note: Arrow `Int32Array` / `BigInt64Array` are NOT `instanceof
+      // Uint8Array` (they are sibling TypedArrays), so an interval value never
+      // reaches this branch — intervals are handled by the `isInterval` /
+      // bigint branches above. This is purely the binary-column → Buffer path.
       return Buffer.from(value);
     }
 
