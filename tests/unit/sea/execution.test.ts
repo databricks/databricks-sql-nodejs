@@ -38,6 +38,8 @@ import { ConnectionOptions } from '../../../lib/contracts/IDBSQLClient';
 // -----------------------------------------------------------------------------
 
 class FakeNativeStatement implements SeaNativeStatement {
+  public readonly statementId = 'fake-statement-id';
+
   public closed = false;
 
   public cancelled = false;
@@ -98,6 +100,8 @@ class FakeNativeAsyncStatement implements SeaNativeAsyncStatement {
 }
 
 class FakeNativeConnection implements SeaNativeConnection {
+  public readonly sessionId = 'fake-session-id';
+
   public closed = false;
 
   public lastSql?: string;

@@ -29,6 +29,7 @@ import HiveDriverError from '../../../lib/errors/HiveDriverError';
 // ─── Fakes ───────────────────────────────────────────────────────────────────
 
 class FakeNativeStatement implements SeaNativeStatement {
+  public readonly statementId = 'fake-statement-id';
   public async fetchNextBatch() { return null; }
   public async schema() { return { ipcBytes: Buffer.alloc(0) }; }
   public async cancel() {}
@@ -47,6 +48,8 @@ interface RecordedMetadataCall {
  * wrapping path.
  */
 class FakeMetadataConnection implements SeaNativeConnection {
+  public readonly sessionId = 'fake-session-id';
+
   public readonly calls: RecordedMetadataCall[] = [];
 
   public throwNextCall: unknown = null;
