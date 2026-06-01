@@ -126,16 +126,22 @@ describe('SeaNativeLoader', () => {
   describe('Node-version gate', () => {
     it('fails closed on a Node version below the floor', () => {
       let loadCalled = false;
-      const loader = new SeaNativeLoader(() => {
-        loadCalled = true;
-        return stubBinding();
-      }, () => 16);
+      const loader = new SeaNativeLoader(
+        () => {
+          loadCalled = true;
+          return stubBinding();
+        },
+        () => 16,
+      );
       expect(() => loader.get()).to.throw(/requires Node >=18/);
       expect(loadCalled, 'load() must not be attempted on an unsupported Node').to.equal(false);
     });
 
     it('fails closed when the Node version is unparseable (NaN)', () => {
-      const loader = new SeaNativeLoader(() => stubBinding(), () => NaN);
+      const loader = new SeaNativeLoader(
+        () => stubBinding(),
+        () => NaN,
+      );
       expect(() => loader.get()).to.throw(/requires Node >=18/);
     });
   });
