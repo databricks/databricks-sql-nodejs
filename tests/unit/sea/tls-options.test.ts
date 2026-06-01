@@ -30,7 +30,7 @@ function patOpts(extra: Partial<ConnectionOptions> = {}): ConnectionOptions {
 
 describe('SeaAuth — TLS options', () => {
   describe('buildSeaTlsOptions', () => {
-    it('returns an empty object when no TLS options are set (thrift-compatible default)', () => {
+    it('returns an empty object when no TLS options are set (⇒ napi secure default)', () => {
       expect(buildSeaTlsOptions(patOpts())).to.deep.equal({});
     });
 

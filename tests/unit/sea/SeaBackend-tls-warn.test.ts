@@ -42,32 +42,32 @@ function patOpts(extra: Partial<ConnectionOptions> = {}): ConnectionOptions {
 }
 
 describe('SeaBackend — TLS verification log', () => {
-  it('logs a debug note when server-cert verification is left at the default (disabled)', async () => {
+  it('does NOT log at the default (verification is ON / secure)', async () => {
     const lines: LoggedLine[] = [];
     const backend = new SeaBackend({ context: fakeContext(lines), nativeBinding: {} as any });
 
     await backend.connect(patOpts());
 
-    const notes = lines.filter((l) => l.level === LogLevel.debug);
-    expect(notes).to.have.lengthOf(1);
-    expect(String(notes[0].message)).to.match(/verification is DISABLED/);
+    expect(lines.filter((l) => l.level === LogLevel.warn)).to.have.lengthOf(0);
   });
 
-  it('logs a debug note when checkServerCertificate is explicitly false', async () => {
+  it('warns when checkServerCertificate is explicitly false (insecure opt-out)', async () => {
     const lines: LoggedLine[] = [];
     const backend = new SeaBackend({ context: fakeContext(lines), nativeBinding: {} as any });
 
     await backend.connect(patOpts({ checkServerCertificate: false }));
 
-    expect(lines.filter((l) => l.level === LogLevel.debug)).to.have.lengthOf(1);
+    const notes = lines.filter((l) => l.level === LogLevel.warn);
+    expect(notes).to.have.lengthOf(1);
+    expect(String(notes[0].message)).to.match(/verification is DISABLED/);
   });
 
-  it('does NOT log when checkServerCertificate is true', async () => {
+  it('does NOT warn when checkServerCertificate is true', async () => {
     const lines: LoggedLine[] = [];
     const backend = new SeaBackend({ context: fakeContext(lines), nativeBinding: {} as any });
 
     await backend.connect(patOpts({ checkServerCertificate: true }));
 
-    expect(lines.filter((l) => l.level === LogLevel.debug)).to.have.lengthOf(0);
+    expect(lines.filter((l) => l.level === LogLevel.warn)).to.have.lengthOf(0);
   });
 });

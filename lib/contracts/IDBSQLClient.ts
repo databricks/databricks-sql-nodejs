@@ -63,21 +63,20 @@ export type ConnectionOptions = {
   /**
    * Whether to verify the server's TLS certificate (SEA backend only).
    *
-   * Defaults to `false`, which matches the legacy NodeJS Thrift driver's
-   * permissive behaviour (`rejectUnauthorized: false`): self-signed,
-   * untrusted, and expired certificates are accepted and the
-   * hostname-vs-certificate check is skipped. This is **insecure** — it
-   * provides no protection against active man-in-the-middle attacks — but
-   * is the historical NodeJS-driver default, so the SEA backend matches it
-   * for drop-in compatibility.
+   * Defaults to `true` — **secure by default**: strict validation against
+   * the system trust store (full chain + expiry + hostname), matching the
+   * JDBC/ODBC drivers and every modern HTTPS client.
    *
-   * Set to `true` for strict validation against the system trust store
-   * (full chain + expiry + hostname), matching the JDBC/ODBC drivers and
-   * every modern HTTPS client. Recommended for production.
+   * Set to `false` to disable verification: self-signed, untrusted, and
+   * expired certificates are accepted and the hostname-vs-certificate check
+   * is skipped. This is **insecure** — it provides no protection against
+   * active man-in-the-middle attacks — and exists only as an opt-out for
+   * parity with the legacy NodeJS Thrift driver, which hard-codes
+   * `rejectUnauthorized: false`.
    *
    * For corporate TLS-inspecting proxies or on-prem deployments with an
-   * internal CA, prefer `checkServerCertificate: true` together with
-   * `customCaCert` over disabling verification entirely.
+   * internal CA, prefer the default `checkServerCertificate: true` together
+   * with `customCaCert` over disabling verification entirely.
    */
   checkServerCertificate?: boolean;
   /**

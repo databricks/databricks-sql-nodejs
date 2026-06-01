@@ -80,22 +80,20 @@ export default class SeaBackend implements IBackend {
     // we ever touch the native binding.
     this.nativeOptions = buildSeaConnectionOptions(options);
 
-    // Server-cert verification defaults to OFF (thrift-compatible). When
-    // it's not explicitly enabled, emit a one-line DEBUG note so an
-    // insecure connection is discoverable in logs without being noisy on
-    // every connect — the default is deliberately permissive for thrift
-    // parity, so this stays at debug level rather than warn.
-    if (this.nativeOptions.checkServerCertificate !== true) {
+    // Server-cert verification is ON by default. Only an explicit
+    // `checkServerCertificate: false` disables it — a deliberate insecure
+    // opt-out for thrift parity — so warn (not debug) when that happens.
+    if (this.nativeOptions.checkServerCertificate === false) {
       this.context
         ?.getLogger()
         .log(
-          LogLevel.debug,
+          LogLevel.warn,
           'SEA backend: TLS server-certificate verification is DISABLED ' +
-            '(checkServerCertificate is not set to true). The connection accepts ' +
+            '(checkServerCertificate: false). The connection accepts ' +
             'self-signed/untrusted/expired certs and skips the hostname check — this ' +
             'matches the legacy Thrift driver but offers no protection against active ' +
-            'man-in-the-middle attacks. Set `checkServerCertificate: true` for strict ' +
-            'validation, optionally with `customCaCert` for corporate/on-prem CAs.',
+            'man-in-the-middle attacks. Remove the override (defaults to strict ' +
+            'validation), optionally with `customCaCert` for corporate/on-prem CAs.',
         );
     }
   }

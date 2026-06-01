@@ -98,8 +98,9 @@ export interface SeaSessionDefaults {
  */
 export interface SeaTlsOptions {
   /**
-   * Verify the server cert. Omitted ⇒ napi default (permissive,
-   * thrift-compatible). See `ConnectionOptions.checkServerCertificate`.
+   * Verify the server cert. Omitted ⇒ napi default (secure: strict chain
+   * + hostname validation). Set `false` to disable (thrift-parity
+   * insecure). See `ConnectionOptions.checkServerCertificate`.
    */
   checkServerCertificate?: boolean;
   /** PEM-encoded CA bytes to add to the trust store. */
@@ -158,8 +159,8 @@ export function isBlankOrReserved(s: string): boolean {
  * `customCaCert`) into the napi shape.
  *
  * - `checkServerCertificate` passes through verbatim (only when set; an
- *   absent value leaves the napi default, which is permissive /
- *   thrift-compatible).
+ *   absent value leaves the napi default, which is secure — strict chain +
+ *   hostname validation. Set `false` to opt out for thrift parity).
  * - `customCaCert` accepts a PEM string or `Buffer` on the public
  *   surface; we convert a string to a `Buffer` here and do a light PEM
  *   sanity check. The bytes are NOT parsed in JS — the kernel returns a
