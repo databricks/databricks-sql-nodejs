@@ -17,8 +17,13 @@ import { SeaNativeLoader, SeaNativeBinding } from '../../../lib/sea/SeaNativeLoa
 
 // Pure-logic tests for SeaNativeLoader. These exercise the load-failure
 // hint branches, the Node-version gate, the shape check, and caching via
-// the injectable `load` seam — so they run everywhere regardless of
-// whether a real `.node` is installed on the test machine.
+// the injectable `load` and `nodeMajor` seams — so they run everywhere
+// regardless of whether a real `.node` is installed on the test machine
+// OR which Node version the runner happens to be (the CI matrix spans
+// 14–20, below and above the >=18 floor). Tests that exercise the load
+// path inject a supported Node major so the version gate never short-
+// circuits them; the gate's own tests inject the version under test.
+const SUPPORTED_NODE_MAJOR = () => 18;
 
 function stubBinding(overrides: Partial<Record<keyof SeaNativeBinding, unknown>> = {}): SeaNativeBinding {
   return {
@@ -52,7 +57,7 @@ describe('SeaNativeLoader', () => {
   describe('successful load', () => {
     it('get() returns the binding from the injected loader', () => {
       const binding = stubBinding();
-      const loader = new SeaNativeLoader(() => binding);
+      const loader = new SeaNativeLoader(() => binding, SUPPORTED_NODE_MAJOR);
       expect(loader.get()).to.equal(binding);
       expect(loader.tryGet()).to.equal(binding);
     });
@@ -63,7 +68,7 @@ describe('SeaNativeLoader', () => {
       const loader = new SeaNativeLoader(() => {
         calls += 1;
         return binding;
-      });
+      }, SUPPORTED_NODE_MAJOR);
       loader.get();
       loader.tryGet();
       loader.get();
@@ -75,7 +80,7 @@ describe('SeaNativeLoader', () => {
     it('MODULE_NOT_FOUND → "not installed" hint pointing at the README', () => {
       const loader = new SeaNativeLoader(() => {
         throw errWithCode('MODULE_NOT_FOUND', "Cannot find module '../../native/sea'");
-      });
+      }, SUPPORTED_NODE_MAJOR);
       expect(loader.tryGet()).to.equal(undefined);
       const msg = thrownMessage(() => loader.get());
       expect(msg).to.match(/not installed/);
@@ -85,7 +90,7 @@ describe('SeaNativeLoader', () => {
     it('ERR_DLOPEN_FAILED → includes the underlying dlerror string and remediation', () => {
       const loader = new SeaNativeLoader(() => {
         throw errWithCode('ERR_DLOPEN_FAILED', 'GLIBC_2.32 not found');
-      });
+      }, SUPPORTED_NODE_MAJOR);
       const msg = thrownMessage(() => loader.get());
       expect(msg).to.match(/GLIBC_2\.32 not found/);
       expect(msg).to.match(/musl/);
@@ -95,7 +100,7 @@ describe('SeaNativeLoader', () => {
     it('a generic Error (no code) preserves its message', () => {
       const loader = new SeaNativeLoader(() => {
         throw new Error('totally unexpected');
-      });
+      }, SUPPORTED_NODE_MAJOR);
       expect(() => loader.get()).to.throw(/totally unexpected/);
     });
 
@@ -103,14 +108,14 @@ describe('SeaNativeLoader', () => {
       const loader = new SeaNativeLoader(() => {
         // eslint-disable-next-line no-throw-literal
         throw 'a string';
-      });
+      }, SUPPORTED_NODE_MAJOR);
       expect(() => loader.get()).to.throw(/non-standard error/);
     });
   });
 
   describe('shape check', () => {
     it('rejects a binding missing an expected export', () => {
-      const loader = new SeaNativeLoader(() => stubBinding({ openSession: undefined }));
+      const loader = new SeaNativeLoader(() => stubBinding({ openSession: undefined }), SUPPORTED_NODE_MAJOR);
       expect(loader.tryGet()).to.equal(undefined);
       const msg = thrownMessage(() => loader.get());
       expect(msg).to.match(/missing expected export/);
@@ -120,30 +125,18 @@ describe('SeaNativeLoader', () => {
 
   describe('Node-version gate', () => {
     it('fails closed on a Node version below the floor', () => {
-      const original = process.version;
-      try {
-        Object.defineProperty(process, 'version', { value: 'v16.20.0', configurable: true });
-        let loadCalled = false;
-        const loader = new SeaNativeLoader(() => {
-          loadCalled = true;
-          return stubBinding();
-        });
-        expect(() => loader.get()).to.throw(/requires Node >=18/);
-        expect(loadCalled, 'load() must not be attempted on an unsupported Node').to.equal(false);
-      } finally {
-        Object.defineProperty(process, 'version', { value: original, configurable: true });
-      }
+      let loadCalled = false;
+      const loader = new SeaNativeLoader(() => {
+        loadCalled = true;
+        return stubBinding();
+      }, () => 16);
+      expect(() => loader.get()).to.throw(/requires Node >=18/);
+      expect(loadCalled, 'load() must not be attempted on an unsupported Node').to.equal(false);
     });
 
     it('fails closed when the Node version is unparseable (NaN)', () => {
-      const original = process.version;
-      try {
-        Object.defineProperty(process, 'version', { value: 'vNOT-A-VERSION', configurable: true });
-        const loader = new SeaNativeLoader(() => stubBinding());
-        expect(() => loader.get()).to.throw(/requires Node >=18/);
-      } finally {
-        Object.defineProperty(process, 'version', { value: original, configurable: true });
-      }
+      const loader = new SeaNativeLoader(() => stubBinding(), () => NaN);
+      expect(() => loader.get()).to.throw(/requires Node >=18/);
     });
   });
 });

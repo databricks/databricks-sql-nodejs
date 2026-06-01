@@ -131,10 +131,20 @@ export class SeaNativeLoader {
 
   private cachedError: Error | undefined;
 
-  constructor(private readonly load: () => SeaNativeBinding = defaultRequire) {}
+  /**
+   * @param load        injectable module-require seam (stub a binding in tests)
+   * @param nodeMajor   injectable Node-major detector. Defaults to reading the
+   *                    live `process.version`; injected in unit tests so the
+   *                    load/shape branches are exercised independently of the
+   *                    runner's actual Node version (the matrix spans 14–20).
+   */
+  constructor(
+    private readonly load: () => SeaNativeBinding = defaultRequire,
+    private readonly nodeMajor: () => number = detectNodeMajor,
+  ) {}
 
   private tryLoad(): SeaNativeBinding | undefined {
-    const nodeMajor = detectNodeMajor();
+    const nodeMajor = this.nodeMajor();
     // Fail closed: if we cannot determine the Node major (NaN) or it is
     // below the floor, refuse the load and fall back to Thrift.
     if (!Number.isFinite(nodeMajor) || nodeMajor < MIN_NODE_MAJOR) {
