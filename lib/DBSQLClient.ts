@@ -628,7 +628,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
     // pattern (see databricks-sql-python/src/databricks/sql/session.py).
     const internalOptions = options as ConnectionOptions & InternalConnectionOptions;
     const backend = internalOptions.useSEA
-      ? new SeaBackend()
+      ? new SeaBackend({ context: this })
       : new ThriftBackend({
           context: this,
           onConnectionEvent: (event, payload) => this.forwardConnectionEvent(event, payload),

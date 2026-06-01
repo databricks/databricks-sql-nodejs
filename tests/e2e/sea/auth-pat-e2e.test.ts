@@ -41,8 +41,7 @@ import { InternalConnectionOptions } from '../../../lib/contracts/InternalConnec
 describe('sea-auth e2e — PAT through DBSQLClient ↔ SeaBackend ↔ napi binding', function suite() {
   const host = process.env.DATABRICKS_PECOTESTING_SERVER_HOSTNAME;
   const path = process.env.DATABRICKS_PECOTESTING_HTTP_PATH;
-  const token =
-    process.env.DATABRICKS_PECOTESTING_TOKEN_PERSONAL || process.env.DATABRICKS_PECOTESTING_TOKEN;
+  const token = process.env.DATABRICKS_PECOTESTING_TOKEN_PERSONAL || process.env.DATABRICKS_PECOTESTING_TOKEN;
 
   this.timeout(120_000);
 

@@ -103,10 +103,7 @@ describe('SeaAuth — PAT auth options builder', () => {
         tokenProvider: { getToken: async () => 'tok' } as any,
       };
 
-      expect(() => buildSeaConnectionOptions(opts)).to.throw(
-        HiveDriverError,
-        /unsupported auth mode 'token-provider'/,
-      );
+      expect(() => buildSeaConnectionOptions(opts)).to.throw(HiveDriverError, /unsupported auth mode 'token-provider'/);
     });
 
     it('rejects external-token, static-token, and custom auth modes', () => {
@@ -118,10 +115,7 @@ describe('SeaAuth — PAT auth options builder', () => {
           path: '/p',
           authType,
         } as any;
-        expect(() => buildSeaConnectionOptions(opts)).to.throw(
-          HiveDriverError,
-          /unsupported auth mode/,
-        );
+        expect(() => buildSeaConnectionOptions(opts)).to.throw(HiveDriverError, /unsupported auth mode/);
       }
     });
   });

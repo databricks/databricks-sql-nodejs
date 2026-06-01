@@ -42,17 +42,11 @@ import IClientContext from '../../../lib/contracts/IClientContext';
 import IDBSQLLogger, { LogLevel } from '../../../lib/contracts/IDBSQLLogger';
 import { getSeaNative } from '../../../lib/sea/SeaNativeLoader';
 import SeaOperationBackend from '../../../lib/sea/SeaOperationBackend';
-import OperationStateError, {
-  OperationStateErrorCode,
-} from '../../../lib/errors/OperationStateError';
+import OperationStateError, { OperationStateErrorCode } from '../../../lib/errors/OperationStateError';
 
 // Minimal binding type shapes (mirrors the napi `index.d.ts`).
 interface NativeBinding {
-  openSession(opts: {
-    hostName: string;
-    httpPath: string;
-    token: string;
-  }): Promise<NativeConnection>;
+  openSession(opts: { hostName: string; httpPath: string; token: string }): Promise<NativeConnection>;
 }
 
 interface NativeConnection {
@@ -102,12 +96,9 @@ describe('SEA operation lifecycle — end-to-end', function suite() {
   // when run via `npx mocha …` outside the e2e harness.
   this.timeout(120_000);
 
-  const hostName =
-    process.env.DATABRICKS_PECOTESTING_SERVER_HOSTNAME || process.env.E2E_HOST;
-  const httpPath =
-    process.env.DATABRICKS_PECOTESTING_HTTP_PATH || process.env.E2E_PATH;
-  const token =
-    process.env.DATABRICKS_PECOTESTING_TOKEN_PERSONAL || process.env.E2E_ACCESS_TOKEN;
+  const hostName = process.env.DATABRICKS_PECOTESTING_SERVER_HOSTNAME || process.env.E2E_HOST;
+  const httpPath = process.env.DATABRICKS_PECOTESTING_HTTP_PATH || process.env.E2E_PATH;
+  const token = process.env.DATABRICKS_PECOTESTING_TOKEN_PERSONAL || process.env.E2E_ACCESS_TOKEN;
 
   before(function gate() {
     if (!hostName || !httpPath || !token) {
@@ -131,10 +122,7 @@ describe('SEA operation lifecycle — end-to-end', function suite() {
       // has work to do. `range(0, 100_000_000)` is large enough that
       // even with kernel-side optimizations the server has not yet
       // produced the full result by the time we cancel.
-      statement = await connection.executeStatement(
-        'SELECT * FROM range(0, 100000000)',
-        {},
-      );
+      statement = await connection.executeStatement('SELECT * FROM range(0, 100000000)', {});
       expect(statement).to.be.an('object');
 
       const op = new SeaOperationBackend({
@@ -175,10 +163,7 @@ describe('SEA operation lifecycle — end-to-end', function suite() {
 
     let statement: NativeStatement | null = null;
     try {
-      statement = await connection.executeStatement(
-        'SELECT * FROM range(0, 100000000)',
-        {},
-      );
+      statement = await connection.executeStatement('SELECT * FROM range(0, 100000000)', {});
 
       const op = new SeaOperationBackend({
         statement: statement as unknown as NativeStatement,
@@ -200,9 +185,7 @@ describe('SEA operation lifecycle — end-to-end', function suite() {
         thrown = err;
       }
       expect(thrown).to.be.instanceOf(OperationStateError);
-      expect((thrown as OperationStateError).errorCode).to.equal(
-        OperationStateErrorCode.Canceled,
-      );
+      expect((thrown as OperationStateError).errorCode).to.equal(OperationStateErrorCode.Canceled);
     } finally {
       if (statement !== null) {
         try {

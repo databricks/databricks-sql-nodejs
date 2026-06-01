@@ -82,10 +82,7 @@ describe('SeaAuth + SeaBackend — OAuth U2M auth flow', () => {
         azureTenantId: 'tenant-uuid',
       };
 
-      expect(() => buildSeaConnectionOptions(opts)).to.throw(
-        HiveDriverError,
-        /Azure-direct OAuth.*is not supported/,
-      );
+      expect(() => buildSeaConnectionOptions(opts)).to.throw(HiveDriverError, /Azure-direct OAuth.*is not supported/);
     });
 
     it('rejects useDatabricksOAuthInAzure on the U2M path', () => {
@@ -96,10 +93,7 @@ describe('SeaAuth + SeaBackend — OAuth U2M auth flow', () => {
         useDatabricksOAuthInAzure: true,
       };
 
-      expect(() => buildSeaConnectionOptions(opts)).to.throw(
-        HiveDriverError,
-        /Azure-direct OAuth.*is not supported/,
-      );
+      expect(() => buildSeaConnectionOptions(opts)).to.throw(HiveDriverError, /Azure-direct OAuth.*is not supported/);
     });
 
     it('rejects a `persistence` hook on U2M citing the AuthConfig::External kernel-plumbing gap', () => {
@@ -113,10 +107,7 @@ describe('SeaAuth + SeaBackend — OAuth U2M auth flow', () => {
         },
       };
 
-      expect(() => buildSeaConnectionOptions(opts)).to.throw(
-        HiveDriverError,
-        /AuthConfig::External.*plumbing/,
-      );
+      expect(() => buildSeaConnectionOptions(opts)).to.throw(HiveDriverError, /AuthConfig::External.*plumbing/);
     });
   });
 
@@ -134,9 +125,7 @@ describe('SeaAuth + SeaBackend — OAuth U2M auth flow', () => {
       const session = await backend.openSession({});
       // Post-integration: SeaSessionBackend generates UUIDv4 ids; the
       // earlier auth-only counter-id scheme was superseded.
-      expect(session.id).to.match(
-        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
-      );
+      expect(session.id).to.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
 
       expect(calls).to.have.lengthOf(1);
       expect(calls[0].method).to.equal('openSession');

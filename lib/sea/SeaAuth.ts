@@ -175,7 +175,7 @@ export function buildSeaConnectionOptions(options: ConnectionOptions): SeaNative
     const { token } = options as { token?: string };
     if (typeof token !== 'string' || isBlankOrReserved(token)) {
       throw new AuthenticationError(
-        'SEA backend: a non-empty PAT must be supplied via `token` when using `authType: \'access-token\'`.',
+        "SEA backend: a non-empty PAT must be supplied via `token` when using `authType: 'access-token'`.",
       );
     }
     if (oauth.oauthClientId !== undefined || oauth.oauthClientSecret !== undefined) {

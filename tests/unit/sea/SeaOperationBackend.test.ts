@@ -156,10 +156,7 @@ describe('SeaOperationBackend — M0 datatype round-trip via napi → ArrowResul
       withTypeName(new Field('s', new Utf8(), true), 'STRING'),
       withTypeName(new Field('bin', new Binary(), true), 'BINARY'),
       withTypeName(new Field('dt', new DateDay(), true), 'DATE'),
-      withTypeName(
-        new Field('ts', new TimestampMicrosecond(), true),
-        'TIMESTAMP',
-      ),
+      withTypeName(new Field('ts', new TimestampMicrosecond(), true), 'TIMESTAMP'),
       // apache-arrow's Decimal signature is `(scale, precision, bitWidth)`.
       withTypeName(new Field('dec', new Decimal(2, 10, 128), true), 'DECIMAL'),
       // INTERVAL on the kernel side: Utf8 + metadata annotation.

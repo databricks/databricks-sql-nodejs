@@ -43,12 +43,8 @@
  *   completion tick.
  */
 
-import {
-  TGetOperationStatusResp,
-  TOperationState,
-  TStatusCode,
-} from '../../thrift/TCLIService_types';
 import Status from '../dto/Status';
+import { OperationStatus, OperationState } from '../contracts/OperationStatus';
 import { LogLevel } from '../contracts/IDBSQLLogger';
 import IClientContext from '../contracts/IClientContext';
 import { mapKernelErrorToJsError, KernelErrorShape } from './SeaErrorMapping';
@@ -148,9 +144,7 @@ export async function seaCancel(
     return Status.success();
   }
 
-  context
-    .getLogger()
-    .log(LogLevel.debug, `Cancelling SEA operation with id: ${operationId}`);
+  context.getLogger().log(LogLevel.debug, `Cancelling SEA operation with id: ${operationId}`);
 
   state.isCancelled = true;
 
@@ -186,9 +180,7 @@ export async function seaClose(
     return Status.success();
   }
 
-  context
-    .getLogger()
-    .log(LogLevel.debug, `Closing SEA operation with id: ${operationId}`);
+  context.getLogger().log(LogLevel.debug, `Closing SEA operation with id: ${operationId}`);
 
   state.isClosed = true;
 
@@ -203,22 +195,19 @@ export async function seaClose(
 }
 
 /**
- * Synthesize a `TGetOperationStatusResp` shaped object reporting the
- * "finished" state. The kernel doesn't surface a Thrift-shaped status
- * struct, but `IOperation.finished({progress, callback})` is public
- * surface and the callback signature expects this exact shape (see
- * `lib/contracts/IOperation.ts:5` `OperationStatusCallback`). For M0
- * we report `FINISHED_STATE` with a success status. Richer fields
- * (`numModifiedRows`, `progressUpdateResponse`, `displayMessage`)
- * defer to M1 per the operation feature plan.
+ * Synthesize a neutral {@link OperationStatus} reporting the "finished"
+ * state. `IOperationBackend.waitUntilReady` is backend-neutral surface — its
+ * `callback` receives an {@link OperationStatus}, not a Thrift wire struct
+ * (the public Thrift-shaped `OperationStatusCallback` is adapted at the
+ * `DBSQLOperation` facade boundary). For M0 we report `Succeeded`. Richer
+ * fields (`numModifiedRows`, `progressUpdateResponse`, `errorMessage`) defer
+ * to M1 per the operation feature plan.
  */
-function synthesizeFinishedStatus(): TGetOperationStatusResp {
+function synthesizeFinishedStatus(): OperationStatus {
   return {
-    status: {
-      statusCode: TStatusCode.SUCCESS_STATUS,
-    },
-    operationState: TOperationState.FINISHED_STATE,
-  } as TGetOperationStatusResp;
+    state: OperationState.Succeeded,
+    hasResultSet: true,
+  };
 }
 
 /**
@@ -246,7 +235,7 @@ export async function seaFinished(
   state: SeaOperationLifecycleState,
   options?: {
     progress?: boolean;
-    callback?: (progress: TGetOperationStatusResp) => unknown;
+    callback?: (status: OperationStatus) => unknown;
   },
 ): Promise<void> {
   if (state.isCancelled || state.isClosed) {

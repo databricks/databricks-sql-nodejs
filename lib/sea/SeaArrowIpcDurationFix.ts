@@ -301,9 +301,7 @@ function rebuildSchemaWithDurationRewritten(message: Message, fbSchema: FbSchema
   // Build the fields and metadata vectors, then the Schema, then the Message.
   const fieldsVec = FbSchema.createFieldsVector(builder, fieldOffsets);
   const metadataVec =
-    schemaMetadataOffsets.length > 0
-      ? FbSchema.createCustomMetadataVector(builder, schemaMetadataOffsets)
-      : 0;
+    schemaMetadataOffsets.length > 0 ? FbSchema.createCustomMetadataVector(builder, schemaMetadataOffsets) : 0;
 
   // Preserve features vector — `features()` requires walking the
   // bigint vector; for the kernel's payloads this is typically empty
@@ -328,7 +326,7 @@ function rebuildSchemaWithDurationRewritten(message: Message, fbSchema: FbSchema
   const newMessage = Message.endMessage(builder);
   builder.finish(newMessage);
 
-  let bytes = builder.asUint8Array();
+  const bytes = builder.asUint8Array();
 
   // The Arrow IPC spec requires each message to be 8-byte aligned so
   // that subsequent record batches' body buffers stay aligned for SIMD
@@ -363,8 +361,7 @@ function reEncodeField(builder: flatbuffers.Builder, field: FbField): number {
       childOffsets.push(reEncodeField(builder, child));
     }
   }
-  const childrenVec =
-    childOffsets.length > 0 ? FbField.createChildrenVector(builder, childOffsets) : 0;
+  const childrenVec = childOffsets.length > 0 ? FbField.createChildrenVector(builder, childOffsets) : 0;
 
   // Re-encode custom_metadata (preserving everything). For Duration
   // fields we'll add our marker on top.
@@ -419,8 +416,7 @@ function reEncodeField(builder: flatbuffers.Builder, field: FbField): number {
     typeOffset = reEncodeTypeSubtable(builder, field, originalTypeType);
   }
 
-  const metadataVec =
-    metadataOffsets.length > 0 ? FbField.createCustomMetadataVector(builder, metadataOffsets) : 0;
+  const metadataVec = metadataOffsets.length > 0 ? FbField.createCustomMetadataVector(builder, metadataOffsets) : 0;
 
   FbField.startField(builder);
   FbField.addName(builder, nameOffset);
@@ -451,11 +447,7 @@ function reEncodeField(builder: flatbuffers.Builder, field: FbField): number {
  *            FixedSizeBinary, Union
  * Children-only types (Struct, List, Null) emit an empty sub-table.
  */
-function reEncodeTypeSubtable(
-  builder: flatbuffers.Builder,
-  field: FbField,
-  typeType: number,
-): number {
+function reEncodeTypeSubtable(builder: flatbuffers.Builder, field: FbField, typeType: number): number {
   // Lazy imports to avoid cyclic resolution and to keep this file's
   // top-of-module imports tight. These are zero-cost — Node caches
   // them after the first require.
@@ -471,6 +463,7 @@ function reEncodeTypeSubtable(
   const { Timestamp } = require('apache-arrow/fb/timestamp');
   const { Interval } = require('apache-arrow/fb/interval');
   const { List } = require('apache-arrow/fb/list');
+  // eslint-disable-next-line @typescript-eslint/naming-convention -- `Struct_` is apache-arrow's generated FlatBuffers export name.
   const { Struct_ } = require('apache-arrow/fb/struct-');
   const { Union } = require('apache-arrow/fb/union');
   const { FixedSizeBinary } = require('apache-arrow/fb/fixed-size-binary');

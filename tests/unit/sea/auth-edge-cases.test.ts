@@ -29,10 +29,7 @@ describe('SeaAuth — edge cases (input validation + ambiguity)', () => {
         token: '   \t  ',
       };
 
-      expect(() => buildSeaConnectionOptions(opts)).to.throw(
-        AuthenticationError,
-        /non-empty PAT/,
-      );
+      expect(() => buildSeaConnectionOptions(opts)).to.throw(AuthenticationError, /non-empty PAT/);
     });
 
     it('rejects literal "undefined" as PAT (buggy shell-export hazard)', () => {
@@ -42,10 +39,7 @@ describe('SeaAuth — edge cases (input validation + ambiguity)', () => {
         token: 'undefined',
       };
 
-      expect(() => buildSeaConnectionOptions(opts)).to.throw(
-        AuthenticationError,
-        /non-empty PAT/,
-      );
+      expect(() => buildSeaConnectionOptions(opts)).to.throw(AuthenticationError, /non-empty PAT/);
     });
 
     it('rejects literal "null" as PAT', () => {
@@ -55,10 +49,7 @@ describe('SeaAuth — edge cases (input validation + ambiguity)', () => {
         token: 'null',
       };
 
-      expect(() => buildSeaConnectionOptions(opts)).to.throw(
-        AuthenticationError,
-        /non-empty PAT/,
-      );
+      expect(() => buildSeaConnectionOptions(opts)).to.throw(AuthenticationError, /non-empty PAT/);
     });
 
     it('rejects mixed-case "UNDEFINED" / "Null" / "NULL" as PAT (case-insensitive)', () => {
@@ -106,10 +97,7 @@ describe('SeaAuth — edge cases (input validation + ambiguity)', () => {
         oauthClientSecret: 'dose-fake-secret',
       };
 
-      expect(() => buildSeaConnectionOptions(opts)).to.throw(
-        AuthenticationError,
-        /oauthClientId.*required/,
-      );
+      expect(() => buildSeaConnectionOptions(opts)).to.throw(AuthenticationError, /oauthClientId.*required/);
     });
 
     it('rejects whitespace-only oauthClientSecret with AuthenticationError when oauthClientId is set (M2M intent)', () => {
@@ -136,10 +124,7 @@ describe('SeaAuth — edge cases (input validation + ambiguity)', () => {
         oauthClientSecret: 'dose-fake-secret',
       };
 
-      expect(() => buildSeaConnectionOptions(opts)).to.throw(
-        AuthenticationError,
-        /oauthClientId.*required/,
-      );
+      expect(() => buildSeaConnectionOptions(opts)).to.throw(AuthenticationError, /oauthClientId.*required/);
     });
 
     it('rejects literal "undefined" as oauthClientSecret with AuthenticationError when id is set (M2M intent)', () => {
@@ -412,9 +397,7 @@ describe('SeaBackend — kernel error envelope decoding (DA-F1)', () => {
   });
 
   it('preserves SQLSTATE on the decoded error when present', async () => {
-    const binding = bindingRejectingWith(
-      '{"code":"Unauthenticated","message":"forbidden","sqlState":"28000"}',
-    );
+    const binding = bindingRejectingWith('{"code":"Unauthenticated","message":"forbidden","sqlState":"28000"}');
     const backend = new SeaBackend({ nativeBinding: binding });
     await backend.connect(validConnectArgs);
 
@@ -501,9 +484,7 @@ describe('SeaBackend — kernel error envelope decoding (DA-F1)', () => {
   });
 
   it('keeps sqlState and kernelMetadata non-enumerable (matches Node `.code` pattern)', async () => {
-    const binding = bindingRejectingWith(
-      '{"code":"NetworkError","message":"x","sqlState":"08000","httpStatus":502}',
-    );
+    const binding = bindingRejectingWith('{"code":"NetworkError","message":"x","sqlState":"08000","httpStatus":502}');
     const backend = new SeaBackend({ nativeBinding: binding });
     await backend.connect(validConnectArgs);
 
@@ -582,9 +563,7 @@ describe('SeaBackend — kernel error envelope decoding (DA-F1)', () => {
     // empty metadata object — and we should NOT attach a `{}`-shaped
     // namespace because that's pure noise. The sqlState top-level
     // field is unaffected.
-    const binding = bindingRejectingWith(
-      '{"code":"Internal","message":"x","sqlState":"08001"}',
-    );
+    const binding = bindingRejectingWith('{"code":"Internal","message":"x","sqlState":"08001"}');
     const backend = new SeaBackend({ nativeBinding: binding });
     await backend.connect(validConnectArgs);
 
@@ -610,9 +589,7 @@ describe('SeaBackend — kernel error envelope decoding (DA-F1)', () => {
         throw new Error('unused');
       },
       async close() {
-        throw new Error(
-          '__databricks_error__:{"code":"Internal","message":"server-side close failed"}',
-        );
+        throw new Error('__databricks_error__:{"code":"Internal","message":"server-side close failed"}');
       },
     };
     binding.openSession = (async () => failingClose as unknown) as typeof binding.openSession;

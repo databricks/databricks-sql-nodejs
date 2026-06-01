@@ -31,13 +31,13 @@ import {
 import Status from '../dto/Status';
 import InfoValue from '../dto/InfoValue';
 import HiveDriverError from '../errors/HiveDriverError';
-import { SeaNativeConnection } from './SeaNativeLoader';
+import { SeaConnection } from './SeaNativeLoader';
 import { decodeNapiKernelError } from './SeaErrorMapping';
 import SeaOperationBackend from './SeaOperationBackend';
 
 export interface SeaSessionBackendOptions {
   /** The opaque napi `Connection` handle returned by `openSession`. */
-  connection: SeaNativeConnection;
+  connection: SeaConnection;
   context: IClientContext;
   /** Optional override for `id`. Defaults to a fresh UUIDv4. */
   id?: string;
@@ -62,7 +62,7 @@ export interface SeaSessionBackendOptions {
  * onto `openSession` to match pyo3.
  */
 export default class SeaSessionBackend implements ISessionBackend {
-  private readonly connection: SeaNativeConnection;
+  private readonly connection: SeaConnection;
 
   private readonly context: IClientContext;
 
@@ -106,14 +106,10 @@ export default class SeaSessionBackend implements ISessionBackend {
 
     // M0 surfaces a clear error rather than silently dropping M1-only knobs.
     if (options.namedParameters !== undefined || options.ordinalParameters !== undefined) {
-      throw new HiveDriverError(
-        'SEA executeStatement: query parameters are not supported in M0 (deferred to M1)',
-      );
+      throw new HiveDriverError('SEA executeStatement: query parameters are not supported in M0 (deferred to M1)');
     }
     if (options.queryTimeout !== undefined) {
-      throw new HiveDriverError(
-        'SEA executeStatement: queryTimeout is not supported in M0 (deferred to M1)',
-      );
+      throw new HiveDriverError('SEA executeStatement: queryTimeout is not supported in M0 (deferred to M1)');
     }
     if (options.useCloudFetch !== undefined) {
       throw new HiveDriverError(

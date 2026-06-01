@@ -1,14 +1,8 @@
 import { expect } from 'chai';
-import {
-  mapKernelErrorToJsError,
-  KernelErrorCode,
-  KernelErrorShape,
-} from '../../../lib/sea/SeaErrorMapping';
+import { mapKernelErrorToJsError, KernelErrorCode, KernelErrorShape } from '../../../lib/sea/SeaErrorMapping';
 import HiveDriverError from '../../../lib/errors/HiveDriverError';
 import AuthenticationError from '../../../lib/errors/AuthenticationError';
-import OperationStateError, {
-  OperationStateErrorCode,
-} from '../../../lib/errors/OperationStateError';
+import OperationStateError, { OperationStateErrorCode } from '../../../lib/errors/OperationStateError';
 import ParameterError from '../../../lib/errors/ParameterError';
 
 describe('SeaErrorMapping.mapKernelErrorToJsError', () => {

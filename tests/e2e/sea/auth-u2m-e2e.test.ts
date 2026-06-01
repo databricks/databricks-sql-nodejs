@@ -48,7 +48,6 @@ import { InternalConnectionOptions } from '../../../lib/contracts/InternalConnec
 describe('sea-auth e2e — OAuth U2M through DBSQLClient ↔ SeaBackend ↔ napi binding', function suite() {
   this.timeout(300_000);
 
-  // eslint-disable-next-line mocha/no-skipped-tests
   it.skip('[pending TBD-oauth_u2m_test_harness] interactive U2M round-trip', async () => {
     const host = process.env.DATABRICKS_PECOTESTING_SERVER_HOSTNAME as string;
     const path = process.env.DATABRICKS_PECOTESTING_HTTP_PATH as string;

@@ -62,10 +62,7 @@ describe('SeaAuth + SeaBackend — OAuth M2M auth flow', () => {
         oauthClientSecret: 'dose-fake-secret',
       } as unknown as ConnectionOptions;
 
-      expect(() => buildSeaConnectionOptions(opts)).to.throw(
-        AuthenticationError,
-        /oauthClientId.*required/,
-      );
+      expect(() => buildSeaConnectionOptions(opts)).to.throw(AuthenticationError, /oauthClientId.*required/);
     });
 
     it('rejects empty oauthClientId with AuthenticationError', () => {
@@ -77,10 +74,7 @@ describe('SeaAuth + SeaBackend — OAuth M2M auth flow', () => {
         oauthClientSecret: 'dose-fake-secret',
       } as unknown as ConnectionOptions;
 
-      expect(() => buildSeaConnectionOptions(opts)).to.throw(
-        AuthenticationError,
-        /oauthClientId.*required/,
-      );
+      expect(() => buildSeaConnectionOptions(opts)).to.throw(AuthenticationError, /oauthClientId.*required/);
     });
 
     it('rejects empty oauthClientSecret with AuthenticationError when oauthClientId is set (M2M intent)', () => {
@@ -112,10 +106,7 @@ describe('SeaAuth + SeaBackend — OAuth M2M auth flow', () => {
         azureTenantId: 'tenant-uuid',
       };
 
-      expect(() => buildSeaConnectionOptions(opts)).to.throw(
-        HiveDriverError,
-        /Azure-direct OAuth.*is not supported/,
-      );
+      expect(() => buildSeaConnectionOptions(opts)).to.throw(HiveDriverError, /Azure-direct OAuth.*is not supported/);
     });
 
     it('rejects useDatabricksOAuthInAzure with the same Entra-direct error', () => {
@@ -128,10 +119,7 @@ describe('SeaAuth + SeaBackend — OAuth M2M auth flow', () => {
         useDatabricksOAuthInAzure: true,
       };
 
-      expect(() => buildSeaConnectionOptions(opts)).to.throw(
-        HiveDriverError,
-        /Azure-direct OAuth.*is not supported/,
-      );
+      expect(() => buildSeaConnectionOptions(opts)).to.throw(HiveDriverError, /Azure-direct OAuth.*is not supported/);
     });
 
     it('rejects a `persistence` hook on M2M (no cache needed)', () => {
@@ -170,9 +158,7 @@ describe('SeaAuth + SeaBackend — OAuth M2M auth flow', () => {
       const session = await backend.openSession({});
       // Post-integration: SeaSessionBackend generates UUIDv4 ids; the
       // earlier auth-only counter-id scheme was superseded.
-      expect(session.id).to.match(
-        /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i,
-      );
+      expect(session.id).to.match(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i);
 
       expect(calls).to.have.lengthOf(1);
       expect(calls[0].method).to.equal('openSession');

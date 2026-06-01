@@ -17,11 +17,7 @@ import ISessionBackend from '../contracts/ISessionBackend';
 import IClientContext from '../contracts/IClientContext';
 import { ConnectionOptions, OpenSessionRequest } from '../contracts/IDBSQLClient';
 import HiveDriverError from '../errors/HiveDriverError';
-import {
-  getSeaNative,
-  SeaNativeBinding,
-  SeaNativeConnection,
-} from './SeaNativeLoader';
+import { getSeaNative, SeaNativeBinding, SeaConnection } from './SeaNativeLoader';
 import { decodeNapiKernelError } from './SeaErrorMapping';
 import { buildSeaConnectionOptions, SeaNativeConnectionOptions } from './SeaAuth';
 import SeaSessionBackend from './SeaSessionBackend';
@@ -109,7 +105,7 @@ export default class SeaBackend implements IBackend {
       sessionOptions.sessionConf = { ...request.configuration };
     }
 
-    let nativeConnection: SeaNativeConnection;
+    let nativeConnection: SeaConnection;
     try {
       // `SeaNativeConnectionOptions.authMode` is a string-literal union
       // ('Pat' | 'OAuthM2m' | 'OAuthU2m') — deliberately not the binding's
@@ -119,7 +115,7 @@ export default class SeaBackend implements IBackend {
       // binding's parameter type at this single boundary.
       nativeConnection = (await this.binding.openSession(
         sessionOptions as unknown as Parameters<SeaNativeBinding['openSession']>[0],
-      )) as SeaNativeConnection;
+      )) as SeaConnection;
     } catch (err) {
       throw decodeNapiKernelError(err);
     }

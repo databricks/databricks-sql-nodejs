@@ -25,11 +25,7 @@
 
 import { expect } from 'chai';
 import sinon from 'sinon';
-import {
-  TOperationState,
-  TStatusCode,
-  TGetOperationStatusResp,
-} from '../../../thrift/TCLIService_types';
+import { OperationStatus, OperationState } from '../../../lib/contracts/OperationStatus';
 import IClientContext from '../../../lib/contracts/IClientContext';
 import IDBSQLLogger, { LogLevel } from '../../../lib/contracts/IDBSQLLogger';
 import {
@@ -41,9 +37,7 @@ import {
   failIfNotActive,
 } from '../../../lib/sea/SeaOperationLifecycle';
 import SeaOperationBackend from '../../../lib/sea/SeaOperationBackend';
-import OperationStateError, {
-  OperationStateErrorCode,
-} from '../../../lib/errors/OperationStateError';
+import OperationStateError, { OperationStateErrorCode } from '../../../lib/errors/OperationStateError';
 import HiveDriverError from '../../../lib/errors/HiveDriverError';
 
 class TestLogger implements IDBSQLLogger {
@@ -182,11 +176,7 @@ describe('SeaOperationLifecycle (helpers)', () => {
 
       await seaCancel(state, handle, ctx, 'op-id-log');
 
-      expect(
-        logger.entries.some(
-          (e) => e.level === LogLevel.debug && e.message.includes('op-id-log'),
-        ),
-      ).to.equal(true);
+      expect(logger.entries.some((e) => e.level === LogLevel.debug && e.message.includes('op-id-log'))).to.equal(true);
     });
   });
 
@@ -255,9 +245,9 @@ describe('SeaOperationLifecycle (helpers)', () => {
       await seaFinished(state, { callback });
 
       expect(callback.calledOnce).to.equal(true);
-      const arg = callback.firstCall.args[0] as TGetOperationStatusResp;
-      expect(arg.operationState).to.equal(TOperationState.FINISHED_STATE);
-      expect(arg.status?.statusCode).to.equal(TStatusCode.SUCCESS_STATUS);
+      const arg = callback.firstCall.args[0] as OperationStatus;
+      expect(arg.state).to.equal(OperationState.Succeeded);
+      expect(arg.hasResultSet).to.equal(true);
     });
 
     it('awaits an async progress callback', async () => {
@@ -294,9 +284,7 @@ describe('SeaOperationLifecycle (helpers)', () => {
         expect.fail('expected throw');
       } catch (err) {
         expect(err).to.be.instanceOf(OperationStateError);
-        expect((err as OperationStateError).errorCode).to.equal(
-          OperationStateErrorCode.Canceled,
-        );
+        expect((err as OperationStateError).errorCode).to.equal(OperationStateErrorCode.Canceled);
       }
     });
 
@@ -347,13 +335,13 @@ describe('SeaOperationBackend (lifecycle integration)', () => {
     const { handle } = makeStatement();
     const op = new SeaOperationBackend({ statement: handle, context: ctx });
 
-    const responses: TGetOperationStatusResp[] = [];
+    const responses: OperationStatus[] = [];
     const start = Date.now();
     await op.waitUntilReady({ callback: (r) => responses.push(r) });
 
     expect(Date.now() - start).to.be.lessThan(50);
     expect(responses).to.have.length(1);
-    expect(responses[0].operationState).to.equal(TOperationState.FINISHED_STATE);
+    expect(responses[0].state).to.equal(OperationState.Succeeded);
   });
 
   it('fetchChunk after cancel throws the cancellation error', async () => {
@@ -370,9 +358,7 @@ describe('SeaOperationBackend (lifecycle integration)', () => {
       thrown = err;
     }
     expect(thrown).to.be.instanceOf(OperationStateError);
-    expect((thrown as OperationStateError).errorCode).to.equal(
-      OperationStateErrorCode.Canceled,
-    );
+    expect((thrown as OperationStateError).errorCode).to.equal(OperationStateErrorCode.Canceled);
   });
 
   it('cancel() is idempotent across the backend surface', async () => {
@@ -404,7 +390,7 @@ describe('SeaOperationBackend (lifecycle integration)', () => {
     const op = new SeaOperationBackend({ statement: handle, context: ctx });
 
     const status = await op.status(false);
-    expect(status.operationState).to.equal(TOperationState.FINISHED_STATE);
+    expect(status.state).to.equal(OperationState.Succeeded);
   });
 
   it('status() reports CANCELED_STATE after cancel', async () => {
@@ -414,7 +400,7 @@ describe('SeaOperationBackend (lifecycle integration)', () => {
 
     await op.cancel();
     const status = await op.status(false);
-    expect(status.operationState).to.equal(TOperationState.CANCELED_STATE);
+    expect(status.state).to.equal(OperationState.Cancelled);
   });
 
   it('id getter is stable', () => {
@@ -440,6 +426,6 @@ describe('SeaOperationBackend (lifecycle integration)', () => {
     const { handle } = makeStatement();
     const op = new SeaOperationBackend({ statement: handle, context: ctx });
 
-    expect(op.hasResultSet).to.equal(true);
+    expect(op.hasResultSet()).to.equal(true);
   });
 });

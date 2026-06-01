@@ -17,11 +17,7 @@ import sinon from 'sinon';
 import SeaBackend from '../../../lib/sea/SeaBackend';
 import SeaSessionBackend from '../../../lib/sea/SeaSessionBackend';
 import SeaOperationBackend from '../../../lib/sea/SeaOperationBackend';
-import {
-  SeaNativeBinding,
-  SeaNativeConnection,
-  SeaNativeStatement,
-} from '../../../lib/sea/SeaNativeLoader';
+import { SeaNativeBinding, SeaConnection, SeaStatement } from '../../../lib/sea/SeaNativeLoader';
 import IClientContext, { ClientConfig } from '../../../lib/contracts/IClientContext';
 import IDBSQLLogger, { LogLevel } from '../../../lib/contracts/IDBSQLLogger';
 import HiveDriverError from '../../../lib/errors/HiveDriverError';
@@ -33,7 +29,7 @@ import { ConnectionOptions } from '../../../lib/contracts/IDBSQLClient';
 // pulling in test-only fixtures from outside the sea/ namespace.
 // -----------------------------------------------------------------------------
 
-class FakeNativeStatement implements SeaNativeStatement {
+class FakeNativeStatement implements SeaStatement {
   public closed = false;
 
   public cancelled = false;
@@ -76,7 +72,7 @@ class FakeNativeStatement implements SeaNativeStatement {
   }
 }
 
-class FakeNativeConnection implements SeaNativeConnection {
+class FakeNativeConnection implements SeaConnection {
   public closed = false;
 
   public lastSql?: string;
@@ -90,7 +86,7 @@ class FakeNativeConnection implements SeaNativeConnection {
 
   // Session-level migration: per-statement options were removed, so the
   // binding's executeStatement takes only `sql`.
-  public async executeStatement(sql: string): Promise<SeaNativeStatement> {
+  public async executeStatement(sql: string): Promise<SeaStatement> {
     if (this.throwOnExecute) {
       throw this.throwOnExecute;
     }
@@ -103,18 +99,19 @@ class FakeNativeConnection implements SeaNativeConnection {
   }
 }
 
-function makeBinding(connection: SeaNativeConnection): SeaNativeBinding & {
+function makeBinding(connection: SeaConnection): SeaNativeBinding & {
   openSessionStub: sinon.SinonStub;
 } {
   const openSessionStub = sinon.stub().resolves(connection);
-  const binding: SeaNativeBinding = {
+  // Structural cast through `unknown`: the binding type carries an `AuthMode`
+  // const enum that can't be produced as a runtime value, so the whole fake
+  // is cast rather than each member.
+  const binding = {
     version: () => 'test',
     openSession: openSessionStub,
-    // Index the binding type for the class constructor types; `typeof
-    // Connection` is illegal since they're exported as type aliases.
-    Connection: function Connection() {} as unknown as SeaNativeBinding['Connection'],
-    Statement: function Statement() {} as unknown as SeaNativeBinding['Statement'],
-  };
+    Connection: function Connection() {},
+    Statement: function Statement() {},
+  } as unknown as SeaNativeBinding;
   return Object.assign(binding, { openSessionStub });
 }
 
@@ -317,7 +314,7 @@ describe('SeaBackend', () => {
 });
 
 describe('SeaSessionBackend', () => {
-  function makeSession(connection: SeaNativeConnection) {
+  function makeSession(connection: SeaConnection) {
     return new SeaSessionBackend({ connection, context: makeContext() });
   }
 
@@ -435,7 +432,7 @@ describe('SeaSessionBackend', () => {
 });
 
 describe('SeaOperationBackend', () => {
-  function makeOperation(statement: SeaNativeStatement = new FakeNativeStatement()) {
+  function makeOperation(statement: SeaStatement = new FakeNativeStatement()) {
     return new SeaOperationBackend({ statement, context: makeContext() });
   }
 
@@ -447,7 +444,7 @@ describe('SeaOperationBackend', () => {
 
   it('hasResultSet is true for M0', () => {
     const op = makeOperation();
-    expect(op.hasResultSet).to.equal(true);
+    expect(op.hasResultSet()).to.equal(true);
   });
 
   it('cancel() forwards to napi Statement', async () => {

@@ -12,7 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { SeaNativeBinding, SeaNativeConnection } from '../../../../lib/sea/SeaNativeLoader';
+import { SeaNativeBinding, SeaConnection } from '../../../../lib/sea/SeaNativeLoader';
 
 export interface RecordedCall {
   method: string;
@@ -44,20 +44,20 @@ export function makeFakeBinding(): FakeBinding {
     },
   };
 
-  const binding: SeaNativeBinding = {
+  // Cast the whole fake through `unknown`: the real binding type carries an
+  // `AuthMode` const enum (and may gain more members), which can't be
+  // fabricated as a runtime value, so a structural cast is the pragmatic seam.
+  const binding = {
     version() {
       return 'fake-binding';
     },
     async openSession(opts: Parameters<SeaNativeBinding['openSession']>[0]) {
       calls.push({ method: 'openSession', args: [opts] });
-      return fakeConnection as unknown as SeaNativeConnection;
+      return fakeConnection as unknown as SeaConnection;
     },
-    // Index the binding type for the napi class constructor types; the
-    // loader exports Connection/Statement as type aliases, so `typeof
-    // Connection` is illegal and bare `Function` has no construct signature.
-    Connection: function FakeConnection() {} as unknown as SeaNativeBinding['Connection'],
-    Statement: function FakeStatement() {} as unknown as SeaNativeBinding['Statement'],
-  };
+    Connection: function FakeConnection() {},
+    Statement: function FakeStatement() {},
+  } as unknown as SeaNativeBinding;
 
   return { binding, calls };
 }

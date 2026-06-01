@@ -200,7 +200,12 @@ function ipcWithDurationSchema(fieldName: string, durationUnit: FbTimeUnit, type
  * a kernel-shaped Duration IPC payload using only the apache-arrow@13
  * public API.
  */
-function buildDurationIpc(fieldName: string, durationUnit: FbTimeUnit, values: bigint[], typeName = 'INTERVAL'): Buffer {
+function buildDurationIpc(
+  fieldName: string,
+  durationUnit: FbTimeUnit,
+  values: bigint[],
+  typeName = 'INTERVAL',
+): Buffer {
   // Build an Int64 stream that carries the values.
   const int64Schema = new Schema([new Field(fieldName, new Int64(), true)]);
   const int64Ipc = ipcFromColumns(int64Schema, {
@@ -242,9 +247,7 @@ describe('SeaOperationBackend — INTERVAL parity with thrift', () => {
     // Arrow `Interval[YearMonth]` carries a single int32 total-months
     // value. apache-arrow surfaces it as Int32Array(2) via the
     // GetVisitor. The kernel emits this type for INTERVAL YEAR-MONTH.
-    const fields = [
-      withTypeName(new Field('iv', new Interval(IntervalUnit.YEAR_MONTH), true), 'INTERVAL'),
-    ];
+    const fields = [withTypeName(new Field('iv', new Interval(IntervalUnit.YEAR_MONTH), true), 'INTERVAL')];
     const schema = new Schema(fields);
     const schemaIpc = ipcSchemaOnly(schema);
 
@@ -261,9 +264,7 @@ describe('SeaOperationBackend — INTERVAL parity with thrift', () => {
   });
 
   it('YEAR-MONTH negative → "-Y-M"', async () => {
-    const fields = [
-      withTypeName(new Field('iv', new Interval(IntervalUnit.YEAR_MONTH), true), 'INTERVAL'),
-    ];
+    const fields = [withTypeName(new Field('iv', new Interval(IntervalUnit.YEAR_MONTH), true), 'INTERVAL')];
     const schema = new Schema(fields);
     const schemaIpc = ipcSchemaOnly(schema);
 
@@ -292,8 +293,7 @@ describe('SeaOperationBackend — INTERVAL parity with thrift', () => {
 
   it('DAY-TIME via Arrow Duration(NANOSECOND) preserves nanosecond precision', async () => {
     // 1 day + 2h + 3min + 4.123456789s
-    const nanos =
-      BigInt(86400 + 2 * 3600 + 3 * 60 + 4) * BigInt(1_000_000_000) + BigInt(123_456_789);
+    const nanos = BigInt(86400 + 2 * 3600 + 3 * 60 + 4) * BigInt(1_000_000_000) + BigInt(123_456_789);
     const ipc = buildDurationIpc('iv', FbTimeUnit.NANOSECOND, [nanos], 'INTERVAL');
     const schemaIpc = ipcWithDurationSchema('iv', FbTimeUnit.NANOSECOND, 'INTERVAL');
 

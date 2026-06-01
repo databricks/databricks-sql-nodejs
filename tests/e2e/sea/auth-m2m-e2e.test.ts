@@ -60,8 +60,7 @@ describe('sea-auth e2e — OAuth M2M through DBSQLClient ↔ SeaBackend ↔ napi
     // issue. Reuse the production `isBlankOrReserved` predicate so the
     // test gate stays in lockstep with the case-insensitive variant
     // shipped in round-2 (B-3 fix).
-    const looksReal = (s: string | undefined): s is string =>
-      typeof s === 'string' && !isBlankOrReserved(s);
+    const looksReal = (s: string | undefined): s is string => typeof s === 'string' && !isBlankOrReserved(s);
     if (!looksReal(host) || !looksReal(path) || !looksReal(oauthClientId) || !looksReal(oauthClientSecret)) {
       // eslint-disable-next-line no-invalid-this
       this.skip();

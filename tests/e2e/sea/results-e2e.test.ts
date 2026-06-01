@@ -28,8 +28,7 @@ import { InternalConnectionOptions } from '../../../lib/contracts/InternalConnec
 // If any is missing, the suite skips so CI / sandboxes without
 // credentials don't flap.
 
-const PROBE_QUERY =
-  "SELECT 1 AS x, 'hello' AS s, true AS b, CAST(1.5 AS DECIMAL(10,2)) AS d, DATE '2026-01-01' AS dt";
+const PROBE_QUERY = "SELECT 1 AS x, 'hello' AS s, true AS b, CAST(1.5 AS DECIMAL(10,2)) AS d, DATE '2026-01-01' AS dt";
 
 interface PecoSecrets {
   host: string;

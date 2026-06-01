@@ -37,8 +37,8 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
-import { TGetOperationStatusResp, TTableSchema } from '../../thrift/TCLIService_types';
-import IOperationBackend from '../contracts/IOperationBackend';
+import { TTableSchema } from '../../thrift/TCLIService_types';
+import IOperationBackend, { IOperationBackendWaitOptions } from '../contracts/IOperationBackend';
 import { OperationStatus, OperationState } from '../contracts/OperationStatus';
 import { ResultMetadata, ResultFormat } from '../contracts/ResultMetadata';
 import IClientContext from '../contracts/IClientContext';
@@ -47,7 +47,7 @@ import ArrowResultConverter from '../result/ArrowResultConverter';
 import ResultSlicer from '../result/ResultSlicer';
 import SeaResultsProvider from './SeaResultsProvider';
 import { arrowSchemaToThriftSchema, decodeIpcSchema } from './SeaArrowIpc';
-import { SeaNativeStatement } from './SeaNativeLoader';
+import { SeaStatement } from './SeaNativeLoader';
 import {
   SeaStatementHandle,
   SeaOperationLifecycleState,
@@ -65,7 +65,7 @@ import {
  * cancel/close half — fetch methods are accessed lazily and the
  * lifecycle tests never reach that path.
  */
-export type SeaOperationStatement = SeaStatementHandle & Partial<SeaNativeStatement>;
+export type SeaOperationStatement = SeaStatementHandle & Partial<SeaStatement>;
 
 /**
  * Constructor options for `SeaOperationBackend`.
@@ -110,7 +110,7 @@ export default class SeaOperationBackend implements IOperationBackend {
     return this._id;
   }
 
-  public get hasResultSet(): boolean {
+  public hasResultSet(): boolean {
     // M0 only routes through SeaOperationBackend for executeStatement
     // calls. DDL/DML without a result set is not exercised through SEA
     // for M0; the napi Statement still produces a schema (empty) in
@@ -200,10 +200,7 @@ export default class SeaOperationBackend implements IOperationBackend {
     return { state: OperationState.Succeeded, hasResultSet: true };
   }
 
-  public async waitUntilReady(options?: {
-    progress?: boolean;
-    callback?: (progress: TGetOperationStatusResp) => unknown;
-  }): Promise<void> {
+  public async waitUntilReady(options?: IOperationBackendWaitOptions): Promise<void> {
     // Kernel's `Statement::execute().await` has already resolved by the
     // time we hold a Statement handle — there is no pending/running
     // state to poll for M0. seaFinished fires the progress callback
@@ -236,7 +233,7 @@ export default class SeaOperationBackend implements IOperationBackend {
     // The lifecycle subset has cancel/close only; fetch methods exist on
     // the full napi Statement. Cast is safe here because we've just
     // verified `fetchNextBatch` is callable.
-    this.resultsProvider = new SeaResultsProvider(this.statement as SeaNativeStatement);
+    this.resultsProvider = new SeaResultsProvider(this.statement as SeaStatement);
     const converter = new ArrowResultConverter(this.context, this.resultsProvider, metadata);
     this.resultSlicer = new ResultSlicer(this.context, converter);
     return this.resultSlicer;
