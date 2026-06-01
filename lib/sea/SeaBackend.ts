@@ -24,13 +24,13 @@ import SeaSessionBackend from './SeaSessionBackend';
 
 export interface SeaBackendOptions {
   /**
-   * Optional in the type so unit tests that only exercise the auth-
-   * routing surface (which doesn't touch context) can pass
-   * `{ nativeBinding }`. The constructor downcasts undefined to
-   * `IClientContext` because runtime callers from `DBSQLClient` always
-   * supply one — see `lib/DBSQLClient.ts` SEA seam.
+   * Required. Provides the logger + config the SEA session/operation chain
+   * logs through. `DBSQLClient` supplies it via the SEA seam
+   * (`new SeaBackend({ context: this })`); unit tests pass a stub. Kept
+   * mandatory (rather than an `as IClientContext` downcast of `undefined`)
+   * so a missing context is a compile error, not a latent runtime NPE.
    */
-  context?: IClientContext;
+  context: IClientContext;
   /**
    * Optional injection seam for unit tests. When provided, replaces the
    * default `getSeaNative()` call so tests can swap in a mock napi
@@ -68,9 +68,9 @@ export default class SeaBackend implements IBackend {
 
   private nativeOptions?: SeaNativeConnectionOptions;
 
-  constructor(options?: SeaBackendOptions) {
-    this.context = options?.context as IClientContext;
-    this.binding = options?.nativeBinding ?? getSeaNative();
+  constructor(options: SeaBackendOptions) {
+    this.context = options.context;
+    this.binding = options.nativeBinding ?? getSeaNative();
   }
 
   public async connect(options: ConnectionOptions): Promise<void> {

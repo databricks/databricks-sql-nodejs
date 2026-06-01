@@ -18,7 +18,7 @@ import { buildSeaConnectionOptions } from '../../../lib/sea/SeaAuth';
 import { ConnectionOptions } from '../../../lib/contracts/IDBSQLClient';
 import AuthenticationError from '../../../lib/errors/AuthenticationError';
 import HiveDriverError from '../../../lib/errors/HiveDriverError';
-import { makeFakeBinding } from './_helpers/fakeBinding';
+import { makeFakeBinding, makeFakeContext } from './_helpers/fakeBinding';
 
 describe('SeaAuth + SeaBackend — OAuth M2M auth flow', () => {
   describe('buildSeaConnectionOptions', () => {
@@ -145,7 +145,7 @@ describe('SeaAuth + SeaBackend — OAuth M2M auth flow', () => {
   describe('SeaBackend.connect + openSession (M2M)', () => {
     it('round-trips M2M options through to the napi binding', async () => {
       const { binding, calls } = makeFakeBinding();
-      const backend = new SeaBackend({ nativeBinding: binding });
+      const backend = new SeaBackend({ nativeBinding: binding, context: makeFakeContext() });
 
       await backend.connect({
         host: 'example.cloud.databricks.com',
@@ -176,7 +176,7 @@ describe('SeaAuth + SeaBackend — OAuth M2M auth flow', () => {
 
     it('rejects connect() for missing oauthClientId before touching the binding', async () => {
       const { binding, calls } = makeFakeBinding();
-      const backend = new SeaBackend({ nativeBinding: binding });
+      const backend = new SeaBackend({ nativeBinding: binding, context: makeFakeContext() });
 
       let caught: unknown;
       try {

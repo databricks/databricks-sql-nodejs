@@ -13,10 +13,30 @@
 // limitations under the License.
 
 import { SeaNativeBinding, SeaConnection } from '../../../../lib/sea/SeaNativeLoader';
+import IClientContext from '../../../../lib/contracts/IClientContext';
 
 export interface RecordedCall {
   method: string;
   args: unknown[];
+}
+
+/**
+ * Minimal `IClientContext` for SEA backend tests. `SeaBackend` requires a
+ * context (it threads logger/config into the session → operation chain), so
+ * even auth-routing tests that never log must supply one. Only `getLogger`
+ * is wired (to a no-op); the rest throw if unexpectedly reached.
+ */
+export function makeFakeContext(): IClientContext {
+  const notUsed = () => {
+    throw new Error('IClientContext member not expected to be used by this test');
+  };
+  return {
+    getConfig: () => ({} as ReturnType<IClientContext['getConfig']>),
+    getLogger: () => ({ log: () => {} }),
+    getConnectionProvider: notUsed,
+    getClient: notUsed,
+    getDriver: notUsed,
+  } as unknown as IClientContext;
 }
 
 export interface FakeBinding {

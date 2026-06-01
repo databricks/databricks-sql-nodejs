@@ -128,11 +128,23 @@ export function isBlankOrReserved(s: string): boolean {
  *   - OAuth U2M: `authType: 'databricks-oauth'` + NO `oauthClientId` and
  *     NO `oauthClientSecret`. Kernel runs the PKCE auth-code dance (opens
  *     a browser, listens on localhost:8030, exchanges the code, persists
- *     to `~/.config/databricks-sql-kernel/oauth/{sha256}.json`). The flow
- *     selector keys off `oauthClientId` presence: present → M2M, absent →
- *     U2M. (Round-4 NF3-2 fix; previously secret-keyed — that variant
- *     routed a typo'd-secret M2M call to the U2M arm and swallowed the
- *     actionable error.) Mirrors thrift's intent at `DBSQLClient.ts:143`.
+ *     to `~/.config/databricks-sql-kernel/oauth/{sha256}.json`).
+ *
+ *     **Flow selection — DELIBERATE DIVERGENCE FROM THRIFT.** Thrift's
+ *     `DBSQLClient.createAuthProvider` (`DBSQLClient.ts:216`) keys off the
+ *     *secret* (`oauthClientSecret === undefined ? U2M : M2M`), so a custom
+ *     `oauthClientId` with no secret runs U2M with that id. SEA instead keys
+ *     off `oauthClientId` *presence* (id present → M2M, absent → U2M). The
+ *     trade-off: keying off the id means a caller who set an id but
+ *     typoed/forgot the secret gets the actionable M2M "secret is required"
+ *     error instead of being silently routed to U2M (which would hide their
+ *     intent). The cost is two real behavioural gaps vs Thrift:
+ *       1. `oauthClientId` + no secret → Thrift runs U2M; SEA throws
+ *          `AuthenticationError` (M2M secret required).
+ *       2. SEA U2M has NO custom-client-id support — the kernel hardcodes
+ *          `client_id = "databricks-cli"`, and SEA rejects any `oauthClientId`
+ *          on the U2M arm. Thrift U2M honours a custom `clientId`.
+ *     Both are documented limitations of the M0 SEA OAuth surface, not bugs.
  *
  * Out of scope on the OAuth paths (rejected with a clear error):
  *   - `azureTenantId` / `useDatabricksOAuthInAzure` → Microsoft Entra
@@ -204,13 +216,15 @@ export function buildSeaConnectionOptions(options: ConnectionOptions): SeaNative
       );
     }
 
-    // Flow selector mirrors thrift's `DBSQLClient.createAuthProvider`
-    // (`DBSQLClient.ts:143`): presence of `oauthClientId` indicates M2M
-    // intent, otherwise U2M. Routing decision is based on `oauthClientId`
-    // (the "do I have an id?" signal) rather than the secret, so a
-    // user who set an id but typoed/forgot the secret gets the M2M
-    // "secret is required" error instead of a U2M error that hides
-    // their actual intent. The U2M arm still defends against an id
+    // Flow selector — DELIBERATELY DIFFERENT from thrift's
+    // `DBSQLClient.createAuthProvider` (`DBSQLClient.ts:216`), which keys off
+    // the secret (`oauthClientSecret === undefined ? U2M : M2M`). SEA keys off
+    // `oauthClientId` *presence* (the "do I have an id?" signal) instead, so a
+    // user who set an id but typoed/forgot the secret gets the actionable M2M
+    // "secret is required" error rather than being silently routed to U2M
+    // (which would hide their intent). Cost: `id + no secret` throws here
+    // where thrift would run U2M, and SEA U2M has no custom-client-id support
+    // (see buildSeaConnectionOptions header). The U2M arm still defends against an id
     // sneaking through: fires only when `oauthClientId` is provided as
     // a blank-reserved literal (e.g., whitespace, `"null"`, `"undefined"`)
     // alongside an absent/blank secret — both `idIsBlank` and

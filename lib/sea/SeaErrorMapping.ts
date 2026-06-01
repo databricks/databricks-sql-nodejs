@@ -57,8 +57,8 @@ export type KernelErrorCode =
  *
  * `errorCode` is namespaced under `kernelMetadata` rather than placed at
  * the top level because `OperationStateError` already declares a top-level
- * `errorCode: enum` field, and `DBSQLOperation.ts:209` switches on it
- * (`err.errorCode === OperationStateErrorCode.Canceled`). Top-level
+ * `errorCode: enum` field, and `DBSQLOperation.ts` switches on it
+ * (`err.errorCode === OperationStateErrorCode.Canceled`, around `:374`). Top-level
  * defineProperty would clobber that enum with a kernel string and break
  * cancel/close detection.
  */
@@ -210,7 +210,7 @@ function buildKernelMetadata(parsed: Record<string, unknown>): KernelMetadata {
  *    envelope fields under a single non-enumerable `kernelMetadata`
  *    namespace. Namespacing avoids the collision with
  *    `OperationStateError.errorCode` (an enum already switched on at the
- *    JS layer — see `DBSQLOperation.ts:209`).
+ *    JS layer — see `DBSQLOperation.ts` around `:374`).
  *  - Binding-side error (e.g. `napi::Error::new(InvalidArg, "openSession:
  *    \`token\` is required for the requested auth mode")` produced by
  *    the binding's own validation): returned unchanged. These don't
