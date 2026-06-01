@@ -122,21 +122,26 @@ describe('DBSQLClient.connect', () => {
     const client = new DBSQLClient();
 
     // `useSEA` is on a non-exported InternalConnectionOptions; cast through any.
-    const seaOptions = { ...connectOptions, useSEA: true } as any;
+    // An empty token makes the real SeaBackend reject during connect() (auth
+    // validation); where the native binding is absent (e.g. CI, which does not
+    // build it) construction throws even earlier. Either way connect() must
+    // reject, so we can assert the partial-init guard leaves `backend` unset.
+    const seaOptions = { ...connectOptions, token: '', useSEA: true } as any;
 
     try {
       await client.connect(seaOptions);
-      expect.fail('SeaBackend.connect should throw until M1 wires the binding');
+      expect.fail('SeaBackend connect() should reject (empty PAT / absent native binding)');
     } catch (error) {
       if (error instanceof AssertionError || !(error instanceof Error)) {
         throw error;
       }
-      expect(error.message).to.match(/not implemented/);
+      // The exact message differs by environment (auth rejection vs binding-load
+      // failure); the contract under test is simply that connect() rejected.
     }
 
     // The partial-init guard (L2 fix) means backend stays undefined after a
     // failed connect, so the next openSession surfaces "not connected" rather
-    // than the SeaBackend's "not implemented" error.
+    // than the SeaBackend's own connect/auth error.
     expect((client as any).backend).to.equal(undefined);
 
     try {
