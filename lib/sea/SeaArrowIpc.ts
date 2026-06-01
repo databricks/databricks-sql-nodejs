@@ -205,7 +205,9 @@ function arrowTypeToTTypeId(field: Field<DataType>): TTypeId {
     }
   }
   if (DataType.isFloat(arrowType)) {
-    // arrow Float precision: 16=HALF, 32=SINGLE, 64=DOUBLE
+    // `precision` is the Arrow `Precision` enum (HALF=0, SINGLE=1, DOUBLE=2),
+    // NOT a bit-width — `=== 2` is DOUBLE. Everything else (HALF/SINGLE) maps
+    // to the thrift FLOAT type.
     return arrowType.precision === 2 ? TTypeId.DOUBLE_TYPE : TTypeId.FLOAT_TYPE;
   }
   if (DataType.isDecimal(arrowType)) return TTypeId.DECIMAL_TYPE;

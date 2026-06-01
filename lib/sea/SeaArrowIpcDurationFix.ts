@@ -32,17 +32,24 @@
  * bytes pass through unchanged. We embed the original `Duration` time
  * unit (`SECOND`/`MILLISECOND`/`MICROSECOND`/`NANOSECOND`) into the
  * rewritten field's `custom_metadata` under the key
- * `databricks.arrow.duration_unit` so the JS converter can format the
- * Int64 value back into a thrift-equivalent string (e.g.
- * `"1 02:03:04.000000000"`).
+ * `databricks.arrow.duration_unit`.
+ *
+ * **Scope on this layer (SEA execution + results, PR 2/3):** the rewrite's
+ * job here is purely to make the stream *decodable* by apache-arrow@13. The
+ * resulting Int64 surfaces to callers as a raw microsecond/nanosecond number
+ * on this layer. The consumer that reads the `duration_unit` marker and
+ * formats it back into the thrift-equivalent string (e.g.
+ * `"1 02:03:04.000000000"`) lands in PR 3/3 (#411) — verified against a live
+ * warehouse to produce byte-identical output to the Thrift path. Until that
+ * consumer merges, INTERVAL DAY-TIME columns are raw Int64 under SEA.
  *
  * Why this lives in its own file: the rewriter is the only place in the
  * codebase that needs to construct FlatBuffers by hand using the
  * `flatbuffers` library; isolating it keeps `SeaArrowIpc.ts` focused on
  * the high-level Arrow-decoded views.
  *
- * @see lib/result/ArrowResultConverter.ts — Phase-1 INTERVAL formatting
- *      reads the metadata key written here.
+ * @see lib/result/ArrowResultConverter.ts — the Phase-1 INTERVAL formatter
+ *      (PR 3/3) reads the metadata key written here.
  * @see findings/parity-mismatch/round5-implementation-2026-05-15.md —
  *      original failure mode (`Unrecognized type: "Duration" (18)`).
  */
@@ -234,10 +241,17 @@ function maybeRewriteSchemaMessage(schemaMessageBytes: Buffer): Buffer | null {
     return null;
   }
 
-  // Scan top-level fields and children for Duration. We rewrite only
-  // top-level Duration fields for M0 (Spark INTERVAL DAY-TIME surfaces
-  // as a top-level column — children of Struct/List/Map are out of
-  // scope until we see a real-world payload with nested Duration).
+  // We rewrite only TOP-LEVEL Duration fields for M0 (Spark INTERVAL
+  // DAY-TIME surfaces as a top-level column). A Duration nested inside
+  // STRUCT/ARRAY/MAP is left untouched and apache-arrow@13 then throws
+  // `Unrecognized type: "Duration" (18)` when decoding the batch.
+  //
+  // This is a SHARED apache-arrow@13 limitation, NOT a SEA-specific gap:
+  // verified against a live warehouse, the Thrift backend throws the
+  // identical error for `array(INTERVAL '1' SECOND)` — so SEA matches Thrift
+  // here rather than diverging. Lifting it (recurse the rewrite into
+  // children) is deferred until there's a real-world nested-Duration payload
+  // to validate against, and would ideally land on both backends together.
   let hasDuration = false;
   const fieldsLength = fbSchema.fieldsLength();
   for (let i = 0; i < fieldsLength; i += 1) {

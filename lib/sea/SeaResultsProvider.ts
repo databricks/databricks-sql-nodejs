@@ -22,7 +22,7 @@ import { decodeIpcBatch, patchIpcBytes } from './SeaArrowIpc';
  * d.ts) so the loader layer's loose `unknown` typing doesn't force
  * unsafe casts at every call site, and so unit tests can pass a stub.
  */
-export interface SeaStatementHandle {
+export interface SeaFetchHandle {
   fetchNextBatch(): Promise<{ ipcBytes: Buffer } | null>;
 }
 
@@ -48,7 +48,7 @@ export interface SeaStatementHandle {
  * `SeaArrowIpc.ts:decodeIpcBatch` for the cost rationale.
  */
 export default class SeaResultsProvider implements IResultsProvider<ArrowBatch> {
-  private readonly statement: SeaStatementHandle;
+  private readonly statement: SeaFetchHandle;
 
   // Prefetched next batch so `hasMore()` can be answered without an
   // extra round-trip. Set by `prime()` (lazy) and by `fetchNext`.
@@ -57,7 +57,7 @@ export default class SeaResultsProvider implements IResultsProvider<ArrowBatch> 
   // Set once the kernel returns `null` from `fetchNextBatch()`.
   private exhausted = false;
 
-  constructor(statement: SeaStatementHandle) {
+  constructor(statement: SeaFetchHandle) {
     this.statement = statement;
   }
 
@@ -89,29 +89,30 @@ export default class SeaResultsProvider implements IResultsProvider<ArrowBatch> 
   // to keep one batch buffered ahead so `hasMore` is accurate without
   // re-asking the kernel.
   private async prime(): Promise<void> {
-    if (this.exhausted || this.prefetched !== undefined) {
-      return;
+    // Loop rather than self-recurse: a long run of empty batches drains
+    // iteratively toward the null sentinel without building a deep promise
+    // chain.
+    while (!this.exhausted && this.prefetched === undefined) {
+      // eslint-disable-next-line no-await-in-loop
+      const next = await this.statement.fetchNextBatch();
+      if (next === null) {
+        this.exhausted = true;
+        return;
+      }
+      // Patch the raw bytes once: rewrite any Arrow `Duration` field to
+      // `Int64` with a `databricks.arrow.duration_unit` marker, so that
+      // apache-arrow@13 (which predates Duration support) can decode the
+      // stream. `decodeIpcBatch` is told these bytes are already patched;
+      // the downstream `RecordBatchReader.from` inside `ArrowResultConverter`
+      // sees the same patched buffer. See `SeaArrowIpcDurationFix.ts`.
+      const ipcBytes = patchIpcBytes(next.ipcBytes);
+      const { rowCount } = decodeIpcBatch(ipcBytes, { alreadyPatched: true });
+      // Skip empty batches — the converter handles them but pre-filtering here
+      // avoids a round-trip through the converter's prefetch loop. Continue to
+      // find a non-empty batch or hit exhaustion.
+      if (rowCount > 0) {
+        this.prefetched = { batches: [ipcBytes], rowCount };
+      }
     }
-    const next = await this.statement.fetchNextBatch();
-    if (next === null) {
-      this.exhausted = true;
-      return;
-    }
-    // Patch the raw bytes once: rewrite any Arrow `Duration` field to
-    // `Int64` with a `databricks.arrow.duration_unit` marker, so that
-    // apache-arrow@13 (which predates Duration support) can decode the
-    // stream. `decodeIpcBatch` is told these bytes are already patched;
-    // the downstream `RecordBatchReader.from` inside `ArrowResultConverter`
-    // sees the same patched buffer. See `SeaArrowIpcDurationFix.ts`.
-    const ipcBytes = patchIpcBytes(next.ipcBytes);
-    const { rowCount } = decodeIpcBatch(ipcBytes, { alreadyPatched: true });
-    if (rowCount === 0) {
-      // Skip empty batches — the converter handles them but pre-filtering
-      // here avoids one round-trip through the converter's prefetch loop.
-      // Re-prime to either find a non-empty batch or hit exhaustion.
-      await this.prime();
-      return;
-    }
-    this.prefetched = { batches: [ipcBytes], rowCount };
   }
 }

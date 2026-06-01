@@ -261,10 +261,11 @@ export async function seaFinished(
  */
 export function failIfNotActive(state: SeaOperationLifecycleState): void {
   if (state.isCancelled) {
-    throw mapKernelErrorToJsError({
-      code: 'Cancelled',
-      message: 'The operation was cancelled.',
-    });
+    // Use the canonical `OperationStateError(Canceled)` (message "The operation
+    // was canceled by a client") rather than a custom string, so the message
+    // matches the Thrift path verbatim and the code branch stays consistent
+    // with the Closed case below.
+    throw new OperationStateError(OperationStateErrorCode.Canceled);
   }
   if (state.isClosed) {
     throw new OperationStateError(OperationStateErrorCode.Closed);

@@ -43,10 +43,12 @@ import { OperationStatus, OperationState } from '../contracts/OperationStatus';
 import { ResultMetadata, ResultFormat } from '../contracts/ResultMetadata';
 import IClientContext from '../contracts/IClientContext';
 import Status from '../dto/Status';
+import HiveDriverError from '../errors/HiveDriverError';
 import ArrowResultConverter from '../result/ArrowResultConverter';
 import ResultSlicer from '../result/ResultSlicer';
 import SeaResultsProvider from './SeaResultsProvider';
-import { arrowSchemaToThriftSchema, decodeIpcSchema } from './SeaArrowIpc';
+import { arrowSchemaToThriftSchema, decodeIpcSchema, patchIpcBytes } from './SeaArrowIpc';
+import { decodeNapiKernelError } from './SeaErrorMapping';
 import { SeaStatement } from './SeaNativeLoader';
 import {
   SeaStatementHandle,
@@ -126,15 +128,36 @@ export default class SeaOperationBackend implements IOperationBackend {
   public async fetchChunk({
     limit,
     disableBuffering,
+    isClosed,
   }: {
     limit: number;
     disableBuffering?: boolean;
+    isClosed?: () => boolean;
   }): Promise<Array<object>> {
     // Cancel-mid-fetch propagation: if cancel() has flipped the
     // lifecycle flag, fail locally without a wire round-trip.
     failIfNotActive(this.lifecycle);
-    const slicer = await this.getResultSlicer();
-    return slicer.fetchNext({ limit, disableBuffering });
+    // Cooperative cancel (parity with ThriftOperationBackend): the facade
+    // supplies `isClosed` and re-checks `failIfClosed()` after we return, so
+    // bailing with `[]` at a yield point is the contract-correct way for a
+    // concurrent cancel()/close() to interrupt the fetch.
+    if (isClosed?.()) {
+      return [];
+    }
+    try {
+      const slicer = await this.getResultSlicer();
+      if (isClosed?.()) {
+        return [];
+      }
+      return await slicer.fetchNext({ limit, disableBuffering });
+    } catch (err) {
+      // The napi fetch contract leaves the stream in an unspecified state on
+      // error ("call close() and discard"). Close the statement so the server
+      // reclaims it promptly — best-effort, so a close failure never masks the
+      // original fetch error — then surface a typed kernel error.
+      await seaClose(this.lifecycle, this.statement, this.context, this._id).catch(() => undefined);
+      throw decodeNapiKernelError(err);
+    }
   }
 
   public async hasMore(): Promise<boolean> {
@@ -153,9 +176,11 @@ export default class SeaOperationBackend implements IOperationBackend {
     }
     this.metadataPromise = (async () => {
       if (!this.statement.schema) {
-        throw new Error('SeaOperationBackend: statement.schema() is not available on this handle');
+        throw new HiveDriverError('SeaOperationBackend: statement.schema() is not available on this handle');
       }
-      const arrowSchemaIpc = await this.statement.schema();
+      // `schema()` is a synchronous napi getter (returns `ArrowSchema`, not a
+      // Promise) — no `await` needed.
+      const arrowSchemaIpc = this.statement.schema();
       const arrowSchema = decodeIpcSchema(arrowSchemaIpc.ipcBytes);
       // `ResultMetadata.schema` keeps the Thrift `TTableSchema` shape for
       // back-compat with the public `IOperation.getSchema()` surface.
@@ -166,8 +191,11 @@ export default class SeaOperationBackend implements IOperationBackend {
         // both flow through the same Arrow result converter.
         resultFormat: ResultFormat.ArrowBased,
         lz4Compressed: false,
-        // Carry the raw Arrow IPC schema bytes for ARROW_BASED consumers.
-        arrowSchema: arrowSchemaIpc.ipcBytes,
+        // Carry the *patched* Arrow IPC schema bytes (Duration → Int64 with the
+        // `duration_unit` marker) so an ARROW_BASED consumer decoding
+        // `arrowSchema` doesn't hit apache-arrow@13's `Unrecognized type
+        // "Duration" (18)`. Matches what the per-batch fetch path already does.
+        arrowSchema: patchIpcBytes(arrowSchemaIpc.ipcBytes),
         isStagingOperation: false,
       };
       this.metadata = meta;
@@ -187,10 +215,15 @@ export default class SeaOperationBackend implements IOperationBackend {
   public async status(_progress: boolean): Promise<OperationStatus> {
     // Synthesised — the kernel resolves `Statement::execute().await` before
     // it hands back a Statement handle, so by the time a SeaOperationBackend
-    // exists the statement is terminal. Report Cancelled/Closed if the
-    // lifecycle flag is set, else Succeeded. Returns the backend-neutral
-    // OperationStatus the IOperationBackend contract expects, so the
-    // DBSQLOperation facade switches on `state` identically across backends.
+    // exists the statement is terminal. Note there is intentionally no
+    // `Failed` arm: a failed execution rejects inside `executeStatement`
+    // (the kernel surfaces the error at submit), so a `Failed` statement
+    // never becomes a SeaOperationBackend — `status()` only ever observes
+    // Succeeded, or Cancelled/Closed from a client-side lifecycle call.
+    // Report Cancelled/Closed if the lifecycle flag is set, else Succeeded.
+    // Returns the backend-neutral OperationStatus the IOperationBackend
+    // contract expects, so the DBSQLOperation facade switches on `state`
+    // identically across backends.
     if (this.lifecycle.isCancelled) {
       return { state: OperationState.Cancelled, hasResultSet: true };
     }
@@ -227,7 +260,7 @@ export default class SeaOperationBackend implements IOperationBackend {
       return this.resultSlicer;
     }
     if (!this.statement.fetchNextBatch) {
-      throw new Error('SeaOperationBackend: statement.fetchNextBatch() is not available on this handle');
+      throw new HiveDriverError('SeaOperationBackend: statement.fetchNextBatch() is not available on this handle');
     }
     const metadata = await this.getResultMetadata();
     // The lifecycle subset has cancel/close only; fetch methods exist on
