@@ -57,17 +57,24 @@ nodejs repo.
 
 At release time the kernel's CI publishes
 `@databricks/sql-kernel-<triple>` npm packages — one per supported
-platform — each containing a single `.node` binary. The nodejs
-driver lists them as `optionalDependencies`; npm installs only the
-one matching the consumer's `process.platform` / `process.arch`.
-`native/sea/index.js` (the napi-rs router) then `require()`s the
-installed package at load time.
+platform — each containing a single `.node` binary. `native/sea/index.js`
+(the napi-rs router) `require()`s the package matching the consumer's
+`process.platform` / `process.arch` at load time.
+
+> **M0 status:** these per-platform packages are **not yet published**, so
+> they are intentionally **not** declared in the driver's
+> `optionalDependencies`. (npm refuses an `npm ci` against a pinned
+> dependency it cannot resolve from the registry, so declaring an
+> unpublished package would break every install.) Until they ship, the
+> binding is produced locally via `npm run build:native` (which copies
+> `index.<triple>.node` into this directory). Once the packages are
+> published, add `@databricks/sql-kernel-<triple>` back to
+> `optionalDependencies` — npm then installs only the matching one.
 
 ## Supported platforms (M0)
 
-M0 publishes a **single** triple: **`linux-x64-gnu`** (package
-`@databricks/sql-kernel-linux-x64-gnu`). It is the only entry in the
-driver's `optionalDependencies`.
+M0 targets a **single** triple: **`linux-x64-gnu`** (package
+`@databricks/sql-kernel-linux-x64-gnu`, once published).
 
 On every other platform (macOS, Windows, linux-arm64, linux-x64-musl
 / Alpine, …) the SEA binding is simply absent: `SeaNativeLoader`
