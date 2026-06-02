@@ -23,6 +23,7 @@ import IDBSQLLogger, { LogLevel } from '../../../lib/contracts/IDBSQLLogger';
 import HiveDriverError from '../../../lib/errors/HiveDriverError';
 import ParameterError from '../../../lib/errors/ParameterError';
 import { ConnectionOptions } from '../../../lib/contracts/IDBSQLClient';
+import { OperationState } from '../../../lib/contracts/OperationStatus';
 
 // -----------------------------------------------------------------------------
 // Fakes — minimal stand-ins for the napi-rs generated surface and the
@@ -73,6 +74,53 @@ class FakeNativeStatement implements SeaStatement {
   }
 }
 
+/**
+ * Fake `AsyncStatement` (the `submitStatement` return). `status()` reports a
+ * configurable state (default Succeeded); `awaitResult()` yields a fetch handle
+ * (reuses `FakeNativeStatement`'s fetchNextBatch/schema surface).
+ */
+class FakeAsyncStatement {
+  public cancelled = false;
+
+  public closed = false;
+
+  public statusCalls = 0;
+
+  public awaitResultError: Error | null = null;
+
+  // Successive status() returns drain this queue; the last value sticks.
+  private readonly states: string[];
+
+  public readonly statementId = '01ef-fake-async-id';
+
+  constructor(
+    statusValue: string | string[] = 'Succeeded',
+    public readonly resultHandle: FakeNativeStatement = new FakeNativeStatement(),
+  ) {
+    this.states = Array.isArray(statusValue) ? [...statusValue] : [statusValue];
+  }
+
+  public async status(): Promise<string> {
+    this.statusCalls += 1;
+    return this.states.length > 1 ? (this.states.shift() as string) : this.states[0];
+  }
+
+  public async awaitResult(): Promise<FakeNativeStatement> {
+    if (this.awaitResultError) {
+      throw this.awaitResultError;
+    }
+    return this.resultHandle;
+  }
+
+  public async cancel(): Promise<void> {
+    this.cancelled = true;
+  }
+
+  public async close(): Promise<void> {
+    this.closed = true;
+  }
+}
+
 class FakeNativeConnection implements SeaConnection {
   public closed = false;
 
@@ -93,8 +141,14 @@ class FakeNativeConnection implements SeaConnection {
   // Mirrors the kernel `Connection.sessionId` getter.
   public readonly sessionId = '01ef-fake-session-id';
 
-  // The merged kernel binding takes an optional per-statement `ExecuteOptions`
-  // (positional/named params, statementConf, …). Record it for assertions.
+  // Last AsyncStatement handed out by submitStatement (the query path).
+  public lastAsyncStatement?: FakeAsyncStatement;
+
+  // The async submit state(s) the next FakeAsyncStatement should report.
+  public submitStatusValue: string | string[] = 'Succeeded';
+
+  // The blocking executeStatement path is no longer used by the SEA backend
+  // (queries go through submitStatement), but the binding still exposes it.
   public async executeStatement(sql: string, options?: unknown): Promise<SeaStatement> {
     if (this.throwOnExecute) {
       throw this.throwOnExecute;
@@ -104,10 +158,16 @@ class FakeNativeConnection implements SeaConnection {
     return this.statementToReturn;
   }
 
-  // Async-submit path (PR 2 territory); present only so the fake satisfies
-  // the full `Connection` surface. Not exercised by these tests.
-  public submitStatement(): Promise<never> {
-    throw new Error('submitStatement not used in this test');
+  // Async-submit path: records sql + per-statement options (for forwarding
+  // assertions) and returns a pending AsyncStatement.
+  public async submitStatement(sql: string, options?: unknown): Promise<any> {
+    if (this.throwOnExecute) {
+      throw this.throwOnExecute;
+    }
+    this.lastSql = sql;
+    this.lastOptions = options;
+    this.lastAsyncStatement = new FakeAsyncStatement(this.submitStatusValue);
+    return this.lastAsyncStatement;
   }
 
   private recordMetadata(method: string, args: unknown[]): Promise<SeaStatement> {
@@ -671,4 +731,103 @@ describe('SeaOperationBackend', () => {
   // implements the real fetch path. Full coverage lives in
   // tests/unit/sea/SeaOperationBackend.test.ts and the parity-gate e2e
   // at tests/e2e/sea/results-e2e.test.ts.
+});
+
+describe('SeaOperationBackend — async (submitStatement) path', () => {
+  const makeAsyncOp = (asyncStatement: FakeAsyncStatement) =>
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    new SeaOperationBackend({ asyncStatement: asyncStatement as any, context: makeContext() });
+
+  it('rejects when neither asyncStatement nor statement is provided', () => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    expect(() => new SeaOperationBackend({ context: makeContext() } as any)).to.throw(
+      HiveDriverError,
+      /exactly one/,
+    );
+  });
+
+  it('rejects when BOTH asyncStatement and statement are provided', () => {
+    expect(
+      () =>
+        new SeaOperationBackend({
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          asyncStatement: new FakeAsyncStatement() as any,
+          statement: new FakeNativeStatement(),
+          context: makeContext(),
+        }),
+    ).to.throw(HiveDriverError, /exactly one/);
+  });
+
+  it('id defaults to the async statement id', () => {
+    const op = makeAsyncOp(new FakeAsyncStatement());
+    expect(op.id).to.equal('01ef-fake-async-id');
+  });
+
+  it('status() reports the real kernel state', async () => {
+    const running = makeAsyncOp(new FakeAsyncStatement('Running'));
+    expect((await running.status(false)).state).to.equal(OperationState.Running);
+    const ok = makeAsyncOp(new FakeAsyncStatement('Succeeded'));
+    expect((await ok.status(false)).state).to.equal(OperationState.Succeeded);
+  });
+
+  it('waitUntilReady() polls status() until terminal, firing the progress callback each tick', async () => {
+    const stmt = new FakeAsyncStatement(['Pending', 'Running', 'Succeeded']);
+    const op = makeAsyncOp(stmt);
+    const states: OperationState[] = [];
+    await op.waitUntilReady({ callback: (s) => states.push(s.state) });
+    expect(stmt.statusCalls).to.equal(3);
+    expect(states).to.deep.equal([OperationState.Pending, OperationState.Running, OperationState.Succeeded]);
+  });
+
+  it('waitUntilReady() surfaces the kernel error envelope on a Failed statement', async () => {
+    const stmt = new FakeAsyncStatement('Failed');
+    // The kernel rejects awaitResult() with a sentinel-framed structured error;
+    // decodeNapiKernelError turns it into a typed HiveDriverError.
+    stmt.awaitResultError = new Error(
+      `__databricks_error__:${JSON.stringify({ code: 'SqlError', message: 'TABLE_OR_VIEW_NOT_FOUND' })}`,
+    );
+    const op = makeAsyncOp(stmt);
+    let thrown: unknown;
+    try {
+      await op.waitUntilReady();
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).to.be.instanceOf(HiveDriverError);
+    expect((thrown as Error).message).to.match(/TABLE_OR_VIEW_NOT_FOUND/);
+  });
+
+  it('waitUntilReady() throws on a server-side Cancelled statement', async () => {
+    const op = makeAsyncOp(new FakeAsyncStatement('Cancelled'));
+    let thrown: unknown;
+    try {
+      await op.waitUntilReady();
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).to.be.instanceOf(HiveDriverError);
+    expect((thrown as Error).message).to.match(/cancelled/i);
+  });
+
+  it('cancel() forwards to the async statement and short-circuits a subsequent poll', async () => {
+    const stmt = new FakeAsyncStatement(['Running', 'Running', 'Succeeded']);
+    const op = makeAsyncOp(stmt);
+    await op.cancel();
+    expect(stmt.cancelled).to.equal(true);
+    // A JS-side cancel makes waitUntilReady fail fast without further polling.
+    let thrown: unknown;
+    try {
+      await op.waitUntilReady();
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).to.be.an('error');
+  });
+
+  it('close() forwards to the async statement', async () => {
+    const stmt = new FakeAsyncStatement();
+    const op = makeAsyncOp(stmt);
+    await op.close();
+    expect(stmt.closed).to.equal(true);
+  });
 });

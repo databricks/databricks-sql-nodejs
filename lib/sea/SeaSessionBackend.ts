@@ -154,16 +154,22 @@ export default class SeaSessionBackend implements ISessionBackend {
 
     const execOptions = this.buildExecuteOptions(options);
 
-    let nativeStatement: SeaStatement;
+    // Submit asynchronously (kernel `wait_timeout=0s`): the server returns a
+    // pending `AsyncStatement` immediately while the query runs, matching the
+    // Thrift backend's always-async (`runAsync: true`) path. The operation
+    // backend polls `status()` to terminal in `waitUntilReady()` and
+    // materialises results via `awaitResult()`, so a long-running query stays
+    // cancellable mid-flight and `status()` reports real Pending/Running states.
+    let asyncStatement;
     try {
-      nativeStatement =
+      asyncStatement =
         execOptions === undefined
-          ? await this.connection.executeStatement(statement)
-          : await this.connection.executeStatement(statement, execOptions);
+          ? await this.connection.submitStatement(statement)
+          : await this.connection.submitStatement(statement, execOptions);
     } catch (err) {
       throw this.logAndMapError('executeStatement', err);
     }
-    return this.wrapStatement(nativeStatement);
+    return new SeaOperationBackend({ asyncStatement: asyncStatement!, context: this.context });
   }
 
   /**
@@ -217,7 +223,7 @@ export default class SeaSessionBackend implements ISessionBackend {
     return Object.keys(execOptions).length > 0 ? execOptions : undefined;
   }
 
-  /** Wrap a napi `Statement` (from execute or a metadata call) as an operation backend. */
+  /** Wrap a napi metadata `Statement` (already terminal) as an operation backend. */
   private wrapStatement(nativeStatement: SeaStatement): IOperationBackend {
     return new SeaOperationBackend({
       statement: nativeStatement,
