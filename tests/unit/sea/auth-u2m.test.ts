@@ -33,6 +33,7 @@ describe('SeaAuth + SeaBackend — OAuth U2M auth flow', () => {
       expect(native).to.deep.equal({
         hostName: 'example.cloud.databricks.com',
         httpPath: '/sql/1.0/warehouses/abc',
+        intervalsAsString: true,
         authMode: 'OAuthU2m',
         oauthRedirectPort: 8030,
       });
@@ -132,6 +133,7 @@ describe('SeaAuth + SeaBackend — OAuth U2M auth flow', () => {
       expect(calls[0].args[0]).to.deep.equal({
         hostName: 'example.cloud.databricks.com',
         httpPath: '/sql/1.0/warehouses/abc',
+        intervalsAsString: true,
         authMode: 'OAuthU2m',
         oauthRedirectPort: 8030,
       });

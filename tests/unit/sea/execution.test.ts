@@ -312,11 +312,14 @@ describe('SeaBackend', () => {
     const args = binding.openSessionStub.firstCall.args[0];
     // sea-auth-u2m introduced the discriminated SeaNativeConnectionOptions
     // shape with a leading `authMode` tag — `'Pat'` for the PAT branch.
+    // `intervalsAsString: true` is always set so the SEA result shape is a
+    // byte-compatible drop-in for the Thrift backend (interval-as-string).
     expect(args).to.deep.equal({
       hostName: 'workspace.example',
       httpPath: '/sql/1.0/warehouses/xyz',
       authMode: 'Pat',
       token: 'dapi-token',
+      intervalsAsString: true,
     });
   });
 
@@ -452,24 +455,46 @@ describe('SeaSessionBackend', () => {
     expect((thrown as Error).message).to.equal('Driver does not support both ordinal and named parameters.');
   });
 
-  it('executeStatement rejects queryTimeout (M1)', async () => {
+  it('executeStatement forwards queryTimeout as queryTimeoutSecs', async () => {
     const connection = new FakeNativeConnection();
     const session = makeSession(connection);
-    let thrown: unknown;
-    try {
-      await session.executeStatement('SELECT 1', { queryTimeout: 30 });
-    } catch (err) {
-      thrown = err;
-    }
-    expect(thrown).to.be.instanceOf(HiveDriverError);
-    expect((thrown as Error).message).to.match(/queryTimeout/);
+    await session.executeStatement('SELECT 1', { queryTimeout: 30 });
+    expect((connection.lastOptions as { queryTimeoutSecs?: number }).queryTimeoutSecs).to.equal(30);
   });
 
-  // These Thrift-path options are not honored on SEA M0. Rejecting them
-  // (rather than silently ignoring) is the contract a caller/agent needs:
-  // a silent no-op gives zero signal to debug.
+  it('executeStatement forwards rowLimit', async () => {
+    const connection = new FakeNativeConnection();
+    const session = makeSession(connection);
+    await session.executeStatement('SELECT 1', { rowLimit: 100 });
+    expect((connection.lastOptions as { rowLimit?: number }).rowLimit).to.equal(100);
+  });
+
+  it('executeStatement serialises queryTags into statementConf.query_tags', async () => {
+    const connection = new FakeNativeConnection();
+    const session = makeSession(connection);
+    await session.executeStatement('SELECT 1', { queryTags: { team: 'x', env: 'prod' } });
+    const conf = (connection.lastOptions as { statementConf?: Record<string, string> }).statementConf;
+    expect(conf).to.have.property('query_tags');
+    expect(conf?.query_tags).to.contain('team:x').and.to.contain('env:prod');
+  });
+
+  it('executeStatement merges explicit statementConf with serialised queryTags', async () => {
+    const connection = new FakeNativeConnection();
+    const session = makeSession(connection);
+    await session.executeStatement('SELECT 1', {
+      statementConf: { 'spark.sql.ansi.enabled': 'true' },
+      queryTags: { team: 'x' },
+    });
+    const conf = (connection.lastOptions as { statementConf?: Record<string, string> }).statementConf;
+    expect(conf?.['spark.sql.ansi.enabled']).to.equal('true');
+    expect(conf?.query_tags).to.contain('team:x');
+  });
+
+  // Genuinely unsupported on SEA — rejected (rather than silently ignored) so
+  // a caller/agent gets signal instead of a no-op. queryTags / queryTimeout /
+  // rowLimit are NOT here — they are forwarded (asserted above).
   for (const { name, options, re } of [
-    { name: 'queryTags', options: { queryTags: { team: 'x' } }, re: /queryTags/ },
+    { name: 'useCloudFetch', options: { useCloudFetch: true }, re: /useCloudFetch/ },
     { name: 'useLZ4Compression', options: { useLZ4Compression: true }, re: /useLZ4Compression/ },
     { name: 'stagingAllowedLocalPath', options: { stagingAllowedLocalPath: '/tmp' }, re: /stagingAllowedLocalPath/ },
   ] as const) {

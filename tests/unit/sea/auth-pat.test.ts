@@ -31,6 +31,7 @@ describe('SeaAuth — PAT auth options builder', () => {
       expect(native).to.deep.equal({
         hostName: 'example.cloud.databricks.com',
         httpPath: '/sql/1.0/warehouses/abc',
+        intervalsAsString: true,
         authMode: 'Pat',
         token: 'dapi-fake-pat',
       });
