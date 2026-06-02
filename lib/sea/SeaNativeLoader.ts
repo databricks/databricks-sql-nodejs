@@ -33,6 +33,9 @@ import type {
   ConnectionOptions as NativeConnectionOptions,
   ArrowBatch as NativeArrowBatch,
   ArrowSchema as NativeArrowSchema,
+  ExecuteOptions as NativeExecuteOptions,
+  TypedValueInput as NativeTypedValueInput,
+  NamedTypedValueInput as NativeNamedTypedValueInput,
 } from '../../native/sea';
 
 // SEA-prefixed re-exports. The kernel-generated `.d.ts` keeps the
@@ -45,6 +48,16 @@ export type SeaArrowBatch = NativeArrowBatch;
 export type SeaArrowSchema = NativeArrowSchema;
 export type SeaConnection = NativeConnection;
 export type SeaStatement = NativeStatement;
+
+// Per-statement execution options and bound-parameter inputs are kernel
+// concerns: the napi binding generates the canonical shapes (`positionalParams`
+// / `namedParams` as `TypedValueInput` / `NamedTypedValueInput`, plus
+// `rowLimit`, `queryTimeoutSecs`, `statementConf`, `queryTags`). We re-export
+// rather than re-declare so the driver-side param codec can never drift from
+// the kernel contract.
+export type SeaNativeExecuteOptions = NativeExecuteOptions;
+export type SeaNativeTypedValueInput = NativeTypedValueInput;
+export type SeaNativeNamedTypedValueInput = NativeNamedTypedValueInput;
 
 /**
  * The full native binding surface, derived from the generated module

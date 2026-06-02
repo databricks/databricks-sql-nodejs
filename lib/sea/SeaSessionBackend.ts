@@ -31,9 +31,11 @@ import {
 import Status from '../dto/Status';
 import InfoValue from '../dto/InfoValue';
 import HiveDriverError from '../errors/HiveDriverError';
-import { SeaConnection } from './SeaNativeLoader';
+import { SeaConnection, SeaNativeExecuteOptions, SeaStatement } from './SeaNativeLoader';
 import { decodeNapiKernelError } from './SeaErrorMapping';
 import SeaOperationBackend from './SeaOperationBackend';
+import { buildSeaPositionalParams, buildSeaNamedParams } from './SeaPositionalParams';
+import { seaServerInfoValue } from './SeaServerInfo';
 
 export interface SeaSessionBackendOptions {
   /** The opaque napi `Connection` handle returned by `openSession`. */
@@ -80,8 +82,24 @@ export default class SeaSessionBackend implements ISessionBackend {
     return this._id;
   }
 
-  public async getInfo(_infoType: number): Promise<InfoValue> {
-    throw new HiveDriverError('SeaSessionBackend.getInfo: not implemented yet (deferred to M1)');
+  /**
+   * `getInfo` (JDBC `DatabaseMetaData` / ODBC `SQLGetInfo`) has no SEA/kernel
+   * endpoint, so — exactly as JDBC does for `DatabaseMetaData` — we synthesize
+   * the answer client-side, mirroring the three `TGetInfoType`s the Databricks
+   * Thrift server answers (server name / DBMS name / DBMS version) and
+   * rejecting every other value the same way the server does. See
+   * {@link seaServerInfoValue}.
+   */
+  public async getInfo(infoType: number): Promise<InfoValue> {
+    this.failIfClosed();
+    const value = seaServerInfoValue(infoType);
+    if (value === undefined) {
+      throw new HiveDriverError(
+        `SEA getInfo: unsupported TGetInfoType ${infoType}. The SEA/kernel path answers only the ` +
+          `info types the Databricks server itself supports (server name, DBMS name, DBMS version).`,
+      );
+    }
+    return new InfoValue(value);
   }
 
   /**
@@ -104,10 +122,17 @@ export default class SeaSessionBackend implements ISessionBackend {
   public async executeStatement(statement: string, options: ExecuteStatementOptions): Promise<IOperationBackend> {
     this.failIfClosed();
 
-    // M0 surfaces a clear error rather than silently dropping M1-only knobs.
-    if (options.namedParameters !== undefined || options.ordinalParameters !== undefined) {
-      throw new HiveDriverError('SEA executeStatement: query parameters are not supported in M0 (deferred to M1)');
+    // Positional (`?`) and named (`:name`) parameters are mutually exclusive —
+    // the kernel param codec binds exactly one placeholder style per
+    // statement, so passing both is a caller error we surface up-front.
+    const positionalParams = buildSeaPositionalParams(options.ordinalParameters);
+    const namedParams = buildSeaNamedParams(options.namedParameters);
+    if (positionalParams !== undefined && namedParams !== undefined) {
+      throw new HiveDriverError(
+        'SEA executeStatement: ordinalParameters and namedParameters are mutually exclusive — pass only one.',
+      );
     }
+
     if (options.queryTimeout !== undefined) {
       throw new HiveDriverError('SEA executeStatement: queryTimeout is not supported in M0 (deferred to M1)');
     }
@@ -136,53 +161,117 @@ export default class SeaSessionBackend implements ISessionBackend {
       );
     }
 
+    // Only build the napi options object when there is something to send —
+    // the no-params path keeps the minimal call shape (`executeStatement(sql)`).
+    let execOptions: SeaNativeExecuteOptions | undefined;
+    if (positionalParams !== undefined || namedParams !== undefined) {
+      execOptions = { positionalParams, namedParams };
+    }
+
     let nativeStatement;
     try {
-      nativeStatement = await this.connection.executeStatement(statement);
+      nativeStatement =
+        execOptions === undefined
+          ? await this.connection.executeStatement(statement)
+          : await this.connection.executeStatement(statement, execOptions);
     } catch (err) {
       throw decodeNapiKernelError(err);
     }
+    return this.wrapStatement(nativeStatement!);
+  }
+
+  /** Wrap a napi `Statement` (from execute or a metadata call) as an operation backend. */
+  private wrapStatement(nativeStatement: SeaStatement): IOperationBackend {
     return new SeaOperationBackend({
-      statement: nativeStatement!,
+      statement: nativeStatement,
       context: this.context,
-      id: nativeStatement!.statementId,
+      id: nativeStatement.statementId,
     });
   }
 
+  /**
+   * Metadata calls forward to the kernel's metadata surface (`listCatalogs`,
+   * `listTables`, …), each of which returns a napi `Statement` whose result
+   * carries the JDBC-shaped columns. We wrap that handle exactly like an
+   * executed statement. The kernel owns the SQL synthesis, the column
+   * projection, and (for `listTables`) the client-side `TABLE_TYPE` filter —
+   * the driver only maps the request fields to positional arguments.
+   *
+   * The `runAsync` / `maxRows` request fields are not threaded here: `runAsync`
+   * is deprecated, and `maxRows` is applied by the facade at fetch time (same
+   * as the Thrift path), so the napi call takes only the filter arguments.
+   */
   public async getTypeInfo(_request: TypeInfoRequest): Promise<IOperationBackend> {
-    throw new HiveDriverError('SeaSessionBackend.getTypeInfo: not implemented yet (deferred to M1)');
+    this.failIfClosed();
+    return this.runMetadata(() => this.connection.listTypeInfo());
   }
 
   public async getCatalogs(_request: CatalogsRequest): Promise<IOperationBackend> {
-    throw new HiveDriverError('SeaSessionBackend.getCatalogs: not implemented yet (deferred to M1)');
+    this.failIfClosed();
+    return this.runMetadata(() => this.connection.listCatalogs());
   }
 
-  public async getSchemas(_request: SchemasRequest): Promise<IOperationBackend> {
-    throw new HiveDriverError('SeaSessionBackend.getSchemas: not implemented yet (deferred to M1)');
+  public async getSchemas(request: SchemasRequest): Promise<IOperationBackend> {
+    this.failIfClosed();
+    return this.runMetadata(() => this.connection.listSchemas(request.catalogName, request.schemaName));
   }
 
-  public async getTables(_request: TablesRequest): Promise<IOperationBackend> {
-    throw new HiveDriverError('SeaSessionBackend.getTables: not implemented yet (deferred to M1)');
+  public async getTables(request: TablesRequest): Promise<IOperationBackend> {
+    this.failIfClosed();
+    return this.runMetadata(() =>
+      this.connection.listTables(request.catalogName, request.schemaName, request.tableName, request.tableTypes),
+    );
   }
 
   public async getTableTypes(_request: TableTypesRequest): Promise<IOperationBackend> {
-    throw new HiveDriverError('SeaSessionBackend.getTableTypes: not implemented yet (deferred to M1)');
+    this.failIfClosed();
+    return this.runMetadata(() => this.connection.listTableTypes());
   }
 
-  public async getColumns(_request: ColumnsRequest): Promise<IOperationBackend> {
-    throw new HiveDriverError('SeaSessionBackend.getColumns: not implemented yet (deferred to M1)');
+  public async getColumns(request: ColumnsRequest): Promise<IOperationBackend> {
+    this.failIfClosed();
+    return this.runMetadata(() =>
+      this.connection.listColumns(request.catalogName, request.schemaName, request.tableName, request.columnName),
+    );
   }
 
-  public async getFunctions(_request: FunctionsRequest): Promise<IOperationBackend> {
-    throw new HiveDriverError('SeaSessionBackend.getFunctions: not implemented yet (deferred to M1)');
+  public async getFunctions(request: FunctionsRequest): Promise<IOperationBackend> {
+    this.failIfClosed();
+    return this.runMetadata(() =>
+      this.connection.listFunctions(request.catalogName, request.schemaName, request.functionName),
+    );
   }
 
-  public async getPrimaryKeys(_request: PrimaryKeysRequest): Promise<IOperationBackend> {
-    throw new HiveDriverError('SeaSessionBackend.getPrimaryKeys: not implemented yet (deferred to M1)');
+  public async getPrimaryKeys(request: PrimaryKeysRequest): Promise<IOperationBackend> {
+    this.failIfClosed();
+    return this.runMetadata(() =>
+      this.connection.getPrimaryKeys(request.catalogName ?? '', request.schemaName, request.tableName),
+    );
   }
 
-  public async getCrossReference(_request: CrossReferenceRequest): Promise<IOperationBackend> {
-    throw new HiveDriverError('SeaSessionBackend.getCrossReference: not implemented yet (deferred to M1)');
+  public async getCrossReference(request: CrossReferenceRequest): Promise<IOperationBackend> {
+    this.failIfClosed();
+    return this.runMetadata(() =>
+      this.connection.getCrossReference(
+        request.parentCatalogName,
+        request.parentSchemaName,
+        request.parentTableName,
+        request.foreignCatalogName,
+        request.foreignSchemaName,
+        request.foreignTableName,
+      ),
+    );
+  }
+
+  /** Run a napi metadata call, mapping kernel errors and wrapping the result handle. */
+  private async runMetadata(call: () => Promise<SeaStatement>): Promise<IOperationBackend> {
+    let nativeStatement;
+    try {
+      nativeStatement = await call();
+    } catch (err) {
+      throw decodeNapiKernelError(err);
+    }
+    return this.wrapStatement(nativeStatement);
   }
 
   public async close(): Promise<Status> {

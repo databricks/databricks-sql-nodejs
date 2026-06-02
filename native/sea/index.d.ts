@@ -19,9 +19,8 @@
  *
  * `rowLimit` (SEA `row_limit`) and `queryTimeoutSecs` (the per-statement
  * server wait timeout) are exposed here and threaded onto the kernel
- * `StatementSpec`. Positional and named parameters remain deferred: they
- * require a non-trivial JS↔napi `TypedValue` mapping and land in a
- * follow-on PR.
+ * `StatementSpec`. `positionalParams` (`?`) and `namedParams` (`:name`)
+ * carry bound query parameters, decoded via `params::parse_typed_value`.
  *
  * **Tag-order caveat (M4 parity note).** The napi `queryTags` field
  * is a Rust `HashMap<String, String>` whose iteration order is
@@ -70,8 +69,46 @@ export interface ExecuteOptions {
    * server statement timeout (JDBC `setQueryTimeout`). Maps to
    * `StatementSpec.query_timeout_secs`. Distinct from the
    * connection-level transport timeout. The SEA wire caps it at 50s.
+   *
+   * **Applies to `executeStatement` only.** The async `submitStatement`
+   * path always sends `wait_timeout=0s` (so the server returns a
+   * `statement_id` immediately and never blocks), which means this
+   * field is *not* consulted on the submit path — the caller drives
+   * completion via `AsyncStatement.status()` / `awaitResult()` and is
+   * responsible for its own timeout (e.g. `Promise.race`). Passing
+   * `queryTimeoutSecs` to `submitStatement` is silently ignored. This
+   * matches the Python `use_sea` async-submit contract, where the
+   * wait-timeout and any statement timeout are orthogonal.
    */
   queryTimeoutSecs?: number
+  /**
+   * Positional parameters, in 1-based wire order. Index `i` in this
+   * Vec corresponds to the `i+1`-th `?` placeholder in the SQL.
+   * Each entry is a `{ sqlType, value }` pair — `value` is the
+   * string-encoded literal or `null` for SQL NULL. Mirrors
+   * `StatementSpec::positional_params`; decoded via [`parse_typed_value`].
+   */
+  positionalParams?: Array<TypedValueInput>
+  /**
+   * Named parameters (`:name` placeholders). Each carries its `name`
+   * alongside the `{ sqlType, value? }` pair. Mapped to a kernel
+   * `TypedValue` via the same [`parse_typed_value`] codec and bound with
+   * `StatementSpec::param_named`. Named is the SEA-spec-required public
+   * param form (`StatementParameter.name` is `openapi_required`);
+   * positional is the documented-undocumented variant. The two are
+   * mutually exclusive at the SQL level (`?` vs `:name`).
+   */
+  namedParams?: Array<NamedTypedValueInput>
+}
+/**
+ * A named bound parameter — a [`TypedValueInput`] plus its `:name`. Kept a
+ * distinct napi object (rather than an optional `name` on `TypedValueInput`)
+ * so the positional surface stays a clean ordered list with no name field.
+ */
+export interface NamedTypedValueInput {
+  name: string
+  sqlType: string
+  value?: string
 }
 /**
  * Authentication mode selector crossing the napi boundary. The string
@@ -189,6 +226,50 @@ export interface ConnectionOptions {
    * `2^32 - 1` round-trip safely (any reasonable pool size fits).
    */
   maxConnections?: number
+  /**
+   * Render `INTERVAL` / `DURATION` result columns as strings
+   * (`ResultConfig.intervals_as_string`). The kernel default is
+   * native Arrow `month_interval` / `duration[us]` types; the NodeJS
+   * Thrift driver surfaces intervals as strings, so the SEA driver
+   * sets this `true` for byte-compatible parity. Omitted ⇒ kernel
+   * default (native Arrow interval types).
+   */
+  intervalsAsString?: boolean
+  /**
+   * Render complex (`ARRAY` / `MAP` / `STRUCT` / `VARIANT`) result
+   * columns as JSON strings (`ResultConfig.complex_types_as_json`)
+   * instead of native Arrow nested types. Omitted ⇒ kernel default
+   * (native Arrow nested types, which the NodeJS Arrow decoder
+   * already renders identically to the Thrift path).
+   */
+  complexTypesAsJson?: boolean
+  /**
+   * Whether to verify the server's TLS certificate.
+   *
+   * Omitted / `true` ⇒ strict validation against the system / Mozilla
+   * trust store (full chain + expiry + hostname), matching JDBC / ODBC
+   * and every modern HTTPS client. This is the **default** for the SEA
+   * backend — secure by default.
+   *
+   * `false` ⇒ permissive: accept self-signed / untrusted / expired
+   * certs AND skip the hostname-vs-SNI check. This is **insecure** (no
+   * protection against active MITM); it exists only as an opt-out for
+   * parity with the legacy NodeJS Thrift driver, which hard-codes
+   * `rejectUnauthorized: false`. Prefer pairing strict checking with
+   * `custom_ca_cert` over disabling verification entirely.
+   *
+   * Maps onto the kernel [`TlsConfig::accept_self_signed`] +
+   * [`TlsConfig::skip_hostname_verification`] (both = `!check`).
+   */
+  checkServerCertificate?: boolean
+  /**
+   * PEM-encoded CA certificate bytes to add to the trust store on
+   * top of the system roots. Use for corporate TLS-inspecting
+   * proxies that re-sign TLS, or on-prem deployments with an
+   * internal CA. Honoured regardless of `check_server_certificate`.
+   * Maps onto the kernel [`TlsConfig::custom_ca_cert`].
+   */
+  customCaCert?: Buffer
 }
 /**
  * Open a Databricks SQL session and return an opaque `Connection`
@@ -200,6 +281,39 @@ export interface ConnectionOptions {
  * to camelCase for free functions).
  */
 export declare function openSession(options: ConnectionOptions): Promise<Connection>
+/**
+ * JS-visible binding for a single positional parameter.
+ *
+ * Shape mirrors the `TSparkParameter` wire object the Thrift backend
+ * already emits via `DBSQLParameter.toSparkParameter()` — `type` is the
+ * canonical Databricks SQL type name (`"INT"`, `"STRING"`,
+ * `"DECIMAL(10,2)"`, ...), `value` is the string-encoded literal or
+ * `None` for SQL NULL.
+ *
+ * Why a string for `value` instead of a tagged JS union: round-tripping
+ * arbitrary JS values across the FFI requires either (a) a custom
+ * napi `FromNapiValue` per arm, or (b) a `serde_json::Value`-style
+ * dynamic dispatch on the Rust side. The Node-driver adapter already
+ * stringifies before calling the binding (see `DBSQLParameter` and the
+ * existing pyo3 wrapper), so the string-in / string-parsed contract
+ * adds no JS-side complexity and keeps the kernel-side validation in
+ * one place.
+ */
+export interface TypedValueInput {
+  /**
+   * Canonical Databricks SQL type name. Case-insensitive for the
+   * simple variants; for DECIMAL the parenthesised form
+   * (`"DECIMAL(10,2)"`) is required so the kernel can extract
+   * precision/scale.
+   */
+  sqlType: string
+  /**
+   * String-encoded value. `None` always produces `TypedValue::Null`
+   * regardless of `sql_type` — matches the connector's
+   * `VoidParameter` shape and the pyo3 binding's contract.
+   */
+  value?: string
+}
 /**
  * A single Arrow IPC stream payload encoding one record batch (plus
  * the schema header so the JS-side reader is stateless).
@@ -231,6 +345,143 @@ export interface ArrowSchema {
  */
 export declare function version(): string
 /**
+ * Opaque async-statement handle.
+ *
+ * Returned by `Connection.submitStatement(...)` after the kernel
+ * `Statement::submit()` returns (server sent `wait_timeout=0s`, so
+ * the response carries a `statement_id` but the statement is still
+ * `Pending`/`Running`). JS drives polling via `status()` /
+ * `awaitResult()`.
+ *
+ * Concurrency shape: `status()`, `awaitResult()`, and `close()` take
+ * `inner.lock()` and hold the guard across the kernel `.await` (tokio
+ * `Mutex` is FIFO), so `status()` / `close()` queue behind any
+ * in-flight `awaitResult()` until it returns naturally. `cancel()` is
+ * the deliberate exception: it does **not** touch `inner` — it fires
+ * through the detached `AsyncStatementCanceller` (session +
+ * statement_id, captured at construction), so an explicit
+ * `stmt.cancel()` interrupts an in-flight `awaitResult()` instead of
+ * queueing behind it. The server-side cancel flips the statement
+ * terminal, which the parked `awaitResult()` poll loop observes
+ * (`Cancelled`) and returns on. The kernel's `AwaitResultCancelGuard`
+ * still covers the drop-cancel case (Promise.race / timeout)
+ * independently — see module docs.
+ */
+export declare class AsyncStatement {
+  /**
+   * Server-issued statement id. Cached at construction; readable
+   * even after `close()` so JS-side log lines can correlate
+   * against kernel / server logs which key on the same id.
+   */
+  get statementId(): string
+  /**
+   * One-shot status check. Returns a string enum matching the
+   * kernel `StatementStatus` shape:
+   * `'Pending' | 'Running' | 'Succeeded' | 'Failed' |
+   * 'Cancelled' | 'Closed' | 'Unknown'`. (`'Unknown'` is the
+   * `#[non_exhaustive]` forward-compat catch-all that
+   * `StatementStatus::as_str` can return — consumers switching on
+   * the state must handle it.) Returns
+   * `KernelError(InvalidStatementHandle)` if the statement has
+   * been explicitly `close()`d.
+   *
+   * The `Failed` variant collapses to the string `'Failed'` on
+   * the JS side; the underlying error envelope (sql_state /
+   * error_code / query_id) is surfaced by `awaitResult()`'s
+   * rejection, which is where callers actually need the typed
+   * error. `status()` is intended for polling progress UIs
+   * that only need the state name.
+   */
+  status(): Promise<string>
+  /**
+   * Block until the server reaches a terminal state, then return
+   * an `AsyncResultHandle` that wraps the materialised result
+   * stream. The handle exposes `fetchNextBatch()` / `schema()`
+   * for consuming the result, plus `statementId` for log
+   * correlation.
+   *
+   * Drop-cancel safety: kernel `await_result` installs
+   * `AwaitResultCancelGuard` which fires a fire-and-forget
+   * `cancel_statement` if the future is dropped mid-poll
+   * (timeout, tokio::select! loser, JS-side `Promise.race`
+   * loser). The `util::guarded` `catch_unwind` here covers the
+   * V8-panic-across-boundary case on top. Returns
+   * `KernelError(InvalidStatementHandle)` if the statement has
+   * been explicitly `close()`d.
+   */
+  awaitResult(): Promise<AsyncResultHandle>
+  /**
+   * Server-side cancel. Returns
+   * `KernelError(InvalidStatementHandle)` if the statement has
+   * been explicitly `close()`d. Idempotent against a server
+   * that already reached a terminal state — the kernel's
+   * `cancel_statement` is a no-op there.
+   *
+   * **Lock-free by design.** Unlike `status()` / `awaitResult()` /
+   * `close()`, this does not take `inner.lock()` — it fires through
+   * the detached `AsyncStatementCanceller` captured at construction.
+   * That lets `stmt.cancel()` interrupt an in-flight `awaitResult()`
+   * (which holds the mutex for the whole poll) instead of queueing
+   * behind it: the server-side cancel flips the statement terminal,
+   * the parked `awaitResult()` poll loop observes `Cancelled` and
+   * returns. The closed-state check reads a lock-free flag so a
+   * cancel after an explicit `close()` still surfaces
+   * `InvalidStatementHandle`.
+   */
+  cancel(): Promise<void>
+  /**
+   * Explicit close. Idempotent — a second call on an
+   * already-closed handle returns `Ok(())`. On `Err`, the napi
+   * inner is already `None`, so a JS-side retry sees the
+   * closed-handle short-circuit and returns `Ok(())` without
+   * re-attempting the wire call. The kernel's own `Drop`
+   * fire-and-forget retry runs once in the background.
+   */
+  close(): Promise<void>
+}
+/**
+ * Opaque result-fetch handle returned by
+ * `AsyncStatement.awaitResult()`. Wraps a kernel `ResultStream`
+ * directly; structurally analogous to the sync `Statement`'s
+ * fetch-side surface (`fetchNextBatch` / `schema` /
+ * `statementId`).
+ *
+ * `cancel()` / `close()` are not exposed: the parent
+ * `AsyncStatement` owns server-side lifecycle. A `close()` here
+ * would create dual-ownership of the same statement_id with
+ * inconsistent close semantics. Callers `close()` the parent
+ * `AsyncStatement` after they're done fetching.
+ *
+ * Schema is cached at construction so it survives the underlying
+ * stream being drained; mirrors the sync `Statement.schema()`
+ * post-close contract.
+ */
+export declare class AsyncResultHandle {
+  /**
+   * Server-issued statement id. Cached at construction; readable
+   * for log correlation. Matches the parent `AsyncStatement`'s
+   * `statementId`.
+   */
+  get statementId(): string
+  /**
+   * Pull the next batch of results. Returns `null` when the
+   * stream is exhausted. The returned `ArrowBatch.ipcBytes` is a
+   * complete Arrow IPC stream (schema header + 1 record-batch
+   * message), suitable for handing to `apache-arrow`'s
+   * `RecordBatchReader`. Byte-identical to the sync
+   * `Statement.fetchNextBatch()` payload for the same query.
+   */
+  fetchNextBatch(): Promise<ArrowBatch | null>
+  /**
+   * Result schema as an Arrow IPC payload (schema header only,
+   * no record-batch message). Available before any batches have
+   * been fetched. Sync because the body has no `.await` —
+   * `encode_ipc_stream` is pure CPU work over the cached
+   * `Arc<Schema>`.
+   */
+  schema(): ArrowSchema
+}
+/**
  * Opaque connection handle wrapping a kernel `Session`.
  *
  * `inner` is `Arc<Mutex<Option<Session>>>` so:
@@ -240,15 +491,16 @@ export declare function version(): string
  * - `close()` can `.take()` the session to consume it for the kernel's
  *   move-by-value `Session::close(self)` signature.
  *
- * **Current concurrency shape** — `executeStatement` holds
- * `inner.lock()` across `stmt.execute().await`, so two concurrent
- * `Promise.all([executeStatement(q1), executeStatement(q2)])` calls
- * on the same Connection serialise even though the kernel transport
- * supports concurrent statements per session, and `close()` blocks
- * behind any in-flight execute. The kernel's `Session::statement()`
- * is `&self`-callable, so the right shape is `Arc<Session>` with
- * concurrent execute paths; that lands in the follow-up lock-shape
- * refactor — see
+ * **Concurrency shape** — both `executeStatement` and
+ * `submitStatement` build the kernel `Statement` under `inner.lock()`
+ * and then RELEASE the guard before the wire call
+ * (`stmt.execute().await` / `stmt.submit().await`). `Session::statement()`
+ * is `&self`-callable and only clones the session's internal `Arc`, so
+ * the built statement is independent of the guard. Concurrent
+ * `Promise.all([executeStatement(q1), submitStatement(q2)])` therefore
+ * serialise only for the microsecond statement-build, not the network
+ * round-trip, and `close()` never blocks behind an in-flight execute or
+ * submit. See
  * `sea-workflow/jira-candidates/2026-05-24-napi-cancel-during-fetch.md`.
  */
 export declare class Connection {
@@ -275,6 +527,29 @@ export declare class Connection {
    */
   executeStatement(sql: string, options?: ExecuteOptions | undefined | null): Promise<Statement>
   /**
+   * Submit a SQL statement and return immediately with an
+   * `AsyncStatement` handle, without blocking until the query
+   * finishes. The kernel's `Statement::submit()` sends
+   * `wait_timeout=0s`, so the server responds as soon as it has a
+   * `statement_id` (state `Pending`/`Running`); JS drives polling
+   * via `AsyncStatement.status()` and materialises results with
+   * `AsyncStatement.awaitResult()`.
+   *
+   * This is the async-execution path the Thrift backend always
+   * uses (`runAsync: true`): the SEA backend submits, returns a
+   * pending operation handle, and polls to terminal during
+   * fetch. Option semantics (statementConf / queryTags /
+   * rowLimit / positional + named params) match `executeStatement`,
+   * with one carve-out: `queryTimeoutSecs` is **ignored** here.
+   * Submit always sends `wait_timeout=0s` so the call returns
+   * immediately, leaving no server wait to bound; the caller drives
+   * completion and its own timeout via `status()` / `awaitResult()`
+   * (e.g. `Promise.race`). Only the blocking-vs-pending return
+   * contract — and that timeout carve-out — differ from
+   * `executeStatement`.
+   */
+  submitStatement(sql: string, options?: ExecuteOptions | undefined | null): Promise<AsyncStatement>
+  /**
    * Explicit close. Awaits the server-side `DeleteSession` so the
    * JS caller can observe failures (auth revoked mid-session,
    * warehouse stopped, network error). Idempotent — a second call
@@ -291,6 +566,67 @@ export declare class Connection {
    * semantics for `DeleteSession`, layer them above this method.
    */
   close(): Promise<void>
+  /**
+   * All catalogs visible to the session.
+   *
+   * JDBC `getCatalogs` shape: `TABLE_CAT: Utf8`.
+   */
+  listCatalogs(): Promise<Statement>
+  /**
+   * Schemas filtered by catalog (exact) and schema name pattern.
+   *
+   * JDBC `getSchemas` shape: `TABLE_SCHEM, TABLE_CATALOG`.
+   */
+  listSchemas(catalog?: string | undefined | null, schemaPattern?: string | undefined | null): Promise<Statement>
+  /**
+   * Tables filtered by catalog (exact), schema (pattern), table (pattern).
+   *
+   * JDBC `getTables` shape: 10 columns. `tableTypes`, when provided,
+   * filters rows by `TABLE_TYPE` kernel-side.
+   *
+   * `tableTypes` is an advisory filter. Databricks `SHOW TABLES` does
+   * NOT honour the table-type filter server-side; the kernel applies
+   * it client-side after the result returns. Callers expecting
+   * server-side rejection of off-type tables should not rely on this.
+   */
+  listTables(catalog?: string | undefined | null, schemaPattern?: string | undefined | null, tablePattern?: string | undefined | null, tableTypes?: Array<string> | undefined | null): Promise<Statement>
+  /**
+   * Columns of tables matching the filter.
+   *
+   * JDBC `getColumns` shape: 23 columns.
+   */
+  listColumns(catalog?: string | undefined | null, schemaPattern?: string | undefined | null, tablePattern?: string | undefined | null, columnPattern?: string | undefined | null): Promise<Statement>
+  /**
+   * Functions visible to the session. `catalog` is exact;
+   * `schemaPattern` and `functionPattern` are SQL LIKE.
+   */
+  listFunctions(catalog?: string | undefined | null, schemaPattern?: string | undefined | null, functionPattern?: string | undefined | null): Promise<Statement>
+  /**
+   * Procedures visible to the session. `catalog` is exact;
+   * `schemaPattern` and `procedurePattern` are SQL LIKE.
+   */
+  listProcedures(catalog?: string | undefined | null, schemaPattern?: string | undefined | null, procedurePattern?: string | undefined | null): Promise<Statement>
+  /**
+   * All table types (`TABLE`, `VIEW`, `SYSTEM TABLE`, …).
+   * No wire call — static in-memory result.
+   */
+  listTableTypes(): Promise<Statement>
+  /**
+   * SQL data types supported by the workspace.
+   * No wire call — static in-memory result.
+   */
+  listTypeInfo(): Promise<Statement>
+  /**
+   * Primary keys for the given table. All three identifiers are
+   * exact — ODBC `SQLPrimaryKeys` does not support patterns.
+   */
+  getPrimaryKeys(catalog: string, schema: string, table: string): Promise<Statement>
+  /**
+   * Foreign-key relationships. The foreign side must be fully
+   * specified (catalog + schema + table); the parent side is
+   * optional. All identifiers are exact — no LIKE patterns.
+   */
+  getCrossReference(parentCatalog: string | undefined | null, parentSchema: string | undefined | null, parentTable: string | undefined | null, foreignCatalog: string, foreignSchema: string, foreignTable: string): Promise<Statement>
 }
 /**
  * Opaque executed-statement handle.
@@ -317,6 +653,51 @@ export declare class Statement {
    * kernel / server logs which key on the same id.
    */
   get statementId(): string
+  /**
+   * Number of rows modified by the statement (UPDATE / INSERT /
+   * DELETE / MERGE). `null` for SELECT and on warehouses that don't
+   * surface the counter. Mirrors Thrift's
+   * `TGetOperationStatusResp.numModifiedRows`.
+   */
+  numModifiedRows(): Promise<number | null>
+  /**
+   * Server-supplied user-facing message. Mirrors Thrift's
+   * `TGetOperationStatusResp.displayMessage`. **PII / sensitive-
+   * data note:** may contain SQL fragments or parameter values —
+   * redact before centralised logging.
+   *
+   * Populated on `Succeeded` / `Closed-with-inline-data` paths.
+   * On terminal-error states (`Failed` / `Cancelled` /
+   * `Closed-no-data`) the kernel returns an Error instead of a
+   * `Statement`, and the same field rides on the JS Error envelope
+   * under the same `displayMessage` key.
+   */
+  displayMessage(): Promise<string | null>
+  /**
+   * Server-supplied diagnostic detail — multi-line operator /
+   * stack context. Mirrors Thrift's
+   * `TGetOperationStatusResp.diagnosticInfo`. For support surfaces,
+   * not user-facing. Same reachability + PII caveats as
+   * `displayMessage`.
+   */
+  diagnosticInfo(): Promise<string | null>
+  /**
+   * Server-supplied JSON blob with extended error details. Mirrors
+   * Thrift's `TGetOperationStatusResp.errorDetailsJson`.
+   * Pass-through string — JS callers parse with `JSON.parse` if
+   * they need structured access.
+   *
+   * **Server-side gating:** populated only when the workspace has
+   * `spark.databricks.sql.errorDetailsJson.enabled = true` on the
+   * underlying SQL cluster. The flag is internal-only / default-
+   * false in the Databricks runtime, so for most JS callers this
+   * will return `null`. Admin-enabled workspaces return content
+   * shaped like `{"errorClass": "...", "messageTemplate": "..."}`.
+   *
+   * **Unbounded:** when populated, server can return a multi-MB
+   * blob; size before logging.
+   */
+  errorDetailsJson(): Promise<string | null>
   /**
    * Pull the next batch of results. Returns `null` when the stream
    * is exhausted. The returned `ArrowBatch.ipcBytes` is a complete
@@ -348,19 +729,25 @@ export declare class Statement {
   /**
    * Server-side cancel.
    *
-   * Short-circuits to `Ok(())` if `fetchNextBatch` has already
-   * returned `null` (stream naturally exhausted) — matches the
-   * JDBC `Statement.cancel()` no-op-after-completion contract, so
-   * JS callers can fire cancel defensively without distinguishing
-   * "real cancel" from "raced with natural completion."
+   * For executed statements: short-circuits to `Ok(())` if
+   * `fetchNextBatch` has already returned `null` (stream
+   * naturally exhausted) — matches the JDBC `Statement.cancel()`
+   * no-op-after-completion contract, so JS callers can fire cancel
+   * defensively without distinguishing "real cancel" from "raced
+   * with natural completion."
+   *
+   * For metadata streams: no-op (the kernel has no in-flight
+   * cancellation surface for metadata calls today).
    *
    * Returns `KernelError(InvalidStatementHandle)` if the statement
    * has been explicitly `close()`d.
    */
   cancel(): Promise<void>
   /**
-   * Explicit close. Awaits the server-side `CloseStatement` so the
-   * JS caller can observe failures (auth revoked mid-session,
+   * Explicit close.
+   *
+   * For executed statements: awaits the server-side `CloseStatement`
+   * so the JS caller can observe failures (auth revoked mid-session,
    * network error, server-side error). Idempotent — a second call
    * on an already-closed statement returns `Ok`.
    *
@@ -376,6 +763,10 @@ export declare class Statement {
    * runtime. The JS caller can log the error but cannot drive a
    * further retry. If you need retry-on-failure semantics for
    * `CloseStatement`, layer them above this method.
+   *
+   * For metadata streams: drops the stream (no server round-trip
+   * needed — metadata results have no in-flight server-side
+   * resource to release).
    */
   close(): Promise<void>
 }
