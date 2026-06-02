@@ -18,4 +18,27 @@ export interface InternalConnectionOptions {
    * @internal Not stable; M0 stub only.
    */
   useSEA?: boolean;
+
+  /**
+   * SEA-only: kernel connection-pool size (`ConnectionOptions.max_connections`).
+   * Validated as a positive integer within the napi `u32` range.
+   * @internal SEA path only.
+   */
+  maxConnections?: number;
+
+  /**
+   * SEA-only: verify the server's TLS certificate. Secure-by-default — omit
+   * to keep full chain + hostname verification; set `false` only to opt into
+   * the insecure accept-anything mode.
+   * @internal SEA path only.
+   */
+  checkServerCertificate?: boolean;
+
+  /**
+   * SEA-only: PEM-encoded CA certificate (string or `Buffer`) added to the
+   * trust store on top of the system roots — for TLS-inspecting proxies or
+   * on-prem internal CAs. Honoured regardless of `checkServerCertificate`.
+   * @internal SEA path only.
+   */
+  customCaCert?: Buffer | string;
 }

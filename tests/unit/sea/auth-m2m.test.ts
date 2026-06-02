@@ -35,6 +35,7 @@ describe('SeaAuth + SeaBackend — OAuth M2M auth flow', () => {
       expect(native).to.deep.equal({
         hostName: 'example.cloud.databricks.com',
         httpPath: '/sql/1.0/warehouses/abc',
+        intervalsAsString: true,
         authMode: 'OAuthM2m',
         oauthClientId: 'client-uuid',
         oauthClientSecret: 'dose-fake-secret',
@@ -165,6 +166,7 @@ describe('SeaAuth + SeaBackend — OAuth M2M auth flow', () => {
       expect(calls[0].args[0]).to.deep.equal({
         hostName: 'example.cloud.databricks.com',
         httpPath: '/sql/1.0/warehouses/abc',
+        intervalsAsString: true,
         authMode: 'OAuthM2m',
         oauthClientId: 'client-uuid',
         oauthClientSecret: 'dose-fake-secret',

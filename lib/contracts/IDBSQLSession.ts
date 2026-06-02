@@ -27,6 +27,18 @@ export type ExecuteStatementOptions = {
    * These tags apply only to this statement and do not persist across queries.
    */
   queryTags?: Record<string, string | null | undefined>;
+  /**
+   * SEA-only: server-side row cap for this statement (kernel `row_limit`). The
+   * Thrift backend has no execute-time server cap, so this is a no-op there;
+   * use `maxRows` for the cross-backend client-side fetch limit.
+   */
+  rowLimit?: number;
+  /**
+   * SEA-only: per-statement Spark conf overlay (kernel `statement_conf`).
+   * Merged with the serialized `queryTags` (which land under the reserved
+   * `query_tags` key). Ignored by the Thrift backend.
+   */
+  statementConf?: Record<string, string>;
 };
 
 export type TypeInfoRequest = {
