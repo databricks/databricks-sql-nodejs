@@ -36,6 +36,8 @@ import type {
   ExecuteOptions as NativeExecuteOptions,
   TypedValueInput as NativeTypedValueInput,
   NamedTypedValueInput as NativeNamedTypedValueInput,
+  AsyncStatement as NativeAsyncStatement,
+  AsyncResultHandle as NativeAsyncResultHandle,
 } from '../../native/sea';
 
 // SEA-prefixed re-exports. The kernel-generated `.d.ts` keeps the
@@ -58,6 +60,14 @@ export type SeaStatement = NativeStatement;
 export type SeaNativeExecuteOptions = NativeExecuteOptions;
 export type SeaNativeTypedValueInput = NativeTypedValueInput;
 export type SeaNativeNamedTypedValueInput = NativeNamedTypedValueInput;
+
+// Async-submit surface: `Connection.submitStatement` returns an
+// `AsyncStatement` (status / awaitResult / cancel / close); `awaitResult`
+// yields an `AsyncResultHandle` whose `fetchNextBatch` / `schema` match the
+// blocking `Statement`'s fetch surface, so the results pipeline consumes
+// either interchangeably.
+export type SeaNativeAsyncStatement = NativeAsyncStatement;
+export type SeaNativeAsyncResultHandle = NativeAsyncResultHandle;
 
 /**
  * The full native binding surface, derived from the generated module
