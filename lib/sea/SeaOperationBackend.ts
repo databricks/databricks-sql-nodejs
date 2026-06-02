@@ -21,7 +21,7 @@
  *   `ArrowResultConverter` (Phase 1 + Phase 2; reused unchanged) →
  *   `ResultSlicer` (chunk-size normalisation; reused unchanged). The M0
  *   row shape is byte-identical to the thrift path for every M0
- *   datatype (parity gate exercised by `tests/integration/sea/results-e2e.test.ts`).
+ *   datatype (parity gate exercised by `tests/e2e/sea/results-e2e.test.ts`).
  *
  * - **Lifecycle (from sea-operation):** `cancel()` / `close()` /
  *   `finished()` (alias of `waitUntilReady`) delegate to the helpers
@@ -42,6 +42,7 @@ import IOperationBackend, { IOperationBackendWaitOptions } from '../contracts/IO
 import { OperationStatus, OperationState } from '../contracts/OperationStatus';
 import { ResultMetadata, ResultFormat } from '../contracts/ResultMetadata';
 import IClientContext from '../contracts/IClientContext';
+import { LogLevel } from '../contracts/IDBSQLLogger';
 import Status from '../dto/Status';
 import HiveDriverError from '../errors/HiveDriverError';
 import ArrowResultConverter from '../result/ArrowResultConverter';
@@ -155,7 +156,22 @@ export default class SeaOperationBackend implements IOperationBackend {
       // error ("call close() and discard"). Close the statement so the server
       // reclaims it promptly — best-effort, so a close failure never masks the
       // original fetch error — then surface a typed kernel error.
-      await seaClose(this.lifecycle, this.statement, this.context, this._id).catch(() => undefined);
+      //
+      // If close() ALSO fails, seaClose has reset isClosed back to false and
+      // the kernel-side statement handle is now leaked (the stream is already
+      // wedged, so nothing downstream forces another close). We still don't
+      // mask the original fetch error, but log the close failure at warn so
+      // the leak is diagnosable rather than completely invisible.
+      await seaClose(this.lifecycle, this.statement, this.context, this._id).catch((closeErr) => {
+        const cause = closeErr instanceof Error ? closeErr.message : String(closeErr);
+        this.context
+          .getLogger()
+          .log(
+            LogLevel.warn,
+            `SEA fetch-error cleanup: close() failed for operation ${this._id}; the server-side ` +
+              `statement may leak until the session is closed. Cause: ${cause}`,
+          );
+      });
       throw decodeNapiKernelError(err);
     }
   }

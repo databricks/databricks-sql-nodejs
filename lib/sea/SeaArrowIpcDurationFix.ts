@@ -196,7 +196,12 @@ function readMessageAt(
     cursor += 4;
   }
 
-  if (metadataLength === 0) {
+  // A zero or negative length (other than the -1 continuation sentinel
+  // handled above) is malformed. Reject by intent rather than relying on
+  // `subarray` clamping: a negative `metadataLength` would make
+  // `metadataEnd < cursor`, which silently passes the `> byteLength`
+  // upper-bound check below.
+  if (metadataLength <= 0) {
     return null;
   }
 
@@ -211,6 +216,12 @@ function readMessageAt(
   const message = Message.getRootAsMessage(bb);
 
   const bodyLength = Number(message.bodyLength());
+  // Same fail-closed intent as metadataLength: a negative body length
+  // (server-controlled) would make `bodyEnd < bodyStart` and slip past
+  // the upper-bound check.
+  if (bodyLength < 0) {
+    return null;
+  }
   const bodyStart = metadataEnd;
   const bodyEnd = bodyStart + bodyLength;
   if (bodyEnd > view.byteLength) {

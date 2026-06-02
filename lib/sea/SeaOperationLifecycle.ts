@@ -47,7 +47,7 @@ import Status from '../dto/Status';
 import { OperationStatus, OperationState } from '../contracts/OperationStatus';
 import { LogLevel } from '../contracts/IDBSQLLogger';
 import IClientContext from '../contracts/IClientContext';
-import { mapKernelErrorToJsError, KernelErrorShape } from './SeaErrorMapping';
+import { decodeNapiKernelError } from './SeaErrorMapping';
 import OperationStateError, { OperationStateErrorCode } from '../errors/OperationStateError';
 
 /**
@@ -89,33 +89,18 @@ export function createLifecycleState(): SeaOperationLifecycleState {
 
 /**
  * Normalise an error thrown by the napi `Statement` into one of the
- * driver's typed error classes. The binding surfaces kernel errors as
- * a JSON envelope on `napi::Error.reason` with the sentinel prefix
- * `__databricks_error__:` (see the napi-binding round 2 findings,
- * section "JSON-envelope error reason"). If we can parse out a kernel
- * payload, we route it through `mapKernelErrorToJsError`; otherwise
- * the original error is rethrown unchanged.
+ * driver's typed error classes, then throw it.
+ *
+ * Delegates to the canonical {@link decodeNapiKernelError} so cancel /
+ * close errors get exactly the same fidelity as fetch errors: the
+ * `sqlState` remap (the envelope field is `sqlState`, not `sqlstate`),
+ * the `kernelMetadata` namespace (vendorCode / httpStatus / retryable /
+ * queryId), and the strict `startsWith` sentinel match. The previous
+ * hand-rolled reimplementation here dropped SQLSTATE and metadata and
+ * used a looser substring match.
  */
 function rethrowKernelError(err: unknown): never {
-  if (err instanceof Error && typeof err.message === 'string') {
-    const sentinel = '__databricks_error__:';
-    const idx = err.message.indexOf(sentinel);
-    if (idx >= 0) {
-      const json = err.message.slice(idx + sentinel.length);
-      let parsed: KernelErrorShape | undefined;
-      try {
-        parsed = JSON.parse(json) as KernelErrorShape;
-      } catch {
-        // Malformed envelope — fall through and rethrow the original
-        // below; we never silently drop a kernel error.
-        parsed = undefined;
-      }
-      if (parsed) {
-        throw mapKernelErrorToJsError(parsed);
-      }
-    }
-  }
-  throw err;
+  throw decodeNapiKernelError(err);
 }
 
 /**

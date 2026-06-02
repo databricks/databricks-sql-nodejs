@@ -371,6 +371,28 @@ describe('SeaSessionBackend', () => {
     expect((thrown as Error).message).to.match(/queryTimeout/);
   });
 
+  // These Thrift-path options are not honored on SEA M0. Rejecting them
+  // (rather than silently ignoring) is the contract a caller/agent needs:
+  // a silent no-op gives zero signal to debug.
+  for (const { name, options, re } of [
+    { name: 'queryTags', options: { queryTags: { team: 'x' } }, re: /queryTags/ },
+    { name: 'useLZ4Compression', options: { useLZ4Compression: true }, re: /useLZ4Compression/ },
+    { name: 'stagingAllowedLocalPath', options: { stagingAllowedLocalPath: '/tmp' }, re: /stagingAllowedLocalPath/ },
+  ] as const) {
+    it(`executeStatement rejects ${name} rather than silently ignoring it`, async () => {
+      const connection = new FakeNativeConnection();
+      const session = makeSession(connection);
+      let thrown: unknown;
+      try {
+        await session.executeStatement('SELECT 1', options);
+      } catch (err) {
+        thrown = err;
+      }
+      expect(thrown).to.be.instanceOf(HiveDriverError);
+      expect((thrown as Error).message).to.match(re);
+    });
+  }
+
   it('metadata methods throw deferred-M1 errors', async () => {
     const connection = new FakeNativeConnection();
     const session = makeSession(connection);
@@ -479,5 +501,5 @@ describe('SeaOperationBackend', () => {
   // the sea-results SeaResultsProvider + ArrowResultConverter pipeline
   // implements the real fetch path. Full coverage lives in
   // tests/unit/sea/SeaOperationBackend.test.ts and the parity-gate e2e
-  // at tests/integration/sea/results-e2e.test.ts.
+  // at tests/e2e/sea/results-e2e.test.ts.
 });

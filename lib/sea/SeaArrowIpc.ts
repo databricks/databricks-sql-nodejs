@@ -12,9 +12,10 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-import { RecordBatchReader, Schema, Field, DataType, TypeMap } from 'apache-arrow';
+import { RecordBatchReader, MessageReader, MessageHeader, Schema, Field, DataType, TypeMap } from 'apache-arrow';
 import { TTableSchema, TTypeId, TPrimitiveTypeEntry } from '../../thrift/TCLIService_types';
 import { rewriteDurationToInt64, DURATION_UNIT_METADATA_KEY } from './SeaArrowIpcDurationFix';
+import HiveDriverError from '../errors/HiveDriverError';
 
 /**
  * Field metadata key used by the kernel to attach the original Databricks
@@ -23,43 +24,46 @@ import { rewriteDurationToInt64, DURATION_UNIT_METADATA_KEY } from './SeaArrowIp
 const DATABRICKS_TYPE_NAME = 'databricks.type_name';
 
 /**
- * Decode an Arrow IPC stream payload (schema header + zero-or-more
- * record-batch messages) into its row count.
+ * Sum the row counts of every RecordBatch message in an Arrow IPC
+ * stream, WITHOUT materializing the Arrow vector tree.
  *
- * Returns `{ schema, rowCount }`. The schema is left intact as the
- * apache-arrow Schema object so callers can reuse it; the rowCount is
- * the sum of `RecordBatch.numRows` across every record-batch message
- * in the stream.
+ * Why this exists: `ArrowResultConverter` consumes `ArrowBatch` objects
+ * that carry an explicit `rowCount`, but the kernel's IPC payload only
+ * carries per-RecordBatch `length` (no separate total). `SeaResultsProvider`
+ * needs that count to build the `ArrowBatch` it hands to the converter —
+ * which then re-decodes the same bytes for the actual values.
  *
- * Why we parse upfront: `ArrowResultConverter` consumes `ArrowBatch`
- * objects which carry an explicit `rowCount`. The kernel's IPC payload
- * does not carry a separate count — only per-RecordBatch numRows. We
- * walk the messages once to sum them so the converter sees the same
- * shape as the thrift path (`ArrowResultHandler.fetchNext` at
- * `lib/result/ArrowResultHandler.ts:55`).
+ * The previous implementation used `RecordBatchReader` and iterated the
+ * batches, which calls `_loadVectors` and materializes the full vector
+ * tree for every batch just to read `numRows` and discard everything
+ * else — ~2x Arrow decode CPU + transient allocation on the fetch hot
+ * path. `MessageReader` instead reads only each message's FlatBuffer
+ * metadata header (where `RecordBatch.length` lives) and skips the body
+ * bytes, so no vectors are decoded here. The converter's later re-decode
+ * is the only real materialization.
  *
- * Re-parsing inside the converter is unavoidable because `RecordBatch`
- * instances created here cannot be passed across the converter's
- * `Buffer[]` boundary without rewriting the converter. Callers that already
- * patched the IPC bytes can set `alreadyPatched` to avoid running the
- * FlatBuffer rewrite twice on the hot fetch path.
+ * `ipcBytes` must already be Duration-patched (row count is unaffected
+ * by the Duration→Int64 rewrite, and the framing is unchanged). Returns
+ * 0 for an empty / schema-only stream.
  */
-export function decodeIpcBatch(
-  ipcBytes: Buffer,
-  options: { alreadyPatched?: boolean } = {},
-): { schema: Schema<TypeMap>; rowCount: number } {
-  const patched = options.alreadyPatched ? ipcBytes : rewriteDurationToInt64(ipcBytes);
-  const reader = RecordBatchReader.from<TypeMap>(patched);
-  // Eagerly open so `schema` is populated.
-  reader.open();
-  const { schema } = reader;
-
+export function countRowsInIpc(ipcBytes: Buffer): number {
+  const reader = new MessageReader(ipcBytes);
   let rowCount = 0;
-  // Iterate all record batches in the stream and sum row counts.
-  for (const batch of reader) {
-    rowCount += batch.numRows;
+  for (const message of reader) {
+    if (message.headerType === MessageHeader.RecordBatch) {
+      // header() for a RecordBatch message carries `length` (the row
+      // count) in the FlatBuffer metadata — no body decode needed.
+      rowCount += Number((message.header() as { length: number | bigint }).length);
+    }
+    // Advance past the (undecoded) body so the next message reads at the
+    // correct offset. readMessageBody returns a view; it does not decode
+    // the body into Arrow vectors.
+    const bodyLength = Number(message.bodyLength);
+    if (bodyLength > 0) {
+      reader.readMessageBody(bodyLength);
+    }
   }
-  return { schema, rowCount };
+  return rowCount;
 }
 
 /**
@@ -70,6 +74,14 @@ export function decodeIpcSchema(ipcBytes: Buffer): Schema<TypeMap> {
   const patched = rewriteDurationToInt64(ipcBytes);
   const reader = RecordBatchReader.from<TypeMap>(patched);
   reader.open();
+  // `RecordBatchReader.from(emptyBuffer).open()` does not throw — it
+  // leaves `schema` undefined. Without this guard a downstream
+  // `arrowSchemaToThriftSchema(undefined)` would hit `undefined.fields`
+  // and surface a raw TypeError instead of a typed driver error. The
+  // real kernel always materialises a schema, so this is defensive.
+  if (!reader.schema) {
+    throw new HiveDriverError('SEA result: Arrow IPC stream carried no schema (empty or truncated payload)');
+  }
   return reader.schema;
 }
 

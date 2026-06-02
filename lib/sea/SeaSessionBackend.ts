@@ -116,6 +116,25 @@ export default class SeaSessionBackend implements ISessionBackend {
         'SEA executeStatement: useCloudFetch is controlled by the kernel result configuration and is not a per-statement option on SEA',
       );
     }
+    // Reject — rather than silently ignore — the remaining Thrift-path
+    // options the SEA M0 backend does not honor. Silently dropping them
+    // is the worst failure mode for an agent/caller: passing e.g.
+    // `queryTags` or `useLZ4Compression` would no-op with zero signal.
+    // (`maxRows` is intentionally NOT here — the facade applies it at
+    // fetch time.)
+    if (options.queryTags !== undefined) {
+      throw new HiveDriverError('SEA executeStatement: queryTags is not supported in M0 (deferred to M1)');
+    }
+    if (options.useLZ4Compression !== undefined) {
+      throw new HiveDriverError(
+        'SEA executeStatement: useLZ4Compression is not supported on SEA (result compression is governed by the kernel)',
+      );
+    }
+    if (options.stagingAllowedLocalPath !== undefined) {
+      throw new HiveDriverError(
+        'SEA executeStatement: stagingAllowedLocalPath (volume operations) is not supported in M0 (deferred to M1)',
+      );
+    }
 
     let nativeStatement;
     try {
