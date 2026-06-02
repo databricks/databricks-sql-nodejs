@@ -319,6 +319,9 @@ export interface DriverConfiguration {
 
   /** Whether metric view metadata is enabled */
   enableMetricViewMetadata?: boolean;
+
+  /** Whether an HTTP/SOCKS proxy is configured on the connection */
+  useProxy?: boolean;
 }
 
 /**

@@ -51,9 +51,9 @@ export function mapOperationTypeToTelemetryType(operationType?: TOperationType):
 /**
  * Map Thrift TSparkRowSetType to telemetry ExecutionResult.Format enum string.
  */
-export function mapResultFormatToTelemetryType(resultFormat?: TSparkRowSetType): string | undefined {
+export function mapResultFormatToTelemetryType(resultFormat?: TSparkRowSetType): string {
   if (resultFormat === undefined) {
-    return undefined;
+    return 'FORMAT_UNSPECIFIED';
   }
 
   switch (resultFormat) {

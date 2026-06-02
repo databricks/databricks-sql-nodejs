@@ -60,9 +60,24 @@ interface DatabricksTelemetryLog {
         char_set_encoding?: string;
         process_name?: string;
       };
+      auth_type?: string;
+      driver_connection_params?: {
+        host_info?: { host_url?: string };
+        http_path?: string;
+        mode?: string;
+        use_proxy?: boolean;
+        enable_arrow?: boolean;
+        enable_direct_results?: boolean;
+        socket_timeout?: number;
+        enable_metric_view_metadata?: boolean;
+      };
       operation_latency_ms?: number;
       sql_operation?: {
         execution_result?: string;
+        is_compressed?: boolean;
+        operation_detail?: {
+          operation_type?: string;
+        };
         chunk_details?: {
           total_chunks_present?: number;
           total_chunks_iterated?: number;
@@ -368,6 +383,11 @@ export default class DatabricksTelemetryExporter {
       if (metric.latencyMs !== undefined) {
         log.entry.sql_driver_log.operation_latency_ms = metric.latencyMs;
       }
+      if (metric.operationType) {
+        log.entry.sql_driver_log.sql_operation = {
+          operation_detail: { operation_type: metric.operationType },
+        };
+      }
       if (metric.driverConfig && includeCorrelation) {
         // system_configuration is a high-entropy client fingerprint (OS, arch,
         // locale, process, runtime). Only ship on the authenticated path.
@@ -384,14 +404,46 @@ export default class DatabricksTelemetryExporter {
           char_set_encoding: metric.driverConfig.charSetEncoding,
           process_name: sanitizeProcessName(metric.driverConfig.processName) || undefined,
         };
+
+        // auth_type and host/http-path are workspace-correlated, so they ride
+        // the same auth-only path as system_configuration.
+        if (metric.driverConfig.authType) {
+          log.entry.sql_driver_log.auth_type = metric.driverConfig.authType;
+        }
+        log.entry.sql_driver_log.driver_connection_params = {
+          host_info: { host_url: this.host },
+          http_path: metric.driverConfig.httpPath,
+          mode: 'THRIFT',
+          use_proxy: metric.driverConfig.useProxy,
+          enable_arrow: metric.driverConfig.arrowEnabled,
+          enable_direct_results: metric.driverConfig.directResultsEnabled,
+          // The proto `socket_timeout` field is defined in seconds, but the driver
+          // tracks socketTimeout in milliseconds — convert so the receiver records
+          // the correct unit (e.g. 900000ms -> 900s) instead of treating ms as seconds.
+          socket_timeout:
+            typeof metric.driverConfig.socketTimeout === 'number'
+              ? Math.round(metric.driverConfig.socketTimeout / 1000)
+              : metric.driverConfig.socketTimeout,
+          enable_metric_view_metadata: metric.driverConfig.enableMetricViewMetadata,
+        };
       }
     } else if (metric.metricType === 'statement') {
       log.entry.sql_driver_log.operation_latency_ms = metric.latencyMs;
 
-      if (metric.resultFormat || metric.chunkCount) {
+      if (metric.resultFormat || metric.chunkCount || metric.operationType || metric.compressed !== undefined) {
         log.entry.sql_driver_log.sql_operation = {
           execution_result: metric.resultFormat,
         };
+
+        if (metric.compressed !== undefined) {
+          log.entry.sql_driver_log.sql_operation.is_compressed = metric.compressed;
+        }
+
+        if (metric.operationType) {
+          log.entry.sql_driver_log.sql_operation.operation_detail = {
+            operation_type: metric.operationType,
+          };
+        }
 
         if ((metric.chunkCount ?? 0) > 0) {
           log.entry.sql_driver_log.sql_operation.chunk_details = {
