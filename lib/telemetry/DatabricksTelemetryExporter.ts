@@ -417,7 +417,13 @@ export default class DatabricksTelemetryExporter {
           use_proxy: metric.driverConfig.useProxy,
           enable_arrow: metric.driverConfig.arrowEnabled,
           enable_direct_results: metric.driverConfig.directResultsEnabled,
-          socket_timeout: metric.driverConfig.socketTimeout,
+          // The proto `socket_timeout` field is defined in seconds, but the driver
+          // tracks socketTimeout in milliseconds — convert so the receiver records
+          // the correct unit (e.g. 900000ms -> 900s) instead of treating ms as seconds.
+          socket_timeout:
+            typeof metric.driverConfig.socketTimeout === 'number'
+              ? Math.round(metric.driverConfig.socketTimeout / 1000)
+              : metric.driverConfig.socketTimeout,
           enable_metric_view_metadata: metric.driverConfig.enableMetricViewMetadata,
         };
       }
