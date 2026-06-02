@@ -33,6 +33,7 @@ import InfoValue from '../dto/InfoValue';
 import HiveDriverError from '../errors/HiveDriverError';
 import { SeaConnection } from './SeaNativeLoader';
 import { decodeNapiKernelError } from './SeaErrorMapping';
+import SeaOperationBackend from './SeaOperationBackend';
 
 export interface SeaSessionBackendOptions {
   /** The opaque napi `Connection` handle returned by `openSession`. */
@@ -100,15 +101,52 @@ export default class SeaSessionBackend implements ISessionBackend {
    * The Thrift backend remains the path for consumers that need any
    * of those today.
    */
-  // The result-execution path (napi `Connection.executeStatement` → result
-  // pipeline) is wired in the SEA execution feature. Until then SEA
-  // executeStatement throws a clear, actionable error rather than silently
-  // failing, so a `useSEA: true` caller knows the path is not yet available.
-  public async executeStatement(_statement: string, _options: ExecuteStatementOptions): Promise<IOperationBackend> {
+  public async executeStatement(statement: string, options: ExecuteStatementOptions): Promise<IOperationBackend> {
     this.failIfClosed();
-    throw new HiveDriverError(
-      'SeaSessionBackend.executeStatement: not implemented yet (wired in the SEA execution feature)',
-    );
+
+    // M0 surfaces a clear error rather than silently dropping M1-only knobs.
+    if (options.namedParameters !== undefined || options.ordinalParameters !== undefined) {
+      throw new HiveDriverError('SEA executeStatement: query parameters are not supported in M0 (deferred to M1)');
+    }
+    if (options.queryTimeout !== undefined) {
+      throw new HiveDriverError('SEA executeStatement: queryTimeout is not supported in M0 (deferred to M1)');
+    }
+    if (options.useCloudFetch !== undefined) {
+      throw new HiveDriverError(
+        'SEA executeStatement: useCloudFetch is controlled by the kernel result configuration and is not a per-statement option on SEA',
+      );
+    }
+    // Reject — rather than silently ignore — the remaining Thrift-path
+    // options the SEA M0 backend does not honor. Silently dropping them
+    // is the worst failure mode for an agent/caller: passing e.g.
+    // `queryTags` or `useLZ4Compression` would no-op with zero signal.
+    // (`maxRows` is intentionally NOT here — the facade applies it at
+    // fetch time.)
+    if (options.queryTags !== undefined) {
+      throw new HiveDriverError('SEA executeStatement: queryTags is not supported in M0 (deferred to M1)');
+    }
+    if (options.useLZ4Compression !== undefined) {
+      throw new HiveDriverError(
+        'SEA executeStatement: useLZ4Compression is not supported on SEA (result compression is governed by the kernel)',
+      );
+    }
+    if (options.stagingAllowedLocalPath !== undefined) {
+      throw new HiveDriverError(
+        'SEA executeStatement: stagingAllowedLocalPath (volume operations) is not supported in M0 (deferred to M1)',
+      );
+    }
+
+    let nativeStatement;
+    try {
+      nativeStatement = await this.connection.executeStatement(statement);
+    } catch (err) {
+      throw decodeNapiKernelError(err);
+    }
+    return new SeaOperationBackend({
+      statement: nativeStatement!,
+      context: this.context,
+      id: nativeStatement!.statementId,
+    });
   }
 
   public async getTypeInfo(_request: TypeInfoRequest): Promise<IOperationBackend> {
