@@ -93,12 +93,13 @@ describe('SEA INTERVAL DAY-TIME (Arrow Duration rewriter) end-to-end', function 
     expect(row.dt, 'INTERVAL DAY-TIME value should be present').to.not.equal(undefined);
   });
 
-  it('surfaces the value as a raw Int64 on this layer (formatter is PR 3/3)', async () => {
+  it('surfaces the value as the formatted thrift INTERVAL DAY-TIME string (#411 formatter wired)', async () => {
     const row = await fetchOneRow(true, secrets as PecoSecrets);
-    // Documents the M0/2-of-3 contract: the rewriter makes the column
-    // *decodable* but the duration_unit formatter is not wired here yet, so the
-    // value is the raw integer microsecond/nanosecond count, not the thrift
-    // "1 02:03:04.000000000" string. (#411 flips this to the formatted string.)
-    expect(['number', 'bigint']).to.include(typeof row.dt);
+    // #411 wires the duration_unit formatter, so the raw Int64 the rewriter
+    // produces is rendered as the thrift "D HH:mm:ss.fffffffff" string —
+    // byte-identical to the Thrift path. (On the #410 layer this surfaced as
+    // the raw integer count.)
+    expect(typeof row.dt).to.equal('string');
+    expect(row.dt).to.equal('1 02:03:04.000000000');
   });
 });

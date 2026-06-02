@@ -116,6 +116,14 @@ function formatDurationToIntervalDayTime(value: bigint | number, unit: string): 
  *   MILLISECOND → ×    1_000_000
  *   MICROSECOND → ×        1_000
  *   NANOSECOND  → ×            1
+ *
+ * Throws on any other unit rather than silently treating it as
+ * NANOSECOND. The four units above are exactly what
+ * `SeaArrowIpcDurationFix` enumerates when it stamps the
+ * `databricks.arrow.duration_unit` metadata, so an unrecognized unit
+ * here means the two sides have drifted — fail loud (matching
+ * `formatArrowInterval`'s stance) instead of emitting a confidently
+ * wrong value.
  */
 function toNanoseconds(value: bigint, unit: string): bigint {
   switch (unit) {
@@ -126,8 +134,12 @@ function toNanoseconds(value: bigint, unit: string): bigint {
     case 'MICROSECOND':
       return value * NS_PER_MICRO;
     case 'NANOSECOND':
-    default:
       return value;
+    default:
+      throw new HiveDriverError(
+        `SEA INTERVAL DAY-TIME: unrecognized Arrow duration unit ${JSON.stringify(unit)}; ` +
+          `expected one of SECOND / MILLISECOND / MICROSECOND / NANOSECOND`,
+      );
   }
 }
 

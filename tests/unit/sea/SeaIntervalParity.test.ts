@@ -61,6 +61,7 @@ import { TimeUnit as FbTimeUnit } from 'apache-arrow/fb/time-unit';
 
 import SeaOperationBackend from '../../../lib/sea/SeaOperationBackend';
 import ClientContextStub from '../.stubs/ClientContextStub';
+import HiveDriverError from '../../../lib/errors/HiveDriverError';
 import { DURATION_UNIT_METADATA_KEY as CONVERTER_DURATION_KEY } from '../../../lib/result/ArrowResultConverter';
 import { DURATION_UNIT_METADATA_KEY as REWRITER_DURATION_KEY } from '../../../lib/sea/SeaArrowIpcDurationFix';
 
@@ -304,6 +305,55 @@ describe('SeaOperationBackend — INTERVAL parity with thrift', () => {
     const rows = await backend.fetchChunk({ limit: 100 });
     expect(rows).to.have.length(1);
     expect((rows[0] as any).iv).to.equal('1 02:03:04.123456789');
+  });
+
+  it('DAY-TIME via Arrow Duration(MILLISECOND) scales correctly', async () => {
+    // 1 day + 2h + 3min + 4s = 93784 s = 93_784_000 ms.
+    const millis = BigInt(93_784) * BigInt(1_000);
+    const ipc = buildDurationIpc('iv', FbTimeUnit.MILLISECOND, [millis], 'INTERVAL');
+    const schemaIpc = ipcWithDurationSchema('iv', FbTimeUnit.MILLISECOND, 'INTERVAL');
+
+    const stub = new StatementStub(schemaIpc, [ipc]);
+    const backend = new SeaOperationBackend({ statement: stub, context: new ClientContextStub() });
+    const rows = await backend.fetchChunk({ limit: 100 });
+    expect(rows).to.have.length(1);
+    expect((rows[0] as any).iv).to.equal('1 02:03:04.000000000');
+  });
+
+  it('DAY-TIME via Arrow Duration(SECOND) scales correctly', async () => {
+    // 1 day + 2h + 3min + 4s = 93784 s.
+    const seconds = BigInt(93_784);
+    const ipc = buildDurationIpc('iv', FbTimeUnit.SECOND, [seconds], 'INTERVAL');
+    const schemaIpc = ipcWithDurationSchema('iv', FbTimeUnit.SECOND, 'INTERVAL');
+
+    const stub = new StatementStub(schemaIpc, [ipc]);
+    const backend = new SeaOperationBackend({ statement: stub, context: new ClientContextStub() });
+    const rows = await backend.fetchChunk({ limit: 100 });
+    expect(rows).to.have.length(1);
+    expect((rows[0] as any).iv).to.equal('1 02:03:04.000000000');
+  });
+
+  it('native non-YEAR_MONTH Arrow Interval is rejected (fail-loud, not misread as [days, ms])', async () => {
+    // The kernel only emits YEAR_MONTH as a native Arrow Interval; DAY-TIME
+    // arrives as Duration. A native DAY_TIME Interval reaching the converter
+    // means the kernel contract drifted — formatArrowInterval must throw
+    // rather than silently misread the value.
+    const fields = [withTypeName(new Field('iv', new Interval(IntervalUnit.DAY_TIME), true), 'INTERVAL')];
+    const schema = new Schema(fields);
+    const schemaIpc = ipcSchemaOnly(schema);
+    // One DAY_TIME value: [days=1, milliseconds=1000] packed as Int32Array(2).
+    const dataIpc = ipcFromColumns(schema, { iv: [Int32Array.from([1, 1000])] });
+
+    const stub = new StatementStub(schemaIpc, [dataIpc]);
+    const backend = new SeaOperationBackend({ statement: stub, context: new ClientContextStub() });
+    let thrown: unknown;
+    try {
+      await backend.fetchChunk({ limit: 100 });
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).to.be.instanceOf(HiveDriverError);
+    expect((thrown as Error).message).to.match(/YEAR_MONTH/);
   });
 
   it('DAY-TIME zero → "0 00:00:00.000000000"', async () => {
