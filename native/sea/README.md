@@ -53,6 +53,26 @@ directory containing `napi/`) and is required when your kernel
 checkout isn't at `../../databricks-sql-kernel` relative to the
 nodejs repo.
 
+## Kernel version pin (`KERNEL_REV`)
+
+The kernel is a private repo with no published binary artifact, and the
+napi binding is built from its Rust source rather than a versioned crate.
+To keep the driver ↔ kernel pair reproducible and bisectable, the exact
+kernel commit the binding is built against is pinned in the **`KERNEL_REV`**
+file at the repo root — a single 40-char commit SHA.
+
+The `.github/workflows/kernel-e2e.yml` CI job is the consumer: it reads
+`KERNEL_REV`, checks the kernel out at that SHA (via a GitHub App token
+with read access to `databricks/databricks-sql-kernel`), runs
+`npm run build:native` against it, and runs the SEA e2e suite
+(`tests/e2e/sea/**`) against the dogfood warehouse. **Bumping `KERNEL_REV`
+is the only way to pick up a new kernel version** — so a driver change and
+the kernel revision it depends on always land together in one reviewable
+diff.
+
+For local dev, point `DATABRICKS_SQL_KERNEL_REPO` at a kernel checkout on
+that SHA (`git -C <kernel> checkout "$(cat KERNEL_REV)"`) to match CI.
+
 ## Production load path
 
 At release time the kernel's CI publishes
