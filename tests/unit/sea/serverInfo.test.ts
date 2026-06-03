@@ -13,12 +13,7 @@
 // limitations under the License.
 
 import { expect } from 'chai';
-import {
-  seaServerInfoValue,
-  SEA_DBMS_NAME,
-  SEA_SERVER_NAME,
-  SEA_DBMS_VERSION,
-} from '../../../lib/sea/SeaServerInfo';
+import { seaServerInfoValue, SEA_DBMS_NAME, SEA_SERVER_NAME, SEA_DBMS_VERSION } from '../../../lib/sea/SeaServerInfo';
 import { TGetInfoType } from '../../../thrift/TCLIService_types';
 
 describe('SeaServerInfo.seaServerInfoValue', () => {

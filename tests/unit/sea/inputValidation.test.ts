@@ -27,7 +27,9 @@ describe('SeaInputValidation.assertBindableValue', () => {
     expect(() => assertBindableValue(null, 'p')).to.not.throw();
     expect(() => assertBindableValue(new Date(), 'p')).to.not.throw();
     expect(() => assertBindableValue(new Int64(5), 'p')).to.not.throw();
-    expect(() => assertBindableValue(new DBSQLParameter({ type: DBSQLParameterType.INTEGER, value: 1 }), 'p')).to.not.throw();
+    expect(() =>
+      assertBindableValue(new DBSQLParameter({ type: DBSQLParameterType.INTEGER, value: 1 }), 'p'),
+    ).to.not.throw();
   });
 
   it('rejects arrays (compound types)', () => {

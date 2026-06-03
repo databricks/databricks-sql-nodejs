@@ -423,7 +423,9 @@ describe('SeaSessionBackend', () => {
     const connection = new FakeNativeConnection();
     const session = makeSession(connection);
     await session.executeStatement('SELECT :x', { namedParameters: { x: 7 } });
-    const options = connection.lastOptions as { namedParams?: Array<{ name: string; sqlType: string; value?: string }> };
+    const options = connection.lastOptions as {
+      namedParams?: Array<{ name: string; sqlType: string; value?: string }>;
+    };
     expect(options.namedParams).to.have.length(1);
     expect(options.namedParams?.[0]).to.deep.equal({ name: 'x', sqlType: 'INTEGER', value: '7' });
   });
@@ -527,7 +529,10 @@ describe('SeaSessionBackend', () => {
   it('getPrimaryKeys rejects an omitted catalog up front (the kernel requires one)', async () => {
     const connection = new FakeNativeConnection();
     const session = makeSession(connection);
-    for (const request of [{ schemaName: 'def', tableName: 't' }, { catalogName: '', schemaName: 'def', tableName: 't' }]) {
+    for (const request of [
+      { schemaName: 'def', tableName: 't' },
+      { catalogName: '', schemaName: 'def', tableName: 't' },
+    ]) {
       let thrown: unknown;
       try {
         // eslint-disable-next-line no-await-in-loop
