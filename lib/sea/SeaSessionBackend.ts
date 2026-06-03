@@ -31,6 +31,8 @@ import {
 import Status from '../dto/Status';
 import InfoValue from '../dto/InfoValue';
 import HiveDriverError from '../errors/HiveDriverError';
+import ParameterError from '../errors/ParameterError';
+import { LogLevel } from '../contracts/IDBSQLLogger';
 import { SeaConnection, SeaNativeExecuteOptions, SeaStatement } from './SeaNativeLoader';
 import { decodeNapiKernelError } from './SeaErrorMapping';
 import SeaOperationBackend from './SeaOperationBackend';
@@ -85,9 +87,16 @@ export default class SeaSessionBackend implements ISessionBackend {
   /**
    * `getInfo` (JDBC `DatabaseMetaData` / ODBC `SQLGetInfo`) has no SEA/kernel
    * endpoint, so — exactly as JDBC does for `DatabaseMetaData` — we synthesize
-   * the answer client-side, mirroring the three `TGetInfoType`s the Databricks
-   * Thrift server answers (server name / DBMS name / DBMS version) and
-   * rejecting every other value the same way the server does. See
+   * the answer client-side for the three `TGetInfoType`s the Databricks server
+   * answers (server name / DBMS name / DBMS version) and reject the rest.
+   *
+   * This is NOT a SEA-only contract narrowing: probing the live warehouse over
+   * the Thrift path confirms the server itself returns an error for every
+   * other `TGetInfoType` (CLI_MAX_DRIVER_CONNECTIONS, CLI_DATA_SOURCE_NAME, …),
+   * and the three values it does answer are byte-identical to the constants we
+   * synthesize (`"Spark SQL"` / `"Spark SQL"` / `"3.1.1"`, re-verified live).
+   * So rejecting an unsupported type matches Thrift's effective behaviour — we
+   * just surface a clearer, typed error than the server's opaque one. See
    * {@link seaServerInfoValue}.
    */
   public async getInfo(infoType: number): Promise<InfoValue> {
@@ -95,8 +104,10 @@ export default class SeaSessionBackend implements ISessionBackend {
     const value = seaServerInfoValue(infoType);
     if (value === undefined) {
       throw new HiveDriverError(
-        `SEA getInfo: unsupported TGetInfoType ${infoType}. The SEA/kernel path answers only the ` +
-          `info types the Databricks server itself supports (server name, DBMS name, DBMS version).`,
+        `SEA getInfo: unsupported TGetInfoType ${infoType}. Only the info types the Databricks ` +
+          `server itself answers are supported: CLI_SERVER_NAME (13), CLI_DBMS_NAME (17), ` +
+          `CLI_DBMS_VER (18). The server rejects every other type on the Thrift path too, so this ` +
+          `is not a SEA-specific restriction.`,
       );
     }
     return new InfoValue(value);
@@ -123,14 +134,14 @@ export default class SeaSessionBackend implements ISessionBackend {
     this.failIfClosed();
 
     // Positional (`?`) and named (`:name`) parameters are mutually exclusive —
-    // the kernel param codec binds exactly one placeholder style per
-    // statement, so passing both is a caller error we surface up-front.
+    // the kernel param codec binds exactly one placeholder style per statement.
+    // Use the SAME error type and message as the Thrift backend
+    // (`ThriftSessionBackend.getQueryParameters`) so a caller catching
+    // `ParameterError` for this case behaves identically across backends.
     const positionalParams = buildSeaPositionalParams(options.ordinalParameters);
     const namedParams = buildSeaNamedParams(options.namedParameters);
     if (positionalParams !== undefined && namedParams !== undefined) {
-      throw new HiveDriverError(
-        'SEA executeStatement: ordinalParameters and namedParameters are mutually exclusive — pass only one.',
-      );
+      throw new ParameterError('Driver does not support both ordinal and named parameters.');
     }
 
     if (options.queryTimeout !== undefined) {
@@ -168,16 +179,16 @@ export default class SeaSessionBackend implements ISessionBackend {
       execOptions = { positionalParams, namedParams };
     }
 
-    let nativeStatement;
+    let nativeStatement: SeaStatement;
     try {
       nativeStatement =
         execOptions === undefined
           ? await this.connection.executeStatement(statement)
           : await this.connection.executeStatement(statement, execOptions);
     } catch (err) {
-      throw decodeNapiKernelError(err);
+      throw this.logAndMapError('executeStatement', err);
     }
-    return this.wrapStatement(nativeStatement!);
+    return this.wrapStatement(nativeStatement);
   }
 
   /** Wrap a napi `Statement` (from execute or a metadata call) as an operation backend. */
@@ -244,8 +255,19 @@ export default class SeaSessionBackend implements ISessionBackend {
 
   public async getPrimaryKeys(request: PrimaryKeysRequest): Promise<IOperationBackend> {
     this.failIfClosed();
+    // The kernel requires a catalog for primary-key lookup (`Identifier::new`
+    // rejects an empty string). The Thrift backend can forward an undefined
+    // catalog and let the server resolve a default; the SEA/kernel path cannot,
+    // so reject up front with a clear, actionable message rather than passing
+    // `''` and surfacing the kernel's opaque "identifier must not be empty".
+    if (request.catalogName === undefined || request.catalogName === '') {
+      throw new HiveDriverError(
+        'SEA getPrimaryKeys requires a catalog — pass `catalogName` explicitly. (The Thrift backend ' +
+          'can omit it and let the server resolve a default; the SEA kernel path requires it.)',
+      );
+    }
     return this.runMetadata(() =>
-      this.connection.getPrimaryKeys(request.catalogName ?? '', request.schemaName, request.tableName),
+      this.connection.getPrimaryKeys(request.catalogName as string, request.schemaName, request.tableName),
     );
   }
 
@@ -265,13 +287,25 @@ export default class SeaSessionBackend implements ISessionBackend {
 
   /** Run a napi metadata call, mapping kernel errors and wrapping the result handle. */
   private async runMetadata(call: () => Promise<SeaStatement>): Promise<IOperationBackend> {
-    let nativeStatement;
+    let nativeStatement: SeaStatement;
     try {
       nativeStatement = await call();
     } catch (err) {
-      throw decodeNapiKernelError(err);
+      throw this.logAndMapError('metadata', err);
     }
     return this.wrapStatement(nativeStatement);
+  }
+
+  /**
+   * Map a napi/kernel error to a typed driver error and emit a debug breadcrumb
+   * first, matching the rest of the SEA backend's logging convention
+   * (`SeaOperationLifecycle` / `SeaOperationBackend`). Metadata and bound-param
+   * execute failures otherwise threw with no on-call signal.
+   */
+  private logAndMapError(op: string, err: unknown): Error {
+    const mapped = decodeNapiKernelError(err);
+    this.context.getLogger().log(LogLevel.debug, `SEA ${op} failed for session ${this._id}: ${mapped.message}`);
+    return mapped;
   }
 
   public async close(): Promise<Status> {

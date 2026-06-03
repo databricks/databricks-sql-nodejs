@@ -22,8 +22,8 @@ import { TGetInfoType, TGetInfoValue } from '../../thrift/TCLIService_types';
  * the values client-side.
  *
  * The Databricks Thrift server itself answers only three `TGetInfoType`s and
- * rejects every other value; we mirror that surface byte-for-byte so the SEA
- * path is a drop-in equivalent:
+ * rejects every other value; we mirror that surface so the SEA path is a
+ * drop-in equivalent:
  *
  *   | TGetInfoType        | Thrift server | SEA (here)        |
  *   |---------------------|---------------|-------------------|
@@ -31,6 +31,13 @@ import { TGetInfoType, TGetInfoValue } from '../../thrift/TCLIService_types';
  *   | CLI_DBMS_NAME   (17)| "Spark SQL"   | "Spark SQL"        |
  *   | CLI_DBMS_VER    (18)| "3.1.1"       | "3.1.1"            |
  *   | (any other)         | error         | undefined → error  |
+ *
+ * Empirically re-verified against a live warehouse over the Thrift path: the
+ * three values above are byte-identical to the server's, and the server
+ * returns an error for every other `TGetInfoType` (probed CLI_MAX_DRIVER_-
+ * CONNECTIONS, CLI_DATA_SOURCE_NAME, CLI_FETCH_DIRECTION, … — all errored). So
+ * the SEA "undefined → throw" path matches Thrift's effective behaviour rather
+ * than narrowing it.
  */
 
 /** Canonical DBMS product name — identical to the Thrift server's value. */

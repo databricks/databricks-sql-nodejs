@@ -39,6 +39,27 @@ describe('SeaPositionalParams.buildSeaPositionalParams', () => {
     ).to.deep.equal([{ sqlType: 'DECIMAL(3,0)', value: '-123' }]);
   });
 
+  it('clamps DECIMAL precision to the Databricks max of 38', () => {
+    // 40 integer digits → precision clamped to 38 (scale 0).
+    expect(
+      buildSeaPositionalParams([
+        new DBSQLParameter({ type: DBSQLParameterType.DECIMAL, value: '1234567890123456789012345678901234567890' }),
+      ]),
+    ).to.deep.equal([{ sqlType: 'DECIMAL(38,0)', value: '1234567890123456789012345678901234567890' }]);
+  });
+
+  it('collapses every INTERVAL subtype to the kernel codec\'s single "INTERVAL" type name', () => {
+    expect(
+      buildSeaPositionalParams([
+        new DBSQLParameter({ type: DBSQLParameterType.INTERVALMONTH, value: '13' }),
+        new DBSQLParameter({ type: DBSQLParameterType.INTERVALDAY, value: '1 02:03:04' }),
+      ]),
+    ).to.deep.equal([
+      { sqlType: 'INTERVAL', value: '13' },
+      { sqlType: 'INTERVAL', value: '1 02:03:04' },
+    ]);
+  });
+
   it('maps NULL to a value-less VOID input', () => {
     expect(buildSeaPositionalParams([null])).to.deep.equal([{ sqlType: 'VOID' }]);
   });
