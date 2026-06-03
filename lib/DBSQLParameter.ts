@@ -8,6 +8,14 @@ export enum DBSQLParameterType {
   STRING = 'STRING',
   DATE = 'DATE',
   TIMESTAMP = 'TIMESTAMP',
+  // Timezone-explicit timestamp variants. A bare `Date` value defaults to
+  // `TIMESTAMP`; set one of these explicitly to bind a TIMESTAMP_NTZ (no
+  // timezone, wall-clock) or TIMESTAMP_LTZ (local timezone) parameter. These
+  // are SEA-path types the kernel param codec accepts; the Thrift wire only
+  // has `TIMESTAMP`, so on the Thrift backend they degrade to a plain
+  // TIMESTAMP bind.
+  TIMESTAMP_NTZ = 'TIMESTAMP_NTZ',
+  TIMESTAMP_LTZ = 'TIMESTAMP_LTZ',
   FLOAT = 'FLOAT',
   DECIMAL = 'DECIMAL',
   DOUBLE = 'DOUBLE',
