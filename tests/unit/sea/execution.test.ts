@@ -21,6 +21,7 @@ import { SeaNativeBinding, SeaConnection, SeaStatement } from '../../../lib/sea/
 import IClientContext, { ClientConfig } from '../../../lib/contracts/IClientContext';
 import IDBSQLLogger, { LogLevel } from '../../../lib/contracts/IDBSQLLogger';
 import HiveDriverError from '../../../lib/errors/HiveDriverError';
+import ParameterError from '../../../lib/errors/ParameterError';
 import { ConnectionOptions } from '../../../lib/contracts/IDBSQLClient';
 
 // -----------------------------------------------------------------------------
@@ -77,6 +78,14 @@ class FakeNativeConnection implements SeaConnection {
 
   public lastSql?: string;
 
+  // Records the per-statement options object passed to executeStatement
+  // (undefined for the no-options path) so param-forwarding can be asserted.
+  public lastOptions?: unknown;
+
+  // Records every metadata call as `[method, ...args]` so the session
+  // backend's request → napi-argument mapping can be asserted.
+  public metadataCalls: Array<unknown[]> = [];
+
   public throwOnExecute: Error | null = null;
 
   public statementToReturn: FakeNativeStatement = new FakeNativeStatement();
@@ -84,14 +93,80 @@ class FakeNativeConnection implements SeaConnection {
   // Mirrors the kernel `Connection.sessionId` getter.
   public readonly sessionId = '01ef-fake-session-id';
 
-  // Session-level migration: per-statement options were removed, so the
-  // binding's executeStatement takes only `sql`.
-  public async executeStatement(sql: string): Promise<SeaStatement> {
+  // The merged kernel binding takes an optional per-statement `ExecuteOptions`
+  // (positional/named params, statementConf, …). Record it for assertions.
+  public async executeStatement(sql: string, options?: unknown): Promise<SeaStatement> {
     if (this.throwOnExecute) {
       throw this.throwOnExecute;
     }
     this.lastSql = sql;
+    this.lastOptions = options;
     return this.statementToReturn;
+  }
+
+  // Async-submit path (PR 2 territory); present only so the fake satisfies
+  // the full `Connection` surface. Not exercised by these tests.
+  public submitStatement(): Promise<never> {
+    throw new Error('submitStatement not used in this test');
+  }
+
+  private recordMetadata(method: string, args: unknown[]): Promise<SeaStatement> {
+    this.metadataCalls.push([method, ...args]);
+    return Promise.resolve(this.statementToReturn);
+  }
+
+  public listProcedures(catalog?: unknown, schemaPattern?: unknown, procedurePattern?: unknown) {
+    return this.recordMetadata('listProcedures', [catalog, schemaPattern, procedurePattern]);
+  }
+
+  public listCatalogs() {
+    return this.recordMetadata('listCatalogs', []);
+  }
+
+  public listSchemas(catalog?: unknown, schemaPattern?: unknown) {
+    return this.recordMetadata('listSchemas', [catalog, schemaPattern]);
+  }
+
+  public listTables(catalog?: unknown, schemaPattern?: unknown, tablePattern?: unknown, tableTypes?: unknown) {
+    return this.recordMetadata('listTables', [catalog, schemaPattern, tablePattern, tableTypes]);
+  }
+
+  public listColumns(catalog?: unknown, schemaPattern?: unknown, tablePattern?: unknown, columnPattern?: unknown) {
+    return this.recordMetadata('listColumns', [catalog, schemaPattern, tablePattern, columnPattern]);
+  }
+
+  public listFunctions(catalog?: unknown, schemaPattern?: unknown, functionPattern?: unknown) {
+    return this.recordMetadata('listFunctions', [catalog, schemaPattern, functionPattern]);
+  }
+
+  public listTableTypes() {
+    return this.recordMetadata('listTableTypes', []);
+  }
+
+  public listTypeInfo() {
+    return this.recordMetadata('listTypeInfo', []);
+  }
+
+  public getPrimaryKeys(catalog: unknown, schema: unknown, table: unknown) {
+    return this.recordMetadata('getPrimaryKeys', [catalog, schema, table]);
+  }
+
+  public getCrossReference(
+    parentCatalog: unknown,
+    parentSchema: unknown,
+    parentTable: unknown,
+    foreignCatalog: unknown,
+    foreignSchema: unknown,
+    foreignTable: unknown,
+  ) {
+    return this.recordMetadata('getCrossReference', [
+      parentCatalog,
+      parentSchema,
+      parentTable,
+      foreignCatalog,
+      foreignSchema,
+      foreignTable,
+    ]);
   }
 
   public async close(): Promise<void> {
@@ -333,29 +408,48 @@ describe('SeaSessionBackend', () => {
     expect(op.id).to.be.a('string').and.have.length.greaterThan(0);
   });
 
-  it('executeStatement rejects namedParameters (M1)', async () => {
+  it('executeStatement forwards ordinalParameters as napi positionalParams', async () => {
     const connection = new FakeNativeConnection();
     const session = makeSession(connection);
-    let thrown: unknown;
-    try {
-      await session.executeStatement('SELECT :x', { namedParameters: { x: 1 } });
-    } catch (err) {
-      thrown = err;
-    }
-    expect(thrown).to.be.instanceOf(HiveDriverError);
-    expect((thrown as Error).message).to.match(/parameters/);
+    await session.executeStatement('SELECT ?', { ordinalParameters: [42, 'hi'] });
+    const options = connection.lastOptions as { positionalParams?: Array<{ sqlType: string; value?: string }> };
+    expect(options, 'options should be passed').to.not.equal(undefined);
+    expect(options.positionalParams).to.have.length(2);
+    expect(options.positionalParams?.[0]).to.deep.equal({ sqlType: 'INTEGER', value: '42' });
+    expect(options.positionalParams?.[1]).to.deep.equal({ sqlType: 'STRING', value: 'hi' });
   });
 
-  it('executeStatement rejects ordinalParameters (M1)', async () => {
+  it('executeStatement forwards namedParameters as napi namedParams (:name carried)', async () => {
+    const connection = new FakeNativeConnection();
+    const session = makeSession(connection);
+    await session.executeStatement('SELECT :x', { namedParameters: { x: 7 } });
+    const options = connection.lastOptions as {
+      namedParams?: Array<{ name: string; sqlType: string; value?: string }>;
+    };
+    expect(options.namedParams).to.have.length(1);
+    expect(options.namedParams?.[0]).to.deep.equal({ name: 'x', sqlType: 'INTEGER', value: '7' });
+  });
+
+  it('executeStatement sends no options object on the no-params path', async () => {
+    const connection = new FakeNativeConnection();
+    const session = makeSession(connection);
+    await session.executeStatement('SELECT 1', {});
+    expect(connection.lastOptions).to.equal(undefined);
+  });
+
+  it('executeStatement rejects mixing ordinal and named parameters with the same ParameterError as Thrift', async () => {
     const connection = new FakeNativeConnection();
     const session = makeSession(connection);
     let thrown: unknown;
     try {
-      await session.executeStatement('SELECT ?', { ordinalParameters: [1] });
+      await session.executeStatement('SELECT ?, :x', { ordinalParameters: [1], namedParameters: { x: 2 } });
     } catch (err) {
       thrown = err;
     }
-    expect(thrown).to.be.instanceOf(HiveDriverError);
+    // Cross-backend parity: ThriftSessionBackend throws ParameterError with this
+    // exact message, so a caller catching ParameterError behaves identically.
+    expect(thrown).to.be.instanceOf(ParameterError);
+    expect((thrown as Error).message).to.equal('Driver does not support both ordinal and named parameters.');
   });
 
   it('executeStatement rejects queryTimeout (M1)', async () => {
@@ -393,31 +487,81 @@ describe('SeaSessionBackend', () => {
     });
   }
 
-  it('metadata methods throw deferred-M1 errors', async () => {
+  // Metadata calls forward to the kernel's metadata surface and wrap the
+  // returned napi `Statement` as a `SeaOperationBackend`. Each case asserts
+  // the request → napi-argument mapping (the only logic the driver owns).
+  it('metadata calls forward to the napi binding with mapped arguments', async () => {
     const connection = new FakeNativeConnection();
     const session = makeSession(connection);
-    for (const method of [
-      'getInfo',
-      'getTypeInfo',
-      'getCatalogs',
-      'getSchemas',
-      'getTables',
-      'getTableTypes',
-      'getColumns',
-      'getFunctions',
-      'getPrimaryKeys',
-      'getCrossReference',
-    ] as const) {
+
+    const op = await session.getCatalogs({});
+    expect(op).to.be.instanceOf(SeaOperationBackend);
+
+    await session.getSchemas({ catalogName: 'main', schemaName: 'def%' });
+    await session.getTables({ catalogName: 'main', schemaName: 'def', tableName: 't%', tableTypes: ['TABLE', 'VIEW'] });
+    await session.getColumns({ catalogName: 'main', schemaName: 'def', tableName: 't', columnName: 'c%' });
+    await session.getFunctions({ catalogName: 'main', schemaName: 'def', functionName: 'f%' });
+    await session.getTableTypes({});
+    await session.getTypeInfo({});
+    await session.getPrimaryKeys({ catalogName: 'main', schemaName: 'def', tableName: 't' });
+    await session.getCrossReference({
+      parentCatalogName: 'pc',
+      parentSchemaName: 'ps',
+      parentTableName: 'pt',
+      foreignCatalogName: 'fc',
+      foreignSchemaName: 'fs',
+      foreignTableName: 'ft',
+    });
+
+    expect(connection.metadataCalls).to.deep.equal([
+      ['listCatalogs'],
+      ['listSchemas', 'main', 'def%'],
+      ['listTables', 'main', 'def', 't%', ['TABLE', 'VIEW']],
+      ['listColumns', 'main', 'def', 't', 'c%'],
+      ['listFunctions', 'main', 'def', 'f%'],
+      ['listTableTypes'],
+      ['listTypeInfo'],
+      ['getPrimaryKeys', 'main', 'def', 't'],
+      ['getCrossReference', 'pc', 'ps', 'pt', 'fc', 'fs', 'ft'],
+    ]);
+  });
+
+  it('getPrimaryKeys rejects an omitted catalog up front (the kernel requires one)', async () => {
+    const connection = new FakeNativeConnection();
+    const session = makeSession(connection);
+    for (const request of [
+      { schemaName: 'def', tableName: 't' },
+      { catalogName: '', schemaName: 'def', tableName: 't' },
+    ]) {
       let thrown: unknown;
       try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await (session as any)[method]({});
+        // eslint-disable-next-line no-await-in-loop
+        await session.getPrimaryKeys(request);
       } catch (err) {
         thrown = err;
       }
-      expect(thrown, `expected ${method} to throw`).to.be.instanceOf(HiveDriverError);
-      expect((thrown as Error).message).to.match(/M1|not implemented/);
+      expect(thrown, `expected reject for ${JSON.stringify(request)}`).to.be.instanceOf(HiveDriverError);
+      expect((thrown as Error).message).to.match(/requires a catalog/);
     }
+    // The kernel call must NOT be reached (no empty-identifier sent over FFI).
+    expect(connection.metadataCalls.filter((c) => c[0] === 'getPrimaryKeys')).to.have.length(0);
+  });
+
+  it('getInfo synthesizes the three server-answered info types and rejects the rest', async () => {
+    const connection = new FakeNativeConnection();
+    const session = makeSession(connection);
+    // CLI_DBMS_NAME (17) → "Spark SQL".
+    const info = await session.getInfo(17);
+    expect(info.getValue()).to.equal('Spark SQL');
+    // An unsupported info type (e.g. CLI_MAX_DRIVER_CONNECTIONS) is rejected,
+    // mirroring the Thrift server's reject-unsupported behaviour.
+    let thrown: unknown;
+    try {
+      await session.getInfo(0);
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).to.be.instanceOf(HiveDriverError);
   });
 
   it('close() forwards to the native connection', async () => {
