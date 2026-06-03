@@ -13,6 +13,7 @@
 // limitations under the License.
 
 import { ConnectionOptions } from '../contracts/IDBSQLClient';
+import { InternalConnectionOptions } from '../contracts/InternalConnectionOptions';
 import AuthenticationError from '../errors/AuthenticationError';
 import HiveDriverError from '../errors/HiveDriverError';
 
@@ -181,10 +182,10 @@ const MAX_U32 = 0xffffffff;
  * (for strings) lacks a PEM certificate header.
  */
 export function buildSeaTlsOptions(options: ConnectionOptions): SeaTlsOptions {
-  const { checkServerCertificate, customCaCert } = options as {
-    checkServerCertificate?: boolean;
-    customCaCert?: Buffer | string;
-  };
+  // Read the SEA-only fields through the purpose-built internal options type
+  // rather than an ad-hoc inline cast, so the shape can't silently drift from
+  // its declaration and a typo'd key fails to compile.
+  const { checkServerCertificate, customCaCert } = options as ConnectionOptions & InternalConnectionOptions;
 
   const tls: SeaTlsOptions = {};
 
@@ -194,10 +195,17 @@ export function buildSeaTlsOptions(options: ConnectionOptions): SeaTlsOptions {
 
   if (customCaCert !== undefined) {
     if (typeof customCaCert === 'string') {
-      if (!customCaCert.includes('-----BEGIN CERTIFICATE-----')) {
+      // Light PEM sanity check — require both the BEGIN and END markers so a
+      // truncated/headerless cert is rejected here rather than surfacing as an
+      // opaque kernel TLS error. Full parsing is deferred to the kernel.
+      if (
+        !customCaCert.includes('-----BEGIN CERTIFICATE-----') ||
+        !customCaCert.includes('-----END CERTIFICATE-----')
+      ) {
         throw new HiveDriverError(
           'SEA backend: `customCaCert` string does not look like a PEM certificate ' +
-            "(missing '-----BEGIN CERTIFICATE-----'). Pass PEM text or a Buffer of PEM bytes.",
+            "(missing the '-----BEGIN CERTIFICATE-----' / '-----END CERTIFICATE-----' markers). " +
+            'Pass PEM text or a Buffer of PEM bytes.',
         );
       }
       tls.customCaCert = Buffer.from(customCaCert, 'utf8');
@@ -293,7 +301,7 @@ export function buildSeaConnectionOptions(options: ConnectionOptions): SeaNative
   // SEA-only pool sizing; read via cast to match how this function reads the
   // other SEA-specific options (TLS) — they live on the internal options
   // surface, not the published public `ConnectionOptions` `.d.ts`.
-  const { maxConnections } = options as { maxConnections?: number };
+  const { maxConnections } = options as ConnectionOptions & InternalConnectionOptions;
   if (maxConnections !== undefined) {
     if (!Number.isInteger(maxConnections) || maxConnections < 1) {
       throw new HiveDriverError(`SEA backend: \`maxConnections\` must be a positive integer; got ${maxConnections}.`);

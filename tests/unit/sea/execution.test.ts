@@ -22,6 +22,7 @@ import IClientContext, { ClientConfig } from '../../../lib/contracts/IClientCont
 import IDBSQLLogger, { LogLevel } from '../../../lib/contracts/IDBSQLLogger';
 import HiveDriverError from '../../../lib/errors/HiveDriverError';
 import ParameterError from '../../../lib/errors/ParameterError';
+import OperationStateError, { OperationStateErrorCode } from '../../../lib/errors/OperationStateError';
 import { ConnectionOptions } from '../../../lib/contracts/IDBSQLClient';
 import { OperationState } from '../../../lib/contracts/OperationStatus';
 
@@ -515,11 +516,14 @@ describe('SeaSessionBackend', () => {
     expect((thrown as Error).message).to.equal('Driver does not support both ordinal and named parameters.');
   });
 
-  it('executeStatement forwards queryTimeout as queryTimeoutSecs', async () => {
+  it('executeStatement does NOT forward queryTimeout to submit (kernel ignores it; enforced client-side)', async () => {
     const connection = new FakeNativeConnection();
     const session = makeSession(connection);
     await session.executeStatement('SELECT 1', { queryTimeout: 30 });
-    expect((connection.lastOptions as { queryTimeoutSecs?: number }).queryTimeoutSecs).to.equal(30);
+    // queryTimeout alone must not produce napi submit options — the kernel
+    // ignores queryTimeoutSecs on submitStatement, so it's enforced client-side
+    // by the operation backend's poll deadline instead (covered below).
+    expect((connection.lastOptions as { queryTimeoutSecs?: number } | undefined)?.queryTimeoutSecs).to.equal(undefined);
   });
 
   it('executeStatement forwards rowLimit', async () => {
@@ -734,9 +738,9 @@ describe('SeaOperationBackend', () => {
 });
 
 describe('SeaOperationBackend — async (submitStatement) path', () => {
-  const makeAsyncOp = (asyncStatement: FakeAsyncStatement) =>
+  const makeAsyncOp = (asyncStatement: FakeAsyncStatement, queryTimeoutSecs?: number) =>
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    new SeaOperationBackend({ asyncStatement: asyncStatement as any, context: makeContext() });
+    new SeaOperationBackend({ asyncStatement: asyncStatement as any, context: makeContext(), queryTimeoutSecs });
 
   it('rejects when neither asyncStatement nor statement is provided', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -794,7 +798,13 @@ describe('SeaOperationBackend — async (submitStatement) path', () => {
     expect((thrown as Error).message).to.match(/TABLE_OR_VIEW_NOT_FOUND/);
   });
 
-  it('waitUntilReady() throws on a server-side Cancelled statement', async () => {
+  // A server-driven terminal state MUST throw OperationStateError (not a plain
+  // HiveDriverError) so the DBSQLOperation facade — which only mirrors its
+  // cancelled/closed flags when `err instanceof OperationStateError` — stays in
+  // sync. Asserting the subclass + errorCode is what catches a regression to
+  // the bare HiveDriverError (which would pass an `instanceOf HiveDriverError`
+  // check since OperationStateError extends it).
+  it('waitUntilReady() throws OperationStateError(Canceled) on a server-side Cancelled statement', async () => {
     const op = makeAsyncOp(new FakeAsyncStatement('Cancelled'));
     let thrown: unknown;
     try {
@@ -802,8 +812,37 @@ describe('SeaOperationBackend — async (submitStatement) path', () => {
     } catch (err) {
       thrown = err;
     }
-    expect(thrown).to.be.instanceOf(HiveDriverError);
-    expect((thrown as Error).message).to.match(/cancelled/i);
+    expect(thrown).to.be.instanceOf(OperationStateError);
+    expect((thrown as OperationStateError).errorCode).to.equal(OperationStateErrorCode.Canceled);
+  });
+
+  it('waitUntilReady() throws OperationStateError(Closed) on a server-side Closed statement', async () => {
+    const op = makeAsyncOp(new FakeAsyncStatement('Closed'));
+    let thrown: unknown;
+    try {
+      await op.waitUntilReady();
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).to.be.instanceOf(OperationStateError);
+    expect((thrown as OperationStateError).errorCode).to.equal(OperationStateErrorCode.Closed);
+  });
+
+  it('waitUntilReady() enforces queryTimeout client-side: throws Timeout and cancels a stuck Running statement', async function timeoutTest() {
+    // eslint-disable-next-line no-invalid-this
+    this.timeout(5000);
+    const stmt = new FakeAsyncStatement('Running'); // never reaches a terminal state
+    const op = makeAsyncOp(stmt, 0.05); // 50ms client-side deadline
+    let thrown: unknown;
+    try {
+      await op.waitUntilReady();
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).to.be.instanceOf(OperationStateError);
+    expect((thrown as OperationStateError).errorCode).to.equal(OperationStateErrorCode.Timeout);
+    // Best-effort server-side cancel fired so the statement doesn't keep running.
+    expect(stmt.cancelled).to.equal(true);
   });
 
   it('cancel() forwards to the async statement and short-circuits a subsequent poll', async () => {
