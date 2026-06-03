@@ -156,9 +156,7 @@ export default class SeaOperationBackend implements IOperationBackend {
 
   constructor({ asyncStatement, statement, context, id }: SeaOperationBackendOptions) {
     if ((asyncStatement === undefined) === (statement === undefined)) {
-      throw new HiveDriverError(
-        'SeaOperationBackend: exactly one of `asyncStatement` or `statement` must be provided',
-      );
+      throw new HiveDriverError('SeaOperationBackend: exactly one of `asyncStatement` or `statement` must be provided');
     }
     this.asyncStatement = asyncStatement;
     this.blockingStatement = statement;
