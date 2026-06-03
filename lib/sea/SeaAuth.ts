@@ -296,9 +296,7 @@ export function buildSeaConnectionOptions(options: ConnectionOptions): SeaNative
   const { maxConnections } = options as { maxConnections?: number };
   if (maxConnections !== undefined) {
     if (!Number.isInteger(maxConnections) || maxConnections < 1) {
-      throw new HiveDriverError(
-        `SEA backend: \`maxConnections\` must be a positive integer; got ${maxConnections}.`,
-      );
+      throw new HiveDriverError(`SEA backend: \`maxConnections\` must be a positive integer; got ${maxConnections}.`);
     }
     if (maxConnections > MAX_U32) {
       throw new HiveDriverError(

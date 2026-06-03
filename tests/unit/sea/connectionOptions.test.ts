@@ -21,7 +21,7 @@ const PAT = { host: 'h.databricks.com', path: '/sql/1.0/warehouses/abc', token: 
 
 // Cast helper: the SEA connection-tuning/TLS options live on the internal
 // surface, so tests build untyped option literals.
-const opts = (extra: Record<string, unknown>) => ({ ...PAT, ...extra }) as unknown as ConnectionOptions;
+const opts = (extra: Record<string, unknown>) => ({ ...PAT, ...extra } as unknown as ConnectionOptions);
 
 describe('SeaAuth connection options — intervalsAsString default', () => {
   it('always sets intervalsAsString:true (thrift-compatible interval rendering)', () => {
@@ -90,10 +90,7 @@ describe('SeaAuth TLS options (buildSeaTlsOptions)', () => {
   });
 
   it('rejects a non-PEM string', () => {
-    expect(() => buildSeaTlsOptions(opts({ customCaCert: 'not-a-pem' }))).to.throw(
-      HiveDriverError,
-      /PEM certificate/,
-    );
+    expect(() => buildSeaTlsOptions(opts({ customCaCert: 'not-a-pem' }))).to.throw(HiveDriverError, /PEM certificate/);
   });
 
   it('rejects an empty Buffer', () => {

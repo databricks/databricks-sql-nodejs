@@ -740,10 +740,7 @@ describe('SeaOperationBackend — async (submitStatement) path', () => {
 
   it('rejects when neither asyncStatement nor statement is provided', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    expect(() => new SeaOperationBackend({ context: makeContext() } as any)).to.throw(
-      HiveDriverError,
-      /exactly one/,
-    );
+    expect(() => new SeaOperationBackend({ context: makeContext() } as any)).to.throw(HiveDriverError, /exactly one/);
   });
 
   it('rejects when BOTH asyncStatement and statement are provided', () => {
