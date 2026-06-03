@@ -13,22 +13,47 @@
 // limitations under the License.
 
 import { DBSQLParameter, DBSQLParameterValue } from '../DBSQLParameter';
+import ParameterError from '../errors/ParameterError';
 import { SeaNativeTypedValueInput, SeaNativeNamedTypedValueInput } from './SeaNativeLoader';
 import assertBindableValue from './SeaInputValidation';
 
 /**
  * Derive `(precision,scale)` from a decimal value string for the SEA
- * `DECIMAL(p,s)` type name — the kernel param codec requires the
- * parenthesised form (plain `"DECIMAL"` is rejected) so it can preserve
- * the caller's fractional digits. `"99.99"` ⇒ `"4,2"`; `"-123"` ⇒ `"3,0"`.
- * Clamped to the Databricks max precision of 38.
+ * `DECIMAL(p,s)` type name — the kernel param codec requires the parenthesised
+ * form (plain `"DECIMAL"` is rejected) so it preserves the caller's fractional
+ * digits. `"99.99"` ⇒ `"4,2"`; `"-123"` ⇒ `"3,0"`; `"0.00001"` ⇒ `"5,5"`.
+ *
+ * Precision is significant integer digits (insignificant leading zeros
+ * stripped, matching Spark's decimal-literal rule) plus the fractional scale.
+ * The value is NOT clamped: a non-numeric value, or one that needs precision >
+ * the Databricks maximum of 38, throws `ParameterError` at bind time rather
+ * than emitting an inconsistent `DECIMAL(38,…)` type alongside an
+ * unrepresentable value (which the kernel would reject or silently truncate).
  */
 function decimalPrecisionScale(v: string): string {
-  const digits = (v.match(/\d/g) ?? []).length;
-  const dot = v.indexOf('.');
-  const scale = dot < 0 ? 0 : (v.slice(dot + 1).match(/\d/g) ?? []).length;
-  const precision = Math.min(Math.max(digits, 1), 38);
-  return `${precision},${Math.min(scale, precision)}`;
+  // Accept an optional sign + plain decimal numeral only. Exponential form
+  // ("1e+21"), empty, and non-numeric ("abc") are rejected with a clear error
+  // instead of mis-deriving (p,s) and surfacing an opaque kernel failure.
+  const m = /^[+-]?(\d*)(?:\.(\d+))?$/.exec(v.trim());
+  const intPart = m?.[1] ?? '';
+  const fracPart = m?.[2] ?? '';
+  if (!m || (intPart === '' && fracPart === '')) {
+    throw new ParameterError(
+      `DECIMAL parameter value "${v}" is not a plain decimal numeral (expected [+-]?digits[.digits]).`,
+    );
+  }
+  const scale = fracPart.length;
+  // Significant integer digits: drop insignificant leading zeros ("007" → 1,
+  // "0" / "" → 0) so e.g. 0.00001 is DECIMAL(5,5), not DECIMAL(6,5).
+  const significantIntDigits = intPart.replace(/^0+/, '').length;
+  const precision = Math.max(significantIntDigits + scale, 1);
+  if (precision > 38) {
+    throw new ParameterError(
+      `DECIMAL parameter value "${v}" needs precision ${precision}, exceeding the Databricks maximum of 38. ` +
+        'Round/scale the value or bind it as a STRING.',
+    );
+  }
+  return `${precision},${scale}`;
 }
 
 /**

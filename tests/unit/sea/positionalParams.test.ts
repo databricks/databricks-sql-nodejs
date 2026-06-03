@@ -15,6 +15,7 @@
 import { expect } from 'chai';
 import { buildSeaPositionalParams, buildSeaNamedParams } from '../../../lib/sea/SeaPositionalParams';
 import { DBSQLParameter, DBSQLParameterType } from '../../../lib/DBSQLParameter';
+import ParameterError from '../../../lib/errors/ParameterError';
 
 describe('SeaPositionalParams.buildSeaPositionalParams', () => {
   it('returns undefined for no params (keeps the no-options fast path)', () => {
@@ -30,22 +31,36 @@ describe('SeaPositionalParams.buildSeaPositionalParams', () => {
     ]);
   });
 
+  const decimal = (value: string) => () =>
+    buildSeaPositionalParams([new DBSQLParameter({ type: DBSQLParameterType.DECIMAL, value })]);
+
   it('emits DECIMAL in the parenthesised DECIMAL(p,s) form the kernel codec requires', () => {
-    expect(
-      buildSeaPositionalParams([new DBSQLParameter({ type: DBSQLParameterType.DECIMAL, value: '99.99' })]),
-    ).to.deep.equal([{ sqlType: 'DECIMAL(4,2)', value: '99.99' }]);
-    expect(
-      buildSeaPositionalParams([new DBSQLParameter({ type: DBSQLParameterType.DECIMAL, value: '-123' })]),
-    ).to.deep.equal([{ sqlType: 'DECIMAL(3,0)', value: '-123' }]);
+    expect(decimal('99.99')()).to.deep.equal([{ sqlType: 'DECIMAL(4,2)', value: '99.99' }]);
+    expect(decimal('-123')()).to.deep.equal([{ sqlType: 'DECIMAL(3,0)', value: '-123' }]);
   });
 
-  it('clamps DECIMAL precision to the Databricks max of 38', () => {
-    // 40 integer digits → precision clamped to 38 (scale 0).
-    expect(
-      buildSeaPositionalParams([
-        new DBSQLParameter({ type: DBSQLParameterType.DECIMAL, value: '1234567890123456789012345678901234567890' }),
-      ]),
-    ).to.deep.equal([{ sqlType: 'DECIMAL(38,0)', value: '1234567890123456789012345678901234567890' }]);
+  it('excludes insignificant leading zeros from precision (Spark decimal-literal rule)', () => {
+    // 0.00001 → DECIMAL(5,5), not DECIMAL(6,5) (the integer "0" is not significant).
+    expect(decimal('0.00001')()).to.deep.equal([{ sqlType: 'DECIMAL(5,5)', value: '0.00001' }]);
+    // "007.50" → significant int "7" (1) + scale 2 ⇒ DECIMAL(3,2).
+    expect(decimal('007.50')()).to.deep.equal([{ sqlType: 'DECIMAL(3,2)', value: '007.50' }]);
+    // "0" ⇒ DECIMAL(1,0) (minimum precision 1).
+    expect(decimal('0')()).to.deep.equal([{ sqlType: 'DECIMAL(1,0)', value: '0' }]);
+  });
+
+  it('rejects a DECIMAL that needs precision > 38 instead of clamping-and-sending', () => {
+    // 40 integer digits can't fit DECIMAL(38,…); clamping the type while sending
+    // the full value is internally inconsistent — reject at bind time instead.
+    expect(decimal('1234567890123456789012345678901234567890')).to.throw(
+      ParameterError,
+      /exceeding the Databricks maximum of 38/,
+    );
+  });
+
+  it('rejects a non-numeric / exponential DECIMAL value', () => {
+    expect(decimal('1e+21')).to.throw(ParameterError, /not a plain decimal numeral/);
+    expect(decimal('abc')).to.throw(ParameterError, /not a plain decimal numeral/);
+    expect(decimal('')).to.throw(ParameterError, /not a plain decimal numeral/);
   });
 
   it('collapses every INTERVAL subtype to the kernel codec\'s single "INTERVAL" type name', () => {
