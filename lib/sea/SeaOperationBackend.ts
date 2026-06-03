@@ -45,6 +45,7 @@ import IClientContext from '../contracts/IClientContext';
 import { LogLevel } from '../contracts/IDBSQLLogger';
 import Status from '../dto/Status';
 import HiveDriverError from '../errors/HiveDriverError';
+import OperationStateError, { OperationStateErrorCode } from '../errors/OperationStateError';
 import ArrowResultConverter from '../result/ArrowResultConverter';
 import ResultSlicer from '../result/ResultSlicer';
 import SeaResultsProvider from './SeaResultsProvider';
@@ -121,6 +122,15 @@ export interface SeaOperationBackendOptions {
    * handle exposes one, else a fresh UUIDv4.
    */
   id?: string;
+  /**
+   * Client-side query timeout in whole seconds (the public `queryTimeout`).
+   * The kernel ignores `queryTimeoutSecs` on the async submit path
+   * (`submitStatement` always sends `wait_timeout=0s`), so the JS poll loop
+   * enforces it as a deadline — on expiry it best-effort cancels the statement
+   * and throws `OperationStateError(Timeout)`, matching the Thrift path's
+   * server-side TIMEDOUT outcome. Omitted ⇒ no client-side deadline.
+   */
+  queryTimeoutSecs?: number;
 }
 
 export default class SeaOperationBackend implements IOperationBackend {
@@ -154,7 +164,11 @@ export default class SeaOperationBackend implements IOperationBackend {
   // already-terminal statement. Drives both fetch and result-metadata.
   private fetchHandlePromise?: Promise<SeaFetchHandle>;
 
-  constructor({ asyncStatement, statement, context, id }: SeaOperationBackendOptions) {
+  // Client-side query-timeout deadline in ms (the public `queryTimeout`),
+  // undefined when unset. Enforced in the async poll loop.
+  private readonly queryTimeoutMs?: number;
+
+  constructor({ asyncStatement, statement, context, id, queryTimeoutSecs }: SeaOperationBackendOptions) {
     if ((asyncStatement === undefined) === (statement === undefined)) {
       throw new HiveDriverError('SeaOperationBackend: exactly one of `asyncStatement` or `statement` must be provided');
     }
@@ -163,6 +177,7 @@ export default class SeaOperationBackend implements IOperationBackend {
     this.lifecycleHandle = (asyncStatement ?? statement) as SeaStatementHandle;
     this.context = context;
     this._id = id ?? asyncStatement?.statementId ?? statement?.statementId ?? uuidv4();
+    this.queryTimeoutMs = queryTimeoutSecs !== undefined && queryTimeoutSecs > 0 ? queryTimeoutSecs * 1000 : undefined;
   }
 
   public get id(): string {
@@ -329,20 +344,31 @@ export default class SeaOperationBackend implements IOperationBackend {
   // ---------------------------------------------------------------------------
 
   /**
-   * Poll the kernel `AsyncStatement` to a terminal state, mirroring the Thrift
-   * backend's `waitUntilReady` loop (100ms cadence). Polling `status()` rather
-   * than awaiting `awaitResult()` directly is deliberate: a blocking
-   * `awaitResult()` holds the kernel statement mutex for the whole query and
-   * would queue a concurrent `cancel()` behind it, whereas the poll loop
-   * releases the mutex between ticks so `cancel()` stays responsive. On
-   * success it materialises the result handle (so the first fetch is free);
-   * on a bad terminal state it surfaces the real kernel error.
+   * Poll the kernel `AsyncStatement` to a terminal state on a fixed 100ms
+   * cadence, mirroring the Thrift backend's `waitUntilReady` loop. We poll
+   * `status()` (a cheap GetStatementStatus RPC) rather than awaiting
+   * `awaitResult()` directly so that `status()` reports the real
+   * Pending/Running/Succeeded state to a progress callback each tick, and so a
+   * JS-initiated `cancel()`/`close()` is observed between ticks via
+   * `failIfNotActive`. On success it materialises the result handle (so the
+   * first fetch is free); on a server-driven terminal state it throws the typed
+   * error the `IOperationBackend` contract requires.
+   *
+   * Terminal errors are thrown as `OperationStateError` (NOT plain
+   * `HiveDriverError`) for Cancelled/Closed/Unknown, because the DBSQLOperation
+   * facade only mirrors its `cancelled`/`closed` flags when
+   * `err instanceof OperationStateError` — exactly as the Thrift backend does.
+   * The Failed branch surfaces the kernel's typed SQL-error envelope via
+   * `awaitResult()`.
    */
   private async waitUntilReadyAsync(options?: IOperationBackendWaitOptions): Promise<void> {
     // Already materialised → terminal-and-ready, nothing to wait for.
     if (this.fetchHandlePromise) {
       return;
     }
+    // Client-side timeout deadline: the kernel ignores queryTimeoutSecs on the
+    // async submit path, so we enforce the public `queryTimeout` here.
+    const deadline = this.queryTimeoutMs !== undefined ? Date.now() + this.queryTimeoutMs : undefined;
     for (;;) {
       // A JS-initiated cancel/close short-circuits before the next poll.
       failIfNotActive(this.lifecycle);
@@ -373,11 +399,20 @@ export default class SeaOperationBackend implements IOperationBackend {
           await this.throwAsyncError();
           break;
         case OperationState.Cancelled:
-          throw new HiveDriverError(`SEA operation ${this._id} was cancelled server-side.`);
+          throw new OperationStateError(OperationStateErrorCode.Canceled);
         case OperationState.Closed:
-          throw new HiveDriverError(`SEA operation ${this._id} was closed before it produced a result.`);
+          throw new OperationStateError(OperationStateErrorCode.Closed);
         default:
-          throw new HiveDriverError(`SEA operation ${this._id} reached an unexpected state: ${state}.`);
+          throw new OperationStateError(OperationStateErrorCode.Unknown);
+      }
+
+      // Still Pending/Running — enforce the client-side timeout before sleeping.
+      if (deadline !== undefined && Date.now() >= deadline) {
+        // Best-effort server-side cancel so the statement doesn't keep running
+        // after we stop waiting; never mask the timeout with a cancel failure.
+        // eslint-disable-next-line no-await-in-loop
+        await this.cancel().catch(() => undefined);
+        throw new OperationStateError(OperationStateErrorCode.Timeout);
       }
 
       // eslint-disable-next-line no-await-in-loop

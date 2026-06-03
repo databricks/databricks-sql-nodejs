@@ -169,7 +169,15 @@ export default class SeaSessionBackend implements ISessionBackend {
     } catch (err) {
       throw this.logAndMapError('executeStatement', err);
     }
-    return new SeaOperationBackend({ asyncStatement: asyncStatement!, context: this.context });
+    // `queryTimeout` is enforced client-side by the operation backend's poll
+    // loop: the kernel ignores `queryTimeoutSecs` on the async submit path
+    // (`submitStatement` always sends `wait_timeout=0s`), so we do NOT forward
+    // it to the napi options — passing it there would be a silent no-op.
+    return new SeaOperationBackend({
+      asyncStatement: asyncStatement!,
+      context: this.context,
+      queryTimeoutSecs: options.queryTimeout !== undefined ? Number(options.queryTimeout) : undefined,
+    });
   }
 
   /**
@@ -195,11 +203,9 @@ export default class SeaSessionBackend implements ISessionBackend {
     if (namedParams !== undefined) {
       execOptions.namedParams = namedParams;
     }
-    // JDBC `setQueryTimeout` is whole seconds; the kernel's `queryTimeoutSecs`
-    // (SEA wait timeout) is the native equivalent. The SEA wire caps it at 50s.
-    if (options.queryTimeout !== undefined) {
-      execOptions.queryTimeoutSecs = Number(options.queryTimeout);
-    }
+    // `queryTimeout` is intentionally NOT forwarded here — the kernel ignores
+    // `queryTimeoutSecs` on `submitStatement`, so it is enforced client-side by
+    // the operation backend's poll-loop deadline instead (see executeStatement).
     if (options.rowLimit !== undefined) {
       execOptions.rowLimit = Number(options.rowLimit);
     }
