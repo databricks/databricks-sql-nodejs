@@ -14,6 +14,7 @@
 
 import { expect } from 'chai';
 import sinon from 'sinon';
+import Int64 from 'node-int64';
 import SeaBackend from '../../../lib/sea/SeaBackend';
 import SeaSessionBackend from '../../../lib/sea/SeaSessionBackend';
 import SeaOperationBackend from '../../../lib/sea/SeaOperationBackend';
@@ -524,6 +525,26 @@ describe('SeaSessionBackend', () => {
     // ignores queryTimeoutSecs on submitStatement, so it's enforced client-side
     // by the operation backend's poll deadline instead (covered below).
     expect((connection.lastOptions as { queryTimeoutSecs?: number } | undefined)?.queryTimeoutSecs).to.equal(undefined);
+  });
+
+  it('coerces an Int64 queryTimeout into the client-side deadline (not NaN)', async function int64Timeout() {
+    // Regression: `Number(new Int64(...))` yields NaN (node-int64 has no valueOf),
+    // which would silently disable the deadline. The backend must coerce via
+    // numberToInt64(...).toNumber() so an Int64 queryTimeout still bounds the poll.
+    // eslint-disable-next-line no-invalid-this
+    this.timeout(5000);
+    const connection = new FakeNativeConnection();
+    connection.submitStatusValue = 'Running'; // never reaches a terminal state
+    const session = makeSession(connection);
+    const op = await session.executeStatement('SELECT 1', { queryTimeout: new Int64(1) });
+    let thrown: unknown;
+    try {
+      await op.waitUntilReady();
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown, 'Int64(1) timeout must fire — NaN would poll forever').to.be.instanceOf(OperationStateError);
+    expect((thrown as OperationStateError).errorCode).to.equal(OperationStateErrorCode.Timeout);
   });
 
   it('executeStatement forwards rowLimit', async () => {
