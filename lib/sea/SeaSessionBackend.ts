@@ -35,6 +35,7 @@ import ParameterError from '../errors/ParameterError';
 import { LogLevel } from '../contracts/IDBSQLLogger';
 import { SeaConnection, SeaNativeExecuteOptions, SeaStatement } from './SeaNativeLoader';
 import { decodeNapiKernelError } from './SeaErrorMapping';
+import { numberToInt64 } from '../thrift-backend/ThriftSessionBackend';
 import SeaOperationBackend from './SeaOperationBackend';
 import { buildSeaPositionalParams, buildSeaNamedParams } from './SeaPositionalParams';
 import { seaServerInfoValue } from './SeaServerInfo';
@@ -121,7 +122,9 @@ export default class SeaSessionBackend implements ISessionBackend {
    * Per-statement options forwarded to the kernel `ExecuteOptions`:
    *   - `ordinalParameters` / `namedParameters` → bound params (mutually
    *     exclusive — the kernel binds one placeholder style per statement);
-   *   - `queryTimeout` → `queryTimeoutSecs` (SEA server wait timeout);
+   *   - `queryTimeout` → enforced client-side by the operation backend's poll
+   *     deadline (the kernel ignores `queryTimeoutSecs` on the async submit
+   *     path), NOT forwarded to the napi options;
    *   - `rowLimit` → `rowLimit` (SEA-only server-side row cap);
    *   - `queryTags` → serialised into the conf overlay's reserved
    *     `query_tags` key (the same wire shape Thrift's `serializeQueryTags`
@@ -176,7 +179,9 @@ export default class SeaSessionBackend implements ISessionBackend {
     return new SeaOperationBackend({
       asyncStatement: asyncStatement!,
       context: this.context,
-      queryTimeoutSecs: options.queryTimeout !== undefined ? Number(options.queryTimeout) : undefined,
+      // `queryTimeout` is typed `number | bigint | Int64`; `numberToInt64(...).toNumber()`
+      // coerces all three (a bare `Number(int64)` yields NaN — node-int64 has no valueOf).
+      queryTimeoutSecs: options.queryTimeout !== undefined ? numberToInt64(options.queryTimeout).toNumber() : undefined,
     });
   }
 

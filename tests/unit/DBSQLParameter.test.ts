@@ -101,4 +101,27 @@ describe('DBSQLParameter', () => {
       expect(dbsqlParam.toSparkParameter()).to.deep.equal(expectedParam);
     }
   });
+
+  it('maps timezone-explicit timestamp types to valid Spark wire types', () => {
+    // TIMESTAMP_NTZ is a real Spark type → bound verbatim.
+    expect(
+      new DBSQLParameter({ type: DBSQLParameterType.TIMESTAMP_NTZ, value: '2024-01-15 10:30:00' }).toSparkParameter(),
+    ).to.deep.equal(
+      new TSparkParameter({
+        type: DBSQLParameterType.TIMESTAMP_NTZ,
+        value: new TSparkParameterValue({ stringValue: '2024-01-15 10:30:00' }),
+      }),
+    );
+    // TIMESTAMP_LTZ has no distinct Spark type → bound as TIMESTAMP (valid on
+    // both Thrift and kernel; the old verbatim 'TIMESTAMP_LTZ' was rejected by
+    // the Thrift server).
+    expect(
+      new DBSQLParameter({ type: DBSQLParameterType.TIMESTAMP_LTZ, value: '2024-01-15 10:30:00' }).toSparkParameter(),
+    ).to.deep.equal(
+      new TSparkParameter({
+        type: DBSQLParameterType.TIMESTAMP,
+        value: new TSparkParameterValue({ stringValue: '2024-01-15 10:30:00' }),
+      }),
+    );
+  });
 });
