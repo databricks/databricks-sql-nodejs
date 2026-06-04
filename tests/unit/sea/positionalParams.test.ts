@@ -90,6 +90,18 @@ describe('SeaPositionalParams.buildSeaPositionalParams', () => {
       { sqlType: 'TIMESTAMP', value: '2024-01-15 10:30:00' },
     ]);
   });
+
+  it('binds TIMESTAMP_NTZ natively and TIMESTAMP_LTZ as TIMESTAMP (Spark has no distinct LTZ type)', () => {
+    expect(
+      buildSeaPositionalParams([
+        new DBSQLParameter({ type: DBSQLParameterType.TIMESTAMP_NTZ, value: '2024-01-15 10:30:00' }),
+        new DBSQLParameter({ type: DBSQLParameterType.TIMESTAMP_LTZ, value: '2024-01-15 10:30:00' }),
+      ]),
+    ).to.deep.equal([
+      { sqlType: 'TIMESTAMP_NTZ', value: '2024-01-15 10:30:00' },
+      { sqlType: 'TIMESTAMP', value: '2024-01-15 10:30:00' },
+    ]);
+  });
 });
 
 describe('SeaPositionalParams.buildSeaNamedParams', () => {

@@ -35,9 +35,11 @@ import ParameterError from '../errors/ParameterError';
 import { LogLevel } from '../contracts/IDBSQLLogger';
 import { SeaConnection, SeaNativeExecuteOptions, SeaStatement } from './SeaNativeLoader';
 import { decodeNapiKernelError } from './SeaErrorMapping';
+import { numberToInt64 } from '../thrift-backend/ThriftSessionBackend';
 import SeaOperationBackend from './SeaOperationBackend';
 import { buildSeaPositionalParams, buildSeaNamedParams } from './SeaPositionalParams';
 import { seaServerInfoValue } from './SeaServerInfo';
+import { serializeQueryTags } from '../utils';
 
 export interface SeaSessionBackendOptions {
   /** The opaque napi `Connection` handle returned by `openSession`. */
@@ -116,50 +118,31 @@ export default class SeaSessionBackend implements ISessionBackend {
   /**
    * Execute a SQL statement through the napi binding.
    *
-   * Catalog / schema / sessionConf were applied at session open, so
-   * there are no per-statement options to thread through.
+   * Catalog / schema / sessionConf are session-level (applied at open).
+   * Per-statement options forwarded to the kernel `ExecuteOptions`:
+   *   - `ordinalParameters` / `namedParameters` → bound params (mutually
+   *     exclusive — the kernel binds one placeholder style per statement);
+   *   - `queryTimeout` → enforced client-side by the operation backend's poll
+   *     deadline (the kernel ignores `queryTimeoutSecs` on the async submit
+   *     path), NOT forwarded to the napi options;
+   *   - `rowLimit` → `rowLimit` (SEA-only server-side row cap);
+   *   - `queryTags` → serialised into the conf overlay's reserved
+   *     `query_tags` key (the same wire shape Thrift's `serializeQueryTags`
+   *     produces), merged with any explicit `statementConf`.
    *
-   * M0 intentionally rejects `queryTimeout`, `namedParameters`, and
-   * `ordinalParameters` with explicit deferred-to-M1 errors. `useCloudFetch`
-   * is a no-op on the SEA path — the kernel hardcodes the SEA
-   * `disposition` to `INLINE_OR_EXTERNAL_LINKS`, and per-statement
-   * conf overrides have no reader on the kernel; cloud-fetch behaviour
-   * is governed entirely by the kernel's `ResultConfig` (M1 binding
-   * surface).
-   *
-   * The Thrift backend remains the path for consumers that need any
-   * of those today.
+   * Still rejected (genuinely unsupported on SEA, rather than silently
+   * dropped): `useCloudFetch` (governed by the kernel `ResultConfig`, not a
+   * per-statement knob), `useLZ4Compression` (kernel owns result compression),
+   * and `stagingAllowedLocalPath` (volume operations). `maxRows` is applied by
+   * the facade at fetch time, so it is intentionally not handled here.
    */
   public async executeStatement(statement: string, options: ExecuteStatementOptions): Promise<IOperationBackend> {
     this.failIfClosed();
 
-    // Positional (`?`) and named (`:name`) parameters are mutually exclusive —
-    // the kernel param codec binds exactly one placeholder style per statement.
-    // Use the SAME error type and message as the Thrift backend
-    // (`ThriftSessionBackend.getQueryParameters`) so a caller catching
-    // `ParameterError` for this case behaves identically across backends.
-    const positionalParams = buildSeaPositionalParams(options.ordinalParameters);
-    const namedParams = buildSeaNamedParams(options.namedParameters);
-    if (positionalParams !== undefined && namedParams !== undefined) {
-      throw new ParameterError('Driver does not support both ordinal and named parameters.');
-    }
-
-    if (options.queryTimeout !== undefined) {
-      throw new HiveDriverError('SEA executeStatement: queryTimeout is not supported in M0 (deferred to M1)');
-    }
     if (options.useCloudFetch !== undefined) {
       throw new HiveDriverError(
         'SEA executeStatement: useCloudFetch is controlled by the kernel result configuration and is not a per-statement option on SEA',
       );
-    }
-    // Reject — rather than silently ignore — the remaining Thrift-path
-    // options the SEA M0 backend does not honor. Silently dropping them
-    // is the worst failure mode for an agent/caller: passing e.g.
-    // `queryTags` or `useLZ4Compression` would no-op with zero signal.
-    // (`maxRows` is intentionally NOT here — the facade applies it at
-    // fetch time.)
-    if (options.queryTags !== undefined) {
-      throw new HiveDriverError('SEA executeStatement: queryTags is not supported in M0 (deferred to M1)');
     }
     if (options.useLZ4Compression !== undefined) {
       throw new HiveDriverError(
@@ -168,30 +151,90 @@ export default class SeaSessionBackend implements ISessionBackend {
     }
     if (options.stagingAllowedLocalPath !== undefined) {
       throw new HiveDriverError(
-        'SEA executeStatement: stagingAllowedLocalPath (volume operations) is not supported in M0 (deferred to M1)',
+        'SEA executeStatement: stagingAllowedLocalPath (volume operations) is not supported on SEA',
       );
     }
 
-    // Only build the napi options object when there is something to send —
-    // the no-params path keeps the minimal call shape (`executeStatement(sql)`).
-    let execOptions: SeaNativeExecuteOptions | undefined;
-    if (positionalParams !== undefined || namedParams !== undefined) {
-      execOptions = { positionalParams, namedParams };
-    }
+    const execOptions = this.buildExecuteOptions(options);
 
-    let nativeStatement: SeaStatement;
+    // Submit asynchronously (kernel `wait_timeout=0s`): the server returns a
+    // pending `AsyncStatement` immediately while the query runs, matching the
+    // Thrift backend's always-async (`runAsync: true`) path. The operation
+    // backend polls `status()` to terminal in `waitUntilReady()` and
+    // materialises results via `awaitResult()`, so a long-running query stays
+    // cancellable mid-flight and `status()` reports real Pending/Running states.
+    let asyncStatement;
     try {
-      nativeStatement =
+      asyncStatement =
         execOptions === undefined
-          ? await this.connection.executeStatement(statement)
-          : await this.connection.executeStatement(statement, execOptions);
+          ? await this.connection.submitStatement(statement)
+          : await this.connection.submitStatement(statement, execOptions);
     } catch (err) {
       throw this.logAndMapError('executeStatement', err);
     }
-    return this.wrapStatement(nativeStatement);
+    // `queryTimeout` is enforced client-side by the operation backend's poll
+    // loop: the kernel ignores `queryTimeoutSecs` on the async submit path
+    // (`submitStatement` always sends `wait_timeout=0s`), so we do NOT forward
+    // it to the napi options — passing it there would be a silent no-op.
+    return new SeaOperationBackend({
+      asyncStatement: asyncStatement!,
+      context: this.context,
+      // `queryTimeout` is typed `number | bigint | Int64`; `numberToInt64(...).toNumber()`
+      // coerces all three (a bare `Number(int64)` yields NaN — node-int64 has no valueOf).
+      queryTimeoutSecs: options.queryTimeout !== undefined ? numberToInt64(options.queryTimeout).toNumber() : undefined,
+    });
   }
 
-  /** Wrap a napi `Statement` (from execute or a metadata call) as an operation backend. */
+  /**
+   * Translate the public `ExecuteStatementOptions` into the kernel napi
+   * `ExecuteOptions`, returning `undefined` when nothing is set so the
+   * no-options call shape (`executeStatement(sql)`) is preserved.
+   */
+  private buildExecuteOptions(options: ExecuteStatementOptions): SeaNativeExecuteOptions | undefined {
+    // Positional (`?`) and named (`:name`) parameters are mutually exclusive —
+    // the kernel binds one placeholder style per statement. Use the SAME error
+    // type and message as the Thrift backend (`ThriftSessionBackend`) so a
+    // caller catching `ParameterError` behaves identically across backends.
+    const positionalParams = buildSeaPositionalParams(options.ordinalParameters);
+    const namedParams = buildSeaNamedParams(options.namedParameters);
+    if (positionalParams !== undefined && namedParams !== undefined) {
+      throw new ParameterError('Driver does not support both ordinal and named parameters.');
+    }
+
+    const execOptions: SeaNativeExecuteOptions = {};
+    if (positionalParams !== undefined) {
+      execOptions.positionalParams = positionalParams;
+    }
+    if (namedParams !== undefined) {
+      execOptions.namedParams = namedParams;
+    }
+    // `queryTimeout` is intentionally NOT forwarded here — the kernel ignores
+    // `queryTimeoutSecs` on `submitStatement`, so it is enforced client-side by
+    // the operation backend's poll-loop deadline instead (see executeStatement).
+    if (options.rowLimit !== undefined) {
+      execOptions.rowLimit = Number(options.rowLimit);
+    }
+    // Per-statement conf overlay plus query tags. Tags are serialised JS-side
+    // into the reserved `query_tags` key (the same wire shape the Thrift
+    // backend produces via `serializeQueryTags` → `confOverlay`), rather than
+    // via the napi `queryTags` field: napi's `HashMap<String,String>` can't
+    // represent a null-valued tag, and the kernel rejects setting both the
+    // `queryTags` field and a `query_tags` conf key.
+    const serializedQueryTags = serializeQueryTags(options.queryTags);
+    if (options.statementConf !== undefined || serializedQueryTags !== undefined) {
+      const statementConf: Record<string, string> = { ...(options.statementConf ?? {}) };
+      if (serializedQueryTags !== undefined) {
+        statementConf.query_tags = serializedQueryTags;
+      }
+      if (Object.keys(statementConf).length > 0) {
+        execOptions.statementConf = statementConf;
+      }
+    }
+
+    return Object.keys(execOptions).length > 0 ? execOptions : undefined;
+  }
+
+  /** Wrap a napi metadata `Statement` (already terminal) as an operation backend. */
   private wrapStatement(nativeStatement: SeaStatement): IOperationBackend {
     return new SeaOperationBackend({
       statement: nativeStatement,
