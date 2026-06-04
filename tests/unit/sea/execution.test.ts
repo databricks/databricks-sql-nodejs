@@ -137,7 +137,10 @@ class FakeCancellableExecution {
 
   public resultError: Error | null = null;
 
-  public readonly statementId = '01ef-fake-sync-id';
+  // Mirrors the real `CancellableExecution.statementId`: `null` until the
+  // initial execute round-trip publishes the server id mid-`result()`. The
+  // resolved `Statement` (resultHandle) carries the id (`FakeNativeStatement`).
+  public readonly statementId: string | null = null;
 
   // When set, the result() promise stays pending until cancel() rejects it,
   // modelling a still-running blocking execute that a concurrent cancel aborts.
@@ -991,9 +994,18 @@ describe('SeaOperationBackend — sync (executeStatementCancellable) path', () =
     ).to.throw(HiveDriverError, /exactly one/);
   });
 
-  it('id defaults to the cancellable execution statement id', () => {
+  it('surfaces the resolved server statement id as op.id once the sync execute completes', async () => {
     const op = makeSyncOp(new FakeCancellableExecution());
-    expect(op.id).to.equal('01ef-fake-sync-id');
+    // Before result() resolves, the server id is not yet known (real
+    // `CancellableExecution.statementId` is null pre-round-trip), so op.id is the
+    // construction-time fallback — a client UUID, NOT the server statement id.
+    const idBefore = op.id;
+    expect(idBefore).to.be.a('string').and.have.length.greaterThan(0);
+    expect(idBefore).to.not.equal('01ef-fake-statement-id');
+    // Driving the blocking execute to terminal publishes the server id; op.id
+    // then reports it (parity with the async path, traceable in server logs).
+    await op.waitUntilReady();
+    expect(op.id).to.equal('01ef-fake-statement-id');
   });
 
   it('status() reports Running before result() and Succeeded after', async () => {

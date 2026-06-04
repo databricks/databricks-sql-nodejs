@@ -157,6 +157,10 @@ export default class SeaOperationBackend implements IOperationBackend {
   // Undefined on the async / metadata paths.
   private readonly cancellableExecution?: SeaNativeCancellableExecution;
 
+  // Sync path: the server statement id captured from the resolved `Statement`
+  // once `result()` settles. Undefined until then; surfaced via `id`.
+  private resolvedStatementId?: string;
+
   // Metadata path: terminal statement. Also the resolved fetch handle on the
   // sync-execute path once `cancellableExecution.result()` settles.
   private blockingStatement?: SeaOperationStatement;
@@ -231,7 +235,14 @@ export default class SeaOperationBackend implements IOperationBackend {
   }
 
   public get id(): string {
-    return this._id;
+    // On the sync (cancellable) path the server statement id isn't known at
+    // construction — it's published mid-`result()` once the initial execute
+    // round-trip returns. Surface it once available (preferring the id captured
+    // from the resolved `Statement`, then the live canceller slot) so a
+    // cancelled/closed sync operation is traceable by the same id the server and
+    // kernel logs key on, matching the async path (which has it from `submit`).
+    // Falls back to the construction-time id (a client UUID) until then.
+    return this.resolvedStatementId ?? this.cancellableExecution?.statementId ?? this._id;
   }
 
   public hasResultSet(): boolean {
@@ -544,6 +555,9 @@ export default class SeaOperationBackend implements IOperationBackend {
           .result()
           .then((stmt) => {
             this.blockingStatement = stmt as unknown as SeaOperationStatement;
+            // Capture the now-known server statement id (stable on the resolved
+            // Statement) so `id` reports it for the rest of the lifecycle.
+            this.resolvedStatementId = this.blockingStatement.statementId ?? this.resolvedStatementId;
             return stmt as unknown as SeaFetchHandle;
           })
           .catch((err) => {
