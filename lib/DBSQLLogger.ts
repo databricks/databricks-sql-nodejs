@@ -26,6 +26,10 @@ export default class DBSQLLogger implements IDBSQLLogger {
     this.logger.log({ level, message });
   }
 
+  getLevel(): LogLevel {
+    return (this.transports.console.level as LogLevel) ?? LogLevel.info;
+  }
+
   setLevel(level: LogLevel) {
     this.transports.console.level = level;
     if (this.transports.file) {

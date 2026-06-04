@@ -286,6 +286,36 @@ export interface ConnectionOptions {
  */
 export declare function openSession(options: ConnectionOptions): Promise<Connection>
 /**
+ * One kernel log event, as handed to JS. `level` is a lower-case string
+ * (`error`/`warn`/`info`/`debug`/`trace`) the Node side maps onto its
+ * `LogLevel`; `target` is the originating `tracing` target (e.g.
+ * `databricks::sql::kernel`); `message` is the rendered event plus any
+ * structured `key=value` fields.
+ */
+export interface LogRecord {
+  level: string
+  target: string
+  message: string
+}
+/**
+ * Install (idempotently) the kernel→JS log bridge and set its level.
+ *
+ * `callback` is invoked with **an array of [`LogRecord`]s** (`(err, records)`)
+ * for each forwarded batch. `level` is one of
+ * `off`/`error`/`warn`/`info`/`debug`/`trace` (case-insensitive); unknown
+ * values fall back to `warn`.
+ *
+ * Safe to call more than once: the process-global subscriber is installed on
+ * the first call only, while every call refreshes the sink + level (last
+ * writer wins — see module docs).
+ */
+export declare function initKernelLogging(callback: (err: Error | null, arg: Array<LogRecord>) => any, level: string): void
+/**
+ * Live-retarget the bridge's level (one of
+ * `off`/`error`/`warn`/`info`/`debug`/`trace`, case-insensitive).
+ */
+export declare function setKernelLogLevel(level: string): void
+/**
  * JS-visible binding for a single positional parameter.
  *
  * Shape mirrors the `TSparkParameter` wire object the Thrift backend

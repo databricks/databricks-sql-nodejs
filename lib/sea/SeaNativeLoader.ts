@@ -39,6 +39,7 @@ import type {
   AsyncStatement as NativeAsyncStatement,
   AsyncResultHandle as NativeAsyncResultHandle,
   CancellableExecution as NativeCancellableExecution,
+  LogRecord as NativeLogRecord,
 } from '../../native/sea';
 
 // SEA-prefixed re-exports. The kernel-generated `.d.ts` keeps the
@@ -77,6 +78,11 @@ export type SeaNativeAsyncResultHandle = NativeAsyncResultHandle;
 // execute and resolves to the same terminal `Statement` `executeStatement`
 // returns.
 export type SeaNativeCancellableExecution = NativeCancellableExecution;
+
+// One kernel log event forwarded over the napi log bridge (see SeaLogging.ts):
+// `{ level, target, message }`. Re-exported so the bridge can name the shape
+// without re-declaring it (stays in lock-step with the kernel contract).
+export type SeaNativeLogRecord = NativeLogRecord;
 
 /**
  * The full native binding surface, derived from the generated module
