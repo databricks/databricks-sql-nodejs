@@ -177,9 +177,10 @@ export default class ThriftSessionBackend implements ISessionBackend {
       this.context
         .getLogger()
         .log(
-          LogLevel.debug,
+          LogLevel.warn,
           'ThriftSessionBackend.executeStatement: rowLimit / statementConf are kernel-backend (useSEA) ' +
-            'options and are ignored on the Thrift path.',
+            'options with no Thrift wire equivalent — they are IGNORED on the Thrift path (e.g. rowLimit ' +
+            'will not cap the result set). Use the kernel backend (useSEA) to honour them.',
         );
     }
 

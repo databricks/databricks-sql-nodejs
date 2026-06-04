@@ -468,15 +468,28 @@ export default class SeaOperationBackend implements IOperationBackend {
         case OperationState.Failed:
           // `status()` collapses Failed to the variant name only; the real
           // SQL-error envelope (sql_state / error_code / query_id) rides on
-          // `awaitResult()`'s rejection — drive it to surface the typed error.
-          // eslint-disable-next-line no-await-in-loop
-          await this.throwAsyncError();
+          // `awaitResult()`'s rejection — drive it to surface the typed error,
+          // then best-effort close the leaked statement before it propagates.
+          try {
+            // eslint-disable-next-line no-await-in-loop
+            await this.throwAsyncError();
+          } catch (failErr) {
+            // eslint-disable-next-line no-await-in-loop
+            await this.bestEffortClose();
+            throw failErr;
+          }
           break;
         case OperationState.Cancelled:
+          // eslint-disable-next-line no-await-in-loop
+          await this.bestEffortClose();
           throw new OperationStateError(OperationStateErrorCode.Canceled);
         case OperationState.Closed:
+          // eslint-disable-next-line no-await-in-loop
+          await this.bestEffortClose();
           throw new OperationStateError(OperationStateErrorCode.Closed);
         default:
+          // eslint-disable-next-line no-await-in-loop
+          await this.bestEffortClose();
           throw new OperationStateError(OperationStateErrorCode.Unknown);
       }
 
@@ -497,6 +510,10 @@ export default class SeaOperationBackend implements IOperationBackend {
                 `statement may keep running until the session is closed. Cause: ${cause}`,
             );
         });
+        // Release the statement handle too (cancel stops the work; close frees
+        // the handle) — best-effort, mirroring the other terminal branches.
+        // eslint-disable-next-line no-await-in-loop
+        await this.bestEffortClose();
         throw new OperationStateError(OperationStateErrorCode.Timeout);
       }
 
@@ -547,6 +564,26 @@ export default class SeaOperationBackend implements IOperationBackend {
       throw decodeNapiKernelError(err);
     }
     throw new HiveDriverError(`SEA operation ${this._id} reported Failed but produced a result.`);
+  }
+
+  /**
+   * Best-effort close of the kernel statement when the poll loop ends on a
+   * server-driven terminal error (Failed/Cancelled/Closed/Unknown/Timeout).
+   * Without it the kernel-side statement handle leaks until session close (the
+   * poll loop, unlike `fetchChunk`, otherwise just throws). Never masks the
+   * original error; warn-logs a close failure so the leak is diagnosable.
+   */
+  private async bestEffortClose(): Promise<void> {
+    await seaClose(this.lifecycle, this.lifecycleHandle, this.context, this._id).catch((closeErr) => {
+      const cause = closeErr instanceof Error ? closeErr.message : String(closeErr);
+      this.context
+        .getLogger()
+        .log(
+          LogLevel.warn,
+          `SEA poll-loop cleanup: close() failed for operation ${this._id}; the server-side ` +
+            `statement may leak until the session is closed. Cause: ${cause}`,
+        );
+    });
   }
 
   /**

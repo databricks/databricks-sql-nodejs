@@ -195,16 +195,15 @@ export function buildSeaTlsOptions(options: ConnectionOptions): SeaTlsOptions {
 
   if (customCaCert !== undefined) {
     if (typeof customCaCert === 'string') {
-      // Light PEM sanity check — require both the BEGIN and END markers so a
-      // truncated/headerless cert is rejected here rather than surfacing as an
-      // opaque kernel TLS error. Full parsing is deferred to the kernel.
-      if (
-        !customCaCert.includes('-----BEGIN CERTIFICATE-----') ||
-        !customCaCert.includes('-----END CERTIFICATE-----')
-      ) {
+      // Light PEM sanity check — require a well-ordered BEGIN…END block so a
+      // truncated/headerless cert (or a stray page that merely contains both
+      // literals out of order, e.g. a proxy-intercept page) is rejected here
+      // rather than surfacing as an opaque kernel TLS error. Ordered match, not
+      // two independent substring checks. Full parsing is deferred to the kernel.
+      if (!/-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/.test(customCaCert)) {
         throw new HiveDriverError(
           'SEA backend: `customCaCert` string does not look like a PEM certificate ' +
-            "(missing the '-----BEGIN CERTIFICATE-----' / '-----END CERTIFICATE-----' markers). " +
+            "(expected a '-----BEGIN CERTIFICATE-----' … '-----END CERTIFICATE-----' block). " +
             'Pass PEM text or a Buffer of PEM bytes.',
         );
       }

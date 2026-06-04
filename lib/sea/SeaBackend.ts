@@ -16,6 +16,8 @@ import IBackend from '../contracts/IBackend';
 import ISessionBackend from '../contracts/ISessionBackend';
 import IClientContext from '../contracts/IClientContext';
 import { ConnectionOptions, OpenSessionRequest } from '../contracts/IDBSQLClient';
+import { InternalConnectionOptions } from '../contracts/InternalConnectionOptions';
+import { LogLevel } from '../contracts/IDBSQLLogger';
 import HiveDriverError from '../errors/HiveDriverError';
 import { getSeaNative, SeaNativeBinding, SeaConnection } from './SeaNativeLoader';
 import { decodeNapiKernelError } from './SeaErrorMapping';
@@ -78,6 +80,22 @@ export default class SeaBackend implements IBackend {
     // Any non-PAT mode (or a missing/empty token) throws here, before
     // we ever touch the native binding.
     this.nativeOptions = buildSeaConnectionOptions(options);
+
+    // Warn on the insecure combo: a `customCaCert` paired with
+    // `checkServerCertificate: false` is almost always a mistake — verification
+    // is fully off, so the custom trust anchor is never used. The combo is
+    // still honoured (kernel contract), but a secure-looking `customCaCert`
+    // shouldn't silently mask disabled verification.
+    const tlsOpts = options as ConnectionOptions & InternalConnectionOptions;
+    if (tlsOpts.checkServerCertificate === false && tlsOpts.customCaCert !== undefined) {
+      this.context
+        .getLogger()
+        .log(
+          LogLevel.warn,
+          'SEA: `customCaCert` is set but `checkServerCertificate: false` disables certificate ' +
+            'verification entirely — the custom CA is not used. Set `checkServerCertificate: true` to use it.',
+        );
+    }
   }
 
   public async openSession(request: OpenSessionRequest): Promise<ISessionBackend> {

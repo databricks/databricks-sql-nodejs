@@ -166,6 +166,10 @@ describe('SeaOperationLifecycle (helpers)', () => {
       }
       expect(thrown).to.be.instanceOf(HiveDriverError);
       expect((thrown as Error).message).to.contain('statement already closed');
+      // The caller asked to cancel: a failed cancel RPC must NOT roll the intent
+      // back (doing so would silently resurrect a cancelled op while the
+      // server-side statement may still be running).
+      expect(state.isCancelled).to.equal(true);
     });
 
     it('logs a debug message tagged with the operation id', async () => {
