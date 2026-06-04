@@ -22,24 +22,54 @@ import {
 import { LogLevel } from '../../../lib/contracts/IDBSQLLogger';
 import { SeaNativeBinding, SeaNativeLogRecord } from '../../../lib/sea/SeaNativeLoader';
 
-// Minimal recording logger.
-function recordingLogger() {
+// Minimal recording logger. With `withLevelChange` (default) it exposes
+// `onLevelChange` + an `emitLevelChange` test helper to simulate a runtime
+// `setLevel(...)`; pass `false` to model a logger that can't notify.
+function recordingLogger(opts: { withLevelChange?: boolean } = {}) {
   const lines: Array<{ level: LogLevel; message: string }> = [];
-  return {
+  const listeners: Array<(level: LogLevel) => void> = [];
+  const logger = {
     lines,
     log(level: LogLevel, message: string) {
       lines.push({ level, message });
     },
+    // test-only: simulate the driver's `setLevel(...)` firing its subscribers
+    emitLevelChange(level: LogLevel) {
+      listeners.forEach((l) => l(level));
+    },
+  } as {
+    lines: Array<{ level: LogLevel; message: string }>;
+    log(level: LogLevel, message: string): void;
+    emitLevelChange(level: LogLevel): void;
+    onLevelChange?(listener: (level: LogLevel) => void): () => void;
   };
+  if (opts.withLevelChange !== false) {
+    logger.onLevelChange = (listener: (level: LogLevel) => void) => {
+      listeners.push(listener);
+      return () => {
+        const i = listeners.indexOf(listener);
+        if (i >= 0) listeners.splice(i, 1);
+      };
+    };
+  }
+  return logger;
 }
 
-// A binding stub that captures the registered bridge callback + level.
+// A binding stub that captures the registered bridge callback + initial level,
+// and records each `setKernelLogLevel` retarget.
 function captureBinding(overrides: Partial<Record<keyof SeaNativeBinding, unknown>> = {}) {
-  const captured: { cb?: (err: Error | null, records: Array<SeaNativeLogRecord>) => void; level?: string } = {};
+  const captured: {
+    cb?: (err: Error | null, records: Array<SeaNativeLogRecord>) => void;
+    level?: string;
+    levelChanges: string[];
+  } = { levelChanges: [] };
   const binding = {
     initKernelLogging: (cb: (err: Error | null, records: Array<SeaNativeLogRecord>) => void, level: string) => {
       captured.cb = cb;
       captured.level = level;
+    },
+    setKernelLogLevel: (level: string) => {
+      captured.levelChanges.push(level);
     },
     ...overrides,
   } as unknown as SeaNativeBinding;
@@ -117,6 +147,58 @@ describe('SeaLogging', () => {
     it('is a no-op (no throw) on an older binding without the bridge export', () => {
       const binding = {} as unknown as SeaNativeBinding;
       expect(() => installKernelLogBridge(binding, recordingLogger(), LogLevel.info)).to.not.throw();
+    });
+  });
+
+  describe('runtime level retargeting', () => {
+    it('retargets the kernel level when the logger level changes at runtime', () => {
+      const { binding, captured } = captureBinding();
+      const logger = recordingLogger();
+      installKernelLogBridge(binding, logger, LogLevel.warn);
+      expect(captured.level).to.equal('warn'); // connect-time level
+
+      logger.emitLevelChange(LogLevel.debug);
+      logger.emitLevelChange(LogLevel.error);
+      expect(captured.levelChanges).to.deep.equal(['debug', 'error']);
+    });
+
+    it('stops retargeting once the returned unsubscribe is called', () => {
+      const { binding, captured } = captureBinding();
+      const logger = recordingLogger();
+      const unsubscribe = installKernelLogBridge(binding, logger, LogLevel.info);
+
+      logger.emitLevelChange(LogLevel.debug);
+      unsubscribe();
+      logger.emitLevelChange(LogLevel.error); // after unsubscribe → ignored
+
+      expect(captured.levelChanges).to.deep.equal(['debug']);
+    });
+
+    it('does not subscribe when the logger cannot notify (no onLevelChange)', () => {
+      const { binding, captured } = captureBinding();
+      const logger = recordingLogger({ withLevelChange: false });
+      const unsubscribe = installKernelLogBridge(binding, logger, LogLevel.info);
+      logger.emitLevelChange(LogLevel.debug);
+      expect(captured.levelChanges).to.have.length(0);
+      expect(unsubscribe).to.be.a('function'); // safe no-op
+      expect(() => unsubscribe()).to.not.throw();
+    });
+
+    it('does not subscribe when the binding cannot retarget (no setKernelLogLevel)', () => {
+      // initKernelLogging present, setKernelLogLevel absent (partial/older binding).
+      const captured: { installed: boolean } = { installed: false };
+      const binding = {
+        initKernelLogging: () => {
+          captured.installed = true;
+        },
+      } as unknown as SeaNativeBinding;
+      const logger = recordingLogger();
+      const unsubscribe = installKernelLogBridge(binding, logger, LogLevel.info);
+      expect(captured.installed).to.equal(true);
+      expect(() => {
+        logger.emitLevelChange(LogLevel.debug);
+        unsubscribe();
+      }).to.not.throw();
     });
   });
 });

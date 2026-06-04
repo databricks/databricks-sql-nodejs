@@ -28,7 +28,10 @@ import { LogLevel } from '../../../lib/contracts/IDBSQLLogger';
 import config from '../utils/config';
 import { InternalConnectionOptions } from '../../../lib/contracts/InternalConnectionOptions';
 
-const delay = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
+const delay = (ms: number) =>
+  new Promise<void>((resolve) => {
+    setTimeout(resolve, ms);
+  });
 
 describe('SEA — unified kernel + driver logging', function unifiedLogging() {
   // Live-warehouse round-trip plus async log flush.

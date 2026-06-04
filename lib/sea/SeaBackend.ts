@@ -71,6 +71,11 @@ export default class SeaBackend implements IBackend {
 
   private nativeOptions?: SeaNativeConnectionOptions;
 
+  // Drops the kernel-log level-change listener on close. No-op until connect()
+  // installs the bridge (and a no-op closure if the logger/binding can't
+  // retarget at runtime).
+  private kernelLogUnsubscribe: () => void = () => {};
+
   constructor(options: SeaBackendOptions) {
     this.context = options.context;
     this.binding = options.nativeBinding ?? getSeaNative();
@@ -90,7 +95,7 @@ export default class SeaBackend implements IBackend {
     // that predates the bridge (logging is advisory).
     const logger = this.context.getLogger();
     const kernelLogLevel = logger.getLevel?.() ?? LogLevel.info;
-    installKernelLogBridge(this.binding, logger, kernelLogLevel);
+    this.kernelLogUnsubscribe = installKernelLogBridge(this.binding, logger, kernelLogLevel);
 
     // Warn on the insecure combo: a `customCaCert` paired with
     // `checkServerCertificate: false` is almost always a mistake — verification
@@ -160,5 +165,11 @@ export default class SeaBackend implements IBackend {
     // No backend-level resources to release — each `SeaSessionBackend`
     // owns its own napi `Connection` lifecycle.
     this.nativeOptions = undefined;
+
+    // Stop retargeting the (process-global) kernel log level from this backend's
+    // logger; the kernel sink itself is process-global and is replaced by the
+    // next connect, matching the bridge's last-writer-wins model.
+    this.kernelLogUnsubscribe();
+    this.kernelLogUnsubscribe = () => {};
   }
 }

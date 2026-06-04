@@ -86,15 +86,24 @@ export function formatKernelLine(record: SeaNativeLogRecord): string {
  *   process the most recently connected client's logger receives kernel logs —
  *   mirroring the Python connector's `pyo3_log` model. Single-client apps, the
  *   common case, are unaffected.
+ * - **Runtime retargeting:** if `logger` exposes `onLevelChange` (as
+ *   `DBSQLLogger` does), the bridge subscribes so a later `logger.setLevel(...)`
+ *   also retargets the kernel-side filter via `setKernelLogLevel` — keeping
+ *   kernel verbosity in lock-step with the driver's at runtime, not just at
+ *   connect. Loggers without it still get the connect-time level.
  * - **Graceful on older bindings:** if the loaded `.node` predates
  *   `initKernelLogging`, this is a no-op (kernel logs simply stay unbridged)
  *   rather than a hard failure — logging is advisory.
+ *
+ * Returns an **unsubscribe** function the caller must invoke on teardown
+ * (`SeaBackend.close()`) to drop the level-change listener; it is a safe no-op
+ * when nothing was subscribed.
  */
-export function installKernelLogBridge(binding: SeaNativeBinding, logger: IDBSQLLogger, level: LogLevel): void {
+export function installKernelLogBridge(binding: SeaNativeBinding, logger: IDBSQLLogger, level: LogLevel): () => void {
   // Defensive: a stale/older binding without the bridge export must not break
   // connect() — logging is non-critical.
   if (typeof binding.initKernelLogging !== 'function') {
-    return;
+    return () => {};
   }
 
   const callback = (err: Error | null, records: Array<SeaNativeLogRecord>): void => {
@@ -107,4 +116,16 @@ export function installKernelLogBridge(binding: SeaNativeBinding, logger: IDBSQL
   };
 
   binding.initKernelLogging(callback, logLevelToKernelLevel(level));
+
+  // Keep the kernel's level in lock-step with runtime `logger.setLevel(...)`
+  // calls. Requires both a logger that notifies (`onLevelChange`) and a binding
+  // that can retarget (`setKernelLogLevel`); otherwise the connect-time level
+  // stands and there is nothing to unsubscribe.
+  if (typeof logger.onLevelChange === 'function' && typeof binding.setKernelLogLevel === 'function') {
+    return logger.onLevelChange((newLevel) => {
+      binding.setKernelLogLevel(logLevelToKernelLevel(newLevel));
+    });
+  }
+
+  return () => {};
 }

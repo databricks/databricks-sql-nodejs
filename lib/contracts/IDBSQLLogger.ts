@@ -14,6 +14,16 @@ export default interface IDBSQLLogger {
    * bridge at its `info` default.
    */
   getLevel?(): LogLevel;
+
+  /**
+   * Optional: subscribe to runtime level changes. When implemented, the
+   * SEA/kernel backend subscribes so a runtime `setLevel(...)` retargets the
+   * kernel-side log bridge too (not just the driver's own transports) — keeping
+   * kernel verbosity in lock-step with the driver's. Returns an unsubscribe
+   * function. Loggers that don't implement it still get the connect-time level;
+   * only *runtime* retargeting of the kernel is unavailable.
+   */
+  onLevelChange?(listener: (level: LogLevel) => void): () => void;
 }
 
 export enum LogLevel {
