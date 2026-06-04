@@ -326,8 +326,8 @@ function makeBinding(connection: SeaConnection): SeaNativeBinding & {
   return Object.assign(binding, { openSessionStub });
 }
 
-function makeContext(): IClientContext {
-  const logger: IDBSQLLogger = {
+function makeContext(logger?: IDBSQLLogger): IClientContext {
+  const log: IDBSQLLogger = logger ?? {
     log(_level: LogLevel, _message: string): void {
       // no-op
     },
@@ -335,7 +335,7 @@ function makeContext(): IClientContext {
   const config = {} as ClientConfig;
   return {
     getConfig: () => config,
-    getLogger: () => logger,
+    getLogger: () => log,
     getConnectionProvider: async () => {
       throw new Error('not used by SEA backend');
     },
@@ -657,6 +657,37 @@ describe('SeaSessionBackend', () => {
     const conf = (connection.lastOptions as { statementConf?: Record<string, string> }).statementConf;
     expect(conf?.['spark.sql.ansi.enabled']).to.equal('true');
     expect(conf?.query_tags).to.contain('team:x');
+  });
+
+  it('queryTags wins over a query_tags key in statementConf (precedence on collision)', async () => {
+    const connection = new FakeNativeConnection();
+    const session = makeSession(connection);
+    await session.executeStatement('SELECT 1', {
+      statementConf: { query_tags: 'manual-raw-value' },
+      queryTags: { team: 'x' },
+    });
+    const conf = (connection.lastOptions as { statementConf?: Record<string, string> }).statementConf;
+    // The structured `queryTags` option overwrites a raw `query_tags` conf key —
+    // a single, predictable wire value rather than two competing ones.
+    expect(conf?.query_tags).to.contain('team:x').and.to.not.equal('manual-raw-value');
+  });
+
+  it('maps a submit-time kernel error via logAndMapError on both paths', async () => {
+    const envelope = `__databricks_error__:${JSON.stringify({ code: 'SqlError', message: 'SUBMIT_BOOM' })}`;
+    for (const opts of [{}, { runAsync: true }]) {
+      const connection = new FakeNativeConnection();
+      connection.throwOnExecute = new Error(envelope); // fails executeStatementCancellable / submitStatement
+      const session = makeSession(connection);
+      let thrown: unknown;
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        await session.executeStatement('SELECT 1', opts);
+      } catch (err) {
+        thrown = err;
+      }
+      expect(thrown, `path ${JSON.stringify(opts)}`).to.be.instanceOf(HiveDriverError);
+      expect((thrown as Error).message).to.match(/SUBMIT_BOOM/);
+    }
   });
 
   // Genuinely unsupported on SEA — rejected (rather than silently ignored) so
@@ -994,18 +1025,42 @@ describe('SeaOperationBackend — sync (executeStatementCancellable) path', () =
     ).to.throw(HiveDriverError, /exactly one/);
   });
 
-  it('surfaces the resolved server statement id as op.id once the sync execute completes', async () => {
-    const op = makeSyncOp(new FakeCancellableExecution());
-    // Before result() resolves, the server id is not yet known (real
-    // `CancellableExecution.statementId` is null pre-round-trip), so op.id is the
-    // construction-time fallback — a client UUID, NOT the server statement id.
+  it('keeps op.id stable across the sync execute and logs the resolved server statement id', async () => {
+    // op.id MUST stay stable (the facade keys telemetry start/complete on it —
+    // a mid-flight flip to the server id would split the records and drop the
+    // summary). The server statement_id is surfaced via a debug log instead.
+    const logs: Array<{ level: LogLevel; message: string }> = [];
+    const logger: IDBSQLLogger = { log: (level, message) => logs.push({ level, message }) };
+    const op = new SeaOperationBackend({
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      cancellableExecution: new FakeCancellableExecution() as any,
+      context: makeContext(logger),
+    });
     const idBefore = op.id;
     expect(idBefore).to.be.a('string').and.have.length.greaterThan(0);
-    expect(idBefore).to.not.equal('01ef-fake-statement-id');
-    // Driving the blocking execute to terminal publishes the server id; op.id
-    // then reports it (parity with the async path, traceable in server logs).
     await op.waitUntilReady();
-    expect(op.id).to.equal('01ef-fake-statement-id');
+    // Stable: driving result() to terminal does NOT mutate the id.
+    expect(op.id).to.equal(idBefore);
+    // But the now-known server statement_id is logged for correlation.
+    expect(logs.some((l) => l.message.includes('01ef-fake-statement-id'))).to.equal(true);
+  });
+
+  it('surfaces the kernel SQL-error envelope when a sync result() rejects (Failed)', async () => {
+    const exec = new FakeCancellableExecution();
+    // The kernel rejects result() with a sentinel-framed structured error;
+    // decodeNapiKernelError turns it into a typed HiveDriverError (sync path).
+    exec.resultError = new Error(
+      `__databricks_error__:${JSON.stringify({ code: 'SqlError', message: 'TABLE_OR_VIEW_NOT_FOUND' })}`,
+    );
+    const op = makeSyncOp(exec);
+    let thrown: unknown;
+    try {
+      await op.waitUntilReady();
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).to.be.instanceOf(HiveDriverError);
+    expect((thrown as Error).message).to.match(/TABLE_OR_VIEW_NOT_FOUND/);
   });
 
   it('status() reports Running before result() and Succeeded after', async () => {

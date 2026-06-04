@@ -52,12 +52,12 @@ export interface SeaSessionBackendOptions {
 /**
  * SEA-backed implementation of `ISessionBackend`.
  *
- * **M0 scope:** `executeStatement` + `close`. Metadata methods
- * (`getCatalogs`, `getSchemas`, etc.) defer to M1 — they throw a clear
- * `HiveDriverError` so consumers using SEA against metadata APIs get an
- * actionable message instead of silently falling back. The Thrift
- * backend continues to handle the metadata path by default (callers
- * opt into SEA via `ConnectionOptions.useSEA`).
+ * **Scope:** `executeStatement` (sync + async), `close`, `getInfo`, and the
+ * full metadata surface (`getCatalogs`, `getSchemas`, `getTables`,
+ * `getColumns`, `getFunctions`, `getTableTypes`, `getTypeInfo`,
+ * `getPrimaryKeys`, `getCrossReference`) — each forwards to the kernel's napi
+ * metadata calls (see `runMetadata`). The Thrift backend remains the default;
+ * callers opt into the kernel path via `ConnectionOptions.useSEA`.
  *
  * **Session config flow:** catalog / schema / sessionConf are applied
  * once at session creation (kernel `Session::builder().defaults()` +
@@ -155,10 +155,13 @@ export default class SeaSessionBackend implements ISessionBackend {
       );
     }
 
-    // `runAsync` selects the kernel execution path, exactly mirroring the
-    // Thrift backend's `runAsync` distinction (the only observable difference is
-    // WHEN `executeStatement` resolves — the public API, result shape, schema,
-    // and error classes are identical on both paths):
+    // `runAsync` selects the kernel execution path. NOTE: this is a SEA/kernel-
+    // specific use of the option — the Thrift backend hardcodes `runAsync: true`
+    // on the wire and never reads `options.runAsync`, so the field is a no-op
+    // there. The only observable difference between the two SEA paths is WHEN
+    // `executeStatement` resolves; the public API, result shape, schema, and
+    // error classes are identical on both (and to Thrift). See the option's
+    // JSDoc in `IDBSQLSession` for the cross-backend contract.
     //
     //   - DEFAULT (`runAsync` false/undefined) — SYNC. Route through
     //     `executeStatementCancellable`: the kernel blocks on `execute()`

@@ -12,7 +12,18 @@ export type ExecuteStatementOptions = {
    */
   queryTimeout?: number | bigint | Int64;
   /**
-   * @deprecated This option is no longer supported and will be removed in future releases
+   * Selects the execution lifecycle. The only observable effect is WHEN
+   * `executeStatement` resolves; the result data, schema, and error classes are
+   * identical regardless.
+   *
+   * - **Thrift backend:** no-op. The Thrift path always submits asynchronously
+   *   (`runAsync: true` on the wire) and polls during fetch; this option is not
+   *   read.
+   * - **Kernel backend (`useSEA`):** selects the kernel execution path —
+   *   `false`/unset (default) runs the blocking direct-results path (faster,
+   *   cancellable mid-compute); `true` submits and polls (returns a pending
+   *   handle before completion). Default is sync, matching the python
+   *   connector's `cursor.execute()`.
    */
   runAsync?: boolean;
   maxRows?: number | bigint | Int64 | null;

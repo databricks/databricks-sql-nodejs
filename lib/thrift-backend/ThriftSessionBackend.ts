@@ -170,6 +170,19 @@ export default class ThriftSessionBackend implements ISessionBackend {
     const driver = await this.context.getDriver();
     const clientConfig = this.context.getConfig();
 
+    // `rowLimit` / `statementConf` are kernel-backend (SEA) options with no
+    // Thrift wire equivalent. Surface a debug breadcrumb rather than dropping
+    // them silently, so a caller that set them on the Thrift path has signal.
+    if (options.rowLimit !== undefined || options.statementConf !== undefined) {
+      this.context
+        .getLogger()
+        .log(
+          LogLevel.debug,
+          'ThriftSessionBackend.executeStatement: rowLimit / statementConf are kernel-backend (useSEA) ' +
+            'options and are ignored on the Thrift path.',
+        );
+    }
+
     const request = new TExecuteStatementReq({
       sessionHandle: this.sessionHandle,
       statement,

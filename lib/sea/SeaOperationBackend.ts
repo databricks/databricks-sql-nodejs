@@ -101,11 +101,15 @@ function delay(ms: number): Promise<void> {
  * with the enum; `Canceled` (one-L spelling) is mapped defensively, and any
  * unrecognised value collapses to `Unknown`.
  */
+// Hoisted out of the (hot, 100ms) async poll loop — `Object.values` would
+// otherwise allocate a fresh array on every status tick.
+const OPERATION_STATE_VALUES = Object.values(OperationState) as string[];
+
 function statusStringToOperationState(state: string): OperationState {
   if (state === 'Canceled') {
     return OperationState.Cancelled;
   }
-  if ((Object.values(OperationState) as string[]).includes(state)) {
+  if (OPERATION_STATE_VALUES.includes(state)) {
     return state as OperationState;
   }
   return OperationState.Unknown;
@@ -156,10 +160,6 @@ export default class SeaOperationBackend implements IOperationBackend {
   // `result()` drives the blocking `execute()` to a terminal `Statement`.
   // Undefined on the async / metadata paths.
   private readonly cancellableExecution?: SeaNativeCancellableExecution;
-
-  // Sync path: the server statement id captured from the resolved `Statement`
-  // once `result()` settles. Undefined until then; surfaced via `id`.
-  private resolvedStatementId?: string;
 
   // Metadata path: terminal statement. Also the resolved fetch handle on the
   // sync-execute path once `cancellableExecution.result()` settles.
@@ -235,14 +235,15 @@ export default class SeaOperationBackend implements IOperationBackend {
   }
 
   public get id(): string {
-    // On the sync (cancellable) path the server statement id isn't known at
-    // construction — it's published mid-`result()` once the initial execute
-    // round-trip returns. Surface it once available (preferring the id captured
-    // from the resolved `Statement`, then the live canceller slot) so a
-    // cancelled/closed sync operation is traceable by the same id the server and
-    // kernel logs key on, matching the async path (which has it from `submit`).
-    // Falls back to the construction-time id (a client UUID) until then.
-    return this.resolvedStatementId ?? this.cancellableExecution?.statementId ?? this._id;
+    // STABLE for the operation's lifetime. The facade keys telemetry start/
+    // complete on this value (DBSQLOperation → MetricsAggregator), so it must
+    // NOT mutate — a sync op's server statement_id isn't known until `result()`
+    // resolves (mid-execute), and flipping `id` then would split the start/
+    // complete records across two keys and silently drop the summary. The
+    // resolved server statement_id is instead surfaced via a debug log (see
+    // `getFetchHandle`) for server/kernel log correlation. On the async path
+    // `_id` already IS the server id (available at submit).
+    return this._id;
   }
 
   public hasResultSet(): boolean {
@@ -482,9 +483,20 @@ export default class SeaOperationBackend implements IOperationBackend {
       // Still Pending/Running — enforce the client-side timeout before sleeping.
       if (deadline !== undefined && Date.now() >= deadline) {
         // Best-effort server-side cancel so the statement doesn't keep running
-        // after we stop waiting; never mask the timeout with a cancel failure.
+        // after we stop waiting; never mask the timeout with a cancel failure,
+        // but warn-log a failed cancel so a still-running server statement is
+        // diagnosable (mirrors the fetch-error cleanup path).
         // eslint-disable-next-line no-await-in-loop
-        await this.cancel().catch(() => undefined);
+        await this.cancel().catch((cancelErr) => {
+          const cause = cancelErr instanceof Error ? cancelErr.message : String(cancelErr);
+          this.context
+            .getLogger()
+            .log(
+              LogLevel.warn,
+              `SEA query-timeout cleanup: cancel() failed for operation ${this._id}; the server-side ` +
+                `statement may keep running until the session is closed. Cause: ${cause}`,
+            );
+        });
         throw new OperationStateError(OperationStateErrorCode.Timeout);
       }
 
@@ -555,9 +567,15 @@ export default class SeaOperationBackend implements IOperationBackend {
           .result()
           .then((stmt) => {
             this.blockingStatement = stmt as unknown as SeaOperationStatement;
-            // Capture the now-known server statement id (stable on the resolved
-            // Statement) so `id` reports it for the rest of the lifecycle.
-            this.resolvedStatementId = this.blockingStatement.statementId ?? this.resolvedStatementId;
+            // Log the now-known server statement id (NOT surfaced via `id`,
+            // which must stay stable for telemetry correlation) so a sync op is
+            // correlatable to server/kernel logs by its client operation id.
+            const serverId = this.blockingStatement.statementId;
+            if (serverId && serverId !== this._id) {
+              this.context
+                .getLogger()
+                .log(LogLevel.debug, `SEA operation ${this._id} resolved to server statement_id ${serverId}`);
+            }
             return stmt as unknown as SeaFetchHandle;
           })
           .catch((err) => {
