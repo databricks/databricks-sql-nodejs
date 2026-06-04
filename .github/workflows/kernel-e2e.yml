@@ -182,12 +182,25 @@ jobs:
       checks: write
       id-token: write
     env:
-      # SEA e2e tests gate on the DATABRICKS_PECOTESTING_* vars; map the
-      # warehouse secrets onto them so the suite actually runs (it skips
-      # when they are absent).
+      # The tests/e2e/sea suite reads creds from TWO sources, so we set both:
+      #
+      # 1. Most SEA tests (execution, results, interval-*) read the
+      #    DATABRICKS_PECOTESTING_* vars directly and skip when absent.
       DATABRICKS_PECOTESTING_SERVER_HOSTNAME: ${{ secrets.DATABRICKS_HOST }}
       DATABRICKS_PECOTESTING_HTTP_PATH: ${{ secrets.TEST_PECO_WAREHOUSE_HTTP_PATH }}
       DATABRICKS_PECOTESTING_TOKEN_PERSONAL: ${{ secrets.DATABRICKS_TOKEN }}
+      #
+      # 2. `e2e-smoke.test.ts` imports tests/e2e/utils/config.ts, which
+      #    `process.exit(1)`s at module load if ANY E2E_* var is unset — which
+      #    would abort the whole `tests/e2e/sea/**` mocha run before it starts.
+      #    Mirror main.yml's e2e-test job mapping so the suite loads + runs.
+      E2E_HOST: ${{ secrets.DATABRICKS_HOST }}
+      E2E_PATH: ${{ secrets.TEST_PECO_WAREHOUSE_HTTP_PATH }}
+      E2E_ACCESS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+      E2E_CATALOG: peco
+      E2E_SCHEMA: default
+      E2E_VOLUME: e2etests
+      E2E_TABLE_SUFFIX: ${{ github.sha }}
     steps:
       - name: Check out driver
         uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
