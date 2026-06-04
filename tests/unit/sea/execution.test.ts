@@ -952,6 +952,18 @@ describe('SeaOperationBackend — async (submitStatement) path', () => {
     expect((thrown as OperationStateError).errorCode).to.equal(OperationStateErrorCode.Canceled);
   });
 
+  it('best-effort close()s the kernel statement on a server-driven terminal error (no leak)', async () => {
+    // P1.5: the poll loop must release the statement handle on terminal errors,
+    // not just throw (otherwise the kernel-side statement leaks until session close).
+    for (const state of ['Cancelled', 'Closed', 'Unknown']) {
+      const stmt = new FakeAsyncStatement(state);
+      const op = makeAsyncOp(stmt);
+      // eslint-disable-next-line no-await-in-loop
+      await op.waitUntilReady().catch(() => undefined);
+      expect(stmt.closed, `closed after ${state}`).to.equal(true);
+    }
+  });
+
   it('waitUntilReady() throws OperationStateError(Closed) on a server-side Closed statement', async () => {
     const op = makeAsyncOp(new FakeAsyncStatement('Closed'));
     let thrown: unknown;

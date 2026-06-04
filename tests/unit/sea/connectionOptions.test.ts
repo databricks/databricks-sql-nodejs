@@ -93,6 +93,17 @@ describe('SeaAuth TLS options (buildSeaTlsOptions)', () => {
     expect(() => buildSeaTlsOptions(opts({ customCaCert: 'not-a-pem' }))).to.throw(HiveDriverError, /PEM certificate/);
   });
 
+  it('rejects out-of-order / partial PEM markers (ordered match, not two substrings)', () => {
+    // END-before-BEGIN, BEGIN-only, and END-only must all fail — a blob that
+    // merely *contains* both literals (e.g. a proxy-intercept page) is not a cert.
+    const reversed = '-----END CERTIFICATE-----\nMIIB...\n-----BEGIN CERTIFICATE-----';
+    const beginOnly = '-----BEGIN CERTIFICATE-----\nMIIB...\n';
+    const endOnly = 'MIIB...\n-----END CERTIFICATE-----';
+    for (const bad of [reversed, beginOnly, endOnly]) {
+      expect(() => buildSeaTlsOptions(opts({ customCaCert: bad })), bad).to.throw(HiveDriverError, /PEM certificate/);
+    }
+  });
+
   it('rejects an empty Buffer', () => {
     expect(() => buildSeaTlsOptions(opts({ customCaCert: Buffer.alloc(0) }))).to.throw(HiveDriverError, /empty/);
   });
