@@ -31,6 +31,9 @@ function stubBinding(overrides: Partial<Record<keyof SeaNativeBinding, unknown>>
     openSession: async () => ({}),
     Connection: function Connection() {},
     Statement: function Statement() {},
+    AsyncStatement: function AsyncStatement() {},
+    AsyncResultHandle: function AsyncResultHandle() {},
+    CancellableExecution: function CancellableExecution() {},
     ...overrides,
   } as unknown as SeaNativeBinding;
 }
@@ -120,6 +123,17 @@ describe('SeaNativeLoader', () => {
       const msg = thrownMessage(() => loader.get());
       expect(msg).to.match(/missing expected export/);
       expect(msg).to.match(/openSession/);
+    });
+
+    it('rejects a stale binding missing the async / cancellable execution classes', () => {
+      // An older cached .node would load but crash mid-query at e.g.
+      // `submitStatement` / `executeStatementCancellable`; fail fast at load.
+      for (const cls of ['AsyncStatement', 'AsyncResultHandle', 'CancellableExecution'] as const) {
+        const loader = new SeaNativeLoader(() => stubBinding({ [cls]: undefined }), SUPPORTED_NODE_MAJOR);
+        const msg = thrownMessage(() => loader.get());
+        expect(msg, cls).to.match(/missing expected export/);
+        expect(msg, cls).to.contain(cls);
+      }
     });
   });
 

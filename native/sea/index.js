@@ -310,10 +310,11 @@ if (!nativeBinding) {
   throw new Error(`Failed to load native binding`)
 }
 
-const { AsyncStatement, AsyncResultHandle, Connection, AuthMode, openSession, Statement, version } = nativeBinding
+const { AsyncStatement, AsyncResultHandle, CancellableExecution, Connection, AuthMode, openSession, Statement, version } = nativeBinding
 
 module.exports.AsyncStatement = AsyncStatement
 module.exports.AsyncResultHandle = AsyncResultHandle
+module.exports.CancellableExecution = CancellableExecution
 module.exports.Connection = Connection
 module.exports.AuthMode = AuthMode
 module.exports.openSession = openSession

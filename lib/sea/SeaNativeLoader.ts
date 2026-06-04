@@ -36,6 +36,9 @@ import type {
   ExecuteOptions as NativeExecuteOptions,
   TypedValueInput as NativeTypedValueInput,
   NamedTypedValueInput as NativeNamedTypedValueInput,
+  AsyncStatement as NativeAsyncStatement,
+  AsyncResultHandle as NativeAsyncResultHandle,
+  CancellableExecution as NativeCancellableExecution,
 } from '../../native/sea';
 
 // SEA-prefixed re-exports. The kernel-generated `.d.ts` keeps the
@@ -58,6 +61,22 @@ export type SeaStatement = NativeStatement;
 export type SeaNativeExecuteOptions = NativeExecuteOptions;
 export type SeaNativeTypedValueInput = NativeTypedValueInput;
 export type SeaNativeNamedTypedValueInput = NativeNamedTypedValueInput;
+
+// Async-submit surface: `Connection.submitStatement` returns an
+// `AsyncStatement` (status / awaitResult / cancel / close); `awaitResult`
+// yields an `AsyncResultHandle` whose `fetchNextBatch` / `schema` match the
+// blocking `Statement`'s fetch surface, so the results pipeline consumes
+// either interchangeably.
+export type SeaNativeAsyncStatement = NativeAsyncStatement;
+export type SeaNativeAsyncResultHandle = NativeAsyncResultHandle;
+
+// Cancellable sync-execute surface: `Connection.executeStatementCancellable`
+// returns a `CancellableExecution` that captures a detached StatementCanceller
+// BEFORE dispatching the blocking `execute()`, so a concurrent `cancel()`
+// interrupts a still-running query mid-compute. `result()` drives the blocking
+// execute and resolves to the same terminal `Statement` `executeStatement`
+// returns.
+export type SeaNativeCancellableExecution = NativeCancellableExecution;
 
 /**
  * The full native binding surface, derived from the generated module
@@ -124,6 +143,13 @@ function assertBindingShape(binding: SeaNativeBinding): void {
   if (typeof binding.openSession !== 'function') missing.push('openSession');
   if (typeof binding.Connection !== 'function') missing.push('Connection');
   if (typeof binding.Statement !== 'function') missing.push('Statement');
+  // Classes the async (submit/poll) and cancellable-sync execution paths depend
+  // on. Checking them here turns a stale/older cached `.node` into a clear
+  // load-time error instead of an `X is not a function` mid-query (e.g.
+  // `Connection.submitStatement` / `executeStatementCancellable`).
+  if (typeof binding.AsyncStatement !== 'function') missing.push('AsyncStatement');
+  if (typeof binding.AsyncResultHandle !== 'function') missing.push('AsyncResultHandle');
+  if (typeof binding.CancellableExecution !== 'function') missing.push('CancellableExecution');
   if (missing.length > 0) {
     throw new Error(
       `SEA native binding loaded but is missing expected export(s): ${missing.join(', ')}. ` +

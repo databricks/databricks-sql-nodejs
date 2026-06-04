@@ -13,6 +13,7 @@
 // limitations under the License.
 
 import { ConnectionOptions } from '../contracts/IDBSQLClient';
+import { InternalConnectionOptions } from '../contracts/InternalConnectionOptions';
 import AuthenticationError from '../errors/AuthenticationError';
 import HiveDriverError from '../errors/HiveDriverError';
 
@@ -66,9 +67,58 @@ export interface SeaSessionDefaults {
   catalog?: string;
   schema?: string;
   sessionConf?: Record<string, string>;
+  /**
+   * Render `INTERVAL` / `DURATION` result columns as strings
+   * (kernel `ResultConfig.intervals_as_string`). The kernel default is
+   * native Arrow `month_interval` / `duration[us]`, but the NodeJS
+   * Thrift driver surfaces intervals as strings — so the SEA path sets
+   * this `true` so its result shape is a byte-compatible drop-in for the
+   * Thrift backend. Omitting it falls back to the kernel's native types.
+   */
+  intervalsAsString?: boolean;
+  /**
+   * Render complex (`ARRAY` / `MAP` / `STRUCT` / `VARIANT`) result
+   * columns as JSON strings (kernel `ResultConfig.complex_types_as_json`).
+   * Left unset on the SEA path: native Arrow nested types already decode
+   * identically to the Thrift backend through the shared Arrow converter,
+   * so forcing JSON here would *introduce* a divergence rather than
+   * remove one.
+   */
+  complexTypesAsJson?: boolean;
+  /**
+   * Per-session kernel connection-pool size
+   * (kernel `ConnectionOptions.max_connections`). Validated as a positive
+   * integer within the napi `u32` range by `buildSeaConnectionOptions`.
+   */
+  maxConnections?: number;
+}
+
+/**
+ * TLS options shared across all auth-mode variants. Mirror the napi
+ * binding's `ConnectionOptions.checkServerCertificate` / `.customCaCert`
+ * (kernel `Session::builder().tls(TlsConfig)`).
+ *
+ * The napi shape takes `customCaCert` as a `Buffer` only; the public
+ * `ConnectionOptions` additionally accepts a PEM string, which
+ * `buildSeaConnectionOptions` normalises to a `Buffer` before crossing
+ * the FFI boundary.
+ */
+export interface SeaTlsOptions {
+  /**
+   * Verify the server's TLS certificate. The SEA backend is
+   * **secure-by-default**: omitting this leaves the kernel default of
+   * `true` (full chain + hostname verification). Set `false` only to opt
+   * into the insecure, accept-anything mode (analogous to Thrift's
+   * `rejectUnauthorized: false`); prefer pairing strict checking with
+   * `customCaCert` over disabling verification entirely.
+   */
+  checkServerCertificate?: boolean;
+  /** PEM-encoded CA bytes to add to the trust store. */
+  customCaCert?: Buffer;
 }
 
 export type SeaNativeConnectionOptions = SeaSessionDefaults &
+  SeaTlsOptions &
   (
     | {
         hostName: string;
@@ -112,6 +162,63 @@ function prependSlash(str: string): string {
 export function isBlankOrReserved(s: string): boolean {
   const normalized = s.trim().toLowerCase();
   return normalized.length === 0 || normalized === 'undefined' || normalized === 'null';
+}
+
+/** napi-rs marshals `maxConnections` as a `u32`; reject values it can't hold. */
+const MAX_U32 = 0xffffffff;
+
+/**
+ * Normalise the public TLS options (`checkServerCertificate` /
+ * `customCaCert`) into the napi shape.
+ *
+ * - `checkServerCertificate` passes through verbatim (only when set; an
+ *   absent value leaves the kernel default, which is secure — verify on).
+ * - `customCaCert` accepts a PEM string or `Buffer` on the public
+ *   surface; we convert a string to a `Buffer` here and do a light PEM
+ *   sanity check. The bytes are NOT parsed in JS — the kernel returns a
+ *   meaningful error if the PEM is malformed.
+ *
+ * Throws `HiveDriverError` when `customCaCert` is supplied but empty or
+ * (for strings) lacks a PEM certificate header.
+ */
+export function buildSeaTlsOptions(options: ConnectionOptions): SeaTlsOptions {
+  // Read the SEA-only fields through the purpose-built internal options type
+  // rather than an ad-hoc inline cast, so the shape can't silently drift from
+  // its declaration and a typo'd key fails to compile.
+  const { checkServerCertificate, customCaCert } = options as ConnectionOptions & InternalConnectionOptions;
+
+  const tls: SeaTlsOptions = {};
+
+  if (checkServerCertificate !== undefined) {
+    tls.checkServerCertificate = checkServerCertificate;
+  }
+
+  if (customCaCert !== undefined) {
+    if (typeof customCaCert === 'string') {
+      // Light PEM sanity check — require a well-ordered BEGIN…END block so a
+      // truncated/headerless cert (or a stray page that merely contains both
+      // literals out of order, e.g. a proxy-intercept page) is rejected here
+      // rather than surfacing as an opaque kernel TLS error. Ordered match, not
+      // two independent substring checks. Full parsing is deferred to the kernel.
+      if (!/-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/.test(customCaCert)) {
+        throw new HiveDriverError(
+          'SEA backend: `customCaCert` string does not look like a PEM certificate ' +
+            "(expected a '-----BEGIN CERTIFICATE-----' … '-----END CERTIFICATE-----' block). " +
+            'Pass PEM text or a Buffer of PEM bytes.',
+        );
+      }
+      tls.customCaCert = Buffer.from(customCaCert, 'utf8');
+    } else if (Buffer.isBuffer(customCaCert)) {
+      if (customCaCert.length === 0) {
+        throw new HiveDriverError('SEA backend: `customCaCert` Buffer is empty.');
+      }
+      tls.customCaCert = customCaCert;
+    } else {
+      throw new HiveDriverError('SEA backend: `customCaCert` must be a PEM string or a Buffer.');
+    }
+  }
+
+  return tls;
 }
 
 /**
@@ -170,10 +277,42 @@ export function isBlankOrReserved(s: string): boolean {
 export function buildSeaConnectionOptions(options: ConnectionOptions): SeaNativeConnectionOptions {
   const { authType } = options as { authType?: string };
 
-  const base = {
+  const base: {
+    hostName: string;
+    httpPath: string;
+    intervalsAsString: boolean;
+    maxConnections?: number;
+  } & SeaTlsOptions = {
     hostName: options.host,
     httpPath: prependSlash(options.path),
+    // Match the NodeJS Thrift driver, which surfaces INTERVAL columns as
+    // strings. The kernel defaults to native Arrow interval/duration types;
+    // forcing the string rendering here keeps the SEA path a byte-compatible
+    // drop-in. Complex types are intentionally left at the kernel default
+    // (native Arrow) — they already decode identically to Thrift via the
+    // shared Arrow converter, so `complexTypesAsJson` is not forced on.
+    intervalsAsString: true,
+    // TLS knobs (server-cert verification toggle + custom CA). Validated and
+    // normalised (string PEM → Buffer) here so the napi shape only sees a Buffer.
+    ...buildSeaTlsOptions(options),
   };
+
+  // SEA-only pool sizing; read via cast to match how this function reads the
+  // other SEA-specific options (TLS) — they live on the internal options
+  // surface, not the published public `ConnectionOptions` `.d.ts`.
+  const { maxConnections } = options as ConnectionOptions & InternalConnectionOptions;
+  if (maxConnections !== undefined) {
+    if (!Number.isInteger(maxConnections) || maxConnections < 1) {
+      throw new HiveDriverError(`SEA backend: \`maxConnections\` must be a positive integer; got ${maxConnections}.`);
+    }
+    if (maxConnections > MAX_U32) {
+      throw new HiveDriverError(
+        `SEA backend: \`maxConnections\` exceeds the napi u32 limit (${MAX_U32}); got ${maxConnections}. ` +
+          'Typical pool sizes are 10-500.',
+      );
+    }
+    base.maxConnections = maxConnections;
+  }
 
   const oauth = options as {
     oauthClientId?: string;

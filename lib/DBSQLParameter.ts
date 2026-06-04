@@ -8,6 +8,15 @@ export enum DBSQLParameterType {
   STRING = 'STRING',
   DATE = 'DATE',
   TIMESTAMP = 'TIMESTAMP',
+  // `TIMESTAMP_NTZ` binds a timezone-free (wall-clock) timestamp. It is a real
+  // Spark type, bound natively on both the Thrift and kernel backends (requires
+  // a server that supports TIMESTAMP_NTZ; Spark 3.4+ / recent DBR).
+  TIMESTAMP_NTZ = 'TIMESTAMP_NTZ',
+  // `TIMESTAMP_LTZ` is an alias for `TIMESTAMP`: Spark has no distinct
+  // TIMESTAMP_LTZ type — `TIMESTAMP` already carries local/instant (LTZ)
+  // semantics. `toSparkParameter` therefore binds it as `TIMESTAMP` on the wire
+  // (valid on both backends); it exists only as a self-documenting alias.
+  TIMESTAMP_LTZ = 'TIMESTAMP_LTZ',
   FLOAT = 'FLOAT',
   DECIMAL = 'DECIMAL',
   DOUBLE = 'DOUBLE',
@@ -50,10 +59,16 @@ export class DBSQLParameter {
       return new TSparkParameter({ name }); // for NULL neither `type` nor `value` should be set
     }
 
+    // Map timezone-explicit timestamp aliases to their Spark wire type. Spark
+    // has no distinct TIMESTAMP_LTZ type (TIMESTAMP carries LTZ semantics), so
+    // bind it as TIMESTAMP — valid on both the Thrift and kernel backends.
+    // TIMESTAMP_NTZ is a real Spark type and is bound natively.
+    const wireType = this.type === DBSQLParameterType.TIMESTAMP_LTZ ? DBSQLParameterType.TIMESTAMP : this.type;
+
     if (typeof this.value === 'boolean') {
       return new TSparkParameter({
         name,
-        type: this.type ?? DBSQLParameterType.BOOLEAN,
+        type: wireType ?? DBSQLParameterType.BOOLEAN,
         value: new TSparkParameterValue({
           stringValue: this.value ? 'TRUE' : 'FALSE',
         }),
@@ -63,7 +78,7 @@ export class DBSQLParameter {
     if (typeof this.value === 'number') {
       return new TSparkParameter({
         name,
-        type: this.type ?? (Number.isInteger(this.value) ? DBSQLParameterType.INTEGER : DBSQLParameterType.DOUBLE),
+        type: wireType ?? (Number.isInteger(this.value) ? DBSQLParameterType.INTEGER : DBSQLParameterType.DOUBLE),
         value: new TSparkParameterValue({
           stringValue: Number(this.value).toString(),
         }),
@@ -73,7 +88,7 @@ export class DBSQLParameter {
     if (this.value instanceof Int64 || typeof this.value === 'bigint') {
       return new TSparkParameter({
         name,
-        type: this.type ?? DBSQLParameterType.BIGINT,
+        type: wireType ?? DBSQLParameterType.BIGINT,
         value: new TSparkParameterValue({
           stringValue: this.value.toString(),
         }),
@@ -83,7 +98,7 @@ export class DBSQLParameter {
     if (this.value instanceof Date) {
       return new TSparkParameter({
         name,
-        type: this.type ?? DBSQLParameterType.TIMESTAMP,
+        type: wireType ?? DBSQLParameterType.TIMESTAMP,
         value: new TSparkParameterValue({
           stringValue: this.value.toISOString(),
         }),
@@ -92,7 +107,7 @@ export class DBSQLParameter {
 
     return new TSparkParameter({
       name,
-      type: this.type ?? DBSQLParameterType.STRING,
+      type: wireType ?? DBSQLParameterType.STRING,
       value: new TSparkParameterValue({
         stringValue: this.value,
       }),

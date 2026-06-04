@@ -131,12 +131,17 @@ export async function seaCancel(
 
   context.getLogger().log(LogLevel.debug, `Cancelling SEA operation with id: ${operationId}`);
 
+  // Set the intent BEFORE the RPC and keep it set even if the cancel RPC
+  // fails: the caller asked to cancel, so the operation must stay cancelled
+  // (subsequent fetches fail fast, and any poll-loop observer that already saw
+  // the flag stays consistent). The RPC failure is surfaced via the rethrow —
+  // we do NOT roll the flag back, which would silently resurrect a cancelled
+  // operation while the kernel-side statement may still be running.
   state.isCancelled = true;
 
   try {
     await statement.cancel();
   } catch (err) {
-    state.isCancelled = false;
     rethrowKernelError(err);
   }
 
