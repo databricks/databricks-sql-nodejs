@@ -519,9 +519,17 @@ export declare class CancellableExecution {
    *
    * On a server-side cancel the kernel's blocking `execute()` currently
    * surfaces `InvalidArgument` (a known kernel quirk — the async path
-   * returns `Cancelled`). When this handle's `cancel()` fired, we normalise
-   * that into `Cancelled` here so JS callers can rely on a single
-   * cancelled-status code regardless of execution path.
+   * returns `Cancelled`). When this handle's `cancel()` actually dispatched a
+   * server-side cancel, we normalise that into `Cancelled` here so JS callers
+   * can rely on a single cancelled-status code regardless of execution path.
+   *
+   * Three outcomes can race the blocking drive: (1) a natural terminal state
+   * → `Ok` or the genuine error; (2) an explicit `cancel()` that dispatched a
+   * server cancel → this `result()` rejects with a `Cancelled`-coded error
+   * (the normalisation above); (3) the future being **dropped** mid-flight
+   * (`Promise.race`/timeout loser) → the kernel's `MidExecuteCancelState`
+   * drop-guard fires a fire-and-forget `cancel_statement`, but there is no
+   * `result()` left to observe a code. Only (2) yields a `Cancelled` error.
    */
   result(): Promise<Statement>
   /**
