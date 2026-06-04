@@ -51,11 +51,15 @@ export interface ExecuteOptions {
    * raises `InvalidArgument` — the caller's intent is ambiguous
    * so we refuse to silently pick one over the other.
    *
+   * A **`null`** value emits a **bare key** (no colon) — e.g.
+   * `{ production: null }` → `"production"` — matching the
+   * connectors' `key`-only tag form.
+   *
    * See the struct-level "Tag-order caveat" for the
    * HashMap-iteration-order vs `Object.keys`-iteration-order
    * divergence and the byte-identical-Thrift-parity workaround.
    */
-  queryTags?: Record<string, string>
+  queryTags?: Record<string, string | undefined | null>
   /**
    * Server-side cap on the number of rows this statement returns
    * (SEA `row_limit`), independent of any SQL `LIMIT`. Maps to
@@ -482,6 +486,51 @@ export declare class AsyncResultHandle {
   schema(): ArrowSchema
 }
 /**
+ * Handle returned by `Connection.executeStatementCancellable`. Owns the
+ * built-but-not-yet-executed kernel `Statement` plus a detached
+ * [`StatementCanceller`] captured before dispatch, so JS can fire a
+ * server-side cancel while the blocking `result()` is in flight.
+ *
+ * `pending` is `Arc<Mutex<Option<KernelStatement>>>` so `result()` can
+ * `.take()` the statement (the kernel `execute()` borrows it `&mut`,
+ * then it moves into the produced `Statement` wrapper to keep its
+ * `ValidityFlag` set — see `statement.rs`). A second `result()` call
+ * after the first resolved surfaces `InvalidStatementHandle`.
+ */
+export declare class CancellableExecution {
+  /**
+   * The server-issued statement id this execution targets, if the
+   * server has issued one yet (`null` before the initial submit
+   * round-trip publishes it mid-`result()`). Useful for log
+   * correlation while the blocking drive is in flight.
+   */
+  get statementId(): string | null
+  /**
+   * Drive the blocking `execute()` and resolve to a `Statement`
+   * (identical to what `executeStatement` returns) once the kernel
+   * reaches a terminal state and the result stream is ready.
+   *
+   * Consumes the pending statement: a second `result()` call returns
+   * `KernelError(InvalidStatementHandle)`. The future is
+   * drop-cancel-safe — the kernel's per-execute `MidExecuteCancelState`
+   * guard fires a fire-and-forget `cancel_statement` if this future is
+   * dropped mid-flight (`Promise.race` / timeout loser), independently
+   * of an explicit `cancel()`.
+   */
+  result(): Promise<Statement>
+  /**
+   * Server-side cancel of the in-flight statement.
+   *
+   * Lock-free: fires the detached `StatementCanceller` captured at
+   * construction rather than taking the mutex `result()` holds, so it
+   * interrupts a still-running blocking `result()` instead of queueing
+   * behind it. No-op (returns `Ok`) if no statement id has been
+   * observed yet (query still in its initial submit round-trip), and
+   * idempotent against a server already in a terminal state.
+   */
+  cancel(): Promise<void>
+}
+/**
  * Opaque connection handle wrapping a kernel `Session`.
  *
  * `inner` is `Arc<Mutex<Option<Session>>>` so:
@@ -526,6 +575,29 @@ export declare class Connection {
    * omission to keep the wire shape stable for the common case.
    */
   executeStatement(sql: string, options?: ExecuteOptions | undefined | null): Promise<Statement>
+  /**
+   * Execute a SQL statement on the blocking (sync) path, but return a
+   * `CancellableExecution` handle so a concurrent JS task can cancel
+   * the query *while it is still running server-side*.
+   *
+   * `executeStatement` builds the kernel `Statement`, awaits the
+   * blocking `execute()`, and only then hands JS a `Statement` — so a
+   * query that runs for several seconds is uncancellable from JS on
+   * that path (there is no handle until the blocking call resolves).
+   * This method instead builds the statement, captures a detached
+   * `StatementCanceller` **before** dispatching `execute()`, and hands
+   * JS a `CancellableExecution` immediately. The caller drives the
+   * blocking execution via `result()` (resolves to the same
+   * `Statement` `executeStatement` returns) and can fire `cancel()`
+   * concurrently to interrupt a still-running query mid-COMPUTE.
+   *
+   * Option semantics are identical to `executeStatement` — including
+   * `queryTimeoutSecs`, which IS honoured here (this is the sync
+   * `execute` path; only the async `submitStatement` ignores it).
+   * Mirrors the pyo3 `Statement.canceller()` / `Statement.execute()`
+   * split (PR #121): obtain the canceller before the blocking drive.
+   */
+  executeStatementCancellable(sql: string, options?: ExecuteOptions | undefined | null): Promise<CancellableExecution>
   /**
    * Submit a SQL statement and return immediately with an
    * `AsyncStatement` handle, without blocking until the query

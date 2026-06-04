@@ -155,14 +155,56 @@ export default class SeaSessionBackend implements ISessionBackend {
       );
     }
 
-    const execOptions = this.buildExecuteOptions(options);
+    // `runAsync` selects the kernel execution path, exactly mirroring the
+    // Thrift backend's `runAsync` distinction (the only observable difference is
+    // WHEN `executeStatement` resolves — the public API, result shape, schema,
+    // and error classes are identical on both paths):
+    //
+    //   - DEFAULT (`runAsync` false/undefined) — SYNC. Route through
+    //     `executeStatementCancellable`: the kernel blocks on `execute()`
+    //     (server-side direct-results / poll-to-terminal), which is faster and,
+    //     with the napi sync canceller, fully cancellable mid-COMPUTE. The
+    //     blocking drive runs in the operation backend's `result()` (inside
+    //     `waitUntilReady`, which the facade invokes lazily at first fetch).
+    //     `queryTimeoutSecs` IS honoured on this path (forwarded to the napi
+    //     options below) since the kernel `execute()` consults it.
+    //
+    //   - `runAsync: true` — ASYNC. Submit (`wait_timeout=0s`): the server
+    //     returns a pending `AsyncStatement` immediately while the query runs;
+    //     the backend polls `status()` to terminal in `waitUntilReady()` and
+    //     materialises results via `awaitResult()`. `queryTimeoutSecs` is
+    //     ignored by the kernel on submit, so it is enforced client-side by the
+    //     operation backend's poll-loop deadline instead.
+    const runAsync = options.runAsync ?? false;
+    const queryTimeoutSecs =
+      options.queryTimeout !== undefined ? numberToInt64(options.queryTimeout).toNumber() : undefined;
 
-    // Submit asynchronously (kernel `wait_timeout=0s`): the server returns a
-    // pending `AsyncStatement` immediately while the query runs, matching the
-    // Thrift backend's always-async (`runAsync: true`) path. The operation
-    // backend polls `status()` to terminal in `waitUntilReady()` and
-    // materialises results via `awaitResult()`, so a long-running query stays
-    // cancellable mid-flight and `status()` reports real Pending/Running states.
+    if (!runAsync) {
+      // Sync path: forward `queryTimeoutSecs` to the napi options — the kernel
+      // `execute()` honours it (server statement timeout).
+      const execOptions = this.buildExecuteOptions(options, queryTimeoutSecs);
+      let cancellableExecution;
+      try {
+        cancellableExecution =
+          execOptions === undefined
+            ? await this.connection.executeStatementCancellable(statement)
+            : await this.connection.executeStatementCancellable(statement, execOptions);
+      } catch (err) {
+        throw this.logAndMapError('executeStatement', err);
+      }
+      return new SeaOperationBackend({
+        cancellableExecution: cancellableExecution!,
+        context: this.context,
+        // The kernel honours `queryTimeoutSecs` on the sync `execute` path, so
+        // it is forwarded via the napi options (see `buildExecuteOptions`); the
+        // backend also keeps it as a deadline guard for parity with async.
+        queryTimeoutSecs,
+      });
+    }
+
+    // Async path: do NOT forward `queryTimeoutSecs` (the kernel ignores it on
+    // submit — `wait_timeout=0s`); it is enforced client-side by the poll loop.
+    const execOptions = this.buildExecuteOptions(options);
     let asyncStatement;
     try {
       asyncStatement =
@@ -181,7 +223,7 @@ export default class SeaSessionBackend implements ISessionBackend {
       context: this.context,
       // `queryTimeout` is typed `number | bigint | Int64`; `numberToInt64(...).toNumber()`
       // coerces all three (a bare `Number(int64)` yields NaN — node-int64 has no valueOf).
-      queryTimeoutSecs: options.queryTimeout !== undefined ? numberToInt64(options.queryTimeout).toNumber() : undefined,
+      queryTimeoutSecs,
     });
   }
 
@@ -190,7 +232,10 @@ export default class SeaSessionBackend implements ISessionBackend {
    * `ExecuteOptions`, returning `undefined` when nothing is set so the
    * no-options call shape (`executeStatement(sql)`) is preserved.
    */
-  private buildExecuteOptions(options: ExecuteStatementOptions): SeaNativeExecuteOptions | undefined {
+  private buildExecuteOptions(
+    options: ExecuteStatementOptions,
+    queryTimeoutSecs?: number,
+  ): SeaNativeExecuteOptions | undefined {
     // Positional (`?`) and named (`:name`) parameters are mutually exclusive —
     // the kernel binds one placeholder style per statement. Use the SAME error
     // type and message as the Thrift backend (`ThriftSessionBackend`) so a
@@ -208,9 +253,14 @@ export default class SeaSessionBackend implements ISessionBackend {
     if (namedParams !== undefined) {
       execOptions.namedParams = namedParams;
     }
-    // `queryTimeout` is intentionally NOT forwarded here — the kernel ignores
-    // `queryTimeoutSecs` on `submitStatement`, so it is enforced client-side by
-    // the operation backend's poll-loop deadline instead (see executeStatement).
+    // `queryTimeoutSecs` is forwarded only on the SYNC path (the caller passes
+    // it in): the kernel `execute()` consults it as the server statement
+    // timeout. On the async submit path the caller omits it (the kernel ignores
+    // it under `wait_timeout=0s`), so it is enforced client-side by the
+    // operation backend's poll-loop deadline instead (see executeStatement).
+    if (queryTimeoutSecs !== undefined) {
+      execOptions.queryTimeoutSecs = queryTimeoutSecs;
+    }
     if (options.rowLimit !== undefined) {
       execOptions.rowLimit = Number(options.rowLimit);
     }

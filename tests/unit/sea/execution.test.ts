@@ -123,6 +123,60 @@ class FakeAsyncStatement {
   }
 }
 
+/**
+ * Fake `CancellableExecution` (the `executeStatementCancellable` return — the
+ * sync `runAsync: false` query path). `result()` drives the (already-terminal,
+ * in the fake) execution and yields the terminal statement fetch handle;
+ * `cancel()` flips a flag and, if armed, makes a pending `result()` reject with
+ * a Cancelled-shaped kernel error to model mid-compute interruption.
+ */
+class FakeCancellableExecution {
+  public cancelled = false;
+
+  public resultCalls = 0;
+
+  public resultError: Error | null = null;
+
+  public readonly statementId = '01ef-fake-sync-id';
+
+  // When set, the result() promise stays pending until cancel() rejects it,
+  // modelling a still-running blocking execute that a concurrent cancel aborts.
+  private pendingResolve?: (stmt: FakeNativeStatement) => void;
+
+  private pendingReject?: (err: Error) => void;
+
+  constructor(public readonly resultHandle: FakeNativeStatement = new FakeNativeStatement()) {}
+
+  // When true, result() does not resolve until cancel()/an error fires.
+  public block = false;
+
+  public async result(): Promise<FakeNativeStatement> {
+    this.resultCalls += 1;
+    if (this.resultError) {
+      throw this.resultError;
+    }
+    if (this.block) {
+      return new Promise<FakeNativeStatement>((resolve, reject) => {
+        this.pendingResolve = resolve;
+        this.pendingReject = reject;
+      });
+    }
+    return this.resultHandle;
+  }
+
+  public async cancel(): Promise<void> {
+    this.cancelled = true;
+    // Model the server flipping the statement terminal: a parked result()
+    // rejects with the kernel's Cancelled error envelope.
+    if (this.pendingReject) {
+      const err = new Error('statement cancelled');
+      this.pendingReject(err);
+      this.pendingReject = undefined;
+      this.pendingResolve = undefined;
+    }
+  }
+}
+
 class FakeNativeConnection implements SeaConnection {
   public closed = false;
 
@@ -143,14 +197,19 @@ class FakeNativeConnection implements SeaConnection {
   // Mirrors the kernel `Connection.sessionId` getter.
   public readonly sessionId = '01ef-fake-session-id';
 
-  // Last AsyncStatement handed out by submitStatement (the query path).
+  // Last AsyncStatement handed out by submitStatement (the async query path).
   public lastAsyncStatement?: FakeAsyncStatement;
 
   // The async submit state(s) the next FakeAsyncStatement should report.
   public submitStatusValue: string | string[] = 'Succeeded';
 
-  // The blocking executeStatement path is no longer used by the SEA backend
-  // (queries go through submitStatement), but the binding still exposes it.
+  // Last CancellableExecution handed out by executeStatementCancellable (the
+  // sync `runAsync: false` query path — the DEFAULT).
+  public lastCancellableExecution?: FakeCancellableExecution;
+
+  // The bare blocking executeStatement path: the SEA backend's sync default
+  // routes through executeStatementCancellable (below), but the binding still
+  // exposes this for completeness.
   public async executeStatement(sql: string, options?: unknown): Promise<SeaStatement> {
     if (this.throwOnExecute) {
       throw this.throwOnExecute;
@@ -158,6 +217,18 @@ class FakeNativeConnection implements SeaConnection {
     this.lastSql = sql;
     this.lastOptions = options;
     return this.statementToReturn;
+  }
+
+  // Sync (`runAsync: false`, the DEFAULT) query path: records sql + options and
+  // returns a pending CancellableExecution whose result() drives the execute.
+  public async executeStatementCancellable(sql: string, options?: unknown): Promise<any> {
+    if (this.throwOnExecute) {
+      throw this.throwOnExecute;
+    }
+    this.lastSql = sql;
+    this.lastOptions = options;
+    this.lastCancellableExecution = new FakeCancellableExecution();
+    return this.lastCancellableExecution;
   }
 
   // Async-submit path: records sql + per-statement options (for forwarding
@@ -517,26 +588,36 @@ describe('SeaSessionBackend', () => {
     expect((thrown as Error).message).to.equal('Driver does not support both ordinal and named parameters.');
   });
 
-  it('executeStatement does NOT forward queryTimeout to submit (kernel ignores it; enforced client-side)', async () => {
+  it('executeStatement (sync default) DOES forward queryTimeout to the napi options', async () => {
     const connection = new FakeNativeConnection();
     const session = makeSession(connection);
     await session.executeStatement('SELECT 1', { queryTimeout: 30 });
-    // queryTimeout alone must not produce napi submit options — the kernel
-    // ignores queryTimeoutSecs on submitStatement, so it's enforced client-side
-    // by the operation backend's poll deadline instead (covered below).
+    // Sync path: the kernel `execute()` honours queryTimeoutSecs (server
+    // statement timeout), so the backend forwards it onto the napi options.
+    expect((connection.lastOptions as { queryTimeoutSecs?: number } | undefined)?.queryTimeoutSecs).to.equal(30);
+  });
+
+  it('executeStatement (runAsync: true) does NOT forward queryTimeout to submit (kernel ignores it; enforced client-side)', async () => {
+    const connection = new FakeNativeConnection();
+    const session = makeSession(connection);
+    await session.executeStatement('SELECT 1', { queryTimeout: 30, runAsync: true });
+    // Async submit path: the kernel ignores queryTimeoutSecs under
+    // `wait_timeout=0s`, so it's enforced client-side by the poll deadline
+    // instead — never forwarded to the napi options.
     expect((connection.lastOptions as { queryTimeoutSecs?: number } | undefined)?.queryTimeoutSecs).to.equal(undefined);
   });
 
-  it('coerces an Int64 queryTimeout into the client-side deadline (not NaN)', async function int64Timeout() {
+  it('coerces an Int64 queryTimeout into the client-side deadline on the async path (not NaN)', async function int64Timeout() {
     // Regression: `Number(new Int64(...))` yields NaN (node-int64 has no valueOf),
     // which would silently disable the deadline. The backend must coerce via
     // numberToInt64(...).toNumber() so an Int64 queryTimeout still bounds the poll.
+    // Exercised on the async path, where the client-side poll deadline applies.
     // eslint-disable-next-line no-invalid-this
     this.timeout(5000);
     const connection = new FakeNativeConnection();
     connection.submitStatusValue = 'Running'; // never reaches a terminal state
     const session = makeSession(connection);
-    const op = await session.executeStatement('SELECT 1', { queryTimeout: new Int64(1) });
+    const op = await session.executeStatement('SELECT 1', { queryTimeout: new Int64(1), runAsync: true });
     let thrown: unknown;
     try {
       await op.waitUntilReady();
@@ -886,5 +967,95 @@ describe('SeaOperationBackend — async (submitStatement) path', () => {
     const op = makeAsyncOp(stmt);
     await op.close();
     expect(stmt.closed).to.equal(true);
+  });
+});
+
+describe('SeaOperationBackend — sync (executeStatementCancellable) path', () => {
+  const makeSyncOp = (cancellableExecution: FakeCancellableExecution, queryTimeoutSecs?: number) =>
+    new SeaOperationBackend({
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      cancellableExecution: cancellableExecution as any,
+      context: makeContext(),
+      queryTimeoutSecs,
+    });
+
+  it('rejects when more than one handle kind is provided', () => {
+    expect(
+      () =>
+        new SeaOperationBackend({
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          cancellableExecution: new FakeCancellableExecution() as any,
+          statement: new FakeNativeStatement(),
+          context: makeContext(),
+        }),
+    ).to.throw(HiveDriverError, /exactly one/);
+  });
+
+  it('id defaults to the cancellable execution statement id', () => {
+    const op = makeSyncOp(new FakeCancellableExecution());
+    expect(op.id).to.equal('01ef-fake-sync-id');
+  });
+
+  it('status() reports Running before result() and Succeeded after', async () => {
+    const exec = new FakeCancellableExecution();
+    const op = makeSyncOp(exec);
+    // Before waitUntilReady drives result(), the blocking execute is still in
+    // flight from the JS side's perspective.
+    expect((await op.status(false)).state).to.equal(OperationState.Running);
+    await op.waitUntilReady();
+    expect((await op.status(false)).state).to.equal(OperationState.Succeeded);
+  });
+
+  it('waitUntilReady() drives result() to the terminal statement and fires the callback once', async () => {
+    const exec = new FakeCancellableExecution();
+    const op = makeSyncOp(exec);
+    const states: OperationState[] = [];
+    await op.waitUntilReady({ callback: (s) => states.push(s.state) });
+    expect(exec.resultCalls).to.equal(1);
+    expect(states).to.deep.equal([OperationState.Succeeded]);
+  });
+
+  it('cancel() forwards to the cancellable execution (mid-compute)', async () => {
+    const exec = new FakeCancellableExecution();
+    const op = makeSyncOp(exec);
+    await op.cancel();
+    expect(exec.cancelled).to.equal(true);
+  });
+
+  it('cancel() interrupts an in-flight result(), surfacing OperationStateError(Canceled)', async () => {
+    const exec = new FakeCancellableExecution();
+    exec.block = true; // result() stays pending until cancel() rejects it
+    const op = makeSyncOp(exec);
+    // Start the wait (drives result(), which parks), then cancel mid-compute.
+    const waitPromise = op.waitUntilReady();
+    // Let the microtask queue run so result() is dispatched and parked.
+    await Promise.resolve();
+    await op.cancel();
+    let thrown: unknown;
+    try {
+      await waitPromise;
+    } catch (err) {
+      thrown = err;
+    }
+    expect(exec.cancelled).to.equal(true);
+    expect(thrown).to.be.instanceOf(OperationStateError);
+    expect((thrown as OperationStateError).errorCode).to.equal(OperationStateErrorCode.Canceled);
+  });
+
+  it('close() routes to the resolved statement once result() has produced it', async () => {
+    const exec = new FakeCancellableExecution();
+    const op = makeSyncOp(exec);
+    await op.waitUntilReady(); // resolves the terminal statement
+    await op.close();
+    expect(exec.resultHandle.closed).to.equal(true);
+  });
+
+  it('close() before result() resolves is a no-op (nothing server-side to close yet)', async () => {
+    const exec = new FakeCancellableExecution();
+    const op = makeSyncOp(exec);
+    // Should not throw even though result() never ran.
+    const status = await op.close();
+    expect(status.isSuccess).to.equal(true);
+    expect(exec.resultHandle.closed).to.equal(false);
   });
 });

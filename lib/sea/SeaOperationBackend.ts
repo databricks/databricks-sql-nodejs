@@ -51,7 +51,12 @@ import ResultSlicer from '../result/ResultSlicer';
 import SeaResultsProvider from './SeaResultsProvider';
 import { arrowSchemaToThriftSchema, decodeIpcSchema, patchIpcBytes } from './SeaArrowIpc';
 import { decodeNapiKernelError } from './SeaErrorMapping';
-import { SeaStatement, SeaNativeAsyncStatement, SeaNativeAsyncResultHandle } from './SeaNativeLoader';
+import {
+  SeaStatement,
+  SeaNativeAsyncStatement,
+  SeaNativeAsyncResultHandle,
+  SeaNativeCancellableExecution,
+} from './SeaNativeLoader';
 import {
   SeaStatementHandle,
   SeaOperationLifecycleState,
@@ -116,6 +121,15 @@ export interface SeaOperationBackendOptions {
   asyncStatement?: SeaNativeAsyncStatement;
   /** The terminal napi `Statement` from a metadata call. */
   statement?: SeaOperationStatement;
+  /**
+   * The pending napi `CancellableExecution` from
+   * `Connection.executeStatementCancellable(...)` — the sync (`runAsync: false`)
+   * query path. `result()` drives the blocking `execute()` to a terminal
+   * `Statement` (the fetch handle); `cancel()` fires a detached canceller that
+   * interrupts a still-running `result()` mid-COMPUTE. Exactly one of
+   * `asyncStatement`, `statement`, or `cancellableExecution` must be set.
+   */
+  cancellableExecution?: SeaNativeCancellableExecution;
   context: IClientContext;
   /**
    * Optional override for `id`. Defaults to the napi statement-id when the
@@ -134,15 +148,23 @@ export interface SeaOperationBackendOptions {
 }
 
 export default class SeaOperationBackend implements IOperationBackend {
-  // Query path: pending async statement we poll to terminal. Undefined on the
-  // metadata path.
+  // Async query path: pending async statement we poll to terminal. Undefined on
+  // the metadata / sync-execute paths.
   private readonly asyncStatement?: SeaNativeAsyncStatement;
 
-  // Metadata path: terminal statement. Undefined on the query path.
-  private readonly blockingStatement?: SeaOperationStatement;
+  // Sync query path (`runAsync: false`): pending cancellable execution whose
+  // `result()` drives the blocking `execute()` to a terminal `Statement`.
+  // Undefined on the async / metadata paths.
+  private readonly cancellableExecution?: SeaNativeCancellableExecution;
+
+  // Metadata path: terminal statement. Also the resolved fetch handle on the
+  // sync-execute path once `cancellableExecution.result()` settles.
+  private blockingStatement?: SeaOperationStatement;
 
   // The cancel/close surface — whichever handle backs this operation. Both
-  // `AsyncStatement` and `Statement` expose `cancel()` / `close()`.
+  // `AsyncStatement` and `Statement` expose `cancel()` / `close()`; the
+  // sync-execute path uses a composite that routes `cancel()` to the
+  // cancellable execution (mid-compute) and `close()` to the resolved statement.
   private readonly lifecycleHandle: SeaStatementHandle;
 
   private readonly context: IClientContext;
@@ -168,15 +190,43 @@ export default class SeaOperationBackend implements IOperationBackend {
   // undefined when unset. Enforced in the async poll loop.
   private readonly queryTimeoutMs?: number;
 
-  constructor({ asyncStatement, statement, context, id, queryTimeoutSecs }: SeaOperationBackendOptions) {
-    if ((asyncStatement === undefined) === (statement === undefined)) {
-      throw new HiveDriverError('SeaOperationBackend: exactly one of `asyncStatement` or `statement` must be provided');
+  constructor({
+    asyncStatement,
+    statement,
+    cancellableExecution,
+    context,
+    id,
+    queryTimeoutSecs,
+  }: SeaOperationBackendOptions) {
+    // Exactly one of the three handle kinds must be supplied.
+    const providedCount =
+      (asyncStatement !== undefined ? 1 : 0) +
+      (statement !== undefined ? 1 : 0) +
+      (cancellableExecution !== undefined ? 1 : 0);
+    if (providedCount !== 1) {
+      throw new HiveDriverError(
+        'SeaOperationBackend: exactly one of `asyncStatement`, `statement`, or `cancellableExecution` must be provided',
+      );
     }
     this.asyncStatement = asyncStatement;
+    this.cancellableExecution = cancellableExecution;
     this.blockingStatement = statement;
-    this.lifecycleHandle = (asyncStatement ?? statement) as SeaStatementHandle;
+    // Lifecycle surface. The async/metadata handles expose both cancel/close.
+    // The sync-execute path uses a composite: `cancel()` always routes to the
+    // cancellable execution (lock-free, interrupts a running `result()`
+    // mid-compute and is a no-op once terminal); `close()` routes to the
+    // resolved terminal statement once `result()` has produced it (before that
+    // there is nothing server-side to close, and the kernel's per-execute drop
+    // guard handles an abandoned in-flight execution).
+    this.lifecycleHandle = cancellableExecution
+      ? {
+          cancel: () => cancellableExecution.cancel(),
+          close: () => (this.blockingStatement ? this.blockingStatement.close() : Promise.resolve()),
+        }
+      : ((asyncStatement ?? statement) as SeaStatementHandle);
     this.context = context;
-    this._id = id ?? asyncStatement?.statementId ?? statement?.statementId ?? uuidv4();
+    this._id =
+      id ?? asyncStatement?.statementId ?? statement?.statementId ?? cancellableExecution?.statementId ?? uuidv4();
     this.queryTimeoutMs = queryTimeoutSecs !== undefined && queryTimeoutSecs > 0 ? queryTimeoutSecs * 1000 : undefined;
   }
 
@@ -312,9 +362,18 @@ export default class SeaOperationBackend implements IOperationBackend {
       return { state: OperationState.Closed, hasResultSet: true };
     }
     if (this.asyncStatement) {
-      // Query path: report the real kernel state (single GetStatementStatus
-      // RPC — no polling here; `waitUntilReady` owns the poll loop).
+      // Async query path: report the real kernel state (single
+      // GetStatementStatus RPC — no polling here; `waitUntilReady` owns the
+      // poll loop).
       const state = statusStringToOperationState(await this.asyncStatement.status());
+      return { state, hasResultSet: true };
+    }
+    if (this.cancellableExecution) {
+      // Sync (`runAsync: false`) path: the kernel `execute()` blocks and polls
+      // server-side; there is no per-status RPC to query while it runs. Report
+      // Running until `result()` has materialised the terminal statement, then
+      // Succeeded — mirroring the kernel's blocking-then-terminal lifecycle.
+      const state = this.fetchHandlePromise ? OperationState.Succeeded : OperationState.Running;
       return { state, hasResultSet: true };
     }
     // Metadata path: the kernel statement is already terminal.
@@ -324,6 +383,9 @@ export default class SeaOperationBackend implements IOperationBackend {
   public async waitUntilReady(options?: IOperationBackendWaitOptions): Promise<void> {
     if (this.asyncStatement) {
       return this.waitUntilReadyAsync(options);
+    }
+    if (this.cancellableExecution) {
+      return this.waitUntilReadyCancellable(options);
     }
     // Metadata path: the kernel statement has already resolved, so there is
     // nothing to poll. seaFinished fires the progress callback once with a
@@ -421,6 +483,36 @@ export default class SeaOperationBackend implements IOperationBackend {
   }
 
   /**
+   * Sync (`runAsync: false`) execute path. Drives the blocking
+   * `CancellableExecution.result()` to a terminal `Statement` (the kernel polls
+   * to completion server-side, honouring `queryTimeoutSecs` on this path). The
+   * await is interruptible: a JS-initiated `cancel()` fires the detached
+   * canceller, the server flips the statement terminal, and the parked
+   * `result()` rejects with `Cancelled` — which we map to the typed
+   * `OperationStateError(Canceled)`.
+   *
+   * Unlike the async path there is no status poll loop (the kernel owns
+   * polling), so the progress callback fires once on completion, matching the
+   * metadata path's single completion tick.
+   */
+  private async waitUntilReadyCancellable(options?: IOperationBackendWaitOptions): Promise<void> {
+    // Already materialised → terminal-and-ready, nothing to wait for.
+    if (this.fetchHandlePromise) {
+      return;
+    }
+    // A JS-initiated cancel/close before we start short-circuits to the typed
+    // state error rather than dispatching the blocking execute.
+    failIfNotActive(this.lifecycle);
+    // `getFetchHandle()` drives `result()` and memoises the resolved Statement
+    // (also stored on `blockingStatement` so `close()` can reach it).
+    await this.getFetchHandle();
+    // Single completion tick, matching the metadata path.
+    if (options?.callback) {
+      await Promise.resolve(options.callback({ state: OperationState.Succeeded, hasResultSet: true }));
+    }
+  }
+
+  /**
    * Drive `awaitResult()` on a Failed statement to surface the kernel's typed
    * SQL-error envelope. Falls back to a generic error if `awaitResult()`
    * unexpectedly resolves instead of rejecting.
@@ -444,6 +536,29 @@ export default class SeaOperationBackend implements IOperationBackend {
         this.fetchHandlePromise = this.asyncStatement.awaitResult().catch((err) => {
           throw decodeNapiKernelError(err);
         }) as Promise<SeaNativeAsyncResultHandle>;
+      } else if (this.cancellableExecution) {
+        // Sync (`runAsync: false`) path: drive the blocking `result()` to the
+        // terminal `Statement`. Store it on `blockingStatement` so `close()` can
+        // reach it post-execute, and so a subsequent fetch uses it directly.
+        this.fetchHandlePromise = this.cancellableExecution
+          .result()
+          .then((stmt) => {
+            this.blockingStatement = stmt as unknown as SeaOperationStatement;
+            return stmt as unknown as SeaFetchHandle;
+          })
+          .catch((err) => {
+            const mapped = decodeNapiKernelError(err);
+            // A cancel-induced rejection surfaces as the kernel's Cancelled
+            // error; map it to the typed `OperationStateError(Canceled)` so the
+            // `DBSQLOperation` facade mirrors its cancelled flag (it only does so
+            // for `OperationStateError`), matching the Thrift path. If the
+            // operation was cancelled client-side, prefer the typed code
+            // regardless of the kernel error text.
+            if (this.lifecycle.isCancelled) {
+              throw new OperationStateError(OperationStateErrorCode.Canceled);
+            }
+            throw mapped;
+          });
       } else {
         const stmt = this.blockingStatement!;
         if (!stmt.fetchNextBatch) {

@@ -38,6 +38,7 @@ import type {
   NamedTypedValueInput as NativeNamedTypedValueInput,
   AsyncStatement as NativeAsyncStatement,
   AsyncResultHandle as NativeAsyncResultHandle,
+  CancellableExecution as NativeCancellableExecution,
 } from '../../native/sea';
 
 // SEA-prefixed re-exports. The kernel-generated `.d.ts` keeps the
@@ -68,6 +69,14 @@ export type SeaNativeNamedTypedValueInput = NativeNamedTypedValueInput;
 // either interchangeably.
 export type SeaNativeAsyncStatement = NativeAsyncStatement;
 export type SeaNativeAsyncResultHandle = NativeAsyncResultHandle;
+
+// Cancellable sync-execute surface: `Connection.executeStatementCancellable`
+// returns a `CancellableExecution` that captures a detached StatementCanceller
+// BEFORE dispatching the blocking `execute()`, so a concurrent `cancel()`
+// interrupts a still-running query mid-compute. `result()` drives the blocking
+// execute and resolves to the same terminal `Statement` `executeStatement`
+// returns.
+export type SeaNativeCancellableExecution = NativeCancellableExecution;
 
 /**
  * The full native binding surface, derived from the generated module
