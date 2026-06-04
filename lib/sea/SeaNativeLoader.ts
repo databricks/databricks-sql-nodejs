@@ -143,6 +143,13 @@ function assertBindingShape(binding: SeaNativeBinding): void {
   if (typeof binding.openSession !== 'function') missing.push('openSession');
   if (typeof binding.Connection !== 'function') missing.push('Connection');
   if (typeof binding.Statement !== 'function') missing.push('Statement');
+  // Classes the async (submit/poll) and cancellable-sync execution paths depend
+  // on. Checking them here turns a stale/older cached `.node` into a clear
+  // load-time error instead of an `X is not a function` mid-query (e.g.
+  // `Connection.submitStatement` / `executeStatementCancellable`).
+  if (typeof binding.AsyncStatement !== 'function') missing.push('AsyncStatement');
+  if (typeof binding.AsyncResultHandle !== 'function') missing.push('AsyncResultHandle');
+  if (typeof binding.CancellableExecution !== 'function') missing.push('CancellableExecution');
   if (missing.length > 0) {
     throw new Error(
       `SEA native binding loaded but is missing expected export(s): ${missing.join(', ')}. ` +

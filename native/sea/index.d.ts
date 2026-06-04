@@ -516,6 +516,12 @@ export declare class CancellableExecution {
    * guard fires a fire-and-forget `cancel_statement` if this future is
    * dropped mid-flight (`Promise.race` / timeout loser), independently
    * of an explicit `cancel()`.
+   *
+   * On a server-side cancel the kernel's blocking `execute()` currently
+   * surfaces `InvalidArgument` (a known kernel quirk — the async path
+   * returns `Cancelled`). When this handle's `cancel()` fired, we normalise
+   * that into `Cancelled` here so JS callers can rely on a single
+   * cancelled-status code regardless of execution path.
    */
   result(): Promise<Statement>
   /**
@@ -524,9 +530,10 @@ export declare class CancellableExecution {
    * Lock-free: fires the detached `StatementCanceller` captured at
    * construction rather than taking the mutex `result()` holds, so it
    * interrupts a still-running blocking `result()` instead of queueing
-   * behind it. No-op (returns `Ok`) if no statement id has been
-   * observed yet (query still in its initial submit round-trip), and
-   * idempotent against a server already in a terminal state.
+   * behind it. No-op (returns `Ok`) if `result()` already finished
+   * successfully, or if no statement id has been observed yet (query still
+   * in its initial submit round-trip), and idempotent against a server
+   * already in a terminal state.
    */
   cancel(): Promise<void>
 }

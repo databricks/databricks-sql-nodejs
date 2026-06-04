@@ -1101,6 +1101,16 @@ describe('SeaOperationBackend — sync (executeStatementCancellable) path', () =
     expect(exec.cancelled).to.equal(true);
   });
 
+  it('close() on a still-running sync op cancels the server execution (no compute leak)', async () => {
+    const exec = new FakeCancellableExecution();
+    const op = makeSyncOp(exec);
+    // close() before result() resolved: with no terminal statement to close,
+    // it must proactively cancel the running execution rather than no-op
+    // (otherwise server compute runs on until the kernel drop-guard fires at GC).
+    await op.close();
+    expect(exec.cancelled).to.equal(true);
+  });
+
   it('cancel() interrupts an in-flight result(), surfacing OperationStateError(Canceled)', async () => {
     const exec = new FakeCancellableExecution();
     exec.block = true; // result() stays pending until cancel() rejects it

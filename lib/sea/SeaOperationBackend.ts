@@ -218,14 +218,15 @@ export default class SeaOperationBackend implements IOperationBackend {
     // Lifecycle surface. The async/metadata handles expose both cancel/close.
     // The sync-execute path uses a composite: `cancel()` always routes to the
     // cancellable execution (lock-free, interrupts a running `result()`
-    // mid-compute and is a no-op once terminal); `close()` routes to the
-    // resolved terminal statement once `result()` has produced it (before that
-    // there is nothing server-side to close, and the kernel's per-execute drop
-    // guard handles an abandoned in-flight execution).
+    // mid-compute and is a no-op once terminal); `close()` closes the resolved
+    // terminal statement once `result()` produced it, OR — if `result()` is
+    // still in flight — proactively cancels the running execution so the server
+    // stops computing immediately rather than running on until the kernel's
+    // drop-guard fires whenever this handle is eventually GC'd.
     this.lifecycleHandle = cancellableExecution
       ? {
           cancel: () => cancellableExecution.cancel(),
-          close: () => (this.blockingStatement ? this.blockingStatement.close() : Promise.resolve()),
+          close: () => (this.blockingStatement ? this.blockingStatement.close() : cancellableExecution.cancel()),
         }
       : ((asyncStatement ?? statement) as SeaStatementHandle);
     this.context = context;
