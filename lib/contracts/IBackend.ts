@@ -3,14 +3,14 @@ import ISessionBackend from './ISessionBackend';
 
 /**
  * Top-level backend dispatch handle. One instance per `DBSQLClient`,
- * chosen at `connect()` time based on the `useSEA` flag and never
+ * chosen at `connect()` time based on the `useKernel` flag and never
  * re-selected per-call.
  */
 export default interface IBackend {
   /**
    * Establish backend-level state before any session is opened. Implementations
    * consume `options` to build backend-specific connection parameters (e.g. the
-   * SEA backend derives napi-binding `SeaNativeConnectionOptions` from the auth
+   * SEA backend derives napi-binding `KernelNativeConnectionOptions` from the auth
    * + host fields here). Transport-layer connection providers are owned by
    * `DBSQLClient` (via `IClientContext`) and exposed to backends through
    * constructor injection.

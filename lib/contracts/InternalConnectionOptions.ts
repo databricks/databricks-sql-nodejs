@@ -7,7 +7,7 @@
  * signature (see `databricks-sql-python/src/databricks/sql/session.py`).
  *
  * Callers cast `ConnectionOptions` to this type *only* at the read site
- * inside the driver; user code that wants to set `useSEA` may still do so
+ * inside the driver; user code that wants to set `useKernel` may still do so
  * via an untyped object literal — the option is not part of the public
  * contract and may be removed without notice.
  */
@@ -17,7 +17,7 @@ export interface InternalConnectionOptions {
    * backend instead of the default Thrift backend. Defaults to `false`.
    * @internal Not stable; M0 stub only.
    */
-  useSEA?: boolean;
+  useKernel?: boolean;
 
   /**
    * SEA-only: kernel connection-pool size (`ConnectionOptions.max_connections`).

@@ -29,16 +29,16 @@ type ArrowSchemaField = Field<DataType<Type, TypeMap>>;
 /**
  * Metadata key carrying the original Arrow `Duration` time unit on fields
  * rewritten to `Int64` by the SEA IPC pre-processor
- * (`lib/sea/SeaArrowIpcDurationFix.ts`). Re-declared here (rather than
+ * (`lib/kernel/KernelArrowIpcDurationFix.ts`). Re-declared here (rather than
  * imported) to keep this generic `lib/result` converter free of a
- * compile-time dependency on `lib/sea`.
+ * compile-time dependency on `lib/kernel`.
  *
  * **SEA-gated by construction — NOT shared with Thrift.** This key (and the
  * `DataType.isInterval` / duration branches below) only ever execute on the
  * SEA path. The Thrift backend sets `intervalTypesAsArrow: false` and maps
  * both INTERVAL `TTypeId`s to `ArrowString` (`lib/result/utils.ts`), so the
  * server pre-formats intervals to strings and this logic is never reached.
- * `export`ed so `SeaIntervalParity.test` can pin it equal to the SEA-side
+ * `export`ed so `KernelIntervalParity.test` can pin it equal to the SEA-side
  * declaration and catch a rename/typo that would silently no-op the consumer.
  */
 export const DURATION_UNIT_METADATA_KEY = 'databricks.arrow.duration_unit';
@@ -101,7 +101,7 @@ function formatYearMonth(years: number, months: number): string {
  *                  millis/seconds depending on `unit`)
  * @param unit      one of `SECOND` / `MILLISECOND` / `MICROSECOND` /
  *                  `NANOSECOND` (the original Arrow time unit, captured
- *                  by `SeaArrowIpcDurationFix.ts`)
+ *                  by `KernelArrowIpcDurationFix.ts`)
  */
 function formatDurationToIntervalDayTime(value: bigint | number, unit: string): string {
   const bi = typeof value === 'bigint' ? value : BigInt(value);
@@ -119,7 +119,7 @@ function formatDurationToIntervalDayTime(value: bigint | number, unit: string): 
  *
  * Throws on any other unit rather than silently treating it as
  * NANOSECOND. The four units above are exactly what
- * `SeaArrowIpcDurationFix` enumerates when it stamps the
+ * `KernelArrowIpcDurationFix` enumerates when it stamps the
  * `databricks.arrow.duration_unit` metadata, so an unrecognized unit
  * here means the two sides have drifted — fail loud (matching
  * `formatArrowInterval`'s stance) instead of emitting a confidently
@@ -360,7 +360,7 @@ export default class ArrowResultConverter implements IResultsProvider<Array<any>
     // INTERVAL — Spark/Databricks SEA emits two flavours: native Arrow
     // `Interval[YearMonth]` / `Interval[DayTime]` (handled here) and
     // `Duration` (transparently rewritten to `Int64` upstream by
-    // `SeaArrowIpcDurationFix.ts`; handled in the bigint/Int64 branch
+    // `KernelArrowIpcDurationFix.ts`; handled in the bigint/Int64 branch
     // below). In every case we coerce to the canonical thrift string
     // form so the SEA path is byte-identical with the thrift path:
     //   YEAR-MONTH → `"Y-M"`

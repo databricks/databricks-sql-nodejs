@@ -18,7 +18,7 @@ import { buildUserAgentString } from './utils';
 import IBackend from './contracts/IBackend';
 import { InternalConnectionOptions } from './contracts/InternalConnectionOptions';
 import ThriftBackend from './thrift-backend/ThriftBackend';
-import SeaBackend from './sea/SeaBackend';
+import KernelBackend from './kernel/KernelBackend';
 import PlainHttpAuthentication from './connection/auth/PlainHttpAuthentication';
 import DatabricksOAuth, { OAuthFlow } from './connection/auth/DatabricksOAuth';
 import {
@@ -627,12 +627,12 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
 
     this.connectionProvider = this.createConnectionProvider(options);
 
-    // M0: `useSEA` is consumed via a non-exported internal-options cast so it
+    // M0: `useKernel` is consumed via a non-exported internal-options cast so it
     // doesn't ship in the public `.d.ts`. Mirrors Python's `kwargs.get("use_sea")`
     // pattern (see databricks-sql-python/src/databricks/sql/session.py).
     const internalOptions = options as ConnectionOptions & InternalConnectionOptions;
-    const backend = internalOptions.useSEA
-      ? new SeaBackend({ context: this })
+    const backend = internalOptions.useKernel
+      ? new KernelBackend({ context: this })
       : new ThriftBackend({
           context: this,
           onConnectionEvent: (event, payload) => this.forwardConnectionEvent(event, payload),

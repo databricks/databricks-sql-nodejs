@@ -19,7 +19,7 @@ export type ExecuteStatementOptions = {
    * - **Thrift backend:** no-op. The Thrift path always submits asynchronously
    *   (`runAsync: true` on the wire) and polls during fetch; this option is not
    *   read.
-   * - **Kernel backend (`useSEA`):** selects the kernel execution path —
+   * - **Kernel backend (`useKernel`):** selects the kernel execution path —
    *   `false`/unset (default) runs the blocking direct-results path (faster,
    *   cancellable mid-compute); `true` submits and polls (returns a pending
    *   handle before completion). Default is sync, matching the python
