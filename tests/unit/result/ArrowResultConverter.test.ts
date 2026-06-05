@@ -5,7 +5,7 @@ import { Table, tableFromArrays, tableToIPC, RecordBatch, TypeMap } from 'apache
 import ArrowResultConverter from '../../../lib/result/ArrowResultConverter';
 import { ArrowBatch } from '../../../lib/result/utils';
 import ResultsProviderStub from '../.stubs/ResultsProviderStub';
-import { TStatusCode, TTableSchema, TTypeId } from '../../../thrift/TCLIService_types';
+import { TTableSchema, TTypeId } from '../../../thrift/TCLIService_types';
 
 import ClientContextStub from '../.stubs/ClientContextStub';
 
@@ -89,7 +89,6 @@ describe('ArrowResultConverter', () => {
     );
     const result = new ArrowResultConverter(new ClientContextStub(), rowSetProvider, {
       schema: sampleThriftSchema,
-      status: { statusCode: TStatusCode.SUCCESS_STATUS },
     });
     expect(await result.fetchNext({ limit: 10000 })).to.be.deep.eq([{ 1: 1 }]);
   });
@@ -98,7 +97,6 @@ describe('ArrowResultConverter', () => {
     const rowSetProvider = new ResultsProviderStub([], emptyItem);
     const result = new ArrowResultConverter(new ClientContextStub(), rowSetProvider, {
       schema: sampleThriftSchema,
-      status: { statusCode: TStatusCode.SUCCESS_STATUS },
     });
     expect(await result.fetchNext({ limit: 10000 })).to.be.deep.eq([]);
     expect(await result.hasMore()).to.be.false;
@@ -116,7 +114,6 @@ describe('ArrowResultConverter', () => {
     );
     const result = new ArrowResultConverter(new ClientContextStub(), rowSetProvider, {
       schema: undefined,
-      status: { statusCode: TStatusCode.SUCCESS_STATUS },
     });
     expect(await result.hasMore()).to.be.false;
     expect(await result.fetchNext({ limit: 10000 })).to.be.deep.eq([]);
@@ -134,7 +131,6 @@ describe('ArrowResultConverter', () => {
     );
     const result = new ArrowResultConverter(new ClientContextStub(), rowSetProvider, {
       schema: thriftSchemaAllNulls,
-      status: { statusCode: TStatusCode.SUCCESS_STATUS },
     });
     expect(await result.fetchNext({ limit: 10000 })).to.be.deep.eq([
       {
@@ -189,7 +185,6 @@ describe('ArrowResultConverter', () => {
     );
     const result = new ArrowResultConverter(new ClientContextStub(), rowSetProvider, {
       schema: createSampleThriftSchema('id'),
-      status: { statusCode: TStatusCode.SUCCESS_STATUS },
     });
 
     const rows1 = await result.fetchNext({ limit: 10000 });

@@ -7,6 +7,11 @@ on:
   pull_request:
     branches:
       - main
+  # Run the same required checks (lint / unit-test / e2e-test / coverage) on the
+  # merge queue's transient ref. Required so a merge queue can be enabled on
+  # `main`: the queue waits on these checks for each merge group, and without a
+  # `merge_group` trigger they would never run and every queued PR would stall.
+  merge_group:
 
 permissions:
   contents: read
