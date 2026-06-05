@@ -403,12 +403,15 @@ describe('SeaOperationBackend — INTERVAL parity with thrift', () => {
     const backend = new SeaOperationBackend({ statement: stub, context: new ClientContextStub() });
 
     // Round-trip the metadata to confirm we synthesise the right TTypeId.
+    // Interval columns are surfaced as STRING_TYPE — matching the Thrift
+    // backend and the Python kernel connector, both of which report interval
+    // columns with a string type code. The value is still rendered to the
+    // canonical interval string (asserted below), which is what makes this
+    // "interval parity with thrift".
     const metadata = await backend.getResultMetadata();
     expect(metadata.schema?.columns?.[0]?.typeDesc.types?.[0]?.primitiveEntry?.type).to.equal(
-      // INTERVAL_DAY_TIME_TYPE = 30 in TCLIService_types
-      // We assert by importing the enum below to avoid magic numbers.
       // eslint-disable-next-line global-require, @typescript-eslint/no-var-requires
-      require('../../../thrift/TCLIService_types').TTypeId.INTERVAL_DAY_TIME_TYPE,
+      require('../../../thrift/TCLIService_types').TTypeId.STRING_TYPE,
     );
 
     const rows = await backend.fetchChunk({ limit: 100 });
