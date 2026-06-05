@@ -142,8 +142,8 @@ export const enum AuthMode {
  * Authentication is selected by `authMode` (default [`AuthMode::Pat`]):
  * - `Pat` — `token` required.
  * - `OAuthM2m` — `oauthClientId` + `oauthClientSecret` required.
- * - `OAuthU2m` — `oauthClientId` / `oauthRedirectPort` optional (kernel
- *   defaults to the `databricks-cli` client on port 8020).
+ * - `OAuthU2m` — `oauthClientId` / `oauthRedirectPort` optional
+ *   (defaults to the `databricks-sql-connector` client on port 8020).
  *
  * Catalog / schema / sessionConf are applied once at session creation
  * and remain in effect for every statement run on the resulting
@@ -174,7 +174,7 @@ export interface ConnectionOptions {
   token?: string
   /**
    * OAuth client id. Required for [`AuthMode::OAuthM2m`]; optional for
-   * [`AuthMode::OAuthU2m`] (kernel defaults to `databricks-cli`).
+   * [`AuthMode::OAuthU2m`] (defaults to `databricks-sql-connector`).
    */
   oauthClientId?: string
   /** OAuth client secret. Required for [`AuthMode::OAuthM2m`]. */
@@ -575,21 +575,25 @@ export declare class Connection {
    */
   get sessionId(): string
   /**
-   * Execute a SQL statement and return a Statement handle that
-   * streams batches via `fetchNextBatch()`.
+   * Execute a SQL statement (directResults — the Thrift / JDBC / Python
+   * `use_sea` model) and return a single `AsyncStatement` handle. Sends
+   * ExecuteStatement with the server inline wait (`wait_timeout` default ~10s,
+   * `on_wait_timeout=CONTINUE`) and returns WITHOUT polling past it.
    *
-   * Catalog / schema / sessionConf are session-level
-   * (`openSession`). Per-statement options on `ExecuteOptions`:
-   * - `statementConf` — per-statement Spark conf overlay
-   * - `queryTags` — serialised to a comma-separated `key:value`
-   *   string and placed in `statement_conf["query_tags"]`,
-   *   matching NodeJS Thrift's `serializeQueryTags` wire shape
+   * The handle is uniform regardless of whether the query finished within the
+   * inline wait:
+   * - **fast query** — the handle is seeded with the inline result, so
+   *   `awaitResult()` returns it with zero extra round-trips and `status()`
+   *   reports the terminal state without a poll (the latency fast path; also
+   *   404-proof — a terminal handle never polls a released statement);
+   * - **slow query** — the handle is a poll/cancel handle the caller drives
+   *   (`status()` / `awaitResult()` / `cancel()`).
    *
-   * `options` is omitted/`None` for the no-options path; passing
-   * `{ statementConf: {} }` (an empty map) is treated the same as
-   * omission to keep the wire shape stable for the common case.
+   * This is the path that gives mid-run cancel for long queries WITHOUT the
+   * eager-handle / close-drives workaround: the returned handle always
+   * corresponds to a server-owned statement, and `close()` is a clean release.
    */
-  executeStatement(sql: string, options?: ExecuteOptions | undefined | null): Promise<Statement>
+  executeStatement(sql: string, options?: ExecuteOptions | undefined | null): Promise<AsyncStatement>
   /**
    * Execute a SQL statement on the blocking (sync) path, but return a
    * `CancellableExecution` handle so a concurrent JS task can cancel

@@ -210,20 +210,9 @@ class FakeNativeConnection implements SeaConnection {
   // sync `runAsync: false` query path — the DEFAULT).
   public lastCancellableExecution?: FakeCancellableExecution;
 
-  // The bare blocking executeStatement path: the SEA backend's sync default
-  // routes through executeStatementCancellable (below), but the binding still
-  // exposes this for completeness.
-  public async executeStatement(sql: string, options?: unknown): Promise<SeaStatement> {
-    if (this.throwOnExecute) {
-      throw this.throwOnExecute;
-    }
-    this.lastSql = sql;
-    this.lastOptions = options;
-    return this.statementToReturn;
-  }
-
-  // Sync (`runAsync: false`, the DEFAULT) query path: records sql + options and
-  // returns a pending CancellableExecution whose result() drives the execute.
+  // Sync (`runAsync: false`) cancellable query path (retained for the
+  // executeStatementCancellable binding; the default execute path is the
+  // directResults `executeStatement` below).
   public async executeStatementCancellable(sql: string, options?: unknown): Promise<any> {
     if (this.throwOnExecute) {
       throw this.throwOnExecute;
@@ -232,6 +221,21 @@ class FakeNativeConnection implements SeaConnection {
     this.lastOptions = options;
     this.lastCancellableExecution = new FakeCancellableExecution();
     return this.lastCancellableExecution;
+  }
+
+  // directResults (`runAsync: false`, the DEFAULT) query path: records sql +
+  // options and returns a single `AsyncStatement` handle — the kernel `execute()`
+  // sends the inline-wait POST and returns one handle (seeded with the inline
+  // result on the fast path, a poll/cancel handle otherwise). `submitStatusValue`
+  // configures the state it reports.
+  public async executeStatement(sql: string, options?: unknown): Promise<any> {
+    if (this.throwOnExecute) {
+      throw this.throwOnExecute;
+    }
+    this.lastSql = sql;
+    this.lastOptions = options;
+    this.lastAsyncStatement = new FakeAsyncStatement(this.submitStatusValue);
+    return this.lastAsyncStatement;
   }
 
   // Async-submit path: records sql + per-statement options (for forwarding

@@ -183,24 +183,31 @@ export default class SeaSessionBackend implements ISessionBackend {
       options.queryTimeout !== undefined ? numberToInt64(options.queryTimeout).toNumber() : undefined;
 
     if (!runAsync) {
-      // Sync path: forward `queryTimeoutSecs` to the napi options — the kernel
-      // `execute()` honours it (server statement timeout).
+      // DEFAULT — directResults (the Thrift / JDBC / Python use_sea model). The
+      // kernel sends ExecuteStatement with the server inline wait (~10s default
+      // + on_wait_timeout=CONTINUE) and returns WITHOUT polling past it, as a
+      // single `AsyncStatement` handle:
+      //   - a fast query comes back seeded with the inline result, so the first
+      //     fetch/status is served with zero extra round-trips (and is
+      //     404-proof — a terminal handle never polls a released statement);
+      //   - a slow query comes back as a poll/cancel handle.
+      // Either way the handle is tied to a server-owned statement, so a long
+      // query stays cancellable (`asyncStatement.cancel()`) and `close()` is a
+      // clean release — no eager-handle / close-drives workaround. Fire-and-
+      // forget DDL/DML commits because the server runs it inline during the POST.
       const execOptions = this.buildExecuteOptions(options, queryTimeoutSecs);
-      let cancellableExecution;
+      let asyncStatement;
       try {
-        cancellableExecution =
+        asyncStatement =
           execOptions === undefined
-            ? await this.connection.executeStatementCancellable(statement)
-            : await this.connection.executeStatementCancellable(statement, execOptions);
+            ? await this.connection.executeStatement(statement)
+            : await this.connection.executeStatement(statement, execOptions);
       } catch (err) {
         throw this.logAndMapError('executeStatement', err);
       }
       return new SeaOperationBackend({
-        cancellableExecution: cancellableExecution!,
+        asyncStatement,
         context: this.context,
-        // The kernel honours `queryTimeoutSecs` on the sync `execute` path, so
-        // it is forwarded via the napi options (see `buildExecuteOptions`); the
-        // backend also keeps it as a deadline guard for parity with async.
         queryTimeoutSecs,
       });
     }
