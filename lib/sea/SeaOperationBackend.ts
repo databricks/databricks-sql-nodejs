@@ -218,15 +218,25 @@ export default class SeaOperationBackend implements IOperationBackend {
     // Lifecycle surface. The async/metadata handles expose both cancel/close.
     // The sync-execute path uses a composite: `cancel()` always routes to the
     // cancellable execution (lock-free, interrupts a running `result()`
-    // mid-compute and is a no-op once terminal); `close()` closes the resolved
-    // terminal statement once `result()` produced it, OR — if `result()` is
-    // still in flight — proactively cancels the running execution so the server
-    // stops computing immediately rather than running on until the kernel's
-    // drop-guard fires whenever this handle is eventually GC'd.
+    // mid-compute and is a no-op once terminal); `close()` drives the statement
+    // to terminal first (fire-and-forget commit) unless the op was cancelled.
     this.lifecycleHandle = cancellableExecution
       ? {
           cancel: () => cancellableExecution.cancel(),
-          close: () => (this.blockingStatement ? this.blockingStatement.close() : cancellableExecution.cancel()),
+          // Fire-and-forget commit semantics. A submitted statement is only
+          // guaranteed to run server-side once `result()` reaches terminal.
+          // On close, if the op was NOT cancelled, drive `result()` to
+          // completion first (the eager kick-off in the session backend means
+          // this is usually already in flight, so we just await the memoised
+          // promise) so a `CREATE`/`INSERT` issued without a fetch still
+          // commits — then close the resolved terminal statement. A cancelled
+          // op skips the drive and releases the (already-cancelling) execution.
+          close: async () => {
+            if (!this.lifecycle.isCancelled && !this.blockingStatement) {
+              await this.getFetchHandle().catch(() => undefined);
+            }
+            return this.blockingStatement ? this.blockingStatement.close() : cancellableExecution.cancel();
+          },
         }
       : ((asyncStatement ?? statement) as SeaStatementHandle);
     this.context = context;

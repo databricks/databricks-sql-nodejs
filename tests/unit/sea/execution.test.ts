@@ -591,44 +591,59 @@ describe('SeaSessionBackend', () => {
     expect((thrown as Error).message).to.equal('Driver does not support both ordinal and named parameters.');
   });
 
-  it('executeStatement (sync default) DOES forward queryTimeout to the napi options', async () => {
+  it('executeStatement does NOT forward queryTimeout — it is a no-op on SEA', async () => {
     const connection = new FakeNativeConnection();
     const session = makeSession(connection);
     await session.executeStatement('SELECT 1', { queryTimeout: 30 });
-    // Sync path: the kernel `execute()` honours queryTimeoutSecs (server
-    // statement timeout), so the backend forwards it onto the napi options.
-    expect((connection.lastOptions as { queryTimeoutSecs?: number } | undefined)?.queryTimeoutSecs).to.equal(30);
+    // queryTimeout is intentionally a NO-OP on SEA (see SeaSessionBackend): the
+    // kernel would otherwise map queryTimeoutSecs onto the SEA `wait_timeout` wire
+    // field (valid range {0} ∪ [5,50]s) — a different concept from a statement
+    // timeout, and out-of-range values fail HTTP 400. The proper mechanism is the
+    // `STATEMENT_TIMEOUT` session config (deferred). So it is neither forwarded
+    // nor allowed to synthesise an options object.
+    expect(connection.lastOptions).to.equal(undefined);
   });
 
-  it('executeStatement (runAsync: true) does NOT forward queryTimeout to submit (kernel ignores it; enforced client-side)', async () => {
+  it('executeStatement (runAsync: true) does NOT forward queryTimeout (no-op on SEA)', async () => {
     const connection = new FakeNativeConnection();
     const session = makeSession(connection);
     await session.executeStatement('SELECT 1', { queryTimeout: 30, runAsync: true });
-    // Async submit path: the kernel ignores queryTimeoutSecs under
-    // `wait_timeout=0s`, so it's enforced client-side by the poll deadline
-    // instead — never forwarded to the napi options.
     expect((connection.lastOptions as { queryTimeoutSecs?: number } | undefined)?.queryTimeoutSecs).to.equal(undefined);
   });
 
-  it('coerces an Int64 queryTimeout into the client-side deadline on the async path (not NaN)', async function int64Timeout() {
-    // Regression: `Number(new Int64(...))` yields NaN (node-int64 has no valueOf),
-    // which would silently disable the deadline. The backend must coerce via
-    // numberToInt64(...).toNumber() so an Int64 queryTimeout still bounds the poll.
-    // Exercised on the async path, where the client-side poll deadline applies.
-    // eslint-disable-next-line no-invalid-this
-    this.timeout(5000);
+  it('accepts an Int64 queryTimeout without forwarding it or crashing (no-op on SEA)', async () => {
+    // queryTimeout is a no-op on SEA, but the option must still be ACCEPTED for
+    // any value type the public API allows (number | bigint | Int64) without
+    // throwing or synthesising napi options. Int64 is the awkward case
+    // (node-int64 has no valueOf), so assert it specifically.
     const connection = new FakeNativeConnection();
-    connection.submitStatusValue = 'Running'; // never reaches a terminal state
     const session = makeSession(connection);
-    const op = await session.executeStatement('SELECT 1', { queryTimeout: new Int64(1), runAsync: true });
-    let thrown: unknown;
-    try {
-      await op.waitUntilReady();
-    } catch (err) {
-      thrown = err;
-    }
-    expect(thrown, 'Int64(1) timeout must fire — NaN would poll forever').to.be.instanceOf(OperationStateError);
-    expect((thrown as OperationStateError).errorCode).to.equal(OperationStateErrorCode.Timeout);
+    await session.executeStatement('SELECT 1', { queryTimeout: new Int64(1) });
+    expect((connection.lastOptions as { queryTimeoutSecs?: number } | undefined)?.queryTimeoutSecs).to.equal(undefined);
+    expect(connection.lastOptions).to.equal(undefined);
+  });
+
+  it('Option A: sync executeStatement drives the statement to terminal before returning', async () => {
+    const connection = new FakeNativeConnection();
+    const session = makeSession(connection);
+    const op = await session.executeStatement('SELECT 1', {});
+    // The default sync path blocks to terminal in executeStatement (matching
+    // JDBC / ADBC C# / Python use_kernel), so the returned op is already finished
+    // — status reports Succeeded with no explicit waitUntilReady()/fetch. This is
+    // what makes fire-and-forget DDL/DML and dependent statements "just work".
+    const status = await op.status(false);
+    expect(status.state).to.equal(OperationState.Succeeded);
+  });
+
+  it('runAsync: true does NOT drive to terminal in executeStatement (returns a pending, cancellable handle)', async () => {
+    const connection = new FakeNativeConnection();
+    connection.submitStatusValue = 'Running';
+    const session = makeSession(connection);
+    const op = await session.executeStatement('SELECT 1', { runAsync: true });
+    // The async path returns immediately with a running handle so the caller can
+    // poll / cancel mid-run (the place to do mid-run cancellation under Option A).
+    const status = await op.status(false);
+    expect(status.state).to.equal(OperationState.Running);
   });
 
   it('executeStatement forwards rowLimit', async () => {
@@ -690,25 +705,26 @@ describe('SeaSessionBackend', () => {
     }
   });
 
-  // Genuinely unsupported on SEA — rejected (rather than silently ignored) so
-  // a caller/agent gets signal instead of a no-op. queryTags / queryTimeout /
-  // rowLimit are NOT here — they are forwarded (asserted above).
-  for (const { name, options, re } of [
-    { name: 'useCloudFetch', options: { useCloudFetch: true }, re: /useCloudFetch/ },
-    { name: 'useLZ4Compression', options: { useLZ4Compression: true }, re: /useLZ4Compression/ },
-    { name: 'stagingAllowedLocalPath', options: { stagingAllowedLocalPath: '/tmp' }, re: /stagingAllowedLocalPath/ },
+  // Not per-statement knobs on the kernel-backed SEA path — ACCEPTED and IGNORED
+  // (no-op) rather than rejected, matching the Python connector's kernel backend
+  // (`KernelDatabricksClient.execute_command`, which takes the same flags and
+  // never reads them). A hard failure would break callers that set these
+  // globally; the kernel exposes no per-statement override for any of them
+  // (CloudFetch is the session-level ResultConfig, compression is decoded from
+  // the manifest, and volume operations have no kernel API yet).
+  for (const { name, options } of [
+    { name: 'useCloudFetch', options: { useCloudFetch: true } },
+    { name: 'useLZ4Compression', options: { useLZ4Compression: true } },
+    { name: 'stagingAllowedLocalPath', options: { stagingAllowedLocalPath: '/tmp' } },
   ] as const) {
-    it(`executeStatement rejects ${name} rather than silently ignoring it`, async () => {
+    it(`executeStatement accepts and ignores ${name} (no throw, not forwarded)`, async () => {
       const connection = new FakeNativeConnection();
       const session = makeSession(connection);
-      let thrown: unknown;
-      try {
-        await session.executeStatement('SELECT 1', options);
-      } catch (err) {
-        thrown = err;
-      }
-      expect(thrown).to.be.instanceOf(HiveDriverError);
-      expect((thrown as Error).message).to.match(re);
+      // Must not throw...
+      await session.executeStatement('SELECT 1', options);
+      // ...and must not be forwarded to the napi options (it has no kernel knob),
+      // so a SELECT-1 with only this option still uses the no-options fast path.
+      expect(connection.lastOptions).to.equal(undefined);
     });
   }
 
@@ -1101,14 +1117,30 @@ describe('SeaOperationBackend — sync (executeStatementCancellable) path', () =
     expect(exec.cancelled).to.equal(true);
   });
 
-  it('close() on a still-running sync op cancels the server execution (no compute leak)', async () => {
+  it('close() on a not-yet-fetched sync op drives result() to terminal then closes it (fire-and-forget commit, no cancel)', async () => {
     const exec = new FakeCancellableExecution();
     const op = makeSyncOp(exec);
-    // close() before result() resolved: with no terminal statement to close,
-    // it must proactively cancel the running execution rather than no-op
-    // (otherwise server compute runs on until the kernel drop-guard fires at GC).
+    // Fire-and-forget DDL/DML: execute then close without a fetch. close() must
+    // drive result() to completion (so the statement actually commits
+    // server-side) and then close the resolved terminal statement — it must NOT
+    // cancel the execution (which would abort an uncommitted CREATE/INSERT).
     await op.close();
+    expect(exec.cancelled).to.equal(false);
+    expect(exec.resultCalls).to.equal(1);
+    expect(exec.resultHandle.closed).to.equal(true);
+  });
+
+  it('close() after cancel() releases the execution WITHOUT driving result() (a cancelled op does not commit)', async () => {
+    const exec = new FakeCancellableExecution();
+    const op = makeSyncOp(exec);
+    await op.cancel();
+    await op.close();
+    // The op was explicitly cancelled, so close() must NOT drive result() to
+    // terminal (no commit of a cancelled statement) — it just releases via the
+    // cancellable execution.
     expect(exec.cancelled).to.equal(true);
+    expect(exec.resultCalls).to.equal(0);
+    expect(exec.resultHandle.closed).to.equal(false);
   });
 
   it('cancel() interrupts an in-flight result(), surfacing OperationStateError(Canceled)', async () => {
@@ -1139,12 +1171,13 @@ describe('SeaOperationBackend — sync (executeStatementCancellable) path', () =
     expect(exec.resultHandle.closed).to.equal(true);
   });
 
-  it('close() before result() resolves is a no-op (nothing server-side to close yet)', async () => {
+  it('close() before any fetch drives result() to terminal and reports success', async () => {
     const exec = new FakeCancellableExecution();
     const op = makeSyncOp(exec);
-    // Should not throw even though result() never ran.
+    // Should not throw; drives result() to terminal (commit) then closes it.
     const status = await op.close();
     expect(status.isSuccess).to.equal(true);
-    expect(exec.resultHandle.closed).to.equal(false);
+    expect(exec.cancelled).to.equal(false);
+    expect(exec.resultHandle.closed).to.equal(true);
   });
 });
