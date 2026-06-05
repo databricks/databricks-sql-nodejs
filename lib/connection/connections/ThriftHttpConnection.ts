@@ -121,12 +121,25 @@ export default class ThriftHttpConnection extends EventEmitter {
       body: data,
     };
 
+    // Consume the response body inside the retried block. node-fetch surfaces
+    // late-stage failures (TCP RST after headers, "Premature close") as rejections
+    // from `response.buffer()`, not from `fetch()`. Reading the body here means
+    // the retry policy sees those failures and can retry them like any other
+    // transient network error — the body Buffer is captured via closure so the
+    // post-retry caller still gets it.
+    let responseBuffer: Buffer | undefined;
+
     this.getThriftMethodName(data)
       .then((thriftMethod) => this.getRetryPolicy(thriftMethod))
       .then((retryPolicy) => {
-        const makeRequest = () => {
+        const makeRequest = async () => {
+          responseBuffer = undefined;
           const request = new Request(this.url, requestConfig);
-          return fetch(request).then((response) => ({ request, response }));
+          const response = await fetch(request);
+          if (response.status === 200) {
+            responseBuffer = await response.buffer();
+          }
+          return { request, response };
         };
         return retryPolicy.invokeWithRetry(makeRequest);
       })
@@ -134,8 +147,10 @@ export default class ThriftHttpConnection extends EventEmitter {
         if (response.status !== 200) {
           throw new THTTPException(response);
         }
-
-        return response.buffer();
+        // `responseBuffer` is always set when status is 200, since `makeRequest`
+        // assigns it before resolving in that branch and the retry loop only
+        // returns a fulfilled response (failures are thrown).
+        return responseBuffer as Buffer;
       })
       .then((buffer) => {
         this.transport.receiver((transportWithData) => this.handleThriftResponse(transportWithData), seqId)(buffer);
