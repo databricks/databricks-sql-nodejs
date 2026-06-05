@@ -147,6 +147,20 @@ export function mapKernelErrorToJsError(kErr: KernelErrorShape): ErrorWithSqlSta
       error = new ParameterError(message);
       break;
 
+    case 'SqlError': {
+      // A server-reported SQL execution failure (kernel `SqlError`, e.g. a
+      // bad query, missing table, divide-by-zero, invalid cast). The Thrift
+      // backend surfaces the same situation as `OperationStateError(Error)`
+      // when the operation reaches ERROR_STATE (see DBSQLOperation), so map
+      // SqlError to the same class for backend parity. OperationStateError
+      // extends HiveDriverError, so existing `instanceof HiveDriverError`
+      // catches are unaffected.
+      const stateError = new OperationStateError(OperationStateErrorCode.Error);
+      stateError.message = message;
+      error = stateError;
+      break;
+    }
+
     // All remaining kernel ErrorCode variants map to the base driver error class.
     // M0 intentionally does not introduce new error classes; M1 may add nuance.
     case 'NotFound':
@@ -156,7 +170,6 @@ export function mapKernelErrorToJsError(kErr: KernelErrorShape): ErrorWithSqlSta
     case 'Internal':
     case 'InvalidStatementHandle':
     case 'NetworkError':
-    case 'SqlError':
       error = new HiveDriverError(message);
       break;
 
