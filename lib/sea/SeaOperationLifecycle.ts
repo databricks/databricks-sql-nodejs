@@ -185,18 +185,21 @@ export async function seaClose(
 }
 
 /**
- * Synthesize a neutral {@link OperationStatus} reporting the "finished"
- * state. `IOperationBackend.waitUntilReady` is backend-neutral surface — its
+ * Synthesize an {@link OperationStatus} reporting the "finished" state.
+ * `IOperationBackend.waitUntilReady` is backend-neutral surface — its
  * `callback` receives an {@link OperationStatus}, not a Thrift wire struct
  * (the public Thrift-shaped `OperationStatusCallback` is adapted at the
- * `DBSQLOperation` facade boundary). For M0 we report `Succeeded`. Richer
- * fields (`numModifiedRows`, `progressUpdateResponse`, `errorMessage`) defer
- * to M1 per the operation feature plan.
+ * `DBSQLOperation` facade boundary). We report `Succeeded`, and merge in any
+ * rich status fields (`numModifiedRows` / `displayMessage` / `diagnosticInfo`
+ * / `errorDetailsJson`) the backend resolved off the terminal kernel
+ * statement, so a `finished({callback})` consumer sees the same surface as a
+ * subsequent `getOperationStatus()` call.
  */
-function synthesizeFinishedStatus(): OperationStatus {
+function synthesizeFinishedStatus(extra?: Partial<OperationStatus>): OperationStatus {
   return {
     state: OperationState.Succeeded,
     hasResultSet: true,
+    ...extra,
   };
 }
 
@@ -227,13 +230,19 @@ export async function seaFinished(
     progress?: boolean;
     callback?: (status: OperationStatus) => unknown;
   },
+  // Rich status fields the backend read off the terminal statement, merged into
+  // the synthesised completion tick so callback consumers see them. Lazy (a
+  // thunk) so the (potentially RPC-backed) read only happens when a callback is
+  // actually wired.
+  richFields?: () => Promise<Partial<OperationStatus>>,
 ): Promise<void> {
   if (state.isCancelled || state.isClosed) {
     return;
   }
 
   if (options?.callback) {
-    const response = synthesizeFinishedStatus();
+    const extra = richFields ? await richFields() : undefined;
+    const response = synthesizeFinishedStatus(extra);
     // Await the callback in case it returns a promise — matches the
     // Thrift code path at `lib/DBSQLOperation.ts:348-351`.
     await Promise.resolve(options.callback(response));

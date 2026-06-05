@@ -85,6 +85,33 @@ export type SeaOperationStatement = SeaStatementHandle & Partial<SeaStatement>;
  */
 type SeaFetchHandle = Pick<SeaStatement, 'fetchNextBatch' | 'schema'>;
 
+/**
+ * The rich operation-status surface the kernel exposes on a terminal sync
+ * `Statement` (`numModifiedRows` / `displayMessage` / `diagnosticInfo` /
+ * `errorDetailsJson`). These accessors live ONLY on the blocking `Statement`
+ * (metadata path + sync `runAsync:false` path once `result()` resolves) — the
+ * async `AsyncStatement` / `AsyncResultHandle` do not expose them — so the
+ * reader below is best-effort and returns an empty record when the handle
+ * predates this surface or the operation never resolved to a `Statement`.
+ */
+type SeaStatusFieldsHandle = Pick<
+  SeaStatement,
+  'numModifiedRows' | 'displayMessage' | 'diagnosticInfo' | 'errorDetailsJson'
+>;
+
+/**
+ * The rich operation-status fields, as the kernel returns them (each `null`
+ * when the server didn't supply it — e.g. `numModifiedRows` is null for a
+ * SELECT). Carried onto the neutral `OperationStatus` and ultimately into the
+ * Thrift `TGetOperationStatusResp` so SEA reports parity with the Thrift path.
+ */
+interface SeaRichStatusFields {
+  numModifiedRows: number | null;
+  displayMessage: string | null;
+  diagnosticInfo: string | null;
+  errorDetailsJson: string | null;
+}
+
 /** Poll cadence for the async `status()` loop — matches the Thrift backend's 100ms. */
 const STATUS_POLL_INTERVAL_MS = 100;
 
@@ -377,7 +404,9 @@ export default class SeaOperationBackend implements IOperationBackend {
     if (this.asyncStatement) {
       // Async query path: report the real kernel state (single
       // GetStatementStatus RPC — no polling here; `waitUntilReady` owns the
-      // poll loop).
+      // poll loop). The rich status fields (`numModifiedRows` etc.) live on the
+      // terminal sync `Statement`, which the async path never produces, so they
+      // stay undefined here.
       const state = statusStringToOperationState(await this.asyncStatement.status());
       return { state, hasResultSet: true };
     }
@@ -386,11 +415,16 @@ export default class SeaOperationBackend implements IOperationBackend {
       // server-side; there is no per-status RPC to query while it runs. Report
       // Running until `result()` has materialised the terminal statement, then
       // Succeeded — mirroring the kernel's blocking-then-terminal lifecycle.
-      const state = this.fetchHandlePromise ? OperationState.Succeeded : OperationState.Running;
-      return { state, hasResultSet: true };
+      if (!this.fetchHandlePromise) {
+        return { state: OperationState.Running, hasResultSet: true };
+      }
+      // The blocking `result()` has resolved a terminal `Statement` — surface
+      // its rich status fields alongside the Succeeded state.
+      return { state: OperationState.Succeeded, hasResultSet: true, ...(await this.readRichStatusFields()) };
     }
-    // Metadata path: the kernel statement is already terminal.
-    return { state: OperationState.Succeeded, hasResultSet: true };
+    // Metadata path: the kernel statement is already terminal — read its rich
+    // fields too (they are `null` for metadata results, by design).
+    return { state: OperationState.Succeeded, hasResultSet: true, ...(await this.readRichStatusFields()) };
   }
 
   public async waitUntilReady(options?: IOperationBackendWaitOptions): Promise<void> {
@@ -402,8 +436,11 @@ export default class SeaOperationBackend implements IOperationBackend {
     }
     // Metadata path: the kernel statement has already resolved, so there is
     // nothing to poll. seaFinished fires the progress callback once with a
-    // synthesised completion tick, matching the Thrift path's final tick.
-    return seaFinished(this.lifecycle, options);
+    // synthesised completion tick, matching the Thrift path's final tick. The
+    // rich-field reader is passed lazily so it only runs when a callback is
+    // wired (metadata statements report all-null, but the surface stays
+    // consistent with the query paths).
+    return seaFinished(this.lifecycle, options, () => this.readRichStatusFields());
   }
 
   public async cancel(): Promise<Status> {
@@ -417,6 +454,85 @@ export default class SeaOperationBackend implements IOperationBackend {
   // ---------------------------------------------------------------------------
   // Internals.
   // ---------------------------------------------------------------------------
+
+  /**
+   * Read the kernel's rich operation-status fields (`numModifiedRows` /
+   * `displayMessage` / `diagnosticInfo` / `errorDetailsJson`) off the terminal
+   * sync `Statement`. These accessors live only on the blocking `Statement`
+   * (metadata path, or the sync `runAsync:false` path once `result()` has
+   * resolved) — not on the async `AsyncStatement` / `AsyncResultHandle` — so:
+   *
+   * - on the async path we have no `Statement`, so we return all-null;
+   * - on the sync path we await `getFetchHandle()` first, which both drives
+   *   `result()` to completion and stores the resolved `Statement` on
+   *   `blockingStatement` (the handle that backs the accessors);
+   * - if the (older) binding predates these accessors we degrade to all-null
+   *   rather than throwing — `getOperationStatus()` must never fail just
+   *   because the rich fields are unavailable.
+   *
+   * Errors from the individual accessors are swallowed to null: a failed
+   * status-field read must not turn a successful operation's status query into
+   * a throw. The fields are best-effort metadata, not the operation outcome.
+   */
+  private async readRichStatusFields(): Promise<SeaRichStatusFields> {
+    const empty: SeaRichStatusFields = {
+      numModifiedRows: null,
+      displayMessage: null,
+      diagnosticInfo: null,
+      errorDetailsJson: null,
+    };
+
+    // The async path never produces a terminal sync `Statement`, so there is
+    // nothing to read these off of.
+    if (this.asyncStatement && !this.cancellableExecution) {
+      return empty;
+    }
+
+    // Ensure the sync path's blocking `result()` has resolved and stored the
+    // terminal `Statement` on `blockingStatement` (no-op on the metadata path,
+    // where `blockingStatement` was set at construction).
+    if (this.cancellableExecution) {
+      try {
+        await this.getFetchHandle();
+      } catch {
+        // The operation failed/cancelled — its outcome surfaces through the
+        // wait/fetch path; status-field reads have nothing to add.
+        return empty;
+      }
+    }
+
+    const handle = this.blockingStatement as Partial<SeaStatusFieldsHandle> | undefined;
+    if (!handle || typeof handle.numModifiedRows !== 'function') {
+      // No resolved statement, or a binding that predates the rich-field
+      // accessors — degrade to all-null.
+      return empty;
+    }
+    const richHandle = handle as SeaStatusFieldsHandle;
+
+    const readOrNull = async <T>(read: () => Promise<T | null>): Promise<T | null> => {
+      try {
+        return await read();
+      } catch (err) {
+        this.context
+          .getLogger()
+          .log(
+            LogLevel.debug,
+            `SEA status-field read failed for operation ${this._id}; reporting null. Cause: ` +
+              `${err instanceof Error ? err.message : String(err)}`,
+          );
+        return null;
+      }
+    };
+
+    const [numModifiedRows, displayMessage, diagnosticInfo, errorDetailsJson] = await Promise.all([
+      readOrNull(() => richHandle.numModifiedRows()),
+      readOrNull(() => richHandle.displayMessage()),
+      readOrNull(() => richHandle.diagnosticInfo()),
+      readOrNull(() => richHandle.errorDetailsJson()),
+    ]);
+
+    return { numModifiedRows, displayMessage, diagnosticInfo, errorDetailsJson };
+  }
 
   /**
    * Poll the kernel `AsyncStatement` to a terminal state on a fixed 100ms
@@ -547,9 +663,13 @@ export default class SeaOperationBackend implements IOperationBackend {
     // `getFetchHandle()` drives `result()` and memoises the resolved Statement
     // (also stored on `blockingStatement` so `close()` can reach it).
     await this.getFetchHandle();
-    // Single completion tick, matching the metadata path.
+    // Single completion tick, matching the metadata path — carrying the rich
+    // status fields (numModifiedRows etc.) read off the now-terminal Statement.
     if (options?.callback) {
-      await Promise.resolve(options.callback({ state: OperationState.Succeeded, hasResultSet: true }));
+      const richFields = await this.readRichStatusFields();
+      await Promise.resolve(
+        options.callback({ state: OperationState.Succeeded, hasResultSet: true, ...richFields }),
+      );
     }
   }
 
