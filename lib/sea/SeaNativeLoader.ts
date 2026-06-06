@@ -17,7 +17,7 @@
  *
  * Mirrors the load-failure-tolerant pattern of `lib/utils/lz4.ts`: the
  * `.node` artifact ships via per-platform optional dependencies
- * (`@databricks/sql-kernel-<triple>`), so its absence must not crash
+ * (`@databricks/databricks-sql-kernel-<triple>`), so its absence must not crash
  * a Thrift-only consumer of the driver. Callers that actually need
  * SEA construct a {@link SeaNativeLoader} (or use the process-global
  * {@link getSeaNative}) which throws a structured error if the binding
@@ -110,7 +110,7 @@ function loadFailureHint(err: NodeJS.ErrnoException): string {
   // not the bare `${platform}` shown here, so a literal example would
   // 404. Point at the README's supported-triple list instead.
   const installHint =
-    'Install the matching @databricks/sql-kernel-* optional dependency for your platform ' +
+    'Install the matching @databricks/databricks-sql-kernel-* optional dependency for your platform ' +
     '(see native/sea/README.md for the supported triples; M0 ships linux-x64-gnu only).';
   if (err.code === 'MODULE_NOT_FOUND') {
     return `SEA native binding not installed for platform ${platform} on Node ${process.version}. ${installHint}`;
