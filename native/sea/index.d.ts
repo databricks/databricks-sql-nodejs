@@ -717,6 +717,22 @@ export declare class Connection {
    */
   executeStatement(sql: string, options?: ExecuteOptions | undefined | null): Promise<Statement>
   /**
+   * directResults execute — the Thrift/JDBC model. Sends ExecuteStatement
+   * with a bounded server-side inline wait (`wait_timeout=10s`,
+   * `on_wait_timeout=CONTINUE`) and returns WITHOUT polling past it:
+   *
+   * - a **`Statement`** (left arm) when the query finished within the inline
+   *   wait — terminal, result ready inline, `close()` is a clean release;
+   * - an **`AsyncStatement`** (right arm) when it did not — a poll/cancel
+   *   handle the caller drives (`status()` / `awaitResult()` / `cancel()`).
+   *
+   * JS distinguishes the arms by feature-detecting `awaitResult` (present
+   * only on `AsyncStatement`). This is the path that gives mid-run cancel for
+   * long queries WITHOUT the eager-handle / close-drives workaround: the
+   * returned handle always corresponds to a server-owned statement.
+   */
+  executeStatementDirect(sql: string, options?: ExecuteOptions | undefined | null): Promise<Statement | AsyncStatement>
+  /**
    * Execute a SQL statement on the blocking (sync) path, but return a
    * `CancellableExecution` handle so a concurrent JS task can cancel
    * the query *while it is still running server-side*.

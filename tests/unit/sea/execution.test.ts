@@ -234,6 +234,26 @@ class FakeNativeConnection implements SeaConnection {
     return this.lastCancellableExecution;
   }
 
+  // directResults (`runAsync: false`, the DEFAULT) query path: records sql +
+  // options and returns either a terminal `Statement` (Completed arm) or — when
+  // `directReturnsRunning` is set — a pending `AsyncStatement` (Running arm),
+  // the two arms `SeaSessionBackend.executeStatement` feature-detects via
+  // `awaitResult`.
+  public directReturnsRunning = false;
+
+  public async executeStatementDirect(sql: string, options?: unknown): Promise<any> {
+    if (this.throwOnExecute) {
+      throw this.throwOnExecute;
+    }
+    this.lastSql = sql;
+    this.lastOptions = options;
+    if (this.directReturnsRunning) {
+      this.lastAsyncStatement = new FakeAsyncStatement(this.submitStatusValue);
+      return this.lastAsyncStatement;
+    }
+    return this.statementToReturn;
+  }
+
   // Async-submit path: records sql + per-statement options (for forwarding
   // assertions) and returns a pending AsyncStatement.
   public async submitStatement(sql: string, options?: unknown): Promise<any> {

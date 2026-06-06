@@ -33,7 +33,7 @@ import InfoValue from '../dto/InfoValue';
 import HiveDriverError from '../errors/HiveDriverError';
 import ParameterError from '../errors/ParameterError';
 import { LogLevel } from '../contracts/IDBSQLLogger';
-import { SeaConnection, SeaNativeExecuteOptions, SeaStatement } from './SeaNativeLoader';
+import { SeaConnection, SeaNativeExecuteOptions, SeaStatement, SeaNativeAsyncStatement } from './SeaNativeLoader';
 import { decodeNapiKernelError } from './SeaErrorMapping';
 import { numberToInt64 } from '../thrift-backend/ThriftSessionBackend';
 import SeaOperationBackend from './SeaOperationBackend';
@@ -183,24 +183,34 @@ export default class SeaSessionBackend implements ISessionBackend {
       options.queryTimeout !== undefined ? numberToInt64(options.queryTimeout).toNumber() : undefined;
 
     if (!runAsync) {
-      // Sync path: forward `queryTimeoutSecs` to the napi options — the kernel
-      // `execute()` honours it (server statement timeout).
+      // DEFAULT — directResults (the Thrift/JDBC model). The kernel's
+      // `executeStatementDirect` runs ExecuteStatement with a bounded server
+      // inline wait and returns WITHOUT polling past it:
+      //   - a terminal `Statement` (result inline) for a fast query, or
+      //   - an `AsyncStatement` (a poll/cancel handle) for a slow one.
+      // Either way the handle is tied to a server-owned statement, so a long
+      // query stays cancellable via `op.cancel()` and `close()` is a clean
+      // release (no client-side drive-to-terminal). Fire-and-forget DDL/DML
+      // commits because the server runs it inline during the POST.
       const execOptions = this.buildExecuteOptions(options, queryTimeoutSecs);
-      let cancellableExecution;
+      let direct;
       try {
-        cancellableExecution =
+        direct =
           execOptions === undefined
-            ? await this.connection.executeStatementCancellable(statement)
-            : await this.connection.executeStatementCancellable(statement, execOptions);
+            ? await this.connection.executeStatementDirect(statement)
+            : await this.connection.executeStatementDirect(statement, execOptions);
       } catch (err) {
         throw this.logAndMapError('executeStatement', err);
       }
+      // Feature-detect the arm: only `AsyncStatement` (the Running arm) exposes
+      // `awaitResult`; the terminal `Statement` (Completed arm) does not.
+      const asAsync = direct as unknown as SeaNativeAsyncStatement;
+      if (direct !== null && typeof asAsync.awaitResult === 'function') {
+        return new SeaOperationBackend({ asyncStatement: asAsync, context: this.context, queryTimeoutSecs });
+      }
       return new SeaOperationBackend({
-        cancellableExecution: cancellableExecution!,
+        statement: direct as unknown as SeaStatement,
         context: this.context,
-        // The kernel honours `queryTimeoutSecs` on the sync `execute` path, so
-        // it is forwarded via the napi options (see `buildExecuteOptions`); the
-        // backend also keeps it as a deadline guard for parity with async.
         queryTimeoutSecs,
       });
     }
