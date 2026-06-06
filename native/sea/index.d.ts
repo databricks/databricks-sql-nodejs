@@ -350,6 +350,34 @@ export interface ConnectionOptions {
    *   `User-Agent` entry here.
    */
   customHeaders?: Array<HeaderEntry>
+  /**
+   * Retry/backoff tuning — all optional. An unset field keeps the kernel's
+   * built-in policy (1s/60s exponential backoff, 6 total attempts, 900s
+   * budget). Mirrors the pyo3 binding's `retry_*` kwargs so the Node.js
+   * driver can forward the same retry knobs the Python connector does.
+   *
+   * Lower bound of the exponential backoff (also clamps a server
+   * `Retry-After`). Maps onto [`HttpConfig::retry_min_wait`].
+   */
+  retryMinWaitSecs?: number
+  /**
+   * Upper bound of the exponential backoff. Maps onto
+   * [`HttpConfig::retry_max_wait`].
+   */
+  retryMaxWaitSecs?: number
+  /**
+   * **Total** number of attempts (matching the connector's
+   * `_retry_stop_after_attempts_count` and JDBC count semantics). The
+   * kernel's [`HttpConfig::retry_max_retries`] counts retries *after* the
+   * first attempt, so this is converted with `max(0, attempts - 1)` in
+   * [`build_http_config`] — `0` / `1` both mean a single attempt, no retry.
+   */
+  retryMaxAttempts?: number
+  /**
+   * Overall retry budget in whole seconds. Maps onto
+   * [`HttpConfig::overall_timeout`].
+   */
+  retryOverallTimeoutSecs?: number
 }
 /**
  * Open a Databricks SQL session and return an opaque `Connection`

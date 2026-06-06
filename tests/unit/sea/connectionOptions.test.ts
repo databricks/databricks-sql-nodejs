@@ -13,7 +13,7 @@
 // limitations under the License.
 
 import { expect } from 'chai';
-import { buildSeaConnectionOptions, buildSeaTlsOptions } from '../../../lib/sea/SeaAuth';
+import { buildSeaConnectionOptions, buildSeaTlsOptions, buildSeaRetryOptions } from '../../../lib/sea/SeaAuth';
 import { ConnectionOptions } from '../../../lib/contracts/IDBSQLClient';
 import HiveDriverError from '../../../lib/errors/HiveDriverError';
 
@@ -21,7 +21,7 @@ const PAT = { host: 'h.databricks.com', path: '/sql/1.0/warehouses/abc', token: 
 
 // Cast helper: the SEA connection-tuning/TLS options live on the internal
 // surface, so tests build untyped option literals.
-const opts = (extra: Record<string, unknown>) => ({ ...PAT, ...extra } as unknown as ConnectionOptions);
+const opts = (extra: Record<string, unknown>) => ({ ...PAT, ...extra }) as unknown as ConnectionOptions;
 
 describe('SeaAuth connection options — intervalsAsString default', () => {
   it('always sets intervalsAsString:true (thrift-compatible interval rendering)', () => {
@@ -117,5 +117,45 @@ describe('SeaAuth TLS options (buildSeaTlsOptions)', () => {
       checkServerCertificate?: boolean;
     };
     expect(native.checkServerCertificate).to.equal(false);
+  });
+});
+
+describe('SeaAuth retry options — buildSeaRetryOptions', () => {
+  // The driver's ClientConfig retry defaults (ms / total-attempt count).
+  const defaults = {
+    retryMaxAttempts: 5,
+    retriesTimeout: 15 * 60 * 1000,
+    retryDelayMin: 1000,
+    retryDelayMax: 60 * 1000,
+  };
+
+  it('converts the connector ms knobs to the kernel whole-second kwargs', () => {
+    const r = buildSeaRetryOptions(defaults);
+    expect(r.retryMinWaitSecs).to.equal(1); // 1000ms
+    expect(r.retryMaxWaitSecs).to.equal(60); // 60000ms
+    expect(r.retryOverallTimeoutSecs).to.equal(900); // 15min
+  });
+
+  it('passes retryMaxAttempts through as a TOTAL attempt count (kernel converts to retries)', () => {
+    expect(buildSeaRetryOptions({ ...defaults, retryMaxAttempts: 5 }).retryMaxAttempts).to.equal(5);
+    expect(buildSeaRetryOptions({ ...defaults, retryMaxAttempts: 0 }).retryMaxAttempts).to.equal(0);
+  });
+
+  it('rounds sub-second delays to the nearest second (kernel granularity)', () => {
+    const r = buildSeaRetryOptions({ ...defaults, retryDelayMin: 1500, retryDelayMax: 2400 });
+    expect(r.retryMinWaitSecs).to.equal(2); // 1.5s → 2
+    expect(r.retryMaxWaitSecs).to.equal(2); // 2.4s → 2
+  });
+
+  it('clamps negative/garbage inputs into the napi u32 range', () => {
+    const r = buildSeaRetryOptions({
+      retryMaxAttempts: -3,
+      retriesTimeout: -1,
+      retryDelayMin: -1000,
+      retryDelayMax: 0,
+    });
+    expect(r.retryMaxAttempts).to.equal(0);
+    expect(r.retryMinWaitSecs).to.equal(0);
+    expect(r.retryOverallTimeoutSecs).to.equal(0);
   });
 });

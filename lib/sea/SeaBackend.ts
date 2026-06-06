@@ -21,7 +21,7 @@ import { LogLevel } from '../contracts/IDBSQLLogger';
 import HiveDriverError from '../errors/HiveDriverError';
 import { getSeaNative, SeaNativeBinding, SeaConnection } from './SeaNativeLoader';
 import { decodeNapiKernelError } from './SeaErrorMapping';
-import { buildSeaConnectionOptions, SeaNativeConnectionOptions } from './SeaAuth';
+import { buildSeaConnectionOptions, buildSeaRetryOptions, SeaNativeConnectionOptions } from './SeaAuth';
 import { installKernelLogBridge } from './SeaLogging';
 import SeaSessionBackend from './SeaSessionBackend';
 
@@ -85,7 +85,14 @@ export default class SeaBackend implements IBackend {
     // Validate PAT auth + capture the napi-binding option shape.
     // Any non-PAT mode (or a missing/empty token) throws here, before
     // we ever touch the native binding.
-    this.nativeOptions = buildSeaConnectionOptions(options);
+    // Forward the driver's retry config to the kernel, which owns the retry
+    // loop on the SEA path. This keeps SEA and Thrift governed by one retry
+    // config (the same `ClientConfig` knobs the Thrift `HttpRetryPolicy` reads),
+    // converted from the connector's milliseconds to the kernel's whole seconds.
+    this.nativeOptions = {
+      ...buildSeaConnectionOptions(options),
+      ...buildSeaRetryOptions(this.context.getConfig()),
+    };
 
     // Bridge the Rust kernel's `tracing` logs into the SAME `DBSQLLogger` the
     // driver logs through, so logs from all three layers (driver, napi shim,

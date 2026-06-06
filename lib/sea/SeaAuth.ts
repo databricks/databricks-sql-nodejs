@@ -91,6 +91,20 @@ export interface SeaSessionDefaults {
    * integer within the napi `u32` range by `buildSeaConnectionOptions`.
    */
   maxConnections?: number;
+  /**
+   * Retry/backoff tuning forwarded to the kernel (which owns the retry loop
+   * on the SEA path). These mirror the driver's `ClientConfig` retry knobs —
+   * the same ones the Thrift `HttpRetryPolicy` uses — converted from the
+   * connector's milliseconds to the kernel's whole seconds, so a single
+   * retry config governs both backends. Unset ⇒ kernel default policy.
+   * Map onto the napi `ConnectionOptions.retry{Min,Max}WaitSecs` /
+   * `retryMaxAttempts` / `retryOverallTimeoutSecs` (see `buildSeaRetryOptions`).
+   */
+  retryMinWaitSecs?: number;
+  retryMaxWaitSecs?: number;
+  /** **Total** attempts (kernel converts to retries-after-first internally). */
+  retryMaxAttempts?: number;
+  retryOverallTimeoutSecs?: number;
 }
 
 /**
@@ -274,6 +288,33 @@ export function buildSeaTlsOptions(options: ConnectionOptions): SeaTlsOptions {
  *   - `HiveDriverError` for unsupported auth modes / Azure-direct /
  *     custom persistence / ambiguous combinations.
  */
+/**
+ * Convert the driver's `ClientConfig` retry knobs (milliseconds, total-attempt
+ * count) into the kernel's `ConnectionOptions` retry kwargs (whole seconds).
+ * The kernel owns the retry loop on the SEA path, so forwarding these keeps SEA
+ * and Thrift governed by one retry config. `retryMaxAttempts` is a TOTAL attempt
+ * count on both sides (the kernel converts to retries-after-first internally),
+ * so it passes through directly. Sub-second delays round to the nearest second
+ * (the kernel's granularity); all values are clamped into the napi `u32` range.
+ */
+export function buildSeaRetryOptions(config: {
+  retryMaxAttempts: number;
+  retriesTimeout: number;
+  retryDelayMin: number;
+  retryDelayMax: number;
+}): Required<
+  Pick<SeaSessionDefaults, 'retryMinWaitSecs' | 'retryMaxWaitSecs' | 'retryMaxAttempts' | 'retryOverallTimeoutSecs'>
+> {
+  const msToSecs = (ms: number): number => Math.min(MAX_U32, Math.max(0, Math.round(ms / 1000)));
+  const clampU32 = (n: number): number => Math.min(MAX_U32, Math.max(0, Math.trunc(n)));
+  return {
+    retryMinWaitSecs: msToSecs(config.retryDelayMin),
+    retryMaxWaitSecs: msToSecs(config.retryDelayMax),
+    retryMaxAttempts: clampU32(config.retryMaxAttempts),
+    retryOverallTimeoutSecs: msToSecs(config.retriesTimeout),
+  };
+}
+
 export function buildSeaConnectionOptions(options: ConnectionOptions): SeaNativeConnectionOptions {
   const { authType } = options as { authType?: string };
 
