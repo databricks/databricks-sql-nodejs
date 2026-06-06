@@ -16,7 +16,7 @@ import { expect } from 'chai';
 import { tryGetSeaNative } from '../../../lib/sea/SeaNativeLoader';
 
 // Fail loudly only when the binding is actually expected to be present —
-// i.e. a CI step has provisioned it (a published `@databricks/sql-kernel-*`
+// i.e. a CI step has provisioned it (a published `@databricks/databricks-sql-kernel-*`
 // optional dep installed, or `npm run build:native` was run) and opts in via
 // `SEA_NATIVE_EXPECTED=1`. A missing binding there is a real packaging / build
 // regression that a silent skip would mask.
@@ -37,7 +37,7 @@ describe('SEA native binding — smoke test', function smoke() {
       it('fails loudly: the binding must load on the linux-x64 CI runner', () => {
         expect.fail(
           'SEA native binding failed to load on a linux-x64 CI runner where ' +
-            '@databricks/sql-kernel-linux-x64-gnu is expected. Run `npm run build:native` or check packaging.',
+            '@databricks/databricks-sql-kernel-linux-x64-gnu is expected. Run `npm run build:native` or check packaging.',
         );
       });
       return;

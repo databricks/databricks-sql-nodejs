@@ -22,6 +22,7 @@ import HiveDriverError from '../errors/HiveDriverError';
 import { getSeaNative, SeaNativeBinding, SeaConnection } from './SeaNativeLoader';
 import { decodeNapiKernelError } from './SeaErrorMapping';
 import { buildSeaConnectionOptions, SeaNativeConnectionOptions } from './SeaAuth';
+import { installKernelLogBridge } from './SeaLogging';
 import SeaSessionBackend from './SeaSessionBackend';
 
 export interface SeaBackendOptions {
@@ -70,6 +71,11 @@ export default class SeaBackend implements IBackend {
 
   private nativeOptions?: SeaNativeConnectionOptions;
 
+  // Drops the kernel-log level-change listener on close. No-op until connect()
+  // installs the bridge (and a no-op closure if the logger/binding can't
+  // retarget at runtime).
+  private kernelLogUnsubscribe: () => void = () => {};
+
   constructor(options: SeaBackendOptions) {
     this.context = options.context;
     this.binding = options.nativeBinding ?? getSeaNative();
@@ -80,6 +86,16 @@ export default class SeaBackend implements IBackend {
     // Any non-PAT mode (or a missing/empty token) throws here, before
     // we ever touch the native binding.
     this.nativeOptions = buildSeaConnectionOptions(options);
+
+    // Bridge the Rust kernel's `tracing` logs into the SAME `DBSQLLogger` the
+    // driver logs through, so logs from all three layers (driver, napi shim,
+    // kernel) land in one place — and one file when the logger has a file
+    // transport. Kernel verbosity follows the logger's own level; loggers that
+    // don't expose `getLevel()` leave the bridge at `info`. No-op on a binding
+    // that predates the bridge (logging is advisory).
+    const logger = this.context.getLogger();
+    const kernelLogLevel = logger.getLevel?.() ?? LogLevel.info;
+    this.kernelLogUnsubscribe = installKernelLogBridge(this.binding, logger, kernelLogLevel);
 
     // Warn on the insecure combo: a `customCaCert` paired with
     // `checkServerCertificate: false` is almost always a mistake — verification
@@ -149,5 +165,11 @@ export default class SeaBackend implements IBackend {
     // No backend-level resources to release — each `SeaSessionBackend`
     // owns its own napi `Connection` lifecycle.
     this.nativeOptions = undefined;
+
+    // Stop retargeting the (process-global) kernel log level from this backend's
+    // logger; the kernel sink itself is process-global and is replaced by the
+    // next connect, matching the bridge's last-writer-wins model.
+    this.kernelLogUnsubscribe();
+    this.kernelLogUnsubscribe = () => {};
   }
 }
