@@ -718,8 +718,8 @@ export declare class Connection {
   executeStatement(sql: string, options?: ExecuteOptions | undefined | null): Promise<Statement>
   /**
    * directResults execute — the Thrift/JDBC model. Sends ExecuteStatement
-   * with a bounded server-side inline wait (`wait_timeout=10s`,
-   * `on_wait_timeout=CONTINUE`) and returns WITHOUT polling past it:
+   * with no `wait_timeout` field (server applies its ~10s default inline wait
+   * and auto-closes on success) and returns WITHOUT polling past it:
    *
    * - a **`Statement`** (left arm) when the query finished within the inline
    *   wait — terminal, result ready inline, `close()` is a clean release;
@@ -730,6 +730,13 @@ export declare class Connection {
    * only on `AsyncStatement`). This is the path that gives mid-run cancel for
    * long queries WITHOUT the eager-handle / close-drives workaround: the
    * returned handle always corresponds to a server-owned statement.
+   *
+   * **Load-bearing contract:** the kernel's `DirectStatement::{Completed,
+   * Running}` discriminant cannot ride on these opaque `#[napi]` classes, so
+   * consumers MUST feature-detect via `awaitResult` (the only member unique to
+   * `AsyncStatement`). `Statement` (the Completed arm) MUST NOT gain an
+   * `awaitResult` member, or every consumer silently misroutes. The pyo3
+   * binding makes the same `await_result`-probe assumption.
    */
   executeStatementDirect(sql: string, options?: ExecuteOptions | undefined | null): Promise<Statement | AsyncStatement>
   /**
@@ -895,11 +902,10 @@ export declare class Statement {
    * data note:** may contain SQL fragments or parameter values —
    * redact before centralised logging.
    *
-   * Populated on `Succeeded` / `Closed-with-inline-data` paths.
-   * On terminal-error states (`Failed` / `Cancelled` /
-   * `Closed-no-data`) the kernel returns an Error instead of a
-   * `Statement`, and the same field rides on the JS Error envelope
-   * under the same `displayMessage` key.
+   * Populated on `Succeeded` / `Closed` paths (incl. an empty `Closed`).
+   * On terminal-error states (`Failed` / `Cancelled`) the kernel returns
+   * an Error instead of a `Statement`, and the same field rides on the JS
+   * Error envelope under the same `displayMessage` key.
    */
   displayMessage(): Promise<string | null>
   /**
