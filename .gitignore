@@ -19,3 +19,7 @@ lib/version.ts
 # in production they arrive via the `@databricks/sql-kernel-<triple>` optional deps.
 native/sea/index.node
 native/sea/index.*.node
+# [bench-only] commit the linux-x64-gnu binary so the github-resolved driver
+# tarball is self-contained for the hermetic DUST/Quicksilver benchmark run.
+# NOT for merge — production ships it via the kernel package's optional deps.
+!native/sea/index.linux-x64-gnu.node
