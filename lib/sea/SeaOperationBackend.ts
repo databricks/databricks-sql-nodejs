@@ -140,15 +140,6 @@ export interface SeaOperationBackendOptions {
    * handle exposes one, else a fresh UUIDv4.
    */
   id?: string;
-  /**
-   * Client-side query timeout in whole seconds (the public `queryTimeout`).
-   * The kernel ignores `queryTimeoutSecs` on the async submit path
-   * (`submitStatement` always sends `wait_timeout=0s`), so the JS poll loop
-   * enforces it as a deadline — on expiry it best-effort cancels the statement
-   * and throws `OperationStateError(Timeout)`, matching the Thrift path's
-   * server-side TIMEDOUT outcome. Omitted ⇒ no client-side deadline.
-   */
-  queryTimeoutSecs?: number;
 }
 
 export default class SeaOperationBackend implements IOperationBackend {
@@ -190,17 +181,12 @@ export default class SeaOperationBackend implements IOperationBackend {
   // already-terminal statement. Drives both fetch and result-metadata.
   private fetchHandlePromise?: Promise<SeaFetchHandle>;
 
-  // Client-side query-timeout deadline in ms (the public `queryTimeout`),
-  // undefined when unset. Enforced in the async poll loop.
-  private readonly queryTimeoutMs?: number;
-
   constructor({
     asyncStatement,
     statement,
     cancellableExecution,
     context,
     id,
-    queryTimeoutSecs,
   }: SeaOperationBackendOptions) {
     // Exactly one of the three handle kinds must be supplied.
     const providedCount =
@@ -232,7 +218,6 @@ export default class SeaOperationBackend implements IOperationBackend {
     this.context = context;
     this._id =
       id ?? asyncStatement?.statementId ?? statement?.statementId ?? cancellableExecution?.statementId ?? uuidv4();
-    this.queryTimeoutMs = queryTimeoutSecs !== undefined && queryTimeoutSecs > 0 ? queryTimeoutSecs * 1000 : undefined;
   }
 
   public get id(): string {
@@ -441,9 +426,6 @@ export default class SeaOperationBackend implements IOperationBackend {
     if (this.fetchHandlePromise) {
       return;
     }
-    // Client-side timeout deadline: the kernel ignores queryTimeoutSecs on the
-    // async submit path, so we enforce the public `queryTimeout` here.
-    const deadline = this.queryTimeoutMs !== undefined ? Date.now() + this.queryTimeoutMs : undefined;
     for (;;) {
       // A JS-initiated cancel/close short-circuits before the next poll.
       failIfNotActive(this.lifecycle);
@@ -494,30 +476,8 @@ export default class SeaOperationBackend implements IOperationBackend {
           throw new OperationStateError(OperationStateErrorCode.Unknown);
       }
 
-      // Still Pending/Running — enforce the client-side timeout before sleeping.
-      if (deadline !== undefined && Date.now() >= deadline) {
-        // Best-effort server-side cancel so the statement doesn't keep running
-        // after we stop waiting; never mask the timeout with a cancel failure,
-        // but warn-log a failed cancel so a still-running server statement is
-        // diagnosable (mirrors the fetch-error cleanup path).
-        // eslint-disable-next-line no-await-in-loop
-        await this.cancel().catch((cancelErr) => {
-          const cause = cancelErr instanceof Error ? cancelErr.message : String(cancelErr);
-          this.context
-            .getLogger()
-            .log(
-              LogLevel.warn,
-              `SEA query-timeout cleanup: cancel() failed for operation ${this._id}; the server-side ` +
-                `statement may keep running until the session is closed. Cause: ${cause}`,
-            );
-        });
-        // Release the statement handle too (cancel stops the work; close frees
-        // the handle) — best-effort, mirroring the other terminal branches.
-        // eslint-disable-next-line no-await-in-loop
-        await this.bestEffortClose();
-        throw new OperationStateError(OperationStateErrorCode.Timeout);
-      }
-
+      // Still Pending/Running — sleep before the next poll. (There is no
+      // client-side query-timeout deadline: `queryTimeout` is a no-op on SEA.)
       // eslint-disable-next-line no-await-in-loop
       await delay(STATUS_POLL_INTERVAL_MS);
     }
@@ -526,7 +486,7 @@ export default class SeaOperationBackend implements IOperationBackend {
   /**
    * Sync (`runAsync: false`) execute path. Drives the blocking
    * `CancellableExecution.result()` to a terminal `Statement` (the kernel polls
-   * to completion server-side, honouring `queryTimeoutSecs` on this path). The
+   * to completion server-side). The
    * await is interruptible: a JS-initiated `cancel()` fires the detached
    * canceller, the server flips the statement terminal, and the parked
    * `result()` rejects with `Cancelled` — which we map to the typed

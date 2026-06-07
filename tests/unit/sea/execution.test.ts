@@ -909,9 +909,9 @@ describe('SeaOperationBackend', () => {
 });
 
 describe('SeaOperationBackend — async (submitStatement) path', () => {
-  const makeAsyncOp = (asyncStatement: FakeAsyncStatement, queryTimeoutSecs?: number) =>
+  const makeAsyncOp = (asyncStatement: FakeAsyncStatement) =>
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    new SeaOperationBackend({ asyncStatement: asyncStatement as any, context: makeContext(), queryTimeoutSecs });
+    new SeaOperationBackend({ asyncStatement: asyncStatement as any, context: makeContext() });
 
   it('rejects when neither asyncStatement nor statement is provided', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -1011,22 +1011,6 @@ describe('SeaOperationBackend — async (submitStatement) path', () => {
     expect((thrown as OperationStateError).errorCode).to.equal(OperationStateErrorCode.Closed);
   });
 
-  it('waitUntilReady() enforces queryTimeout client-side: throws Timeout and cancels a stuck Running statement', async function timeoutTest() {
-    // eslint-disable-next-line no-invalid-this
-    this.timeout(5000);
-    const stmt = new FakeAsyncStatement('Running'); // never reaches a terminal state
-    const op = makeAsyncOp(stmt, 0.05); // 50ms client-side deadline
-    let thrown: unknown;
-    try {
-      await op.waitUntilReady();
-    } catch (err) {
-      thrown = err;
-    }
-    expect(thrown).to.be.instanceOf(OperationStateError);
-    expect((thrown as OperationStateError).errorCode).to.equal(OperationStateErrorCode.Timeout);
-    // Best-effort server-side cancel fired so the statement doesn't keep running.
-    expect(stmt.cancelled).to.equal(true);
-  });
 
   it('cancel() forwards to the async statement and short-circuits a subsequent poll', async () => {
     const stmt = new FakeAsyncStatement(['Running', 'Running', 'Succeeded']);
@@ -1052,12 +1036,11 @@ describe('SeaOperationBackend — async (submitStatement) path', () => {
 });
 
 describe('SeaOperationBackend — sync (executeStatementCancellable) path', () => {
-  const makeSyncOp = (cancellableExecution: FakeCancellableExecution, queryTimeoutSecs?: number) =>
+  const makeSyncOp = (cancellableExecution: FakeCancellableExecution) =>
     new SeaOperationBackend({
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       cancellableExecution: cancellableExecution as any,
       context: makeContext(),
-      queryTimeoutSecs,
     });
 
   it('rejects when more than one handle kind is provided', () => {
