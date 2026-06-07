@@ -9,6 +9,10 @@
 # the .d.ts is the consumer-facing type contract.
 !native/sea/index.js
 !native/sea/index.d.ts
+# [bench-only] ship the prebuilt linux-x64-gnu binary in the package so the
+# github-resolved driver is self-contained for the hermetic DUST benchmark.
+# NOT for merge — production ships it via the kernel per-triple optional deps.
+!native/sea/index.linux-x64-gnu.node
 
 !LICENSE
 !NOTICE
