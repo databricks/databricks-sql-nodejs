@@ -567,6 +567,45 @@ describe('SeaSessionBackend', () => {
     expect(op.id).to.be.a('string').and.have.length.greaterThan(0);
   });
 
+  it('executeStatement (sync default) routes a still-running query through the AsyncStatement arm', async () => {
+    // The directResults Running arm — a query that did NOT finish within the
+    // server inline wait comes back as an AsyncStatement (poll/cancel handle).
+    // This is the branch the whole PR exists to add (Node mid-run cancel).
+    const connection = new FakeNativeConnection();
+    connection.directReturnsRunning = true;
+    const session = makeSession(connection);
+    const op = await session.executeStatement('SELECT slow', {});
+    expect(op).to.be.instanceOf(SeaOperationBackend);
+    // The Running arm was taken: an AsyncStatement was constructed + wired
+    // (not the terminal `statement` arm).
+    expect(connection.lastAsyncStatement, 'AsyncStatement (Running) arm should be taken').to.not.equal(undefined);
+    // Driving the op polls the async handle's status() — the polling arm.
+    await op.waitUntilReady();
+    expect(connection.lastAsyncStatement!.statusCalls, 'async handle polled via status()').to.be.greaterThan(0);
+  });
+
+  it('executeStatement (sync default) AsyncStatement arm: op.cancel() reaches the running statement', async () => {
+    // The point of directResults on single-threaded Node: the returned op holds
+    // a handle to the still-running statement, so op.cancel() can abort it.
+    const connection = new FakeNativeConnection();
+    connection.directReturnsRunning = true;
+    const session = makeSession(connection);
+    const op = await session.executeStatement('SELECT slow', {});
+    await op.cancel();
+    expect(connection.lastAsyncStatement!.cancelled, 'cancel reaches the running statement').to.equal(true);
+  });
+
+  it('executeStatement (sync default) routes a fast query through the terminal Statement arm', async () => {
+    // Contrast: a query that finished within the inline wait comes back as a
+    // terminal Statement (result inline) — no AsyncStatement is created.
+    const connection = new FakeNativeConnection(); // directReturnsRunning = false (default)
+    const session = makeSession(connection);
+    const op = await session.executeStatement('SELECT 1', {});
+    expect(connection.lastAsyncStatement, 'no AsyncStatement arm for a terminal query').to.equal(undefined);
+    await op.cancel();
+    expect(connection.statementToReturn.cancelled, 'cancel reaches the terminal statement').to.equal(true);
+  });
+
   it('executeStatement forwards ordinalParameters as napi positionalParams', async () => {
     const connection = new FakeNativeConnection();
     const session = makeSession(connection);
@@ -696,7 +735,7 @@ describe('SeaSessionBackend', () => {
     const envelope = `__databricks_error__:${JSON.stringify({ code: 'SqlError', message: 'SUBMIT_BOOM' })}`;
     for (const opts of [{}, { runAsync: true }]) {
       const connection = new FakeNativeConnection();
-      connection.throwOnExecute = new Error(envelope); // fails executeStatementCancellable / submitStatement
+      connection.throwOnExecute = new Error(envelope); // fails executeStatementDirect / submitStatement
       const session = makeSession(connection);
       let thrown: unknown;
       try {

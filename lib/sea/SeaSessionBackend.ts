@@ -67,6 +67,19 @@ export interface SeaSessionBackendOptions {
  * needed — that pattern was removed when the napi binding moved these
  * onto `openSession` to match pyo3.
  */
+
+/**
+ * Narrow the directResults union (`executeStatementDirect`'s
+ * `Statement | AsyncStatement`) to the Running `AsyncStatement` arm. Only that
+ * arm exposes `awaitResult`; the terminal `Statement` (Completed arm) does not.
+ * Mirrors the kernel `DirectStatement::{Completed, Running}` discriminant, which
+ * the opaque napi classes can't carry on the wire — the `awaitResult` probe is
+ * the load-bearing feature-detect (see databricks-sql-kernel#140).
+ */
+function isSeaAsyncStatement(x: SeaStatement | SeaNativeAsyncStatement): x is SeaNativeAsyncStatement {
+  return typeof (x as SeaNativeAsyncStatement).awaitResult === 'function';
+}
+
 export default class SeaSessionBackend implements ISessionBackend {
   private readonly connection: SeaConnection;
 
@@ -164,13 +177,16 @@ export default class SeaSessionBackend implements ISessionBackend {
     // JSDoc in `IDBSQLSession` for the cross-backend contract.
     //
     //   - DEFAULT (`runAsync` false/undefined) — SYNC. Route through
-    //     `executeStatementCancellable`: the kernel blocks on `execute()`
-    //     (server-side direct-results / poll-to-terminal), which is faster and,
-    //     with the napi sync canceller, fully cancellable mid-COMPUTE. The
-    //     blocking drive runs in the operation backend's `result()` (inside
-    //     `waitUntilReady`, which the facade invokes lazily at first fetch).
-    //     `queryTimeoutSecs` IS honoured on this path (forwarded to the napi
-    //     options below) since the kernel `execute()` consults it.
+    //     `executeStatementDirect` (the directResults model): the kernel sends
+    //     ExecuteStatement with the server's inline wait and returns WITHOUT
+    //     polling past it — a terminal `Statement` (result inline) for a fast
+    //     query, or a still-running `AsyncStatement` (poll/cancel handle) for a
+    //     slow one. The handle is server-owned, so a long query stays cancellable
+    //     via `op.cancel()` and `close()` is a clean release (no client-side
+    //     drive-to-terminal). `queryTimeoutSecs` IS honoured here (forwarded to
+    //     the napi options below) — note the kernel sends it as `wait_timeout=Ns`
+    //     + CANCEL, so a timeout shorter than the query cancels it (eager error)
+    //     rather than returning the `Running` handle.
     //
     //   - `runAsync: true` — ASYNC. Submit (`wait_timeout=0s`): the server
     //     returns a pending `AsyncStatement` immediately while the query runs;
@@ -193,7 +209,7 @@ export default class SeaSessionBackend implements ISessionBackend {
       // release (no client-side drive-to-terminal). Fire-and-forget DDL/DML
       // commits because the server runs it inline during the POST.
       const execOptions = this.buildExecuteOptions(options, queryTimeoutSecs);
-      let direct;
+      let direct: SeaStatement | SeaNativeAsyncStatement;
       try {
         direct =
           execOptions === undefined
@@ -202,17 +218,22 @@ export default class SeaSessionBackend implements ISessionBackend {
       } catch (err) {
         throw this.logAndMapError('executeStatement', err);
       }
-      // Feature-detect the arm: only `AsyncStatement` (the Running arm) exposes
-      // `awaitResult`; the terminal `Statement` (Completed arm) does not.
-      const asAsync = direct as unknown as SeaNativeAsyncStatement;
-      if (direct !== null && typeof asAsync.awaitResult === 'function') {
-        return new SeaOperationBackend({ asyncStatement: asAsync, context: this.context, queryTimeoutSecs });
+      // The kernel contract (`Promise<Statement | AsyncStatement>`) never yields
+      // null/undefined; reject a non-handle up front so a contract violation
+      // surfaces as a mapped driver error here rather than an opaque `TypeError`
+      // deferred to first fetch/close.
+      if (direct === null || direct === undefined) {
+        throw this.logAndMapError(
+          'executeStatement',
+          new HiveDriverError('SEA executeStatementDirect returned no statement handle'),
+        );
       }
-      return new SeaOperationBackend({
-        statement: direct as unknown as SeaStatement,
-        context: this.context,
-        queryTimeoutSecs,
-      });
+      // Feature-detect the arm via a type guard: only the Running `AsyncStatement`
+      // exposes `awaitResult`; the terminal `Statement` (Completed arm) does not.
+      if (isSeaAsyncStatement(direct)) {
+        return new SeaOperationBackend({ asyncStatement: direct, context: this.context, queryTimeoutSecs });
+      }
+      return new SeaOperationBackend({ statement: direct, context: this.context, queryTimeoutSecs });
     }
 
     // Async path: do NOT forward `queryTimeoutSecs` (the kernel ignores it on
