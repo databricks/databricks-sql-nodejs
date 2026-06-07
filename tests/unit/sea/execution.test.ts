@@ -14,7 +14,6 @@
 
 import { expect } from 'chai';
 import sinon from 'sinon';
-import Int64 from 'node-int64';
 import SeaBackend from '../../../lib/sea/SeaBackend';
 import SeaSessionBackend from '../../../lib/sea/SeaSessionBackend';
 import SeaOperationBackend from '../../../lib/sea/SeaOperationBackend';
@@ -650,44 +649,21 @@ describe('SeaSessionBackend', () => {
     expect((thrown as Error).message).to.equal('Driver does not support both ordinal and named parameters.');
   });
 
-  it('executeStatement (sync default) DOES forward queryTimeout to the napi options', async () => {
+  it('executeStatement (sync default) does NOT forward queryTimeout — no-op on SEA', async () => {
     const connection = new FakeNativeConnection();
     const session = makeSession(connection);
     await session.executeStatement('SELECT 1', { queryTimeout: 30 });
-    // Sync path: the kernel `execute()` honours queryTimeoutSecs (server
-    // statement timeout), so the backend forwards it onto the napi options.
-    expect((connection.lastOptions as { queryTimeoutSecs?: number } | undefined)?.queryTimeoutSecs).to.equal(30);
-  });
-
-  it('executeStatement (runAsync: true) does NOT forward queryTimeout to submit (kernel ignores it; enforced client-side)', async () => {
-    const connection = new FakeNativeConnection();
-    const session = makeSession(connection);
-    await session.executeStatement('SELECT 1', { queryTimeout: 30, runAsync: true });
-    // Async submit path: the kernel ignores queryTimeoutSecs under
-    // `wait_timeout=0s`, so it's enforced client-side by the poll deadline
-    // instead — never forwarded to the napi options.
+    // queryTimeout is a no-op on SEA (SQL Warehouses use STATEMENT_TIMEOUT). It
+    // must NOT be mapped to the kernel's `wait_timeout` (the inline-hold window),
+    // so nothing is forwarded onto the napi options.
     expect((connection.lastOptions as { queryTimeoutSecs?: number } | undefined)?.queryTimeoutSecs).to.equal(undefined);
   });
 
-  it('coerces an Int64 queryTimeout into the client-side deadline on the async path (not NaN)', async function int64Timeout() {
-    // Regression: `Number(new Int64(...))` yields NaN (node-int64 has no valueOf),
-    // which would silently disable the deadline. The backend must coerce via
-    // numberToInt64(...).toNumber() so an Int64 queryTimeout still bounds the poll.
-    // Exercised on the async path, where the client-side poll deadline applies.
-    // eslint-disable-next-line no-invalid-this
-    this.timeout(5000);
+  it('executeStatement (runAsync: true) does NOT forward queryTimeout — no-op on SEA', async () => {
     const connection = new FakeNativeConnection();
-    connection.submitStatusValue = 'Running'; // never reaches a terminal state
     const session = makeSession(connection);
-    const op = await session.executeStatement('SELECT 1', { queryTimeout: new Int64(1), runAsync: true });
-    let thrown: unknown;
-    try {
-      await op.waitUntilReady();
-    } catch (err) {
-      thrown = err;
-    }
-    expect(thrown, 'Int64(1) timeout must fire — NaN would poll forever').to.be.instanceOf(OperationStateError);
-    expect((thrown as OperationStateError).errorCode).to.equal(OperationStateErrorCode.Timeout);
+    await session.executeStatement('SELECT 1', { queryTimeout: 30, runAsync: true });
+    expect((connection.lastOptions as { queryTimeoutSecs?: number } | undefined)?.queryTimeoutSecs).to.equal(undefined);
   });
 
   it('executeStatement forwards rowLimit', async () => {
