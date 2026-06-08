@@ -13,6 +13,7 @@
 // limitations under the License.
 
 import { expect } from 'chai';
+import expectNativeConnectionOptions from './_helpers/nativeOptions';
 import { buildSeaConnectionOptions } from '../../../lib/sea/SeaAuth';
 import { ConnectionOptions } from '../../../lib/contracts/IDBSQLClient';
 import AuthenticationError from '../../../lib/errors/AuthenticationError';
@@ -28,7 +29,7 @@ describe('SeaAuth — PAT auth options builder', () => {
       };
 
       const native = buildSeaConnectionOptions(opts);
-      expect(native).to.deep.equal({
+      expectNativeConnectionOptions(native, {
         hostName: 'example.cloud.databricks.com',
         httpPath: '/sql/1.0/warehouses/abc',
         intervalsAsString: true,

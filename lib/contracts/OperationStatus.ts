@@ -53,4 +53,33 @@ export interface OperationStatus {
    * to `WaitUntilReadyOptions.callback` for the consumer to interpret.
    */
   progressUpdateResponse?: unknown;
+
+  /**
+   * Number of rows modified by a DML statement (UPDATE / INSERT / DELETE /
+   * MERGE). `undefined`/`null` for SELECT and on backends/warehouses that do
+   * not surface the counter. Mirrors Thrift's
+   * `TGetOperationStatusResp.numModifiedRows`.
+   */
+  numModifiedRows?: number | null;
+
+  /**
+   * Server-supplied user-facing message, when the backend exposes one. Mirrors
+   * Thrift's `TGetOperationStatusResp.displayMessage`. May contain SQL
+   * fragments or parameter values — treat as potentially sensitive.
+   */
+  displayMessage?: string | null;
+
+  /**
+   * Server-supplied diagnostic detail (multi-line operator / stack context),
+   * when available. Mirrors Thrift's `TGetOperationStatusResp.diagnosticInfo`.
+   * For support surfaces, not user-facing.
+   */
+  diagnosticInfo?: string | null;
+
+  /**
+   * Server-supplied JSON blob with extended error details, when available.
+   * Mirrors Thrift's `TGetOperationStatusResp.errorDetailsJson`. Pass-through
+   * string — callers parse with `JSON.parse` if they need structured access.
+   */
+  errorDetailsJson?: string | null;
 }

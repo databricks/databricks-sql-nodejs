@@ -1,4 +1,5 @@
 import { expect } from 'chai';
+import Int64 from 'node-int64';
 import { TOperationState, TSparkRowSetType, TStatusCode } from '../../../thrift/TCLIService_types';
 import { OperationState, OperationStatus } from '../../../lib/contracts/OperationStatus';
 import { ResultFormat, ResultMetadata } from '../../../lib/contracts/ResultMetadata';
@@ -67,6 +68,54 @@ describe('wireSynthesis', () => {
       });
       expect(resp.errorMessage).to.equal('should-not-elevate-to-error-but-still-passed-through');
       expect(resp.sqlState).to.equal('01000');
+    });
+
+    describe('rich status fields (numModifiedRows / displayMessage / diagnosticInfo / errorDetailsJson)', () => {
+      it('re-boxes numModifiedRows as a Thrift Int64 (matching the Thrift deserializer wire shape)', () => {
+        const resp = synthesizeThriftStatus({ ...baseStatus, numModifiedRows: 5 });
+        expect(resp.numModifiedRows, 'should be a node-int64 Int64').to.be.instanceOf(Int64);
+        expect((resp.numModifiedRows as Int64).toNumber()).to.equal(5);
+      });
+
+      it('re-boxes numModifiedRows: 0 as Int64(0) — a real zero-row DML result, not "absent"', () => {
+        const resp = synthesizeThriftStatus({ ...baseStatus, numModifiedRows: 0 });
+        expect(resp.numModifiedRows, '0 is a value, not a missing field').to.be.instanceOf(Int64);
+        expect((resp.numModifiedRows as Int64).toNumber()).to.equal(0);
+      });
+
+      it('maps a null numModifiedRows (server did not supply) to undefined, matching the Thrift path', () => {
+        const resp = synthesizeThriftStatus({ ...baseStatus, numModifiedRows: null });
+        expect(resp.numModifiedRows).to.equal(undefined);
+      });
+
+      it('maps an absent numModifiedRows to undefined', () => {
+        const resp = synthesizeThriftStatus({ ...baseStatus });
+        expect(resp.numModifiedRows).to.equal(undefined);
+      });
+
+      it('passes displayMessage / diagnosticInfo / errorDetailsJson through as strings', () => {
+        const resp = synthesizeThriftStatus({
+          ...baseStatus,
+          displayMessage: 'INSERT 0 5',
+          diagnosticInfo: 'stage 1/1 finished',
+          errorDetailsJson: '{"detail":"none"}',
+        });
+        expect(resp.displayMessage).to.equal('INSERT 0 5');
+        expect(resp.diagnosticInfo).to.equal('stage 1/1 finished');
+        expect(resp.errorDetailsJson).to.equal('{"detail":"none"}');
+      });
+
+      it('maps null string fields to undefined (absent, not the literal null)', () => {
+        const resp = synthesizeThriftStatus({
+          ...baseStatus,
+          displayMessage: null,
+          diagnosticInfo: null,
+          errorDetailsJson: null,
+        });
+        expect(resp.displayMessage).to.equal(undefined);
+        expect(resp.diagnosticInfo).to.equal(undefined);
+        expect(resp.errorDetailsJson).to.equal(undefined);
+      });
     });
   });
 

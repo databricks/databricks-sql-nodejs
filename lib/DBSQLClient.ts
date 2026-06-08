@@ -152,6 +152,8 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
 
       useLZ4Compression: true,
 
+      preserveBigNumericPrecision: false,
+
       // Telemetry defaults are sourced from DEFAULT_TELEMETRY_CONFIG so
       // every component reads from the same single frozen const. Mapping the
       // unprefixed TelemetryConfiguration keys to the `telemetry`-prefixed
@@ -602,6 +604,11 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
     // Store enableMetricViewMetadata configuration
     if (options.enableMetricViewMetadata !== undefined) {
       this.config.enableMetricViewMetadata = options.enableMetricViewMetadata;
+    }
+
+    // Opt-in: preserve DECIMAL (string) / BIGINT (bigint) precision in results.
+    if (options.preserveBigNumericPrecision !== undefined) {
+      this.config.preserveBigNumericPrecision = options.preserveBigNumericPrecision;
     }
 
     // Override telemetry config if provided in options. Per-key narrowed copy

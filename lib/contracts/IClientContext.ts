@@ -26,6 +26,12 @@ export interface ClientConfig {
   useLZ4Compression: boolean;
   enableMetricViewMetadata?: boolean;
 
+  // When true, DECIMAL values are returned as exact strings and 64-bit
+  // integers as JS `bigint`, instead of being coerced to a lossy `number`.
+  // Off by default to preserve the long-standing representation on both the
+  // Thrift and SEA backends. See `ConnectionOptions.preserveBigNumericPrecision`.
+  preserveBigNumericPrecision?: boolean;
+
   // Telemetry configuration
   telemetryEnabled?: boolean;
   telemetryBatchSize?: number;

@@ -2,7 +2,7 @@ import { expect } from 'chai';
 import fs from 'fs';
 import path from 'path';
 import { Table, tableFromArrays, tableToIPC, RecordBatch, TypeMap } from 'apache-arrow';
-import ArrowResultConverter from '../../../lib/result/ArrowResultConverter';
+import ArrowResultConverter, { bigNumDecimalToString } from '../../../lib/result/ArrowResultConverter';
 import { ArrowBatch } from '../../../lib/result/utils';
 import ResultsProviderStub from '../.stubs/ResultsProviderStub';
 import { TTableSchema, TTypeId } from '../../../thrift/TCLIService_types';
@@ -198,5 +198,58 @@ describe('ArrowResultConverter', () => {
     const rows3 = await result.fetchNext({ limit: 10000 });
     expect(rows3).to.deep.equal([{ id: 30 }, { id: 31 }]);
     expect(await result.hasMore()).to.be.false;
+  });
+
+  function bigintThriftSchema(columnName: string): TTableSchema {
+    return {
+      columns: [
+        {
+          columnName,
+          typeDesc: { types: [{ primitiveEntry: { type: TTypeId.BIGINT_TYPE } }] },
+          position: 1,
+        },
+      ],
+    };
+  }
+
+  it('preserves BIGINT precision as bigint when preserveBigNumericPrecision is set', async () => {
+    // 9007199254740993 = Number.MAX_SAFE_INTEGER + 2 — not exactly
+    // representable as a JS number.
+    const table = tableFromArrays({ big_value: BigInt64Array.from([BigInt('9007199254740993'), BigInt('5')]) });
+    const rowSetProvider = new ResultsProviderStub(
+      [{ batches: [createSampleArrowBatch(table.batches[0])], rowCount: 2 }],
+      emptyItem,
+    );
+    const result = new ArrowResultConverter(
+      new ClientContextStub(),
+      rowSetProvider,
+      { schema: bigintThriftSchema('big_value') },
+      { preserveBigNumericPrecision: true },
+    );
+    expect(await result.fetchNext({ limit: 10000 })).to.deep.equal([
+      { big_value: BigInt('9007199254740993') },
+      { big_value: BigInt('5') },
+    ]);
+  });
+
+  it('narrows BIGINT to a (lossy) number by default — preserves the Thrift contract', async () => {
+    const table = tableFromArrays({ big_value: BigInt64Array.from([BigInt('9007199254740993'), BigInt('5')]) });
+    const rowSetProvider = new ResultsProviderStub(
+      [{ batches: [createSampleArrowBatch(table.batches[0])], rowCount: 2 }],
+      emptyItem,
+    );
+    const result = new ArrowResultConverter(new ClientContextStub(), rowSetProvider, {
+      schema: bigintThriftSchema('big_value'),
+    });
+    // Default path coerces to `number`; 9007199254740993 rounds to ...992.
+    expect(await result.fetchNext({ limit: 10000 })).to.deep.equal([{ big_value: 9007199254740992 }, { big_value: 5 }]);
+  });
+
+  it('formats unscaled decimals to exact strings (bigNumDecimalToString)', () => {
+    expect(bigNumDecimalToString(BigInt('1234567890'), 5)).to.equal('12345.67890'); // trailing zero kept
+    expect(bigNumDecimalToString(BigInt('-1234567890123456789'), 4)).to.equal('-123456789012345.6789');
+    expect(bigNumDecimalToString(BigInt('5'), 2)).to.equal('0.05'); // leading zero synthesized
+    expect(bigNumDecimalToString(BigInt('-5'), 2)).to.equal('-0.05');
+    expect(bigNumDecimalToString(BigInt('12345'), 0)).to.equal('12345'); // scale 0 → integer string
   });
 });

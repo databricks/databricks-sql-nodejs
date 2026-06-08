@@ -56,6 +56,15 @@ export type ConnectionOptions = {
   enableMetricViewMetadata?: boolean;
 
   /**
+   * Preserve full numeric precision in results. When `true`, DECIMAL columns
+   * are returned as exact strings and 64-bit integers (BIGINT) as JS `bigint`,
+   * instead of the default lossy coercion to a JS `number` (which silently
+   * rounds DECIMALs and integers beyond 2^53). Applies to both the Thrift and
+   * SEA backends. Defaults to `false` to preserve the existing representation.
+   */
+  preserveBigNumericPrecision?: boolean;
+
+  /**
    * Extra HTTP headers attached to driver-owned out-of-band requests
    * (telemetry POSTs and feature-flag GETs). Not applied to the primary
    * Thrift transport or to OAuth/OIDC token requests.
