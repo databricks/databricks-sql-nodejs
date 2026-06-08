@@ -1011,7 +1011,6 @@ describe('SeaOperationBackend — async (submitStatement) path', () => {
     expect((thrown as OperationStateError).errorCode).to.equal(OperationStateErrorCode.Closed);
   });
 
-
   it('cancel() forwards to the async statement and short-circuits a subsequent poll', async () => {
     const stmt = new FakeAsyncStatement(['Running', 'Running', 'Succeeded']);
     const op = makeAsyncOp(stmt);

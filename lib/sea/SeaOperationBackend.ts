@@ -181,13 +181,7 @@ export default class SeaOperationBackend implements IOperationBackend {
   // already-terminal statement. Drives both fetch and result-metadata.
   private fetchHandlePromise?: Promise<SeaFetchHandle>;
 
-  constructor({
-    asyncStatement,
-    statement,
-    cancellableExecution,
-    context,
-    id,
-  }: SeaOperationBackendOptions) {
+  constructor({ asyncStatement, statement, cancellableExecution, context, id }: SeaOperationBackendOptions) {
     // Exactly one of the three handle kinds must be supplied.
     const providedCount =
       (asyncStatement !== undefined ? 1 : 0) +
