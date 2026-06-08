@@ -15,7 +15,7 @@ import {
   RecordBatchReader,
   util as arrowUtils,
 } from 'apache-arrow';
-import { TTableSchema, TColumnDesc } from '../../thrift/TCLIService_types';
+import { TTableSchema, TColumnDesc, TTypeId } from '../../thrift/TCLIService_types';
 import IClientContext from '../contracts/IClientContext';
 import HiveDriverError from '../errors/HiveDriverError';
 import IResultsProvider, { ResultsProviderFetchNextOptions } from './IResultsProvider';
@@ -169,12 +169,40 @@ function formatDayTimeFromTotal(totalNanos: bigint): string {
   return `${sign}${days.toString()} ${pad2(hours)}:${pad2(minutes)}:${pad2(seconds)}${fraction}`;
 }
 
+/**
+ * Render an Arrow `Decimal` value — supplied as its unscaled integer (from
+ * `bigNumToBigInt`) plus the column `scale` — as an exact decimal string,
+ * e.g. unscaled `1234567890` / scale `5` → `"12345.67890"`. Used by the
+ * precision-preserving path so high-precision DECIMALs survive the round-trip
+ * instead of being flattened to an IEEE-754 double.
+ */
+export function bigNumDecimalToString(unscaled: bigint, scale: number): string {
+  if (scale <= 0) {
+    return unscaled.toString();
+  }
+  const negative = unscaled < ZERO_BIGINT;
+  // `padStart(scale + 1)` guarantees at least one digit before the point
+  // (e.g. unscaled `5` / scale `2` → `"005"` → `"0.05"`).
+  const digits = (negative ? -unscaled : unscaled).toString().padStart(scale + 1, '0');
+  const cut = digits.length - scale;
+  return `${negative ? '-' : ''}${digits.slice(0, cut)}.${digits.slice(cut)}`;
+}
+
 export default class ArrowResultConverter implements IResultsProvider<Array<any>> {
   private readonly context: IClientContext;
 
   private readonly source: IResultsProvider<ArrowBatch>;
 
   private readonly schema: Array<TColumnDesc>;
+
+  // When true, DECIMAL and 64-bit integer values keep full precision —
+  // DECIMAL as an exact string and BIGINT as a JS `bigint` — instead of being
+  // coerced to a lossy `number`. Enabled by the SEA backend, which always
+  // receives native Arrow `Decimal128` / `Int64` from the kernel and has no
+  // server-side "send as string" escape hatch (the Thrift backend gets the
+  // string form via `useArrowNativeTypes=false`). Off by default so the Thrift
+  // path keeps its long-standing `number` representation unchanged.
+  private readonly preserveBigNumericPrecision: boolean;
 
   private recordBatchReader?: IterableIterator<RecordBatch<TypeMap>>;
 
@@ -193,10 +221,16 @@ export default class ArrowResultConverter implements IResultsProvider<Array<any>
   // operation backend and the SEA backend's neutral `ResultMetadata` —
   // which both carry `schema?: TTableSchema` — can construct the converter
   // without an adapter at the call site.
-  constructor(context: IClientContext, source: IResultsProvider<ArrowBatch>, { schema }: { schema?: TTableSchema }) {
+  constructor(
+    context: IClientContext,
+    source: IResultsProvider<ArrowBatch>,
+    { schema }: { schema?: TTableSchema },
+    { preserveBigNumericPrecision = false }: { preserveBigNumericPrecision?: boolean } = {},
+  ) {
     this.context = context;
     this.source = source;
     this.schema = getSchemaColumns(schema);
+    this.preserveBigNumericPrecision = preserveBigNumericPrecision;
   }
 
   public async hasMore() {
@@ -374,6 +408,11 @@ export default class ArrowResultConverter implements IResultsProvider<Array<any>
     if (value instanceof Object && value[isArrowBigNumSymbol]) {
       const result = bigNumToBigInt(value);
       if (DataType.isDecimal(valueType)) {
+        // Preserve full precision as an exact string when requested (SEA);
+        // otherwise keep the historical lossy `number` form.
+        if (this.preserveBigNumericPrecision) {
+          return bigNumDecimalToString(result, valueType.scale);
+        }
         return Number(result) / 10 ** valueType.scale;
       }
       // A rewritten Duration Int64 surfaces as a raw `bigint`, not a BigNum
@@ -397,6 +436,12 @@ export default class ArrowResultConverter implements IResultsProvider<Array<any>
       if (durationUnit) {
         return formatDurationToIntervalDayTime(value, durationUnit);
       }
+      // Keep the exact `bigint` when precision must be preserved (SEA); the
+      // default path narrows to `number` for backward compatibility (the
+      // Thrift backend has always returned BIGINT as a JS `number`).
+      if (this.preserveBigNumericPrecision) {
+        return value;
+      }
       return Number(value);
     }
 
@@ -411,7 +456,23 @@ export default class ArrowResultConverter implements IResultsProvider<Array<any>
       const typeDescriptor = column.typeDesc.types[0]?.primitiveEntry;
       const field = column.columnName;
       const value = record[field];
-      result[field] = value === null ? null : convertThriftValue(typeDescriptor, value);
+      if (value === null) {
+        result[field] = null;
+        return;
+      }
+      // When preserving precision, DECIMAL and BIGINT values were already
+      // produced in their exact form by `convertArrowTypes` (string / bigint).
+      // `convertThriftValue` would narrow both back to a lossy `number`
+      // (DECIMAL_TYPE → `Number(value)`, BIGINT_TYPE → `convertBigInt`), so
+      // pass them through untouched on this path.
+      if (
+        this.preserveBigNumericPrecision &&
+        (typeDescriptor?.type === TTypeId.DECIMAL_TYPE || typeDescriptor?.type === TTypeId.BIGINT_TYPE)
+      ) {
+        result[field] = value;
+        return;
+      }
+      result[field] = convertThriftValue(typeDescriptor, value);
     });
 
     return result;

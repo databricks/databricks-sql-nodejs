@@ -14,6 +14,8 @@
 
 import { expect } from 'chai';
 import sinon from 'sinon';
+import Int64 from 'node-int64';
+import expectNativeConnectionOptions from './_helpers/nativeOptions';
 import SeaBackend from '../../../lib/sea/SeaBackend';
 import SeaSessionBackend from '../../../lib/sea/SeaSessionBackend';
 import SeaOperationBackend from '../../../lib/sea/SeaOperationBackend';
@@ -57,22 +59,48 @@ class FakeNativeStatement implements SeaStatement {
     this.closed = true;
   }
 
-  // Status accessors added by the kernel's status-fields surface.
+  // Status accessors added by the kernel's status-fields surface. The values
+  // are configurable so a test can assert non-null rich-status (e.g. a DML
+  // `numModifiedRows`) propagates through `op.status()`; they default to all-
+  // null, matching a SELECT / metadata statement that carries none.
+  public rich: SeaRichStatusValues = {
+    numModifiedRows: null,
+    displayMessage: null,
+    diagnosticInfo: null,
+    errorDetailsJson: null,
+  };
+
+  // Counts every rich-field accessor call so a test can assert the backend
+  // memoizes the read on a terminal statement (re-`status()` must not re-hit
+  // the FFI accessors).
+  public richReads = 0;
+
   public async numModifiedRows(): Promise<number | null> {
-    return null;
+    this.richReads += 1;
+    return this.rich.numModifiedRows;
   }
 
   public async displayMessage(): Promise<string | null> {
-    return null;
+    this.richReads += 1;
+    return this.rich.displayMessage;
   }
 
   public async diagnosticInfo(): Promise<string | null> {
-    return null;
+    this.richReads += 1;
+    return this.rich.diagnosticInfo;
   }
 
   public async errorDetailsJson(): Promise<string | null> {
-    return null;
+    this.richReads += 1;
+    return this.rich.errorDetailsJson;
   }
+}
+
+interface SeaRichStatusValues {
+  numModifiedRows: number | null;
+  displayMessage: string | null;
+  diagnosticInfo: string | null;
+  errorDetailsJson: string | null;
 }
 
 /**
@@ -119,6 +147,33 @@ class FakeAsyncStatement {
 
   public async close(): Promise<void> {
     this.closed = true;
+  }
+
+  // Extended status accessors exposed on the napi AsyncStatement. The kernel
+  // populates them off the terminal GetStatement poll (a DML's count rides on
+  // that response); configurable here to assert the driver surfaces them
+  // through op.status() on the async path.
+  public rich: SeaRichStatusValues = {
+    numModifiedRows: null,
+    displayMessage: null,
+    diagnosticInfo: null,
+    errorDetailsJson: null,
+  };
+
+  public async numModifiedRows(): Promise<number | null> {
+    return this.rich.numModifiedRows;
+  }
+
+  public async displayMessage(): Promise<string | null> {
+    return this.rich.displayMessage;
+  }
+
+  public async diagnosticInfo(): Promise<string | null> {
+    return this.rich.diagnosticInfo;
+  }
+
+  public async errorDetailsJson(): Promise<string | null> {
+    return this.rich.errorDetailsJson;
   }
 }
 
@@ -177,6 +232,16 @@ class FakeCancellableExecution {
       this.pendingResolve = undefined;
     }
   }
+
+  // Resolve a parked (blocked) result() with the terminal statement, modelling
+  // the server-side blocking execute finally completing.
+  public release(): void {
+    if (this.pendingResolve) {
+      this.pendingResolve(this.resultHandle);
+      this.pendingResolve = undefined;
+      this.pendingReject = undefined;
+    }
+  }
 }
 
 class FakeNativeConnection implements SeaConnection {
@@ -221,6 +286,10 @@ class FakeNativeConnection implements SeaConnection {
     return this.statementToReturn;
   }
 
+  // Rich status the next sync-execute's terminal Statement should report
+  // (e.g. a DML `numModifiedRows`). Defaults to all-null (a SELECT).
+  public richStatus?: SeaRichStatusValues;
+
   // Sync (`runAsync: false`, the DEFAULT) query path: records sql + options and
   // returns a pending CancellableExecution whose result() drives the execute.
   public async executeStatementCancellable(sql: string, options?: unknown): Promise<any> {
@@ -229,7 +298,11 @@ class FakeNativeConnection implements SeaConnection {
     }
     this.lastSql = sql;
     this.lastOptions = options;
-    this.lastCancellableExecution = new FakeCancellableExecution();
+    const resultHandle = new FakeNativeStatement();
+    if (this.richStatus) {
+      resultHandle.rich = this.richStatus;
+    }
+    this.lastCancellableExecution = new FakeCancellableExecution(resultHandle);
     return this.lastCancellableExecution;
   }
 
@@ -469,7 +542,7 @@ describe('SeaBackend', () => {
     // shape with a leading `authMode` tag — `'Pat'` for the PAT branch.
     // `intervalsAsString: true` is always set so the SEA result shape is a
     // byte-compatible drop-in for the Thrift backend (interval-as-string).
-    expect(args).to.deep.equal({
+    expectNativeConnectionOptions(args, {
       hostName: 'workspace.example',
       httpPath: '/sql/1.0/warehouses/xyz',
       authMode: 'Pat',
@@ -942,6 +1015,36 @@ describe('SeaOperationBackend — async (submitStatement) path', () => {
     expect((await ok.status(false)).state).to.equal(OperationState.Succeeded);
   });
 
+  it('surfaces rich-status fields (numModifiedRows etc.) through op.status() once Succeeded', async () => {
+    // The kernel derives a DML's count off the terminal GetStatement poll and
+    // exposes it on the AsyncStatement accessors; the backend surfaces it on
+    // op.status() at the Succeeded state — parity with the sync path.
+    const stmt = new FakeAsyncStatement('Succeeded');
+    stmt.rich = {
+      numModifiedRows: 7,
+      displayMessage: 'UPDATE 0 7',
+      diagnosticInfo: 'ok',
+      errorDetailsJson: null,
+    };
+    const op = makeAsyncOp(stmt);
+    const status = await op.status(false);
+    expect(status.state).to.equal(OperationState.Succeeded);
+    expect(status.numModifiedRows).to.equal(7);
+    expect(status.displayMessage).to.equal('UPDATE 0 7');
+    expect(status.diagnosticInfo).to.equal('ok');
+    expect(status.errorDetailsJson).to.equal(null);
+  });
+
+  it('does not read rich-status fields before the async statement is terminal', async () => {
+    // A Running async statement must not surface (or fabricate) a count.
+    const stmt = new FakeAsyncStatement('Running');
+    stmt.rich = { numModifiedRows: 99, displayMessage: null, diagnosticInfo: null, errorDetailsJson: null };
+    const op = makeAsyncOp(stmt);
+    const status = await op.status(false);
+    expect(status.state).to.equal(OperationState.Running);
+    expect(status.numModifiedRows).to.equal(undefined);
+  });
+
   it('waitUntilReady() polls status() until terminal, firing the progress callback each tick', async () => {
     const stmt = new FakeAsyncStatement(['Pending', 'Running', 'Succeeded']);
     const op = makeAsyncOp(stmt);
@@ -949,6 +1052,26 @@ describe('SeaOperationBackend — async (submitStatement) path', () => {
     await op.waitUntilReady({ callback: (s) => states.push(s.state) });
     expect(stmt.statusCalls).to.equal(3);
     expect(states).to.deep.equal([OperationState.Pending, OperationState.Running, OperationState.Succeeded]);
+  });
+
+  it('progress callback carries rich-status fields on the terminal Succeeded tick (parity with the sync path)', async () => {
+    // Regression guard: the async poll loop must merge the rich-status fields
+    // into the callback on the Succeeded tick, matching waitUntilReadyCancellable.
+    // Previously the async path fired only { state, hasResultSet } even when
+    // Succeeded, so a DML's numModifiedRows never reached a progress callback.
+    const stmt = new FakeAsyncStatement(['Running', 'Succeeded']);
+    stmt.rich = { numModifiedRows: 13, displayMessage: 'UPDATE 0 13', diagnosticInfo: null, errorDetailsJson: null };
+    const op = makeAsyncOp(stmt);
+    const ticks: Array<{ state: OperationState; numModifiedRows?: number | null; displayMessage?: string | null }> = [];
+    await op.waitUntilReady({ callback: (s) => ticks.push(s) });
+
+    const succeeded = ticks.find((t) => t.state === OperationState.Succeeded);
+    expect(succeeded, 'a Succeeded tick fired').to.not.equal(undefined);
+    expect(succeeded?.numModifiedRows).to.equal(13);
+    expect(succeeded?.displayMessage).to.equal('UPDATE 0 13');
+    // Non-terminal ticks must NOT carry rich fields (only populated when terminal).
+    const running = ticks.find((t) => t.state === OperationState.Running);
+    expect(running?.numModifiedRows).to.equal(undefined);
   });
 
   it('waitUntilReady() surfaces the kernel error envelope on a Failed statement', async () => {
@@ -1102,6 +1225,30 @@ describe('SeaOperationBackend — sync (executeStatementCancellable) path', () =
     expect((await op.status(false)).state).to.equal(OperationState.Succeeded);
   });
 
+  it('status() stays Running and does NOT block while a concurrent result() is still in flight', async () => {
+    // Regression guard: status() must gate Succeeded on the *resolved* statement
+    // (blockingStatement), not on the mere existence of fetchHandlePromise.
+    // Once a concurrent path (here, waitUntilReady) has dispatched result(),
+    // fetchHandlePromise is set but still pending; the old `!fetchHandlePromise`
+    // gate would (a) report Succeeded early and (b) block on the pending
+    // result() via readRichStatusFields() -> getFetchHandle().
+    const exec = new FakeCancellableExecution();
+    exec.block = true; // result() parks until released
+    const op = makeSyncOp(exec);
+    const waitPromise = op.waitUntilReady(); // dispatches result() (parks); fetchHandlePromise now pending
+    await Promise.resolve(); // let result() get dispatched + parked
+
+    const status = (await Promise.race([
+      op.status(false),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('status() blocked on the pending result()')), 2000)),
+    ])) as { state: OperationState };
+    expect(status.state).to.equal(OperationState.Running);
+
+    exec.release(); // blocking execute completes
+    await waitPromise;
+    expect((await op.status(false)).state).to.equal(OperationState.Succeeded);
+  });
+
   it('waitUntilReady() drives result() to the terminal statement and fires the callback once', async () => {
     const exec = new FakeCancellableExecution();
     const op = makeSyncOp(exec);
@@ -1163,5 +1310,46 @@ describe('SeaOperationBackend — sync (executeStatementCancellable) path', () =
     const status = await op.close();
     expect(status.isSuccess).to.equal(true);
     expect(exec.resultHandle.closed).to.equal(false);
+  });
+
+  it('surfaces the kernel rich-status fields (numModifiedRows etc.) through op.status() and memoizes the read', async () => {
+    // A DML statement's terminal kernel `Statement` carries numModifiedRows /
+    // displayMessage / diagnosticInfo / errorDetailsJson. Drive the sync execute
+    // to terminal and assert each non-null field propagates through op.status()
+    // (previously the fakes returned all-null, so this propagation was untested).
+    const resultHandle = new FakeNativeStatement();
+    resultHandle.rich = {
+      numModifiedRows: 42,
+      displayMessage: 'INSERT 0 42',
+      diagnosticInfo: 'stage 1/1 finished',
+      errorDetailsJson: '{"detail":"none"}',
+    };
+    const exec = new FakeCancellableExecution(resultHandle);
+    const op = makeSyncOp(exec);
+    await op.waitUntilReady();
+
+    const status = await op.status(false);
+    expect(status.state).to.equal(OperationState.Succeeded);
+    expect(status.numModifiedRows).to.equal(42);
+    expect(status.displayMessage).to.equal('INSERT 0 42');
+    expect(status.diagnosticInfo).to.equal('stage 1/1 finished');
+    expect(status.errorDetailsJson).to.equal('{"detail":"none"}');
+
+    // C5: re-status()-ing a completed op reuses the memoized read — the four FFI
+    // accessors fire exactly once across both status() calls (4 reads, not 8).
+    await op.status(false);
+    expect(resultHandle.richReads).to.equal(4);
+  });
+
+  it('reports all-null rich-status for a SELECT (no rows modified) — the default', async () => {
+    // A read-only statement carries no numModifiedRows; the backend surfaces
+    // null rather than fabricating a value.
+    const op = makeSyncOp(new FakeCancellableExecution());
+    await op.waitUntilReady();
+    const status = await op.status(false);
+    expect(status.numModifiedRows).to.equal(null);
+    expect(status.displayMessage).to.equal(null);
+    expect(status.diagnosticInfo).to.equal(null);
+    expect(status.errorDetailsJson).to.equal(null);
   });
 });

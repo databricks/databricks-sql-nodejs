@@ -1,3 +1,4 @@
+import Int64 from 'node-int64';
 import {
   TGetOperationStatusResp,
   TGetResultSetMetadataResp,
@@ -77,10 +78,17 @@ function resultFormatToThrift(format: ResultFormat): TSparkRowSetType {
  * `OperationStatus` DTO. Used by `DBSQLOperation.status()` when running
  * against a non-Thrift backend (e.g. SEA) so the public API stays Thrift-shaped.
  *
- * Lossy by design: Thrift-only fields not carried by `OperationStatus`
- * (`taskStatus`, `numModifiedRows`, `operationStarted`, `operationCompleted`,
- * `displayMessage`, `diagnosticInfo`) are left undefined. Consumers that
- * read those fields will see `undefined` on non-Thrift backends.
+ * Carries the rich status fields when the backend supplies them
+ * (`numModifiedRows`, `displayMessage`, `diagnosticInfo`, `errorDetailsJson`)
+ * — the SEA backend reads these off the terminal kernel statement, so DML
+ * operations report `numModifiedRows` at parity with the Thrift path.
+ * `numModifiedRows` is re-boxed as a Thrift `Int64` (`node-int64`) to match the
+ * wire shape the Thrift deserializer produces, so consumers can read it
+ * uniformly across backends.
+ *
+ * Still lossy for Thrift-only fields not carried by `OperationStatus`
+ * (`taskStatus`, `operationStarted`, `operationCompleted`), which are left
+ * undefined.
  */
 export function synthesizeThriftStatus(status: OperationStatus): TGetOperationStatusResp {
   return {
@@ -90,6 +98,17 @@ export function synthesizeThriftStatus(status: OperationStatus): TGetOperationSt
     errorMessage: status.errorMessage,
     hasResultSet: status.hasResultSet,
     progressUpdateResponse: status.progressUpdateResponse as TGetOperationStatusResp['progressUpdateResponse'],
+    // Rich status fields: only present on backends that surface them (SEA on a
+    // terminal sync statement). `null` (server didn't supply) maps to
+    // `undefined` so the synthesized response matches the Thrift path, where an
+    // absent field is simply not set.
+    numModifiedRows:
+      status.numModifiedRows === undefined || status.numModifiedRows === null
+        ? undefined
+        : new Int64(status.numModifiedRows),
+    displayMessage: status.displayMessage ?? undefined,
+    diagnosticInfo: status.diagnosticInfo ?? undefined,
+    errorDetailsJson: status.errorDetailsJson ?? undefined,
   } as TGetOperationStatusResp;
 }
 

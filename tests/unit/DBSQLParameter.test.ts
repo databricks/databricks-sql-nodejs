@@ -124,4 +124,66 @@ describe('DBSQLParameter', () => {
       }),
     );
   });
+
+  it('infers a fitting integer type by magnitude', () => {
+    const cases: Array<[number, DBSQLParameterType, string]> = [
+      // Within INT (i32) range → INTEGER.
+      [42, DBSQLParameterType.INTEGER, '42'],
+      [2147483647, DBSQLParameterType.INTEGER, '2147483647'],
+      [-2147483648, DBSQLParameterType.INTEGER, '-2147483648'],
+      // Beyond i32 but a safe integer → BIGINT (INTEGER would overflow the
+      // server's INT literal parse).
+      [3000000000, DBSQLParameterType.BIGINT, '3000000000'],
+      // Whole-number double outside the safe-integer range → DOUBLE, not
+      // INTEGER. Regression: `Number.isInteger(1e30)` is `true`, so this used
+      // to be typed INTEGER and rejected as `invalid INT literal "1e+30"`.
+      [1e30, DBSQLParameterType.DOUBLE, '1e+30'],
+    ];
+    for (const [value, type, stringValue] of cases) {
+      expect(new DBSQLParameter({ value }).toSparkParameter()).to.deep.equal(
+        new TSparkParameter({ type, value: new TSparkParameterValue({ stringValue }) }),
+      );
+    }
+  });
+
+  it('binds a Date as a calendar date when typed DATE', () => {
+    // Explicit DATE type → date-only `yyyy-mm-dd`. The full ISO timestamp is
+    // rejected by the SEA wire as a DATE literal ("trailing input").
+    expect(
+      new DBSQLParameter({
+        type: DBSQLParameterType.DATE,
+        value: new Date(Date.UTC(2024, 0, 15, 10, 30, 0)),
+      }).toSparkParameter(),
+    ).to.deep.equal(
+      new TSparkParameter({
+        type: DBSQLParameterType.DATE,
+        value: new TSparkParameterValue({ stringValue: '2024-01-15' }),
+      }),
+    );
+    // Without an explicit type a Date still binds as a full TIMESTAMP.
+    expect(new DBSQLParameter({ value: new Date('2023-09-06T03:14:27.843Z') }).toSparkParameter()).to.deep.equal(
+      new TSparkParameter({
+        type: DBSQLParameterType.TIMESTAMP,
+        value: new TSparkParameterValue({ stringValue: '2023-09-06T03:14:27.843Z' }),
+      }),
+    );
+  });
+
+  it('binds a typed DATE from local calendar accessors, never via toISOString (no UTC off-by-one)', () => {
+    // A `Date` constructed from local components must bind the wall-calendar
+    // date the user intended, regardless of the process timezone.
+    // `toISOString()` converts to UTC first, so in a positive-offset zone a
+    // local-midnight `new Date(2024, 2, 14)` (internally 2024-03-13T..Z) would
+    // bind "2024-03-13" — off by one. Sabotage `toISOString` to PROVE the DATE
+    // path doesn't use it: this guards the regression in any timezone, including
+    // the UTC CI runner where the two formulations would otherwise agree.
+    const localDate = new Date(2024, 2, 14);
+    (localDate as unknown as { toISOString: () => string }).toISOString = () => '1999-12-31T00:00:00.000Z';
+    expect(new DBSQLParameter({ type: DBSQLParameterType.DATE, value: localDate }).toSparkParameter()).to.deep.equal(
+      new TSparkParameter({
+        type: DBSQLParameterType.DATE,
+        value: new TSparkParameterValue({ stringValue: '2024-03-14' }),
+      }),
+    );
+  });
 });
