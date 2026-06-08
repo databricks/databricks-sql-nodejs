@@ -406,7 +406,15 @@ export default class SeaOperationBackend implements IOperationBackend {
       // server-side; there is no per-status RPC to query while it runs. Report
       // Running until `result()` has materialised the terminal statement, then
       // Succeeded — mirroring the kernel's blocking-then-terminal lifecycle.
-      if (!this.fetchHandlePromise) {
+      //
+      // Gate on `blockingStatement`, NOT on `fetchHandlePromise`: the latter is
+      // assigned synchronously when `getFetchHandle()` is first called (e.g. by
+      // a concurrent fetch or `waitUntilReady`), while `result()` may still be
+      // pending — `blockingStatement` is only set inside the resolve handler.
+      // Using the promise's *existence* as a completion proxy would make a
+      // concurrent `status()` poll both report Succeeded early AND block on the
+      // pending `result()` via `readRichStatusFields()`.
+      if (!this.blockingStatement) {
         return { state: OperationState.Running, hasResultSet: true };
       }
       // The blocking `result()` has resolved a terminal `Statement` — surface
@@ -587,8 +595,16 @@ export default class SeaOperationBackend implements IOperationBackend {
       const state = statusStringToOperationState(await this.asyncStatement!.status());
 
       if (options?.callback) {
+        // On the terminal Succeeded tick, carry the rich status fields
+        // (numModifiedRows / displayMessage / diagnosticInfo / errorDetailsJson)
+        // so the async path's progress callback matches the sync path
+        // (`waitUntilReadyCancellable`). The kernel has populated the
+        // AsyncStatement's accessors off the just-completed terminal poll, and
+        // the read is memoised + does not force result materialisation.
         // eslint-disable-next-line no-await-in-loop
-        await Promise.resolve(options.callback({ state, hasResultSet: true }));
+        const richFields = state === OperationState.Succeeded ? await this.readRichStatusFields() : {};
+        // eslint-disable-next-line no-await-in-loop
+        await Promise.resolve(options.callback({ state, hasResultSet: true, ...richFields }));
       }
 
       switch (state) {

@@ -232,6 +232,16 @@ class FakeCancellableExecution {
       this.pendingResolve = undefined;
     }
   }
+
+  // Resolve a parked (blocked) result() with the terminal statement, modelling
+  // the server-side blocking execute finally completing.
+  public release(): void {
+    if (this.pendingResolve) {
+      this.pendingResolve(this.resultHandle);
+      this.pendingResolve = undefined;
+      this.pendingReject = undefined;
+    }
+  }
 }
 
 class FakeNativeConnection implements SeaConnection {
@@ -1044,6 +1054,26 @@ describe('SeaOperationBackend — async (submitStatement) path', () => {
     expect(states).to.deep.equal([OperationState.Pending, OperationState.Running, OperationState.Succeeded]);
   });
 
+  it('progress callback carries rich-status fields on the terminal Succeeded tick (parity with the sync path)', async () => {
+    // Regression guard: the async poll loop must merge the rich-status fields
+    // into the callback on the Succeeded tick, matching waitUntilReadyCancellable.
+    // Previously the async path fired only { state, hasResultSet } even when
+    // Succeeded, so a DML's numModifiedRows never reached a progress callback.
+    const stmt = new FakeAsyncStatement(['Running', 'Succeeded']);
+    stmt.rich = { numModifiedRows: 13, displayMessage: 'UPDATE 0 13', diagnosticInfo: null, errorDetailsJson: null };
+    const op = makeAsyncOp(stmt);
+    const ticks: Array<{ state: OperationState; numModifiedRows?: number | null; displayMessage?: string | null }> = [];
+    await op.waitUntilReady({ callback: (s) => ticks.push(s) });
+
+    const succeeded = ticks.find((t) => t.state === OperationState.Succeeded);
+    expect(succeeded, 'a Succeeded tick fired').to.not.equal(undefined);
+    expect(succeeded?.numModifiedRows).to.equal(13);
+    expect(succeeded?.displayMessage).to.equal('UPDATE 0 13');
+    // Non-terminal ticks must NOT carry rich fields (only populated when terminal).
+    const running = ticks.find((t) => t.state === OperationState.Running);
+    expect(running?.numModifiedRows).to.equal(undefined);
+  });
+
   it('waitUntilReady() surfaces the kernel error envelope on a Failed statement', async () => {
     const stmt = new FakeAsyncStatement('Failed');
     // The kernel rejects awaitResult() with a sentinel-framed structured error;
@@ -1192,6 +1222,30 @@ describe('SeaOperationBackend — sync (executeStatementCancellable) path', () =
     // flight from the JS side's perspective.
     expect((await op.status(false)).state).to.equal(OperationState.Running);
     await op.waitUntilReady();
+    expect((await op.status(false)).state).to.equal(OperationState.Succeeded);
+  });
+
+  it('status() stays Running and does NOT block while a concurrent result() is still in flight', async () => {
+    // Regression guard: status() must gate Succeeded on the *resolved* statement
+    // (blockingStatement), not on the mere existence of fetchHandlePromise.
+    // Once a concurrent path (here, waitUntilReady) has dispatched result(),
+    // fetchHandlePromise is set but still pending; the old `!fetchHandlePromise`
+    // gate would (a) report Succeeded early and (b) block on the pending
+    // result() via readRichStatusFields() -> getFetchHandle().
+    const exec = new FakeCancellableExecution();
+    exec.block = true; // result() parks until released
+    const op = makeSyncOp(exec);
+    const waitPromise = op.waitUntilReady(); // dispatches result() (parks); fetchHandlePromise now pending
+    await Promise.resolve(); // let result() get dispatched + parked
+
+    const status = (await Promise.race([
+      op.status(false),
+      new Promise((_, reject) => setTimeout(() => reject(new Error('status() blocked on the pending result()')), 2000)),
+    ])) as { state: OperationState };
+    expect(status.state).to.equal(OperationState.Running);
+
+    exec.release(); // blocking execute completes
+    await waitPromise;
     expect((await op.status(false)).state).to.equal(OperationState.Succeeded);
   });
 

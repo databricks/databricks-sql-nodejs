@@ -137,7 +137,17 @@ export class DBSQLParameter {
         name,
         type: wireType ?? DBSQLParameterType.TIMESTAMP,
         value: new TSparkParameterValue({
-          stringValue: isDateType ? this.value.toISOString().slice(0, 10) : this.value.toISOString(),
+          // For DATE, project the *calendar* date using local-time accessors
+          // rather than `toISOString().slice(0, 10)`. `toISOString()` first
+          // converts to UTC, so a `new Date(2024, 2, 14)` constructed in a
+          // positive-offset zone (e.g. UTC+10, internal `2024-03-13T14:00Z`)
+          // would yield "2024-03-13" — off by one. Users reason about a DATE
+          // as the wall-calendar date they constructed, so extract that.
+          stringValue: isDateType
+            ? `${this.value.getFullYear()}-${String(this.value.getMonth() + 1).padStart(2, '0')}-${String(
+                this.value.getDate(),
+              ).padStart(2, '0')}`
+            : this.value.toISOString(),
         }),
       });
     }

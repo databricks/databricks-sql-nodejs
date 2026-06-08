@@ -168,4 +168,22 @@ describe('DBSQLParameter', () => {
       }),
     );
   });
+
+  it('binds a typed DATE from local calendar accessors, never via toISOString (no UTC off-by-one)', () => {
+    // A `Date` constructed from local components must bind the wall-calendar
+    // date the user intended, regardless of the process timezone.
+    // `toISOString()` converts to UTC first, so in a positive-offset zone a
+    // local-midnight `new Date(2024, 2, 14)` (internally 2024-03-13T..Z) would
+    // bind "2024-03-13" — off by one. Sabotage `toISOString` to PROVE the DATE
+    // path doesn't use it: this guards the regression in any timezone, including
+    // the UTC CI runner where the two formulations would otherwise agree.
+    const localDate = new Date(2024, 2, 14);
+    (localDate as unknown as { toISOString: () => string }).toISOString = () => '1999-12-31T00:00:00.000Z';
+    expect(new DBSQLParameter({ type: DBSQLParameterType.DATE, value: localDate }).toSparkParameter()).to.deep.equal(
+      new TSparkParameter({
+        type: DBSQLParameterType.DATE,
+        value: new TSparkParameterValue({ stringValue: '2024-03-14' }),
+      }),
+    );
+  });
 });

@@ -288,7 +288,10 @@ describe('SeaAuth HTTP options (buildSeaHttpOptions)', () => {
     ];
     for (const [label, customHeaders] of injections) {
       it(`throws HiveDriverError on ${label}`, () => {
-        expect(() => buildSeaHttpOptions(opts({ customHeaders }))).to.throw(HiveDriverError, /forbidden control character/);
+        expect(() => buildSeaHttpOptions(opts({ customHeaders }))).to.throw(
+          HiveDriverError,
+          /forbidden control character/,
+        );
       });
     }
 
@@ -301,9 +304,10 @@ describe('SeaAuth HTTP options (buildSeaHttpOptions)', () => {
     it('validates a reserved header before dropping it (injection via Authorization is still rejected)', () => {
       // Reserved-name drop must not let a CR/LF-laced reserved header slip past
       // validation — validate first, then drop.
-      expect(() =>
-        buildSeaHttpOptions(opts({ customHeaders: { Authorization: 'Bearer x\r\nInjected: 1' } })),
-      ).to.throw(HiveDriverError, /forbidden control character/);
+      expect(() => buildSeaHttpOptions(opts({ customHeaders: { Authorization: 'Bearer x\r\nInjected: 1' } }))).to.throw(
+        HiveDriverError,
+        /forbidden control character/,
+      );
     });
   });
 });
