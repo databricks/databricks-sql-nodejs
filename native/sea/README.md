@@ -3,7 +3,7 @@
 **The Rust binding source lives in the kernel repo** at
 `databricks-sql-kernel/napi/`. Building it requires a local checkout
 of that repo — see "Build for local dev" below. The published npm
-package is `@databricks/sql-kernel-<triple>`.
+package is `@databricks/databricks-sql-kernel-<triple>`.
 
 ## Workspace topology
 
@@ -33,10 +33,10 @@ and reintroduce the same clash. Standalone-workspace is the fix.
 - `index.js` — napi-rs's per-platform router shim. Gitignored;
   populated by `npm run build:native` for local dev. In published
   tarballs it ships alongside the `.d.ts` and `require()`s the
-  right `@databricks/sql-kernel-<triple>` optional dependency.
+  right `@databricks/databricks-sql-kernel-<triple>` optional dependency.
 - `index.*.node` — the actual native binary, one per platform.
   Gitignored. In production these live in the per-triple optional
-  dependencies (`@databricks/sql-kernel-linux-x64-gnu`, etc.); for
+  dependencies (`@databricks/databricks-sql-kernel-linux-x64-gnu`, etc.); for
   local dev `npm run build:native` copies one into this directory.
 
 ## Build for local dev
@@ -56,7 +56,7 @@ nodejs repo.
 ## Production load path
 
 At release time the kernel's CI publishes
-`@databricks/sql-kernel-<triple>` npm packages — one per supported
+`@databricks/databricks-sql-kernel-<triple>` npm packages — one per supported
 platform — each containing a single `.node` binary. `native/sea/index.js`
 (the napi-rs router) `require()`s the package matching the consumer's
 `process.platform` / `process.arch` at load time.
@@ -68,13 +68,13 @@ platform — each containing a single `.node` binary. `native/sea/index.js`
 > unpublished package would break every install.) Until they ship, the
 > binding is produced locally via `npm run build:native` (which copies
 > `index.<triple>.node` into this directory). Once the packages are
-> published, add `@databricks/sql-kernel-<triple>` back to
+> published, add `@databricks/databricks-sql-kernel-<triple>` back to
 > `optionalDependencies` — npm then installs only the matching one.
 
 ## Supported platforms (M0)
 
 M0 targets a **single** triple: **`linux-x64-gnu`** (package
-`@databricks/sql-kernel-linux-x64-gnu`, once published).
+`@databricks/databricks-sql-kernel-linux-x64-gnu`, once published).
 
 On every other platform (macOS, Windows, linux-arm64, linux-x64-musl
 / Alpine, …) the SEA binding is simply absent: `SeaNativeLoader`
@@ -86,9 +86,9 @@ CI starts publishing them in later milestones.
 
 ## Supply-chain note
 
-The unpublished triple names (`@databricks/sql-kernel-darwin-arm64`,
+The unpublished triple names (`@databricks/databricks-sql-kernel-darwin-arm64`,
 `…-win32-x64-msvc`, etc.) referenced by the router are **not**
 squat-able: `@databricks` is a Databricks-owned npm scope, and npm
 only allows org members to publish under a scope it owns. A third
-party therefore cannot register `@databricks/sql-kernel-*` and have
+party therefore cannot register `@databricks/databricks-sql-kernel-*` and have
 the router autoload it. No placeholder packages are required.

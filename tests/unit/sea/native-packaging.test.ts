@@ -21,7 +21,7 @@ import { join } from 'path';
 // (e.g. `@databricks/sea-native-linux-x64-gnu-darwin-arm64`, and the doubled
 // `@databricks/sea-native-linux-x64-gnu-linux-x64-gnu`), so a published
 // install would never resolve a `.node`. The canonical name is
-// `@databricks/sql-kernel-<triple>` (see native/sea/README.md and the
+// `@databricks/databricks-sql-kernel-<triple>` (see native/sea/README.md and the
 // SeaNativeLoader load-failure hint).
 describe('SEA native binding — packaging (native/sea/index.js)', () => {
   // Resolved from the repo root (the cwd for `npm test`) so the test does not
@@ -35,8 +35,8 @@ describe('SEA native binding — packaging (native/sea/index.js)', () => {
     expect(required.length, 'no @databricks/* require() found in the router').to.be.greaterThan(0);
   });
 
-  it('every npm fallback uses the canonical @databricks/sql-kernel-<triple> name', () => {
-    const triple = /^@databricks\/sql-kernel-[a-z0-9]+(-[a-z0-9]+)*$/;
+  it('every npm fallback uses the canonical @databricks/databricks-sql-kernel-<triple> name', () => {
+    const triple = /^@databricks\/databricks-sql-kernel-[a-z0-9]+(-[a-z0-9]+)*$/;
     for (const name of required) {
       expect(name, `unexpected SEA native package name: ${name}`).to.match(triple);
     }
@@ -47,9 +47,9 @@ describe('SEA native binding — packaging (native/sea/index.js)', () => {
     expect(indexJs, 'router still doubles the linux-x64-gnu triple').to.not.contain('linux-x64-gnu-linux-x64-gnu');
   });
 
-  it('resolves the M0 linux-x64-gnu triple to @databricks/sql-kernel-linux-x64-gnu', () => {
+  it('resolves the M0 linux-x64-gnu triple to @databricks/databricks-sql-kernel-linux-x64-gnu', () => {
     expect(required, 'M0 supported triple package missing from the router').to.include(
-      '@databricks/sql-kernel-linux-x64-gnu',
+      '@databricks/databricks-sql-kernel-linux-x64-gnu',
     );
   });
 });

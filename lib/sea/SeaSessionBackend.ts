@@ -33,9 +33,8 @@ import InfoValue from '../dto/InfoValue';
 import HiveDriverError from '../errors/HiveDriverError';
 import ParameterError from '../errors/ParameterError';
 import { LogLevel } from '../contracts/IDBSQLLogger';
-import { SeaConnection, SeaNativeExecuteOptions, SeaStatement } from './SeaNativeLoader';
+import { SeaConnection, SeaNativeExecuteOptions, SeaStatement, SeaNativeAsyncStatement } from './SeaNativeLoader';
 import { decodeNapiKernelError } from './SeaErrorMapping';
-import { numberToInt64 } from '../thrift-backend/ThriftSessionBackend';
 import SeaOperationBackend from './SeaOperationBackend';
 import { buildSeaPositionalParams, buildSeaNamedParams } from './SeaPositionalParams';
 import { seaServerInfoValue } from './SeaServerInfo';
@@ -67,6 +66,19 @@ export interface SeaSessionBackendOptions {
  * needed — that pattern was removed when the napi binding moved these
  * onto `openSession` to match pyo3.
  */
+
+/**
+ * Narrow the directResults union (`executeStatementDirect`'s
+ * `Statement | AsyncStatement`) to the Running `AsyncStatement` arm. Only that
+ * arm exposes `awaitResult`; the terminal `Statement` (Completed arm) does not.
+ * Mirrors the kernel `DirectStatement::{Completed, Running}` discriminant, which
+ * the opaque napi classes can't carry on the wire — the `awaitResult` probe is
+ * the load-bearing feature-detect (see databricks-sql-kernel#140).
+ */
+function isSeaAsyncStatement(x: SeaStatement | SeaNativeAsyncStatement): x is SeaNativeAsyncStatement {
+  return typeof (x as SeaNativeAsyncStatement).awaitResult === 'function';
+}
+
 export default class SeaSessionBackend implements ISessionBackend {
   private readonly connection: SeaConnection;
 
@@ -122,9 +134,9 @@ export default class SeaSessionBackend implements ISessionBackend {
    * Per-statement options forwarded to the kernel `ExecuteOptions`:
    *   - `ordinalParameters` / `namedParameters` → bound params (mutually
    *     exclusive — the kernel binds one placeholder style per statement);
-   *   - `queryTimeout` → enforced client-side by the operation backend's poll
-   *     deadline (the kernel ignores `queryTimeoutSecs` on the async submit
-   *     path), NOT forwarded to the napi options;
+   *   - `queryTimeout` → NO-OP on SEA (SQL Warehouses use `STATEMENT_TIMEOUT`);
+   *     never forwarded to the kernel and never applied as a client-side
+   *     deadline — see the note in `executeStatement`;
    *   - `rowLimit` → `rowLimit` (SEA-only server-side row cap);
    *   - `queryTags` → serialised into the conf overlay's reserved
    *     `query_tags` key (the same wire shape Thrift's `serializeQueryTags`
@@ -164,49 +176,72 @@ export default class SeaSessionBackend implements ISessionBackend {
     // JSDoc in `IDBSQLSession` for the cross-backend contract.
     //
     //   - DEFAULT (`runAsync` false/undefined) — SYNC. Route through
-    //     `executeStatementCancellable`: the kernel blocks on `execute()`
-    //     (server-side direct-results / poll-to-terminal), which is faster and,
-    //     with the napi sync canceller, fully cancellable mid-COMPUTE. The
-    //     blocking drive runs in the operation backend's `result()` (inside
-    //     `waitUntilReady`, which the facade invokes lazily at first fetch).
-    //     `queryTimeoutSecs` IS honoured on this path (forwarded to the napi
-    //     options below) since the kernel `execute()` consults it.
+    //     `executeStatementDirect` (the directResults model): the kernel sends
+    //     ExecuteStatement with the server's inline wait and returns WITHOUT
+    //     polling past it — a terminal `Statement` (result inline) for a fast
+    //     query, or a still-running `AsyncStatement` (poll/cancel handle) for a
+    //     slow one. The handle is server-owned, so a long query stays cancellable
+    //     via `op.cancel()` and `close()` is a clean release (no client-side
+    //     drive-to-terminal). `queryTimeout` is a no-op here (see the note
+    //     below) — it is NOT mapped to the server `wait_timeout`.
     //
     //   - `runAsync: true` — ASYNC. Submit (`wait_timeout=0s`): the server
     //     returns a pending `AsyncStatement` immediately while the query runs;
     //     the backend polls `status()` to terminal in `waitUntilReady()` and
-    //     materialises results via `awaitResult()`. `queryTimeoutSecs` is
-    //     ignored by the kernel on submit, so it is enforced client-side by the
-    //     operation backend's poll-loop deadline instead.
+    //     materialises results via `awaitResult()`. `queryTimeout` is a no-op
+    //     here too.
     const runAsync = options.runAsync ?? false;
-    const queryTimeoutSecs =
-      options.queryTimeout !== undefined ? numberToInt64(options.queryTimeout).toNumber() : undefined;
+    // `queryTimeout` is a NO-OP on the SEA (kernel) backend. It is the JDBC
+    // `setQueryTimeout` knob which — per the option's JSDoc — is effective only
+    // on Compute clusters; SQL Warehouses (what SEA targets) use the
+    // `STATEMENT_TIMEOUT` SQL/session conf instead. We deliberately do NOT map it
+    // to the SEA `wait_timeout` field: `wait_timeout` is the server's inline-hold
+    // window (the time the POST blocks for results, capped 5–50s), NOT a
+    // statement-execution timeout — mapping it there silently caps the timeout at
+    // 50s, rejects <5s with HTTP 400, and conflates the inline wait with
+    // execution. So `queryTimeout` is neither forwarded to the kernel nor used as
+    // a client-side deadline.
 
     if (!runAsync) {
-      // Sync path: forward `queryTimeoutSecs` to the napi options — the kernel
-      // `execute()` honours it (server statement timeout).
-      const execOptions = this.buildExecuteOptions(options, queryTimeoutSecs);
-      let cancellableExecution;
+      // DEFAULT — directResults (the Thrift/JDBC model). The kernel's
+      // `executeStatementDirect` runs ExecuteStatement with a bounded server
+      // inline wait and returns WITHOUT polling past it:
+      //   - a terminal `Statement` (result inline) for a fast query, or
+      //   - an `AsyncStatement` (a poll/cancel handle) for a slow one.
+      // Either way the handle is tied to a server-owned statement, so a long
+      // query stays cancellable via `op.cancel()` and `close()` is a clean
+      // release (no client-side drive-to-terminal). Fire-and-forget DDL/DML
+      // commits because the server runs it inline during the POST.
+      const execOptions = this.buildExecuteOptions(options);
+      let direct: SeaStatement | SeaNativeAsyncStatement;
       try {
-        cancellableExecution =
+        direct =
           execOptions === undefined
-            ? await this.connection.executeStatementCancellable(statement)
-            : await this.connection.executeStatementCancellable(statement, execOptions);
+            ? await this.connection.executeStatementDirect(statement)
+            : await this.connection.executeStatementDirect(statement, execOptions);
       } catch (err) {
         throw this.logAndMapError('executeStatement', err);
       }
-      return new SeaOperationBackend({
-        cancellableExecution: cancellableExecution!,
-        context: this.context,
-        // The kernel honours `queryTimeoutSecs` on the sync `execute` path, so
-        // it is forwarded via the napi options (see `buildExecuteOptions`); the
-        // backend also keeps it as a deadline guard for parity with async.
-        queryTimeoutSecs,
-      });
+      // The kernel contract (`Promise<Statement | AsyncStatement>`) never yields
+      // null/undefined; reject a non-handle up front so a contract violation
+      // surfaces as a mapped driver error here rather than an opaque `TypeError`
+      // deferred to first fetch/close.
+      if (direct === null || direct === undefined) {
+        throw this.logAndMapError(
+          'executeStatement',
+          new HiveDriverError('SEA executeStatementDirect returned no statement handle'),
+        );
+      }
+      // Feature-detect the arm via a type guard: only the Running `AsyncStatement`
+      // exposes `awaitResult`; the terminal `Statement` (Completed arm) does not.
+      if (isSeaAsyncStatement(direct)) {
+        return new SeaOperationBackend({ asyncStatement: direct, context: this.context });
+      }
+      return new SeaOperationBackend({ statement: direct, context: this.context });
     }
 
-    // Async path: do NOT forward `queryTimeoutSecs` (the kernel ignores it on
-    // submit — `wait_timeout=0s`); it is enforced client-side by the poll loop.
+    // Async path: submit (`wait_timeout=0s`) returns a pending handle the
+    // backend polls. (`queryTimeout` is a no-op on SEA — see the note above.)
     const execOptions = this.buildExecuteOptions(options);
     let asyncStatement;
     try {
@@ -217,16 +252,11 @@ export default class SeaSessionBackend implements ISessionBackend {
     } catch (err) {
       throw this.logAndMapError('executeStatement', err);
     }
-    // `queryTimeout` is enforced client-side by the operation backend's poll
-    // loop: the kernel ignores `queryTimeoutSecs` on the async submit path
-    // (`submitStatement` always sends `wait_timeout=0s`), so we do NOT forward
-    // it to the napi options — passing it there would be a silent no-op.
+    // `queryTimeout` is a no-op on SEA (see the note at the top of this method);
+    // not forwarded to the kernel and not applied as a client-side deadline.
     return new SeaOperationBackend({
       asyncStatement: asyncStatement!,
       context: this.context,
-      // `queryTimeout` is typed `number | bigint | Int64`; `numberToInt64(...).toNumber()`
-      // coerces all three (a bare `Number(int64)` yields NaN — node-int64 has no valueOf).
-      queryTimeoutSecs,
     });
   }
 
@@ -235,10 +265,7 @@ export default class SeaSessionBackend implements ISessionBackend {
    * `ExecuteOptions`, returning `undefined` when nothing is set so the
    * no-options call shape (`executeStatement(sql)`) is preserved.
    */
-  private buildExecuteOptions(
-    options: ExecuteStatementOptions,
-    queryTimeoutSecs?: number,
-  ): SeaNativeExecuteOptions | undefined {
+  private buildExecuteOptions(options: ExecuteStatementOptions): SeaNativeExecuteOptions | undefined {
     // Positional (`?`) and named (`:name`) parameters are mutually exclusive —
     // the kernel binds one placeholder style per statement. Use the SAME error
     // type and message as the Thrift backend (`ThriftSessionBackend`) so a
@@ -256,14 +283,9 @@ export default class SeaSessionBackend implements ISessionBackend {
     if (namedParams !== undefined) {
       execOptions.namedParams = namedParams;
     }
-    // `queryTimeoutSecs` is forwarded only on the SYNC path (the caller passes
-    // it in): the kernel `execute()` consults it as the server statement
-    // timeout. On the async submit path the caller omits it (the kernel ignores
-    // it under `wait_timeout=0s`), so it is enforced client-side by the
-    // operation backend's poll-loop deadline instead (see executeStatement).
-    if (queryTimeoutSecs !== undefined) {
-      execOptions.queryTimeoutSecs = queryTimeoutSecs;
-    }
+    // NB: `queryTimeout` is intentionally NOT forwarded — it is a no-op on SEA
+    // (SQL Warehouses use `STATEMENT_TIMEOUT`; mapping it to `wait_timeout` would
+    // abuse the inline-hold window). See the note in `executeStatement`.
     if (options.rowLimit !== undefined) {
       execOptions.rowLimit = Number(options.rowLimit);
     }

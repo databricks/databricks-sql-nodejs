@@ -17,10 +17,11 @@
  *   produces (`lib/utils/queryTags.ts`). Backslashes in keys are
  *   doubled; backslash/colon/comma in values are backslash-escaped.
  *
- * `rowLimit` (SEA `row_limit`) and `queryTimeoutSecs` (the per-statement
- * server wait timeout) are exposed here and threaded onto the kernel
+ * `rowLimit` (SEA `row_limit`) is exposed here and threaded onto the kernel
  * `StatementSpec`. `positionalParams` (`?`) and `namedParams` (`:name`)
  * carry bound query parameters, decoded via `params::parse_typed_value`.
+ * (There is no `queryTimeoutSecs`: it abused the SEA `wait_timeout` inline-hold
+ * window and was removed — a real per-statement timeout is `STATEMENT_TIMEOUT`.)
  *
  * **Tag-order caveat (M4 parity note).** The napi `queryTags` field
  * is a Rust `HashMap<String, String>` whose iteration order is
@@ -66,25 +67,6 @@ export interface ExecuteOptions {
    * `StatementSpec.row_limit`. Omitted ⇒ no driver-imposed cap.
    */
   rowLimit?: number
-  /**
-   * Per-statement server wait timeout in whole seconds. Bounds how
-   * long the server waits before cancelling the statement
-   * (`on_wait_timeout = CANCEL`), surfacing as a timeout — the
-   * server statement timeout (JDBC `setQueryTimeout`). Maps to
-   * `StatementSpec.query_timeout_secs`. Distinct from the
-   * connection-level transport timeout. The SEA wire caps it at 50s.
-   *
-   * **Applies to `executeStatement` only.** The async `submitStatement`
-   * path always sends `wait_timeout=0s` (so the server returns a
-   * `statement_id` immediately and never blocks), which means this
-   * field is *not* consulted on the submit path — the caller drives
-   * completion via `AsyncStatement.status()` / `awaitResult()` and is
-   * responsible for its own timeout (e.g. `Promise.race`). Passing
-   * `queryTimeoutSecs` to `submitStatement` is silently ignored. This
-   * matches the Python `use_sea` async-submit contract, where the
-   * wait-timeout and any statement timeout are orthogonal.
-   */
-  queryTimeoutSecs?: number
   /**
    * Positional parameters, in 1-based wire order. Index `i` in this
    * Vec corresponds to the `i+1`-th `?` placeholder in the SQL.
@@ -137,13 +119,28 @@ export const enum AuthMode {
   OAuthU2m = 'OAuthU2m'
 }
 /**
+ * A single extra HTTP header as an explicit `{ name, value }` pair.
+ *
+ * An ordered list of these (`ConnectionOptions.custom_headers`) mirrors
+ * the kernel core's `Vec<(String, String)>` and the pyo3 binding's
+ * `http_headers`: order is preserved and duplicate `name`s are allowed.
+ * A struct (rather than a raw `[name, value]` tuple) because napi-rs
+ * does not marshal Rust tuples through `#[napi(object)]` fields; the
+ * struct is the idiomatic, self-documenting equivalent and maps to a JS
+ * `{ name: string, value: string }`.
+ */
+export interface HeaderEntry {
+  name: string
+  value: string
+}
+/**
  * JS-visible options for opening a Databricks SQL session.
  *
  * Authentication is selected by `authMode` (default [`AuthMode::Pat`]):
  * - `Pat` — `token` required.
  * - `OAuthM2m` — `oauthClientId` + `oauthClientSecret` required.
- * - `OAuthU2m` — `oauthClientId` / `oauthRedirectPort` optional (kernel
- *   defaults to the `databricks-cli` client on port 8020).
+ * - `OAuthU2m` — `oauthClientId` / `oauthRedirectPort` optional
+ *   (defaults to the `databricks-sql-connector` client on port 8020).
  *
  * Catalog / schema / sessionConf are applied once at session creation
  * and remain in effect for every statement run on the resulting
@@ -174,7 +171,7 @@ export interface ConnectionOptions {
   token?: string
   /**
    * OAuth client id. Required for [`AuthMode::OAuthM2m`]; optional for
-   * [`AuthMode::OAuthU2m`] (kernel defaults to `databricks-cli`).
+   * [`AuthMode::OAuthU2m`] (defaults to `databricks-sql-connector`).
    */
   oauthClientId?: string
   /** OAuth client secret. Required for [`AuthMode::OAuthM2m`]. */
@@ -220,9 +217,9 @@ export interface ConnectionOptions {
    * the JDBC driver's `HttpConnectionPoolSize` default and to close
    * the throughput gap vs the NodeJS Thrift driver's
    * `maxSockets: Infinity` pool for bursty workloads. The kernel
-   * core's [`HttpConfig::pool_max_idle_per_host`] default remains
-   * at the conservative kernel value (10); each binding chooses
-   * its own user-facing default. Mirrors the Python connector's
+   * core's [`HttpConfig::pool_max_idle_per_host`] default is also 100
+   * (matching the same JDBC default), so napi pins its own copy rather
+   * than inheriting it. Mirrors the Python connector's
    * `max_connections` kwarg on the SEA backend, which exposes the
    * knob but keeps its own urllib3-aligned default of 10.
    *
@@ -262,10 +259,27 @@ export interface ConnectionOptions {
    * `rejectUnauthorized: false`. Prefer pairing strict checking with
    * `custom_ca_cert` over disabling verification entirely.
    *
-   * Maps onto the kernel [`TlsConfig::accept_self_signed`] +
-   * [`TlsConfig::skip_hostname_verification`] (both = `!check`).
+   * This is the master verify toggle: `false` disables chain validation
+   * (`TlsConfig::accept_self_signed`) **and** subsumes the hostname
+   * check (`skip_hostname_verification`), regardless of
+   * `check_server_certificate_hostname`.
    */
   checkServerCertificate?: boolean
+  /**
+   * Whether to verify that the server certificate matches the host
+   * (hostname-vs-SNI check), **independently** of full chain validation.
+   *
+   * Omitted / `true` ⇒ the hostname check runs (the secure default).
+   * `false` ⇒ skip only the hostname check while still validating the
+   * chain + expiry against the trust store — for connecting via an IP
+   * literal or a host the cert wasn't issued for, without dropping all
+   * validation. Ignored (already implied) when
+   * `check_server_certificate` is `false`, which disables everything.
+   *
+   * Mirrors the Python connector's `_tls_verify_hostname` knob and the
+   * kernel's [`TlsConfig::skip_hostname_verification`] (= `!check`).
+   */
+  checkServerCertificateHostname?: boolean
   /**
    * PEM-encoded CA certificate bytes to add to the trust store on
    * top of the system roots. Use for corporate TLS-inspecting
@@ -274,6 +288,50 @@ export interface ConnectionOptions {
    * Maps onto the kernel [`TlsConfig::custom_ca_cert`].
    */
   customCaCert?: Buffer
+  /**
+   * PEM-encoded client certificate for mutual TLS (mTLS). Set this
+   * together with `client_key_pem` when the server requires the
+   * client to present a certificate. A PEM carrying a leaf cert
+   * optionally followed by its intermediate chain is accepted.
+   * Maps onto the kernel [`TlsConfig::client_cert_pem`].
+   *
+   * `client_cert_pem` and `client_key_pem` must be supplied together;
+   * the kernel rejects setting only one at `open_session` with
+   * `InvalidArgument`.
+   */
+  clientCertPem?: Buffer
+  /**
+   * PEM-encoded private key for the mTLS client certificate. Set this
+   * together with `client_cert_pem`. For portability across the
+   * kernel's TLS backends supply a PKCS#8 key (`BEGIN PRIVATE KEY`).
+   * Maps onto the kernel [`TlsConfig::client_key_pem`].
+   */
+  clientKeyPem?: Buffer
+  /**
+   * Extra HTTP headers to send on every request — the route for
+   * caller-supplied headers (the NodeJS driver's `customHeaders` and
+   * the composed `User-Agent`). Maps onto the kernel
+   * [`HttpConfig::custom_headers`].
+   *
+   * An **ordered list** of `(name, value)` pairs, mirroring the kernel
+   * core's `Vec<(String, String)>` and the pyo3 binding's
+   * `http_headers` — order is preserved and duplicate names are
+   * allowed (the kernel emits each entry, and for `User-Agent` folds
+   * the **last** one into its base UA).
+   *
+   * Three names are handled specially by the kernel:
+   * - `Authorization` / `x-databricks-org-id` are **reserved** — a
+   *   caller entry for either is silently dropped (skip-and-warn) so
+   *   auth and multi-tenant routing can't be hijacked by a custom
+   *   header. (The NodeJS driver also drops these before they cross
+   *   the FFI, matching the Python connector's double-wall.)
+   * - `User-Agent` is **appended** to the kernel base UA (rather than
+   *   replacing it), preserving the `DatabricksJDBCDriverOSS/...`
+   *   token the SEA server keys on while still surfacing the caller's
+   *   identity. The NodeJS driver folds its `userAgentEntry` into a
+   *   `User-Agent` entry here.
+   */
+  customHeaders?: Array<HeaderEntry>
 }
 /**
  * Open a Databricks SQL session and return an opaque `Connection`
@@ -285,6 +343,56 @@ export interface ConnectionOptions {
  * to camelCase for free functions).
  */
 export declare function openSession(options: ConnectionOptions): Promise<Connection>
+/**
+ * One kernel log event, as handed to JS. `level` is a lower-case string
+ * (`error`/`warn`/`info`/`debug`/`trace`) the Node side maps onto its
+ * `LogLevel`; `target` is the originating `tracing` target (e.g.
+ * `databricks::sql::kernel`); `message` is the rendered event plus any
+ * structured `key=value` fields.
+ */
+export interface LogRecord {
+  level: string
+  target: string
+  message: string
+}
+/**
+ * Install (idempotently) the kernel→JS log bridge and set its level.
+ *
+ * `callback` is invoked with **an array of [`LogRecord`]s** (`(err, records)`)
+ * for each forwarded batch. `level` is one of
+ * `off`/`error`/`warn`/`info`/`debug`/`trace` (case-insensitive); unknown
+ * values fall back to `warn`.
+ *
+ * Safe to call more than once: the process-global subscriber is installed on
+ * the first call only, while every call refreshes the sink + level (last
+ * writer wins — see module docs).
+ */
+export declare function initKernelLogging(callback: (err: Error | null, arg: Array<LogRecord>) => any, level: string): void
+/**
+ * Snapshot of the bridge's runtime state for observability.
+ *
+ * `installed` is `true` only when the process-global subscriber was
+ * successfully installed by *this* bridge (and the drain thread started);
+ * `false` means another global subscriber was already set or the drain
+ * thread could not be spawned, so kernel logs are NOT reaching the JS sink.
+ * `dropped` is the cumulative count of records discarded because the
+ * bounded channel was full during a burst (drop-newest) — a nonzero,
+ * growing value signals the sink can't keep up.
+ */
+export interface KernelLoggingStats {
+  installed: boolean
+  dropped: number
+}
+/**
+ * Return the bridge's [`KernelLoggingStats`]. Safe to call before
+ * `initKernelLogging` (reports `installed: false`, `dropped: 0`).
+ */
+export declare function kernelLoggingStats(): KernelLoggingStats
+/**
+ * Live-retarget the bridge's level (one of
+ * `off`/`error`/`warn`/`info`/`debug`/`trace`, case-insensitive).
+ */
+export declare function setKernelLogLevel(level: string): void
 /**
  * JS-visible binding for a single positional parameter.
  *
@@ -591,6 +699,29 @@ export declare class Connection {
    */
   executeStatement(sql: string, options?: ExecuteOptions | undefined | null): Promise<Statement>
   /**
+   * directResults execute — the Thrift/JDBC model. Sends ExecuteStatement
+   * with no `wait_timeout` field (server applies its ~10s default inline wait
+   * and auto-closes on success) and returns WITHOUT polling past it:
+   *
+   * - a **`Statement`** (left arm) when the query finished within the inline
+   *   wait — terminal, result ready inline, `close()` is a clean release;
+   * - an **`AsyncStatement`** (right arm) when it did not — a poll/cancel
+   *   handle the caller drives (`status()` / `awaitResult()` / `cancel()`).
+   *
+   * JS distinguishes the arms by feature-detecting `awaitResult` (present
+   * only on `AsyncStatement`). This is the path that gives mid-run cancel for
+   * long queries WITHOUT the eager-handle / close-drives workaround: the
+   * returned handle always corresponds to a server-owned statement.
+   *
+   * **Load-bearing contract:** the kernel's `DirectStatement::{Completed,
+   * Running}` discriminant cannot ride on these opaque `#[napi]` classes, so
+   * consumers MUST feature-detect via `awaitResult` (the only member unique to
+   * `AsyncStatement`). `Statement` (the Completed arm) MUST NOT gain an
+   * `awaitResult` member, or every consumer silently misroutes. The pyo3
+   * binding makes the same `await_result`-probe assumption.
+   */
+  executeStatementDirect(sql: string, options?: ExecuteOptions | undefined | null): Promise<Statement | AsyncStatement>
+  /**
    * Execute a SQL statement on the blocking (sync) path, but return a
    * `CancellableExecution` handle so a concurrent JS task can cancel
    * the query *while it is still running server-side*.
@@ -606,9 +737,7 @@ export declare class Connection {
    * `Statement` `executeStatement` returns) and can fire `cancel()`
    * concurrently to interrupt a still-running query mid-COMPUTE.
    *
-   * Option semantics are identical to `executeStatement` — including
-   * `queryTimeoutSecs`, which IS honoured here (this is the sync
-   * `execute` path; only the async `submitStatement` ignores it).
+   * Option semantics are identical to `executeStatement`.
    * Mirrors the pyo3 `Statement.canceller()` / `Statement.execute()`
    * split (PR #121): obtain the canceller before the blocking drive.
    */
@@ -626,14 +755,11 @@ export declare class Connection {
    * uses (`runAsync: true`): the SEA backend submits, returns a
    * pending operation handle, and polls to terminal during
    * fetch. Option semantics (statementConf / queryTags /
-   * rowLimit / positional + named params) match `executeStatement`,
-   * with one carve-out: `queryTimeoutSecs` is **ignored** here.
+   * rowLimit / positional + named params) match `executeStatement`.
    * Submit always sends `wait_timeout=0s` so the call returns
-   * immediately, leaving no server wait to bound; the caller drives
-   * completion and its own timeout via `status()` / `awaitResult()`
-   * (e.g. `Promise.race`). Only the blocking-vs-pending return
-   * contract — and that timeout carve-out — differ from
-   * `executeStatement`.
+   * immediately; the caller drives completion via `status()` /
+   * `awaitResult()`. Only the blocking-vs-pending return contract
+   * differs from `executeStatement`.
    */
   submitStatement(sql: string, options?: ExecuteOptions | undefined | null): Promise<AsyncStatement>
   /**
@@ -753,11 +879,10 @@ export declare class Statement {
    * data note:** may contain SQL fragments or parameter values —
    * redact before centralised logging.
    *
-   * Populated on `Succeeded` / `Closed-with-inline-data` paths.
-   * On terminal-error states (`Failed` / `Cancelled` /
-   * `Closed-no-data`) the kernel returns an Error instead of a
-   * `Statement`, and the same field rides on the JS Error envelope
-   * under the same `displayMessage` key.
+   * Populated on `Succeeded` / `Closed` paths (incl. an empty `Closed`).
+   * On terminal-error states (`Failed` / `Cancelled`) the kernel returns
+   * an Error instead of a `Statement`, and the same field rides on the JS
+   * Error envelope under the same `displayMessage` key.
    */
   displayMessage(): Promise<string | null>
   /**

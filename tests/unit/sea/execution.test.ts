@@ -14,7 +14,6 @@
 
 import { expect } from 'chai';
 import sinon from 'sinon';
-import Int64 from 'node-int64';
 import SeaBackend from '../../../lib/sea/SeaBackend';
 import SeaSessionBackend from '../../../lib/sea/SeaSessionBackend';
 import SeaOperationBackend from '../../../lib/sea/SeaOperationBackend';
@@ -232,6 +231,26 @@ class FakeNativeConnection implements SeaConnection {
     this.lastOptions = options;
     this.lastCancellableExecution = new FakeCancellableExecution();
     return this.lastCancellableExecution;
+  }
+
+  // directResults (`runAsync: false`, the DEFAULT) query path: records sql +
+  // options and returns either a terminal `Statement` (Completed arm) or — when
+  // `directReturnsRunning` is set — a pending `AsyncStatement` (Running arm),
+  // the two arms `SeaSessionBackend.executeStatement` feature-detects via
+  // `awaitResult`.
+  public directReturnsRunning = false;
+
+  public async executeStatementDirect(sql: string, options?: unknown): Promise<any> {
+    if (this.throwOnExecute) {
+      throw this.throwOnExecute;
+    }
+    this.lastSql = sql;
+    this.lastOptions = options;
+    if (this.directReturnsRunning) {
+      this.lastAsyncStatement = new FakeAsyncStatement(this.submitStatusValue);
+      return this.lastAsyncStatement;
+    }
+    return this.statementToReturn;
   }
 
   // Async-submit path: records sql + per-statement options (for forwarding
@@ -547,6 +566,45 @@ describe('SeaSessionBackend', () => {
     expect(op.id).to.be.a('string').and.have.length.greaterThan(0);
   });
 
+  it('executeStatement (sync default) routes a still-running query through the AsyncStatement arm', async () => {
+    // The directResults Running arm — a query that did NOT finish within the
+    // server inline wait comes back as an AsyncStatement (poll/cancel handle).
+    // This is the branch the whole PR exists to add (Node mid-run cancel).
+    const connection = new FakeNativeConnection();
+    connection.directReturnsRunning = true;
+    const session = makeSession(connection);
+    const op = await session.executeStatement('SELECT slow', {});
+    expect(op).to.be.instanceOf(SeaOperationBackend);
+    // The Running arm was taken: an AsyncStatement was constructed + wired
+    // (not the terminal `statement` arm).
+    expect(connection.lastAsyncStatement, 'AsyncStatement (Running) arm should be taken').to.not.equal(undefined);
+    // Driving the op polls the async handle's status() — the polling arm.
+    await op.waitUntilReady();
+    expect(connection.lastAsyncStatement!.statusCalls, 'async handle polled via status()').to.be.greaterThan(0);
+  });
+
+  it('executeStatement (sync default) AsyncStatement arm: op.cancel() reaches the running statement', async () => {
+    // The point of directResults on single-threaded Node: the returned op holds
+    // a handle to the still-running statement, so op.cancel() can abort it.
+    const connection = new FakeNativeConnection();
+    connection.directReturnsRunning = true;
+    const session = makeSession(connection);
+    const op = await session.executeStatement('SELECT slow', {});
+    await op.cancel();
+    expect(connection.lastAsyncStatement!.cancelled, 'cancel reaches the running statement').to.equal(true);
+  });
+
+  it('executeStatement (sync default) routes a fast query through the terminal Statement arm', async () => {
+    // Contrast: a query that finished within the inline wait comes back as a
+    // terminal Statement (result inline) — no AsyncStatement is created.
+    const connection = new FakeNativeConnection(); // directReturnsRunning = false (default)
+    const session = makeSession(connection);
+    const op = await session.executeStatement('SELECT 1', {});
+    expect(connection.lastAsyncStatement, 'no AsyncStatement arm for a terminal query').to.equal(undefined);
+    await op.cancel();
+    expect(connection.statementToReturn.cancelled, 'cancel reaches the terminal statement').to.equal(true);
+  });
+
   it('executeStatement forwards ordinalParameters as napi positionalParams', async () => {
     const connection = new FakeNativeConnection();
     const session = makeSession(connection);
@@ -591,44 +649,21 @@ describe('SeaSessionBackend', () => {
     expect((thrown as Error).message).to.equal('Driver does not support both ordinal and named parameters.');
   });
 
-  it('executeStatement (sync default) DOES forward queryTimeout to the napi options', async () => {
+  it('executeStatement (sync default) does NOT forward queryTimeout — no-op on SEA', async () => {
     const connection = new FakeNativeConnection();
     const session = makeSession(connection);
     await session.executeStatement('SELECT 1', { queryTimeout: 30 });
-    // Sync path: the kernel `execute()` honours queryTimeoutSecs (server
-    // statement timeout), so the backend forwards it onto the napi options.
-    expect((connection.lastOptions as { queryTimeoutSecs?: number } | undefined)?.queryTimeoutSecs).to.equal(30);
-  });
-
-  it('executeStatement (runAsync: true) does NOT forward queryTimeout to submit (kernel ignores it; enforced client-side)', async () => {
-    const connection = new FakeNativeConnection();
-    const session = makeSession(connection);
-    await session.executeStatement('SELECT 1', { queryTimeout: 30, runAsync: true });
-    // Async submit path: the kernel ignores queryTimeoutSecs under
-    // `wait_timeout=0s`, so it's enforced client-side by the poll deadline
-    // instead — never forwarded to the napi options.
+    // queryTimeout is a no-op on SEA (SQL Warehouses use STATEMENT_TIMEOUT). It
+    // must NOT be mapped to the kernel's `wait_timeout` (the inline-hold window),
+    // so nothing is forwarded onto the napi options.
     expect((connection.lastOptions as { queryTimeoutSecs?: number } | undefined)?.queryTimeoutSecs).to.equal(undefined);
   });
 
-  it('coerces an Int64 queryTimeout into the client-side deadline on the async path (not NaN)', async function int64Timeout() {
-    // Regression: `Number(new Int64(...))` yields NaN (node-int64 has no valueOf),
-    // which would silently disable the deadline. The backend must coerce via
-    // numberToInt64(...).toNumber() so an Int64 queryTimeout still bounds the poll.
-    // Exercised on the async path, where the client-side poll deadline applies.
-    // eslint-disable-next-line no-invalid-this
-    this.timeout(5000);
+  it('executeStatement (runAsync: true) does NOT forward queryTimeout — no-op on SEA', async () => {
     const connection = new FakeNativeConnection();
-    connection.submitStatusValue = 'Running'; // never reaches a terminal state
     const session = makeSession(connection);
-    const op = await session.executeStatement('SELECT 1', { queryTimeout: new Int64(1), runAsync: true });
-    let thrown: unknown;
-    try {
-      await op.waitUntilReady();
-    } catch (err) {
-      thrown = err;
-    }
-    expect(thrown, 'Int64(1) timeout must fire — NaN would poll forever').to.be.instanceOf(OperationStateError);
-    expect((thrown as OperationStateError).errorCode).to.equal(OperationStateErrorCode.Timeout);
+    await session.executeStatement('SELECT 1', { queryTimeout: 30, runAsync: true });
+    expect((connection.lastOptions as { queryTimeoutSecs?: number } | undefined)?.queryTimeoutSecs).to.equal(undefined);
   });
 
   it('executeStatement forwards rowLimit', async () => {
@@ -676,7 +711,7 @@ describe('SeaSessionBackend', () => {
     const envelope = `__databricks_error__:${JSON.stringify({ code: 'SqlError', message: 'SUBMIT_BOOM' })}`;
     for (const opts of [{}, { runAsync: true }]) {
       const connection = new FakeNativeConnection();
-      connection.throwOnExecute = new Error(envelope); // fails executeStatementCancellable / submitStatement
+      connection.throwOnExecute = new Error(envelope); // fails executeStatementDirect / submitStatement
       const session = makeSession(connection);
       let thrown: unknown;
       try {
@@ -874,9 +909,9 @@ describe('SeaOperationBackend', () => {
 });
 
 describe('SeaOperationBackend — async (submitStatement) path', () => {
-  const makeAsyncOp = (asyncStatement: FakeAsyncStatement, queryTimeoutSecs?: number) =>
+  const makeAsyncOp = (asyncStatement: FakeAsyncStatement) =>
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
-    new SeaOperationBackend({ asyncStatement: asyncStatement as any, context: makeContext(), queryTimeoutSecs });
+    new SeaOperationBackend({ asyncStatement: asyncStatement as any, context: makeContext() });
 
   it('rejects when neither asyncStatement nor statement is provided', () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -976,23 +1011,6 @@ describe('SeaOperationBackend — async (submitStatement) path', () => {
     expect((thrown as OperationStateError).errorCode).to.equal(OperationStateErrorCode.Closed);
   });
 
-  it('waitUntilReady() enforces queryTimeout client-side: throws Timeout and cancels a stuck Running statement', async function timeoutTest() {
-    // eslint-disable-next-line no-invalid-this
-    this.timeout(5000);
-    const stmt = new FakeAsyncStatement('Running'); // never reaches a terminal state
-    const op = makeAsyncOp(stmt, 0.05); // 50ms client-side deadline
-    let thrown: unknown;
-    try {
-      await op.waitUntilReady();
-    } catch (err) {
-      thrown = err;
-    }
-    expect(thrown).to.be.instanceOf(OperationStateError);
-    expect((thrown as OperationStateError).errorCode).to.equal(OperationStateErrorCode.Timeout);
-    // Best-effort server-side cancel fired so the statement doesn't keep running.
-    expect(stmt.cancelled).to.equal(true);
-  });
-
   it('cancel() forwards to the async statement and short-circuits a subsequent poll', async () => {
     const stmt = new FakeAsyncStatement(['Running', 'Running', 'Succeeded']);
     const op = makeAsyncOp(stmt);
@@ -1017,12 +1035,11 @@ describe('SeaOperationBackend — async (submitStatement) path', () => {
 });
 
 describe('SeaOperationBackend — sync (executeStatementCancellable) path', () => {
-  const makeSyncOp = (cancellableExecution: FakeCancellableExecution, queryTimeoutSecs?: number) =>
+  const makeSyncOp = (cancellableExecution: FakeCancellableExecution) =>
     new SeaOperationBackend({
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       cancellableExecution: cancellableExecution as any,
       context: makeContext(),
-      queryTimeoutSecs,
     });
 
   it('rejects when more than one handle kind is provided', () => {

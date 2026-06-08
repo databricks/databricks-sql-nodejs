@@ -162,6 +162,12 @@ function arrowTypeToTTypeId(field: Field<DataType>): TTypeId {
       return TTypeId.TIMESTAMP_TYPE;
     case 'DECIMAL':
       return TTypeId.DECIMAL_TYPE;
+    // INTERVAL — surface as STRING_TYPE to match the Thrift backend and the
+    // Python kernel connector, both of which report interval columns with a
+    // string type code. The cell value is already rendered to the canonical
+    // interval string (e.g. "2-6" / "3 12:30:15.000000000") by
+    // ArrowResultConverter, which keys off the Arrow value type (not this
+    // synthesized TTypeId), so value formatting is unaffected.
     case 'INTERVAL':
     case 'INTERVAL DAY':
     case 'INTERVAL DAY TO HOUR':
@@ -173,11 +179,10 @@ function arrowTypeToTTypeId(field: Field<DataType>): TTypeId {
     case 'INTERVAL MINUTE':
     case 'INTERVAL MINUTE TO SECOND':
     case 'INTERVAL SECOND':
-      return TTypeId.INTERVAL_DAY_TIME_TYPE;
     case 'INTERVAL YEAR':
     case 'INTERVAL YEAR TO MONTH':
     case 'INTERVAL MONTH':
-      return TTypeId.INTERVAL_YEAR_MONTH_TYPE;
+      return TTypeId.STRING_TYPE;
     case 'ARRAY':
       return TTypeId.ARRAY_TYPE;
     case 'MAP':
@@ -198,10 +203,12 @@ function arrowTypeToTTypeId(field: Field<DataType>): TTypeId {
   if (DataType.isInt(arrowType)) {
     // Duration columns are rewritten to Int64 with a
     // `databricks.arrow.duration_unit` metadata marker (see
-    // `SeaArrowIpcDurationFix.ts`). Surface them as INTERVAL_DAY_TIME
-    // so the converter formats them back into the thrift string form.
+    // `SeaArrowIpcDurationFix.ts`). Surface them as STRING_TYPE (matching the
+    // Thrift backend and Python kernel) — the converter still formats the
+    // value into the thrift INTERVAL DAY-TIME string via the duration_unit
+    // metadata, independent of this type code.
     if (arrowType.bitWidth === 64 && field.metadata.has(DURATION_UNIT_METADATA_KEY)) {
-      return TTypeId.INTERVAL_DAY_TIME_TYPE;
+      return TTypeId.STRING_TYPE;
     }
     switch (arrowType.bitWidth) {
       case 8:
@@ -233,8 +240,10 @@ function arrowTypeToTTypeId(field: Field<DataType>): TTypeId {
   // pairs which the converter formats to thrift's `"Y-M"` / day-time
   // strings.
   if (DataType.isInterval(arrowType)) {
-    // unit 0 = YEAR_MONTH, unit 1 = DAY_TIME, unit 2 = MONTH_DAY_NANO
-    return arrowType.unit === 0 ? TTypeId.INTERVAL_YEAR_MONTH_TYPE : TTypeId.INTERVAL_DAY_TIME_TYPE;
+    // Surface native Arrow interval types as STRING_TYPE too (Thrift / Python
+    // kernel parity). The converter formats the value to the thrift "Y-M" /
+    // day-time string from the Arrow value, independent of this type code.
+    return TTypeId.STRING_TYPE;
   }
   if (DataType.isList(arrowType)) return TTypeId.ARRAY_TYPE;
   if (DataType.isMap(arrowType)) return TTypeId.MAP_TYPE;
