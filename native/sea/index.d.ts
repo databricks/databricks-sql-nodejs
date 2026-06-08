@@ -17,10 +17,11 @@
  *   produces (`lib/utils/queryTags.ts`). Backslashes in keys are
  *   doubled; backslash/colon/comma in values are backslash-escaped.
  *
- * `rowLimit` (SEA `row_limit`) and `queryTimeoutSecs` (the per-statement
- * server wait timeout) are exposed here and threaded onto the kernel
+ * `rowLimit` (SEA `row_limit`) is exposed here and threaded onto the kernel
  * `StatementSpec`. `positionalParams` (`?`) and `namedParams` (`:name`)
  * carry bound query parameters, decoded via `params::parse_typed_value`.
+ * (There is no `queryTimeoutSecs`: it abused the SEA `wait_timeout` inline-hold
+ * window and was removed — a real per-statement timeout is `STATEMENT_TIMEOUT`.)
  *
  * **Tag-order caveat (M4 parity note).** The napi `queryTags` field
  * is a Rust `HashMap<String, String>` whose iteration order is
@@ -66,25 +67,6 @@ export interface ExecuteOptions {
    * `StatementSpec.row_limit`. Omitted ⇒ no driver-imposed cap.
    */
   rowLimit?: number
-  /**
-   * Per-statement server wait timeout in whole seconds. Bounds how
-   * long the server waits before cancelling the statement
-   * (`on_wait_timeout = CANCEL`), surfacing as a timeout — the
-   * server statement timeout (JDBC `setQueryTimeout`). Maps to
-   * `StatementSpec.query_timeout_secs`. Distinct from the
-   * connection-level transport timeout. The SEA wire caps it at 50s.
-   *
-   * **Applies to `executeStatement` only.** The async `submitStatement`
-   * path always sends `wait_timeout=0s` (so the server returns a
-   * `statement_id` immediately and never blocks), which means this
-   * field is *not* consulted on the submit path — the caller drives
-   * completion via `AsyncStatement.status()` / `awaitResult()` and is
-   * responsible for its own timeout (e.g. `Promise.race`). Passing
-   * `queryTimeoutSecs` to `submitStatement` is silently ignored. This
-   * matches the Python `use_sea` async-submit contract, where the
-   * wait-timeout and any statement timeout are orthogonal.
-   */
-  queryTimeoutSecs?: number
   /**
    * Positional parameters, in 1-based wire order. Index `i` in this
    * Vec corresponds to the `i+1`-th `?` placeholder in the SQL.
@@ -717,6 +699,29 @@ export declare class Connection {
    */
   executeStatement(sql: string, options?: ExecuteOptions | undefined | null): Promise<Statement>
   /**
+   * directResults execute — the Thrift/JDBC model. Sends ExecuteStatement
+   * with no `wait_timeout` field (server applies its ~10s default inline wait
+   * and auto-closes on success) and returns WITHOUT polling past it:
+   *
+   * - a **`Statement`** (left arm) when the query finished within the inline
+   *   wait — terminal, result ready inline, `close()` is a clean release;
+   * - an **`AsyncStatement`** (right arm) when it did not — a poll/cancel
+   *   handle the caller drives (`status()` / `awaitResult()` / `cancel()`).
+   *
+   * JS distinguishes the arms by feature-detecting `awaitResult` (present
+   * only on `AsyncStatement`). This is the path that gives mid-run cancel for
+   * long queries WITHOUT the eager-handle / close-drives workaround: the
+   * returned handle always corresponds to a server-owned statement.
+   *
+   * **Load-bearing contract:** the kernel's `DirectStatement::{Completed,
+   * Running}` discriminant cannot ride on these opaque `#[napi]` classes, so
+   * consumers MUST feature-detect via `awaitResult` (the only member unique to
+   * `AsyncStatement`). `Statement` (the Completed arm) MUST NOT gain an
+   * `awaitResult` member, or every consumer silently misroutes. The pyo3
+   * binding makes the same `await_result`-probe assumption.
+   */
+  executeStatementDirect(sql: string, options?: ExecuteOptions | undefined | null): Promise<Statement | AsyncStatement>
+  /**
    * Execute a SQL statement on the blocking (sync) path, but return a
    * `CancellableExecution` handle so a concurrent JS task can cancel
    * the query *while it is still running server-side*.
@@ -732,9 +737,7 @@ export declare class Connection {
    * `Statement` `executeStatement` returns) and can fire `cancel()`
    * concurrently to interrupt a still-running query mid-COMPUTE.
    *
-   * Option semantics are identical to `executeStatement` — including
-   * `queryTimeoutSecs`, which IS honoured here (this is the sync
-   * `execute` path; only the async `submitStatement` ignores it).
+   * Option semantics are identical to `executeStatement`.
    * Mirrors the pyo3 `Statement.canceller()` / `Statement.execute()`
    * split (PR #121): obtain the canceller before the blocking drive.
    */
@@ -752,14 +755,11 @@ export declare class Connection {
    * uses (`runAsync: true`): the SEA backend submits, returns a
    * pending operation handle, and polls to terminal during
    * fetch. Option semantics (statementConf / queryTags /
-   * rowLimit / positional + named params) match `executeStatement`,
-   * with one carve-out: `queryTimeoutSecs` is **ignored** here.
+   * rowLimit / positional + named params) match `executeStatement`.
    * Submit always sends `wait_timeout=0s` so the call returns
-   * immediately, leaving no server wait to bound; the caller drives
-   * completion and its own timeout via `status()` / `awaitResult()`
-   * (e.g. `Promise.race`). Only the blocking-vs-pending return
-   * contract — and that timeout carve-out — differ from
-   * `executeStatement`.
+   * immediately; the caller drives completion via `status()` /
+   * `awaitResult()`. Only the blocking-vs-pending return contract
+   * differs from `executeStatement`.
    */
   submitStatement(sql: string, options?: ExecuteOptions | undefined | null): Promise<AsyncStatement>
   /**
@@ -879,11 +879,10 @@ export declare class Statement {
    * data note:** may contain SQL fragments or parameter values —
    * redact before centralised logging.
    *
-   * Populated on `Succeeded` / `Closed-with-inline-data` paths.
-   * On terminal-error states (`Failed` / `Cancelled` /
-   * `Closed-no-data`) the kernel returns an Error instead of a
-   * `Statement`, and the same field rides on the JS Error envelope
-   * under the same `displayMessage` key.
+   * Populated on `Succeeded` / `Closed` paths (incl. an empty `Closed`).
+   * On terminal-error states (`Failed` / `Cancelled`) the kernel returns
+   * an Error instead of a `Statement`, and the same field rides on the JS
+   * Error envelope under the same `displayMessage` key.
    */
   displayMessage(): Promise<string | null>
   /**
