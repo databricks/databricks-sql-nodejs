@@ -92,6 +92,16 @@ export type ConnectionOptions = {
   preserveBigNumericPrecision?: boolean;
 
   /**
+   * [bench] When true, result fetching drains Arrow batches without
+   * constructing per-row JS objects (skips `table.toArray()` + per-cell type
+   * conversion); chunks come back as length-only arrays. Transport (network /
+   * CloudFetch / LZ4 / Arrow IPC framing) is unaffected, so this measures
+   * execute+fetch throughput without the JS-object materialization cost.
+   * Benchmark-only; defaults to `false`.
+   */
+  disableArrowMaterialization?: boolean;
+
+  /**
    * Extra HTTP headers attached to driver-owned out-of-band requests
    * (telemetry POSTs and feature-flag GETs). Not applied to the primary
    * Thrift transport or to OAuth/OIDC token requests.

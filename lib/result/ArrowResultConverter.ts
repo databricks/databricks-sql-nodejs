@@ -259,6 +259,27 @@ export default class ArrowResultConverter implements IResultsProvider<Array<any>
     await this.prefetch(options);
 
     if (this.prefetchedRecordBatch) {
+      // [bench] No-materialization drain: count the batch's rows and return a
+      // length-only array, skipping `table.toArray()` + per-row JS-object
+      // construction. The expensive transport work (source.fetchNext →
+      // CloudFetch/network + LZ4 + IPC framing) already happened in `prefetch`,
+      // so this measures execute+fetch without the JS materialization tax.
+      if (this.context.getConfig().disableArrowMaterialization) {
+        const numRows = Math.min(this.prefetchedRecordBatch.numRows, this.remainingRows);
+        this.prefetchedRecordBatch = undefined;
+        // Fill with real (null) slots, not holes: ResultSlicer flattens chunks
+        // via `Array.prototype.flat()`, which silently drops sparse-array holes
+        // and would collapse the row count to 0. `null` placeholders cost a
+        // single pointer each (no per-cell decode / object construction).
+        const result = new Array(numRows).fill(null);
+        this.remainingRows -= numRows;
+        if (this.remainingRows === 0) {
+          this.recordBatchReader = undefined;
+        }
+        await this.prefetch(options);
+        return result;
+      }
+
       // Consume a record batch fetched during previous call to `fetchNext`
       const table = new Table(this.prefetchedRecordBatch);
       this.prefetchedRecordBatch = undefined;

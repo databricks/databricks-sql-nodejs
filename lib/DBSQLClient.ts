@@ -154,6 +154,8 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
 
       preserveBigNumericPrecision: false,
 
+      disableArrowMaterialization: false,
+
       // Telemetry defaults are sourced from DEFAULT_TELEMETRY_CONFIG so
       // every component reads from the same single frozen const. Mapping the
       // unprefixed TelemetryConfiguration keys to the `telemetry`-prefixed
@@ -627,6 +629,11 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
     }
     if (options.retryDelayMax !== undefined) {
       this.config.retryDelayMax = options.retryDelayMax;
+    }
+
+    // [bench] Opt-in: drain Arrow batches without per-row JS-object materialization.
+    if (options.disableArrowMaterialization !== undefined) {
+      this.config.disableArrowMaterialization = options.disableArrowMaterialization;
     }
 
     // Override telemetry config if provided in options. Per-key narrowed copy
