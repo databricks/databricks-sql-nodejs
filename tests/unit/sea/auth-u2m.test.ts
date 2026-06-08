@@ -13,6 +13,7 @@
 // limitations under the License.
 
 import { expect } from 'chai';
+import expectNativeConnectionOptions from './_helpers/nativeOptions';
 import SeaBackend from '../../../lib/sea/SeaBackend';
 import { buildSeaConnectionOptions } from '../../../lib/sea/SeaAuth';
 import { ConnectionOptions } from '../../../lib/contracts/IDBSQLClient';
@@ -30,7 +31,7 @@ describe('SeaAuth + SeaBackend — OAuth U2M auth flow', () => {
       };
 
       const native = buildSeaConnectionOptions(opts);
-      expect(native).to.deep.equal({
+      expectNativeConnectionOptions(native, {
         hostName: 'example.cloud.databricks.com',
         httpPath: '/sql/1.0/warehouses/abc',
         intervalsAsString: true,
@@ -130,7 +131,7 @@ describe('SeaAuth + SeaBackend — OAuth U2M auth flow', () => {
 
       expect(calls).to.have.lengthOf(1);
       expect(calls[0].method).to.equal('openSession');
-      expect(calls[0].args[0]).to.deep.equal({
+      expectNativeConnectionOptions(calls[0].args[0], {
         hostName: 'example.cloud.databricks.com',
         httpPath: '/sql/1.0/warehouses/abc',
         intervalsAsString: true,

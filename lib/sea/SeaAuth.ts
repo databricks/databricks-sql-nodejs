@@ -16,6 +16,7 @@ import { ConnectionOptions } from '../contracts/IDBSQLClient';
 import { InternalConnectionOptions } from '../contracts/InternalConnectionOptions';
 import AuthenticationError from '../errors/AuthenticationError';
 import HiveDriverError from '../errors/HiveDriverError';
+import { buildUserAgentString } from '../utils';
 
 /**
  * Default local listener port for the U2M authorization-code callback.
@@ -91,6 +92,20 @@ export interface SeaSessionDefaults {
    * integer within the napi `u32` range by `buildSeaConnectionOptions`.
    */
   maxConnections?: number;
+  /**
+   * Retry/backoff tuning forwarded to the kernel (which owns the retry loop
+   * on the SEA path). These mirror the driver's `ClientConfig` retry knobs —
+   * the same ones the Thrift `HttpRetryPolicy` uses — converted from the
+   * connector's milliseconds to the kernel's whole seconds, so a single
+   * retry config governs both backends. Unset ⇒ kernel default policy.
+   * Map onto the napi `ConnectionOptions.retry{Min,Max}WaitSecs` /
+   * `retryMaxAttempts` / `retryOverallTimeoutSecs` (see `buildSeaRetryOptions`).
+   */
+  retryMinWaitSecs?: number;
+  retryMaxWaitSecs?: number;
+  /** **Total** attempts (kernel converts to retries-after-first internally). */
+  retryMaxAttempts?: number;
+  retryOverallTimeoutSecs?: number;
 }
 
 /**
@@ -113,12 +128,54 @@ export interface SeaTlsOptions {
    * `customCaCert` over disabling verification entirely.
    */
   checkServerCertificate?: boolean;
+  /**
+   * Verify the server certificate's hostname (hostname-vs-SNI), independently
+   * of chain validation. Omit ⇒ kernel default (on). `false` skips only the
+   * hostname check. No-op when `checkServerCertificate` is `false`. Mirrors
+   * the kernel napi `checkServerCertificateHostname` / Python
+   * `tls_verify_hostname`.
+   */
+  checkServerCertificateHostname?: boolean;
   /** PEM-encoded CA bytes to add to the trust store. */
   customCaCert?: Buffer;
+  /**
+   * PEM-encoded client certificate for mutual TLS (kernel
+   * `TlsConfig::client_cert_pem`). Paired with {@link clientKeyPem} —
+   * `buildSeaTlsOptions` rejects supplying only one before the FFI hop.
+   * The napi shape takes a `Buffer`; the public surface also accepts a
+   * PEM string, normalised here.
+   */
+  clientCertPem?: Buffer;
+  /**
+   * PEM-encoded private key for the mTLS client certificate (kernel
+   * `TlsConfig::client_key_pem`). Paired with {@link clientCertPem}.
+   */
+  clientKeyPem?: Buffer;
+}
+
+/**
+ * HTTP options shared across all auth-mode variants. Mirrors the napi
+ * binding's `ConnectionOptions.customHeaders` (kernel
+ * `HttpConfig::custom_headers`).
+ *
+ * Carries the extra request headers the SEA path sends on every request:
+ * the caller's `customHeaders` plus the composed `User-Agent` (the kernel
+ * appends a `User-Agent` entry to its base UA rather than replacing it).
+ *
+ * An **ordered list** of `{ name, value }` pairs — the napi shape
+ * (`Array<HeaderEntry>`), which mirrors the kernel core's
+ * `Vec<(String, String)>` and the Python connector's `http_headers`
+ * `List[Tuple[str, str]]`. Order is preserved and duplicate names are
+ * allowed (e.g. a caller `User-Agent` followed by the connector's, which
+ * the kernel folds last-wins).
+ */
+export interface SeaHttpOptions {
+  customHeaders?: Array<{ name: string; value: string }>;
 }
 
 export type SeaNativeConnectionOptions = SeaSessionDefaults &
   SeaTlsOptions &
+  SeaHttpOptions &
   (
     | {
         hostName: string;
@@ -168,24 +225,74 @@ export function isBlankOrReserved(s: string): boolean {
 const MAX_U32 = 0xffffffff;
 
 /**
- * Normalise the public TLS options (`checkServerCertificate` /
- * `customCaCert`) into the napi shape.
+ * Normalise a PEM input (`string` or `Buffer`) accepted on the public
+ * surface into the `Buffer` the napi shape requires. Does a light,
+ * ordered BEGIN…END sanity check so a truncated/headerless blob (or a
+ * stray page that merely contains the literals out of order, e.g. a
+ * proxy-intercept page) is rejected here rather than surfacing as an
+ * opaque kernel TLS error. The bytes are NOT fully parsed in JS — that
+ * is deferred to the kernel, which returns a meaningful error on a
+ * malformed PEM/key.
+ *
+ * `kind` selects the expected block: `'certificate'` matches a
+ * `CERTIFICATE` block; `'private key'` matches any `… PRIVATE KEY` block
+ * (PKCS#8 `PRIVATE KEY`, PKCS#1 `RSA PRIVATE KEY`, SEC1 `EC PRIVATE KEY`).
+ *
+ * Throws `HiveDriverError` when the value is empty or (for strings)
+ * lacks the expected PEM header.
+ */
+function normalizePemBytes(value: Buffer | string, optionName: string, kind: 'certificate' | 'private key'): Buffer {
+  if (typeof value === 'string') {
+    const re =
+      kind === 'certificate'
+        ? /-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/
+        : /-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]+?-----END [A-Z0-9 ]*PRIVATE KEY-----/;
+    if (!re.test(value)) {
+      const expected =
+        kind === 'certificate'
+          ? "a '-----BEGIN CERTIFICATE-----' … '-----END CERTIFICATE-----' block"
+          : "a 'BEGIN … PRIVATE KEY' / 'END … PRIVATE KEY' PEM block (PKCS#8, PKCS#1, or SEC1)";
+      throw new HiveDriverError(
+        `SEA backend: \`${optionName}\` string does not look like a PEM ${kind} (expected ${expected}). ` +
+          'Pass PEM text or a Buffer of PEM bytes.',
+      );
+    }
+    return Buffer.from(value, 'utf8');
+  }
+  if (Buffer.isBuffer(value)) {
+    if (value.length === 0) {
+      throw new HiveDriverError(`SEA backend: \`${optionName}\` Buffer is empty.`);
+    }
+    return value;
+  }
+  throw new HiveDriverError(`SEA backend: \`${optionName}\` must be a PEM string or a Buffer.`);
+}
+
+/**
+ * Normalise the public TLS options into the napi shape.
  *
  * - `checkServerCertificate` passes through verbatim (only when set; an
  *   absent value leaves the kernel default, which is secure — verify on).
- * - `customCaCert` accepts a PEM string or `Buffer` on the public
- *   surface; we convert a string to a `Buffer` here and do a light PEM
- *   sanity check. The bytes are NOT parsed in JS — the kernel returns a
- *   meaningful error if the PEM is malformed.
+ * - `checkServerCertificateHostname` passes through verbatim — the
+ *   independent hostname-vs-SNI toggle (kernel applies it only when the
+ *   master verify toggle is on). Mirrors Python's `tls_verify_hostname`.
+ * - `customCaCert` accepts a PEM string or `Buffer`; normalised to a
+ *   `Buffer` via {@link normalizePemBytes}.
+ * - `clientCertPem` / `clientKeyPem` carry the mutual-TLS client identity.
+ *   They must be supplied **together** — supplying only one is rejected
+ *   here with an actionable error (rather than waiting for the kernel's
+ *   `InvalidArgument` at `openSession`). Each accepts a PEM string or
+ *   `Buffer`, normalised the same way.
  *
- * Throws `HiveDriverError` when `customCaCert` is supplied but empty or
- * (for strings) lacks a PEM certificate header.
+ * Throws `HiveDriverError` when a cert/key is empty, mis-typed, lacks the
+ * expected PEM header, or when only one half of the mTLS pair is set.
  */
 export function buildSeaTlsOptions(options: ConnectionOptions): SeaTlsOptions {
   // Read the SEA-only fields through the purpose-built internal options type
   // rather than an ad-hoc inline cast, so the shape can't silently drift from
   // its declaration and a typo'd key fails to compile.
-  const { checkServerCertificate, customCaCert } = options as ConnectionOptions & InternalConnectionOptions;
+  const { checkServerCertificate, checkServerCertificateHostname, customCaCert, clientCertPem, clientKeyPem } =
+    options as ConnectionOptions & InternalConnectionOptions;
 
   const tls: SeaTlsOptions = {};
 
@@ -193,32 +300,108 @@ export function buildSeaTlsOptions(options: ConnectionOptions): SeaTlsOptions {
     tls.checkServerCertificate = checkServerCertificate;
   }
 
+  if (checkServerCertificateHostname !== undefined) {
+    tls.checkServerCertificateHostname = checkServerCertificateHostname;
+  }
+
   if (customCaCert !== undefined) {
-    if (typeof customCaCert === 'string') {
-      // Light PEM sanity check — require a well-ordered BEGIN…END block so a
-      // truncated/headerless cert (or a stray page that merely contains both
-      // literals out of order, e.g. a proxy-intercept page) is rejected here
-      // rather than surfacing as an opaque kernel TLS error. Ordered match, not
-      // two independent substring checks. Full parsing is deferred to the kernel.
-      if (!/-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/.test(customCaCert)) {
-        throw new HiveDriverError(
-          'SEA backend: `customCaCert` string does not look like a PEM certificate ' +
-            "(expected a '-----BEGIN CERTIFICATE-----' … '-----END CERTIFICATE-----' block). " +
-            'Pass PEM text or a Buffer of PEM bytes.',
-        );
-      }
-      tls.customCaCert = Buffer.from(customCaCert, 'utf8');
-    } else if (Buffer.isBuffer(customCaCert)) {
-      if (customCaCert.length === 0) {
-        throw new HiveDriverError('SEA backend: `customCaCert` Buffer is empty.');
-      }
-      tls.customCaCert = customCaCert;
-    } else {
-      throw new HiveDriverError('SEA backend: `customCaCert` must be a PEM string or a Buffer.');
-    }
+    tls.customCaCert = normalizePemBytes(customCaCert, 'customCaCert', 'certificate');
+  }
+
+  // mTLS client identity. Enforce both-or-neither up front so a caller who
+  // sets only one gets a clear message naming the missing half, instead of
+  // the kernel's generic `InvalidArgument` after the FFI hop.
+  const hasCert = clientCertPem !== undefined;
+  const hasKey = clientKeyPem !== undefined;
+  if (hasCert !== hasKey) {
+    throw new HiveDriverError(
+      'SEA backend: mutual TLS requires both `clientCertPem` and `clientKeyPem`; only ' +
+        `\`${hasCert ? 'clientCertPem' : 'clientKeyPem'}\` was supplied. ` +
+        `Provide the matching ${hasCert ? 'private key (`clientKeyPem`)' : 'certificate (`clientCertPem`)'}, ` +
+        'or omit both.',
+    );
+  }
+  if (hasCert && hasKey) {
+    tls.clientCertPem = normalizePemBytes(clientCertPem as Buffer | string, 'clientCertPem', 'certificate');
+    tls.clientKeyPem = normalizePemBytes(clientKeyPem as Buffer | string, 'clientKeyPem', 'private key');
   }
 
   return tls;
+}
+
+/**
+ * Build the napi HTTP options (`customHeaders`) from the public
+ * `customHeaders` map and `userAgentEntry`.
+ *
+ * Mirrors the Python connector's `use_kernel` path (`session.py` +
+ * `backend/kernel/client.py`), which:
+ *   1. composes a single connector `User-Agent` and **unconditionally**
+ *      appends it last —
+ *      `all_headers = (http_headers or []) + [("User-Agent", useragent_header)]`;
+ *   2. before forwarding to the kernel, **drops** the kernel-managed
+ *      reserved names `Authorization` / `x-databricks-org-id`
+ *      (case-insensitive) — the kernel applies the auth token itself and
+ *      re-derives the org id from the `?o=` in the http path, and would
+ *      otherwise skip-and-warn on every request.
+ *
+ * The result is an ordered list (the napi `Array<HeaderEntry>` shape,
+ * matching the kernel core `Vec<(String, String)>`): the caller's
+ * `customHeaders` first (minus reserved names), then the connector's
+ * `User-Agent` last. The connector UA is always present and, being last,
+ * is authoritative (the kernel folds the last `User-Agent` into its base
+ * UA — `DatabricksJDBCDriverOSS/...` — preserving the result-disposition
+ * gating token). The value is composed via the same `buildUserAgentString`
+ * the Thrift path uses, so the SEA UA carries the identical
+ * `NodejsDatabricksSqlConnector/...` identity (with `userAgentEntry`
+ * folded in). A caller `User-Agent` in `customHeaders` is forwarded too
+ * (mirroring Python, which doesn't dedupe it); the kernel's last-wins fold
+ * means the connector UA still wins.
+ */
+const KERNEL_MANAGED_HEADERS = new Set(['authorization', 'x-databricks-org-id']);
+
+// CR / LF / NUL in a header name or value enable request-splitting / header
+// injection. The kernel's HTTP client (reqwest) does reject these, but only at
+// connect time and with an opaque "Failed to construct HTTP client:
+// InvalidArgument: failed to parse header value" error that names neither the
+// offending header nor the cause. Reject them here, before the FFI hop, with a
+// clear error so a caller gets actionable signal at the point they set the
+// header (verified against pecotesting: the kernel otherwise surfaces the
+// opaque construction error).
+const FORBIDDEN_HEADER_CHARS = /[\r\n\0]/;
+
+function validateHeaderToken(kind: 'name' | 'value', headerName: string, token: string): void {
+  if (FORBIDDEN_HEADER_CHARS.test(token)) {
+    throw new HiveDriverError(
+      `SEA backend: customHeaders ${kind} for \`${headerName}\` contains a forbidden control character ` +
+        `(CR, LF, or NUL). Such characters enable HTTP header injection and are rejected.`,
+    );
+  }
+}
+
+export function buildSeaHttpOptions(options: ConnectionOptions): SeaHttpOptions {
+  const { customHeaders, userAgentEntry } = options;
+
+  const headers: Array<{ name: string; value: string }> = [];
+  if (customHeaders) {
+    for (const [name, value] of Object.entries(customHeaders)) {
+      // Reject CR/LF/NUL in either the name or the value before forwarding —
+      // a clear, early error instead of the kernel's opaque connect-time throw.
+      validateHeaderToken('name', name, name);
+      validateHeaderToken('value', name, value);
+      // Drop kernel-managed reserved names before the FFI hop — same
+      // double-wall as the Python connector's `_KERNEL_MANAGED_HEADERS`.
+      if (KERNEL_MANAGED_HEADERS.has(name.toLowerCase())) {
+        continue;
+      }
+      headers.push({ name, value });
+    }
+  }
+
+  // Always append the connector's composed User-Agent last — exactly the
+  // Python connector's unconditional `base_headers` append.
+  headers.push({ name: 'User-Agent', value: buildUserAgentString(userAgentEntry) });
+
+  return { customHeaders: headers };
 }
 
 /**
@@ -274,6 +457,38 @@ export function buildSeaTlsOptions(options: ConnectionOptions): SeaTlsOptions {
  *   - `HiveDriverError` for unsupported auth modes / Azure-direct /
  *     custom persistence / ambiguous combinations.
  */
+/**
+ * Convert the driver's `ClientConfig` retry knobs (milliseconds, total-attempt
+ * count) into the kernel's `ConnectionOptions` retry kwargs (whole seconds).
+ * The kernel owns the retry loop on the SEA path, so forwarding these keeps SEA
+ * and Thrift governed by one retry config. `retryMaxAttempts` is a TOTAL attempt
+ * count on both sides (the kernel converts to retries-after-first internally),
+ * so it passes through directly. Sub-second delays round to the nearest second
+ * (the kernel's granularity); all values are clamped into the napi `u32` range.
+ */
+export function buildSeaRetryOptions(config: {
+  retryMaxAttempts?: number;
+  retriesTimeout?: number;
+  retryDelayMin?: number;
+  retryDelayMax?: number;
+}): Pick<SeaSessionDefaults, 'retryMinWaitSecs' | 'retryMaxWaitSecs' | 'retryMaxAttempts' | 'retryOverallTimeoutSecs'> {
+  const msToSecs = (ms: number): number => Math.min(MAX_U32, Math.max(0, Math.round(ms / 1000)));
+  const clampU32 = (n: number): number => Math.min(MAX_U32, Math.max(0, Math.trunc(n)));
+  // Only forward a knob the connector actually set to a finite number; an
+  // absent/garbage value is OMITTED so the kernel keeps its built-in default
+  // (rather than emitting NaN across the FFI). A finite-but-negative value is
+  // still forwarded and clamped to 0 by the helpers above.
+  const out: Pick<
+    SeaSessionDefaults,
+    'retryMinWaitSecs' | 'retryMaxWaitSecs' | 'retryMaxAttempts' | 'retryOverallTimeoutSecs'
+  > = {};
+  if (Number.isFinite(config.retryDelayMin)) out.retryMinWaitSecs = msToSecs(config.retryDelayMin as number);
+  if (Number.isFinite(config.retryDelayMax)) out.retryMaxWaitSecs = msToSecs(config.retryDelayMax as number);
+  if (Number.isFinite(config.retryMaxAttempts)) out.retryMaxAttempts = clampU32(config.retryMaxAttempts as number);
+  if (Number.isFinite(config.retriesTimeout)) out.retryOverallTimeoutSecs = msToSecs(config.retriesTimeout as number);
+  return out;
+}
+
 export function buildSeaConnectionOptions(options: ConnectionOptions): SeaNativeConnectionOptions {
   const { authType } = options as { authType?: string };
 
@@ -282,7 +497,8 @@ export function buildSeaConnectionOptions(options: ConnectionOptions): SeaNative
     httpPath: string;
     intervalsAsString: boolean;
     maxConnections?: number;
-  } & SeaTlsOptions = {
+  } & SeaTlsOptions &
+    SeaHttpOptions = {
     hostName: options.host,
     httpPath: prependSlash(options.path),
     // Match the NodeJS Thrift driver, which surfaces INTERVAL columns as
@@ -292,9 +508,12 @@ export function buildSeaConnectionOptions(options: ConnectionOptions): SeaNative
     // (native Arrow) — they already decode identically to Thrift via the
     // shared Arrow converter, so `complexTypesAsJson` is not forced on.
     intervalsAsString: true,
-    // TLS knobs (server-cert verification toggle + custom CA). Validated and
-    // normalised (string PEM → Buffer) here so the napi shape only sees a Buffer.
+    // TLS knobs (server-cert verification toggle + custom CA + mTLS client
+    // identity). Validated and normalised (string PEM → Buffer) here so the
+    // napi shape only sees a Buffer.
     ...buildSeaTlsOptions(options),
+    // HTTP headers (caller `customHeaders` + composed `User-Agent`).
+    ...buildSeaHttpOptions(options),
   };
 
   // SEA-only pool sizing; read via cast to match how this function reads the

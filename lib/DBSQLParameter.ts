@@ -29,6 +29,37 @@ export enum DBSQLParameterType {
   INTERVALDAY = 'INTERVAL DAY',
 }
 
+// 32-bit signed integer bounds — the range of the Spark `INT` type.
+const INT32_MIN = -2147483648;
+const INT32_MAX = 2147483647;
+
+/**
+ * Infer the Spark parameter type for a JS `number` when the caller didn't set
+ * one explicitly.
+ *
+ * A JS `number` is an IEEE-754 double, so a whole-number value can still be far
+ * outside the `INT` range (e.g. `1e30`). Typing such a value as `INTEGER`
+ * makes the server reject it (`invalid INT literal "1e+30"`). Pick the
+ * narrowest type that actually fits:
+ *   - non-integer / non-finite → `DOUBLE`
+ *   - integer within INT (i32) range → `INTEGER`
+ *   - integer within the safe-integer range → `BIGINT`
+ *   - anything larger → `DOUBLE` (can't be represented exactly as an integer
+ *     anyway; callers needing exact 64-bit integers should pass a `bigint`).
+ */
+function inferNumberType(value: number): DBSQLParameterType {
+  if (!Number.isInteger(value)) {
+    return DBSQLParameterType.DOUBLE;
+  }
+  if (value >= INT32_MIN && value <= INT32_MAX) {
+    return DBSQLParameterType.INTEGER;
+  }
+  if (Number.isSafeInteger(value)) {
+    return DBSQLParameterType.BIGINT;
+  }
+  return DBSQLParameterType.DOUBLE;
+}
+
 interface DBSQLParameterOptions {
   type?: DBSQLParameterType;
   value: DBSQLParameterValue;
@@ -78,7 +109,7 @@ export class DBSQLParameter {
     if (typeof this.value === 'number') {
       return new TSparkParameter({
         name,
-        type: wireType ?? (Number.isInteger(this.value) ? DBSQLParameterType.INTEGER : DBSQLParameterType.DOUBLE),
+        type: wireType ?? inferNumberType(this.value),
         value: new TSparkParameterValue({
           stringValue: Number(this.value).toString(),
         }),
@@ -96,11 +127,17 @@ export class DBSQLParameter {
     }
 
     if (this.value instanceof Date) {
+      // A `Date` bound as `DATE` must project a calendar date (`yyyy-mm-dd`),
+      // not a full ISO-8601 timestamp: the SEA wire rejects
+      // `2024-03-14T00:00:00.000Z` as a DATE literal ("trailing input"), and
+      // Thrift accepts the date-only form just as well. Without an explicit
+      // DATE type the value still binds as a TIMESTAMP from the full ISO string.
+      const isDateType = wireType === DBSQLParameterType.DATE;
       return new TSparkParameter({
         name,
         type: wireType ?? DBSQLParameterType.TIMESTAMP,
         value: new TSparkParameterValue({
-          stringValue: this.value.toISOString(),
+          stringValue: isDateType ? this.value.toISOString().slice(0, 10) : this.value.toISOString(),
         }),
       });
     }

@@ -68,6 +68,18 @@ export interface KernelMetadata {
   httpStatus?: number;
   retryable?: boolean;
   queryId?: string;
+  /**
+   * Rich server-error diagnostics from the SEA terminal-error payload. These
+   * mirror the fields the **Thrift** backend already surfaces via
+   * `OperationStateError.response` (`TGetOperationStatusResp.displayMessage` /
+   * `.errorMessage` / `.errorDetailsJson`) and that the Python `use_kernel`
+   * connector forwards onto its exceptions — so SEA stays at parity rather
+   * than dropping them. Kernel sources: `Error.display_message` /
+   * `.diagnostic_info` / `.error_details_json`.
+   */
+  displayMessage?: string;
+  diagnosticInfo?: string;
+  errorDetailsJson?: string;
 }
 
 /**
@@ -209,6 +221,16 @@ function buildKernelMetadata(parsed: Record<string, unknown>): KernelMetadata {
   if (typeof parsed.queryId === 'string') {
     meta.queryId = parsed.queryId;
   }
+  // Rich diagnostics — Thrift/Python parity (were previously dropped).
+  if (typeof parsed.displayMessage === 'string') {
+    meta.displayMessage = parsed.displayMessage;
+  }
+  if (typeof parsed.diagnosticInfo === 'string') {
+    meta.diagnosticInfo = parsed.diagnosticInfo;
+  }
+  if (typeof parsed.errorDetailsJson === 'string') {
+    meta.errorDetailsJson = parsed.errorDetailsJson;
+  }
   return meta;
 }
 
@@ -288,14 +310,9 @@ export function decodeNapiKernelError(err: unknown): Error {
   const meta = buildKernelMetadata(envelope);
   // Skip the namespace attachment entirely when no fields validated
   // through — keeps `err.kernelMetadata` absent rather than `{}` for
-  // simple envelopes (the common case).
-  if (
-    meta.errorCode !== undefined ||
-    meta.vendorCode !== undefined ||
-    meta.httpStatus !== undefined ||
-    meta.retryable !== undefined ||
-    meta.queryId !== undefined
-  ) {
+  // simple envelopes (the common case). Key-count check so new
+  // `KernelMetadata` fields are covered automatically.
+  if (Object.keys(meta).length > 0) {
     defineErrorMetadata(jsErr, 'kernelMetadata', meta);
   }
   return jsErr;

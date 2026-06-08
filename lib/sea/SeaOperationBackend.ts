@@ -85,6 +85,33 @@ export type SeaOperationStatement = SeaStatementHandle & Partial<SeaStatement>;
  */
 type SeaFetchHandle = Pick<SeaStatement, 'fetchNextBatch' | 'schema'>;
 
+/**
+ * The rich operation-status surface the kernel exposes on a terminal sync
+ * `Statement` (`numModifiedRows` / `displayMessage` / `diagnosticInfo` /
+ * `errorDetailsJson`). These accessors live ONLY on the blocking `Statement`
+ * (metadata path + sync `runAsync:false` path once `result()` resolves) — the
+ * async `AsyncStatement` / `AsyncResultHandle` do not expose them — so the
+ * reader below is best-effort and returns an empty record when the handle
+ * predates this surface or the operation never resolved to a `Statement`.
+ */
+type SeaStatusFieldsHandle = Pick<
+  SeaStatement,
+  'numModifiedRows' | 'displayMessage' | 'diagnosticInfo' | 'errorDetailsJson'
+>;
+
+/**
+ * The rich operation-status fields, as the kernel returns them (each `null`
+ * when the server didn't supply it — e.g. `numModifiedRows` is null for a
+ * SELECT). Carried onto the neutral `OperationStatus` and ultimately into the
+ * Thrift `TGetOperationStatusResp` so SEA reports parity with the Thrift path.
+ */
+interface SeaRichStatusFields {
+  numModifiedRows: number | null;
+  displayMessage: string | null;
+  diagnosticInfo: string | null;
+  errorDetailsJson: string | null;
+}
+
 /** Poll cadence for the async `status()` loop — matches the Thrift backend's 100ms. */
 const STATUS_POLL_INTERVAL_MS = 100;
 
@@ -155,6 +182,13 @@ export default class SeaOperationBackend implements IOperationBackend {
   // Metadata path: terminal statement. Also the resolved fetch handle on the
   // sync-execute path once `cancellableExecution.result()` settles.
   private blockingStatement?: SeaOperationStatement;
+
+  // Memoized rich-status read. `readRichStatusFields()` is only ever invoked
+  // once the operation is terminal (the Succeeded branches of `status()` and
+  // the `seaFinished` progress callback), and the kernel's terminal response is
+  // immutable, so the FFI accessors are read exactly once and the result
+  // reused — re-`status()`-ing a completed operation is then free.
+  private richStatusFieldsPromise?: Promise<SeaRichStatusFields>;
 
   // The cancel/close surface — whichever handle backs this operation. Both
   // `AsyncStatement` and `Statement` expose `cancel()` / `close()`; the
@@ -356,8 +390,15 @@ export default class SeaOperationBackend implements IOperationBackend {
     if (this.asyncStatement) {
       // Async query path: report the real kernel state (single
       // GetStatementStatus RPC — no polling here; `waitUntilReady` owns the
-      // poll loop).
+      // poll loop). On a terminal Succeeded state, that same GetStatement poll
+      // carried the rich status fields (the kernel derives a DML's
+      // `numModifiedRows` from the inline count on the terminal response), so
+      // surface them — mirroring the sync path. Reading them does not fetch the
+      // result.
       const state = statusStringToOperationState(await this.asyncStatement.status());
+      if (state === OperationState.Succeeded) {
+        return { state, hasResultSet: true, ...(await this.readRichStatusFields()) };
+      }
       return { state, hasResultSet: true };
     }
     if (this.cancellableExecution) {
@@ -365,11 +406,16 @@ export default class SeaOperationBackend implements IOperationBackend {
       // server-side; there is no per-status RPC to query while it runs. Report
       // Running until `result()` has materialised the terminal statement, then
       // Succeeded — mirroring the kernel's blocking-then-terminal lifecycle.
-      const state = this.fetchHandlePromise ? OperationState.Succeeded : OperationState.Running;
-      return { state, hasResultSet: true };
+      if (!this.fetchHandlePromise) {
+        return { state: OperationState.Running, hasResultSet: true };
+      }
+      // The blocking `result()` has resolved a terminal `Statement` — surface
+      // its rich status fields alongside the Succeeded state.
+      return { state: OperationState.Succeeded, hasResultSet: true, ...(await this.readRichStatusFields()) };
     }
-    // Metadata path: the kernel statement is already terminal.
-    return { state: OperationState.Succeeded, hasResultSet: true };
+    // Metadata path: the kernel statement is already terminal — read its rich
+    // fields too (they are `null` for metadata results, by design).
+    return { state: OperationState.Succeeded, hasResultSet: true, ...(await this.readRichStatusFields()) };
   }
 
   public async waitUntilReady(options?: IOperationBackendWaitOptions): Promise<void> {
@@ -381,8 +427,11 @@ export default class SeaOperationBackend implements IOperationBackend {
     }
     // Metadata path: the kernel statement has already resolved, so there is
     // nothing to poll. seaFinished fires the progress callback once with a
-    // synthesised completion tick, matching the Thrift path's final tick.
-    return seaFinished(this.lifecycle, options);
+    // synthesised completion tick, matching the Thrift path's final tick. The
+    // rich-field reader is passed lazily so it only runs when a callback is
+    // wired (metadata statements report all-null, but the surface stays
+    // consistent with the query paths).
+    return seaFinished(this.lifecycle, options, () => this.readRichStatusFields());
   }
 
   public async cancel(): Promise<Status> {
@@ -396,6 +445,116 @@ export default class SeaOperationBackend implements IOperationBackend {
   // ---------------------------------------------------------------------------
   // Internals.
   // ---------------------------------------------------------------------------
+
+  /**
+   * Read the kernel's rich operation-status fields (`numModifiedRows` /
+   * `displayMessage` / `diagnosticInfo` / `errorDetailsJson`) off the terminal
+   * sync `Statement`. These accessors live only on the blocking `Statement`
+   * (metadata path, or the sync `runAsync:false` path once `result()` has
+   * resolved) — not on the async `AsyncStatement` / `AsyncResultHandle` — so:
+   *
+   * - on the async path we have no `Statement`, so we return all-null;
+   * - on the sync path we await `getFetchHandle()` first, which both drives
+   *   `result()` to completion and stores the resolved `Statement` on
+   *   `blockingStatement` (the handle that backs the accessors);
+   * - if the (older) binding predates these accessors we degrade to all-null
+   *   rather than throwing — `getOperationStatus()` must never fail just
+   *   because the rich fields are unavailable.
+   *
+   * Errors from the individual accessors are swallowed to null: a failed
+   * status-field read must not turn a successful operation's status query into
+   * a throw. The fields are best-effort metadata, not the operation outcome.
+   */
+  private readRichStatusFields(): Promise<SeaRichStatusFields> {
+    if (!this.richStatusFieldsPromise) {
+      this.richStatusFieldsPromise = this.computeRichStatusFields();
+    }
+    return this.richStatusFieldsPromise;
+  }
+
+  private async computeRichStatusFields(): Promise<SeaRichStatusFields> {
+    const empty: SeaRichStatusFields = {
+      numModifiedRows: null,
+      displayMessage: null,
+      diagnosticInfo: null,
+      errorDetailsJson: null,
+    };
+
+    // Async (submit/poll) path: a DML's `numModifiedRows` rides in the result
+    // set, which SEA delivers on the terminal `GetStatement` poll. The kernel
+    // derives it off that poll (no extra fetch) and exposes it on the
+    // `AsyncStatement`'s status accessors — so read them directly. The value is
+    // populated once the statement has reached a terminal state via
+    // `status()` / `waitUntilReady` (which polled it); it stays null before
+    // that and for SELECTs. Reading does NOT force a result materialisation, so
+    // async streaming is untouched.
+    if (this.asyncStatement) {
+      return this.readStatusFieldsFrom(this.asyncStatement);
+    }
+
+    // Ensure the sync path's blocking `result()` has resolved and stored the
+    // terminal `Statement` on `blockingStatement` (no-op on the metadata path,
+    // where `blockingStatement` was set at construction).
+    if (this.cancellableExecution) {
+      try {
+        await this.getFetchHandle();
+      } catch {
+        // The operation failed/cancelled — its outcome surfaces through the
+        // wait/fetch path; status-field reads have nothing to add.
+        return empty;
+      }
+    }
+
+    return this.readStatusFieldsFrom(this.blockingStatement);
+  }
+
+  /**
+   * Read the four rich-status accessors (`numModifiedRows` / `displayMessage` /
+   * `diagnosticInfo` / `errorDetailsJson`) off a kernel handle — the terminal
+   * sync `Statement` or the async `AsyncStatement`, which expose the same
+   * accessor shape. Per-field read errors are swallowed to `null`: a failed
+   * status-field read must never turn a successful operation's status query
+   * into a throw. Degrades to all-null for a missing handle or a binding that
+   * predates the accessors.
+   */
+  private async readStatusFieldsFrom(handle: unknown): Promise<SeaRichStatusFields> {
+    const empty: SeaRichStatusFields = {
+      numModifiedRows: null,
+      displayMessage: null,
+      diagnosticInfo: null,
+      errorDetailsJson: null,
+    };
+
+    const candidate = handle as Partial<SeaStatusFieldsHandle> | undefined;
+    if (!candidate || typeof candidate.numModifiedRows !== 'function') {
+      return empty;
+    }
+    const richHandle = candidate as SeaStatusFieldsHandle;
+
+    const readOrNull = async <T>(read: () => Promise<T | null>): Promise<T | null> => {
+      try {
+        return await read();
+      } catch (err) {
+        this.context
+          .getLogger()
+          .log(
+            LogLevel.debug,
+            `SEA status-field read failed for operation ${this._id}; reporting null. Cause: ` +
+              `${err instanceof Error ? err.message : String(err)}`,
+          );
+        return null;
+      }
+    };
+
+    const [numModifiedRows, displayMessage, diagnosticInfo, errorDetailsJson] = await Promise.all([
+      readOrNull(() => richHandle.numModifiedRows()),
+      readOrNull(() => richHandle.displayMessage()),
+      readOrNull(() => richHandle.diagnosticInfo()),
+      readOrNull(() => richHandle.errorDetailsJson()),
+    ]);
+
+    return { numModifiedRows, displayMessage, diagnosticInfo, errorDetailsJson };
+  }
 
   /**
    * Poll the kernel `AsyncStatement` to a terminal state on a fixed 100ms
@@ -501,9 +660,11 @@ export default class SeaOperationBackend implements IOperationBackend {
     // `getFetchHandle()` drives `result()` and memoises the resolved Statement
     // (also stored on `blockingStatement` so `close()` can reach it).
     await this.getFetchHandle();
-    // Single completion tick, matching the metadata path.
+    // Single completion tick, matching the metadata path — carrying the rich
+    // status fields (numModifiedRows etc.) read off the now-terminal Statement.
     if (options?.callback) {
-      await Promise.resolve(options.callback({ state: OperationState.Succeeded, hasResultSet: true }));
+      const richFields = await this.readRichStatusFields();
+      await Promise.resolve(options.callback({ state: OperationState.Succeeded, hasResultSet: true, ...richFields }));
     }
   }
 
@@ -603,7 +764,13 @@ export default class SeaOperationBackend implements IOperationBackend {
     // SeaResultsProvider consumes only `fetchNextBatch`; both the async result
     // handle and the blocking statement satisfy that surface.
     this.resultsProvider = new SeaResultsProvider(handle as unknown as SeaStatement);
-    const converter = new ArrowResultConverter(this.context, this.resultsProvider, metadata);
+    // DECIMAL/BIGINT precision preservation is opt-in via the
+    // `preserveBigNumericPrecision` connection option (default off). The kernel
+    // always delivers native Arrow Decimal128 / Int64, so when enabled the
+    // converter renders DECIMAL as an exact string and BIGINT as a `bigint`.
+    const converter = new ArrowResultConverter(this.context, this.resultsProvider, metadata, {
+      preserveBigNumericPrecision: this.context.getConfig().preserveBigNumericPrecision ?? false,
+    });
     this.resultSlicer = new ResultSlicer(this.context, converter);
     return this.resultSlicer;
   }

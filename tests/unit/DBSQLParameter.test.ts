@@ -124,4 +124,48 @@ describe('DBSQLParameter', () => {
       }),
     );
   });
+
+  it('infers a fitting integer type by magnitude', () => {
+    const cases: Array<[number, DBSQLParameterType, string]> = [
+      // Within INT (i32) range → INTEGER.
+      [42, DBSQLParameterType.INTEGER, '42'],
+      [2147483647, DBSQLParameterType.INTEGER, '2147483647'],
+      [-2147483648, DBSQLParameterType.INTEGER, '-2147483648'],
+      // Beyond i32 but a safe integer → BIGINT (INTEGER would overflow the
+      // server's INT literal parse).
+      [3000000000, DBSQLParameterType.BIGINT, '3000000000'],
+      // Whole-number double outside the safe-integer range → DOUBLE, not
+      // INTEGER. Regression: `Number.isInteger(1e30)` is `true`, so this used
+      // to be typed INTEGER and rejected as `invalid INT literal "1e+30"`.
+      [1e30, DBSQLParameterType.DOUBLE, '1e+30'],
+    ];
+    for (const [value, type, stringValue] of cases) {
+      expect(new DBSQLParameter({ value }).toSparkParameter()).to.deep.equal(
+        new TSparkParameter({ type, value: new TSparkParameterValue({ stringValue }) }),
+      );
+    }
+  });
+
+  it('binds a Date as a calendar date when typed DATE', () => {
+    // Explicit DATE type → date-only `yyyy-mm-dd`. The full ISO timestamp is
+    // rejected by the SEA wire as a DATE literal ("trailing input").
+    expect(
+      new DBSQLParameter({
+        type: DBSQLParameterType.DATE,
+        value: new Date(Date.UTC(2024, 0, 15, 10, 30, 0)),
+      }).toSparkParameter(),
+    ).to.deep.equal(
+      new TSparkParameter({
+        type: DBSQLParameterType.DATE,
+        value: new TSparkParameterValue({ stringValue: '2024-01-15' }),
+      }),
+    );
+    // Without an explicit type a Date still binds as a full TIMESTAMP.
+    expect(new DBSQLParameter({ value: new Date('2023-09-06T03:14:27.843Z') }).toSparkParameter()).to.deep.equal(
+      new TSparkParameter({
+        type: DBSQLParameterType.TIMESTAMP,
+        value: new TSparkParameterValue({ stringValue: '2023-09-06T03:14:27.843Z' }),
+      }),
+    );
+  });
 });
