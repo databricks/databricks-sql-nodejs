@@ -32,6 +32,15 @@ export interface ClientConfig {
   // Thrift and SEA backends. See `ConnectionOptions.preserveBigNumericPrecision`.
   preserveBigNumericPrecision?: boolean;
 
+  // [bench] When true, ArrowResultConverter drains result batches WITHOUT
+  // building per-row JS objects: it reads each RecordBatch's row count and
+  // returns a length-only array, skipping `table.toArray()` + per-cell
+  // `convertArrowTypes`/`convertThriftTypes`. Network fetch, CloudFetch
+  // download, LZ4 decompression and Arrow IPC framing are still exercised, so
+  // this isolates execute+transport cost from JS materialization (the analog of
+  // JDBC `rs.next()`-without-getX and Python `fetchall_arrow`). Off by default.
+  disableArrowMaterialization?: boolean;
+
   // Telemetry configuration
   telemetryEnabled?: boolean;
   telemetryBatchSize?: number;
