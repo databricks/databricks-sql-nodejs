@@ -162,8 +162,11 @@ describe('CloudFetchResultHandler', () => {
       result['pendingLinks'] = [];
       result['downloadTasks'] = [
         Promise.resolve({
-          batches: [],
-          rowCount: 0,
+          ok: true,
+          batch: {
+            batches: [],
+            rowCount: 0,
+          },
         }),
       ];
       expect(await result.hasMore()).to.be.true;
@@ -263,6 +266,48 @@ describe('CloudFetchResultHandler', () => {
         expectedLinksCount - clientConfig.cloudFetchConcurrentDownloads - 2,
       );
       expect(result['downloadTasks'].length).to.be.equal(clientConfig.cloudFetchConcurrentDownloads - 1);
+    }
+  });
+
+  it('should not leak unhandled rejections from prefetched downloads when a download fails', async () => {
+    const context = new ClientContextStub({ cloudFetchConcurrentDownloads: 3 });
+    const clientConfig = context.getConfig();
+
+    const rowSet: TRowSet = {
+      startRowOffset: new Int64(0),
+      rows: [],
+      resultLinks: [...(sampleRowSet1.resultLinks ?? []), ...(sampleRowSet2.resultLinks ?? [])],
+    };
+    const rowSetProvider = new ResultsProviderStub([rowSet], undefined);
+
+    const result = new CloudFetchResultHandler(context, rowSetProvider, {
+      status: { statusCode: TStatusCode.SUCCESS_STATUS },
+    });
+
+    // Every download fails like a real CloudFetch ECONNRESET / socket hang up.
+    context.invokeWithRetryStub.callsFake(async () => {
+      throw Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' });
+    });
+
+    // `cloudFetchConcurrentDownloads` downloads are scheduled at once; the head is awaited and
+    // surfaces the error, so `fetchNext` rejects.
+    let thrown: any;
+    try {
+      await result.fetchNext({ limit: 10000 });
+    } catch (e) {
+      thrown = e;
+    }
+    expect(thrown?.code).to.be.equal('ECONNRESET');
+
+    // The consumer typically stops iterating once `fetchNext` throws. The remaining prefetched
+    // downloads must NOT reject (which would surface as `unhandledRejection`) — they should be
+    // reflected into a settled value with the failure captured.
+    const remaining = result['downloadTasks'];
+    expect(remaining.length).to.be.equal(clientConfig.cloudFetchConcurrentDownloads - 1);
+    const settled = await Promise.allSettled(remaining);
+    for (const outcome of settled) {
+      expect(outcome.status).to.be.equal('fulfilled');
+      expect((outcome as PromiseFulfilledResult<any>).value.ok).to.be.equal(false);
     }
   });
 
