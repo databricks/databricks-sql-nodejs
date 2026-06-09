@@ -1,6 +1,6 @@
 /**
  * Backend-neutral operation state. Mirrors the kernel/pyo3 `StatementStatus`
- * and the Python connector's `CommandState`, so a SEA `IOperationBackend`
+ * and the Python connector's `CommandState`, so a kernel `IOperationBackend`
  * implementer can return these without depending on the Thrift wire enum.
  *
  * Thrift mapping (in `ThriftOperationBackend.adaptOperationStatus`):

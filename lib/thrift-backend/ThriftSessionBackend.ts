@@ -170,7 +170,7 @@ export default class ThriftSessionBackend implements ISessionBackend {
     const driver = await this.context.getDriver();
     const clientConfig = this.context.getConfig();
 
-    // `rowLimit` / `statementConf` are kernel-backend (SEA) options with no
+    // `rowLimit` / `statementConf` are kernel-backend (kernel) options with no
     // Thrift wire equivalent. Surface a debug breadcrumb rather than dropping
     // them silently, so a caller that set them on the Thrift path has signal.
     if (options.rowLimit !== undefined || options.statementConf !== undefined) {
@@ -178,9 +178,9 @@ export default class ThriftSessionBackend implements ISessionBackend {
         .getLogger()
         .log(
           LogLevel.warn,
-          'ThriftSessionBackend.executeStatement: rowLimit / statementConf are kernel-backend (useSEA) ' +
+          'ThriftSessionBackend.executeStatement: rowLimit / statementConf are kernel-backend (useKernel) ' +
             'options with no Thrift wire equivalent — they are IGNORED on the Thrift path (e.g. rowLimit ' +
-            'will not cap the result set). Use the kernel backend (useSEA) to honour them.',
+            'will not cap the result set). Use the kernel backend (useKernel) to honour them.',
         );
     }
 

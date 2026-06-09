@@ -171,7 +171,7 @@ export default class DBSQLOperation implements IOperation {
   /**
    * Requests operation status. Returns the Thrift wire response for
    * back-compat with existing user code. On the Thrift backend the response
-   * is returned verbatim; on any other backend (e.g. SEA) the response is
+   * is returned verbatim; on any other backend (e.g. kernel) the response is
    * synthesized from the neutral {@link IOperationBackend.status} result,
    * with Thrift-only fields (`taskStatus`, `numModifiedRows`, etc.) left
    * undefined.

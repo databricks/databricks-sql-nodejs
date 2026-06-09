@@ -120,7 +120,7 @@ export interface TelemetryEvent {
    * cloudfetch effectiveness by backend without a metrics-schema migration.
    * Optional for back-compat with already-emitted Thrift-only events.
    */
-  backend?: 'thrift' | 'sea' | 'kernel';
+  backend?: 'thrift' | 'kernel';
 
   /** Timestamp when the event occurred (milliseconds since epoch) */
   timestamp: number;
@@ -258,7 +258,7 @@ export interface DriverConfiguration {
    * non-Thrift backend so per-connection slicing in metrics is possible.
    * Optional for back-compat with snapshots taken before this field landed.
    */
-  backend?: 'thrift' | 'sea' | 'kernel';
+  backend?: 'thrift' | 'kernel';
 
   /** Node.js version */
   nodeVersion: string;

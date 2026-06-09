@@ -118,19 +118,19 @@ describe('DBSQLClient.connect', () => {
     logSpy.restore();
   });
 
-  it('useSEA: true routes to SeaBackend and leaves `backend` unset when connect() throws', async () => {
+  it('useKernel: true routes to KernelBackend and leaves `backend` unset when connect() throws', async () => {
     const client = new DBSQLClient();
 
-    // `useSEA` is on a non-exported InternalConnectionOptions; cast through any.
-    // An empty token makes the real SeaBackend reject during connect() (auth
+    // `useKernel` is on a non-exported InternalConnectionOptions; cast through any.
+    // An empty token makes the real KernelBackend reject during connect() (auth
     // validation); where the native binding is absent (e.g. CI, which does not
     // build it) construction throws even earlier. Either way connect() must
     // reject, so we can assert the partial-init guard leaves `backend` unset.
-    const seaOptions = { ...connectOptions, token: '', useSEA: true } as any;
+    const kernelOptions = { ...connectOptions, token: '', useKernel: true } as any;
 
     try {
-      await client.connect(seaOptions);
-      expect.fail('SeaBackend connect() should reject (empty PAT / absent native binding)');
+      await client.connect(kernelOptions);
+      expect.fail('KernelBackend connect() should reject (empty PAT / absent native binding)');
     } catch (error) {
       if (error instanceof AssertionError || !(error instanceof Error)) {
         throw error;
@@ -141,7 +141,7 @@ describe('DBSQLClient.connect', () => {
 
     // The partial-init guard (L2 fix) means backend stays undefined after a
     // failed connect, so the next openSession surfaces "not connected" rather
-    // than the SeaBackend's own connect/auth error.
+    // than the KernelBackend's own connect/auth error.
     expect((client as any).backend).to.equal(undefined);
 
     try {

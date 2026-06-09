@@ -60,7 +60,7 @@ export type ConnectionOptions = {
    * are returned as exact strings and 64-bit integers (BIGINT) as JS `bigint`,
    * instead of the default lossy coercion to a JS `number` (which silently
    * rounds DECIMALs and integers beyond 2^53). Applies to both the Thrift and
-   * SEA backends. Defaults to `false` to preserve the existing representation.
+   * kernel backends. Defaults to `false` to preserve the existing representation.
    */
   preserveBigNumericPrecision?: boolean;
 
