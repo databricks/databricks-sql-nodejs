@@ -3,12 +3,12 @@
 !dist/**/*
 !thrift/**/*
 
-# SEA napi-rs router shim + TypeScript declarations. The router (index.js)
+# kernel napi-rs router shim + TypeScript declarations. The router (index.js)
 # selects the per-platform `.node` artifact from `@databricks/sql-kernel-*`
 # optionalDependencies (populated when the kernel CI publishes them);
 # the .d.ts is the consumer-facing type contract.
-!native/sea/index.js
-!native/sea/index.d.ts
+!native/kernel/index.js
+!native/kernel/index.d.ts
 
 !LICENSE
 !NOTICE

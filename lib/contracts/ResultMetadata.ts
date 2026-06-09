@@ -3,7 +3,7 @@ import { TTableSchema } from '../../thrift/TCLIService_types';
 /**
  * Backend-neutral result-format taxonomy. Mirrors the three on-wire shapes
  * `ThriftOperationBackend` actually dispatches on (`COLUMN_BASED_SET`,
- * `ARROW_BASED_SET`, `URL_BASED_SET`); a SEA implementer surfaces the same
+ * `ARROW_BASED_SET`, `URL_BASED_SET`); a kernel implementer surfaces the same
  * three so result-handling stays format-agnostic.
  */
 export enum ResultFormat {
@@ -18,7 +18,7 @@ export enum ResultFormat {
  * `schema` keeps the Thrift `TTableSchema` shape for now because the public
  * `DBSQLOperation.getSchema()` and `getMetadata()` already expose it on
  * `IOperation`; carrying it across the boundary preserves back-compat. The
- * SEA backend will adapt its column descriptors into the same shape until
+ * kernel backend will adapt its column descriptors into the same shape until
  * the public IOperation surface is migrated in a later PR.
  */
 export interface ResultMetadata {

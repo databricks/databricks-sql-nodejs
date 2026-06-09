@@ -9,7 +9,7 @@ export default class DBSQLLogger implements IDBSQLLogger {
     file?: winston.transports.FileTransportInstance;
   };
 
-  // Subscribers notified on `setLevel(...)` — used by the SEA/kernel backend to
+  // Subscribers notified on `setLevel(...)` — used by the kernel backend to
   // keep the kernel-side log bridge's verbosity in lock-step with this logger.
   private levelListeners: Array<(level: LogLevel) => void> = [];
 

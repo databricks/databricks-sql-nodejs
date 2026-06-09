@@ -19,7 +19,7 @@ export type ExecuteStatementOptions = {
    * - **Thrift backend:** no-op. The Thrift path always submits asynchronously
    *   (`runAsync: true` on the wire) and polls during fetch; this option is not
    *   read.
-   * - **Kernel backend (`useSEA`):** selects the kernel execution path —
+   * - **Kernel backend (`useKernel`):** selects the kernel execution path —
    *   `false`/unset (default) runs the blocking direct-results path (faster,
    *   cancellable mid-compute); `true` submits and polls (returns a pending
    *   handle before completion). Default is sync, matching the python
@@ -39,13 +39,13 @@ export type ExecuteStatementOptions = {
    */
   queryTags?: Record<string, string | null | undefined>;
   /**
-   * SEA-only: server-side row cap for this statement (kernel `row_limit`). The
+   * kernel-only: server-side row cap for this statement (kernel `row_limit`). The
    * Thrift backend has no execute-time server cap, so this is a no-op there;
    * use `maxRows` for the cross-backend client-side fetch limit.
    */
   rowLimit?: number;
   /**
-   * SEA-only: per-statement Spark conf overlay (kernel `statement_conf`).
+   * kernel-only: per-statement Spark conf overlay (kernel `statement_conf`).
    * Merged with the serialized `queryTags` (which land under the reserved
    * `query_tags` key). Ignored by the Thrift backend.
    */

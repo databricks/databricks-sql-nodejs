@@ -1,31 +1,31 @@
 name: Kernel E2E Tests
 
-# Runs the SEA backend e2e suite (tests/e2e/sea/**) against a real
+# Runs the kernel backend e2e suite (tests/e2e/kernel/**) against a real
 # Databricks warehouse with a freshly-built napi-rs kernel binding.
 #
 # The kernel is a private repo with no published binary artifact. We pin
 # a kernel SHA in the `KERNEL_REV` file at the repo root, check the kernel
 # out via a GitHub App token, and run `npm run build:native` to compile
-# the napi binding into native/sea/ in the same checkout the tests run
+# the napi binding into native/kernel/ in the same checkout the tests run
 # against. Bumping `KERNEL_REV` is the ONLY way to pick up a new kernel
 # version — this keeps the driver <-> kernel pair bisectable, so a driver
 # change and the kernel revision it depends on always land together.
 #
-# Why this exists: the committed native/sea/index.d.ts + index.js are the
+# Why this exists: the committed native/kernel/index.d.ts + index.js are the
 # TypeScript declarations and the napi-rs platform router; the actual
 # `.node` binary is gitignored (large, per-platform) and is NOT in the
-# repo. The standard `main.yml` e2e job has no binary, so its SEA suite
+# repo. The standard `main.yml` e2e job has no binary, so its kernel suite
 # skips (it gates on DATABRICKS_PECOTESTING_* secrets it doesn't set).
-# This workflow is what actually exercises the SEA path end-to-end against
+# This workflow is what actually exercises the kernel path end-to-end against
 # a known kernel revision.
 #
 # Gate semantics:
 #   - Plain PR events post a synthetic-success check so the required
-#     "Kernel E2E" check doesn't block PRs that don't touch the SEA path.
+#     "Kernel E2E" check doesn't block PRs that don't touch the kernel path.
 #     Real tests run in the merge queue.
 #   - `kernel-e2e` label triggers a preview run on the PR; the label is
 #     auto-removed on `synchronize` for the same security reason.
-#   - merge_group fires the real gate — runs when SEA-relevant files
+#   - merge_group fires the real gate — runs when kernel-relevant files
 #     changed, auto-passes otherwise.
 #
 # Required external setup (one-time, by a repo admin):
@@ -81,7 +81,7 @@ jobs:
 
   # ───────────────────────────────────────────────────────────────
   # Synthetic success on every non-label PR event so the required
-  # "Kernel E2E" check doesn't permablock PRs that don't touch SEA
+  # "Kernel E2E" check doesn't permablock PRs that don't touch kernel
   # code. Real run happens in the merge queue (or via explicit label).
   # ───────────────────────────────────────────────────────────────
   skip-kernel-e2e-pr:
@@ -112,7 +112,7 @@ jobs:
             });
 
   # ───────────────────────────────────────────────────────────────
-  # Detect whether SEA-relevant files changed. Used by both the
+  # Detect whether kernel-relevant files changed. Used by both the
   # labelled-PR path and the merge-queue path to decide between
   # "really run the suite" and "auto-pass the check".
   # ───────────────────────────────────────────────────────────────
@@ -148,7 +148,7 @@ jobs:
           ref: ${{ steps.refs.outputs.head_sha }}
           fetch-depth: 0
 
-      - name: Detect SEA-relevant changes
+      - name: Detect kernel-relevant changes
         id: changed
         env:
           HEAD_SHA: ${{ steps.refs.outputs.head_sha }}
@@ -157,10 +157,10 @@ jobs:
           CHANGED=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
           echo "Changed files:"
           echo "$CHANGED"
-          # Run when the SEA driver layer, the napi binding contract, SEA
+          # Run when the kernel driver layer, the napi binding contract, kernel
           # e2e tests, this workflow, the kernel revision pin, or core deps
           # move.
-          if echo "$CHANGED" | grep -qE "^(lib/sea/|native/sea/|tests/e2e/sea/|tests/unit/sea/|\.github/workflows/kernel-e2e\.yml|KERNEL_REV|package\.json|package-lock\.json)"; then
+          if echo "$CHANGED" | grep -qE "^(lib/kernel/|native/kernel/|tests/e2e/kernel/|tests/unit/kernel/|\.github/workflows/kernel-e2e\.yml|KERNEL_REV|package\.json|package-lock\.json)"; then
             echo "run_tests=true" >> "$GITHUB_OUTPUT"
           else
             echo "run_tests=false" >> "$GITHUB_OUTPUT"
@@ -168,7 +168,7 @@ jobs:
 
   # ───────────────────────────────────────────────────────────────
   # Real test job. Builds the napi binding from the pinned kernel SHA
-  # and runs the SEA e2e suite against the dogfood warehouse.
+  # and runs the kernel e2e suite against the dogfood warehouse.
   # ───────────────────────────────────────────────────────────────
   run-kernel-e2e:
     needs: detect-changes
@@ -182,9 +182,9 @@ jobs:
       checks: write
       id-token: write
     env:
-      # The tests/e2e/sea suite reads creds from TWO sources, so we set both:
+      # The tests/e2e/kernel suite reads creds from TWO sources, so we set both:
       #
-      # 1. Most SEA tests (execution, results, interval-*) read the
+      # 1. Most kernel tests (execution, results, interval-*) read the
       #    DATABRICKS_PECOTESTING_* vars directly and skip when absent.
       DATABRICKS_PECOTESTING_SERVER_HOSTNAME: ${{ secrets.DATABRICKS_HOST }}
       DATABRICKS_PECOTESTING_HTTP_PATH: ${{ secrets.TEST_PECO_WAREHOUSE_HTTP_PATH }}
@@ -192,7 +192,7 @@ jobs:
       #
       # 2. `e2e-smoke.test.ts` imports tests/e2e/utils/config.ts, which
       #    `process.exit(1)`s at module load if ANY E2E_* var is unset — which
-      #    would abort the whole `tests/e2e/sea/**` mocha run before it starts.
+      #    would abort the whole `tests/e2e/kernel/**` mocha run before it starts.
       #    Mirror main.yml's e2e-test job mapping so the suite loads + runs.
       E2E_HOST: ${{ secrets.DATABRICKS_HOST }}
       E2E_PATH: ${{ secrets.TEST_PECO_WAREHOUSE_HTTP_PATH }}
@@ -304,7 +304,7 @@ jobs:
 
       - name: Build napi binding from pinned kernel
         # build:native cd's into ${DATABRICKS_SQL_KERNEL_REPO}/napi, runs the
-        # napi-rs build, and copies index.* into native/sea/. Pointing it at
+        # napi-rs build, and copies index.* into native/kernel/. Pointing it at
         # the SHA-pinned kernel checkout is what makes the binary match
         # KERNEL_REV exactly.
         env:
@@ -312,23 +312,23 @@ jobs:
         run: npm run build:native
 
       - name: Assert committed binding matches KERNEL_REV
-        # The committed native/sea/index.d.ts + index.js are the consumer-facing
+        # The committed native/kernel/index.d.ts + index.js are the consumer-facing
         # type contract + platform router; they MUST correspond to the pinned
         # kernel. build:native just regenerated them from the KERNEL_REV
         # checkout, so any diff means the committed contract drifted from the
         # pin — fail loudly and tell the author to commit the regenerated files.
         # (The .node binaries are gitignored, so git diff only sees the contract.)
         run: |
-          if ! git diff --exit-code -- native/sea/index.d.ts native/sea/index.js; then
-            echo "::error::native/sea/index.d.ts / index.js are out of sync with KERNEL_REV ($(tr -d '[:space:]' < KERNEL_REV)). Run 'npm run build:native' against that kernel SHA and commit native/sea/index.*."
+          if ! git diff --exit-code -- native/kernel/index.d.ts native/kernel/index.js; then
+            echo "::error::native/kernel/index.d.ts / index.js are out of sync with KERNEL_REV ($(tr -d '[:space:]' < KERNEL_REV)). Run 'npm run build:native' against that kernel SHA and commit native/kernel/index.*."
             exit 1
           fi
           echo "Committed binding matches KERNEL_REV."
 
       - name: Smoke-check binding loads
-        run: node -e "const b=require('./native/sea'); if(typeof b.version!=='function'){throw new Error('napi binding failed to load')} console.log('kernel binding ok:', b.version())"
+        run: node -e "const b=require('./native/kernel'); if(typeof b.version!=='function'){throw new Error('napi binding failed to load')} console.log('kernel binding ok:', b.version())"
 
-      - name: Run SEA e2e tests
+      - name: Run kernel e2e tests
         # Run through `nyc` (not bare `mocha`) so the `require: ['ts-node/register']`
         # in nyc.config.js loads the .ts specs via the CommonJS ts-node hook —
         # exactly how main.yml's e2e job runs them. Bare `mocha` has no ts-node
@@ -340,7 +340,7 @@ jobs:
         # index 4 (`mocha --config <file> <glob>`): tests/e2e/.mocharc.js derives
         # `spec` from `process.argv.slice(4)`. We invoke mocha directly (not via
         # `npm run e2e -- <glob>`, whose inner shell mangles `**` to zero files).
-        run: NODE_OPTIONS="--max-old-space-size=4096" npx nyc --report-dir coverage_kernel_e2e mocha --config tests/e2e/.mocharc.js "tests/e2e/sea/**/*.test.ts"
+        run: NODE_OPTIONS="--max-old-space-size=4096" npx nyc --report-dir coverage_kernel_e2e mocha --config tests/e2e/.mocharc.js "tests/e2e/kernel/**/*.test.ts"
 
       - name: Post Kernel E2E check (success)
         if: success()
@@ -358,7 +358,7 @@ jobs:
               completed_at: new Date().toISOString(),
               output: {
                 title: 'Kernel E2E passed',
-                summary: 'tests/e2e/sea ran green against the pinned kernel SHA.'
+                summary: 'tests/e2e/kernel ran green against the pinned kernel SHA.'
               }
             });
 
@@ -383,7 +383,7 @@ jobs:
             });
 
   # ───────────────────────────────────────────────────────────────
-  # Auto-pass the Kernel E2E check in the merge queue when no SEA-
+  # Auto-pass the Kernel E2E check in the merge queue when no kernel-
   # relevant files changed.
   # ───────────────────────────────────────────────────────────────
   auto-pass-merge-queue:
@@ -409,7 +409,7 @@ jobs:
               conclusion: 'success',
               completed_at: new Date().toISOString(),
               output: {
-                title: 'Skipped — no SEA-relevant changes',
-                summary: 'No files under lib/sea/, native/sea/, tests/e2e/sea/, tests/unit/sea/, KERNEL_REV, package.json, or package-lock.json changed.'
+                title: 'Skipped — no kernel-relevant changes',
+                summary: 'No files under lib/kernel/, native/kernel/, tests/e2e/kernel/, tests/unit/kernel/, KERNEL_REV, package.json, or package-lock.json changed.'
               }
             });

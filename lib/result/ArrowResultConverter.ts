@@ -28,17 +28,17 @@ type ArrowSchemaField = Field<DataType<Type, TypeMap>>;
 
 /**
  * Metadata key carrying the original Arrow `Duration` time unit on fields
- * rewritten to `Int64` by the SEA IPC pre-processor
- * (`lib/sea/SeaArrowIpcDurationFix.ts`). Re-declared here (rather than
+ * rewritten to `Int64` by the kernel IPC pre-processor
+ * (`lib/kernel/KernelArrowIpcDurationFix.ts`). Re-declared here (rather than
  * imported) to keep this generic `lib/result` converter free of a
- * compile-time dependency on `lib/sea`.
+ * compile-time dependency on `lib/kernel`.
  *
- * **SEA-gated by construction — NOT shared with Thrift.** This key (and the
+ * **kernel-gated by construction — NOT shared with Thrift.** This key (and the
  * `DataType.isInterval` / duration branches below) only ever execute on the
- * SEA path. The Thrift backend sets `intervalTypesAsArrow: false` and maps
+ * kernel path. The Thrift backend sets `intervalTypesAsArrow: false` and maps
  * both INTERVAL `TTypeId`s to `ArrowString` (`lib/result/utils.ts`), so the
  * server pre-formats intervals to strings and this logic is never reached.
- * `export`ed so `SeaIntervalParity.test` can pin it equal to the SEA-side
+ * `export`ed so `KernelIntervalParity.test` can pin it equal to the kernel-side
  * declaration and catch a rename/typo that would silently no-op the consumer.
  */
 export const DURATION_UNIT_METADATA_KEY = 'databricks.arrow.duration_unit';
@@ -67,7 +67,7 @@ const NS_PER_DAY = NS_PER_HOUR * BigInt(24);
 function formatArrowInterval(value: Int32Array, valueType: Interval): string {
   if (valueType?.unit !== IntervalUnit.YEAR_MONTH) {
     throw new HiveDriverError(
-      `SEA result converter: unsupported Arrow Interval unit ${valueType?.unit}. The kernel emits only ` +
+      `kernel result converter: unsupported Arrow Interval unit ${valueType?.unit}. The kernel emits only ` +
         `YEAR_MONTH as a native Arrow Interval (DAY-TIME arrives as Duration); MONTH_DAY_NANO is unsupported.`,
     );
   }
@@ -94,14 +94,14 @@ function formatYearMonth(years: number, months: number): string {
 }
 
 /**
- * Format an Arrow `Duration` value (rewritten by the SEA IPC
+ * Format an Arrow `Duration` value (rewritten by the kernel IPC
  * pre-processor to `Int64`) into the thrift INTERVAL DAY-TIME string.
  *
  * @param value     the duration value as `bigint` (signed nanos/micros/
  *                  millis/seconds depending on `unit`)
  * @param unit      one of `SECOND` / `MILLISECOND` / `MICROSECOND` /
  *                  `NANOSECOND` (the original Arrow time unit, captured
- *                  by `SeaArrowIpcDurationFix.ts`)
+ *                  by `KernelArrowIpcDurationFix.ts`)
  */
 function formatDurationToIntervalDayTime(value: bigint | number, unit: string): string {
   const bi = typeof value === 'bigint' ? value : BigInt(value);
@@ -119,7 +119,7 @@ function formatDurationToIntervalDayTime(value: bigint | number, unit: string): 
  *
  * Throws on any other unit rather than silently treating it as
  * NANOSECOND. The four units above are exactly what
- * `SeaArrowIpcDurationFix` enumerates when it stamps the
+ * `KernelArrowIpcDurationFix` enumerates when it stamps the
  * `databricks.arrow.duration_unit` metadata, so an unrecognized unit
  * here means the two sides have drifted — fail loud (matching
  * `formatArrowInterval`'s stance) instead of emitting a confidently
@@ -137,7 +137,7 @@ function toNanoseconds(value: bigint, unit: string): bigint {
       return value;
     default:
       throw new HiveDriverError(
-        `SEA INTERVAL DAY-TIME: unrecognized Arrow duration unit ${JSON.stringify(unit)}; ` +
+        `kernel INTERVAL DAY-TIME: unrecognized Arrow duration unit ${JSON.stringify(unit)}; ` +
           `expected one of SECOND / MILLISECOND / MICROSECOND / NANOSECOND`,
       );
   }
@@ -197,7 +197,7 @@ export default class ArrowResultConverter implements IResultsProvider<Array<any>
 
   // When true, DECIMAL and 64-bit integer values keep full precision —
   // DECIMAL as an exact string and BIGINT as a JS `bigint` — instead of being
-  // coerced to a lossy `number`. Enabled by the SEA backend, which always
+  // coerced to a lossy `number`. Enabled by the kernel backend, which always
   // receives native Arrow `Decimal128` / `Int64` from the kernel and has no
   // server-side "send as string" escape hatch (the Thrift backend gets the
   // string form via `useArrowNativeTypes=false`). Off by default so the Thrift
@@ -218,7 +218,7 @@ export default class ArrowResultConverter implements IResultsProvider<Array<any>
 
   // Only the column `schema` is consumed here. Typed as the minimal shape
   // (not the full Thrift `TGetResultSetMetadataResp`) so both the Thrift
-  // operation backend and the SEA backend's neutral `ResultMetadata` —
+  // operation backend and the kernel backend's neutral `ResultMetadata` —
   // which both carry `schema?: TTableSchema` — can construct the converter
   // without an adapter at the call site.
   constructor(
@@ -391,12 +391,12 @@ export default class ArrowResultConverter implements IResultsProvider<Array<any>
       return new Date(value);
     }
 
-    // INTERVAL — Spark/Databricks SEA emits two flavours: native Arrow
+    // INTERVAL — Spark/Databricks kernel emits two flavours: native Arrow
     // `Interval[YearMonth]` / `Interval[DayTime]` (handled here) and
     // `Duration` (transparently rewritten to `Int64` upstream by
-    // `SeaArrowIpcDurationFix.ts`; handled in the bigint/Int64 branch
+    // `KernelArrowIpcDurationFix.ts`; handled in the bigint/Int64 branch
     // below). In every case we coerce to the canonical thrift string
-    // form so the SEA path is byte-identical with the thrift path:
+    // form so the kernel path is byte-identical with the thrift path:
     //   YEAR-MONTH → `"Y-M"`
     //   DAY-TIME   → `"D HH:mm:ss.fffffffff"`
     if (DataType.isInterval(valueType)) {
@@ -408,7 +408,7 @@ export default class ArrowResultConverter implements IResultsProvider<Array<any>
     if (value instanceof Object && value[isArrowBigNumSymbol]) {
       const result = bigNumToBigInt(value);
       if (DataType.isDecimal(valueType)) {
-        // Preserve full precision as an exact string when requested (SEA);
+        // Preserve full precision as an exact string when requested (kernel);
         // otherwise keep the historical lossy `number` form.
         if (this.preserveBigNumericPrecision) {
           return bigNumDecimalToString(result, valueType.scale);
@@ -436,7 +436,7 @@ export default class ArrowResultConverter implements IResultsProvider<Array<any>
       if (durationUnit) {
         return formatDurationToIntervalDayTime(value, durationUnit);
       }
-      // Keep the exact `bigint` when precision must be preserved (SEA); the
+      // Keep the exact `bigint` when precision must be preserved (kernel); the
       // default path narrows to `number` for backward compatibility (the
       // Thrift backend has always returned BIGINT as a JS `number`).
       if (this.preserveBigNumericPrecision) {

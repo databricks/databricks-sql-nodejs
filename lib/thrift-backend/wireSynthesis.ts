@@ -76,11 +76,11 @@ function resultFormatToThrift(format: ResultFormat): TSparkRowSetType {
 /**
  * Synthesize a Thrift `TGetOperationStatusResp` from the neutral
  * `OperationStatus` DTO. Used by `DBSQLOperation.status()` when running
- * against a non-Thrift backend (e.g. SEA) so the public API stays Thrift-shaped.
+ * against a non-Thrift backend (e.g. kernel) so the public API stays Thrift-shaped.
  *
  * Carries the rich status fields when the backend supplies them
  * (`numModifiedRows`, `displayMessage`, `diagnosticInfo`, `errorDetailsJson`)
- * — the SEA backend reads these off the terminal kernel statement, so DML
+ * — the kernel backend reads these off the terminal kernel statement, so DML
  * operations report `numModifiedRows` at parity with the Thrift path.
  * `numModifiedRows` is re-boxed as a Thrift `Int64` (`node-int64`) to match the
  * wire shape the Thrift deserializer produces, so consumers can read it
@@ -98,7 +98,7 @@ export function synthesizeThriftStatus(status: OperationStatus): TGetOperationSt
     errorMessage: status.errorMessage,
     hasResultSet: status.hasResultSet,
     progressUpdateResponse: status.progressUpdateResponse as TGetOperationStatusResp['progressUpdateResponse'],
-    // Rich status fields: only present on backends that surface them (SEA on a
+    // Rich status fields: only present on backends that surface them (kernel on a
     // terminal sync statement). `null` (server didn't supply) maps to
     // `undefined` so the synthesized response matches the Thrift path, where an
     // absent field is simply not set.
