@@ -40,7 +40,32 @@ describe('KernelAuth + KernelBackend — OAuth M2M auth flow', () => {
         authMode: 'OAuthM2m',
         oauthClientId: 'client-uuid',
         oauthClientSecret: 'dose-fake-secret',
+        oauthScopes: ['all-apis'],
       });
+    });
+
+    it('defaults M2M oauthScopes to all-apis (Thrift + kernel parity)', () => {
+      const native = buildKernelConnectionOptions({
+        host: 'example.cloud.databricks.com',
+        path: '/sql/1.0/warehouses/abc',
+        authType: 'databricks-oauth',
+        oauthClientId: 'client-uuid',
+        oauthClientSecret: 'dose-fake-secret',
+      });
+      expect(native.authMode).to.equal('OAuthM2m');
+      expect((native as { oauthScopes?: string[] }).oauthScopes).to.deep.equal(['all-apis']);
+    });
+
+    it('honors a caller-supplied M2M oauthScopes override (parity with pyo3)', () => {
+      const native = buildKernelConnectionOptions({
+        host: 'example.cloud.databricks.com',
+        path: '/sql/1.0/warehouses/abc',
+        authType: 'databricks-oauth',
+        oauthClientId: 'client-uuid',
+        oauthClientSecret: 'dose-fake-secret',
+        oauthScopes: ['sql', 'offline_access'],
+      } as ConnectionOptions);
+      expect((native as { oauthScopes?: string[] }).oauthScopes).to.deep.equal(['sql', 'offline_access']);
     });
 
     it('prepends `/` to the path on the M2M branch too', () => {
@@ -177,6 +202,7 @@ describe('KernelAuth + KernelBackend — OAuth M2M auth flow', () => {
         authMode: 'OAuthM2m',
         oauthClientId: 'client-uuid',
         oauthClientSecret: 'dose-fake-secret',
+        oauthScopes: ['all-apis'],
       });
 
       await session.close();

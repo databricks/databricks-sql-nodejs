@@ -28,6 +28,20 @@ import { buildUserAgentString } from '../utils';
  */
 const U2M_DEFAULT_REDIRECT_PORT = 8030;
 
+// U2M OAuth scopes default. Matches the standalone Thrift driver's
+// `defaultOAuthScopes` (lib/connection/auth/DatabricksOAuth/OAuthScope.ts):
+// `['sql', 'offline_access']`. The kernel's bare default is
+// `['all-apis', 'offline_access']`; the `databricks-sql-connector` OAuth app is
+// registered for the `sql` scope, so we pass the Thrift-parity scopes explicitly
+// unless the caller overrides via `oauthScopes`.
+const U2M_DEFAULT_SCOPES = ['sql', 'offline_access'];
+
+// M2M OAuth scopes default. Matches the standalone Thrift driver (`getScopes`
+// forces `['all-apis']` for the client-credentials flow) and the kernel's own
+// M2M default (`m2m.rs` → `['all-apis']`). Overridable via `oauthScopes`
+// (parity with pyo3, which forwards `scopes` on M2M).
+const M2M_DEFAULT_SCOPES = ['all-apis'];
+
 /**
  * Shape consumed by the napi-binding's `openSession()` (see
  * `native/kernel/index.d.ts`). Mirrors `ConnectionOptions` in the binding's
@@ -189,12 +203,14 @@ export type KernelNativeConnectionOptions = KernelSessionDefaults &
         authMode: 'OAuthM2m';
         oauthClientId: string;
         oauthClientSecret: string;
+        oauthScopes?: Array<string>;
       }
     | {
         hostName: string;
         httpPath: string;
         authMode: 'OAuthU2m';
         oauthRedirectPort: number;
+        oauthScopes?: Array<string>;
       }
   );
 
@@ -541,6 +557,7 @@ export function buildKernelConnectionOptions(options: ConnectionOptions): Kernel
   const oauth = options as {
     oauthClientId?: string;
     oauthClientSecret?: string;
+    oauthScopes?: Array<string>;
     azureTenantId?: string;
     useDatabricksOAuthInAzure?: boolean;
     persistence?: unknown;
@@ -627,6 +644,13 @@ export function buildKernelConnectionOptions(options: ConnectionOptions): Kernel
         ...base,
         authMode: 'OAuthU2m',
         oauthRedirectPort: U2M_DEFAULT_REDIRECT_PORT,
+        // Pass scopes explicitly so the kernel requests the same set as the
+        // Thrift driver (`sql offline_access`) rather than its bare-Rust
+        // `all-apis offline_access` default. Caller can override via `oauthScopes`.
+        oauthScopes:
+          Array.isArray(oauth.oauthScopes) && oauth.oauthScopes.length > 0
+            ? oauth.oauthScopes
+            : U2M_DEFAULT_SCOPES,
       };
     }
 
@@ -652,6 +676,12 @@ export function buildKernelConnectionOptions(options: ConnectionOptions): Kernel
       authMode: 'OAuthM2m',
       oauthClientId: oauth.oauthClientId,
       oauthClientSecret: oauth.oauthClientSecret,
+      // Configurable (parity with pyo3); defaults to `['all-apis']` — the only
+      // scope the client-credentials flow allows, matching Thrift + the kernel.
+      oauthScopes:
+        Array.isArray(oauth.oauthScopes) && oauth.oauthScopes.length > 0
+          ? oauth.oauthScopes
+          : M2M_DEFAULT_SCOPES,
     };
   }
 

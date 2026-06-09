@@ -37,7 +37,40 @@ describe('KernelAuth + KernelBackend — OAuth U2M auth flow', () => {
         intervalsAsString: true,
         authMode: 'OAuthU2m',
         oauthRedirectPort: 8030,
+        oauthScopes: ['sql', 'offline_access'],
       });
+    });
+
+    it('defaults U2M oauthScopes to Thrift parity (sql offline_access)', () => {
+      const native = buildKernelConnectionOptions({
+        host: 'example.cloud.databricks.com',
+        path: '/sql/1.0/warehouses/abc',
+        authType: 'databricks-oauth',
+      });
+      expect(native.authMode).to.equal('OAuthU2m');
+      // Matches the standalone Thrift driver's defaultOAuthScopes, NOT the
+      // kernel's bare `all-apis offline_access` default.
+      expect((native as { oauthScopes?: string[] }).oauthScopes).to.deep.equal(['sql', 'offline_access']);
+    });
+
+    it('honors a caller-supplied U2M oauthScopes override', () => {
+      const native = buildKernelConnectionOptions({
+        host: 'example.cloud.databricks.com',
+        path: '/sql/1.0/warehouses/abc',
+        authType: 'databricks-oauth',
+        oauthScopes: ['all-apis'],
+      } as ConnectionOptions);
+      expect((native as { oauthScopes?: string[] }).oauthScopes).to.deep.equal(['all-apis']);
+    });
+
+    it('falls back to the default U2M scopes when oauthScopes is an empty array', () => {
+      const native = buildKernelConnectionOptions({
+        host: 'example.cloud.databricks.com',
+        path: '/sql/1.0/warehouses/abc',
+        authType: 'databricks-oauth',
+        oauthScopes: [],
+      } as ConnectionOptions);
+      expect((native as { oauthScopes?: string[] }).oauthScopes).to.deep.equal(['sql', 'offline_access']);
     });
 
     it('rejects oauthClientId without oauthClientSecret as M2M-with-missing-secret', () => {
@@ -143,6 +176,7 @@ describe('KernelAuth + KernelBackend — OAuth U2M auth flow', () => {
         intervalsAsString: true,
         authMode: 'OAuthU2m',
         oauthRedirectPort: 8030,
+        oauthScopes: ['sql', 'offline_access'],
       });
 
       await session.close();
