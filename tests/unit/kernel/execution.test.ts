@@ -551,6 +551,36 @@ describe('KernelBackend', () => {
     });
   });
 
+  it('openSession() serializes session-level queryTags into sessionConf.QUERY_TAGS', async () => {
+    const connection = new FakeNativeConnection();
+    const binding = makeBinding(connection);
+    const backend = new KernelBackend({ context: makeContext(), nativeBinding: binding });
+    await backend.connect({ host: 'h', path: '/p', token: 't' } as ConnectionOptions);
+
+    await backend.openSession({ queryTags: { team: 'eng', env: 'prod' } });
+
+    // Session-level tags land in the reserved QUERY_TAGS session conf (the
+    // kernel allowlists it → SEA CreateSession session_confs), mirroring Thrift.
+    const conf = (binding.openSessionStub.firstCall.args[0] as { sessionConf?: Record<string, string> }).sessionConf;
+    expect(conf?.QUERY_TAGS).to.be.a('string');
+    expect(conf?.QUERY_TAGS).to.contain('team:eng').and.to.contain('env:prod');
+  });
+
+  it('openSession() queryTags takes precedence over an explicit configuration.QUERY_TAGS', async () => {
+    const connection = new FakeNativeConnection();
+    const binding = makeBinding(connection);
+    const backend = new KernelBackend({ context: makeContext(), nativeBinding: binding });
+    await backend.connect({ host: 'h', path: '/p', token: 't' } as ConnectionOptions);
+
+    await backend.openSession({
+      configuration: { QUERY_TAGS: 'manual-raw-value' },
+      queryTags: { team: 'eng' },
+    });
+
+    const conf = (binding.openSessionStub.firstCall.args[0] as { sessionConf?: Record<string, string> }).sessionConf;
+    expect(conf?.QUERY_TAGS).to.contain('team:eng').and.to.not.equal('manual-raw-value');
+  });
+
   it('openSession() returns a KernelSessionBackend wrapping the napi Connection', async () => {
     const connection = new FakeNativeConnection();
     const binding = makeBinding(connection);
