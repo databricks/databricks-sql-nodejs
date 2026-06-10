@@ -828,25 +828,22 @@ describe('KernelSessionBackend', () => {
     }
   });
 
-  // Genuinely unsupported on kernel — rejected (rather than silently ignored) so
-  // a caller/agent gets signal instead of a no-op. queryTags / queryTimeout /
-  // rowLimit are NOT here — they are forwarded (asserted above).
-  for (const { name, options, re } of [
-    { name: 'useCloudFetch', options: { useCloudFetch: true }, re: /useCloudFetch/ },
-    { name: 'useLZ4Compression', options: { useLZ4Compression: true }, re: /useLZ4Compression/ },
-    { name: 'stagingAllowedLocalPath', options: { stagingAllowedLocalPath: '/tmp' }, re: /stagingAllowedLocalPath/ },
+  // Unsupported-on-kernel per-statement HINTS are NO-OPs (not errors) so Thrift-
+  // targeted call sites are drop-in on the kernel path. They are kernel-governed
+  // perf/format hints (useCloudFetch / useLZ4Compression) or an unexposed feature
+  // (staging); ignoring them can't change results. (Parameter binding is NOT here
+  // — a dropped param would change results, so it still throws; asserted above.)
+  for (const { name, options } of [
+    { name: 'useCloudFetch', options: { useCloudFetch: true } },
+    { name: 'useLZ4Compression', options: { useLZ4Compression: true } },
+    { name: 'stagingAllowedLocalPath', options: { stagingAllowedLocalPath: '/tmp' } },
   ] as const) {
-    it(`executeStatement rejects ${name} rather than silently ignoring it`, async () => {
+    it(`executeStatement ignores unsupported ${name} (no-op, does not throw)`, async () => {
       const connection = new FakeNativeConnection();
       const session = makeSession(connection);
-      let thrown: unknown;
-      try {
-        await session.executeStatement('SELECT 1', options);
-      } catch (err) {
-        thrown = err;
-      }
-      expect(thrown).to.be.instanceOf(HiveDriverError);
-      expect((thrown as Error).message).to.match(re);
+      // Must resolve to an operation backend — the option is silently ignored.
+      const op = await session.executeStatement('SELECT 1', options);
+      expect(op, `${name} should be a no-op`).to.exist;
     });
   }
 

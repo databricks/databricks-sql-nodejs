@@ -156,20 +156,36 @@ export default class KernelSessionBackend implements ISessionBackend {
   public async executeStatement(statement: string, options: ExecuteStatementOptions): Promise<IOperationBackend> {
     this.failIfClosed();
 
+    // Per-statement options the kernel backend doesn't honour are treated as
+    // NO-OPs (logged at warn), not errors — so call sites written for the Thrift
+    // backend are drop-in on the kernel path. These are perf/format hints the
+    // kernel governs internally (useCloudFetch / useLZ4Compression) or a feature
+    // it doesn't expose yet (staging); ignoring them cannot change query results.
+    // NB: parameter binding (compound/BINARY) is deliberately NOT no-op'd — a
+    // dropped param would silently change results, so it still throws.
     if (options.useCloudFetch !== undefined) {
-      throw new HiveDriverError(
-        'kernel executeStatement: useCloudFetch is controlled by the kernel result configuration and is not a per-statement option on kernel',
-      );
+      this.context
+        .getLogger()
+        .log(
+          LogLevel.warn,
+          'kernel executeStatement: ignoring per-statement `useCloudFetch` — result fetching is governed by the kernel result configuration (no-op on kernel).',
+        );
     }
     if (options.useLZ4Compression !== undefined) {
-      throw new HiveDriverError(
-        'kernel executeStatement: useLZ4Compression is not supported on kernel (result compression is governed by the kernel)',
-      );
+      this.context
+        .getLogger()
+        .log(
+          LogLevel.warn,
+          'kernel executeStatement: ignoring per-statement `useLZ4Compression` — result compression is governed by the kernel (no-op on kernel).',
+        );
     }
     if (options.stagingAllowedLocalPath !== undefined) {
-      throw new HiveDriverError(
-        'kernel executeStatement: stagingAllowedLocalPath (volume operations) is not supported on kernel',
-      );
+      this.context
+        .getLogger()
+        .log(
+          LogLevel.warn,
+          'kernel executeStatement: ignoring `stagingAllowedLocalPath` — volume/staging operations are not yet supported on the kernel backend (no-op).',
+        );
     }
 
     // `runAsync` selects the kernel execution path. NOTE: this is a kernel-
