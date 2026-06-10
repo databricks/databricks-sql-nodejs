@@ -33,7 +33,7 @@
  * byte-identical Thrift parity, the JS adapter pre-serialises via
  * `serializeQueryTags` and writes the result into
  * `statementConf["query_tags"]` directly — see
- * `SeaSessionBackend.executeStatement` in the NodeJS driver. This
+ * `KernelSessionBackend.executeStatement` in the NodeJS driver. This
  * path is the one the production code uses.
  */
 export interface ExecuteOptions {
@@ -99,7 +99,7 @@ export interface NamedTypedValueInput {
 /**
  * Authentication mode selector crossing the napi boundary. The string
  * literals are what napi-rs emits from this `#[napi(string_enum)]` — the
- * NodeJS SEA adapter (`SeaAuth`) matches them verbatim (`'Pat'`,
+ * NodeJS SEA adapter (`KernelAuth`) matches them verbatim (`'Pat'`,
  * `'OAuthM2m'`, `'OAuthU2m'`).
  *
  * Mirrors the kernel [`AuthConfig`] variants this binding supports.
@@ -132,6 +132,25 @@ export const enum AuthMode {
 export interface HeaderEntry {
   name: string
   value: string
+}
+/**
+ * Programmatic HTTP/HTTPS proxy configuration, mirroring the kernel's
+ * internal [`ProxyConfig`]. Supplied as a structured object rather than a
+ * flattened URL so credentials never have to be percent-encoded into the URL
+ * and the bypass-host list can be expressed.
+ *
+ * - `url` — proxy endpoint, e.g. `"http://proxy.corp.example.com:8080"`. Must
+ *   use the `http://` or `https://` scheme.
+ * - `username` / `password` — optional proxy basic-auth, applied via
+ *   `reqwest`'s `Proxy::basic_auth` (not embedded in the URL).
+ * - `bypassHosts` — optional comma-separated host/domain list that should
+ *   bypass the proxy (e.g. `"localhost,*.internal.corp"`).
+ */
+export interface ProxyInput {
+  url: string
+  username?: string
+  password?: string
+  bypassHosts?: string
 }
 /**
  * JS-visible options for opening a Databricks SQL session.
@@ -360,6 +379,33 @@ export interface ConnectionOptions {
    * [`HttpConfig::overall_timeout`].
    */
   retryOverallTimeoutSecs?: number
+  /**
+   * Programmatic HTTP/HTTPS proxy ([`ProxyInput`]) to route all kernel
+   * traffic through. Carries the proxy `url`, optional basic-auth
+   * `username` / `password`, and an optional `bypassHosts` list — mapped
+   * field-for-field onto the kernel [`ProxyConfig`].
+   *
+   * Omitted ⇒ the kernel does NOT configure a proxy explicitly and
+   * `reqwest`'s standard behaviour applies — the `HTTPS_PROXY` /
+   * `HTTP_PROXY` / `NO_PROXY` environment variables are still honoured.
+   * Setting this **overrides** those env vars. This complements the env-var
+   * path: callers who cannot set process env vars (e.g. a long-lived Node
+   * server) can now route a single connection through a proxy
+   * programmatically.
+   */
+  proxy?: ProxyInput
+  /**
+   * Per-connection socket read timeout, in milliseconds. Caps how
+   * long a single HTTP round-trip may block waiting on the server
+   * before the request errors out. Maps onto the kernel
+   * [`HttpConfig::request_timeout`] (the internal reqwest
+   * `Client::timeout`).
+   *
+   * Omitted ⇒ kernel default (120 000 ms / 120 s). Napi-rs
+   * serialises `u32` as JS `number`; the largest representable value
+   * (~49.7 days) far exceeds any sensible socket timeout.
+   */
+  socketTimeoutMs?: number
 }
 /**
  * Open a Databricks SQL session and return an opaque `Connection`
