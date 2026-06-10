@@ -17,7 +17,6 @@ import expectNativeConnectionOptions from './_helpers/nativeOptions';
 import KernelBackend from '../../../lib/kernel/KernelBackend';
 import { buildKernelConnectionOptions } from '../../../lib/kernel/KernelAuth';
 import { ConnectionOptions } from '../../../lib/contracts/IDBSQLClient';
-import AuthenticationError from '../../../lib/errors/AuthenticationError';
 import HiveDriverError from '../../../lib/errors/HiveDriverError';
 import { makeFakeBinding, makeFakeContext } from './_helpers/fakeBinding';
 
@@ -73,18 +72,11 @@ describe('KernelAuth + KernelBackend — OAuth U2M auth flow', () => {
       expect((native as { oauthScopes?: string[] }).oauthScopes).to.deep.equal(['sql', 'offline_access']);
     });
 
-    it('rejects oauthClientId without oauthClientSecret as M2M-with-missing-secret', () => {
-      // Round-4 NF3-2: presence of `oauthClientId` signals M2M intent.
-      // Routing now keys off the id (the "do I have an id?" signal),
-      // not the secret. A caller who supplies id but no secret gets the
-      // M2M "secret is required" error — the actionable message for the
-      // real problem (typo'd env var, forgot to export it, etc.).
-      //
-      // The U2M arm still has a defense-in-depth rejection of a stray
-      // `oauthClientId` (the kernel hardcodes `databricks-cli` for U2M);
-      // see [NF-2 / round-1 history]. That defense fires only when
-      // BOTH id and secret are blank — the M2M arm's stricter checks
-      // catch this typical caller-error shape first.
+    it('routes oauthClientId + no secret to U2M with that id as a custom client (secret-based routing, Thrift parity)', () => {
+      // Routing keys off the SECRET (matching Thrift): no usable secret ⇒ U2M,
+      // regardless of the id. A non-blank `oauthClientId` is then honoured as a
+      // custom U2M client (Thrift forwards `options.oauthClientId` to its U2M
+      // flow too). (Old id-presence routing rejected this as M2M-missing-secret.)
       const opts: ConnectionOptions = {
         host: 'example.cloud.databricks.com',
         path: '/sql/1.0/warehouses/abc',
@@ -92,10 +84,9 @@ describe('KernelAuth + KernelBackend — OAuth U2M auth flow', () => {
         oauthClientId: 'custom-client',
       };
 
-      expect(() => buildKernelConnectionOptions(opts)).to.throw(
-        AuthenticationError,
-        /oauthClientSecret.*non-empty.*OAuth M2M/,
-      );
+      const native = buildKernelConnectionOptions(opts);
+      expect(native.authMode).to.equal('OAuthU2m');
+      expect((native as { oauthClientId?: string }).oauthClientId).to.equal('custom-client');
     });
 
     it('prepends `/` to the path on the U2M branch too', () => {
