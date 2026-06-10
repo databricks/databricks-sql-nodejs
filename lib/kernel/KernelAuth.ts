@@ -192,9 +192,22 @@ export interface KernelHttpOptions {
   customHeaders?: Array<{ name: string; value: string }>;
 }
 
+/**
+ * HTTP(S) proxy forwarded to the napi binding's `ConnectionOptions.proxy`
+ * (kernel `ProxyConfig.url`). The public `ConnectionOptions.proxy` is the
+ * Thrift-shaped `{protocol, host, port, auth}`; `buildKernelProxyOptions`
+ * composes a single proxy URL string (with any basic-auth credentials
+ * percent-encoded into the `userinfo`) so the SAME connection option works
+ * on both backends. The napi contract takes a flat `proxy?: string`.
+ */
+export interface KernelProxyOptions {
+  proxy?: string;
+}
+
 export type KernelNativeConnectionOptions = KernelSessionDefaults &
   KernelTlsOptions &
   KernelHttpOptions &
+  KernelProxyOptions &
   (
     | {
         hostName: string;
@@ -514,6 +527,29 @@ export function buildKernelRetryOptions(config: {
   return out;
 }
 
+/**
+ * Map the public `ConnectionOptions.proxy` (`{protocol, host, port, auth}` —
+ * the same shape the Thrift backend accepts) onto the kernel's napi
+ * `proxy?: string`. Composes `protocol://[user:pass@]host:port`, percent-
+ * encoding any `auth.{username,password}` into the URL `userinfo` so
+ * credentials containing reserved characters (`@`, `:`, `/`) survive intact —
+ * the kernel parses the userinfo off and applies it as basic-auth. The kernel
+ * accepts only `http://` / `https://`; a SOCKS protocol surfaces a clear
+ * kernel error at connect (reqwest SOCKS support is not compiled in).
+ */
+export function buildKernelProxyOptions(options: ConnectionOptions): KernelProxyOptions {
+  const { proxy } = options;
+  if (!proxy) {
+    return {};
+  }
+  const { username, password } = proxy.auth ?? {};
+  const userinfo =
+    username !== undefined ? `${encodeURIComponent(username)}:${encodeURIComponent(password ?? '')}@` : '';
+  return {
+    proxy: `${proxy.protocol}://${userinfo}${proxy.host}:${proxy.port}`,
+  };
+}
+
 export function buildKernelConnectionOptions(options: ConnectionOptions): KernelNativeConnectionOptions {
   const { authType } = options as { authType?: string };
 
@@ -523,7 +559,8 @@ export function buildKernelConnectionOptions(options: ConnectionOptions): Kernel
     intervalsAsString: boolean;
     maxConnections?: number;
   } & KernelTlsOptions &
-    KernelHttpOptions = {
+    KernelHttpOptions &
+    KernelProxyOptions = {
     hostName: options.host,
     httpPath: prependSlash(options.path),
     // Match the NodeJS Thrift driver, which surfaces INTERVAL columns as
@@ -539,6 +576,8 @@ export function buildKernelConnectionOptions(options: ConnectionOptions): Kernel
     ...buildKernelTlsOptions(options),
     // HTTP headers (caller `customHeaders` + composed `User-Agent`).
     ...buildKernelHttpOptions(options),
+    // HTTP(S) proxy — the same `ConnectionOptions.proxy` the Thrift path uses.
+    ...buildKernelProxyOptions(options),
   };
 
   // kernel-only pool sizing; read via cast to match how this function reads the

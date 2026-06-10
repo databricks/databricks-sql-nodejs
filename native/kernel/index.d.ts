@@ -134,25 +134,6 @@ export interface HeaderEntry {
   value: string
 }
 /**
- * Programmatic HTTP/HTTPS proxy configuration, mirroring the kernel's
- * internal [`ProxyConfig`]. Supplied as a structured object rather than a
- * flattened URL so credentials never have to be percent-encoded into the URL
- * and the bypass-host list can be expressed.
- *
- * - `url` — proxy endpoint, e.g. `"http://proxy.corp.example.com:8080"`. Must
- *   use the `http://` or `https://` scheme.
- * - `username` / `password` — optional proxy basic-auth, applied via
- *   `reqwest`'s `Proxy::basic_auth` (not embedded in the URL).
- * - `bypassHosts` — optional comma-separated host/domain list that should
- *   bypass the proxy (e.g. `"localhost,*.internal.corp"`).
- */
-export interface ProxyInput {
-  url: string
-  username?: string
-  password?: string
-  bypassHosts?: string
-}
-/**
  * JS-visible options for opening a Databricks SQL session.
  *
  * Authentication is selected by `authMode` (default [`AuthMode::Pat`]):
@@ -380,20 +361,23 @@ export interface ConnectionOptions {
    */
   retryOverallTimeoutSecs?: number
   /**
-   * Programmatic HTTP/HTTPS proxy ([`ProxyInput`]) to route all kernel
-   * traffic through. Carries the proxy `url`, optional basic-auth
-   * `username` / `password`, and an optional `bypassHosts` list — mapped
-   * field-for-field onto the kernel [`ProxyConfig`].
+   * HTTP/HTTPS proxy URL to route all kernel traffic through, e.g.
+   * `http://proxy.corp.example.com:8080`. Basic-auth credentials may
+   * be embedded in the URL (`http://user:pass@host:port`); the
+   * `userinfo` is parsed off and applied as a `Proxy-Authorization`
+   * header. Must use the `http://` or `https://` scheme.
    *
    * Omitted ⇒ the kernel does NOT configure a proxy explicitly and
    * `reqwest`'s standard behaviour applies — the `HTTPS_PROXY` /
-   * `HTTP_PROXY` / `NO_PROXY` environment variables are still honoured.
-   * Setting this **overrides** those env vars. This complements the env-var
-   * path: callers who cannot set process env vars (e.g. a long-lived Node
-   * server) can now route a single connection through a proxy
-   * programmatically.
+   * `HTTP_PROXY` / `NO_PROXY` environment variables are still
+   * honoured. Setting this **overrides** those env vars. This
+   * complements the env-var path: callers who cannot set process
+   * env vars (e.g. a long-lived Node server) can now route a single
+   * connection through a proxy programmatically.
+   *
+   * Maps onto the kernel [`ProxyConfig::url`].
    */
-  proxy?: ProxyInput
+  proxy?: string
   /**
    * Per-connection socket read timeout, in milliseconds. Caps how
    * long a single HTTP round-trip may block waiting on the server
