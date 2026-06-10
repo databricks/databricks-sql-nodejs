@@ -195,14 +195,21 @@ export interface KernelHttpOptions {
 
 /**
  * HTTP(S) proxy forwarded to the napi binding's `ConnectionOptions.proxy`
- * (kernel `ProxyConfig.url`). The public `ConnectionOptions.proxy` is the
+ * (kernel `ProxyConfig`). The public `ConnectionOptions.proxy` is the
  * Thrift-shaped `{protocol, host, port, auth}`; `buildKernelProxyOptions`
- * composes a single proxy URL string (with any basic-auth credentials
- * percent-encoded into the `userinfo`) so the SAME connection option works
- * on both backends. The napi contract takes a flat `proxy?: string`.
+ * maps it onto the kernel's structured proxy input — `url` composed from
+ * `protocol://host:port`, with `auth.{username,password}` forwarded as
+ * separate basic-auth fields (NOT embedded in the URL, so no percent-encoding
+ * footgun) and the `noProxy` host list forwarded as `bypassHosts`. The same
+ * connection option therefore works identically on both backends.
  */
 export interface KernelProxyOptions {
-  proxy?: string;
+  proxy?: {
+    url: string;
+    username?: string;
+    password?: string;
+    bypassHosts?: string;
+  };
 }
 
 export type KernelNativeConnectionOptions = KernelSessionDefaults &
@@ -541,12 +548,13 @@ export function buildKernelRetryOptions(config: {
 
 /**
  * Map the public `ConnectionOptions.proxy` (`{protocol, host, port, auth}` —
- * the same shape the Thrift backend accepts) onto the kernel's napi
- * `proxy?: string`. Composes `protocol://[user:pass@]host:port`, percent-
- * encoding any `auth.{username,password}` into the URL `userinfo` so
- * credentials containing reserved characters (`@`, `:`, `/`) survive intact —
- * the kernel parses the userinfo off and applies it as basic-auth. The kernel
- * accepts only `http://` / `https://`; a SOCKS protocol surfaces a clear
+ * the same shape the Thrift backend accepts) onto the kernel's structured napi
+ * proxy input. The `url` is composed from `protocol://host:port` (no embedded
+ * credentials); `auth.{username,password}` are forwarded as separate
+ * basic-auth fields (the kernel applies them via reqwest `Proxy::basic_auth`),
+ * avoiding any URL percent-encoding footgun. The `noProxy` host list (a driver
+ * option, not on the published `.d.ts`) is forwarded as `bypassHosts`. The
+ * kernel accepts only `http://` / `https://`; a SOCKS protocol surfaces a clear
  * kernel error at connect (reqwest SOCKS support is not compiled in).
  */
 export function buildKernelProxyOptions(options: ConnectionOptions): KernelProxyOptions {
@@ -554,12 +562,14 @@ export function buildKernelProxyOptions(options: ConnectionOptions): KernelProxy
   if (!proxy) {
     return {};
   }
-  const { username, password } = proxy.auth ?? {};
-  const userinfo =
-    username !== undefined ? `${encodeURIComponent(username)}:${encodeURIComponent(password ?? '')}@` : '';
-  return {
-    proxy: `${proxy.protocol}://${userinfo}${proxy.host}:${proxy.port}`,
+  const { noProxy } = options as ConnectionOptions & { noProxy?: string };
+  const out: NonNullable<KernelProxyOptions['proxy']> = {
+    url: `${proxy.protocol}://${proxy.host}:${proxy.port}`,
   };
+  if (proxy.auth?.username !== undefined) out.username = proxy.auth.username;
+  if (proxy.auth?.password !== undefined) out.password = proxy.auth.password;
+  if (typeof noProxy === 'string' && noProxy.length > 0) out.bypassHosts = noProxy;
+  return { proxy: out };
 }
 
 export function buildKernelConnectionOptions(options: ConnectionOptions): KernelNativeConnectionOptions {
