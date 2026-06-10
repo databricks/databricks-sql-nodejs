@@ -28,6 +28,25 @@ import { buildUserAgentString } from '../utils';
  */
 const U2M_DEFAULT_REDIRECT_PORT = 8030;
 
+// U2M OAuth scopes default. Matches the standalone Thrift driver's
+// `defaultOAuthScopes` (lib/connection/auth/DatabricksOAuth/OAuthScope.ts):
+// `['sql', 'offline_access']`. The kernel's bare default is
+// `['all-apis', 'offline_access']`; the `databricks-sql-connector` OAuth app is
+// registered for the `sql` scope, so we pass the Thrift-parity scopes explicitly
+// unless the caller overrides via `oauthScopes`.
+const U2M_DEFAULT_SCOPES = ['sql', 'offline_access'];
+
+// M2M OAuth scopes default. Matches the standalone Thrift driver (`getScopes`
+// forces `['all-apis']` for the client-credentials flow) and the kernel's own
+// M2M default (`m2m.rs` → `['all-apis']`). Overridable via `oauthScopes`
+// (parity with pyo3, which forwards `scopes` on M2M).
+const M2M_DEFAULT_SCOPES = ['all-apis'];
+
+// Default OAuth client id — identical to the Thrift driver's
+// `DatabricksOAuthManager.defaultClientId` and the kernel napi's own U2M default.
+// Used for `oauthClientId ?? default`, mirroring Thrift's `getClientId()`.
+const DEFAULT_OAUTH_CLIENT_ID = 'databricks-sql-connector';
+
 /**
  * Shape consumed by the napi-binding's `openSession()` (see
  * `native/kernel/index.d.ts`). Mirrors `ConnectionOptions` in the binding's
@@ -189,12 +208,15 @@ export type KernelNativeConnectionOptions = KernelSessionDefaults &
         authMode: 'OAuthM2m';
         oauthClientId: string;
         oauthClientSecret: string;
+        oauthScopes?: Array<string>;
       }
     | {
         hostName: string;
         httpPath: string;
         authMode: 'OAuthU2m';
         oauthRedirectPort: number;
+        oauthScopes?: Array<string>;
+        oauthClientId?: string;
       }
   );
 
@@ -541,6 +563,7 @@ export function buildKernelConnectionOptions(options: ConnectionOptions): Kernel
   const oauth = options as {
     oauthClientId?: string;
     oauthClientSecret?: string;
+    oauthScopes?: Array<string>;
     azureTenantId?: string;
     useDatabricksOAuthInAzure?: boolean;
     persistence?: unknown;
@@ -579,40 +602,18 @@ export function buildKernelConnectionOptions(options: ConnectionOptions): Kernel
       );
     }
 
-    // Flow selector — DELIBERATELY DIFFERENT from thrift's
-    // `DBSQLClient.createAuthProvider` (`DBSQLClient.ts:216`), which keys off
-    // the secret (`oauthClientSecret === undefined ? U2M : M2M`). kernel keys off
-    // `oauthClientId` *presence* (the "do I have an id?" signal) instead, so a
-    // user who set an id but typoed/forgot the secret gets the actionable M2M
-    // "secret is required" error rather than being silently routed to U2M
-    // (which would hide their intent). Cost: `id + no secret` throws here
-    // where thrift would run U2M, and kernel U2M has no custom-client-id support
-    // (see buildKernelConnectionOptions header). The U2M arm still defends against an id
-    // sneaking through: fires only when `oauthClientId` is provided as
-    // a blank-reserved literal (e.g., whitespace, `"null"`, `"undefined"`)
-    // alongside an absent/blank secret — both `idIsBlank` and
-    // `secretIsBlank` are true so U2M wins routing, but the caller's
-    // intent to use U2M with a partially-set id is ambiguous and
-    // rejected explicitly.
-    const idIsBlank =
-      oauth.oauthClientId === undefined ||
-      (typeof oauth.oauthClientId === 'string' && isBlankOrReserved(oauth.oauthClientId));
-    const secretIsBlank =
-      oauth.oauthClientSecret === undefined ||
-      (typeof oauth.oauthClientSecret === 'string' && isBlankOrReserved(oauth.oauthClientSecret));
-
-    if (idIsBlank && secretIsBlank) {
-      // U2M — neither id nor secret supplied.
-      if (oauth.oauthClientId !== undefined) {
-        // Defense-in-depth: id was set but blank/reserved literal.
-        // The kernel hardcodes `client_id = "databricks-cli"` for U2M;
-        // there's no JS-side override knob.
-        throw new HiveDriverError(
-          'kernel backend: `oauthClientId` is not supported on the OAuth U2M flow; ' +
-            "the kernel uses the built-in 'databricks-cli' client. " +
-            'Omit `oauthClientId` for U2M, or supply `oauthClientSecret` for the M2M flow.',
-        );
-      }
+    // Flow selector + client-id resolution mirror the Thrift driver EXACTLY
+    // (`DBSQLClient.createAuthProvider`, DBSQLClient.ts:220):
+    //   flow     = oauthClientSecret === undefined ? U2M : M2M   (strict undefined)
+    //   clientId = oauthClientId ?? defaultClientId              (`??` guards null/undefined only)
+    // No blank/reserved normalization on the OAuth fields — a present-but-
+    // degenerate value (`""`, `"undefined"`, whitespace) is forwarded verbatim,
+    // exactly as Thrift forwards it, so the kernel path does not diverge from the
+    // Thrift backend. (This intentionally re-imports Thrift's env-stringification
+    // behaviour: a secret that resolved to `""`/`"undefined"` counts as a real
+    // secret ⇒ M2M, just like Thrift.)
+    if (oauth.oauthClientSecret === undefined) {
+      // U2M (browser) — no secret, exactly like Thrift.
       if (oauth.persistence !== undefined) {
         throw new HiveDriverError(
           'kernel backend: `persistence` (custom OAuth token store) is not yet wired through ' +
@@ -623,24 +624,21 @@ export function buildKernelConnectionOptions(options: ConnectionOptions): Kernel
             'when the kernel exposes it.',
         );
       }
-      return {
+      const u2m = {
         ...base,
-        authMode: 'OAuthU2m',
+        authMode: 'OAuthU2m' as const,
         oauthRedirectPort: U2M_DEFAULT_REDIRECT_PORT,
+        // Scopes default to Thrift parity (`sql offline_access`); overridable.
+        oauthScopes:
+          Array.isArray(oauth.oauthScopes) && oauth.oauthScopes.length > 0 ? oauth.oauthScopes : U2M_DEFAULT_SCOPES,
       };
+      // clientId: Thrift uses `oauthClientId ?? default`. Forward it verbatim
+      // when set; when absent the napi applies the same default
+      // (`databricks-sql-connector`), so omitting it is identical to Thrift.
+      return oauth.oauthClientId !== undefined ? { ...u2m, oauthClientId: oauth.oauthClientId } : u2m;
     }
 
-    // M2M.
-    if (typeof oauth.oauthClientId !== 'string' || isBlankOrReserved(oauth.oauthClientId)) {
-      throw new AuthenticationError(
-        'kernel backend: `oauthClientId` is required (non-empty, non-whitespace) for OAuth M2M.',
-      );
-    }
-    if (typeof oauth.oauthClientSecret !== 'string' || isBlankOrReserved(oauth.oauthClientSecret)) {
-      throw new AuthenticationError(
-        'kernel backend: `oauthClientSecret` must be a non-empty non-whitespace string for OAuth M2M.',
-      );
-    }
+    // M2M (client credentials) — a secret is present, exactly like Thrift.
     if (oauth.persistence !== undefined) {
       throw new HiveDriverError(
         'kernel backend: `persistence` is not supported on OAuth M2M ' +
@@ -650,8 +648,12 @@ export function buildKernelConnectionOptions(options: ConnectionOptions): Kernel
     return {
       ...base,
       authMode: 'OAuthM2m',
-      oauthClientId: oauth.oauthClientId,
+      // Thrift: `getClientId()` = `oauthClientId ?? defaultClientId`.
+      oauthClientId: oauth.oauthClientId ?? DEFAULT_OAUTH_CLIENT_ID,
       oauthClientSecret: oauth.oauthClientSecret,
+      // Configurable (parity with pyo3); defaults to `['all-apis']`.
+      oauthScopes:
+        Array.isArray(oauth.oauthScopes) && oauth.oauthScopes.length > 0 ? oauth.oauthScopes : M2M_DEFAULT_SCOPES,
     };
   }
 

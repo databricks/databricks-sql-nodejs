@@ -67,126 +67,59 @@ describe('KernelAuth — edge cases (input validation + ambiguity)', () => {
       }
     });
 
-    // Round-4 NF3-2: presence of `oauthClientId` signals M2M intent.
-    // A blank/reserved-literal `oauthClientSecret` is then a missing-secret
-    // typo, not a request to fall back to U2M. Surface the M2M "secret
-    // required" AuthenticationError so the user fixes the real problem
-    // rather than swap class to a HiveDriverError pointing at a flow
-    // they didn't intend to use.
-    it('rejects mixed-case reserved-literal oauthClientSecret with AuthenticationError when id is set', () => {
-      const opts: ConnectionOptions = {
-        host: 'example.cloud.databricks.com',
-        path: '/sql/1.0/warehouses/abc',
-        authType: 'databricks-oauth',
-        oauthClientId: 'client-uuid',
-        oauthClientSecret: 'NULL',
-      };
+    // Strict Thrift parity: flow = `oauthClientSecret === undefined ? U2M : M2M`,
+    // and OAuth fields are forwarded VERBATIM (no blank/reserved normalization),
+    // exactly as the Thrift driver does. A present-but-degenerate secret
+    // (`""` / whitespace / `"undefined"`) therefore counts as a real secret ⇒ M2M
+    // — byte-for-byte with Thrift (which only routes to U2M when the secret is
+    // strictly `undefined`). The id rides through as `oauthClientId ?? default`.
+    const m2mDegenerateSecret = [
+      { label: 'reserved-literal "NULL"', secret: 'NULL' },
+      { label: 'whitespace-only', secret: '\n\t' },
+      { label: 'literal "undefined"', secret: 'undefined' },
+      { label: 'empty string', secret: '' },
+    ];
+    for (const { label, secret } of m2mDegenerateSecret) {
+      it(`routes id + ${label} secret to M2M (secret !== undefined ⇒ M2M, like Thrift)`, () => {
+        const native = buildKernelConnectionOptions({
+          host: 'example.cloud.databricks.com',
+          path: '/sql/1.0/warehouses/abc',
+          authType: 'databricks-oauth',
+          oauthClientId: 'client-uuid',
+          oauthClientSecret: secret,
+        } as ConnectionOptions);
+        expect(native.authMode).to.equal('OAuthM2m');
+        expect((native as { oauthClientId?: string }).oauthClientId).to.equal('client-uuid');
+      });
+    }
 
-      expect(() => buildKernelConnectionOptions(opts)).to.throw(
-        AuthenticationError,
-        /oauthClientSecret.*non-empty.*OAuth M2M/,
-      );
-    });
+    // Degenerate ids on M2M are forwarded verbatim (`oauthClientId ?? default`
+    // keeps a non-nullish value), NOT rejected — matching Thrift's getClientId().
+    for (const id of ['   ', 'undefined']) {
+      it(`forwards a degenerate oauthClientId (${JSON.stringify(id)}) verbatim on M2M`, () => {
+        const native = buildKernelConnectionOptions({
+          host: 'example.cloud.databricks.com',
+          path: '/sql/1.0/warehouses/abc',
+          authType: 'databricks-oauth',
+          oauthClientId: id,
+          oauthClientSecret: 'dose-fake-secret',
+        } as ConnectionOptions);
+        expect(native.authMode).to.equal('OAuthM2m');
+        expect((native as { oauthClientId?: string }).oauthClientId).to.equal(id);
+      });
+    }
 
-    it('rejects whitespace-only oauthClientId on M2M', () => {
-      const opts: ConnectionOptions = {
-        host: 'example.cloud.databricks.com',
-        path: '/sql/1.0/warehouses/abc',
-        authType: 'databricks-oauth',
-        oauthClientId: '   ',
-        oauthClientSecret: 'dose-fake-secret',
-      };
-
-      expect(() => buildKernelConnectionOptions(opts)).to.throw(AuthenticationError, /oauthClientId.*required/);
-    });
-
-    it('rejects whitespace-only oauthClientSecret with AuthenticationError when oauthClientId is set (M2M intent)', () => {
-      const opts: ConnectionOptions = {
-        host: 'example.cloud.databricks.com',
-        path: '/sql/1.0/warehouses/abc',
-        authType: 'databricks-oauth',
-        oauthClientId: 'client-uuid',
-        oauthClientSecret: '\n\t',
-      };
-
-      expect(() => buildKernelConnectionOptions(opts)).to.throw(
-        AuthenticationError,
-        /oauthClientSecret.*non-empty.*OAuth M2M/,
-      );
-    });
-
-    it('rejects literal "undefined" as oauthClientId on M2M', () => {
-      const opts: ConnectionOptions = {
-        host: 'example.cloud.databricks.com',
-        path: '/sql/1.0/warehouses/abc',
-        authType: 'databricks-oauth',
-        oauthClientId: 'undefined',
-        oauthClientSecret: 'dose-fake-secret',
-      };
-
-      expect(() => buildKernelConnectionOptions(opts)).to.throw(AuthenticationError, /oauthClientId.*required/);
-    });
-
-    it('rejects literal "undefined" as oauthClientSecret with AuthenticationError when id is set (M2M intent)', () => {
-      const opts: ConnectionOptions = {
-        host: 'example.cloud.databricks.com',
-        path: '/sql/1.0/warehouses/abc',
-        authType: 'databricks-oauth',
-        oauthClientId: 'client-uuid',
-        oauthClientSecret: 'undefined',
-      };
-
-      expect(() => buildKernelConnectionOptions(opts)).to.throw(
-        AuthenticationError,
-        /oauthClientSecret.*non-empty.*OAuth M2M/,
-      );
-    });
-
-    // Round-4 NF3-2: pin the exact class against the round-3 NF-N3
-    // regression where M2M-with-empty-secret was routed through the U2M
-    // arm and raised a bare `HiveDriverError`. `instanceof
-    // AuthenticationError` correctly returns `false` for a bare
-    // `HiveDriverError` instance (instanceof is a one-way subclass
-    // check), so the subclass check IS sufficient to catch the
-    // regression. We don't add an `error.name` or `constructor.name`
-    // belt — the former requires `this.name` on the subclass (LE4-1
-    // handles that separately for downstream-consumer benefit, not for
-    // this test), and the latter is bundler-fragile (terser/esbuild
-    // strip class names without `keep_classnames`).
-    it('M2M-with-empty-secret throws AuthenticationError, not bare HiveDriverError (class pin)', () => {
-      const opts: ConnectionOptions = {
-        host: 'example.cloud.databricks.com',
-        path: '/sql/1.0/warehouses/abc',
-        authType: 'databricks-oauth',
-        oauthClientId: 'x',
-        oauthClientSecret: '',
-      };
-
-      expect(() => buildKernelConnectionOptions(opts)).to.throw(
-        AuthenticationError,
-        /oauthClientSecret.*non-empty.*OAuth M2M/,
-      );
-    });
-
-    // Round-5 DA4-2: the round-3 → round-4 test flips left the U2M-arm
-    // defense-in-depth U2M+id rejection without coverage. It's still
-    // reachable: when `oauthClientId` is a blank-reserved literal
-    // (whitespace, `"null"`, `"undefined"`) AND `oauthClientSecret` is
-    // absent/blank, BOTH `idIsBlank` and `secretIsBlank` are true so
-    // U2M wins routing — but a non-undefined id signals ambiguity that
-    // U2M cannot honor (the kernel hardcodes `databricks-cli`).
-    it('routes a whitespace oauthClientId with no oauthClientSecret to the U2M defense-in-depth rejection', () => {
-      const opts: ConnectionOptions = {
+    // No secret ⇒ U2M, and a degenerate id is forwarded verbatim too (Thrift's
+    // `oauthClientId ?? default` keeps a non-nullish whitespace id).
+    it('routes a whitespace oauthClientId with no secret to U2M, forwarding the id verbatim', () => {
+      const native = buildKernelConnectionOptions({
         host: 'example.cloud.databricks.com',
         path: '/sql/1.0/warehouses/abc',
         authType: 'databricks-oauth',
         oauthClientId: '   ',
-      } as unknown as ConnectionOptions;
-
-      expect(() => buildKernelConnectionOptions(opts)).to.throw(
-        HiveDriverError,
-        /oauthClientId.*not supported on the OAuth U2M flow/,
-      );
+      } as unknown as ConnectionOptions);
+      expect(native.authMode).to.equal('OAuthU2m');
+      expect((native as { oauthClientId?: string }).oauthClientId).to.equal('   ');
     });
   });
 
@@ -260,41 +193,21 @@ describe('KernelAuth — edge cases (input validation + ambiguity)', () => {
     // `process.env.MY_SECRET || ''` shape) should route to U2M, not
     // to the M2M arm with an "empty secret" rejection. M2M's error
     // message would never mention U2M, leaving the user stuck.
-    it('routes blank oauthClientSecret to U2M (not to an M2M-blank-secret rejection)', () => {
-      const opts: ConnectionOptions = {
-        host: 'example.cloud.databricks.com',
-        path: '/sql/1.0/warehouses/abc',
-        authType: 'databricks-oauth',
-        oauthClientSecret: '',
-      };
-
-      const native = buildKernelConnectionOptions(opts);
-      expect(native.authMode).to.equal('OAuthU2m');
-    });
-
-    it('routes whitespace-only oauthClientSecret to U2M too', () => {
-      const opts: ConnectionOptions = {
-        host: 'example.cloud.databricks.com',
-        path: '/sql/1.0/warehouses/abc',
-        authType: 'databricks-oauth',
-        oauthClientSecret: '   \t  ',
-      };
-
-      const native = buildKernelConnectionOptions(opts);
-      expect(native.authMode).to.equal('OAuthU2m');
-    });
-
-    it('routes literal-"undefined" oauthClientSecret to U2M too', () => {
-      const opts: ConnectionOptions = {
-        host: 'example.cloud.databricks.com',
-        path: '/sql/1.0/warehouses/abc',
-        authType: 'databricks-oauth',
-        oauthClientSecret: 'undefined',
-      };
-
-      const native = buildKernelConnectionOptions(opts);
-      expect(native.authMode).to.equal('OAuthU2m');
-    });
+    // Strict Thrift parity: a present-but-degenerate secret (no id) is still a
+    // defined secret ⇒ M2M (only a strictly-`undefined` secret routes to U2M).
+    // With no id, the client defaults via `oauthClientId ?? default`.
+    for (const secret of ['', '   \t  ', 'undefined']) {
+      it(`routes a degenerate-but-present oauthClientSecret (${JSON.stringify(secret)}, no id) to M2M`, () => {
+        const native = buildKernelConnectionOptions({
+          host: 'example.cloud.databricks.com',
+          path: '/sql/1.0/warehouses/abc',
+          authType: 'databricks-oauth',
+          oauthClientSecret: secret,
+        } as ConnectionOptions);
+        expect(native.authMode).to.equal('OAuthM2m');
+        expect((native as { oauthClientId?: string }).oauthClientId).to.equal('databricks-sql-connector');
+      });
+    }
   });
 
   describe('explicit-undefined vs missing for Azure-direct discriminants', () => {

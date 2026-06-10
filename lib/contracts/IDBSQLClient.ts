@@ -22,6 +22,10 @@ type AuthOptions =
       oauthClientId?: string;
       oauthClientSecret?: string;
       useDatabricksOAuthInAzure?: boolean;
+      // OAuth scopes to request. When omitted, the kernel backend defaults the
+      // U2M flow to `['sql', 'offline_access']` (parity with the Thrift driver's
+      // `defaultOAuthScopes`), overriding the kernel's bare `all-apis offline_access`.
+      oauthScopes?: Array<string>;
     }
   | {
       authType: 'custom';

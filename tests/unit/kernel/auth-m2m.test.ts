@@ -17,7 +17,6 @@ import expectNativeConnectionOptions from './_helpers/nativeOptions';
 import KernelBackend from '../../../lib/kernel/KernelBackend';
 import { buildKernelConnectionOptions } from '../../../lib/kernel/KernelAuth';
 import { ConnectionOptions } from '../../../lib/contracts/IDBSQLClient';
-import AuthenticationError from '../../../lib/errors/AuthenticationError';
 import HiveDriverError from '../../../lib/errors/HiveDriverError';
 import { makeFakeBinding, makeFakeContext } from './_helpers/fakeBinding';
 
@@ -40,7 +39,32 @@ describe('KernelAuth + KernelBackend — OAuth M2M auth flow', () => {
         authMode: 'OAuthM2m',
         oauthClientId: 'client-uuid',
         oauthClientSecret: 'dose-fake-secret',
+        oauthScopes: ['all-apis'],
       });
+    });
+
+    it('defaults M2M oauthScopes to all-apis (Thrift + kernel parity)', () => {
+      const native = buildKernelConnectionOptions({
+        host: 'example.cloud.databricks.com',
+        path: '/sql/1.0/warehouses/abc',
+        authType: 'databricks-oauth',
+        oauthClientId: 'client-uuid',
+        oauthClientSecret: 'dose-fake-secret',
+      });
+      expect(native.authMode).to.equal('OAuthM2m');
+      expect((native as { oauthScopes?: string[] }).oauthScopes).to.deep.equal(['all-apis']);
+    });
+
+    it('honors a caller-supplied M2M oauthScopes override (parity with pyo3)', () => {
+      const native = buildKernelConnectionOptions({
+        host: 'example.cloud.databricks.com',
+        path: '/sql/1.0/warehouses/abc',
+        authType: 'databricks-oauth',
+        oauthClientId: 'client-uuid',
+        oauthClientSecret: 'dose-fake-secret',
+        oauthScopes: ['sql', 'offline_access'],
+      } as ConnectionOptions);
+      expect((native as { oauthScopes?: string[] }).oauthScopes).to.deep.equal(['sql', 'offline_access']);
     });
 
     it('prepends `/` to the path on the M2M branch too', () => {
@@ -56,7 +80,7 @@ describe('KernelAuth + KernelBackend — OAuth M2M auth flow', () => {
       expect(native.httpPath).to.equal('/sql/1.0/warehouses/abc');
     });
 
-    it('rejects missing oauthClientId with AuthenticationError', () => {
+    it('defaults a missing oauthClientId to the default client on M2M (Thrift `?? default`)', () => {
       const opts = {
         host: 'example.cloud.databricks.com',
         path: '/sql/1.0/warehouses/abc',
@@ -64,10 +88,14 @@ describe('KernelAuth + KernelBackend — OAuth M2M auth flow', () => {
         oauthClientSecret: 'dose-fake-secret',
       } as unknown as ConnectionOptions;
 
-      expect(() => buildKernelConnectionOptions(opts)).to.throw(AuthenticationError, /oauthClientId.*required/);
+      // Secret present ⇒ M2M; `oauthClientId ?? defaultClientId`, exactly like
+      // Thrift's getClientId(). (No upfront "id required" throw.)
+      const native = buildKernelConnectionOptions(opts);
+      expect(native.authMode).to.equal('OAuthM2m');
+      expect((native as { oauthClientId?: string }).oauthClientId).to.equal('databricks-sql-connector');
     });
 
-    it('rejects empty oauthClientId with AuthenticationError', () => {
+    it('forwards an empty oauthClientId verbatim on M2M (Thrift `??` keeps "")', () => {
       const opts = {
         host: 'example.cloud.databricks.com',
         path: '/sql/1.0/warehouses/abc',
@@ -76,10 +104,14 @@ describe('KernelAuth + KernelBackend — OAuth M2M auth flow', () => {
         oauthClientSecret: 'dose-fake-secret',
       } as unknown as ConnectionOptions;
 
-      expect(() => buildKernelConnectionOptions(opts)).to.throw(AuthenticationError, /oauthClientId.*required/);
+      // `'' ?? default` === '' (nullish coalescing only guards null/undefined),
+      // so Thrift forwards the empty id; we match it verbatim — no normalization.
+      const native = buildKernelConnectionOptions(opts);
+      expect(native.authMode).to.equal('OAuthM2m');
+      expect((native as { oauthClientId?: string }).oauthClientId).to.equal('');
     });
 
-    it('rejects empty oauthClientSecret with AuthenticationError when oauthClientId is set (M2M intent)', () => {
+    it('routes id + empty secret to M2M (strict Thrift parity: secret !== undefined ⇒ M2M)', () => {
       const opts: ConnectionOptions = {
         host: 'example.cloud.databricks.com',
         path: '/sql/1.0/warehouses/abc',
@@ -88,14 +120,11 @@ describe('KernelAuth + KernelBackend — OAuth M2M auth flow', () => {
         oauthClientSecret: '',
       };
 
-      // Presence of `oauthClientId` signals M2M intent; an empty secret
-      // is a typo/missing-env, not a request to fall back to U2M.
-      // Surface the M2M "secret required" error so the user knows the
-      // real problem instead of getting routed to a different flow.
-      expect(() => buildKernelConnectionOptions(opts)).to.throw(
-        AuthenticationError,
-        /oauthClientSecret.*non-empty.*OAuth M2M/,
-      );
+      // Routing is strict `oauthClientSecret === undefined ? U2M : M2M`, byte-for-
+      // byte with Thrift: a present-but-empty secret counts as a secret ⇒ M2M.
+      const native = buildKernelConnectionOptions(opts);
+      expect(native.authMode).to.equal('OAuthM2m');
+      expect((native as { oauthClientId?: string }).oauthClientId).to.equal('client-uuid');
     });
 
     it('rejects azureTenantId with a clear Entra-direct-out-of-scope error', () => {
@@ -177,30 +206,31 @@ describe('KernelAuth + KernelBackend — OAuth M2M auth flow', () => {
         authMode: 'OAuthM2m',
         oauthClientId: 'client-uuid',
         oauthClientSecret: 'dose-fake-secret',
+        oauthScopes: ['all-apis'],
       });
 
       await session.close();
       await backend.close();
     });
 
-    it('rejects connect() for missing oauthClientId before touching the binding', async () => {
+    it('connect() with an M2M secret but no oauthClientId proceeds with the default client (Thrift parity)', async () => {
       const { binding, calls } = makeFakeBinding();
       const backend = new KernelBackend({ nativeBinding: binding, context: makeFakeContext() });
 
-      let caught: unknown;
-      try {
-        await backend.connect({
-          host: 'example.cloud.databricks.com',
-          path: '/sql/1.0/warehouses/abc',
-          authType: 'databricks-oauth',
-          // eslint-disable-next-line @typescript-eslint/no-explicit-any
-          oauthClientSecret: 'dose-fake-secret',
-        } as any);
-      } catch (e) {
-        caught = e;
-      }
-      expect(caught).to.be.instanceOf(AuthenticationError);
-      expect(calls).to.have.lengthOf(0);
+      // Strict Thrift parity: secret present + no id ⇒ M2M with the default
+      // client (`oauthClientId ?? default`), not an upfront rejection.
+      await backend.connect({
+        host: 'example.cloud.databricks.com',
+        path: '/sql/1.0/warehouses/abc',
+        authType: 'databricks-oauth',
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        oauthClientSecret: 'dose-fake-secret',
+      } as any);
+      await backend.openSession({});
+
+      expect(calls).to.have.lengthOf(1);
+      expect((calls[0].args[0] as { authMode?: string; oauthClientId?: string }).authMode).to.equal('OAuthM2m');
+      expect((calls[0].args[0] as { oauthClientId?: string }).oauthClientId).to.equal('databricks-sql-connector');
     });
   });
 });

@@ -19,6 +19,7 @@ import { ConnectionOptions, OpenSessionRequest } from '../contracts/IDBSQLClient
 import { InternalConnectionOptions } from '../contracts/InternalConnectionOptions';
 import { LogLevel } from '../contracts/IDBSQLLogger';
 import HiveDriverError from '../errors/HiveDriverError';
+import { serializeQueryTags } from '../utils';
 import { getKernelNative, KernelNativeBinding, KernelConnection } from './KernelNativeLoader';
 import { decodeNapiKernelError } from './KernelErrorMapping';
 import { buildKernelConnectionOptions, buildKernelRetryOptions, KernelNativeConnectionOptions } from './KernelAuth';
@@ -144,6 +145,20 @@ export default class KernelBackend implements IBackend {
     }
     if (request.configuration !== undefined) {
       sessionOptions.sessionConf = { ...request.configuration };
+    }
+    // Session-level query tags: serialize into the reserved `QUERY_TAGS`
+    // session conf. The kernel allowlists `QUERY_TAGS` (SESSION_CONF_ALLOWLIST)
+    // and forwards it onto the SEA `CreateSession` `session_confs`, mirroring
+    // the Thrift backend's `ThriftBackend.openSession`. Runs after the
+    // `configuration` merge so `queryTags` takes precedence over an explicit
+    // `configuration.QUERY_TAGS`, matching the documented contract.
+    if (request.queryTags !== undefined) {
+      const serialized = serializeQueryTags(request.queryTags);
+      if (serialized) {
+        sessionOptions.sessionConf = { ...(sessionOptions.sessionConf ?? {}), QUERY_TAGS: serialized };
+      } else if (sessionOptions.sessionConf) {
+        delete sessionOptions.sessionConf.QUERY_TAGS;
+      }
     }
 
     let nativeConnection: KernelConnection;
