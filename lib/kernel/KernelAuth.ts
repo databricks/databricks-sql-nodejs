@@ -190,11 +190,32 @@ export interface KernelTlsOptions {
  */
 export interface KernelHttpOptions {
   customHeaders?: Array<{ name: string; value: string }>;
+  socketTimeoutMs?: number;
+}
+
+/**
+ * HTTP(S) proxy forwarded to the napi binding's `ConnectionOptions.proxy`
+ * (kernel `ProxyConfig`). The public `ConnectionOptions.proxy` is the
+ * Thrift-shaped `{protocol, host, port, auth}`; `buildKernelProxyOptions`
+ * maps it onto the kernel's structured proxy input — `url` composed from
+ * `protocol://host:port`, with `auth.{username,password}` forwarded as
+ * separate basic-auth fields (NOT embedded in the URL, so no percent-encoding
+ * footgun) and the `noProxy` host list forwarded as `bypassHosts`. The same
+ * connection option therefore works identically on both backends.
+ */
+export interface KernelProxyOptions {
+  proxy?: {
+    url: string;
+    username?: string;
+    password?: string;
+    bypassHosts?: string;
+  };
 }
 
 export type KernelNativeConnectionOptions = KernelSessionDefaults &
   KernelTlsOptions &
   KernelHttpOptions &
+  KernelProxyOptions &
   (
     | {
         hostName: string;
@@ -401,7 +422,7 @@ function validateHeaderToken(kind: 'name' | 'value', headerName: string, token: 
 }
 
 export function buildKernelHttpOptions(options: ConnectionOptions): KernelHttpOptions {
-  const { customHeaders, userAgentEntry } = options;
+  const { customHeaders, userAgentEntry, socketTimeout } = options;
 
   const headers: Array<{ name: string; value: string }> = [];
   if (customHeaders) {
@@ -423,7 +444,18 @@ export function buildKernelHttpOptions(options: ConnectionOptions): KernelHttpOp
   // Python connector's unconditional `base_headers` append.
   headers.push({ name: 'User-Agent', value: buildUserAgentString(userAgentEntry) });
 
-  return { customHeaders: headers };
+  const http: KernelHttpOptions = { customHeaders: headers };
+  // Per-connection socket read timeout (ms). The public `socketTimeout`
+  // ConnectionOption maps onto the kernel napi `socketTimeoutMs`
+  // (kernel `HttpConfig::request_timeout` / reqwest `Client::timeout`).
+  // Only forward a POSITIVE value: `socketTimeout: 0` means "disabled / wait
+  // indefinitely" on the Thrift path, but forwarding `0` would make reqwest
+  // time out immediately, so we omit it and let the kernel keep its (large)
+  // default — preserving the "effectively no idle timeout" semantics.
+  if (typeof socketTimeout === 'number' && socketTimeout > 0) {
+    http.socketTimeoutMs = socketTimeout;
+  }
+  return http;
 }
 
 /**
@@ -514,6 +546,32 @@ export function buildKernelRetryOptions(config: {
   return out;
 }
 
+/**
+ * Map the public `ConnectionOptions.proxy` (`{protocol, host, port, auth}` —
+ * the same shape the Thrift backend accepts) onto the kernel's structured napi
+ * proxy input. The `url` is composed from `protocol://host:port` (no embedded
+ * credentials); `auth.{username,password}` are forwarded as separate
+ * basic-auth fields (the kernel applies them via reqwest `Proxy::basic_auth`),
+ * avoiding any URL percent-encoding footgun. The `noProxy` host list (a driver
+ * option, not on the published `.d.ts`) is forwarded as `bypassHosts`. The
+ * kernel accepts only `http://` / `https://`; a SOCKS protocol surfaces a clear
+ * kernel error at connect (reqwest SOCKS support is not compiled in).
+ */
+export function buildKernelProxyOptions(options: ConnectionOptions): KernelProxyOptions {
+  const { proxy } = options;
+  if (!proxy) {
+    return {};
+  }
+  const { noProxy } = options as ConnectionOptions & { noProxy?: string };
+  const out: NonNullable<KernelProxyOptions['proxy']> = {
+    url: `${proxy.protocol}://${proxy.host}:${proxy.port}`,
+  };
+  if (proxy.auth?.username !== undefined) out.username = proxy.auth.username;
+  if (proxy.auth?.password !== undefined) out.password = proxy.auth.password;
+  if (typeof noProxy === 'string' && noProxy.length > 0) out.bypassHosts = noProxy;
+  return { proxy: out };
+}
+
 export function buildKernelConnectionOptions(options: ConnectionOptions): KernelNativeConnectionOptions {
   const { authType } = options as { authType?: string };
 
@@ -523,7 +581,8 @@ export function buildKernelConnectionOptions(options: ConnectionOptions): Kernel
     intervalsAsString: boolean;
     maxConnections?: number;
   } & KernelTlsOptions &
-    KernelHttpOptions = {
+    KernelHttpOptions &
+    KernelProxyOptions = {
     hostName: options.host,
     httpPath: prependSlash(options.path),
     // Match the NodeJS Thrift driver, which surfaces INTERVAL columns as
@@ -539,6 +598,8 @@ export function buildKernelConnectionOptions(options: ConnectionOptions): Kernel
     ...buildKernelTlsOptions(options),
     // HTTP headers (caller `customHeaders` + composed `User-Agent`).
     ...buildKernelHttpOptions(options),
+    // HTTP(S) proxy — the same `ConnectionOptions.proxy` the Thrift path uses.
+    ...buildKernelProxyOptions(options),
   };
 
   // kernel-only pool sizing; read via cast to match how this function reads the
