@@ -620,6 +620,42 @@ describe('DBSQLClient.createAuthProvider', () => {
   });
 });
 
+describe('DBSQLClient retry-policy ConnectionOptions', () => {
+  it('ingests retry-policy options from connect() into ClientConfig', async () => {
+    const client = new DBSQLClient();
+
+    // Defaults before connect.
+    expect(client.getConfig().retryMaxAttempts).to.equal(5);
+    expect(client.getConfig().retriesTimeout).to.equal(15 * 60 * 1000);
+    expect(client.getConfig().retryDelayMin).to.equal(1000);
+    expect(client.getConfig().retryDelayMax).to.equal(60 * 1000);
+
+    await client.connect({
+      ...connectOptions,
+      retryMaxAttempts: 2,
+      retriesTimeout: 5000,
+      retryDelayMin: 100,
+      retryDelayMax: 500,
+    });
+
+    expect(client.getConfig().retryMaxAttempts).to.equal(2);
+    expect(client.getConfig().retriesTimeout).to.equal(5000);
+    expect(client.getConfig().retryDelayMin).to.equal(100);
+    expect(client.getConfig().retryDelayMax).to.equal(500);
+  });
+
+  it('keeps defaults when retry-policy options are omitted', async () => {
+    const client = new DBSQLClient();
+
+    await client.connect({ ...connectOptions });
+
+    expect(client.getConfig().retryMaxAttempts).to.equal(5);
+    expect(client.getConfig().retriesTimeout).to.equal(15 * 60 * 1000);
+    expect(client.getConfig().retryDelayMin).to.equal(1000);
+    expect(client.getConfig().retryDelayMax).to.equal(60 * 1000);
+  });
+});
+
 describe('DBSQLClient.enableMetricViewMetadata', () => {
   it('should store enableMetricViewMetadata config when enabled', async () => {
     const client = new DBSQLClient();
