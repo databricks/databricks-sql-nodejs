@@ -61,33 +61,36 @@ platform — each containing a single `.node` binary. `native/kernel/index.js`
 (the napi-rs router) `require()`s the package matching the consumer's
 `process.platform` / `process.arch` at load time.
 
-> **M0 status:** these per-platform packages are **not yet published**, so
-> they are intentionally **not** declared in the driver's
-> `optionalDependencies`. (npm refuses an `npm ci` against a pinned
-> dependency it cannot resolve from the registry, so declaring an
-> unpublished package would break every install.) Until they ship, the
-> binding is produced locally via `npm run build:native` (which copies
-> `index.<triple>.node` into this directory). Once the packages are
-> published, add `@databricks/databricks-sql-kernel-<triple>` back to
-> `optionalDependencies` — npm then installs only the matching one.
+> **Status:** the per-platform packages are published on npm (kernel
+> `0.2.0`) and declared in the driver's `optionalDependencies`, pinned to
+> that exact version. `npm install` resolves only the package matching the
+> consumer's `process.platform` / `process.arch`; the others are skipped
+> (that is what `optionalDependencies` tolerates), so installing on an
+> unsupported platform does not fail. Local development can still override
+> the installed binary with `npm run build:native`, which copies a freshly
+> built `index.<triple>.node` into this directory — the router prefers that
+> local file over the installed package.
 
-## Supported platforms (M0)
+## Supported platforms
 
-M0 targets a **single** triple: **`linux-x64-gnu`** (package
-`@databricks/databricks-sql-kernel-linux-x64-gnu`, once published).
+The driver declares all eight published triples in `optionalDependencies`:
 
-On every other platform (macOS, Windows, linux-arm64, linux-x64-musl
-/ Alpine, …) the kernel binding is simply absent: `KernelNativeLoader`
-returns `undefined` from `tryGet()` / throws a structured
-`MODULE_NOT_FOUND` hint from `get()`, and the driver continues to use
-the Thrift backend exclusively. This is expected, not a regression —
-additional triples are added to `optionalDependencies` as the kernel
-CI starts publishing them in later milestones.
+- `linux-x64-gnu`, `linux-arm64-gnu`
+- `linux-x64-musl`, `linux-arm64-musl`
+- `darwin-x64`, `darwin-arm64`
+- `win32-x64-msvc`, `win32-arm64-msvc`
+
+On any other platform (e.g. linux-arm gnueabihf, riscv64, s390x, FreeBSD)
+the kernel binding is simply absent: `KernelNativeLoader` returns
+`undefined` from `tryGet()` / throws a structured `MODULE_NOT_FOUND` hint
+from `get()`, and the driver continues to use the Thrift backend
+exclusively. This is expected, not a regression — additional triples are
+added to `optionalDependencies` as the kernel CI starts publishing them.
 
 ## Supply-chain note
 
-The unpublished triple names (`@databricks/databricks-sql-kernel-darwin-arm64`,
-`…-win32-x64-msvc`, etc.) referenced by the router are **not**
+The triple names not yet built/published (`…-linux-arm-gnueabihf`,
+`…-riscv64-gnu`, etc.) referenced by the router boilerplate are **not**
 squat-able: `@databricks` is a Databricks-owned npm scope, and npm
 only allows org members to publish under a scope it owns. A third
 party therefore cannot register `@databricks/databricks-sql-kernel-*` and have
