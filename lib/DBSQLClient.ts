@@ -611,6 +611,24 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
       this.config.preserveBigNumericPrecision = options.preserveBigNumericPrecision;
     }
 
+    // Retry-policy knobs. These live in ClientConfig (consumed by the Thrift
+    // HttpRetryPolicy and forwarded to the kernel on the SEA path), so copying
+    // them here makes them configurable from connect() on BOTH backends. A
+    // per-key narrowed copy (not a spread) keeps the structural type system
+    // honest, matching the metricView / precision / telemetry knobs above.
+    if (options.retryMaxAttempts !== undefined) {
+      this.config.retryMaxAttempts = options.retryMaxAttempts;
+    }
+    if (options.retriesTimeout !== undefined) {
+      this.config.retriesTimeout = options.retriesTimeout;
+    }
+    if (options.retryDelayMin !== undefined) {
+      this.config.retryDelayMin = options.retryDelayMin;
+    }
+    if (options.retryDelayMax !== undefined) {
+      this.config.retryDelayMax = options.retryDelayMax;
+    }
+
     // Override telemetry config if provided in options. Per-key narrowed copy
     // preserves the structural type system: `ConnectionOptions` and
     // `ClientConfig` declare identical types for these knobs, so a user

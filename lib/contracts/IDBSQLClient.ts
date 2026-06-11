@@ -60,6 +60,29 @@ export type ConnectionOptions = {
   enableMetricViewMetadata?: boolean;
 
   /**
+   * Retry-policy knobs governing how the driver retries retryable requests.
+   * They apply to **both** backends: the Thrift `HttpRetryPolicy` reads them
+   * directly, and on the kernel (SEA) path they are forwarded to the kernel
+   * (which owns the retry loop) via `buildKernelRetryOptions`. An unset field
+   * keeps the driver default shown below.
+   *
+   *   • `retryMaxAttempts` — maximum TOTAL number of attempts (the initial
+   *     request plus any retries). Default 5. `0` or `1` both mean a single
+   *     attempt with no retry. Both backends honour the same total-attempt
+   *     semantics (the kernel converts it to its after-initial retry count).
+   *   • `retriesTimeout`   — maximum total wallclock spent retrying, in
+   *     milliseconds. Default 900000 (15 minutes).
+   *   • `retryDelayMin`    — minimum backoff between attempts, in milliseconds.
+   *     Default 1000.
+   *   • `retryDelayMax`    — maximum backoff between attempts, in milliseconds.
+   *     Default 60000.
+   */
+  retryMaxAttempts?: number;
+  retriesTimeout?: number;
+  retryDelayMin?: number;
+  retryDelayMax?: number;
+
+  /**
    * Preserve full numeric precision in results. When `true`, DECIMAL columns
    * are returned as exact strings and 64-bit integers (BIGINT) as JS `bigint`,
    * instead of the default lossy coercion to a JS `number` (which silently
