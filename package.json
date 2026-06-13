@@ -92,14 +92,6 @@
     "winston": "^3.8.2"
   },
   "optionalDependencies": {
-    "lz4": "^0.6.5",
-    "@databricks/databricks-sql-kernel-linux-x64-gnu": "0.2.0",
-    "@databricks/databricks-sql-kernel-linux-arm64-gnu": "0.2.0",
-    "@databricks/databricks-sql-kernel-linux-x64-musl": "0.2.0",
-    "@databricks/databricks-sql-kernel-linux-arm64-musl": "0.2.0",
-    "@databricks/databricks-sql-kernel-darwin-x64": "0.2.0",
-    "@databricks/databricks-sql-kernel-darwin-arm64": "0.2.0",
-    "@databricks/databricks-sql-kernel-win32-x64-msvc": "0.2.0",
-    "@databricks/databricks-sql-kernel-win32-arm64-msvc": "0.2.0"
+    "lz4": "^0.6.5"
   }
 }
