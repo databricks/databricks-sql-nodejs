@@ -48,7 +48,9 @@ import HiveDriverError from '../errors/HiveDriverError';
 import OperationStateError, { OperationStateErrorCode } from '../errors/OperationStateError';
 import ArrowResultConverter from '../result/ArrowResultConverter';
 import ResultSlicer from '../result/ResultSlicer';
+import IResultsProvider from '../result/IResultsProvider';
 import KernelResultsProvider from './KernelResultsProvider';
+import KernelNoMaterializationConverter from './KernelNoMaterializationConverter';
 import { arrowSchemaToThriftSchema, decodeIpcSchema, patchIpcBytes } from './KernelArrowIpc';
 import { decodeNapiKernelError } from './KernelErrorMapping';
 import {
@@ -782,13 +784,25 @@ export default class KernelOperationBackend implements IOperationBackend {
     // KernelResultsProvider consumes only `fetchNextBatch`; both the async result
     // handle and the blocking statement satisfy that surface.
     this.resultsProvider = new KernelResultsProvider(handle as unknown as KernelStatement);
-    // DECIMAL/BIGINT precision preservation is opt-in via the
-    // `preserveBigNumericPrecision` connection option (default off). The kernel
-    // always delivers native Arrow Decimal128 / Int64, so when enabled the
-    // converter renders DECIMAL as an exact string and BIGINT as a `bigint`.
-    const converter = new ArrowResultConverter(this.context, this.resultsProvider, metadata, {
-      preserveBigNumericPrecision: this.context.getConfig().preserveBigNumericPrecision ?? false,
-    });
+    // [bench] No-materialization layer for the kernel path: when enabled, drain
+    // the IPC batches through the kernel transport (napi fetchNextBatch →
+    // download + LZ4 + encode_ipc_stream) but skip BOTH the Arrow vector decode
+    // (`ArrowResultConverter` → `RecordBatchReader._loadVectors`) and the per-row
+    // JS-object build. Row counts come from `KernelResultsProvider`'s header-only
+    // `countRowsInIpc`, so this measures kernel execute+transport without the
+    // materialization tax. The materialized path below is the production default.
+    let converter: IResultsProvider<Array<any>>;
+    if (this.context.getConfig().disableArrowMaterialization) {
+      converter = new KernelNoMaterializationConverter(this.resultsProvider);
+    } else {
+      // DECIMAL/BIGINT precision preservation is opt-in via the
+      // `preserveBigNumericPrecision` connection option (default off). The kernel
+      // always delivers native Arrow Decimal128 / Int64, so when enabled the
+      // converter renders DECIMAL as an exact string and BIGINT as a `bigint`.
+      converter = new ArrowResultConverter(this.context, this.resultsProvider, metadata, {
+        preserveBigNumericPrecision: this.context.getConfig().preserveBigNumericPrecision ?? false,
+      });
+    }
     this.resultSlicer = new ResultSlicer(this.context, converter);
     return this.resultSlicer;
   }
