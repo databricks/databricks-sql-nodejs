@@ -9,6 +9,11 @@
 # the .d.ts is the consumer-facing type contract.
 !native/kernel/index.js
 !native/kernel/index.d.ts
+# [bench] Vendored prebuilt napi addon: the kernel optionalDependencies were
+# dropped (unpublished), so the per-platform `.node` is committed here instead
+# and MUST be packed — without this the router can't load the kernel and any
+# useKernel:true connect() fails at native-addon load.
+!native/kernel/*.node
 
 !LICENSE
 !NOTICE
