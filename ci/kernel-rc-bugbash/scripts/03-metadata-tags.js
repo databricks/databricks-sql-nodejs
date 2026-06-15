@@ -77,9 +77,11 @@ const collect = async (op) => { const r = await op.fetchAll(); await op.close();
       fn: async () => {
         const types = await collect(await session.getTableTypes());
         const names = types.map((t) => JSON.stringify(t)).join(',');
-        // METRIC_VIEW tables exist only if one is defined; report what table types the server exposes.
+        // METRIC_VIEW only appears if a metric view is defined on the warehouse,
+        // which is environment-dependent — so its ABSENCE is not a driver bug
+        // (don't hard-fail). Report which case we observed.
         if (/METRIC_VIEW/i.test(names)) return 'METRIC_VIEW present in table types';
-        throw new Error('no METRIC_VIEW defined on this warehouse to inspect (expected unless one exists); table types seen: ' + names.slice(0, 120));
+        return 'no METRIC_VIEW defined on this warehouse (env-dependent, not a bug); table types seen: ' + names.slice(0, 120);
       },
     },
   ]);

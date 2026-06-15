@@ -5,9 +5,17 @@ name: kernel-rc-cross-os
 # (useKernel:true). Confirms the per-platform @databricks/databricks-sql-kernel-<triple>
 # napi binary installs, loads, and runs the full bug-bash suite on each OS.
 #
-# The kernel loader requires Node >= 18, so the matrix is 18/20/22 (not 14/16).
-# Manual trigger only — it runs heavy queries against a real warehouse.
+# Node matrix:
+#   - 18/20/22: real published RC (loader floor is >=18) — kernel as shipped.
+#   - 16: the loader hard-gates at >=18, but the binary is N-API<=7 and runs on
+#     Node 16. These jobs LOWER the floor 18->16 to validate the proposed change
+#     (kernel on Node 16), and additionally run the Thrift suite (no change needed).
+#
+# Runs on push to this branch and via manual dispatch. Heavy queries hit a real
+# warehouse; concurrency is capped.
 on:
+  push:
+    branches: [ kernel-rc-cross-os-ci ]
   workflow_dispatch:
     inputs:
       rc_version:
@@ -22,6 +30,7 @@ defaults:
 # Reuses the repo's existing e2e secrets (same as main.yml):
 #   DATABRICKS_HOST, TEST_PECO_WAREHOUSE_HTTP_PATH, DATABRICKS_TOKEN
 env:
+  RC_VERSION: ${{ github.event.inputs.rc_version || '1.16.0-rc.1' }}
   DATABRICKS_PECOTESTING_SERVER_HOSTNAME: ${{ secrets.DATABRICKS_HOST }}
   DATABRICKS_PECOTESTING_HTTP_PATH2: ${{ secrets.TEST_PECO_WAREHOUSE_HTTP_PATH }}
   DATABRICKS_PECOTESTING_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
@@ -31,12 +40,18 @@ jobs:
   suite:
     name: ${{ matrix.label }} · node ${{ matrix.node }}
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    timeout-minutes: 40
     strategy:
       fail-fast: false
       max-parallel: 3            # cap concurrent load on the single warehouse
       matrix:
         include:
+          # Node 16 — validate the proposed lowered floor (kernel) + Thrift.
+          - { label: linux-x64-gnu,   os: ubuntu-latest,    node: 16 }
+          - { label: darwin-x64,      os: macos-13,         node: 16 }
+          - { label: darwin-arm64,    os: macos-latest,     node: 16 }
+          - { label: win32-x64-msvc,  os: windows-latest,   node: 16 }
+          # 18/20/22 — real published RC (floor >=18), kernel as shipped.
           - { label: linux-x64-gnu,   os: ubuntu-latest,    node: 18 }
           - { label: linux-x64-gnu,   os: ubuntu-latest,    node: 20 }
           - { label: linux-x64-gnu,   os: ubuntu-latest,    node: 22 }
@@ -51,39 +66,50 @@ jobs:
           node-version: ${{ matrix.node }}
       - name: Platform info
         run: node -e "console.log(process.version, process.platform, process.arch)"
-      - name: Install RC ${{ inputs.rc_version }} (resolves per-platform kernel binary)
+      - name: Install RC ${{ env.RC_VERSION }} (resolves per-platform kernel binary)
         run: |
           npm install --no-audit --no-fund
-          npm install --no-audit --no-fund "@databricks/sql@${{ inputs.rc_version }}"
+          npm install --no-audit --no-fund "@databricks/sql@${{ env.RC_VERSION }}"
       - name: Verify kernel native binary loads
         run: node -e "console.log('kernel napi', require('@databricks/sql/native/kernel').version())"
-      - name: Run full bug-bash suite (kernel mode)
+      - name: '[node16] Lower kernel floor 18->16 (validate proposed change)'
+        if: ${{ matrix.node == 16 }}
+        run: node -e "const fs=require('fs');const f='node_modules/@databricks/sql/dist/kernel/KernelNativeLoader.js';const s=fs.readFileSync(f,'utf8');const o=s.replace('MIN_NODE_MAJOR = 18','MIN_NODE_MAJOR = 16');if(o===s)throw new Error('floor marker not found');fs.writeFileSync(f,o);console.log('kernel floor lowered 18->16');"
+      - name: Run full bug-bash suite (KERNEL mode)
+        run: node scripts/run-all.js
+      - name: '[node16] Run full bug-bash suite (THRIFT mode)'
+        if: ${{ matrix.node == 16 }}
+        env:
+          BUGBASH_THRIFT: '1'
         run: node scripts/run-all.js
 
   # musl Linux (Alpine) — run via docker on a glibc runner (a `container:` job
   # breaks JS actions: the runner's glibc node can't exec inside musl).
   linux-musl:
-    name: ${{ matrix.label }}
+    name: ${{ matrix.label }} · ${{ matrix.image }}
     runs-on: ${{ matrix.runner }}
-    timeout-minutes: 30
+    timeout-minutes: 40
     strategy:
       fail-fast: false
       matrix:
         include:
-          - { label: linux-x64-musl,   runner: ubuntu-latest }
-          - { label: linux-arm64-musl, runner: ubuntu-24.04-arm }   # needs ARM runner availability
+          - { label: linux-x64-musl,   runner: ubuntu-latest,    image: 'node:20-alpine', node16: '' }
+          - { label: linux-x64-musl,   runner: ubuntu-latest,    image: 'node:16-alpine', node16: 'yes' }
+          - { label: linux-arm64-musl, runner: ubuntu-24.04-arm, image: 'node:20-alpine', node16: '' }   # needs ARM runner availability
     steps:
       - uses: actions/checkout@v4
-      - name: Run suite in node:20-alpine
+      - name: Run suite in ${{ matrix.image }}
         working-directory: .
         run: |
           docker run --rm \
             -e DATABRICKS_PECOTESTING_SERVER_HOSTNAME \
             -e DATABRICKS_PECOTESTING_HTTP_PATH2 \
             -e DATABRICKS_PECOTESTING_TOKEN \
-            -v "$PWD":/work -w /work/ci/kernel-rc-bugbash node:20-alpine \
+            -e LOWER16='${{ matrix.node16 }}' \
+            -v "$PWD":/work -w /work/ci/kernel-rc-bugbash ${{ matrix.image }} \
             sh -c "node -e 'console.log(process.version, process.platform, process.arch)' && \
                    npm install --no-audit --no-fund && \
-                   npm install --no-audit --no-fund '@databricks/sql@${{ inputs.rc_version }}' && \
+                   npm install --no-audit --no-fund '@databricks/sql@${{ env.RC_VERSION }}' && \
+                   if [ -n \"\$LOWER16\" ]; then node -e \"const fs=require('fs');const f='node_modules/@databricks/sql/dist/kernel/KernelNativeLoader.js';fs.writeFileSync(f,fs.readFileSync(f,'utf8').replace('MIN_NODE_MAJOR = 18','MIN_NODE_MAJOR = 16'));console.log('floor lowered 18->16');\"; fi && \
                    node -e \"console.log('kernel napi', require('@databricks/sql/native/kernel').version())\" && \
                    node scripts/run-all.js"
