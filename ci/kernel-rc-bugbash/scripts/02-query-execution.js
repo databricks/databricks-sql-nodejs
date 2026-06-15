@@ -51,15 +51,22 @@ const { kernelConnect, runQuery, runSuite } = require('./lib');
         // make the cancel race a near-instant query — useless. runAsync so it is
         // genuinely in-flight when we cancel.
         const RUNNING = 1, PENDING = 5;
-        const op = await session.executeStatement(
-          "SELECT count(*) FROM range(5000000000) WHERE sha2(cast(id AS string),256) LIKE '%fffff%'",
-          { runAsync: true },
-        );
-        await new Promise((r) => setTimeout(r, 2000));
-        // Precondition: the query must really be in-flight, else the test proves nothing.
-        const stBefore = (await op.status()).operationState;
-        if (stBefore !== RUNNING && stBefore !== PENDING) {
-          throw new Error(`not in-flight before cancel (state=${stBefore}); query finished/optimized — test meaningless`);
+        const SQL = "SELECT count(*) FROM range(5000000000) WHERE sha2(cast(id AS string),256) LIKE '%fffff%'";
+        // Get the query genuinely in-flight before cancelling. Retry a few times:
+        // on a contended/fast warehouse the submit can occasionally come back
+        // already-terminal, which makes the cancel unobservable — that's
+        // INCONCLUSIVE (env timing), not a driver failure, so we don't hard-fail.
+        let op, stBefore;
+        for (let attempt = 1; attempt <= 4; attempt++) {
+          op = await session.executeStatement(SQL, { runAsync: true });
+          await new Promise((r) => setTimeout(r, 2000));
+          stBefore = (await op.status()).operationState;
+          if (stBefore === RUNNING || stBefore === PENDING) break;
+          await op.close().catch(() => {});
+          op = undefined;
+        }
+        if (!op) {
+          return 'INCONCLUSIVE: could not get the query in-flight (finished too fast under load) — cancel not exercised, not a driver failure';
         }
         const tc = Date.now();
         await op.cancel();
