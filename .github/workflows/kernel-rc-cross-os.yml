@@ -48,10 +48,13 @@ jobs:
       matrix:
         include:
           # Node 16 — validate the proposed lowered floor (kernel) + Thrift.
-          - { label: linux-x64-gnu,   os: ubuntu-latest,    node: 16 }
-          - { label: darwin-x64,      os: macos-13,         node: 16 }
-          - { label: darwin-arm64,    os: macos-latest,     node: 16 }
-          - { label: win32-x64-msvc,  os: windows-latest,   node: 16 }
+          # The kernel packages declare engines>=18, so npm SKIPS them as
+          # optional deps on Node 16; we force-install the matching triple
+          # (a direct install only warns on engines) then lower the loader floor.
+          - { label: linux-x64-gnu,   os: ubuntu-latest,    node: 16, triple: linux-x64-gnu }
+          - { label: darwin-x64,      os: macos-13,         node: 16, triple: darwin-x64 }
+          - { label: darwin-arm64,    os: macos-latest,     node: 16, triple: darwin-arm64 }
+          - { label: win32-x64-msvc,  os: windows-latest,   node: 16, triple: win32-x64-msvc }
           # 18/20/22 — real published RC (floor >=18), kernel as shipped.
           - { label: linux-x64-gnu,   os: ubuntu-latest,    node: 18 }
           - { label: linux-x64-gnu,   os: ubuntu-latest,    node: 20 }
@@ -71,11 +74,13 @@ jobs:
         run: |
           npm install --no-audit --no-fund
           npm install --no-audit --no-fund "@databricks/sql@${{ env.RC_VERSION }}"
+      - name: '[node16] Force-install kernel binary (npm skips it via engines>=18) + lower floor'
+        if: ${{ matrix.node == 16 }}
+        run: |
+          npm install --no-save --no-audit --no-fund "@databricks/databricks-sql-kernel-${{ matrix.triple }}@0.2.0"
+          node -e "const fs=require('fs');const f='node_modules/@databricks/sql/dist/kernel/KernelNativeLoader.js';const s=fs.readFileSync(f,'utf8');const o=s.replace('MIN_NODE_MAJOR = 18','MIN_NODE_MAJOR = 16');if(o===s)throw new Error('floor marker not found');fs.writeFileSync(f,o);console.log('kernel floor lowered 18->16');"
       - name: Verify kernel native binary loads
         run: node -e "console.log('kernel napi', require('@databricks/sql/native/kernel').version())"
-      - name: '[node16] Lower kernel floor 18->16 (validate proposed change)'
-        if: ${{ matrix.node == 16 }}
-        run: node -e "const fs=require('fs');const f='node_modules/@databricks/sql/dist/kernel/KernelNativeLoader.js';const s=fs.readFileSync(f,'utf8');const o=s.replace('MIN_NODE_MAJOR = 18','MIN_NODE_MAJOR = 16');if(o===s)throw new Error('floor marker not found');fs.writeFileSync(f,o);console.log('kernel floor lowered 18->16');"
       - name: Run full bug-bash suite (KERNEL mode)
         run: node scripts/run-all.js
       - name: '[node16] Run full bug-bash suite (THRIFT mode)'
@@ -112,6 +117,6 @@ jobs:
             sh -c "node -e 'console.log(process.version, process.platform, process.arch)' && \
                    npm install --no-audit --no-fund && \
                    npm install --no-audit --no-fund '@databricks/sql@${{ env.RC_VERSION }}' && \
-                   if [ -n \"\$LOWER16\" ]; then node -e \"const fs=require('fs');const f='node_modules/@databricks/sql/dist/kernel/KernelNativeLoader.js';fs.writeFileSync(f,fs.readFileSync(f,'utf8').replace('MIN_NODE_MAJOR = 18','MIN_NODE_MAJOR = 16'));console.log('floor lowered 18->16');\"; fi && \
+                   if [ -n \"\$LOWER16\" ]; then npm install --no-save --no-audit --no-fund '@databricks/databricks-sql-kernel-linux-x64-musl@0.2.0' && node -e \"const fs=require('fs');const f='node_modules/@databricks/sql/dist/kernel/KernelNativeLoader.js';fs.writeFileSync(f,fs.readFileSync(f,'utf8').replace('MIN_NODE_MAJOR = 18','MIN_NODE_MAJOR = 16'));console.log('floor lowered 18->16');\"; fi && \
                    node -e \"console.log('kernel napi', require('@databricks/sql/native/kernel').version())\" && \
                    node scripts/run-all.js"
