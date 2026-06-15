@@ -1,5 +1,13 @@
 # Release History
 
+## 1.16.0
+
+- **New: optional kernel backend (`useKernel: true`).** Adds an alternative connection path backed by the native `@databricks/databricks-sql-kernel` client (a Rust core exposed via napi-rs), shipped as prebuilt per-platform packages (linux x64/arm64 gnu+musl, macOS x64/arm64, Windows x64/arm64) pulled in automatically as optional dependencies. The kernel talks to Databricks over the **SEA (Statement Execution API) HTTP transport** — not Thrift — with CloudFetch and inline-Arrow result fetching, through the same `DBSQLClient` surface. Supports PAT and OAuth (M2M/U2M) auth. Requires Node >= 18; on older Node the binding is not loaded and `useKernel: true` raises a clear error directing you to the Thrift backend. The default backend remains Thrift — opt in per connection. (databricks/databricks-sql-nodejs#378, #380, #409, #410, #411, #412, #416, #428, #434 by @msrathore-db)
+- Kernel backend behavior is aligned with Thrift so application code works the same either way: named/positional query parameters, metadata calls, TLS/mTLS with a custom CA, custom headers and user-agent, HTTP/SOCKS proxy and socket timeout, configurable retry/backoff, session query tags, async submit + `cancel()`, operation id/schema, and INTERVAL/type parity. Kernel logs surface through the same `DBSQLLogger` sink. (databricks/databricks-sql-nodejs#417, #420, #421, #426, #430, #431 by @msrathore-db)
+- Make retry-policy knobs (max attempts, min/max backoff, overall timeout) configurable via `connect()` for both backends (databricks/databricks-sql-nodejs#433 by @msrathore-db)
+- Retry transient network errors and fix a CloudFetch prefetch promise-rejection leak (databricks/databricks-sql-nodejs#424 by @msrathore-db)
+- Telemetry: emit `sql_operation`, `auth_type`, and `driver_connection_params` (databricks/databricks-sql-nodejs#396 by @samikshya-db)
+
 ## 1.15.0
 
 - Add SPOG routing support: parse `?o=<workspaceId>` from `httpPath` and inject `x-databricks-org-id` on Thrift, telemetry, and feature-flag requests. Expose `customHeaders` on `ConnectionOptions` for caller-supplied headers (databricks/databricks-sql-nodejs#391 by @samikshya-db)
