@@ -1,0 +1,13 @@
+{
+  "name": "kernel-rc-bugbash",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Cross-OS bug-bash suite for the SQL kernel (Rust/SEA) backend, run against the published RC of @databricks/sql in kernel mode (useKernel:true).",
+  "type": "commonjs",
+  "scripts": {
+    "test": "node scripts/run-all.js"
+  },
+  "dependencies": {
+    "@databricks/sql": "1.16.0-rc.1"
+  }
+}

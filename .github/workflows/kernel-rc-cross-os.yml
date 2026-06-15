@@ -1,0 +1,89 @@
+name: kernel-rc-cross-os
+
+# Cross-OS / arch / Node validation of the SQL kernel (Rust/SEA) backend against
+# the PUBLISHED release candidate (@databricks/sql@1.16.0-rc.1) in kernel mode
+# (useKernel:true). Confirms the per-platform @databricks/databricks-sql-kernel-<triple>
+# napi binary installs, loads, and runs the full bug-bash suite on each OS.
+#
+# The kernel loader requires Node >= 18, so the matrix is 18/20/22 (not 14/16).
+# Manual trigger only — it runs heavy queries against a real warehouse.
+on:
+  workflow_dispatch:
+    inputs:
+      rc_version:
+        description: '@databricks/sql version to test'
+        required: true
+        default: '1.16.0-rc.1'
+
+defaults:
+  run:
+    working-directory: ci/kernel-rc-bugbash
+
+# Reuses the repo's existing e2e secrets (same as main.yml):
+#   DATABRICKS_HOST, TEST_PECO_WAREHOUSE_HTTP_PATH, DATABRICKS_TOKEN
+env:
+  DATABRICKS_PECOTESTING_SERVER_HOSTNAME: ${{ secrets.DATABRICKS_HOST }}
+  DATABRICKS_PECOTESTING_HTTP_PATH2: ${{ secrets.TEST_PECO_WAREHOUSE_HTTP_PATH }}
+  DATABRICKS_PECOTESTING_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
+
+jobs:
+  # glibc Linux (x64 + arm64), macOS (x64 + arm64), Windows x64.
+  suite:
+    name: ${{ matrix.label }} · node ${{ matrix.node }}
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      max-parallel: 3            # cap concurrent load on the single warehouse
+      matrix:
+        include:
+          - { label: linux-x64-gnu,   os: ubuntu-latest,    node: 18 }
+          - { label: linux-x64-gnu,   os: ubuntu-latest,    node: 20 }
+          - { label: linux-x64-gnu,   os: ubuntu-latest,    node: 22 }
+          - { label: linux-arm64-gnu, os: ubuntu-24.04-arm, node: 20 }   # needs ARM runner availability
+          - { label: darwin-x64,      os: macos-13,         node: 20 }
+          - { label: darwin-arm64,    os: macos-latest,     node: 20 }
+          - { label: win32-x64-msvc,  os: windows-latest,   node: 20 }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ matrix.node }}
+      - name: Platform info
+        run: node -e "console.log(process.version, process.platform, process.arch)"
+      - name: Install RC ${{ inputs.rc_version }} (resolves per-platform kernel binary)
+        run: |
+          npm install --no-audit --no-fund
+          npm install --no-audit --no-fund "@databricks/sql@${{ inputs.rc_version }}"
+      - name: Verify kernel native binary loads
+        run: node -e "console.log('kernel napi', require('@databricks/sql/native/kernel').version())"
+      - name: Run full bug-bash suite (kernel mode)
+        run: node scripts/run-all.js
+
+  # musl Linux (Alpine) — run via docker on a glibc runner (a `container:` job
+  # breaks JS actions: the runner's glibc node can't exec inside musl).
+  linux-musl:
+    name: ${{ matrix.label }}
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { label: linux-x64-musl,   runner: ubuntu-latest }
+          - { label: linux-arm64-musl, runner: ubuntu-24.04-arm }   # needs ARM runner availability
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run suite in node:20-alpine
+        working-directory: .
+        run: |
+          docker run --rm \
+            -e DATABRICKS_PECOTESTING_SERVER_HOSTNAME \
+            -e DATABRICKS_PECOTESTING_HTTP_PATH2 \
+            -e DATABRICKS_PECOTESTING_TOKEN \
+            -v "$PWD":/work -w /work/ci/kernel-rc-bugbash node:20-alpine \
+            sh -c "node -e 'console.log(process.version, process.platform, process.arch)' && \
+                   npm install --no-audit --no-fund && \
+                   npm install --no-audit --no-fund '@databricks/sql@${{ inputs.rc_version }}' && \
+                   node -e \"console.log('kernel napi', require('@databricks/sql/native/kernel').version())\" && \
+                   node scripts/run-all.js"
