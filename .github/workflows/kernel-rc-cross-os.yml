@@ -40,6 +40,7 @@ jobs:
   suite:
     name: ${{ matrix.label }} · node ${{ matrix.node }}
     runs-on: ${{ matrix.os }}
+    environment: azure-prod        # e2e secrets (DATABRICKS_*) are scoped to this environment
     timeout-minutes: 40
     strategy:
       fail-fast: false
@@ -88,6 +89,7 @@ jobs:
   linux-musl:
     name: ${{ matrix.label }} · ${{ matrix.image }}
     runs-on: ${{ matrix.runner }}
+    environment: azure-prod        # e2e secrets (DATABRICKS_*) are scoped to this environment
     timeout-minutes: 40
     strategy:
       fail-fast: false
