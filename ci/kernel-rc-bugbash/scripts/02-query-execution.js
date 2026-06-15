@@ -81,18 +81,27 @@ const { kernelConnect, runQuery, runSuite } = require('./lib');
       name: 'Many concurrent queries all complete',
       fn: async () => {
         const C = 80;
-        const results = await Promise.all(
-          Array.from({ length: C }, (_, i) =>
-            (async () => {
+        // Server-side transients that are NOT driver bugs (warehouse under load /
+        // cold-start). A real app retries these — so does this test, otherwise a
+        // shared-warehouse blast makes the concurrency check spuriously red.
+        const TRANSIENT = /sparkSession|Couldn't create directory|TEMPORARILY_UNAVAILABLE|please retry|temporarily|503|429|RuntimeException.*(session|directory)/i;
+        const oneQuery = async (i) => {
+          for (let attempt = 1; ; attempt++) {
+            try {
               const op = await session.executeStatement(`SELECT ${i} AS k, count(*) AS c FROM range(100)`);
               const r = await op.fetchAll(); await op.close();
               // identity check: result i must carry its own k (no crossed responses);
               // count(*) of range(100) is 100.
               if (Number(r[0].k) !== i || Number(r[0].c) !== 100) throw new Error('bad concurrent result ' + JSON.stringify(r));
               return Number(r[0].k);
-            })()
-          )
-        );
+            } catch (e) {
+              const msg = e && e.message ? e.message : String(e);
+              if (attempt < 4 && TRANSIENT.test(msg)) { await new Promise((r) => setTimeout(r, 500 * attempt)); continue; }
+              throw e;
+            }
+          }
+        };
+        const results = await Promise.all(Array.from({ length: C }, (_, i) => oneQuery(i)));
         const distinctComplete = results.length === C && results.slice().sort((a, b) => a - b).every((v, idx) => v === idx);
         if (!distinctComplete) throw new Error('missing/duplicate results: ' + JSON.stringify(results));
         return `${C} concurrent queries ok (all distinct k, count=100)`;
