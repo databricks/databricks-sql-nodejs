@@ -103,7 +103,7 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
 
     this.context
       .getLogger()
-      .log(LogLevel.info, `Result File Download speed from cloud storage ${cleanUrl}: ${speedMBps.toFixed(4)} MB/s`);
+      .log(LogLevel.debug, `Result File Download speed from cloud storage ${cleanUrl}: ${speedMBps.toFixed(4)} MB/s`);
 
     const speedThresholdMBps = this.context.getConfig().cloudFetchSpeedThresholdMBps;
     if (speedMBps < speedThresholdMBps) {
