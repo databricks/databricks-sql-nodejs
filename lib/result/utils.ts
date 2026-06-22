@@ -15,6 +15,8 @@ import {
   Binary as ArrowBinary,
   DateUnit,
   RecordBatchWriter,
+  RecordBatch,
+  TypeMap,
 } from 'apache-arrow';
 import { TTableSchema, TColumnDesc, TPrimitiveTypeEntry, TTypeId, TColumn } from '../../thrift/TCLIService_types';
 import HiveDriverError from '../errors/HiveDriverError';
@@ -22,6 +24,13 @@ import HiveDriverError from '../errors/HiveDriverError';
 export interface ArrowBatch {
   batches: Array<Buffer>;
   rowCount: number;
+  // Pre-decoded RecordBatches, supplied by the kernel copycage path
+  // (`KernelResultsProvider` + `KernelArrowImport`) instead of `batches`.
+  // When present, `ArrowResultConverter` consumes these directly and
+  // skips `RecordBatchReader.from(batches)` — there are no IPC bytes to
+  // decode. The Thrift/CloudFetch paths leave this undefined and continue
+  // to supply `batches` (Arrow IPC buffers) as before.
+  recordBatches?: Array<RecordBatch<TypeMap>>;
 }
 
 export function getSchemaColumns(schema?: TTableSchema): Array<TColumnDesc> {

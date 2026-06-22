@@ -37,6 +37,7 @@
  */
 
 import { v4 as uuidv4 } from 'uuid';
+import { Schema, TypeMap } from 'apache-arrow';
 import { TTableSchema } from '../../thrift/TCLIService_types';
 import IOperationBackend, { IOperationBackendWaitOptions } from '../contracts/IOperationBackend';
 import { OperationStatus, OperationState } from '../contracts/OperationStatus';
@@ -48,8 +49,9 @@ import HiveDriverError from '../errors/HiveDriverError';
 import OperationStateError, { OperationStateErrorCode } from '../errors/OperationStateError';
 import ArrowResultConverter from '../result/ArrowResultConverter';
 import ResultSlicer from '../result/ResultSlicer';
-import KernelResultsProvider from './KernelResultsProvider';
+import KernelResultsProvider, { KernelBufferHandoffOptions, KernelFetchMode } from './KernelResultsProvider';
 import { arrowSchemaToThriftSchema, decodeIpcSchema, patchIpcBytes } from './KernelArrowIpc';
+import { isSchemaZeroCopySupported } from './KernelArrowImport';
 import { decodeNapiKernelError } from './KernelErrorMapping';
 import {
   KernelStatement,
@@ -83,7 +85,8 @@ export type KernelOperationStatement = KernelStatementHandle & Partial<KernelSta
  * (`KernelResultsProvider` → `ArrowResultConverter` → `ResultSlicer`) consumes
  * either interchangeably.
  */
-type KernelFetchHandle = Pick<KernelStatement, 'fetchNextBatch' | 'schema'>;
+type KernelFetchHandle = Pick<KernelStatement, 'fetchNextBatch' | 'schema'> &
+  Partial<Pick<KernelStatement, 'fetchNextBatchCopycage'>>;
 
 /**
  * The rich operation-status surface the kernel exposes on a terminal sync
@@ -114,6 +117,27 @@ interface KernelRichStatusFields {
 
 /** Poll cadence for the async `status()` loop — matches the Thrift backend's 100ms. */
 const STATUS_POLL_INTERVAL_MS = 100;
+
+/**
+ * Resolve the kernel fetch mode from the environment and, for the copycage
+ * mode, package it with the decoded Arrow `schema` the buffer-handoff import
+ * needs.
+ *
+ * `KERNEL_FETCH_MODE` ∈ {ipc, copycage} (default ipc). Returns `undefined`
+ * for the IPC path (the provider then re-encodes IPC).
+ *
+ * Copycage is gated on `isSchemaZeroCopySupported`: if the result schema
+ * carries any type the buffer-handoff importer cannot reconstruct
+ * (dictionary / union / 64-bit-offset Large variant), the whole result falls
+ * back to IPC so it still decodes correctly rather than risk a mis-decode.
+ */
+function resolveFetchMode(schema: Schema<TypeMap>): KernelBufferHandoffOptions | undefined {
+  const mode = (process.env.KERNEL_FETCH_MODE ?? '').toLowerCase() as KernelFetchMode | '';
+  if (mode === 'copycage' && isSchemaZeroCopySupported(schema)) {
+    return { mode, schema };
+  }
+  return undefined;
+}
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => {
@@ -207,6 +231,11 @@ export default class KernelOperationBackend implements IOperationBackend {
   private resultsProvider?: KernelResultsProvider;
 
   private metadata?: ResultMetadata;
+
+  // The result's decoded Arrow schema, captured in `getResultMetadata`. The
+  // copycage buffer-handoff path needs it to drive `makeData` reconstruction
+  // (`KernelArrowImport`); undefined until metadata has been fetched.
+  private arrowSchema?: Schema<TypeMap>;
 
   private metadataPromise?: Promise<ResultMetadata>;
 
@@ -349,6 +378,10 @@ export default class KernelOperationBackend implements IOperationBackend {
       // Promise) — no `await` needed.
       const arrowSchemaIpc = handle.schema();
       const arrowSchema = decodeIpcSchema(arrowSchemaIpc.ipcBytes);
+      // Cache the decoded Arrow schema for the copycage buffer-handoff path
+      // (`getResultSlicer` → `resolveFetchMode`), which rebuilds `RecordBatch`es
+      // from the kernel's in-cage buffers via `makeData`.
+      this.arrowSchema = arrowSchema;
       // `ResultMetadata.schema` keeps the Thrift `TTableSchema` shape for
       // back-compat with the public `IOperation.getSchema()` surface.
       const thriftSchema: TTableSchema = arrowSchemaToThriftSchema(arrowSchema);
@@ -779,9 +812,17 @@ export default class KernelOperationBackend implements IOperationBackend {
     }
     const metadata = await this.getResultMetadata();
     const handle = await this.getFetchHandle();
-    // KernelResultsProvider consumes only `fetchNextBatch`; both the async result
-    // handle and the blocking statement satisfy that surface.
-    this.resultsProvider = new KernelResultsProvider(handle as unknown as KernelStatement);
+    // KernelResultsProvider consumes `fetchNextBatch` (IPC) plus an optional
+    // `fetchNextBatchCopycage`; both the async result handle and the blocking
+    // statement satisfy that surface.
+    //
+    // Copycage fetch (in-cage Arrow buffer copies, no IPC re-encode) is opt-in
+    // via `KERNEL_FETCH_MODE=copycage` (default ipc). It needs the decoded
+    // Arrow schema to rebuild `RecordBatch`es and is gated on the schema being
+    // reconstructible (`resolveFetchMode` → `isSchemaZeroCopySupported`); the
+    // provider further gates on the binding exposing `fetchNextBatchCopycage`.
+    const bufferHandoff = this.arrowSchema !== undefined ? resolveFetchMode(this.arrowSchema) : undefined;
+    this.resultsProvider = new KernelResultsProvider(handle as unknown as KernelStatement, bufferHandoff);
     // DECIMAL/BIGINT precision preservation is opt-in via the
     // `preserveBigNumericPrecision` connection option (default off). The kernel
     // always delivers native Arrow Decimal128 / Int64, so when enabled the

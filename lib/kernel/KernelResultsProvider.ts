@@ -12,9 +12,11 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import { Schema, TypeMap } from 'apache-arrow';
 import IResultsProvider, { ResultsProviderFetchNextOptions } from '../result/IResultsProvider';
 import { ArrowBatch } from '../result/utils';
 import { countRowsInIpc, patchIpcBytes } from './KernelArrowIpc';
+import { importZeroCopyBatch, KernelZeroCopyBatch } from './KernelArrowImport';
 
 /**
  * The minimal slice of the napi-binding `Statement` class that we
@@ -24,6 +26,31 @@ import { countRowsInIpc, patchIpcBytes } from './KernelArrowIpc';
  */
 export interface KernelFetchHandle {
   fetchNextBatch(): Promise<{ ipcBytes: Buffer } | null>;
+  // Copy-into-cage fetch (Flavour A): returns the batch's Arrow buffers as
+  // V8-allocated (in-cage) copies of the Arrow bytes — cage-safe and
+  // finalizer-free, one memcpy per buffer. Optional so stubs / older bindings
+  // without the method still satisfy the interface (the provider then falls
+  // back to the IPC path).
+  fetchNextBatchCopycage?(): Promise<KernelZeroCopyBatch | null>;
+}
+
+/**
+ * Which native fetch path the provider drives. `ipc` re-encodes each batch
+ * to Arrow IPC bytes (default, oldest path). `copycage` hands V8-allocated
+ * in-cage copies of the kernel's Arrow buffers (Flavour A) — cage-safe, one
+ * memcpy/buffer, no IPC serialize+decode.
+ */
+export type KernelFetchMode = 'ipc' | 'copycage';
+
+/**
+ * Enables the copycage buffer-handoff fetch path. Carries the decoded Arrow
+ * `schema` needed to drive `makeData` reconstruction. Only takes effect when
+ * the binding also exposes `fetchNextBatchCopycage`; otherwise the provider
+ * falls back to the IPC path.
+ */
+export interface KernelBufferHandoffOptions {
+  mode: Exclude<KernelFetchMode, 'ipc'>;
+  schema: Schema<TypeMap>;
 }
 
 /**
@@ -57,8 +84,20 @@ export default class KernelResultsProvider implements IResultsProvider<ArrowBatc
   // Set once the kernel returns `null` from `fetchNextBatch()`.
   private exhausted = false;
 
-  constructor(statement: KernelFetchHandle) {
+  // When set, fetch via a buffer-handoff path (`zerocopy` ⇒
+  // `fetchNextBatchZerocopy()`, `copycage` ⇒ `fetchNextBatchCopycage()`)
+  // feeding `importZeroCopyBatch(schema, …)`. Undefined ⇒ the IPC path.
+  private readonly bufferHandoff?: KernelBufferHandoffOptions;
+
+  constructor(statement: KernelFetchHandle, bufferHandoff?: KernelBufferHandoffOptions) {
     this.statement = statement;
+    // Only engage the copycage path if the binding actually exposes
+    // `fetchNextBatchCopycage` — otherwise silently fall back to IPC (older
+    // binding / stub).
+    this.bufferHandoff =
+      bufferHandoff !== undefined && typeof statement.fetchNextBatchCopycage === 'function'
+        ? bufferHandoff
+        : undefined;
   }
 
   public async hasMore(): Promise<boolean> {
@@ -93,6 +132,24 @@ export default class KernelResultsProvider implements IResultsProvider<ArrowBatc
     // iteratively toward the null sentinel without building a deep promise
     // chain.
     while (!this.exhausted && this.prefetched === undefined) {
+      if (this.bufferHandoff !== undefined) {
+        // Copycage: fetch the batch as in-cage `ArrayBuffer` copies and feed
+        // `importZeroCopyBatch` to rebuild the `RecordBatch` directly (no IPC
+        // serialize+decode). The constructor already verified the binding
+        // exposes `fetchNextBatchCopycage`.
+        // eslint-disable-next-line no-await-in-loop
+        const desc = await this.statement.fetchNextBatchCopycage!.call(this.statement);
+        if (desc === null) {
+          this.exhausted = true;
+          return;
+        }
+        if (desc.numRows > 0) {
+          const recordBatch = importZeroCopyBatch(this.bufferHandoff.schema, desc);
+          this.prefetched = { batches: [], recordBatches: [recordBatch], rowCount: desc.numRows };
+        }
+        // eslint-disable-next-line no-continue
+        continue;
+      }
       // eslint-disable-next-line no-await-in-loop
       const next = await this.statement.fetchNextBatch();
       if (next === null) {

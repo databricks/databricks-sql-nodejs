@@ -300,7 +300,14 @@ export default class ArrowResultConverter implements IResultsProvider<Array<any>
         }
 
         const arrowBatch = await this.source.fetchNext(options); // eslint-disable-line no-await-in-loop
-        if (arrowBatch.batches.length > 0 && arrowBatch.rowCount > 0) {
+        if (arrowBatch.recordBatches !== undefined && arrowBatch.rowCount > 0) {
+          // Kernel copycage path: batches are already decoded `RecordBatch`
+          // objects (rebuilt from the kernel's in-cage Arrow buffers in
+          // `KernelArrowImport`), so there are no IPC bytes to parse —
+          // iterate them directly.
+          this.recordBatchReader = arrowBatch.recordBatches[Symbol.iterator]();
+          this.remainingRows = arrowBatch.rowCount;
+        } else if (arrowBatch.batches.length > 0 && arrowBatch.rowCount > 0) {
           const reader = RecordBatchReader.from<TypeMap>(arrowBatch.batches);
           this.recordBatchReader = reader[Symbol.iterator]();
           this.remainingRows = arrowBatch.rowCount;
