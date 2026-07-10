@@ -1,5 +1,16 @@
 # Release History
 
+## 1.17.0
+
+**Security (non-breaking):** clears the non-breaking OSV-Scanner findings via a `package.json` `overrides` block plus a coherent dev-toolchain bump (`mocha`, `eslint`) — **2 CRITICAL** (`basic-ftp`, `form-data`) plus the transitively-fixable HIGH/MED/LOW (`ws`, `@75lb/deep-merge`, `ip-address`, and the mocha-tree deps `braces`/`micromatch`/`cross-spawn`/`minimatch`/`glob`/`@babel/*`/`js-yaml`/`path-to-regexp`). No engine or runtime-API changes — a drop-in patch so consumers can clear critical/high scanner alerts without adopting the breaking `2.0.0` bump.
+
+Known residual findings, all deferred because they can't be fixed without a breaking change (addressed in `2.0.0`, databricks/databricks-sql-nodejs#390):
+
+- `thrift` and `uuid` (HIGH) — direct runtime deps whose fixes are SemVer-major bumps (thrift 0.16→0.23, uuid 9→11).
+- `serialize-javascript` (dev-only) — its only patched versions (7.0.3+) require Node ≥20, which this release's non-breaking `>=14` floor can't adopt. Dev-only: it's a test-reporter dependency, never present in the published tarball, never runs on a consumer machine.
+
+Closes #386, #263.
+
 ## 1.16.0
 
 - **New: optional kernel backend (`useKernel: true`).** Adds an alternative connection path backed by the native `@databricks/databricks-sql-kernel` client (a Rust core exposed via napi-rs), shipped as prebuilt per-platform packages (linux x64/arm64 gnu+musl, macOS x64/arm64, Windows x64/arm64) pulled in automatically as optional dependencies. The kernel talks to Databricks over the **SEA (Statement Execution API) HTTP transport** — not Thrift — with CloudFetch and inline-Arrow result fetching, through the same `DBSQLClient` surface. Supports PAT and OAuth (M2M/U2M) auth. Requires Node >= 18; on older Node the binding is not loaded and `useKernel: true` raises a clear error directing you to the Thrift backend. The default backend remains Thrift — opt in per connection. (databricks/databricks-sql-nodejs#378, #380, #409, #410, #411, #412, #416, #428, #434 by @msrathore-db)
