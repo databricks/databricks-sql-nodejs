@@ -1,9 +1,20 @@
 import { expect } from 'chai';
 import sinon from 'sinon';
 
-describe('lz4 module loader', () => {
+describe('lz4 module loader', function () {
   let moduleLoadStub: sinon.SinonStub | undefined;
   let consoleWarnStub: sinon.SinonStub;
+
+  // This suite directly exercises CJS-only primitives (Module._load,
+  // require.cache). Node 22+ loads .ts specs through the ESM loader,
+  // where neither is available. Skip on those runtimes — the production
+  // lz4 loader code itself works fine; only this test's mechanism is
+  // CJS-bound.
+  before(function () {
+    if (typeof require === 'undefined') {
+      this.skip();
+    }
+  });
 
   beforeEach(() => {
     consoleWarnStub = sinon.stub(console, 'warn');

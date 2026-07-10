@@ -163,7 +163,12 @@ export default class FederationProvider implements ITokenProvider {
           'Content-Type': 'application/x-www-form-urlencoded',
         },
         body,
-        signal: controller.signal,
+        // node-fetch ships its own AbortSignal shim that differs slightly
+        // from the native AbortSignal (subtle `this`-typing mismatch on
+        // onabort handler). TS 4 didn't catch this; TS 5+ does. The two
+        // are runtime-compatible, so cast through `unknown` (rather than
+        // `any`) to keep the assertion narrow.
+        signal: controller.signal as unknown as import('node-fetch').RequestInit['signal'],
       });
 
       if (!response.ok) {
