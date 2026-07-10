@@ -5,6 +5,7 @@
 **Security (non-breaking):** clears the non-breaking OSV-Scanner findings via a `package.json` `overrides` block plus a coherent dev-toolchain bump (`mocha`, `eslint`) — **2 CRITICAL** (`basic-ftp`, `form-data`) plus the transitively-fixable HIGH/MED/LOW (`ws`, `@75lb/deep-merge`, `ip-address`, and the mocha-tree deps `braces`/`micromatch`/`cross-spawn`/`minimatch`/`glob`/`@babel/*`/`js-yaml`/`path-to-regexp`). No engine or runtime-API changes — a drop-in patch so consumers can clear critical/high scanner alerts without adopting the breaking `2.0.0` bump.
 
 Known residual findings, all deferred because they can't be fixed without a breaking change (addressed in `2.0.0`, databricks/databricks-sql-nodejs#390):
+
 - `thrift` and `uuid` (HIGH) — direct runtime deps whose fixes are SemVer-major bumps (thrift 0.16→0.23, uuid 9→11).
 - `serialize-javascript` (dev-only) — its only patched versions (7.0.3+) require Node ≥20, which this release's non-breaking `>=14` floor can't adopt. Dev-only: it's a test-reporter dependency, never present in the published tarball, never runs on a consumer machine.
 
