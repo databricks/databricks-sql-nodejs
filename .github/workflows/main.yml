@@ -67,7 +67,7 @@ jobs:
         # because the modern npm ecosystem (e.g. @dabh/diagnostics@2.0.7+
         # via winston) ships ES2021 syntax (||=) that Node 14's V8 cannot
         # parse. Node 14 has been EOL upstream since April 2023.
-        node-version: ['20', '22', '24']
+        node-version: ['20', '22', '24', '26']
     env:
       cache-name: cache-node-modules
       NYC_REPORT_DIR: coverage_unit_node${{ matrix.node-version }}
@@ -116,7 +116,7 @@ jobs:
         # Matches the unit-test matrix so e2e catches Node-version-specific
         # behaviors (TLS/cipher defaults, native fetch interaction, lz4 ABI,
         # OAuth crypto APIs) that unit tests with mocked I/O can't surface.
-        node-version: ['20', '22', '24']
+        node-version: ['20', '22', '24', '26']
     env:
       E2E_HOST: ${{ secrets.DATABRICKS_HOST }}
       E2E_PATH: ${{ secrets.TEST_PECO_WAREHOUSE_HTTP_PATH }}
