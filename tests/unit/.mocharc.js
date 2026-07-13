@@ -6,11 +6,15 @@ const argvSpecs = process.argv.slice(4);
 
 module.exports = {
   spec: argvSpecs.length > 0 ? argvSpecs : allSpecs,
-  // Force ts-node's CommonJS require-hook to own .ts compilation. Without an
-  // explicit loader, mocha on Node 24+ loads .ts through Node's built-in
-  // --experimental-strip-types (ESM), whose strip-only mode rejects TS
-  // parameter properties. Registering ts-node makes .ts resolve via its CJS
-  // hook on every supported Node version (no version-specific flags — the
-  // --no-experimental-strip-types flag doesn't exist on Node < 22.6).
+  // Compile .ts specs with ts-node on every supported Node version. Both
+  // hooks are needed: mocha loads some specs via `require` (CJS) and others
+  // via `import()` (ESM), and on Node 24+ any .ts reaching the ESM path is
+  // grabbed by Node's built-in --experimental-strip-types, whose strip-only
+  // mode rejects TS parameter properties ("parameter property is not
+  // supported in strip-only mode"). `require: ts-node/register` covers the
+  // CJS path; `loader: ts-node/esm` covers the import() path. Verified on
+  // Node 20 and 24. (Avoid the --no-experimental-strip-types node flag — it
+  // doesn't exist before Node 22.6 and crashes older Node at startup.)
   require: 'ts-node/register',
+  loader: 'ts-node/esm',
 };
