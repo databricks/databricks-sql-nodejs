@@ -6,13 +6,11 @@ const argvSpecs = process.argv.slice(4);
 
 module.exports = {
   spec: argvSpecs.length > 0 ? argvSpecs : allSpecs,
-  // Compile .ts specs with ts-node, not Node's built-in type stripping.
-  // Node >= 22.6 enables --experimental-strip-types, which becomes the
-  // default loader for .ts on Node 24+. Its "strip-only" mode cannot handle
-  // TypeScript features that emit code (e.g. constructor parameter
-  // properties), so it throws "parameter property is not supported in
-  // strip-only mode" on files ts-node compiles fine. Force ts-node and turn
-  // off Node's stripper so ts-node owns .ts on every supported Node version.
+  // Force ts-node's CommonJS require-hook to own .ts compilation. Without an
+  // explicit loader, mocha on Node 24+ loads .ts through Node's built-in
+  // --experimental-strip-types (ESM), whose strip-only mode rejects TS
+  // parameter properties. Registering ts-node makes .ts resolve via its CJS
+  // hook on every supported Node version (no version-specific flags — the
+  // --no-experimental-strip-types flag doesn't exist on Node < 22.6).
   require: 'ts-node/register',
-  'node-option': ['no-experimental-strip-types'],
 };
