@@ -132,37 +132,14 @@ jobs:
       pull-requests: write
       checks: write
     steps:
-      - name: Detect changed driver paths
+      # The integration suite gates the GA Thrift backend (plus SEA/kernel), so
+      # virtually any change in this repo can affect it. Run it for every labeled
+      # PR rather than path-gating — path filters previously skipped changes like
+      # KERNEL_REV bumps and native/ binding edits (and any Thrift-affecting file
+      # not on the list).
+      - name: Mark for dispatch (run on every change)
         id: changed
-        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
-        with:
-          script: |
-            const { data: files } = await github.rest.pulls.listFiles({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              pull_number: context.payload.pull_request.number,
-              per_page: 100
-            });
-
-            const names = files.map((file) => file.filename);
-            const sourceChanged = names.some((file) =>
-              file.startsWith('bin/') ||
-              file.startsWith('lib/') ||
-              file.startsWith('spec/') ||
-              file.startsWith('thrift/') ||
-              file.startsWith('tests/e2e/') ||
-              file.startsWith('tests/integration/') ||
-              file === 'package.json' ||
-              file === 'package-lock.json' ||
-              file === 'tsconfig.json' ||
-              file === 'tsconfig.build.json'
-            );
-            const workflowChanged = names.some((file) => file.startsWith('.github/workflows/'));
-            const runNode = sourceChanged || workflowChanged;
-
-            if (workflowChanged) console.log('Workflow files changed - triggering Node.js integration tests');
-            if (sourceChanged) console.log('Driver source files changed - triggering Node.js integration tests');
-            core.setOutput('nodejs', runNode.toString());
+        run: echo "nodejs=true" >> "$GITHUB_OUTPUT"
 
       - name: Generate GitHub App Token (driver-test repo)
         id: app-token
@@ -200,26 +177,6 @@ jobs:
               "pr_title": "${{ steps.sanitize.outputs.result }}",
               "pr_author": "${{ github.event.pull_request.user.login }}"
             }
-
-      - name: Pass Node.js Integration Tests check (no driver changes)
-        if: steps.changed.outputs.nodejs != 'true'
-        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
-        with:
-          github-token: ${{ github.token }}
-          script: |
-            await github.rest.checks.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              name: 'Node.js Integration Tests',
-              head_sha: context.payload.pull_request.head.sha,
-              status: 'completed',
-              conclusion: 'success',
-              completed_at: new Date().toISOString(),
-              output: {
-                title: 'Skipped - no driver changes',
-                summary: 'No Node.js driver source files changed; skipping integration tests.'
-              }
-            });
 
       - name: Fail check on dispatch error
         if: failure() && steps.changed.outputs.nodejs == 'true'
@@ -267,40 +224,14 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Check if driver files changed
+      # The integration suite gates the GA Thrift backend (plus SEA/kernel), so
+      # virtually any change can affect it. Run it on every merge-queue commit
+      # rather than path-gating — path filters previously skipped changes like
+      # KERNEL_REV bumps and native/ binding edits (and any Thrift-affecting file
+      # not on the list).
+      - name: Mark for dispatch (run on every change)
         id: changed
-        env:
-          BASE_SHA: ${{ github.event.merge_group.base_sha }}
-          HEAD_SHA: ${{ github.event.merge_group.head_sha }}
-        run: |
-          CHANGED=$(git diff --name-only "$BASE_SHA" "$HEAD_SHA")
-          if echo "$CHANGED" | grep -qE "^(bin/|lib/|spec/|thrift/|tests/e2e/|tests/integration/|package\.json|package-lock\.json|tsconfig(\.build)?\.json|\.github/workflows/)"; then
-            echo "changed=true" >> "$GITHUB_OUTPUT"
-            echo "Driver files changed - will dispatch Node.js integration tests"
-          else
-            echo "changed=false" >> "$GITHUB_OUTPUT"
-            echo "No driver files changed - will auto-pass"
-          fi
-
-      - name: Auto-pass (no driver changes)
-        if: steps.changed.outputs.changed != 'true'
-        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
-        with:
-          github-token: ${{ github.token }}
-          script: |
-            await github.rest.checks.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              name: 'Node.js Integration Tests',
-              head_sha: '${{ github.event.merge_group.head_sha }}',
-              status: 'completed',
-              conclusion: 'success',
-              completed_at: new Date().toISOString(),
-              output: {
-                title: 'Skipped - no driver changes',
-                summary: 'No Node.js driver source files changed.'
-              }
-            });
+        run: echo "changed=true" >> "$GITHUB_OUTPUT"
 
       - name: Extract PR number from merge queue ref
         if: steps.changed.outputs.changed == 'true'
