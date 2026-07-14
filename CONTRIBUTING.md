@@ -109,7 +109,7 @@ npm run type-check
 
 ## Dependency Pins
 
-A few entries in `package.json` are pinned more tightly than usual. Don't relax these without understanding why.
+A few entries in `package.json` are pinned more tightly than usual. Don't relax these without understanding why. For the full list of CVE-driven `overrides` entries, see [`SECURITY-OVERRIDES.md`](./SECURITY-OVERRIDES.md).
 
 - **`typescript: "5.5.4"`** (exact, no caret). This pin has both a floor and a ceiling:
 

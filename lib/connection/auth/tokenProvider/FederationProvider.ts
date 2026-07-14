@@ -1,7 +1,16 @@
-import fetch from 'node-fetch';
+import nodeFetch from 'node-fetch';
 import ITokenProvider from './ITokenProvider';
 import Token from './Token';
 import { getJWTIssuer, isSameHost } from './utils';
+
+// Indirection so tests can swap the fetch implementation without
+// patching the import system. Default is node-fetch.
+let fetchImpl: typeof nodeFetch = nodeFetch;
+
+/** Test-only: replace the fetch implementation. Called with no arg, restores node-fetch. */
+export function setFederationFetchForTest(fn?: typeof nodeFetch): void {
+  fetchImpl = fn ?? nodeFetch;
+}
 
 /**
  * Token exchange endpoint path for Databricks OIDC.
@@ -157,7 +166,7 @@ export default class FederationProvider implements ITokenProvider {
     const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
     try {
-      const response = await fetch(url, {
+      const response = await fetchImpl(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',

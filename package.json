@@ -23,7 +23,7 @@
     "type-check": "tsc --noEmit",
     "prettier": "prettier . --check",
     "prettier:fix": "prettier . --write",
-    "lint": "eslint lib/** tests/e2e/** --ext .js,.ts",
+    "lint": "eslint 'lib/**/*.{js,ts}' 'tests/e2e/**/*.{js,ts}' --ext .js,.ts",
     "lint:fix": "eslint lib/** --ext .js,.ts --fix"
   },
   "repository": {
