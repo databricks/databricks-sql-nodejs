@@ -35,7 +35,7 @@ on:
   pull_request:
     branches: [main]
   schedule:
-    - cron: '0 0 * * 0'  # Run every Sunday at midnight UTC
+    - cron: '0 0 * * 0' # Run every Sunday at midnight UTC
   workflow_dispatch:
 
 permissions:
