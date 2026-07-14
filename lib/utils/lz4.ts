@@ -41,9 +41,13 @@ function tryLoadLZ4Module(): LZ4Codec | undefined {
     return undefined;
   }
 
+  // lz4-napi's frame APIs already return freshly-allocated, owned `Buffer`s
+  // (napi-rs materializes Node Buffers), so we return them directly rather
+  // than copying again with `Buffer.from` — decode runs on the CloudFetch
+  // hot path (once per Arrow batch).
   return {
-    encode: (data: Buffer): Buffer => Buffer.from(napi.compressFrameSync(data)),
-    decode: (data: Buffer): Buffer => Buffer.from(napi.decompressFrameSync(data)),
+    encode: (data: Buffer): Buffer => napi.compressFrameSync(data),
+    decode: (data: Buffer): Buffer => napi.decompressFrameSync(data),
   };
 }
 

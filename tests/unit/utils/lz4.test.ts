@@ -1,5 +1,6 @@
 import { expect } from 'chai';
 import sinon from 'sinon';
+import getLZ4 from '../../../lib/utils/lz4';
 
 // Exercises the lz4 loader (lib/utils/lz4.ts), which now wraps `lz4-napi`
 // and exposes a stable { encode, decode } frame codec with a
@@ -122,5 +123,64 @@ describe('lz4 module loader', function () {
 
     expect(wasLoadAttempted()).to.be.false;
     expect(consoleWarnStub.called).to.be.false;
+  });
+});
+
+// Real (unmocked) frame-format compatibility, exercised through the driver's
+// own codec (lib/utils/lz4.ts) with the actual `lz4-napi`. This is the test
+// that backs the "LZ4 frame compatible" claim: unlike the loader suite above
+// it does NOT mock lz4-napi, and it runs on every supported Node version
+// (import-based, so no CJS-only interception → no ESM skip).
+describe('lz4 frame codec (real lz4-napi)', function () {
+  // The Databricks server sends LZ4 **frame** format (magic 0x184D2204). This
+  // golden frame was produced by the reference `lz4` CLI (an implementation
+  // independent of lz4-napi) from the known plaintext below — so decoding it
+  // proves the driver reads frames it did not itself produce, not merely that
+  // its own encode/decode round-trip agrees.
+  const goldenPlaintext = Buffer.from(
+    'Databricks LZ4 frame golden test — the quick brown fox jumps over the lazy dog 0123456789',
+  );
+  const goldenFrame = Buffer.from([
+    4, 34, 77, 24, 100, 64, 167, 91, 0, 0, 128, 68, 97, 116, 97, 98, 114, 105, 99, 107, 115, 32, 76, 90, 52, 32, 102,
+    114, 97, 109, 101, 32, 103, 111, 108, 100, 101, 110, 32, 116, 101, 115, 116, 32, 226, 128, 148, 32, 116, 104, 101,
+    32, 113, 117, 105, 99, 107, 32, 98, 114, 111, 119, 110, 32, 102, 111, 120, 32, 106, 117, 109, 112, 115, 32, 111,
+    118, 101, 114, 32, 116, 104, 101, 32, 108, 97, 122, 121, 32, 100, 111, 103, 32, 48, 49, 50, 51, 52, 53, 54, 55, 56,
+    57, 0, 0, 0, 0, 153, 39, 109, 21,
+  ]);
+
+  it('is available (lz4-napi resolves with prebuilds)', () => {
+    // Guards against silent regression to the old behavior where LZ4 support
+    // was optional-and-missing on newer Node.
+    expect(getLZ4(), 'lz4-napi should resolve on all supported platforms').to.not.be.undefined;
+  });
+
+  it('decodes a golden LZ4 frame produced by an independent encoder', () => {
+    const codec = getLZ4();
+    expect(codec).to.not.be.undefined;
+
+    // Frame magic 0x184D2204, little-endian.
+    expect(goldenFrame.readUInt32LE(0)).to.equal(0x184d2204);
+
+    const decoded = codec!.decode(goldenFrame);
+    expect(decoded.equals(goldenPlaintext)).to.be.true;
+  });
+
+  it('round-trips arbitrary binary payloads (encode then decode)', () => {
+    const codec = getLZ4();
+    expect(codec).to.not.be.undefined;
+
+    for (const payload of [
+      Buffer.alloc(0),
+      Buffer.from('short'),
+      Buffer.from('a'.repeat(100000)), // larger than a single block
+      Buffer.from(Array.from({ length: 4096 }, (_, i) => i % 256)), // non-repetitive binary
+    ]) {
+      const encoded = codec!.encode(payload);
+      // Non-empty inputs must carry the LZ4 frame magic.
+      if (payload.length > 0) {
+        expect(encoded.readUInt32LE(0)).to.equal(0x184d2204);
+      }
+      expect(codec!.decode(encoded).equals(payload)).to.be.true;
+    }
   });
 });
