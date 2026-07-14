@@ -139,6 +139,12 @@ export class OAuthCallbackServerStub<
   public unref() {
     return this;
   }
+
+  // Required by @types/node >= 18.19.x (Node 20+ added Symbol.asyncDispose to Server).
+  // Cast through `any`: the project targets ES2018, whose lib predates
+  // Symbol.asyncDispose, so referencing it directly is a compile error even
+  // though the runtime (Node 20+) provides it.
+  public async [(Symbol as any).asyncDispose]() {}
 }
 
 export class AuthorizationCodeStub {

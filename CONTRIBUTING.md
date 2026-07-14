@@ -107,6 +107,20 @@ npm run lint:fix
 npm run type-check
 ```
 
+## Dependency Pins
+
+A few entries in `package.json` are pinned more tightly than usual. Don't relax these without understanding why.
+
+- **`typescript: "5.5.4"`** (exact, no caret). This pin has both a floor and a ceiling:
+
+  - Floor (TS >= 5.0) is required because `uuid@11`'s shipped `.d.ts` uses `export type * from './types.js'`, a TS 5.0+ feature.
+  - Ceiling (TS < 5.6) is required because TS 5.6 changed how `@types/node`'s generic `Buffer<TArrayBuffer extends ArrayBufferLike>` declarations get emitted into our published `dist/*.d.ts`. Allowing TS 5.6+ would leak `Buffer<ArrayBufferLike>` into the published types, which fails to compile for consumers on stale `@types/node`.
+  - If you bump TS, run `npm run build` and `git diff dist/` and verify no `Buffer<...>` generics appear in any `.d.ts`. If they do, you need to either roll back or also bump `@types/node` consumer expectations (a customer-facing change).
+
+- **`overrides.uuid: "^11.1.1"`**. Forces `thrift@0.23.0`'s declared `uuid: ^13.0.0` (ESM-only) down to v11 (dual ESM+CJS). Without this override, the driver's CJS-compiled `dist/` would crash on `require('uuid')` at runtime. Remove this override only after migrating the driver to ESM or when `thrift` drops the uuid dep.
+
+- **`package-lock.json` is pinned to `lockfileVersion: 2`.** Modern npm writes v3 by default. To regenerate the lockfile, run `npm install --lockfile-version=2` so CI's lint step doesn't reject your PR. v2 is kept for compat with older toolchains; revisit when the team is ready to drop them.
+
 ## Pull Request Process
 
 1. Update the [CHANGELOG](CHANGELOG.md) with details of your changes, if applicable.
