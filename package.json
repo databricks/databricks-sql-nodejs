@@ -18,7 +18,7 @@
     "update-version": "node bin/update-version.js && prettier --write ./lib/version.ts",
     "build": "npm run update-version && tsc --project tsconfig.build.json",
     "build:native": "bash -c 'cd ${DATABRICKS_SQL_KERNEL_REPO:-../../databricks-sql-kernel}/napi && npx --yes @napi-rs/cli@2.18.4 build --platform ${BUILD_PROFILE:---release} && cp index.* $OLDPWD/native/kernel/'",
-    "prepack": "test -f native/kernel/index.js || { echo 'ERROR: native/kernel/index.js (napi-rs router) is missing — the published tarball would fail to load kernel. It is committed to git; run `npm run build:native` if you removed it.' >&2; exit 1; }",
+    "prepack": "test -f native/kernel/index.js || { echo 'ERROR: native/kernel/index.js (napi-rs router) is missing \u2014 the published tarball would fail to load kernel. It is committed to git; run `npm run build:native` if you removed it.' >&2; exit 1; }",
     "watch": "tsc --project tsconfig.build.json --watch",
     "type-check": "tsc --noEmit",
     "prettier": "prettier . --check",
@@ -103,12 +103,8 @@
     "@databricks/databricks-sql-kernel-win32-arm64-msvc": "0.2.0"
   },
   "overrides": {
-    "basic-ftp": "^5.3.1",
-    "@75lb/deep-merge": "^1.1.2",
-    "ws": "^8.18.0",
-    "ip-address": "^10.1.1",
-    "form-data": "^4.0.4",
     "uuid": "^11.1.1",
+    "ws": "^8.18.0",
     "serialize-javascript": "^7.0.5"
   }
 }

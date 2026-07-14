@@ -61,6 +61,7 @@ jobs:
       labels: linux-ubuntu-latest
     timeout-minutes: 20
     strategy:
+      fail-fast: false
       matrix:
         # LTS versions: 16/18/20 are the currently-supported floor; 22
         # is the active LTS and 24 is the new LTS. Node 14 was dropped
