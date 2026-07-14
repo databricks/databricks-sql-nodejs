@@ -1,15 +1,18 @@
 import { expect } from 'chai';
 import sinon from 'sinon';
 
+// Exercises the lz4 loader (lib/utils/lz4.ts), which now wraps `lz4-napi`
+// and exposes a stable { encode, decode } frame codec with a
+// load-failure-tolerant contract.
+//
+// This suite uses CJS-only primitives (Module._load, require.cache) to
+// inject a fake/failed 'lz4-napi'. Node 22+ loads .ts specs via the ESM
+// loader where those aren't available; skip there — the production loader
+// works fine, only this test's interception mechanism is CJS-bound.
 describe('lz4 module loader', function () {
-  let moduleLoadStub: sinon.SinonStub | undefined;
+  let moduleLoadRestore: (() => void) | undefined;
   let consoleWarnStub: sinon.SinonStub;
 
-  // This suite directly exercises CJS-only primitives (Module._load,
-  // require.cache). Node 22+ loads .ts specs through the ESM loader,
-  // where neither is available. Skip on those runtimes — the production
-  // lz4 loader code itself works fine; only this test's mechanism is
-  // CJS-bound.
   before(function () {
     if (typeof require === 'undefined') {
       this.skip();
@@ -22,10 +25,10 @@ describe('lz4 module loader', function () {
 
   afterEach(() => {
     consoleWarnStub.restore();
-    if (moduleLoadStub) {
-      moduleLoadStub.restore();
+    if (moduleLoadRestore) {
+      moduleLoadRestore();
+      moduleLoadRestore = undefined;
     }
-    // Clear module cache
     Object.keys(require.cache).forEach((key) => {
       if (key.includes('lz4')) {
         delete require.cache[key];
@@ -33,29 +36,28 @@ describe('lz4 module loader', function () {
     });
   });
 
-  const mockModuleLoad = (lz4MockOrError: unknown): { restore: () => void; wasLz4LoadAttempted: () => boolean } => {
+  // Intercept require('lz4-napi') to return a mock or throw a given error.
+  const mockNapiLoad = (napiMockOrError: unknown): { wasLoadAttempted: () => boolean } => {
     // eslint-disable-next-line global-require
     const Module = require('module');
     const originalLoad = Module._load;
-    let lz4LoadAttempted = false;
+    let loadAttempted = false;
 
     Module._load = (request: string, parent: unknown, isMain: boolean) => {
-      if (request === 'lz4') {
-        lz4LoadAttempted = true;
-        if (lz4MockOrError instanceof Error) {
-          throw lz4MockOrError;
+      if (request === 'lz4-napi') {
+        loadAttempted = true;
+        if (napiMockOrError instanceof Error) {
+          throw napiMockOrError;
         }
-        return lz4MockOrError;
+        return napiMockOrError;
       }
       return originalLoad.call(Module, request, parent, isMain);
     };
 
-    return {
-      restore: () => {
-        Module._load = originalLoad;
-      },
-      wasLz4LoadAttempted: () => lz4LoadAttempted,
+    moduleLoadRestore = () => {
+      Module._load = originalLoad;
     };
+    return { wasLoadAttempted: () => loadAttempted };
   };
 
   const loadLz4Module = () => {
@@ -64,104 +66,61 @@ describe('lz4 module loader', function () {
     return require('../../../lib/utils/lz4');
   };
 
-  it('should successfully load and use lz4 module when available', () => {
-    const fakeLz4 = {
-      encode: (buf: Buffer) => {
-        const compressed = Buffer.from(`compressed:${buf.toString()}`);
-        return compressed;
-      },
-      decode: (buf: Buffer) => {
-        const decompressed = buf.toString().replace('compressed:', '');
-        return Buffer.from(decompressed);
-      },
+  it('exposes an { encode, decode } codec backed by lz4-napi frame APIs', () => {
+    // Fake lz4-napi: frame APIs the adapter calls.
+    const fakeNapi = {
+      compressFrameSync: (buf: Buffer) => Buffer.from(`frame:${buf.toString()}`),
+      decompressFrameSync: (buf: Buffer) => Buffer.from(buf.toString().replace('frame:', '')),
     };
 
-    const { restore } = mockModuleLoad(fakeLz4);
-    const moduleExports = loadLz4Module();
-    const lz4Module = moduleExports.default();
-    restore();
+    mockNapiLoad(fakeNapi);
+    const lz4Module = loadLz4Module().default();
 
     expect(lz4Module).to.not.be.undefined;
     expect(lz4Module.encode).to.be.a('function');
     expect(lz4Module.decode).to.be.a('function');
 
     const testData = Buffer.from('Hello, World!');
-    const compressed = lz4Module.encode(testData);
-    const decompressed = lz4Module.decode(compressed);
-
-    expect(decompressed.toString()).to.equal('Hello, World!');
+    const roundTripped = lz4Module.decode(lz4Module.encode(testData));
+    expect(roundTripped.toString()).to.equal('Hello, World!');
     expect(consoleWarnStub.called).to.be.false;
   });
 
-  it('should return undefined when lz4 module fails to load with MODULE_NOT_FOUND', () => {
-    const err: NodeJS.ErrnoException = new Error("Cannot find module 'lz4'");
+  it('returns undefined (no warning) when lz4-napi is not installed (MODULE_NOT_FOUND)', () => {
+    const err: NodeJS.ErrnoException = new Error("Cannot find module 'lz4-napi'");
     err.code = 'MODULE_NOT_FOUND';
 
-    const { restore } = mockModuleLoad(err);
-    const moduleExports = loadLz4Module();
-    const lz4Module = moduleExports.default();
-    restore();
+    mockNapiLoad(err);
+    const lz4Module = loadLz4Module().default();
 
     expect(lz4Module).to.be.undefined;
     expect(consoleWarnStub.called).to.be.false;
   });
 
-  it('should return undefined and log warning when lz4 fails with ERR_DLOPEN_FAILED', () => {
-    const err: NodeJS.ErrnoException = new Error('Module did not self-register');
+  it('returns undefined and warns on any other load failure', () => {
+    const err: NodeJS.ErrnoException = new Error('unexpected dlopen failure');
     err.code = 'ERR_DLOPEN_FAILED';
 
-    const { restore } = mockModuleLoad(err);
-    const moduleExports = loadLz4Module();
-    const lz4Module = moduleExports.default();
-    restore();
+    mockNapiLoad(err);
+    const lz4Module = loadLz4Module().default();
 
     expect(lz4Module).to.be.undefined;
     expect(consoleWarnStub.calledOnce).to.be.true;
-    expect(consoleWarnStub.firstCall.args[0]).to.include('Architecture or version mismatch');
+    expect(consoleWarnStub.firstCall.args[0]).to.include('lz4-napi');
   });
 
-  it('should return undefined and log warning when lz4 fails with unknown error code', () => {
-    const err: NodeJS.ErrnoException = new Error('Some unknown error');
-    err.code = 'UNKNOWN_ERROR';
-
-    const { restore } = mockModuleLoad(err);
-    const moduleExports = loadLz4Module();
-    const lz4Module = moduleExports.default();
-    restore();
-
-    expect(lz4Module).to.be.undefined;
-    expect(consoleWarnStub.calledOnce).to.be.true;
-    expect(consoleWarnStub.firstCall.args[0]).to.include('Unhandled error code');
-  });
-
-  it('should return undefined and log warning when error has no code property', () => {
-    const err = new Error('Error without code');
-
-    const { restore } = mockModuleLoad(err);
-    const moduleExports = loadLz4Module();
-    const lz4Module = moduleExports.default();
-    restore();
-
-    expect(lz4Module).to.be.undefined;
-    expect(consoleWarnStub.calledOnce).to.be.true;
-    expect(consoleWarnStub.firstCall.args[0]).to.include('Invalid error object');
-  });
-
-  it('should not attempt to load lz4 module when getResolvedModule is not called', () => {
-    const fakeLz4 = {
-      encode: () => Buffer.from(''),
-      decode: () => Buffer.from(''),
+  it('does not attempt to load lz4-napi until the codec is requested', () => {
+    const fakeNapi = {
+      compressFrameSync: () => Buffer.from(''),
+      decompressFrameSync: () => Buffer.from(''),
     };
 
-    const { restore, wasLz4LoadAttempted } = mockModuleLoad(fakeLz4);
+    const { wasLoadAttempted } = mockNapiLoad(fakeNapi);
 
-    // Load the module but don't call getResolvedModule
+    // Import the module but do NOT call the default export (getResolvedModule).
     loadLz4Module();
-    // Note: we're NOT calling .default() here
 
-    restore();
-
-    expect(wasLz4LoadAttempted()).to.be.false;
+    expect(wasLoadAttempted()).to.be.false;
     expect(consoleWarnStub.called).to.be.false;
   });
 });
