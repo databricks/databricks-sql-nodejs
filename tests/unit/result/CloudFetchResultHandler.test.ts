@@ -5,6 +5,7 @@ import LZ4 from 'lz4';
 import { Request, Response } from 'node-fetch';
 import { ShouldRetryResult } from '../../../lib/connection/contracts/IRetryPolicy';
 import { HttpTransactionDetails } from '../../../lib/connection/contracts/IConnectionProvider';
+import { LogLevel } from '../../../lib/contracts/IDBSQLLogger';
 import CloudFetchResultHandler from '../../../lib/result/CloudFetchResultHandler';
 import ResultsProviderStub from '../.stubs/ResultsProviderStub';
 import { TRowSet, TSparkArrowResultLink, TStatusCode } from '../../../thrift/TCLIService_types';
@@ -197,6 +198,26 @@ describe('CloudFetchResultHandler', () => {
     expect(result['pendingLinks'].length).to.be.equal(expectedLinksCount);
     expect(result['downloadTasks'].length).to.be.equal(0);
     expect(context.invokeWithRetryStub.called).to.be.false;
+  });
+
+  it('should log cloud fetch download speed at debug level', async () => {
+    const context = new ClientContextStub({ cloudFetchConcurrentDownloads: 1 });
+    const rowSetProvider = new ResultsProviderStub([sampleRowSet1], undefined);
+    const result = new CloudFetchResultHandler(context, rowSetProvider, {
+      status: { statusCode: TStatusCode.SUCCESS_STATUS },
+    });
+
+    const logStub = sinon.stub(context.logger, 'log');
+    context.invokeWithRetryStub.callsFake(async () => ({
+      request: new Request('localhost'),
+      response: new Response(Buffer.concat([sampleArrowSchema, sampleArrowBatch]), { status: 200 }),
+    }));
+
+    await result.fetchNext({ limit: 10000 });
+
+    expect(logStub.calledWith(LogLevel.debug, sinon.match(/Result File Download speed from cloud storage/))).to.be.true;
+    expect(logStub.neverCalledWith(LogLevel.info, sinon.match(/Result File Download speed from cloud storage/))).to.be
+      .true;
   });
 
   it('should download batches according to settings', async () => {
