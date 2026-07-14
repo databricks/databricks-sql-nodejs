@@ -140,6 +140,7 @@ export default class FeatureFlagCache {
       const headers: Record<string, string> = {
         'Content-Type': 'application/json',
         'User-Agent': this.userAgent,
+        ...(this.context.getConfig().customHeaders ?? {}),
         ...(await this.getAuthHeaders()),
       };
 
@@ -202,11 +203,15 @@ export default class FeatureFlagCache {
   }
 
   private async getAuthHeaders(): Promise<Record<string, string>> {
-    if (!this.authProvider) {
+    // Prefer the explicitly-injected auth provider; fall back to the context
+    // (used when a shared TelemetryClient resolves auth through its FIFO of
+    // registered DBSQLClients). Mirrors DatabricksTelemetryExporter.getAuthHeaders.
+    const authProvider = this.authProvider ?? this.context.getAuthProvider?.();
+    if (!authProvider) {
       return {};
     }
     try {
-      return normalizeHeaders(await this.authProvider.authenticate());
+      return normalizeHeaders(await authProvider.authenticate());
     } catch (error: any) {
       this.context.getLogger().log(LogLevel.debug, `Feature flag auth failed: ${error?.message ?? error}`);
       return {};

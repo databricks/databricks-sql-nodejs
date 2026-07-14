@@ -3,6 +3,7 @@
 node_modules
 *.log
 .nyc_output
+coverage
 coverage_e2e
 coverage_unit
 .clinic
@@ -10,3 +11,12 @@ coverage_unit
 dist
 *.DS_Store
 lib/version.ts
+
+# kernel native binding — copied/generated from kernel workspace by `npm run build:native`.
+# The committed contract is `native/kernel/index.d.ts` (TypeScript declarations) and
+# `native/kernel/index.js` (the napi-rs platform router — small, stable, and required in
+# the publish tarball so a missing build step can't ship a tarball that can't load).
+# The `.node` binaries are large per-platform artifacts and must NOT be committed;
+# in production they arrive via the `@databricks/sql-kernel-<triple>` optional deps.
+native/kernel/index.node
+native/kernel/index.*.node

@@ -22,6 +22,10 @@ type AuthOptions =
       oauthClientId?: string;
       oauthClientSecret?: string;
       useDatabricksOAuthInAzure?: boolean;
+      // OAuth scopes to request. When omitted, the kernel backend defaults the
+      // U2M flow to `['sql', 'offline_access']` (parity with the Thrift driver's
+      // `defaultOAuthScopes`), overriding the kernel's bare `all-apis offline_access`.
+      oauthScopes?: Array<string>;
     }
   | {
       authType: 'custom';
@@ -54,6 +58,133 @@ export type ConnectionOptions = {
   socketTimeout?: number;
   proxy?: ProxyOptions;
   enableMetricViewMetadata?: boolean;
+
+  /**
+   * Retry-policy knobs governing how the driver retries retryable requests.
+   * They apply to **both** backends: the Thrift `HttpRetryPolicy` reads them
+   * directly, and on the kernel (SEA) path they are forwarded to the kernel
+   * (which owns the retry loop) via `buildKernelRetryOptions`. An unset field
+   * keeps the driver default shown below.
+   *
+   *   • `retryMaxAttempts` — maximum TOTAL number of attempts (the initial
+   *     request plus any retries). Default 5. `0` or `1` both mean a single
+   *     attempt with no retry. Both backends honour the same total-attempt
+   *     semantics (the kernel converts it to its after-initial retry count).
+   *   • `retriesTimeout`   — maximum total wallclock spent retrying, in
+   *     milliseconds. Default 900000 (15 minutes).
+   *   • `retryDelayMin`    — minimum backoff between attempts, in milliseconds.
+   *     Default 1000.
+   *   • `retryDelayMax`    — maximum backoff between attempts, in milliseconds.
+   *     Default 60000.
+   */
+  retryMaxAttempts?: number;
+  retriesTimeout?: number;
+  retryDelayMin?: number;
+  retryDelayMax?: number;
+
+  /**
+   * Preserve full numeric precision in results. When `true`, DECIMAL columns
+   * are returned as exact strings and 64-bit integers (BIGINT) as JS `bigint`,
+   * instead of the default lossy coercion to a JS `number` (which silently
+   * rounds DECIMALs and integers beyond 2^53). Applies to both the Thrift and
+   * kernel backends. Defaults to `false` to preserve the existing representation.
+   */
+  preserveBigNumericPrecision?: boolean;
+
+  /**
+   * Extra HTTP headers attached to driver-owned out-of-band requests
+   * (telemetry POSTs and feature-flag GETs). Not applied to the primary
+   * Thrift transport or to OAuth/OIDC token requests.
+   *
+   * When `path` contains `?o=<workspaceId>` (SPOG account-level routing),
+   * the driver automatically injects an `x-databricks-org-id` header unless
+   * one is already present in this map.
+   */
+  customHeaders?: Record<string, string>;
+
+  /**
+   * Whether the driver emits telemetry events (connection / statement /
+   * cloud-fetch / error). Defaults to `true`.
+   *
+   * Activation is gated by **two** conditions:
+   *   1. This flag is `true` **and**
+   *   2. The remote feature flag for the workspace allows telemetry.
+   *
+   * Setting this to `false` is a hard, unconditional opt-out. Setting to
+   * `true` only requests telemetry; the workspace must also allow it.
+   *
+   * The environment variable `DATABRICKS_TELEMETRY_DISABLED` set to one of
+   * `1`, `true`, `yes`, or `on` (case-insensitive) overrides this flag and
+   * disables telemetry entirely.
+   */
+  telemetryEnabled?: boolean;
+
+  /**
+   * Maximum number of metrics to batch before flushing to the telemetry
+   * endpoint. Default 100.
+   */
+  telemetryBatchSize?: number;
+
+  /**
+   * How often to flush buffered telemetry metrics, in milliseconds.
+   * The flush timer is `unref()`'d so it cannot keep the Node.js process
+   * alive on its own. Default 5000ms.
+   */
+  telemetryFlushIntervalMs?: number;
+
+  /**
+   * Maximum retry attempts for a telemetry export *after* the initial call.
+   * Default 3.
+   */
+  telemetryMaxRetries?: number;
+
+  /**
+   * When `true`, telemetry is sent to the authenticated `/telemetry-ext`
+   * endpoint with workspace + session + statement IDs and a system
+   * configuration block. When `false`, only error names are emitted via the
+   * unauthenticated endpoint. Default `true`.
+   *
+   * Privacy-relevant: setting `false` minimizes the data surface at the
+   * cost of losing most observability.
+   */
+  telemetryAuthenticatedExport?: boolean;
+
+  /**
+   * Number of consecutive telemetry export failures before the per-host
+   * circuit breaker trips and pauses exports. Default 5.
+   */
+  telemetryCircuitBreakerThreshold?: number;
+
+  /**
+   * How long the circuit breaker stays open before re-probing the
+   * telemetry endpoint, in milliseconds. Default 60000ms (1 minute).
+   */
+  telemetryCircuitBreakerTimeout?: number;
+
+  /**
+   * Maximum wall-clock time `client.close()` will wait for the final
+   * telemetry flush HTTP POST. Bounds shutdown latency so callers
+   * doing `await client.close(); process.exit(0)` are not held up by a
+   * misbehaving telemetry endpoint. Default 2000ms.
+   */
+  telemetryCloseTimeoutMs?: number;
+
+  /**
+   * Hard cap on the per-statement aggregation map size. When the cap is
+   * reached, the oldest entry is evicted (its buffered errors are emitted
+   * as standalone metrics first so the first-failure signal survives).
+   * Default 5000.
+   */
+  telemetryMaxStatementMetrics?: number;
+
+  /**
+   * Maximum number of telemetry metrics buffered in memory before the
+   * oldest non-error entry is dropped. Raise this when
+   * `getTelemetryStats().droppedMetrics` increases between observations,
+   * which indicates the buffer is filling faster than the flush interval
+   * can drain it. Default 500.
+   */
+  telemetryMaxPendingMetrics?: number;
 } & AuthOptions;
 
 export interface OpenSessionRequest {

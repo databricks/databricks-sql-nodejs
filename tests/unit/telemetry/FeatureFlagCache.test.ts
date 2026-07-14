@@ -257,9 +257,19 @@ describe('FeatureFlagCache', () => {
       const cache = new FeatureFlagCache(context);
       const host = 'test-host.databricks.com';
 
+      // Stub the network seam so the test is deterministic. The real
+      // `fetchWithRetry` makes an HTTP call with a 10s timeout to the
+      // (bogus) host; under mocha's 2s default this passed only when the
+      // DNS failure happened to resolve quickly — flaky across runners /
+      // Node versions (it timed out on Node 14/16/18 in CI). The behavior
+      // under test is just that `fetchFeatureFlag` resolves to `false`.
+      const fetchStub = sinon.stub(cache as any, 'fetchWithRetry').rejects(new Error('network disabled in test'));
+
       // Access private method through any cast
       const result = await (cache as any).fetchFeatureFlag(host);
       expect(result).to.be.false;
+
+      fetchStub.restore();
     });
   });
 
@@ -315,6 +325,45 @@ describe('FeatureFlagCache', () => {
       expect(enabled2).to.be.false;
 
       fetchStub.restore();
+    });
+  });
+
+  describe('customHeaders propagation (SPOG)', () => {
+    function makeJsonResponse(body: unknown) {
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        statusText: 'OK',
+        json: () => Promise.resolve(body),
+        text: () => Promise.resolve(''),
+      });
+    }
+
+    it('attaches config.customHeaders to the feature-flag GET', async () => {
+      const context = new ClientContextStub({
+        customHeaders: { 'x-databricks-org-id': '12345678901234' },
+      } as any);
+      const cache = new FeatureFlagCache(context);
+      const stub = sinon.stub(cache as any, 'fetchWithRetry').returns(makeJsonResponse({ flags: [] }));
+
+      await (cache as any).fetchFeatureFlag('host.example.com');
+
+      expect(stub.calledOnce).to.be.true;
+      const init = stub.firstCall.args[1] as { headers: Record<string, string> };
+      expect(init.headers['x-databricks-org-id']).to.equal('12345678901234');
+      stub.restore();
+    });
+
+    it('does not set x-databricks-org-id when customHeaders is empty', async () => {
+      const context = new ClientContextStub();
+      const cache = new FeatureFlagCache(context);
+      const stub = sinon.stub(cache as any, 'fetchWithRetry').returns(makeJsonResponse({ flags: [] }));
+
+      await (cache as any).fetchFeatureFlag('host.example.com');
+
+      const init = stub.firstCall.args[1] as { headers: Record<string, string> };
+      expect(init.headers).to.not.have.property('x-databricks-org-id');
+      stub.restore();
     });
   });
 });

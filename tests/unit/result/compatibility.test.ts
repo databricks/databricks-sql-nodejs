@@ -33,7 +33,7 @@ describe('Result handlers compatibility tests', () => {
         arrowSchema: fixtureArrow.arrowSchema,
         status: { statusCode: TStatusCode.SUCCESS_STATUS },
       }),
-      { schema: fixtureArrow.schema, status: { statusCode: TStatusCode.SUCCESS_STATUS } },
+      { schema: fixtureArrow.schema },
     );
     const rows = await result.fetchNext({ limit: 10000 });
     expect(fixArrowResult(rows)).to.deep.equal(fixtureArrow.expected);
@@ -48,7 +48,7 @@ describe('Result handlers compatibility tests', () => {
         arrowSchema: fixtureArrowNT.arrowSchema,
         status: { statusCode: TStatusCode.SUCCESS_STATUS },
       }),
-      { schema: fixtureArrowNT.schema, status: { statusCode: TStatusCode.SUCCESS_STATUS } },
+      { schema: fixtureArrowNT.schema },
     );
     const rows = await result.fetchNext({ limit: 10000 });
     expect(fixArrowResult(rows)).to.deep.equal(fixtureArrowNT.expected);
@@ -63,7 +63,7 @@ describe('Result handlers compatibility tests', () => {
         schema: fixtureArrow.schema,
         status: { statusCode: TStatusCode.SUCCESS_STATUS },
       }),
-      { schema: fixtureArrow.schema, status: { statusCode: TStatusCode.SUCCESS_STATUS } },
+      { schema: fixtureArrow.schema },
     );
     const rows = await result.fetchNext({ limit: 10000 });
     expect(fixArrowResult(rows)).to.deep.equal(fixtureArrow.expected);

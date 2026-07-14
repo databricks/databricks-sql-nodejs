@@ -60,9 +60,24 @@ interface DatabricksTelemetryLog {
         char_set_encoding?: string;
         process_name?: string;
       };
+      auth_type?: string;
+      driver_connection_params?: {
+        host_info?: { host_url?: string };
+        http_path?: string;
+        mode?: string;
+        use_proxy?: boolean;
+        enable_arrow?: boolean;
+        enable_direct_results?: boolean;
+        socket_timeout?: number;
+        enable_metric_view_metadata?: boolean;
+      };
       operation_latency_ms?: number;
       sql_operation?: {
         execution_result?: string;
+        is_compressed?: boolean;
+        operation_detail?: {
+          operation_type?: string;
+        };
         chunk_details?: {
           total_chunks_present?: number;
           total_chunks_iterated?: number;
@@ -116,7 +131,16 @@ export default class DatabricksTelemetryExporter {
   ) {
     this.circuitBreaker = circuitBreakerRegistry.getCircuitBreaker(host);
     const config = this.context.getConfig();
-    this.authenticatedUserAgent = buildUserAgentString(config.userAgentEntry);
+    // Telemetry-default-on means anything in `userAgentEntry` ships to the
+    // telemetry endpoint on every POST. `buildUserAgentString` redacts
+    // Databricks token *prefixes* (dapi, dose, …) but not the broader secret
+    // shapes — JWTs, OAuth `client_secret`, JSON-encoded credentials, URL
+    // userinfo — that customers occasionally stuff into the user-agent.
+    // Run the full SECRET_PATTERNS sweep before the UA is built so the
+    // header value never carries an unredacted secret. The user's primary
+    // Thrift connection is unaffected.
+    const redactedEntry = config.userAgentEntry === undefined ? undefined : redactSensitive(config.userAgentEntry, 256);
+    this.authenticatedUserAgent = buildUserAgentString(redactedEntry);
     this.unauthenticatedUserAgent = buildUserAgentString(undefined);
   }
 
@@ -240,6 +264,7 @@ export default class DatabricksTelemetryExporter {
     let headers: Record<string, string> = {
       'Content-Type': 'application/json',
       'User-Agent': userAgent,
+      ...(config.customHeaders ?? {}),
     };
 
     if (authenticatedExport) {
@@ -289,12 +314,16 @@ export default class DatabricksTelemetryExporter {
   }
 
   private async getAuthHeaders(): Promise<Record<string, string>> {
-    if (!this.authProvider) {
+    // Prefer the explicitly-injected auth provider; fall back to the context
+    // (used when a shared TelemetryClient resolves auth through its FIFO of
+    // registered DBSQLClients).
+    const authProvider = this.authProvider ?? this.context.getAuthProvider?.();
+    if (!authProvider) {
       return {};
     }
     const logger = this.context.getLogger();
     try {
-      return normalizeHeaders(await this.authProvider.authenticate());
+      return normalizeHeaders(await authProvider.authenticate());
     } catch (error: any) {
       logger.log(LogLevel.debug, `Telemetry: auth provider threw: ${error?.message ?? error}`);
       return {};
@@ -304,13 +333,23 @@ export default class DatabricksTelemetryExporter {
   private async sendRequest(url: string, init: RequestInit): Promise<Response> {
     const connectionProvider = await this.context.getConnectionProvider();
     const agent = await connectionProvider.getAgent();
-    const retryPolicy = await connectionProvider.getRetryPolicy();
+    // Do NOT route through `connectionProvider.getRetryPolicy()` here. That
+    // policy is bounded by the customer's `retriesTimeout` (15 min default)
+    // and `retryMaxAttempts` (5), so each call to `sendRequest` could spend
+    // up to ~15 min retrying on its own. Stacked under the exporter's outer
+    // `exportWithRetry` loop (`telemetryMaxRetries` default 3) the worst-case
+    // wall-clock per batch reaches ~45 min — during which `flushInFlight`
+    // blocks subsequent flushes and `addPendingMetric` silently drops past
+    // the buffer cap.
+    //
+    // Telemetry must be a polite background citizen: the outer loop is the
+    // single source of retry, and a single attempt here is the right shape.
+    // Connection-level errors that the customer retry policy would have
+    // bridged (transient socket errors, 5xx) are still classified by
+    // `ExceptionClassifier` and retried by `exportWithRetry` instead.
     const requestConfig: RequestInit = { agent, ...init };
-    const result = await retryPolicy.invokeWithRetry(() => {
-      const request = new Request(url, requestConfig);
-      return fetch(request).then((response) => ({ request, response }));
-    });
-    return result.response;
+    const request = new Request(url, requestConfig);
+    return fetch(request);
   }
 
   private toTelemetryLog(
@@ -340,43 +379,90 @@ export default class DatabricksTelemetryExporter {
       },
     };
 
-    if (metric.metricType === 'connection' && metric.driverConfig && includeCorrelation) {
-      // system_configuration is a high-entropy client fingerprint (OS, arch,
-      // locale, process, runtime). Only ship on the authenticated path.
-      log.entry.sql_driver_log.system_configuration = {
-        driver_version: metric.driverConfig.driverVersion,
-        driver_name: metric.driverConfig.driverName,
-        runtime_name: 'Node.js',
-        runtime_version: metric.driverConfig.nodeVersion,
-        runtime_vendor: metric.driverConfig.runtimeVendor,
-        os_name: metric.driverConfig.platform,
-        os_version: metric.driverConfig.osVersion,
-        os_arch: metric.driverConfig.osArch,
-        locale_name: metric.driverConfig.localeName,
-        char_set_encoding: metric.driverConfig.charSetEncoding,
-        process_name: sanitizeProcessName(metric.driverConfig.processName) || undefined,
-      };
+    if (metric.metricType === 'connection') {
+      if (metric.latencyMs !== undefined) {
+        log.entry.sql_driver_log.operation_latency_ms = metric.latencyMs;
+      }
+      if (metric.operationType) {
+        log.entry.sql_driver_log.sql_operation = {
+          operation_detail: { operation_type: metric.operationType },
+        };
+      }
+      if (metric.driverConfig && includeCorrelation) {
+        // system_configuration is a high-entropy client fingerprint (OS, arch,
+        // locale, process, runtime). Only ship on the authenticated path.
+        log.entry.sql_driver_log.system_configuration = {
+          driver_version: metric.driverConfig.driverVersion,
+          driver_name: metric.driverConfig.driverName,
+          runtime_name: 'Node.js',
+          runtime_version: metric.driverConfig.nodeVersion,
+          runtime_vendor: metric.driverConfig.runtimeVendor,
+          os_name: metric.driverConfig.platform,
+          os_version: metric.driverConfig.osVersion,
+          os_arch: metric.driverConfig.osArch,
+          locale_name: metric.driverConfig.localeName,
+          char_set_encoding: metric.driverConfig.charSetEncoding,
+          process_name: sanitizeProcessName(metric.driverConfig.processName) || undefined,
+        };
+
+        // auth_type and host/http-path are workspace-correlated, so they ride
+        // the same auth-only path as system_configuration.
+        if (metric.driverConfig.authType) {
+          log.entry.sql_driver_log.auth_type = metric.driverConfig.authType;
+        }
+        log.entry.sql_driver_log.driver_connection_params = {
+          host_info: { host_url: this.host },
+          http_path: metric.driverConfig.httpPath,
+          mode: 'THRIFT',
+          use_proxy: metric.driverConfig.useProxy,
+          enable_arrow: metric.driverConfig.arrowEnabled,
+          enable_direct_results: metric.driverConfig.directResultsEnabled,
+          // The proto `socket_timeout` field is defined in seconds, but the driver
+          // tracks socketTimeout in milliseconds — convert so the receiver records
+          // the correct unit (e.g. 900000ms -> 900s) instead of treating ms as seconds.
+          socket_timeout:
+            typeof metric.driverConfig.socketTimeout === 'number'
+              ? Math.round(metric.driverConfig.socketTimeout / 1000)
+              : metric.driverConfig.socketTimeout,
+          enable_metric_view_metadata: metric.driverConfig.enableMetricViewMetadata,
+        };
+      }
     } else if (metric.metricType === 'statement') {
       log.entry.sql_driver_log.operation_latency_ms = metric.latencyMs;
 
-      if (metric.resultFormat || metric.chunkCount) {
+      if (metric.resultFormat || metric.chunkCount || metric.operationType || metric.compressed !== undefined) {
         log.entry.sql_driver_log.sql_operation = {
           execution_result: metric.resultFormat,
         };
 
-        if (metric.chunkCount && metric.chunkCount > 0) {
+        if (metric.compressed !== undefined) {
+          log.entry.sql_driver_log.sql_operation.is_compressed = metric.compressed;
+        }
+
+        if (metric.operationType) {
+          log.entry.sql_driver_log.sql_operation.operation_detail = {
+            operation_type: metric.operationType,
+          };
+        }
+
+        if ((metric.chunkCount ?? 0) > 0) {
           log.entry.sql_driver_log.sql_operation.chunk_details = {
             total_chunks_present: metric.chunkCount,
             total_chunks_iterated: metric.chunkCount,
+            initial_chunk_latency_millis: metric.chunkInitialLatencyMs,
+            slowest_chunk_latency_millis: metric.chunkSlowestLatencyMs,
+            sum_chunks_download_time_millis: metric.chunkSumLatencyMs,
           };
         }
       }
     } else if (metric.metricType === 'error') {
       const stackOrMessage = metric.errorStack ?? metric.errorMessage ?? '';
+      // Primary redaction site is TelemetryEventEmitter.emitError — this
+      // second pass is defence-in-depth in case a metric reached the
+      // exporter via a path that bypassed the emitter (programmatic injection
+      // in tests, future call sites). On the unauth path we ship nothing.
       log.entry.sql_driver_log.error_info = {
         error_name: metric.errorName || 'UnknownError',
-        // Redact common secret shapes and cap length. On the unauth path we
-        // keep only the error class — no message body.
         stack_trace: includeCorrelation ? redactSensitive(stackOrMessage) : '',
       };
     }

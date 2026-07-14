@@ -120,6 +120,91 @@ describe('DatabricksTelemetryExporter', () => {
       }
       expect(threw).to.be.false;
     });
+
+    it('should attach config.customHeaders to the POST (SPOG)', async () => {
+      const context = new ClientContextStub({
+        customHeaders: { 'x-databricks-org-id': '12345678901234' },
+      } as any);
+      const registry = new CircuitBreakerRegistry(context);
+      const exporter = new DatabricksTelemetryExporter(context, 'host.example.com', registry, fakeAuthProvider);
+      const sendRequestStub = sinon.stub(exporter as any, 'sendRequest').returns(makeOkResponse());
+
+      await exporter.export([makeMetric()]);
+
+      const init = sendRequestStub.firstCall.args[1] as { headers: Record<string, string> };
+      expect(init.headers['x-databricks-org-id']).to.equal('12345678901234');
+    });
+
+    it('auth headers win over customHeaders on key collision', async () => {
+      const context = new ClientContextStub({
+        customHeaders: { Authorization: 'Bearer not-the-real-token' },
+      } as any);
+      const registry = new CircuitBreakerRegistry(context);
+      const exporter = new DatabricksTelemetryExporter(context, 'host.example.com', registry, fakeAuthProvider);
+      const sendRequestStub = sinon.stub(exporter as any, 'sendRequest').returns(makeOkResponse());
+
+      await exporter.export([makeMetric()]);
+
+      const init = sendRequestStub.firstCall.args[1] as { headers: Record<string, string> };
+      expect(init.headers.Authorization).to.equal('Bearer test-token');
+    });
+
+    it('does not attach customHeaders when none are configured', async () => {
+      const context = new ClientContextStub();
+      const registry = new CircuitBreakerRegistry(context);
+      const exporter = new DatabricksTelemetryExporter(context, 'host.example.com', registry, fakeAuthProvider);
+      const sendRequestStub = sinon.stub(exporter as any, 'sendRequest').returns(makeOkResponse());
+
+      await exporter.export([makeMetric()]);
+
+      const init = sendRequestStub.firstCall.args[1] as { headers: Record<string, string> };
+      expect(init.headers).to.not.have.property('x-databricks-org-id');
+    });
+  });
+
+  describe('export() - driver_connection_params', () => {
+    // The driver tracks socketTimeout in milliseconds, but the receiver proto
+    // defines `socket_timeout` in seconds. Lock in the ms -> s conversion so a
+    // 15-minute (900000ms) timeout is reported as 900s, not 900000s.
+    function getConnectionParams(sendRequestStub: sinon.SinonStub): any {
+      const init = sendRequestStub.firstCall.args[1] as { body: string };
+      const body = JSON.parse(init.body);
+      const log = JSON.parse(body.protoLogs[0]);
+      return log.entry.sql_driver_log.driver_connection_params;
+    }
+
+    function makeConnectionMetric(socketTimeout: number): TelemetryMetric {
+      return makeMetric({
+        metricType: 'connection',
+        driverConfig: {
+          driverName: 'nodejs-sql-driver',
+          driverVersion: '1.14.0',
+          socketTimeout,
+        } as any,
+      });
+    }
+
+    it('converts socketTimeout from milliseconds to seconds', async () => {
+      const context = new ClientContextStub({ telemetryAuthenticatedExport: true } as any);
+      const registry = new CircuitBreakerRegistry(context);
+      const exporter = new DatabricksTelemetryExporter(context, 'host.example.com', registry, fakeAuthProvider);
+      const sendRequestStub = sinon.stub(exporter as any, 'sendRequest').returns(makeOkResponse());
+
+      await exporter.export([makeConnectionMetric(900000)]);
+
+      expect(getConnectionParams(sendRequestStub).socket_timeout).to.equal(900);
+    });
+
+    it('rounds sub-second socketTimeout values', async () => {
+      const context = new ClientContextStub({ telemetryAuthenticatedExport: true } as any);
+      const registry = new CircuitBreakerRegistry(context);
+      const exporter = new DatabricksTelemetryExporter(context, 'host.example.com', registry, fakeAuthProvider);
+      const sendRequestStub = sinon.stub(exporter as any, 'sendRequest').returns(makeOkResponse());
+
+      await exporter.export([makeConnectionMetric(1500)]);
+
+      expect(getConnectionParams(sendRequestStub).socket_timeout).to.equal(2);
+    });
   });
 
   describe('export() - retry logic', () => {

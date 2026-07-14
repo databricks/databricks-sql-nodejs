@@ -1,10 +1,11 @@
 import { expect, AssertionError } from 'chai';
 import sinon, { SinonStub } from 'sinon';
 import Int64 from 'node-int64';
-import LZ4 from 'lz4';
+import { compressFrameSync } from 'lz4-napi';
 import { Request, Response } from 'node-fetch';
 import { ShouldRetryResult } from '../../../lib/connection/contracts/IRetryPolicy';
 import { HttpTransactionDetails } from '../../../lib/connection/contracts/IConnectionProvider';
+import { LogLevel } from '../../../lib/contracts/IDBSQLLogger';
 import CloudFetchResultHandler from '../../../lib/result/CloudFetchResultHandler';
 import ResultsProviderStub from '../.stubs/ResultsProviderStub';
 import { TRowSet, TSparkArrowResultLink, TStatusCode } from '../../../thrift/TCLIService_types';
@@ -162,8 +163,11 @@ describe('CloudFetchResultHandler', () => {
       result['pendingLinks'] = [];
       result['downloadTasks'] = [
         Promise.resolve({
-          batches: [],
-          rowCount: 0,
+          ok: true,
+          batch: {
+            batches: [],
+            rowCount: 0,
+          },
         }),
       ];
       expect(await result.hasMore()).to.be.true;
@@ -194,6 +198,26 @@ describe('CloudFetchResultHandler', () => {
     expect(result['pendingLinks'].length).to.be.equal(expectedLinksCount);
     expect(result['downloadTasks'].length).to.be.equal(0);
     expect(context.invokeWithRetryStub.called).to.be.false;
+  });
+
+  it('should log cloud fetch download speed at debug level', async () => {
+    const context = new ClientContextStub({ cloudFetchConcurrentDownloads: 1 });
+    const rowSetProvider = new ResultsProviderStub([sampleRowSet1], undefined);
+    const result = new CloudFetchResultHandler(context, rowSetProvider, {
+      status: { statusCode: TStatusCode.SUCCESS_STATUS },
+    });
+
+    const logStub = sinon.stub(context.logger, 'log');
+    context.invokeWithRetryStub.callsFake(async () => ({
+      request: new Request('localhost'),
+      response: new Response(Buffer.concat([sampleArrowSchema, sampleArrowBatch]), { status: 200 }),
+    }));
+
+    await result.fetchNext({ limit: 10000 });
+
+    expect(logStub.calledWith(LogLevel.debug, sinon.match(/Result File Download speed from cloud storage/))).to.be.true;
+    expect(logStub.neverCalledWith(LogLevel.info, sinon.match(/Result File Download speed from cloud storage/))).to.be
+      .true;
   });
 
   it('should download batches according to settings', async () => {
@@ -266,6 +290,48 @@ describe('CloudFetchResultHandler', () => {
     }
   });
 
+  it('should not leak unhandled rejections from prefetched downloads when a download fails', async () => {
+    const context = new ClientContextStub({ cloudFetchConcurrentDownloads: 3 });
+    const clientConfig = context.getConfig();
+
+    const rowSet: TRowSet = {
+      startRowOffset: new Int64(0),
+      rows: [],
+      resultLinks: [...(sampleRowSet1.resultLinks ?? []), ...(sampleRowSet2.resultLinks ?? [])],
+    };
+    const rowSetProvider = new ResultsProviderStub([rowSet], undefined);
+
+    const result = new CloudFetchResultHandler(context, rowSetProvider, {
+      status: { statusCode: TStatusCode.SUCCESS_STATUS },
+    });
+
+    // Every download fails like a real CloudFetch ECONNRESET / socket hang up.
+    context.invokeWithRetryStub.callsFake(async () => {
+      throw Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' });
+    });
+
+    // `cloudFetchConcurrentDownloads` downloads are scheduled at once; the head is awaited and
+    // surfaces the error, so `fetchNext` rejects.
+    let thrown: any;
+    try {
+      await result.fetchNext({ limit: 10000 });
+    } catch (e) {
+      thrown = e;
+    }
+    expect(thrown?.code).to.be.equal('ECONNRESET');
+
+    // The consumer typically stops iterating once `fetchNext` throws. The remaining prefetched
+    // downloads must NOT reject (which would surface as `unhandledRejection`) — they should be
+    // reflected into a settled value with the failure captured.
+    const remaining = result['downloadTasks'];
+    expect(remaining.length).to.be.equal(clientConfig.cloudFetchConcurrentDownloads - 1);
+    const settled = await Promise.allSettled(remaining);
+    for (const outcome of settled) {
+      expect(outcome.status).to.be.equal('fulfilled');
+      expect((outcome as PromiseFulfilledResult<any>).value.ok).to.be.equal(false);
+    }
+  });
+
   it('should return a proper row count in a batch', async () => {
     const context = new ClientContextStub();
 
@@ -306,7 +372,7 @@ describe('CloudFetchResultHandler', () => {
 
     context.invokeWithRetryStub.callsFake(async () => ({
       request: new Request('localhost'),
-      response: new Response(LZ4.encode(expectedBatch), { status: 200 }),
+      response: new Response(compressFrameSync(expectedBatch), { status: 200 }),
     }));
 
     expect(await rowSetProvider.hasMore()).to.be.true;
