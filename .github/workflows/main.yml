@@ -51,7 +51,7 @@ jobs:
             ${{ runner.os }}-
       - name: Check code style
         run: |
-          npm install --no-audit --no-fund
+          npm ci
           npm run prettier
           npm run lint
 
@@ -90,7 +90,7 @@ jobs:
             ${{ runner.os }}-${{ matrix.node-version }}-
       - name: Run unit tests
         run: |
-          npm install --no-audit --no-fund
+          npm ci
           npm run test
       - run: tar -cvf ${{ env.NYC_REPORT_DIR }}.tar ${{ env.NYC_REPORT_DIR }}
       - name: Store coverage report
@@ -150,7 +150,7 @@ jobs:
             ${{ runner.os }}-${{ matrix.node-version }}-
       - name: Run e2e tests
         run: |
-          npm install --no-audit --no-fund
+          npm ci
           NODE_OPTIONS="--max-old-space-size=4096" npm run e2e
       - run: tar -cvf ${{ env.NYC_REPORT_DIR }}.tar ${{ env.NYC_REPORT_DIR }}
       - name: Store coverage report

@@ -18,7 +18,7 @@
     "update-version": "node bin/update-version.js && prettier --write ./lib/version.ts",
     "build": "npm run update-version && tsc --project tsconfig.build.json",
     "build:native": "bash -c 'cd ${DATABRICKS_SQL_KERNEL_REPO:-../../databricks-sql-kernel}/napi && npx --yes @napi-rs/cli@2.18.4 build --platform ${BUILD_PROFILE:---release} && cp index.* $OLDPWD/native/kernel/'",
-    "prepack": "test -f native/kernel/index.js || { echo 'ERROR: native/kernel/index.js (napi-rs router) is missing \u2014 the published tarball would fail to load kernel. It is committed to git; run `npm run build:native` if you removed it.' >&2; exit 1; }",
+    "prepack": "test -f native/kernel/index.js || { echo 'ERROR: native/kernel/index.js (napi-rs router) is missing — the published tarball would fail to load kernel. It is committed to git; run `npm run build:native` if you removed it.' >&2; exit 1; }",
     "watch": "tsc --project tsconfig.build.json --watch",
     "type-check": "tsc --noEmit",
     "prettier": "prettier . --check",
