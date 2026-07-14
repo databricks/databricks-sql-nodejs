@@ -14,6 +14,19 @@
 #
 # See google.github.io/osv-scanner/configuration/ for the schema.
 #
+# CONVENTION: use suppressions sparingly, only with a strong reason
+# (unreachable code path + no fix available, or dev-only + not shipped).
+# EVERY [[IgnoredVulns]] entry MUST set `ignoreUntil = "YYYY-MM-DD"`
+# (~6 months out). OSV-Scanner v2.3.8 honors it natively; when it lapses
+# the finding re-surfaces, forcing a re-review instead of a permanent
+# silent ignore.
+#
+# Example:
+#   [[IgnoredVulns]]
+#   id = "GHSA-xxxx-xxxx-xxxx"
+#   ignoreUntil = "2026-01-15"
+#   reason = "dev-only (eslint toolchain); not reachable from shipped dist/."
+#
 # This file starts empty -- populate iteratively as the first scan run
 # surfaces real false positives or dev-only findings worth excluding.
 # Do not pre-populate with speculative suppressions.
