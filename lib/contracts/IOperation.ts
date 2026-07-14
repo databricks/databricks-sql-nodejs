@@ -1,6 +1,7 @@
 import { Readable, ReadableOptions } from 'node:stream';
 import { TGetOperationStatusResp, TTableSchema } from '../../thrift/TCLIService_types';
 import Status from '../dto/Status';
+import { ResultMetadata } from './ResultMetadata';
 
 export type OperationStatusCallback = (progress: TGetOperationStatusResp) => unknown;
 
@@ -59,7 +60,10 @@ export default interface IOperation {
   fetchAll(options?: FetchOptions): Promise<Array<object>>;
 
   /**
-   * Request status of operation
+   * Request status of operation. Returns the Thrift wire response for
+   * back-compat. New code should prefer {@link IOperation.getResultMetadata}
+   * for metadata and may consume the neutral `IOperationBackend.status` via
+   * a typed downcast when implementing alternative backends.
    *
    * @param progress
    */
@@ -89,6 +93,12 @@ export default interface IOperation {
    * Fetch schema
    */
   getSchema(options?: GetSchemaOptions): Promise<TTableSchema | null>;
+
+  /**
+   * Fetch result-set metadata in the backend-neutral `ResultMetadata` shape.
+   * Prefer this over the Thrift-shaped surface for new code.
+   */
+  getResultMetadata(): Promise<ResultMetadata>;
 
   iterateChunks(options?: IteratorOptions): IOperationChunksIterator;
 

@@ -1,9 +1,8 @@
 import thrift from 'thrift';
-import Int64 from 'node-int64';
+import os from 'os';
 
 import { EventEmitter } from 'events';
 import TCLIService from '../thrift/TCLIService';
-import { TProtocolVersion } from '../thrift/TCLIService_types';
 import IDBSQLClient, { ClientOptions, ConnectionOptions, OpenSessionRequest } from './contracts/IDBSQLClient';
 import IDriver from './contracts/IDriver';
 import IClientContext, { ClientConfig } from './contracts/IClientContext';
@@ -14,9 +13,12 @@ import IDBSQLSession from './contracts/IDBSQLSession';
 import IAuthentication from './connection/contracts/IAuthentication';
 import HttpConnection from './connection/connections/HttpConnection';
 import IConnectionOptions from './connection/contracts/IConnectionOptions';
-import Status from './dto/Status';
 import HiveDriverError from './errors/HiveDriverError';
-import { buildUserAgentString, definedOrError } from './utils';
+import { buildUserAgentString } from './utils';
+import IBackend from './contracts/IBackend';
+import { InternalConnectionOptions } from './contracts/InternalConnectionOptions';
+import ThriftBackend from './thrift-backend/ThriftBackend';
+import KernelBackend from './kernel/KernelBackend';
 import PlainHttpAuthentication from './connection/auth/PlainHttpAuthentication';
 import DatabricksOAuth, { OAuthFlow } from './connection/auth/DatabricksOAuth';
 import {
@@ -31,6 +33,13 @@ import IDBSQLLogger, { LogLevel } from './contracts/IDBSQLLogger';
 import DBSQLLogger from './DBSQLLogger';
 import CloseableCollection from './utils/CloseableCollection';
 import IConnectionProvider from './connection/contracts/IConnectionProvider';
+import TelemetryClient from './telemetry/TelemetryClient';
+import TelemetryClientProvider from './telemetry/TelemetryClientProvider';
+import TelemetryEventEmitter from './telemetry/TelemetryEventEmitter';
+import MetricsAggregator from './telemetry/MetricsAggregator';
+import { DriverConfiguration, DRIVER_NAME, TelemetryEventType, DEFAULT_TELEMETRY_CONFIG } from './telemetry/types';
+import { safeEmit } from './telemetry/telemetryUtils';
+import driverVersion from './version';
 
 function prependSlash(str: string): string {
   if (str.length > 0 && str.charAt(0) !== '/') {
@@ -39,20 +48,35 @@ function prependSlash(str: string): string {
   return str;
 }
 
-function getInitialNamespaceOptions(catalogName?: string, schemaName?: string) {
-  if (!catalogName && !schemaName) {
-    return {};
-  }
-
-  return {
-    initialNamespace: {
-      catalogName,
-      schemaName,
-    },
-  };
-}
-
 export type ThriftLibrary = Pick<typeof thrift, 'createClient'>;
+
+/**
+ * Copy any defined telemetry knob from `src` into `dst`. Both objects declare
+ * identical types for these keys, so the assignment is structurally typed —
+ * a wrong-shape value in `ConnectionOptions` is caught at the call site.
+ *
+ * Keep this in sync with the `telemetry*` knobs exposed in
+ * `ConnectionOptions` (lib/contracts/IDBSQLClient.ts) and `ClientConfig`
+ * (lib/contracts/IClientContext.ts). Adding a knob requires extending this
+ * list AND the public option surface; otherwise the user-supplied override
+ * silently does nothing.
+ */
+function copyDefinedTelemetryOptions(src: ConnectionOptions, dst: ClientConfig): void {
+  if (src.telemetryEnabled !== undefined) dst.telemetryEnabled = src.telemetryEnabled;
+  if (src.telemetryBatchSize !== undefined) dst.telemetryBatchSize = src.telemetryBatchSize;
+  if (src.telemetryFlushIntervalMs !== undefined) dst.telemetryFlushIntervalMs = src.telemetryFlushIntervalMs;
+  if (src.telemetryMaxRetries !== undefined) dst.telemetryMaxRetries = src.telemetryMaxRetries;
+  if (src.telemetryAuthenticatedExport !== undefined)
+    dst.telemetryAuthenticatedExport = src.telemetryAuthenticatedExport;
+  if (src.telemetryCircuitBreakerThreshold !== undefined)
+    dst.telemetryCircuitBreakerThreshold = src.telemetryCircuitBreakerThreshold;
+  if (src.telemetryCircuitBreakerTimeout !== undefined)
+    dst.telemetryCircuitBreakerTimeout = src.telemetryCircuitBreakerTimeout;
+  if (src.telemetryCloseTimeoutMs !== undefined) dst.telemetryCloseTimeoutMs = src.telemetryCloseTimeoutMs;
+  if (src.telemetryMaxStatementMetrics !== undefined)
+    dst.telemetryMaxStatementMetrics = src.telemetryMaxStatementMetrics;
+  if (src.telemetryMaxPendingMetrics !== undefined) dst.telemetryMaxPendingMetrics = src.telemetryMaxPendingMetrics;
+}
 
 export default class DBSQLClient extends EventEmitter implements IDBSQLClient, IClientContext {
   private static defaultLogger?: IDBSQLLogger;
@@ -74,6 +98,32 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
   private thrift: ThriftLibrary = thrift;
 
   private readonly sessions = new CloseableCollection<DBSQLSession>();
+
+  private backend?: IBackend;
+
+  // Telemetry components — `telemetryClient` is the shared per-host owner
+  // (process-wide via TelemetryClientProvider). The exporter, aggregator,
+  // circuit-breaker registry and feature-flag cache live on it. Each
+  // DBSQLClient still owns its own `telemetryEmitter` so it respects its
+  // own `telemetryEnabled` flag.
+  private host?: string;
+
+  private httpPath?: string;
+
+  private authType?: string;
+
+  private useProxy?: boolean;
+
+  private telemetryClient?: TelemetryClient;
+
+  private telemetryEmitter?: TelemetryEventEmitter;
+
+  // True once we've shipped the full DriverConfiguration on a CONNECTION_OPEN
+  // event for this client. Subsequent openSession events for the same client
+  // strip the (~1KB, static-for-the-process) blob — a long-running client
+  // opening N sessions would otherwise pay N×blob bytes for telemetry on data
+  // that hasn't changed since the first session.
+  private driverConfigShipped = false;
 
   private static getDefaultLogger(): IDBSQLLogger {
     if (!this.defaultLogger) {
@@ -101,6 +151,33 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
       cloudFetchSpeedThresholdMBps: 0.1,
 
       useLZ4Compression: true,
+
+      preserveBigNumericPrecision: false,
+
+      // Telemetry defaults are sourced from DEFAULT_TELEMETRY_CONFIG so
+      // every component reads from the same single frozen const. Mapping the
+      // unprefixed TelemetryConfiguration keys to the `telemetry`-prefixed
+      // ClientConfig keys is mechanical; doing it once here means that adding
+      // a new knob to DEFAULT_TELEMETRY_CONFIG only requires extending the
+      // ClientConfig surface and (optionally) adding to telemetryOverrides.
+      // Previously this method declared 7 keys while DEFAULT_TELEMETRY_CONFIG
+      // declared 15 — silent desync risk every time someone touched one but
+      // not the other.
+      telemetryEnabled: DEFAULT_TELEMETRY_CONFIG.enabled,
+      telemetryBatchSize: DEFAULT_TELEMETRY_CONFIG.batchSize,
+      telemetryFlushIntervalMs: DEFAULT_TELEMETRY_CONFIG.flushIntervalMs,
+      telemetryMaxRetries: DEFAULT_TELEMETRY_CONFIG.maxRetries,
+      telemetryBackoffBaseMs: DEFAULT_TELEMETRY_CONFIG.backoffBaseMs,
+      telemetryBackoffMaxMs: DEFAULT_TELEMETRY_CONFIG.backoffMaxMs,
+      telemetryBackoffJitterMs: DEFAULT_TELEMETRY_CONFIG.backoffJitterMs,
+      telemetryAuthenticatedExport: DEFAULT_TELEMETRY_CONFIG.authenticatedExport,
+      telemetryCircuitBreakerThreshold: DEFAULT_TELEMETRY_CONFIG.circuitBreakerThreshold,
+      telemetryCircuitBreakerTimeout: DEFAULT_TELEMETRY_CONFIG.circuitBreakerTimeout,
+      telemetryMaxPendingMetrics: DEFAULT_TELEMETRY_CONFIG.maxPendingMetrics,
+      telemetryMaxErrorsPerStatement: DEFAULT_TELEMETRY_CONFIG.maxErrorsPerStatement,
+      telemetryStatementTtlMs: DEFAULT_TELEMETRY_CONFIG.statementTtlMs,
+      telemetryCloseTimeoutMs: DEFAULT_TELEMETRY_CONFIG.closeTimeoutMs,
+      telemetryMaxStatementMetrics: DEFAULT_TELEMETRY_CONFIG.maxStatementMetrics,
     };
   }
 
@@ -213,6 +290,275 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
   }
 
   /**
+   * Extract the numeric workspace ID for telemetry.
+   *
+   * Two URL shapes carry the workspace ID today:
+   *  - Warehouse, query form: `/sql/1.0/warehouses/<id>?o=<wsId>`
+   *  - All-purpose cluster, path form: `sql/protocolv1/o/<wsId>/<cluster-id>`
+   *
+   * Host-based extraction was tried previously but produced confidently-wrong
+   * values:
+   *  - AWS `dbc-XXXXX-YYYY.cloud.databricks.com` → `dbc-XXXXX-YYYY`
+   *    is the deployment shard prefix, not the workspace ID.
+   *  - Azure `adb-NNNNNNNNNNNNN.NN.azuredatabricks.net` → the workspace ID is
+   *    the numeric portion after the `adb-` prefix (and before the form-factor
+   *    digit), not `adb-NNN`.
+   *
+   * Returns `undefined` when no workspace ID can be derived. Server-side
+   * attribution is better off seeing a missing field than a wrong value.
+   */
+  private static extractWorkspaceId(httpPath: string | undefined): string | undefined {
+    if (!httpPath) {
+      return undefined;
+    }
+    const queryIdx = httpPath.indexOf('?');
+    // Warehouse form: `?o=<digits>` in the query string.
+    if (queryIdx >= 0) {
+      const query = httpPath.slice(queryIdx + 1);
+      // Match `o=<digits>` as the first param, an inner `&o=<digits>`, etc.
+      // Workspace IDs are decimal integers; reject anything else so a stray
+      // `o=tenant_42` doesn't ship as a workspace ID.
+      const queryMatch = query.match(/(?:^|&)o=(\d+)(?:&|$)/);
+      if (queryMatch) {
+        return queryMatch[1];
+      }
+    }
+    // All-purpose cluster form: `/o/<digits>/<cluster-id>` as a path segment.
+    const pathOnly = queryIdx >= 0 ? httpPath.slice(0, queryIdx) : httpPath;
+    const pathMatch = pathOnly.match(/(?:^|\/)o\/(\d+)(?:\/|$)/);
+    return pathMatch ? pathMatch[1] : undefined;
+  }
+
+  // Detects an `o=<value>` or `/o/<value>` where `<value>` is present but
+  // non-numeric, so the caller can warn instead of silently dropping a
+  // malformed workspace param.
+  private static hasMalformedOrgParam(httpPath: string | undefined): boolean {
+    if (!httpPath) {
+      return false;
+    }
+    const queryIdx = httpPath.indexOf('?');
+    if (queryIdx >= 0) {
+      const query = httpPath.slice(queryIdx + 1);
+      const hasOrg = /(?:^|&)o=/.test(query);
+      const hasNumericOrg = /(?:^|&)o=\d+(?:&|$)/.test(query);
+      if (hasOrg && !hasNumericOrg) {
+        return true;
+      }
+    }
+    const pathOnly = queryIdx >= 0 ? httpPath.slice(0, queryIdx) : httpPath;
+    const hasPathOrg = /(?:^|\/)o\/[^/]+/.test(pathOnly);
+    const hasNumericPathOrg = /(?:^|\/)o\/\d+(?:\/|$)/.test(pathOnly);
+    return hasPathOrg && !hasNumericPathOrg;
+  }
+
+  /**
+   * Build the customHeaders map applied to telemetry POSTs and feature-flag
+   * GETs (SPOG / Single Panel of Glass support). When `httpPath` carries a
+   * workspace ID — either as a `?o=<wsId>` query (warehouse) or a
+   * `/o/<wsId>/<cluster-id>` path segment (all-purpose cluster) — endpoints
+   * that don't include the workspace in their URL path need it conveyed via
+   * the `x-databricks-org-id` header instead. A user-supplied value in
+   * `userHeaders` (case-insensitively keyed) wins over the parsed value.
+   *
+   * `httpPath` is passed explicitly (rather than read off `this.httpPath`) so
+   * the SPOG-routing dependency is visible in the signature — a future
+   * refactor that reorders connect() can't silently break injection.
+   */
+  private buildCustomHeaders(
+    httpPath: string | undefined,
+    userHeaders: Record<string, string> | undefined,
+  ): Record<string, string> | undefined {
+    const merged: Record<string, string> = { ...(userHeaders ?? {}) };
+    const hasOrgIdAlready = Object.keys(merged).some((k) => k.toLowerCase() === 'x-databricks-org-id');
+    if (hasOrgIdAlready) {
+      this.logger.log(LogLevel.debug, 'SPOG: x-databricks-org-id supplied by caller; not extracting from httpPath');
+    } else {
+      const orgId = DBSQLClient.extractWorkspaceId(httpPath);
+      if (orgId) {
+        merged['x-databricks-org-id'] = orgId;
+        this.logger.log(LogLevel.debug, `SPOG: injecting x-databricks-org-id=${orgId} (extracted from httpPath)`);
+      } else if (DBSQLClient.hasMalformedOrgParam(httpPath)) {
+        this.logger.log(
+          LogLevel.warn,
+          'SPOG: httpPath contains non-numeric workspace ID; x-databricks-org-id not injected',
+        );
+      }
+    }
+    return Object.keys(merged).length > 0 ? merged : undefined;
+  }
+
+  /**
+   * Build driver configuration for telemetry reporting.
+   * @returns DriverConfiguration object with current driver settings
+   */
+  private buildDriverConfiguration(): DriverConfiguration {
+    return {
+      driverVersion,
+      driverName: DRIVER_NAME,
+      nodeVersion: process.version,
+      platform: process.platform,
+      osVersion: os.release(),
+      osArch: os.arch(),
+      runtimeVendor: 'Node.js Foundation',
+      localeName: this.getLocaleName(),
+      charSetEncoding: 'UTF-8',
+      processName: this.getProcessName(),
+      authType: this.authType || 'pat',
+
+      // Feature flags
+      cloudFetchEnabled: this.config.useCloudFetch ?? false,
+      lz4Enabled: this.config.useLZ4Compression ?? false,
+      arrowEnabled: this.config.arrowEnabled ?? false,
+      directResultsEnabled: true, // Direct results always enabled
+
+      // Configuration values
+      socketTimeout: this.config.socketTimeout ?? 0,
+      retryMaxAttempts: this.config.retryMaxAttempts ?? 0,
+      cloudFetchConcurrentDownloads: this.config.cloudFetchConcurrentDownloads ?? 0,
+
+      // Connection parameters
+      httpPath: this.httpPath,
+      enableMetricViewMetadata: this.config.enableMetricViewMetadata,
+      useProxy: this.useProxy,
+    };
+  }
+
+  /**
+   * Map Node.js auth type to telemetry auth enum string.
+   * Distinguishes between U2M and M2M OAuth flows.
+   */
+  private mapAuthType(options: ConnectionOptions): string {
+    switch (options.authType) {
+      case 'databricks-oauth':
+        return options.oauthClientSecret === undefined ? 'external-browser' : 'oauth-m2m';
+      case 'custom':
+        return 'custom';
+      case 'token-provider':
+        return 'token-provider';
+      case 'external-token':
+        return 'external-token';
+      case 'static-token':
+        return 'static-token';
+      case 'access-token':
+      case undefined:
+        return 'pat';
+      default:
+        return 'unknown';
+    }
+  }
+
+  /**
+   * Get locale name in format language_country (e.g., en_US).
+   * Matches JDBC format: user.language + '_' + user.country
+   */
+  private getLocaleName(): string {
+    try {
+      // Try to get from environment variables
+      const lang = process.env.LANG || process.env.LC_ALL || process.env.LC_MESSAGES || '';
+      if (lang) {
+        // LANG format is typically "en_US.UTF-8", extract "en_US"
+        const match = lang.match(/^([a-z]{2}_[A-Z]{2})/);
+        if (match) {
+          return match[1];
+        }
+      }
+      // Fallback to en_US
+      return 'en_US';
+    } catch {
+      return 'en_US';
+    }
+  }
+
+  /**
+   * Get process name, similar to JDBC's ProcessNameUtil.
+   * Returns the script name or process title.
+   */
+  private getProcessName(): string {
+    try {
+      // Try process.title first (can be set by application)
+      if (process.title && process.title !== 'node') {
+        return process.title;
+      }
+      // Try to get the main script name from argv[1]
+      if (process.argv && process.argv.length > 1) {
+        const scriptPath = process.argv[1];
+        // Extract filename without path
+        const filename = scriptPath.split('/').pop()?.split('\\').pop() || '';
+        // Remove extension
+        const nameWithoutExt = filename.replace(/\.[^.]*$/, '');
+        if (nameWithoutExt) {
+          return nameWithoutExt;
+        }
+      }
+      return 'node';
+    } catch {
+      return 'node';
+    }
+  }
+
+  /**
+   * Initialize telemetry components if enabled.
+   * CRITICAL: All errors swallowed and logged at LogLevel.debug ONLY.
+   * Driver NEVER throws exceptions due to telemetry.
+   */
+  private async initializeTelemetry(): Promise<void> {
+    if (!this.host) {
+      return;
+    }
+
+    try {
+      // Acquire (or create) the per-host TelemetryClient from the
+      // process-wide provider. The shared client owns the circuit-breaker
+      // registry, feature-flag cache, exporter, and aggregator. Multiple
+      // DBSQLClient instances on the same host share these resources so
+      // breaker counters and HTTP batches don't fragment per-instance.
+      this.telemetryClient = TelemetryClientProvider.getInstance().getOrCreateClient(this, this.host);
+
+      // Use the shared feature-flag cache (registered in the previous step).
+      const enabled = await this.telemetryClient.getFeatureFlagCache().isTelemetryEnabled(this.host);
+
+      if (!enabled) {
+        // Release our refcount immediately; we won't be emitting.
+        await TelemetryClientProvider.getInstance().releaseClient(this, this.host);
+        this.telemetryClient = undefined;
+        this.logger.log(LogLevel.debug, 'Telemetry: disabled');
+        return;
+      }
+
+      // Each DBSQLClient still owns its own emitter so it respects its own
+      // `telemetryEnabled` flag and feature-flag result. All emitters bridge
+      // into the SHARED aggregator on the TelemetryClient.
+      this.telemetryEmitter = new TelemetryEventEmitter(this);
+      const sharedAggregator = this.telemetryClient.getAggregator();
+      for (const eventType of Object.values(TelemetryEventType)) {
+        this.telemetryEmitter.on(eventType, (event) => {
+          sharedAggregator.processEvent(event);
+        });
+      }
+
+      this.logger.log(LogLevel.debug, 'Telemetry: enabled');
+    } catch (error: any) {
+      // Swallow all telemetry initialization errors. If we acquired a refcount
+      // before the throw, release it — otherwise the per-host TelemetryClient
+      // (and its flush timer / exporter / FFCache) leaks for the lifetime of
+      // the process on long-running supervisors that retry-connect.
+      if (this.telemetryClient) {
+        try {
+          await TelemetryClientProvider.getInstance().releaseClient(this, this.host);
+        } catch (releaseError: any) {
+          this.logger.log(
+            LogLevel.debug,
+            `Telemetry release-after-init-failure error: ${releaseError?.message ?? releaseError}`,
+          );
+        }
+        this.telemetryClient = undefined;
+        this.telemetryEmitter = undefined;
+      }
+      this.logger.log(LogLevel.debug, `Telemetry initialization error: ${error?.message ?? error}`);
+    }
+  }
+
+  /**
    * Connects DBSQLClient to endpoint
    * @public
    * @param options - host, path, and token are required
@@ -233,45 +579,171 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
       }
     }
 
+    // If connect() is being called a second time (reconnect, host switch),
+    // release the prior telemetry refcount and emitter so we don't leak a
+    // refcount in the process-wide TelemetryClientProvider for the old host.
+    if (this.host && this.telemetryClient) {
+      try {
+        await TelemetryClientProvider.getInstance().releaseClient(this, this.host);
+      } catch (error: any) {
+        this.logger.log(LogLevel.debug, `Telemetry release-on-reconnect error: ${error.message}`);
+      }
+      this.telemetryClient = undefined;
+      this.telemetryEmitter = undefined;
+    }
+    // Re-arm: the new connection is a fresh client-config lineage even if
+    // the host is the same.
+    this.driverConfigShipped = false;
+
+    // Store connection params for telemetry
+    this.host = options.host;
+    this.httpPath = options.path;
+    this.authType = this.mapAuthType(options);
+    this.useProxy = Boolean(options.proxy);
+
     // Store enableMetricViewMetadata configuration
     if (options.enableMetricViewMetadata !== undefined) {
       this.config.enableMetricViewMetadata = options.enableMetricViewMetadata;
     }
 
+    // Opt-in: preserve DECIMAL (string) / BIGINT (bigint) precision in results.
+    if (options.preserveBigNumericPrecision !== undefined) {
+      this.config.preserveBigNumericPrecision = options.preserveBigNumericPrecision;
+    }
+
+    // Retry-policy knobs. These live in ClientConfig (consumed by the Thrift
+    // HttpRetryPolicy and forwarded to the kernel on the SEA path), so copying
+    // them here makes them configurable from connect() on BOTH backends. A
+    // per-key narrowed copy (not a spread) keeps the structural type system
+    // honest, matching the metricView / precision / telemetry knobs above.
+    if (options.retryMaxAttempts !== undefined) {
+      this.config.retryMaxAttempts = options.retryMaxAttempts;
+    }
+    if (options.retriesTimeout !== undefined) {
+      this.config.retriesTimeout = options.retriesTimeout;
+    }
+    if (options.retryDelayMin !== undefined) {
+      this.config.retryDelayMin = options.retryDelayMin;
+    }
+    if (options.retryDelayMax !== undefined) {
+      this.config.retryDelayMax = options.retryDelayMax;
+    }
+
+    // Override telemetry config if provided in options. Per-key narrowed copy
+    // preserves the structural type system: `ConnectionOptions` and
+    // `ClientConfig` declare identical types for these knobs, so a user
+    // passing `telemetryBatchSize: "100"` (string) gets a TS error instead of
+    // silently writing a string into a number field that `MetricsAggregator`
+    // would later read and break aggregation thresholds at runtime.
+    copyDefinedTelemetryOptions(options, this.config);
+
+    // Persist userAgentEntry so telemetry and feature-flag call sites reuse
+    // the same value as the primary Thrift connection's User-Agent.
+    if (options.userAgentEntry !== undefined) {
+      this.config.userAgentEntry = options.userAgentEntry;
+    }
+
+    // SPOG: parse `?o=<workspaceId>` out of httpPath and stash it as
+    // `x-databricks-org-id` for the telemetry + feature-flag clients, which
+    // hit endpoints that don't carry the workspace in their URL path.
+    this.config.customHeaders = this.buildCustomHeaders(options.path, options.customHeaders);
+
     this.authProvider = this.createAuthProvider(options, authProvider);
 
     this.connectionProvider = this.createConnectionProvider(options);
 
-    const thriftConnection = await this.connectionProvider.getThriftConnection();
+    // M0: `useKernel` is consumed via a non-exported internal-options cast so it
+    // doesn't ship in the public `.d.ts`. Mirrors Python's `kwargs.get("use_kernel")`
+    // pattern (see databricks-sql-python/src/databricks/sql/session.py).
+    const internalOptions = options as ConnectionOptions & InternalConnectionOptions;
+    const backend = internalOptions.useKernel
+      ? new KernelBackend({ context: this })
+      : new ThriftBackend({
+          context: this,
+          onConnectionEvent: (event, payload) => this.forwardConnectionEvent(event, payload),
+        });
 
-    thriftConnection.on('error', (error: Error) => {
-      // Error.stack already contains error type and message, so log stack if available,
-      // otherwise fall back to just error type + message
-      this.logger.log(LogLevel.error, error.stack || `${error.name}: ${error.message}`);
+    // Publish `this.backend` only after a successful `connect()`. Otherwise a
+    // failed connect would leave a half-initialized backend in place, and the
+    // next `openSession()` would slip past the `!this.backend` guard and
+    // surface a misleading "backend not implemented" / partial-state error
+    // instead of the accurate "DBSQLClient: not connected".
+    try {
+      await backend.connect(options);
+    } catch (err) {
+      // `IBackend.close()` is documented as safe on a partially-initialized
+      // backend; best-effort cleanup so we don't leak sockets / state.
       try {
-        this.emit('error', error);
-      } catch (e) {
-        // EventEmitter will throw unhandled error when emitting 'error' event.
-        // Since we already logged it few lines above, just suppress this behaviour
+        await backend.close();
+      } catch (closeErr) {
+        // Swallow; the original error is what the caller needs to see.
       }
-    });
+      throw err;
+    }
+    this.backend = backend;
 
-    thriftConnection.on('reconnecting', (params: { delay: number; attempt: number }) => {
-      this.logger.log(LogLevel.debug, `Reconnecting, params: ${JSON.stringify(params)}`);
-      this.emit('reconnecting', params);
-    });
-
-    thriftConnection.on('close', () => {
-      this.logger.log(LogLevel.debug, 'Closing connection.');
-      this.emit('close');
-    });
-
-    thriftConnection.on('timeout', () => {
-      this.logger.log(LogLevel.debug, 'Connection timed out.');
-      this.emit('timeout');
-    });
+    // Initialize telemetry if enabled. The env var DATABRICKS_TELEMETRY_DISABLED
+    // is a hard kill switch for ops/IT teams who can't redeploy app code.
+    // Recognized truthy values: 1, true, yes, on (case-insensitive). Anything
+    // else (empty, "0", "false", "no", "off") leaves the runtime config in
+    // charge — avoiding the footgun where a sysadmin sets the var to "false"
+    // expecting to enable telemetry.
+    const envKill = process.env.DATABRICKS_TELEMETRY_DISABLED;
+    const trimmedEnvKill = typeof envKill === 'string' ? envKill.trim() : '';
+    const envDisabled = trimmedEnvKill.length > 0 && /^(1|true|yes|on)$/i.test(trimmedEnvKill);
+    // Surface the misconfiguration: an ops engineer who sees the var name and
+    // tries to "set it to false to keep telemetry on" otherwise gets the
+    // opposite of what they expect (the var is then silently ignored, runtime
+    // config stays in charge — default `true`). Warn on any non-empty value
+    // that isn't recognized so the disable-failed shape is visible in logs.
+    if (trimmedEnvKill.length > 0 && !envDisabled) {
+      this.logger.log(
+        LogLevel.warn,
+        `DATABRICKS_TELEMETRY_DISABLED='${trimmedEnvKill}' was ignored. ` +
+          `To disable telemetry, set the variable to one of: 1, true, yes, on. ` +
+          `Telemetry remains controlled by the runtime config and feature flag.`,
+      );
+    }
+    if (this.config.telemetryEnabled && !envDisabled) {
+      await this.initializeTelemetry();
+    }
 
     return this;
+  }
+
+  private forwardConnectionEvent(event: 'error' | 'reconnecting' | 'close' | 'timeout', payload?: unknown): void {
+    switch (event) {
+      case 'error': {
+        // `payload` is typed `unknown` because the cross-backend
+        // `IBackend.onConnectionEvent` doesn't constrain the error shape.
+        // Normalize to `Error` so the stack/name/message access below is safe
+        // for any backend that emits a non-Error value (e.g. a bare string).
+        const error = payload instanceof Error ? payload : new Error(String(payload));
+        this.logger.log(LogLevel.error, error.stack || `${error.name}: ${error.message}`);
+        try {
+          this.emit('error', error);
+        } catch (e) {
+          // EventEmitter throws when 'error' has no listeners; we've already logged it.
+        }
+        return;
+      }
+      case 'reconnecting':
+        this.logger.log(LogLevel.debug, `Reconnecting, params: ${JSON.stringify(payload)}`);
+        this.emit('reconnecting', payload);
+        return;
+      case 'close':
+        this.logger.log(LogLevel.debug, 'Closing connection.');
+        this.emit('close');
+        return;
+      case 'timeout':
+        this.logger.log(LogLevel.debug, 'Connection timed out.');
+        this.emit('timeout');
+        // Explicit return mirrors the other cases and protects against
+        // fall-through if a new event is added below.
+        // eslint-disable-next-line no-useless-return
+        return;
+      // no default
+    }
   }
 
   /**
@@ -284,6 +756,13 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
    * const session = await client.openSession();
    */
   public async openSession(request: OpenSessionRequest = {}): Promise<IDBSQLSession> {
+    if (!this.backend) {
+      throw new HiveDriverError('DBSQLClient: not connected');
+    }
+
+    // Track connection open latency
+    const startTime = Date.now();
+
     // Prepare session configuration
     const configuration = request.configuration ? { ...request.configuration } : {};
 
@@ -291,26 +770,67 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
     if (this.config.enableMetricViewMetadata) {
       configuration['spark.sql.thriftserver.metadata.metricview.enabled'] = 'true';
     }
-
-    const response = await this.driver.openSession({
-      client_protocol_i64: new Int64(TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V8),
-      ...getInitialNamespaceOptions(request.initialCatalog, request.initialSchema),
+    const sessionBackend = await this.backend.openSession({
+      ...request,
       configuration,
-      canUseMultipleCatalogs: true,
+    });
+    const session = new DBSQLSession({ backend: sessionBackend, context: this });
+    this.sessions.add(session);
+
+    // Emit connection.open telemetry event. The DriverConfiguration blob
+    // (~1KB: runtime/OS/locale/process info) is static for the lifetime of
+    // this DBSQLClient — ship it once, on the first openSession, and omit
+    // on subsequent sessions for the same client. Server-side correlation
+    // by sessionId still groups N sessions under the first event's config.
+    safeEmit(this, (emitter) => {
+      if (!this.host) return;
+      const latencyMs = Date.now() - startTime;
+      const workspaceId = DBSQLClient.extractWorkspaceId(this.httpPath);
+      const driverConfig = this.driverConfigShipped ? undefined : this.buildDriverConfiguration();
+      if (driverConfig) {
+        this.driverConfigShipped = true;
+      }
+      emitter.emitConnectionOpen({
+        sessionId: session.id,
+        workspaceId,
+        driverConfig,
+        latencyMs,
+      });
     });
 
-    Status.assert(response.status);
-    const session = new DBSQLSession({
-      handle: definedOrError(response.sessionHandle),
-      context: this,
-      serverProtocolVersion: response.serverProtocolVersion,
-    });
-    this.sessions.add(session);
     return session;
   }
 
+  /**
+   * Closes the client, releasing sessions and telemetry resources.
+   *
+   * The internal telemetry flush timer uses `setInterval(...).unref()` so it
+   * cannot keep the Node.js process alive on its own. As a consequence, any
+   * telemetry buffered between flush ticks is lost if the process exits
+   * without calling `close()`. Long-lived applications should `await` this
+   * method on shutdown so the aggregator drains its remaining metrics.
+   */
   public async close(): Promise<void> {
     await this.sessions.closeAll();
+    await this.backend?.close();
+
+    this.backend = undefined;
+
+    // Cleanup telemetry. Releasing our refcount on the shared TelemetryClient
+    // is awaited because the underlying close() drains the final HTTP POST —
+    // a caller doing `await client.close(); process.exit(0)` would otherwise
+    // truncate the in-flight request when this is the last refcount holder.
+    if (this.host && this.telemetryClient) {
+      try {
+        await TelemetryClientProvider.getInstance().releaseClient(this, this.host);
+      } catch (error: any) {
+        this.logger.log(LogLevel.debug, `Telemetry cleanup error: ${error.message}`);
+      }
+      this.telemetryClient = undefined;
+    }
+    // Drop the emitter ref so post-close calls (e.g. session.close racing
+    // with client.close) cannot smuggle events into the closed aggregator.
+    this.telemetryEmitter = undefined;
 
     this.client = undefined;
     this.connectionProvider = undefined;
@@ -351,5 +871,49 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
 
   public async getDriver(): Promise<IDriver> {
     return this.driver;
+  }
+
+  /**
+   * Returns the authentication provider associated with this client, if any.
+   * Intended for internal telemetry/feature-flag call sites that need to
+   * obtain auth headers directly without routing through `IClientContext`.
+   *
+   * @internal Not part of the public API. May change without notice.
+   */
+  public getAuthProvider(): IAuthentication | undefined {
+    return this.authProvider;
+  }
+
+  /** @internal */
+  public getTelemetryEmitter(): TelemetryEventEmitter | undefined {
+    return this.telemetryEmitter;
+  }
+
+  /** @internal */
+  public getTelemetryAggregator(): MetricsAggregator | undefined {
+    return this.telemetryClient?.getAggregator();
+  }
+
+  /**
+   * Operator-visible snapshot of the client's telemetry state: current
+   * buffer depth, in-flight statement aggregations, cumulative drops/
+   * evictions, and circuit-breaker state. Returns `undefined` when
+   * telemetry is disabled (config, env-kill, or feature-flag).
+   *
+   * Use this in health-check endpoints or shutdown banners to verify that
+   * telemetry is flowing. A non-zero `droppedMetrics` between observations
+   * means buffer overflow — raise `telemetryMaxPendingMetrics`.
+   */
+  public getTelemetryStats():
+    | {
+        host: string;
+        pendingMetricsCount: number;
+        inFlightStatements: number;
+        droppedMetrics: number;
+        evictedStatements: number;
+        circuitBreakerState: string;
+      }
+    | undefined {
+    return this.telemetryClient?.getTelemetryStats();
   }
 }

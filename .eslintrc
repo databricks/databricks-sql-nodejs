@@ -9,6 +9,12 @@
       "rules": {
         "class-methods-use-this": "off",
         "no-underscore-dangle": "off",
+        "@typescript-eslint/no-unused-vars": [
+          "error",
+          { "argsIgnorePattern": "^_", "varsIgnorePattern": "^_", "ignoreRestSiblings": true }
+        ],
+        "@typescript-eslint/no-use-before-define": ["error", { "functions": false }],
+        "no-continue": "off",
         "consistent-return": "off",
         "no-param-reassign": "off",
         "no-bitwise": "off",
@@ -29,7 +35,8 @@
       "files": ["*.test.js", "*.test.ts"],
       "rules": {
         "no-unused-expressions": "off",
-        "@typescript-eslint/no-unused-expressions": "off"
+        "@typescript-eslint/no-unused-expressions": "off",
+        "func-names": "off"
       }
     }
   ]

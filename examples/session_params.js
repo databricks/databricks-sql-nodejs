@@ -10,8 +10,12 @@ client
   .connect({ host, path, token })
   .then(async (client) => {
     const session = await client.openSession({
+      queryTags: {
+        team: 'engineering',
+        test: 'session-params',
+        driver: 'node',
+      },
       configuration: {
-        QUERY_TAGS: 'team:engineering,test:session-params,driver:node',
         ansi_mode: 'false',
       },
     });

@@ -11,7 +11,7 @@ The Databricks SQL Driver for Node.js is a Javascript driver for applications th
 
 ## Requirements
 
-- Node.js 14 or newer
+- Node.js 20 or newer
 
 ## Installation
 
@@ -50,6 +50,18 @@ client
     console.log(error);
   });
 ```
+
+## Telemetry
+
+The driver emits connection, statement, and CloudFetch metrics plus
+redacted error events to help Databricks improve driver reliability. No
+SQL text, parameter values, or row data is ever collected. Emission is
+gated by a server-side feature flag and can be disabled per-connection
+with `telemetryEnabled: false` or globally with the
+`DATABRICKS_TELEMETRY_DISABLED` env var.
+
+See [docs/TELEMETRY.md](docs/TELEMETRY.md) for the full event payloads,
+tuning knobs, multi-tenant guidance, and troubleshooting.
 
 ## Run Tests
 

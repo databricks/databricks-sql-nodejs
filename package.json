@@ -1,6 +1,6 @@
 {
   "name": "@databricks/sql",
-  "version": "1.13.0",
+  "version": "2.0.0",
   "description": "Driver for connection to Databricks SQL via Thrift API.",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
@@ -9,7 +9,7 @@
     "test": "tests"
   },
   "engines": {
-    "node": ">=14.0.0"
+    "node": ">=20.0.0"
   },
   "scripts": {
     "prepare": "npm run build",
@@ -17,6 +17,8 @@
     "test": "nyc --report-dir=${NYC_REPORT_DIR:-coverage_unit} mocha --config tests/unit/.mocharc.js",
     "update-version": "node bin/update-version.js && prettier --write ./lib/version.ts",
     "build": "npm run update-version && tsc --project tsconfig.build.json",
+    "build:native": "bash -c 'cd ${DATABRICKS_SQL_KERNEL_REPO:-../../databricks-sql-kernel}/napi && npx --yes @napi-rs/cli@2.18.4 build --platform ${BUILD_PROFILE:---release} && cp index.* $OLDPWD/native/kernel/'",
+    "prepack": "test -f native/kernel/index.js || { echo 'ERROR: native/kernel/index.js (napi-rs router) is missing — the published tarball would fail to load kernel. It is committed to git; run `npm run build:native` if you removed it.' >&2; exit 1; }",
     "watch": "tsc --project tsconfig.build.json --watch",
     "type-check": "tsc --noEmit",
     "prettier": "prettier . --check",
@@ -45,22 +47,20 @@
     "hive",
     "hive js"
   ],
-  "license": "Apache 2.0",
+  "license": "Apache-2.0",
   "devDependencies": {
     "@types/chai": "^4.3.14",
     "@types/http-proxy": "^1.17.14",
-    "@types/lz4": "^0.6.4",
     "@types/mocha": "^10.0.6",
     "@types/node": "^18.11.9",
-    "@types/node-fetch": "^2.6.4",
+    "@types/node-fetch": "^2.6.13",
     "@types/node-int64": "^0.4.29",
     "@types/sinon": "^17.0.3",
     "@types/thrift": "^0.10.11",
-    "@types/uuid": "^8.3.4",
     "@typescript-eslint/eslint-plugin": "^5.44.0",
     "@typescript-eslint/parser": "^5.44.0",
     "chai": "^4.3.6",
-    "eslint": "^8.22.0",
+    "eslint": "^8.57.1",
     "eslint-config-airbnb": "^19.0.4",
     "eslint-config-airbnb-typescript": "^17.0.0",
     "eslint-config-prettier": "^8.5.0",
@@ -69,26 +69,44 @@
     "eslint-plugin-react": "^7.30.1",
     "eslint-plugin-react-hooks": "^4.6.0",
     "http-proxy": "^1.18.1",
-    "mocha": "^10.2.0",
+    "mocha": "^10.8.2",
     "nyc": "^15.1.0",
     "prettier": "^2.8.4",
     "sinon": "^17.0.1",
     "ts-node": "^10.9.2",
-    "typescript": "^4.9.3"
+    "typescript": "5.5.4"
   },
   "dependencies": {
     "apache-arrow": "^13.0.0",
     "commander": "^9.3.0",
+    "flatbuffers": "23.5.26",
     "node-fetch": "^2.6.12",
     "node-int64": "^0.4.0",
     "open": "^8.4.2",
     "openid-client": "^5.4.2",
     "proxy-agent": "^6.3.1",
-    "thrift": "^0.16.0",
-    "uuid": "^9.0.0",
+    "thrift": "^0.23.0",
+    "uuid": "^11.1.1",
     "winston": "^3.8.2"
   },
   "optionalDependencies": {
-    "lz4": "^0.6.5"
+    "lz4-napi": "^2.9.0",
+    "@databricks/databricks-sql-kernel-linux-x64-gnu": "0.2.0",
+    "@databricks/databricks-sql-kernel-linux-arm64-gnu": "0.2.0",
+    "@databricks/databricks-sql-kernel-linux-x64-musl": "0.2.0",
+    "@databricks/databricks-sql-kernel-linux-arm64-musl": "0.2.0",
+    "@databricks/databricks-sql-kernel-darwin-x64": "0.2.0",
+    "@databricks/databricks-sql-kernel-darwin-arm64": "0.2.0",
+    "@databricks/databricks-sql-kernel-win32-x64-msvc": "0.2.0",
+    "@databricks/databricks-sql-kernel-win32-arm64-msvc": "0.2.0"
+  },
+  "overrides": {
+    "basic-ftp": "^5.3.1",
+    "@75lb/deep-merge": "^1.1.2",
+    "ws": "^8.18.0",
+    "ip-address": "^10.1.1",
+    "form-data": "^4.0.4",
+    "uuid": "^11.1.1",
+    "serialize-javascript": "^7.0.5"
   }
 }

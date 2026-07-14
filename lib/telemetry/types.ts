@@ -15,14 +15,20 @@
  */
 
 /**
+ * Driver name constant for telemetry
+ */
+export const DRIVER_NAME = 'nodejs-sql-driver';
+
+/**
  * Event types emitted by the telemetry system
  */
 export enum TelemetryEventType {
   CONNECTION_OPEN = 'connection.open',
+  CONNECTION_CLOSE = 'connection.close',
   STATEMENT_START = 'statement.start',
   STATEMENT_COMPLETE = 'statement.complete',
   CLOUDFETCH_CHUNK = 'cloudfetch.chunk',
-  ERROR = 'error',
+  ERROR = 'telemetry.error',
 }
 
 /**
@@ -38,8 +44,17 @@ export interface TelemetryConfiguration {
   /** Interval in milliseconds to flush metrics */
   flushIntervalMs?: number;
 
-  /** Maximum retry attempts for export */
+  /** Maximum retry attempts for export (attempts *after* the initial call) */
   maxRetries?: number;
+
+  /** Minimum backoff delay in ms for retry backoff */
+  backoffBaseMs?: number;
+
+  /** Maximum backoff delay in ms (includes jitter) */
+  backoffMaxMs?: number;
+
+  /** Upper bound of added jitter in ms */
+  backoffJitterMs?: number;
 
   /** Whether to use authenticated export endpoint */
   authenticatedExport?: boolean;
@@ -49,27 +64,63 @@ export interface TelemetryConfiguration {
 
   /** Circuit breaker timeout in milliseconds */
   circuitBreakerTimeout?: number;
+
+  /** Maximum number of pending metrics buffered before dropping oldest */
+  maxPendingMetrics?: number;
+
+  /** Maximum number of error events buffered per statement before dropping oldest */
+  maxErrorsPerStatement?: number;
+
+  /** TTL in ms after which abandoned statement aggregations are evicted */
+  statementTtlMs?: number;
+
+  /**
+   * Maximum wall-clock time `close()` will wait for the final flush HTTP POST
+   * before abandoning it and returning. Bounds shutdown latency so callers
+   * doing `await client.close(); process.exit(0)` are not held up by a
+   * misbehaving telemetry endpoint.
+   */
+  closeTimeoutMs?: number;
+
+  /** Hard cap on per-statement aggregation map size; oldest evicted on overflow. */
+  maxStatementMetrics?: number;
 }
 
 /**
  * Default telemetry configuration values
  */
-export const DEFAULT_TELEMETRY_CONFIG: Required<TelemetryConfiguration> = {
-  enabled: false, // Initially disabled for safe rollout
+export const DEFAULT_TELEMETRY_CONFIG: Readonly<Required<TelemetryConfiguration>> = Object.freeze({
+  enabled: true, // Enabled by default, gated by feature flag
   batchSize: 100,
   flushIntervalMs: 5000,
   maxRetries: 3,
+  backoffBaseMs: 100,
+  backoffMaxMs: 1000,
+  backoffJitterMs: 100,
   authenticatedExport: true,
   circuitBreakerThreshold: 5,
-  circuitBreakerTimeout: 60000, // 1 minute
-};
+  circuitBreakerTimeout: 60000,
+  maxPendingMetrics: 500,
+  maxErrorsPerStatement: 50,
+  statementTtlMs: 60 * 60 * 1000, // 1 hour
+  closeTimeoutMs: 2000, // 2s — caps client.close() shutdown latency
+  maxStatementMetrics: 5000, // hard cap for the per-statement aggregation map
+});
 
 /**
  * Runtime telemetry event emitted by the driver
  */
 export interface TelemetryEvent {
   /** Type of the event */
-  eventType: TelemetryEventType | string;
+  eventType: TelemetryEventType;
+
+  /**
+   * Backend that produced the event. Populated once non-Thrift backends start
+   * emitting telemetry so dashboards can slice latency / error rate /
+   * cloudfetch effectiveness by backend without a metrics-schema migration.
+   * Optional for back-compat with already-emitted Thrift-only events.
+   */
+  backend?: 'thrift' | 'kernel';
 
   /** Timestamp when the event occurred (milliseconds since epoch) */
   timestamp: number;
@@ -123,6 +174,9 @@ export interface TelemetryEvent {
   /** Error message */
   errorMessage?: string;
 
+  /** Stack trace, captured at emission site; redacted before export */
+  errorStack?: string;
+
   /** Whether the error is terminal (non-retryable) */
   isTerminal?: boolean;
 }
@@ -146,11 +200,14 @@ export interface TelemetryMetric {
   /** Workspace ID */
   workspaceId?: string;
 
-  /** Driver configuration (for connection metrics) */
+  /** Driver configuration (included in all metrics for context) */
   driverConfig?: DriverConfiguration;
 
   /** Execution latency in milliseconds */
   latencyMs?: number;
+
+  /** Type of operation (SELECT, INSERT, etc.) */
+  operationType?: string;
 
   /** Result format (inline, cloudfetch, arrow) */
   resultFormat?: string;
@@ -158,17 +215,32 @@ export interface TelemetryMetric {
   /** Number of result chunks */
   chunkCount?: number;
 
+  /** Latency of the first chunk fetch in milliseconds */
+  chunkInitialLatencyMs?: number;
+
+  /** Latency of the slowest chunk fetch in milliseconds */
+  chunkSlowestLatencyMs?: number;
+
+  /** Sum of all chunk fetch latencies in milliseconds */
+  chunkSumLatencyMs?: number;
+
   /** Total bytes downloaded */
   bytesDownloaded?: number;
 
   /** Number of poll operations */
   pollCount?: number;
 
+  /** Whether compression was used */
+  compressed?: boolean;
+
   /** Error name/type */
   errorName?: string;
 
   /** Error message */
   errorMessage?: string;
+
+  /** Stack trace, captured at emission site; redacted before export */
+  errorStack?: string;
 }
 
 /**
@@ -181,6 +253,13 @@ export interface DriverConfiguration {
   /** Driver name */
   driverName: string;
 
+  /**
+   * Backend in use for this connection. Populated when the driver selects a
+   * non-Thrift backend so per-connection slicing in metrics is possible.
+   * Optional for back-compat with snapshots taken before this field landed.
+   */
+  backend?: 'thrift' | 'kernel';
+
   /** Node.js version */
   nodeVersion: string;
 
@@ -189,6 +268,27 @@ export interface DriverConfiguration {
 
   /** OS version */
   osVersion: string;
+
+  /** OS architecture (x64, arm64, etc.) */
+  osArch: string;
+
+  /** Runtime vendor (Node.js Foundation) */
+  runtimeVendor: string;
+
+  /** Locale name (e.g., en_US) */
+  localeName: string;
+
+  /** Character set encoding (e.g., UTF-8) */
+  charSetEncoding: string;
+
+  /**
+   * Process name. Producers MUST pass only a basename (no absolute path) —
+   * `sanitizeProcessName()` is applied at export time as a defence in depth.
+   */
+  processName: string;
+
+  /** Authentication type (pat, external-browser, oauth-m2m, custom) */
+  authType: string;
 
   // Feature flags
   /** Whether CloudFetch is enabled */
@@ -212,6 +312,16 @@ export interface DriverConfiguration {
 
   /** Number of concurrent CloudFetch downloads */
   cloudFetchConcurrentDownloads: number;
+
+  // Connection parameters for telemetry
+  /** HTTP path for API calls */
+  httpPath?: string;
+
+  /** Whether metric view metadata is enabled */
+  enableMetricViewMetadata?: boolean;
+
+  /** Whether an HTTP/SOCKS proxy is configured on the connection */
+  useProxy?: boolean;
 }
 
 /**
@@ -244,6 +354,15 @@ export interface StatementMetrics {
 
   /** Number of CloudFetch chunks downloaded */
   chunkCount: number;
+
+  /** Latency of the first chunk fetch in milliseconds */
+  chunkInitialLatencyMs?: number;
+
+  /** Latency of the slowest chunk fetch in milliseconds */
+  chunkSlowestLatencyMs?: number;
+
+  /** Sum of all chunk fetch latencies in milliseconds */
+  chunkSumLatencyMs?: number;
 
   /** Total bytes downloaded */
   totalBytesDownloaded: number;

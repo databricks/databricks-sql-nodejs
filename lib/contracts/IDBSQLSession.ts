@@ -12,7 +12,18 @@ export type ExecuteStatementOptions = {
    */
   queryTimeout?: number | bigint | Int64;
   /**
-   * @deprecated This option is no longer supported and will be removed in future releases
+   * Selects the execution lifecycle. The only observable effect is WHEN
+   * `executeStatement` resolves; the result data, schema, and error classes are
+   * identical regardless.
+   *
+   * - **Thrift backend:** no-op. The Thrift path always submits asynchronously
+   *   (`runAsync: true` on the wire) and polls during fetch; this option is not
+   *   read.
+   * - **Kernel backend (`useKernel`):** selects the kernel execution path —
+   *   `false`/unset (default) runs the blocking direct-results path (faster,
+   *   cancellable mid-compute); `true` submits and polls (returns a pending
+   *   handle before completion). Default is sync, matching the python
+   *   connector's `cursor.execute()`.
    */
   runAsync?: boolean;
   maxRows?: number | bigint | Int64 | null;
@@ -21,6 +32,24 @@ export type ExecuteStatementOptions = {
   stagingAllowedLocalPath?: string | string[];
   namedParameters?: Record<string, DBSQLParameter | DBSQLParameterValue>;
   ordinalParameters?: Array<DBSQLParameter | DBSQLParameterValue>;
+  /**
+   * Per-statement query tags as key-value pairs. Serialized and passed via confOverlay
+   * as "query_tags". Values may be null/undefined to include a key without a value.
+   * These tags apply only to this statement and do not persist across queries.
+   */
+  queryTags?: Record<string, string | null | undefined>;
+  /**
+   * kernel-only: server-side row cap for this statement (kernel `row_limit`). The
+   * Thrift backend has no execute-time server cap, so this is a no-op there;
+   * use `maxRows` for the cross-backend client-side fetch limit.
+   */
+  rowLimit?: number;
+  /**
+   * kernel-only: per-statement Spark conf overlay (kernel `statement_conf`).
+   * Merged with the serialized `queryTags` (which land under the reserved
+   * `query_tags` key). Ignored by the Thrift backend.
+   */
+  statementConf?: Record<string, string>;
 };
 
 export type TypeInfoRequest = {

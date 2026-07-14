@@ -1,6 +1,6 @@
 import { expect } from 'chai';
 import Int64 from 'node-int64';
-import LZ4 from 'lz4';
+import { compressFrameSync } from 'lz4-napi';
 import ArrowResultHandler from '../../../lib/result/ArrowResultHandler';
 import ResultsProviderStub from '../.stubs/ResultsProviderStub';
 import { TRowSet, TSparkArrowBatch, TStatusCode, TTableSchema } from '../../../thrift/TCLIService_types';
@@ -39,7 +39,7 @@ const sampleRowSet1LZ4Compressed: TRowSet = {
   rows: [],
   arrowBatches: sampleRowSet1.arrowBatches?.map((item) => ({
     ...item,
-    batch: LZ4.encode(item.batch),
+    batch: compressFrameSync(item.batch),
   })),
 };
 
