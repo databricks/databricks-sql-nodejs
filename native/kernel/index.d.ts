@@ -670,6 +670,21 @@ export declare class AsyncResultHandle {
    */
   fetchNextBatch(): Promise<ArrowBatch | null>
   /**
+   * Copy-into-cage variant of `fetchNextBatch` (Flavour A): hands the
+   * batch's Arrow buffers to JS as in-cage (V8-allocated) `ArrayBuffer`s
+   * with the bytes `memcpy`'d in, instead of serialising to Arrow IPC
+   * bytes. Mirrors `Statement::fetch_next_batch_copycage` exactly — this
+   * is the handle the *async query path* (`awaitResult()`) exposes, so
+   * the driver's normal `executeStatement` flow can use copycage rather
+   * than silently falling back to IPC. See `crate::zerocopy::CopyCageBatch`.
+   *
+   * Any offset-sliced array is compacted to offset 0 first
+   * (`zerocopy::compact_to_offset_zero`); the JS importer's `makeData`
+   * cannot apply a logical element offset. Returns `null` at end of
+   * stream, exactly like `fetchNextBatch`.
+   */
+  fetchNextBatchCopycage(): Promise<{ numRows: number, columns: any[] } | null>
+  /**
    * Result schema as an Arrow IPC payload (schema header only,
    * no record-batch message). Available before any batches have
    * been fetched. Sync because the body has no `.await` —
@@ -1007,6 +1022,30 @@ export declare class Statement {
    * succeed or fail consistently.
    */
   fetchNextBatch(): Promise<ArrowBatch | null>
+  /**
+   * Copy-into-cage variant of `fetchNextBatch` (Flavour A): hands the
+   * batch's Arrow buffers to JS as in-cage (V8-allocated) `ArrayBuffer`s
+   * with the bytes `memcpy`'d in, instead of serialising to Arrow IPC
+   * bytes (`fetchNextBatch`). See `crate::zerocopy::CopyCageBatch`.
+   *
+   * Cage-safe (works under the V8 sandbox / Electron) and GC-clean — V8
+   * owns the bytes, so no Arc/finalizer is needed. Costs one plain copy
+   * per buffer but still avoids the IPC path's serialize + decode passes.
+   *
+   * Any offset-sliced array is compacted to offset 0 first
+   * (`zerocopy::compact_to_offset_zero`), because the JS importer's
+   * `makeData` cannot apply a logical element offset.
+   *
+   * Returns `null` at end of stream, exactly like `fetchNextBatch`. Same
+   * error/auto-close/finished semantics — only the result encoding
+   * differs, so the two are interchangeable per-fetch.
+   *
+   * `ts_return_type` pins a structural shape in the generated d.ts:
+   * `CopyCageBatch` is a manual `ToNapiValue` type (not a `#[napi(object)]`
+   * struct), so napi-rs has no interface to emit for it. The driver
+   * re-types the value precisely via `KernelArrowImport.ts`.
+   */
+  fetchNextBatchCopycage(): Promise<{ numRows: number, columns: any[] } | null>
   /**
    * Result schema as an Arrow IPC payload (schema header only, no
    * record-batch message). Available before any batches have been
