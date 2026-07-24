@@ -165,8 +165,8 @@ jobs:
 
   coverage:
     needs: [unit-test, e2e-test]
-    # Run when e2e is skipped (fork PRs) but still block on a real e2e failure.
-    if: ${{ !cancelled() && needs.unit-test.result == 'success' && needs.e2e-test.result != 'failure' }}
+    # Runs when e2e passed OR was skipped (fork PRs); a real e2e failure still blocks it.
+    if: ${{ needs.unit-test.result == 'success' && (needs.e2e-test.result == 'success' || needs.e2e-test.result == 'skipped') }}
     runs-on:
       group: databricks-protected-runner-group
       labels: linux-ubuntu-latest
