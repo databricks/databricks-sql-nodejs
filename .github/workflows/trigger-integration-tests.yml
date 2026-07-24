@@ -92,32 +92,16 @@ jobs:
               body
             });
 
-  skip-integration-tests-pr:
-    if: github.event_name == 'pull_request' && github.event.action != 'labeled' && github.event.action != 'closed'
-    runs-on:
-      group: databricks-protected-runner-group
-      labels: linux-ubuntu-latest
-    permissions:
-      checks: write
-    steps:
-      - name: Skip Node.js Integration Tests
-        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
-        with:
-          github-token: ${{ github.token }}
-          script: |
-            await github.rest.checks.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              name: 'Node.js Integration Tests',
-              head_sha: context.payload.pull_request.head.sha,
-              status: 'completed',
-              conclusion: 'success',
-              completed_at: new Date().toISOString(),
-              output: {
-                title: 'Skipped on PR - runs in merge queue',
-                summary: 'Node.js integration tests are skipped on ordinary PR events and run as a required gate in the merge queue. Add the `integration-test` label to preview them on this PR.'
-              }
-            });
+  # NOTE: the PR-open "skipped" placeholder for the required
+  # `Node.js Integration Tests` check is NOT posted here anymore. It is posted by
+  # the companion workflow `skip-checks-reporter.yml`, which runs on `workflow_run`
+  # in the base-repo context. That context has a read-write token even for
+  # fork-triggered runs, so it can post the check on EVERY PR head — including fork
+  # PRs, whose own `pull_request` run gets a read-only token and cannot post checks
+  # (the previous inline `github.token` stub 403'd on forks, so fork PRs could never
+  # satisfy the now-required check and were stuck out of the merge queue). See
+  # skip-checks-reporter.yml. The real suite still runs as the required gate on the
+  # merge_group commit and as a label preview.
 
   trigger-tests-pr:
     if: |
