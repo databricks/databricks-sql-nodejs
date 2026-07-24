@@ -175,7 +175,8 @@ jobs:
               "pr_repo": "${{ github.repository }}",
               "pr_url": "${{ github.event.pull_request.html_url }}",
               "pr_title": "${{ steps.sanitize.outputs.result }}",
-              "pr_author": "${{ github.event.pull_request.user.login }}"
+              "pr_author": "${{ github.event.pull_request.user.login }}",
+              "proxy_mode": "replay"
             }
 
       - name: Fail check on dispatch error
@@ -270,7 +271,8 @@ jobs:
               "pr_repo": "${{ github.repository }}",
               "pr_url": "${{ github.server_url }}/${{ github.repository }}/pull/${{ steps.extract-pr.outputs.pr_number }}",
               "pr_title": "Merge queue validation",
-              "pr_author": "merge-queue"
+              "pr_author": "merge-queue",
+              "proxy_mode": "replay"
             }
 
       - name: Fail check on dispatch error
