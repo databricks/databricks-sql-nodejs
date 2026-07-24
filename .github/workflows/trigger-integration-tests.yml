@@ -327,9 +327,13 @@ jobs:
               pull_number: context.payload.pull_request.number,
               per_page: 100,
             });
-            // The whole repo IS the driver. Count a merge as source-affecting when it changes a file under lib/.
-            // Docs/CI/test-only merges do not warrant a full multi-language fan-out.
-            const isSource = (f) => f.startsWith('lib/');
+            // The whole repo IS the driver. Count a merge as source-affecting when it changes driver
+            // source: lib/ (JS/TS), native/ (kernel bindings), thrift/ (Thrift defs), or the KERNEL_REV
+            // pin. Docs/CI/test-only merges do not warrant a full multi-language fan-out. (Matches the
+            // source roots called out in the "run on every change" comments above — a merge that only
+            // bumps KERNEL_REV or edits native/ or thrift/ still affects the Thrift/kernel backends.)
+            const isSource = (f) =>
+              f.startsWith('lib/') || f.startsWith('native/') || f.startsWith('thrift/') || f === 'KERNEL_REV';
             const srcChanged = files.some((f) => isSource(f.filename));
             console.log(`driver source changed: ${srcChanged}`);
             core.setOutput('source', srcChanged.toString());
