@@ -30,7 +30,7 @@ name: Report Integration Test Skip
 
 on:
   workflow_run:
-    workflows: ["Trigger Integration Tests"]
+    workflows: ['Trigger Integration Tests']
     types: [requested]
 
 jobs:
