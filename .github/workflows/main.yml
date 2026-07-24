@@ -101,6 +101,9 @@ jobs:
           retention-days: 1
 
   e2e-test:
+    # Skip on fork PRs (no access to azure-prod secrets); still runs on internal
+    # PRs, push, and in the merge queue, where fork code is e2e-tested before merge.
+    if: ${{ github.event.pull_request.head.repo.fork != true }}
     runs-on:
       group: databricks-protected-runner-group
       labels: linux-ubuntu-latest
@@ -162,6 +165,8 @@ jobs:
 
   coverage:
     needs: [unit-test, e2e-test]
+    # Runs when e2e passed OR was skipped (fork PRs); a real e2e failure still blocks it.
+    if: ${{ needs.unit-test.result == 'success' && (needs.e2e-test.result == 'success' || needs.e2e-test.result == 'skipped') }}
     runs-on:
       group: databricks-protected-runner-group
       labels: linux-ubuntu-latest
@@ -188,7 +193,10 @@ jobs:
           ls -1 coverage_*.tar | xargs -I '{}' -- tar -xvf '{}'
           rm coverage_*.tar
       - run: ls -la
+      # Skip the upload on forks — CODECOV_TOKEN is unavailable and
+      # fail_ci_if_error would fail the required coverage check.
       - name: Coverage
+        if: ${{ github.event.pull_request.head.repo.fork != true }}
         uses: codecov/codecov-action@ab904c41d6ece82784817410c45d8b8c02684457 # v3
         with:
           token: ${{ secrets.CODECOV_TOKEN }}
