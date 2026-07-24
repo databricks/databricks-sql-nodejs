@@ -101,14 +101,8 @@ jobs:
           retention-days: 1
 
   e2e-test:
-    # Skip on fork PRs only: e2e needs the azure-prod environment + warehouse
-    # secrets, which GitHub withholds from a fork's pull_request run — so it
-    # can't pass there and would otherwise permanently block the required
-    # `coverage` check (which needs this job), keeping fork PRs out of the merge
-    # queue. On internal PRs, push, and merge_group there is no
-    # `pull_request.head.repo.fork == true`, so this runs normally — a fork PR's
-    # code is still e2e-tested in the merge queue (base-repo context, secrets
-    # available) before it can merge.
+    # Skip on fork PRs (no access to azure-prod secrets); still runs on internal
+    # PRs, push, and in the merge queue, where fork code is e2e-tested before merge.
     if: ${{ github.event.pull_request.head.repo.fork != true }}
     runs-on:
       group: databricks-protected-runner-group
@@ -171,11 +165,7 @@ jobs:
 
   coverage:
     needs: [unit-test, e2e-test]
-    # Run whenever unit-test passed, tolerating a SKIPPED e2e-test (fork PRs,
-    # where e2e is skipped above). A default `needs` would auto-skip coverage
-    # when e2e is skipped, leaving this required check absent on fork heads and
-    # blocking the merge queue. A genuine e2e FAILURE (internal PR / merge_group)
-    # still blocks coverage — e2e stays enforced everywhere it can run.
+    # Run when e2e is skipped (fork PRs) but still block on a real e2e failure.
     if: ${{ !cancelled() && needs.unit-test.result == 'success' && needs.e2e-test.result != 'failure' }}
     runs-on:
       group: databricks-protected-runner-group
@@ -203,10 +193,8 @@ jobs:
           ls -1 coverage_*.tar | xargs -I '{}' -- tar -xvf '{}'
           rm coverage_*.tar
       - run: ls -la
-      # Upload to Codecov only when the token is available (non-fork). Forks
-      # can't access CODECOV_TOKEN, and with fail_ci_if_error the step would
-      # fail the required coverage check on forks. The report still generates
-      # from the unit-test artifacts; only the external upload is skipped.
+      # Skip the upload on forks — CODECOV_TOKEN is unavailable and
+      # fail_ci_if_error would fail the required coverage check.
       - name: Coverage
         if: ${{ github.event.pull_request.head.repo.fork != true }}
         uses: codecov/codecov-action@ab904c41d6ece82784817410c45d8b8c02684457 # v3
