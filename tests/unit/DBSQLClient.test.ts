@@ -62,6 +62,67 @@ describe('DBSQLClient.connect', () => {
     expect(connectionOptions.path).to.equal(path);
   });
 
+  it('should validate the server certificate by default', async () => {
+    const client = new DBSQLClient();
+
+    const connectionOptions = client['getConnectionOptions'](connectOptions);
+
+    expect(connectionOptions.rejectUnauthorized).to.be.true;
+  });
+
+  it('should map checkServerCertificate to rejectUnauthorized', async () => {
+    const client = new DBSQLClient();
+
+    expect(client['getConnectionOptions']({ ...connectOptions, checkServerCertificate: false }).rejectUnauthorized).to
+      .be.false;
+    expect(client['getConnectionOptions']({ ...connectOptions, checkServerCertificate: true }).rejectUnauthorized).to.be
+      .true;
+  });
+
+  it('should not set a custom CA when customCaCert is omitted', async () => {
+    const client = new DBSQLClient();
+
+    const connectionOptions = client['getConnectionOptions'](connectOptions);
+
+    expect(connectionOptions.ca).to.be.undefined;
+  });
+
+  it('should add customCaCert on top of the system root certificates (additive)', async () => {
+    const client = new DBSQLClient();
+    const customCaCert = '-----BEGIN CERTIFICATE-----\ncustom\n-----END CERTIFICATE-----\n';
+
+    const connectionOptions = client['getConnectionOptions']({ ...connectOptions, customCaCert });
+
+    expect(connectionOptions.ca).to.be.an('array');
+    const ca = connectionOptions.ca as Array<string>;
+    // The custom cert must be present...
+    expect(ca).to.include(customCaCert);
+    // ...alongside the built-in system roots (so public warehouses still validate).
+    expect(ca.length).to.be.greaterThan(1);
+  });
+
+  it('should not set client cert/key when mTLS options are omitted', async () => {
+    const client = new DBSQLClient();
+
+    const connectionOptions = client['getConnectionOptions'](connectOptions);
+
+    expect(connectionOptions.cert).to.be.undefined;
+    expect(connectionOptions.key).to.be.undefined;
+  });
+
+  it('should map clientCert/clientKey to cert/key for mutual TLS', async () => {
+    const client = new DBSQLClient();
+
+    const connectionOptions = client['getConnectionOptions']({
+      ...connectOptions,
+      clientCert: 'client-cert',
+      clientKey: 'client-key',
+    });
+
+    expect(connectionOptions.cert).to.equal('client-cert');
+    expect(connectionOptions.key).to.equal('client-key');
+  });
+
   it('should initialize connection state', async () => {
     const client = new DBSQLClient();
 

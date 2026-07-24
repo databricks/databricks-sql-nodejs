@@ -1,5 +1,6 @@
 import thrift from 'thrift';
 import os from 'os';
+import tls from 'tls';
 
 import { EventEmitter } from 'events';
 import TCLIService from '../thrift/TCLIService';
@@ -196,6 +197,15 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
       https: true,
       socketTimeout: options.socketTimeout,
       proxy: options.proxy,
+      // `customCaCert` is ADDITIVE: Node's `ca` option replaces the system trust
+      // store, so we append the custom cert to the built-in roots to keep public
+      // Databricks warehouses trusted while also trusting the caller's CA.
+      ca: options.customCaCert === undefined ? undefined : [...tls.rootCertificates, options.customCaCert.toString()],
+      // Client certificate + key for mutual TLS (mTLS). Both must be supplied together.
+      cert: options.clientCert,
+      key: options.clientKey,
+      // Validate the server certificate unless the caller explicitly opts out.
+      rejectUnauthorized: options.checkServerCertificate ?? true,
       headers: {
         'User-Agent': buildUserAgentString(options.userAgentEntry),
       },
