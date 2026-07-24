@@ -14,10 +14,13 @@ name: Report Integration Test Skip
 #     triggering run came from a fork. So this can post the placeholder on any PR
 #     head, fork or not, letting every PR auto-enqueue with no label.
 #
-# The required check is UNPINNED (no integration_id in the ruleset), so a
-# `github.token` (github-actions app) check satisfies it — no app token / secrets
-# needed here. The real suite is unaffected: it runs as the required gate on the
-# `merge_group` commit (posted by the driver-test app) and as a label preview.
+# The required check is PINNED to the driver-test app's integration id in the
+# ruleset, so the placeholder must be posted BY that app — hence this mints the
+# INTEGRATION_TEST_APP token (scoped to this repo) and posts with it, rather than
+# using `github.token` (github-actions app), which would not satisfy the pinned
+# gate. Secrets are available here because this runs in the base-repo context. The
+# real suite is unaffected: it runs as the required gate on the `merge_group`
+# commit (also posted by the driver-test app) and as a label preview.
 #
 # SECURITY: runs with a write token in a privileged context. It MUST NOT check out
 # or execute any PR/fork-controlled content — it only calls checks.create with a
@@ -40,12 +43,21 @@ jobs:
     permissions:
       checks: write
     steps:
+      - name: Generate GitHub App token (this repo)
+        id: app-token
+        uses: actions/create-github-app-token@f8d387b68d61c58ab83c6c016672934102569859 # v3.0.0
+        with:
+          app-id: ${{ secrets.INTEGRATION_TEST_APP_ID }}
+          private-key: ${{ secrets.INTEGRATION_TEST_PRIVATE_KEY }}
+          owner: databricks
+          repositories: databricks-sql-nodejs
+
       - name: Post skipped Node.js Integration Tests check
         uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
         env:
           HEAD_SHA: ${{ github.event.workflow_run.head_sha }}
         with:
-          github-token: ${{ github.token }}
+          github-token: ${{ steps.app-token.outputs.token }}
           script: |
             await github.rest.checks.create({
               owner: context.repo.owner,
