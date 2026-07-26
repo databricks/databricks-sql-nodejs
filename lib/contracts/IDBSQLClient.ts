@@ -92,6 +92,15 @@ export type ConnectionOptions = {
   preserveBigNumericPrecision?: boolean;
 
   /**
+   * Skip materializing fetched rows into JS objects — the driver still fetches,
+   * decompresses and parses each Arrow batch, but returns `null` row placeholders
+   * instead of running the per-cell type conversion. Only the row count is then
+   * meaningful, so this is for throughput benchmarks that measure fetch cost
+   * without the per-cell decode. Applies to both backends. Defaults to `false`.
+   */
+  disableRowMaterialization?: boolean;
+
+  /**
    * Extra HTTP headers attached to driver-owned out-of-band requests
    * (telemetry POSTs and feature-flag GETs). Not applied to the primary
    * Thrift transport or to OAuth/OIDC token requests.
