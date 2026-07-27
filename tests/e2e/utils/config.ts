@@ -75,9 +75,13 @@ function tokenFromConfigFile(): string | undefined {
   } catch (e) {
     // The file was configured but couldn't be read/parsed. Surface this so a
     // parse failure isn't misdiagnosed as a genuinely-unset token (which would
-    // send the engineer-bot down the wrong `blocked` diagnosis).
+    // send the engineer-bot down the wrong `blocked` diagnosis). Log only the
+    // error's name/message — never the raw exception, since a JSON.parse failure
+    // on Node 20 can embed a snippet of the offending (token-bearing) input in
+    // its message, which would leak part of the credential into CI logs.
+    const detail = e instanceof Error ? e.message : 'unknown error';
     // eslint-disable-next-line no-console
-    console.error(`⚠️  Failed to read token from DATABRICKS_TEST_CONFIG_FILE ('${path}'): ${e}`);
+    console.error(`⚠️  Failed to read token from DATABRICKS_TEST_CONFIG_FILE ('${path}'): ${detail}`);
     return undefined;
   }
 }
