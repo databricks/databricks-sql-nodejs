@@ -103,6 +103,14 @@ jobs:
       - name: Install connector deps (npm ci)
         run: npm ci
 
+      # Scope the JFrog credential away from the model-driven followup step:
+      # `npm ci` above consumed ~/.npmrc, and the agent's `npm test` doesn't need
+      # the registry. (Addresses the reviewer-bot finding on the odbc onboarding PR.)
+      - name: Scrub JFrog credentials before the agent runs
+        run: |
+          rm -f ~/.npmrc
+          echo "JFROG_ACCESS_TOKEN=" >> "$GITHUB_ENV"
+
       # --- shared bot setup ----------------------------------------------------
       - name: Bot prelude (tokens + Node + engine install)
         id: prelude

@@ -85,6 +85,17 @@ jobs:
         # this leaves no tracked-file churn for publish to trip on.
         run: npm ci
 
+      # Scope the JFrog credential AWAY from the model-driven steps. setup-jfrog
+      # wrote ~/.npmrc with an embedded auth token + exported JFROG_ACCESS_TOKEN to
+      # $GITHUB_ENV; `npm ci` above already consumed them, and the agent's test
+      # commands (npm test / npm run e2e) don't need the registry. Remove them
+      # before the agent runs so a prompt-injected agent can't read the token.
+      # (Addresses the reviewer-bot finding on the odbc onboarding PR.)
+      - name: Scrub JFrog credentials before the agent runs
+        run: |
+          rm -f ~/.npmrc
+          echo "JFROG_ACCESS_TOKEN=" >> "$GITHUB_ENV"
+
       # --- shared bot setup ----------------------------------------------------
       - name: Bot prelude (tokens + Node + engine install)
         id: prelude
