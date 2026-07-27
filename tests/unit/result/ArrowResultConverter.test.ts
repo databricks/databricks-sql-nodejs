@@ -54,9 +54,19 @@ const sampleArrowBatch = [
   ]),
 ];
 
+// Resolve from CWD (always the repo root when mocha runs) rather than
+// __dirname. Node 22+'s ESM auto-detection loads .ts specs as ES modules,
+// where CJS globals like __dirname are unavailable.
+// Loud check for the CWD assumption: this file reads stub fixtures at
+// import time, so a wrong CWD must fail clearly rather than producing
+// an opaque ENOENT.
+if (!fs.existsSync('package.json')) {
+  throw new Error(`Expected mocha to be invoked from repo root; CWD=${process.cwd()} has no package.json`);
+}
+const ARROW_STUBS_DIR = path.resolve('tests/unit/result/.stubs');
 const arrowBatchAllNulls = [
-  fs.readFileSync(path.join(__dirname, './.stubs/arrowSchemaAllNulls.arrow')),
-  fs.readFileSync(path.join(__dirname, './.stubs/dataAllNulls.arrow')),
+  fs.readFileSync(path.join(ARROW_STUBS_DIR, 'arrowSchemaAllNulls.arrow')),
+  fs.readFileSync(path.join(ARROW_STUBS_DIR, 'dataAllNulls.arrow')),
 ];
 
 const emptyItem: ArrowBatch = {

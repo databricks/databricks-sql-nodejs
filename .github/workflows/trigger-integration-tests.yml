@@ -22,7 +22,7 @@ name: Trigger Integration Tests
 
 on:
   pull_request:
-    types: [opened, synchronize, reopened, labeled]
+    types: [opened, synchronize, reopened, labeled, closed]
   merge_group:
 
 jobs:
@@ -92,32 +92,16 @@ jobs:
               body
             });
 
-  skip-integration-tests-pr:
-    if: github.event_name == 'pull_request' && github.event.action != 'labeled'
-    runs-on:
-      group: databricks-protected-runner-group
-      labels: linux-ubuntu-latest
-    permissions:
-      checks: write
-    steps:
-      - name: Skip Node.js Integration Tests
-        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
-        with:
-          github-token: ${{ github.token }}
-          script: |
-            await github.rest.checks.create({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              name: 'Node.js Integration Tests',
-              head_sha: context.payload.pull_request.head.sha,
-              status: 'completed',
-              conclusion: 'success',
-              completed_at: new Date().toISOString(),
-              output: {
-                title: 'Skipped on PR - runs in merge queue',
-                summary: 'Node.js integration tests are skipped on ordinary PR events and run as a required gate in the merge queue. Add the `integration-test` label to preview them on this PR.'
-              }
-            });
+  # NOTE: the PR-open "skipped" placeholder for the required
+  # `Node.js Integration Tests` check is NOT posted here anymore. It is posted by
+  # the companion workflow `skip-checks-reporter.yml`, which runs on `workflow_run`
+  # in the base-repo context. That context has a read-write token even for
+  # fork-triggered runs, so it can post the check on EVERY PR head — including fork
+  # PRs, whose own `pull_request` run gets a read-only token and cannot post checks
+  # (the previous inline `github.token` stub 403'd on forks, so fork PRs could never
+  # satisfy the now-required check and were stuck out of the merge queue). See
+  # skip-checks-reporter.yml. The real suite still runs as the required gate on the
+  # merge_group commit and as a label preview.
 
   trigger-tests-pr:
     if: |
@@ -175,7 +159,8 @@ jobs:
               "pr_repo": "${{ github.repository }}",
               "pr_url": "${{ github.event.pull_request.html_url }}",
               "pr_title": "${{ steps.sanitize.outputs.result }}",
-              "pr_author": "${{ github.event.pull_request.user.login }}"
+              "pr_author": "${{ github.event.pull_request.user.login }}",
+              "proxy_mode": "replay"
             }
 
       - name: Fail check on dispatch error
@@ -207,7 +192,7 @@ jobs:
               owner: context.repo.owner,
               repo: context.repo.repo,
               issue_number: context.issue.number,
-              body: 'Node.js integration tests triggered. [View workflow run](https://github.com/databricks/databricks-driver-test/actions/workflows/databricks-nodejs-integration-tests.yml).'
+              body: 'Node.js integration tests triggered. [View workflow runs](https://github.com/databricks/databricks-driver-test/actions/workflows/databricks-sql-nodejs-integration-tests.yml). The result posts back here as the "Node.js Integration Tests" check.'
             });
 
   merge-queue-nodejs:
@@ -220,7 +205,7 @@ jobs:
       checks: write
     steps:
       - name: Checkout code
-        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
         with:
           fetch-depth: 0
 
@@ -270,7 +255,8 @@ jobs:
               "pr_repo": "${{ github.repository }}",
               "pr_url": "${{ github.server_url }}/${{ github.repository }}/pull/${{ steps.extract-pr.outputs.pr_number }}",
               "pr_title": "Merge queue validation",
-              "pr_author": "merge-queue"
+              "pr_author": "merge-queue",
+              "proxy_mode": "replay"
             }
 
       - name: Fail check on dispatch error
@@ -292,3 +278,66 @@ jobs:
                 summary: 'An error occurred while dispatching Node.js integration tests. Check this workflow run for details.'
               }
             });
+
+  # =============================================================================
+  # After merge: trigger the multi-language coverage fan-out.
+  # Fires when a PR lands on main (merge queue or direct merge) and touched
+  # driver source. Dispatches `coverage-fanout` to databricks-driver-test, whose
+  # coverage-fanout-tracker.yml opens a tracking issue and runs the
+  # language-agnostic fan-out (a spec authored from THIS PR's diff, conformed as
+  # tests across every driver) as peco-engineer-bot.
+  # =============================================================================
+  trigger-coverage-fanout:
+    if: |
+      github.event_name == 'pull_request' &&
+      github.event.action == 'closed' &&
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.base.ref == 'main'
+    runs-on:
+      group: databricks-protected-runner-group
+      labels: linux-ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Check if driver source changed
+        id: changed
+        uses: actions/github-script@f28e40c7f34bde8b3046d885e986cb6290c5673b # v7.1.0
+        with:
+          script: |
+            const files = await github.paginate(github.rest.pulls.listFiles, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: context.payload.pull_request.number,
+              per_page: 100,
+            });
+            // The whole repo IS the driver. Count a merge as source-affecting when it changes driver
+            // source: lib/ (JS/TS), native/ (kernel bindings), thrift/ (Thrift defs), or the KERNEL_REV
+            // pin. Docs/CI/test-only merges do not warrant a full multi-language fan-out. (Matches the
+            // source roots called out in the "run on every change" comments above — a merge that only
+            // bumps KERNEL_REV or edits native/ or thrift/ still affects the Thrift/kernel backends.)
+            const isSource = (f) =>
+              f.startsWith('lib/') || f.startsWith('native/') || f.startsWith('thrift/') || f === 'KERNEL_REV';
+            const srcChanged = files.some((f) => isSource(f.filename));
+            console.log(`driver source changed: ${srcChanged}`);
+            core.setOutput('source', srcChanged.toString());
+
+      - name: Generate GitHub App token (databricks-driver-test)
+        if: steps.changed.outputs.source == 'true'
+        id: app-token
+        uses: actions/create-github-app-token@f8d387b68d61c58ab83c6c016672934102569859 # v3.0.0
+        with:
+          app-id: ${{ secrets.INTEGRATION_TEST_APP_ID }}
+          private-key: ${{ secrets.INTEGRATION_TEST_PRIVATE_KEY }}
+          owner: databricks
+          repositories: databricks-driver-test
+          permission-contents: write
+
+      - name: Dispatch coverage-fanout
+        if: steps.changed.outputs.source == 'true'
+        uses: peter-evans/repository-dispatch@ff45666b9427631e3450c54a1bcbee4d9ff4d7c0 # v3.0.0
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          repository: databricks/databricks-driver-test
+          event-type: coverage-fanout
+          client-payload: '{"reference_repo": "${{ github.repository }}", "pr_number": "${{ github.event.pull_request.number }}", "pr_url": "${{ github.event.pull_request.html_url }}"}'

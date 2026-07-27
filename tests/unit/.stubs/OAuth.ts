@@ -100,44 +100,18 @@ export class OAuthCallbackServerStub<
     return this;
   }
 
-  // Dummy methods and properties for compatibility with `http.Server`
-
-  public maxHeadersCount: number | null = null;
-
-  public maxRequestsPerSocket: number | null = null;
-
-  public timeout: number = -1;
-
-  public headersTimeout: number = -1;
-
-  public keepAliveTimeout: number = -1;
-
-  public requestTimeout: number = -1;
-
-  public maxConnections: number = -1;
-
-  public connections: number = 0;
-
-  public setTimeout() {
-    return this;
-  }
-
-  public closeAllConnections() {}
-
-  public closeIdleConnections() {}
-
+  // No-op shim for the subset of `http.Server` members production code
+  // touches. We intentionally do NOT mirror the full http.Server surface
+  // (setTimeout, closeAllConnections, ref/unref, Symbol.asyncDispose, the
+  // maxHeadersCount/timeout/... property pile) -- those existed only to
+  // satisfy http.Server's structural type and had to grow every time
+  // @types/node widened the interface. The call site casts the stub via
+  // `as unknown as ...` (see AuthorizationCode.test.ts), and that cast is
+  // what carries the "trust me, this is Server-shaped" assertion. When the
+  // OAuth code starts calling a new Server member, add a shim here and the
+  // runtime test exercises it; @types/node additions no longer touch this.
   public address() {
     return null;
-  }
-
-  public getConnections() {}
-
-  public ref() {
-    return this;
-  }
-
-  public unref() {
-    return this;
   }
 }
 

@@ -1,7 +1,16 @@
-import fetch from 'node-fetch';
+import nodeFetch from 'node-fetch';
 import ITokenProvider from './ITokenProvider';
 import Token from './Token';
 import { getJWTIssuer, isSameHost } from './utils';
+
+// Indirection so tests can swap the fetch implementation without
+// patching the import system. Default is node-fetch.
+let fetchImpl: typeof nodeFetch = nodeFetch;
+
+/** Test-only: replace the fetch implementation. Called with no arg, restores node-fetch. */
+export function setFederationFetchForTest(fn?: typeof nodeFetch): void {
+  fetchImpl = fn ?? nodeFetch;
+}
 
 /**
  * Token exchange endpoint path for Databricks OIDC.
@@ -157,13 +166,18 @@ export default class FederationProvider implements ITokenProvider {
     const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
     try {
-      const response = await fetch(url, {
+      const response = await fetchImpl(url, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
         },
         body,
-        signal: controller.signal,
+        // node-fetch ships its own AbortSignal shim that differs slightly
+        // from the native AbortSignal (subtle `this`-typing mismatch on
+        // onabort handler). TS 4 didn't catch this; TS 5+ does. The two
+        // are runtime-compatible, so cast through `unknown` (rather than
+        // `any`) to keep the assertion narrow.
+        signal: controller.signal as unknown as import('node-fetch').RequestInit['signal'],
       });
 
       if (!response.ok) {

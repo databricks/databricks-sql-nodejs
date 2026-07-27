@@ -10,7 +10,19 @@ import { expect } from 'chai';
  */
 describe('Thrift Field ID Validation', () => {
   const MAX_ALLOWED_FIELD_ID = 3329;
-  const THRIFT_DIR = path.join(__dirname, '../../thrift');
+  // Resolve from CWD (always the repo root when mocha runs) rather than
+  // __dirname. Node 22+'s ESM auto-detection loads .ts specs as ES
+  // modules, where CJS globals like __dirname are unavailable.
+  const THRIFT_DIR = path.resolve('thrift');
+
+  before(() => {
+    // Loud check for the CWD assumption above. Fails clearly when this
+    // file is executed from a non-repo-root CWD (e.g. running a single
+    // spec from a subdirectory) instead of producing an opaque ENOENT.
+    if (!fs.existsSync('package.json')) {
+      throw new Error(`Expected mocha to be invoked from repo root; CWD=${process.cwd()} has no package.json`);
+    }
+  });
 
   it('should ensure all Thrift field IDs are within allowed range', () => {
     const violations: string[] = [];

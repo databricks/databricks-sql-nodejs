@@ -17,3 +17,8 @@ package-lock.json
 # defaults (no semicolons), not this repo's prettier config.
 native/kernel/index.d.ts
 native/kernel/index.js
+
+# Bot-engine prompts + config: prose/markdown and YAML authored to the engine
+# conventions, not this repo's prettier profile. Reflowing them would mangle the
+# carefully-wrapped prompt text.
+.bot

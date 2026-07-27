@@ -34,3 +34,38 @@ runs:
         always-auth=true
         EOF
         echo "npm configured to use JFrog registry"
+
+    # Rewrite lockfile `resolved:` URLs to JFrog. `npm ci` honors the
+    # lockfile's `resolved:` URL over the `.npmrc` registry; protected
+    # runners cannot reach `registry.npmjs.org` or the internal
+    # `npm-proxy.dev.databricks.com` directly, so without this rewrite
+    # npm hangs ~8 minutes on any package whose `resolved:` points
+    # elsewhere, then dies with "Exit handler never called".
+    # The committed lockfile is kept as-generated locally (mixed
+    # public-npm + dev-proxy URLs) so contributors can `npm ci`
+    # locally; this step adapts it for CI.
+    - name: Rewrite lockfile to JFrog registry
+      shell: bash
+      run: |
+        set -euo pipefail
+        if [ -f package-lock.json ]; then
+          # Rewrite both public npm and the internal dev-proxy (the
+          # latter is written by `npm install` when run on a dev
+          # workstation whose .npmrc points at npm-proxy.dev).
+          sed -i \
+            -e 's|https://registry.npmjs.org|https://databricks.jfrog.io/artifactory/api/npm/db-npm|g' \
+            -e 's|https://npm-proxy.dev.databricks.com|https://databricks.jfrog.io/artifactory/api/npm/db-npm|g' \
+            package-lock.json
+          echo "package-lock.json resolved: URLs rewritten to JFrog"
+          echo "Resolved URL distribution after rewrite:"
+          grep -oE '"resolved": "https://[^/]+' package-lock.json | sort | uniq -c
+          # Fail loud if any non-JFrog host remains — a new registry hostname
+          # added to the tree would otherwise silently hang `npm ci` for 8min.
+          LEAKS=$(grep -oE '"resolved": "https://[^/]+' package-lock.json | grep -v 'databricks\.jfrog\.io' | sort -u || true)
+          if [ -n "$LEAKS" ]; then
+            echo "::error::JFrog rewrite incomplete; non-JFrog hosts remain: $LEAKS"
+            exit 1
+          fi
+        else
+          echo "no package-lock.json found; skipping rewrite"
+        fi

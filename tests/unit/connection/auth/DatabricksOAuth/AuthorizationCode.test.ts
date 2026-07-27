@@ -95,7 +95,11 @@ function prepareTestInstances(options: Partial<AuthorizationCodeOptions>) {
 
   const createHttpServer = sinon.spy((requestHandler: (req: IncomingMessage, res: ServerResponse) => void) => {
     httpServer.requestHandler = requestHandler;
-    return httpServer;
+    // OAuthCallbackServerStub only implements the http.Server members the
+    // OAuth code actually calls (listen/close/address). This cast carries
+    // the "trust me, this is Server-shaped" assertion so the stub doesn't
+    // have to mirror the full (and @types/node-drifting) http.Server surface.
+    return httpServer as unknown as ReturnType<AuthorizationCode['createHttpServer']>;
   });
 
   authCode['createHttpServer'] = createHttpServer;

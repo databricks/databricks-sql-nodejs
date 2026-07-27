@@ -1,5 +1,17 @@
 # Release History
 
+## 2.0.0
+
+**Breaking changes — completes the security cleanup that 1.17.0 could not do without breaking changes.**
+
+- **`engines.node` raised to `>=20.0.0`** (was `>=14`). Node 14/16/18 are dropped. Node 14 (EOL 2023-04), 16 (EOL 2023-09), and 18 (EOL 2025-04) are all past upstream end-of-life. The `>=20` floor is also the minimum for the patched `serialize-javascript` (dev) — see below — and comfortably clears the kernel backend's own Node 18 requirement.
+- **`thrift` `^0.16.0` → `^0.23.0`** — clears GHSA-r67j-r569-jrwp (HIGH) and GHSA-526f-jxpj-jmg2. A direct runtime dep whose fix is a major bump.
+- **`uuid` `^9.0.0` → `^11.1.1`** — clears GHSA-w5hq-g745-h8pq (HIGH 7.5). uuid 11 dual-publishes ESM+CJS; the driver's CJS `dist/` continues to `require('uuid')` unchanged. An `overrides` pin holds thrift's transitive uuid at 11 (uuid 13 is ESM-only and would break `require()`).
+
+**Security:** with the above plus the `overrides` block carried from 1.17.0 (and `serialize-javascript` pinned to the patched `^7.0.5`, which requires Node ≥20), OSV-Scanner reports **zero findings** — 0 CRITICAL / 0 HIGH / 0 MED / 0 LOW.
+
+Closes #370.
+
 ## 1.17.0
 
 **Security (non-breaking):** clears the non-breaking OSV-Scanner findings via a `package.json` `overrides` block plus a coherent dev-toolchain bump (`mocha`, `eslint`) — **2 CRITICAL** (`basic-ftp`, `form-data`) plus the transitively-fixable HIGH/MED/LOW (`ws`, `@75lb/deep-merge`, `ip-address`, and the mocha-tree deps `braces`/`micromatch`/`cross-spawn`/`minimatch`/`glob`/`@babel/*`/`js-yaml`/`path-to-regexp`). No engine or runtime-API changes — a drop-in patch so consumers can clear critical/high scanner alerts without adopting the breaking `2.0.0` bump.
