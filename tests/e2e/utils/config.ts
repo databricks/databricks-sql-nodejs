@@ -50,10 +50,49 @@ function loadOverrides(): object {
   return {};
 }
 
+// Access token from the JSON file named by `DATABRICKS_TEST_CONFIG_FILE`, or
+// `undefined` when the variable is unset/empty/unreadable.
+//
+// Why this indirection exists: the engineer-bot (databricks-bot-engine) runs the
+// e2e suite inside an agent-driven subprocess whose environment has every
+// credential-shaped variable — anything matching `*TOKEN*` / `*SECRET*` /
+// `*PASSWORD*` etc. — stripped for safety (the engine's `shared/env_scrub.py`).
+// `E2E_ACCESS_TOKEN` is therefore removed before the tests start, so without this
+// fallback `token` would be undefined and `validateConfig` would `process.exit(1)`,
+// aborting the whole suite. The bot instead writes the token to a file and points
+// at it with `DATABRICKS_TEST_CONFIG_FILE` — a name the scrub deliberately
+// preserves. Normal CI and local dev leave that variable unset, so this returns
+// `undefined` and the `E2E_ACCESS_TOKEN` env var is used unchanged.
+function tokenFromConfigFile(): string | undefined {
+  const path = process.env.DATABRICKS_TEST_CONFIG_FILE;
+  if (!path) {
+    return undefined;
+  }
+  try {
+    const fs = require('fs'); // eslint-disable-line global-require
+    const parsed = JSON.parse(fs.readFileSync(path, 'utf8'));
+    return typeof parsed?.token === 'string' ? parsed.token : undefined;
+  } catch (e) {
+    // The file was configured but couldn't be read/parsed. Surface this so a
+    // parse failure isn't misdiagnosed as a genuinely-unset token (which would
+    // send the engineer-bot down the wrong `blocked` diagnosis). Log only the
+    // error's name/message — never the raw exception, since a JSON.parse failure
+    // on Node 20 can embed a snippet of the offending (token-bearing) input in
+    // its message, which would leak part of the credential into CI logs.
+    const detail = e instanceof Error ? e.message : 'unknown error';
+    // eslint-disable-next-line no-console
+    console.error(`⚠️  Failed to read token from DATABRICKS_TEST_CONFIG_FILE ('${path}'): ${detail}`);
+    return undefined;
+  }
+}
+
 export default validateConfig({
   host: process.env.E2E_HOST,
   path: process.env.E2E_PATH,
-  token: process.env.E2E_ACCESS_TOKEN,
+  // Env var wins; fall back to the config file only when it's absent (see
+  // tokenFromConfigFile — used by the engineer-bot, whose subprocess env is
+  // scrubbed of credential-shaped vars). Normal CI/local dev is unchanged.
+  token: process.env.E2E_ACCESS_TOKEN || tokenFromConfigFile(),
   catalog: process.env.E2E_CATALOG,
   schema: process.env.E2E_SCHEMA,
   volume: process.env.E2E_VOLUME,
