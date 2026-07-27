@@ -73,6 +73,11 @@ function tokenFromConfigFile(): string | undefined {
     const parsed = JSON.parse(fs.readFileSync(path, 'utf8'));
     return typeof parsed?.token === 'string' ? parsed.token : undefined;
   } catch (e) {
+    // The file was configured but couldn't be read/parsed. Surface this so a
+    // parse failure isn't misdiagnosed as a genuinely-unset token (which would
+    // send the engineer-bot down the wrong `blocked` diagnosis).
+    // eslint-disable-next-line no-console
+    console.error(`⚠️  Failed to read token from DATABRICKS_TEST_CONFIG_FILE ('${path}'): ${e}`);
     return undefined;
   }
 }
