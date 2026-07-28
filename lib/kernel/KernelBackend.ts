@@ -57,7 +57,8 @@ export interface KernelBackendOptions {
  * (slash-prepended httpPath, AuthenticationError on missing token or
  * blank OAuth credentials, HiveDriverError on unsupported authType /
  * Azure-direct / ambiguous credential combinations). M2M and U2M
- * routing key off `oauthClientId` presence; see KernelAuth.ts.
+ * routing key off `oauthClientSecret` presence (mirroring Thrift); see
+ * KernelAuth.ts.
  *
  * **Why we don't use IClientContext's connectionProvider here:** that
  * provider is the Thrift HTTP transport. The kernel owns its own

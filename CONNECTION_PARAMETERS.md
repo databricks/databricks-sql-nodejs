@@ -57,9 +57,9 @@ column.
 | `authType: 'access-token'` + `token` (PAT)                                   |    ✅    |   ✅   |                                                                                                                                                     |
 | `authType: 'databricks-oauth'` — M2M (`oauthClientId` + `oauthClientSecret`) |    ✅    |   ✅   | Kernel runs OIDC discovery + client-credentials internally.                                                                                         |
 | `authType: 'databricks-oauth'` — U2M (browser)                               |    ✅    |   ⚠️   | See U2M gaps below.                                                                                                                                 |
-| `oauthScopes`                                                                |    ✅    |   ✅   | Kernel default U2M scopes = `['sql','offline_access']` (Thrift parity); M2M = `['all-apis']`.                                                       |
-| `oauthClientId` (U2M)                                                        |    ✅    |   ❌   | **Kernel-side gap.** Kernel U2M hardcodes `client_id` and **rejects** a custom `oauthClientId`; Thrift honors it.                                   |
-| `oauthClientId` + no secret                                                  | ✅ (U2M) |   ❌   | **Divergence.** Thrift routes to U2M with that id; kernel keys the flow off `oauthClientSecret` presence and throws an M2M "secret required" error. |
+| `oauthScopes`                                                                |    ❌    |   ✅   | **Thrift ignores `oauthScopes`** — `createAuthProvider` never threads it into `DatabricksOAuth`, so `authenticate()` always falls back to `defaultOAuthScopes` (`['sql','offline_access']`). Only the kernel honors a custom `oauthScopes`; its defaults happen to match Thrift's fallback (U2M = `['sql','offline_access']`, M2M = `['all-apis']`). |
+| `oauthClientId` (U2M)                                                        |    ✅    |   ✅   | The kernel adapter (`buildKernelConnectionOptions`) forwards a custom `oauthClientId` verbatim on the U2M arm; when it is absent the napi binding applies its own default `client_id`. Whether the native binding then honors or rejects a custom id is not observable from this repo — the TypeScript layer neither hardcodes an id nor rejects one. |
+| `oauthClientId` + no secret                                                  | ✅ (U2M) | ✅ (U2M) | **Parity.** The kernel keys flow selection off `oauthClientSecret` presence exactly like Thrift, so `oauthClientId` + no secret routes to **U2M** (with the id forwarded) — it does **not** throw an M2M "secret required" error. |
 | `azureTenantId` / `useDatabricksOAuthInAzure`                                |    ✅    |   ❌   | **Thrift-only.** Kernel rejects Azure-direct (Entra) OAuth; workspace-OIDC discovery covers Azure workspaces without it.                            |
 | `persistence` (custom OAuth token store)                                     |    ✅    |   ❌   | **Thrift-only.** Kernel throws; it auto-persists U2M tokens to `~/.config/databricks-sql-kernel/oauth/` and does not cache M2M.                     |
 | `authType: 'custom'` (`provider`)                                            |    ✅    |   ❌   | **Thrift-only.** Kernel supports only `access-token` and `databricks-oauth`.                                                                        |
@@ -105,7 +105,7 @@ column.
 | Option                        | Thrift | Kernel | Gap                                                                                                                                                                                                                                                                                                                            |
 | ----------------------------- | :----: | :----: | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
 | `preserveBigNumericPrecision` |   ✅   |   ✅   | DECIMAL → exact string, BIGINT → `bigint` on both.                                                                                                                                                                                                                                                                             |
-| `enableMetricViewMetadata`    |   ✅   |   ❌   | **Thrift-only in the connector.** Thrift auto-injects `spark.sql.thriftserver.metadata.metricview.enabled=true` (`ThriftBackend.ts`); `KernelBackend` does **not** auto-inject it. The kernel core _can_ accept the raw conf key via `session_conf`, so a caller could pass it manually in `OpenSessionRequest.configuration`. |
+| `enableMetricViewMetadata`    |   ✅   |   ⚠️   | **Auto-injected for both backends** in `DBSQLClient.openSession`, which sets `spark.sql.thriftserver.metadata.metricview.enabled=true` on `request.configuration` before dispatch. `KernelBackend` folds that into `sessionOptions.sessionConf`, so the conf **does** reach the kernel session config. (`ThriftBackend.ts` performs a second, redundant injection on the Thrift path.) The kernel-side gap is that the key is a non-allowlisted session conf, so it is likely dropped by the kernel's case-insensitive allowlist (see "Session defaults") — not that it is never injected. |
 
 ## Session defaults (`openSession(request)`)
 
@@ -147,14 +147,15 @@ regardless of `useKernel`.
 
 ### Supported on Thrift, missing / ignored on Kernel
 
-1. `enableMetricViewMetadata` — no auto-injection on the kernel path.
+1. `enableMetricViewMetadata` — auto-injected for both backends in
+   `DBSQLClient.openSession`, but the conf key is likely dropped by the
+   kernel's session-conf allowlist, so it has no effect on the kernel path.
 2. Auth types `custom`, `token-provider`, `external-token`, `static-token`,
    plus `enableTokenFederation` / `federationClientId`.
 3. `azureTenantId` / `useDatabricksOAuthInAzure` (Azure-direct OAuth).
 4. `persistence` (custom OAuth token store).
-5. Custom `oauthClientId` on the U2M flow (and `oauthClientId` + no secret).
-6. SOCKS proxies.
-7. Per-statement `useCloudFetch`, `useLZ4Compression`,
+5. SOCKS proxies.
+6. Per-statement `useCloudFetch`, `useLZ4Compression`,
    `stagingAllowedLocalPath`.
 
 ### Supported on Kernel, no Thrift public equivalent
@@ -167,7 +168,9 @@ regardless of `useKernel`.
 ### Behavioral divergences to watch
 
 - **U2M flow selection** keys off `oauthClientSecret` presence on the kernel
-  path but is honored differently on Thrift.
+  path, matching Thrift: no secret ⇒ U2M, secret present ⇒ M2M. A custom
+  `oauthClientId` (with no secret) is forwarded on the U2M arm rather than
+  triggering an M2M "secret required" error.
 - **`socketTimeout: 0`** means "indefinite" on Thrift but is dropped on the
   kernel path (kernel default kept).
 - **`configuration`** is allowlist-filtered on the kernel path but forwarded
