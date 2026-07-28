@@ -30,3 +30,16 @@
 # This file starts empty -- populate iteratively as the first scan run
 # surfaces real false positives or dev-only findings worth excluding.
 # Do not pre-populate with speculative suppressions.
+#
+# NOTE (brace-expansion / CVE-2026-14257, GHSA-mh99-v99m-4gvg): this OOM
+# DoS is intentionally NOT suppressed. Its affected range is
+# `introduced=0, fixed=5.0.8` and 5.0.8 is not yet published to npm
+# (latest is 2.1.2), so there is no version to bump to -- it cannot be
+# resolved today. It is left visible so the scan keeps surfacing it and
+# it gets picked up as soon as a fix is published, rather than being
+# silently ignored. (It is dev-only -- pulled in transitively via
+# minimatch under eslint/mocha/nyc, not in the production tree, and not
+# bundled in the shipped dist/ -- so the exposure is limited to the local
+# lint/test toolchain.) The sibling CVE-2026-13149 (GHSA-3jxr-9vmj-r5cp)
+# IS fixed, via package.json `overrides` (brace-expansion@1 -> 1.1.16,
+# @2 -> 2.1.2).
