@@ -1,5 +1,12 @@
 # Release History
 
+## Unreleased
+
+**Security (non-breaking):** clears the two `brace-expansion` DoS findings surfaced by OSV-Scanner. `brace-expansion` is a dev-only transitive dep (via `minimatch` under `eslint`/`mocha`/`nyc`) and is never bundled in the shipped `dist/`.
+
+- **`brace-expansion` pinned to `1.1.16` / `2.1.2` via `overrides`** — clears GHSA-3jxr-9vmj-r5cp (CVE-2026-13149, HIGH; exponential-time expansion DoS).
+- **GHSA-mh99-v99m-4gvg (CVE-2026-14257, HIGH; unbounded-expansion OOM DoS)** has no published fix (the fixed version `5.0.8` is not yet on npm; latest is `2.1.2`), so it cannot be resolved today. It is left **unsuppressed** so the scan keeps surfacing it and it gets remediated as soon as a fix is published. Exposure is limited: dev-only (transitive via minimatch under eslint/mocha/nyc), not in the production tree, and not bundled in the shipped `dist/`.
+
 ## 2.0.0
 
 **Breaking changes — completes the security cleanup that 1.17.0 could not do without breaking changes.**
