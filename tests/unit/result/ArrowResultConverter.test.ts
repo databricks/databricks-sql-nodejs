@@ -210,6 +210,43 @@ describe('ArrowResultConverter', () => {
     expect(await result.hasMore()).to.be.false;
   });
 
+  it('returns null placeholders with exact counts when disableRowMaterialization is set', async () => {
+    // Same batch/row-count layout as 'should respect row count in batch', but
+    // materialization is off: each fetch must return the identical *count* of
+    // rows, every element `null` (no per-cell conversion).
+    const rowSetProvider = new ResultsProviderStub(
+      [
+        {
+          batches: [createSampleArrowBatch(createSampleRecordBatch(10, 5), createSampleRecordBatch(20, 5))],
+          rowCount: 8,
+        },
+        {
+          batches: [createSampleArrowBatch(createSampleRecordBatch(30, 5))],
+          rowCount: 2,
+        },
+      ],
+      emptyItem,
+    );
+    const result = new ArrowResultConverter(
+      new ClientContextStub(),
+      rowSetProvider,
+      { schema: createSampleThriftSchema('id') },
+      { disableRowMaterialization: true },
+    );
+
+    const rows1 = await result.fetchNext({ limit: 10000 });
+    expect(rows1).to.deep.equal([null, null, null, null, null]);
+    expect(await result.hasMore()).to.be.true;
+
+    const rows2 = await result.fetchNext({ limit: 10000 });
+    expect(rows2).to.deep.equal([null, null, null]);
+    expect(await result.hasMore()).to.be.true;
+
+    const rows3 = await result.fetchNext({ limit: 10000 });
+    expect(rows3).to.deep.equal([null, null]);
+    expect(await result.hasMore()).to.be.false;
+  });
+
   function bigintThriftSchema(columnName: string): TTableSchema {
     return {
       columns: [
