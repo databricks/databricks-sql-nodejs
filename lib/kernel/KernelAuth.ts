@@ -16,7 +16,7 @@ import { ConnectionOptions } from '../contracts/IDBSQLClient';
 import { InternalConnectionOptions } from '../contracts/InternalConnectionOptions';
 import AuthenticationError from '../errors/AuthenticationError';
 import HiveDriverError from '../errors/HiveDriverError';
-import { buildUserAgentString } from '../utils';
+import { buildUserAgentString, normalizePemBytes } from '../utils';
 
 /**
  * Default local listener port for the U2M authorization-code callback.
@@ -268,50 +268,6 @@ export function isBlankOrReserved(s: string): boolean {
 const MAX_U32 = 0xffffffff;
 
 /**
- * Normalise a PEM input (`string` or `Buffer`) accepted on the public
- * surface into the `Buffer` the napi shape requires. Does a light,
- * ordered BEGIN…END sanity check so a truncated/headerless blob (or a
- * stray page that merely contains the literals out of order, e.g. a
- * proxy-intercept page) is rejected here rather than surfacing as an
- * opaque kernel TLS error. The bytes are NOT fully parsed in JS — that
- * is deferred to the kernel, which returns a meaningful error on a
- * malformed PEM/key.
- *
- * `kind` selects the expected block: `'certificate'` matches a
- * `CERTIFICATE` block; `'private key'` matches any `… PRIVATE KEY` block
- * (PKCS#8 `PRIVATE KEY`, PKCS#1 `RSA PRIVATE KEY`, SEC1 `EC PRIVATE KEY`).
- *
- * Throws `HiveDriverError` when the value is empty or (for strings)
- * lacks the expected PEM header.
- */
-function normalizePemBytes(value: Buffer | string, optionName: string, kind: 'certificate' | 'private key'): Buffer {
-  if (typeof value === 'string') {
-    const re =
-      kind === 'certificate'
-        ? /-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/
-        : /-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]+?-----END [A-Z0-9 ]*PRIVATE KEY-----/;
-    if (!re.test(value)) {
-      const expected =
-        kind === 'certificate'
-          ? "a '-----BEGIN CERTIFICATE-----' … '-----END CERTIFICATE-----' block"
-          : "a 'BEGIN … PRIVATE KEY' / 'END … PRIVATE KEY' PEM block (PKCS#8, PKCS#1, or SEC1)";
-      throw new HiveDriverError(
-        `kernel backend: \`${optionName}\` string does not look like a PEM ${kind} (expected ${expected}). ` +
-          'Pass PEM text or a Buffer of PEM bytes.',
-      );
-    }
-    return Buffer.from(value, 'utf8');
-  }
-  if (Buffer.isBuffer(value)) {
-    if (value.length === 0) {
-      throw new HiveDriverError(`kernel backend: \`${optionName}\` Buffer is empty.`);
-    }
-    return value;
-  }
-  throw new HiveDriverError(`kernel backend: \`${optionName}\` must be a PEM string or a Buffer.`);
-}
-
-/**
  * Normalise the public TLS options into the napi shape.
  *
  * - `checkServerCertificate` passes through verbatim (only when set; an
@@ -321,11 +277,13 @@ function normalizePemBytes(value: Buffer | string, optionName: string, kind: 'ce
  *   master verify toggle is on). Mirrors Python's `tls_verify_hostname`.
  * - `customCaCert` accepts a PEM string or `Buffer`; normalised to a
  *   `Buffer` via {@link normalizePemBytes}.
- * - `clientCertPem` / `clientKeyPem` carry the mutual-TLS client identity.
- *   They must be supplied **together** — supplying only one is rejected
- *   here with an actionable error (rather than waiting for the kernel's
- *   `InvalidArgument` at `openSession`). Each accepts a PEM string or
- *   `Buffer`, normalised the same way.
+ * - `clientCertPem` / `clientKeyPem` (or their public aliases
+ *   `clientCert` / `clientKey`) carry the mutual-TLS client identity. The
+ *   internal `*Pem` names win when both are present. They must be supplied
+ *   **together** — supplying only one is rejected here with an actionable
+ *   error (rather than waiting for the kernel's `InvalidArgument` at
+ *   `openSession`). Each accepts a PEM string or `Buffer`, normalised the
+ *   same way.
  *
  * Throws `HiveDriverError` when a cert/key is empty, mis-typed, lacks the
  * expected PEM header, or when only one half of the mTLS pair is set.
@@ -334,8 +292,17 @@ export function buildKernelTlsOptions(options: ConnectionOptions): KernelTlsOpti
   // Read the kernel-only fields through the purpose-built internal options type
   // rather than an ad-hoc inline cast, so the shape can't silently drift from
   // its declaration and a typo'd key fails to compile.
-  const { checkServerCertificate, checkServerCertificateHostname, customCaCert, clientCertPem, clientKeyPem } =
-    options as ConnectionOptions & InternalConnectionOptions;
+  const merged = options as ConnectionOptions & InternalConnectionOptions;
+  const { checkServerCertificate, checkServerCertificateHostname, customCaCert } = merged;
+
+  // The public mTLS options are `clientCert`/`clientKey` (see `ConnectionOptions`);
+  // the internal kernel-only aliases are `clientCertPem`/`clientKeyPem`. Accept
+  // both here — preferring the explicit internal alias when present — so a caller
+  // who sets the public `clientCert`/`clientKey` and runs on the kernel backend
+  // still gets mTLS configured instead of having their client identity silently
+  // dropped.
+  const clientCertPem = merged.clientCertPem ?? merged.clientCert;
+  const clientKeyPem = merged.clientKeyPem ?? merged.clientKey;
 
   const tls: KernelTlsOptions = {};
 
@@ -348,7 +315,7 @@ export function buildKernelTlsOptions(options: ConnectionOptions): KernelTlsOpti
   }
 
   if (customCaCert !== undefined) {
-    tls.customCaCert = normalizePemBytes(customCaCert, 'customCaCert', 'certificate');
+    tls.customCaCert = normalizePemBytes(customCaCert, 'customCaCert', 'certificate', 'kernel backend');
   }
 
   // mTLS client identity. Enforce both-or-neither up front so a caller who
@@ -365,8 +332,18 @@ export function buildKernelTlsOptions(options: ConnectionOptions): KernelTlsOpti
     );
   }
   if (hasCert && hasKey) {
-    tls.clientCertPem = normalizePemBytes(clientCertPem as Buffer | string, 'clientCertPem', 'certificate');
-    tls.clientKeyPem = normalizePemBytes(clientKeyPem as Buffer | string, 'clientKeyPem', 'private key');
+    tls.clientCertPem = normalizePemBytes(
+      clientCertPem as Buffer | string,
+      'clientCertPem',
+      'certificate',
+      'kernel backend',
+    );
+    tls.clientKeyPem = normalizePemBytes(
+      clientKeyPem as Buffer | string,
+      'clientKeyPem',
+      'private key',
+      'kernel backend',
+    );
   }
 
   return tls;

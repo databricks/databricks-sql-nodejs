@@ -1,5 +1,6 @@
 import { expect, AssertionError } from 'chai';
 import sinon from 'sinon';
+import fs from 'fs';
 import DBSQLClient, { ThriftLibrary } from '../../lib/DBSQLClient';
 import DBSQLSession from '../../lib/DBSQLSession';
 import ThriftBackend from '../../lib/thrift-backend/ThriftBackend';
@@ -60,6 +61,134 @@ describe('DBSQLClient.connect', () => {
     const connectionOptions = client['getConnectionOptions']({ ...connectOptions, path });
 
     expect(connectionOptions.path).to.equal(path);
+  });
+
+  it('should validate the server certificate by default', async () => {
+    const client = new DBSQLClient();
+
+    const connectionOptions = client['getConnectionOptions'](connectOptions);
+
+    expect(connectionOptions.rejectUnauthorized).to.be.true;
+  });
+
+  it('should map checkServerCertificate to rejectUnauthorized', async () => {
+    const client = new DBSQLClient();
+
+    expect(client['getConnectionOptions']({ ...connectOptions, checkServerCertificate: false }).rejectUnauthorized).to
+      .be.false;
+    expect(client['getConnectionOptions']({ ...connectOptions, checkServerCertificate: true }).rejectUnauthorized).to.be
+      .true;
+  });
+
+  it('should not set a custom CA when customCaCert is omitted', async () => {
+    const client = new DBSQLClient();
+
+    const connectionOptions = client['getConnectionOptions'](connectOptions);
+
+    expect(connectionOptions.ca).to.be.undefined;
+  });
+
+  it('should add customCaCert on top of the system root certificates (additive)', async () => {
+    const client = new DBSQLClient();
+    const customCaCert = '-----BEGIN CERTIFICATE-----\ncustom\n-----END CERTIFICATE-----\n';
+
+    const connectionOptions = client['getConnectionOptions']({ ...connectOptions, customCaCert });
+
+    expect(connectionOptions.ca).to.be.an('array');
+    const ca = connectionOptions.ca as Array<Buffer | string>;
+    // The custom cert must be present, pushed as a Buffer (byte-fidelity, parity with cert/key)...
+    expect(ca.map((entry) => entry.toString('utf8'))).to.include(customCaCert);
+    // ...alongside the built-in system roots (so public warehouses still validate).
+    expect(ca.length).to.be.greaterThan(1);
+  });
+
+  it('should preserve NODE_EXTRA_CA_CERTS roots when customCaCert is set', async () => {
+    const client = new DBSQLClient();
+    const customCaCert = '-----BEGIN CERTIFICATE-----\ncustom\n-----END CERTIFICATE-----\n';
+    const extraCaCert = '-----BEGIN CERTIFICATE-----\nextra\n-----END CERTIFICATE-----\n';
+
+    const previousEnv = process.env.NODE_EXTRA_CA_CERTS;
+    process.env.NODE_EXTRA_CA_CERTS = '/path/to/extra-ca.pem';
+    const readFileSync = sinon.stub(fs, 'readFileSync').returns(extraCaCert);
+    try {
+      const connectionOptions = client['getConnectionOptions']({ ...connectOptions, customCaCert });
+
+      const ca = connectionOptions.ca as Array<Buffer | string>;
+      const caStrings = ca.map((entry) => entry.toString('utf8'));
+      // The custom cert is pushed as a Buffer (byte-fidelity, parity with cert/key).
+      expect(caStrings).to.include(customCaCert);
+      // Roots injected via NODE_EXTRA_CA_CERTS must survive the additive rebuild,
+      // otherwise callers relying on that env var lose their trust anchors.
+      expect(caStrings).to.include(extraCaCert);
+    } finally {
+      readFileSync.restore();
+      if (previousEnv === undefined) {
+        delete process.env.NODE_EXTRA_CA_CERTS;
+      } else {
+        process.env.NODE_EXTRA_CA_CERTS = previousEnv;
+      }
+    }
+  });
+
+  it('should not set client cert/key when mTLS options are omitted', async () => {
+    const client = new DBSQLClient();
+
+    const connectionOptions = client['getConnectionOptions'](connectOptions);
+
+    expect(connectionOptions.cert).to.be.undefined;
+    expect(connectionOptions.key).to.be.undefined;
+  });
+
+  it('should map clientCert/clientKey to cert/key for mutual TLS', async () => {
+    const client = new DBSQLClient();
+
+    const clientCert = '-----BEGIN CERTIFICATE-----\nclient-cert\n-----END CERTIFICATE-----\n';
+    const clientKey = '-----BEGIN PRIVATE KEY-----\nclient-key\n-----END PRIVATE KEY-----\n';
+    const connectionOptions = client['getConnectionOptions']({
+      ...connectOptions,
+      clientCert,
+      clientKey,
+    });
+
+    // Normalised to a Buffer of the PEM bytes (parity with the kernel path).
+    expect((connectionOptions.cert as Buffer).toString('utf8')).to.equal(clientCert);
+    expect((connectionOptions.key as Buffer).toString('utf8')).to.equal(clientKey);
+  });
+
+  it('should reject a malformed PEM clientCert with a named error (parity with the kernel path)', async () => {
+    const client = new DBSQLClient();
+
+    expect(() =>
+      client['getConnectionOptions']({
+        ...connectOptions,
+        clientCert: 'not-a-pem',
+        clientKey: '-----BEGIN PRIVATE KEY-----\nk\n-----END PRIVATE KEY-----\n',
+      }),
+    ).to.throw(/`clientCert` string does not look like a PEM certificate/);
+  });
+
+  it('should reject a malformed PEM customCaCert with a named error (parity with the kernel path)', async () => {
+    const client = new DBSQLClient();
+
+    expect(() => client['getConnectionOptions']({ ...connectOptions, customCaCert: 'not-a-pem' })).to.throw(
+      /`customCaCert` string does not look like a PEM certificate/,
+    );
+  });
+
+  it('should throw if only clientCert is supplied for mutual TLS', async () => {
+    const client = new DBSQLClient();
+
+    expect(() => client['getConnectionOptions']({ ...connectOptions, clientCert: 'client-cert' })).to.throw(
+      /only `clientCert` was supplied/,
+    );
+  });
+
+  it('should throw if only clientKey is supplied for mutual TLS', async () => {
+    const client = new DBSQLClient();
+
+    expect(() => client['getConnectionOptions']({ ...connectOptions, clientKey: 'client-key' })).to.throw(
+      /only `clientKey` was supplied/,
+    );
   });
 
   it('should initialize connection state', async () => {

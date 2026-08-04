@@ -26,7 +26,7 @@ describe('HttpConnection.connect', () => {
     expect(anotherConnection).to.eq(thriftConnection);
   });
 
-  it('should set SSL certificates and disable rejectUnauthorized', async () => {
+  it('should set SSL certificates and validate the server certificate by default', async () => {
     const connection = new HttpConnection(
       {
         host: 'localhost',
@@ -42,10 +42,44 @@ describe('HttpConnection.connect', () => {
 
     const thriftConnection = await connection.getThriftConnection();
 
-    expect(thriftConnection.config.agent.options.rejectUnauthorized).to.be.false;
+    expect(thriftConnection.config.agent.options.rejectUnauthorized).to.be.true;
     expect(thriftConnection.config.agent.options.ca).to.be.eq('ca');
     expect(thriftConnection.config.agent.options.cert).to.be.eq('cert');
     expect(thriftConnection.config.agent.options.key).to.be.eq('key');
+  });
+
+  it('should allow disabling server certificate validation via rejectUnauthorized', async () => {
+    const connection = new HttpConnection(
+      {
+        host: 'localhost',
+        port: 10001,
+        path: '/hive',
+        https: true,
+        rejectUnauthorized: false,
+      },
+      new ClientContextStub(),
+    );
+
+    const thriftConnection = await connection.getThriftConnection();
+
+    expect(thriftConnection.config.agent.options.rejectUnauthorized).to.be.false;
+  });
+
+  it('should keep server certificate validation enabled when rejectUnauthorized is true', async () => {
+    const connection = new HttpConnection(
+      {
+        host: 'localhost',
+        port: 10001,
+        path: '/hive',
+        https: true,
+        rejectUnauthorized: true,
+      },
+      new ClientContextStub(),
+    );
+
+    const thriftConnection = await connection.getThriftConnection();
+
+    expect(thriftConnection.config.agent.options.rejectUnauthorized).to.be.true;
   });
 
   it('should initialize http agents', async () => {

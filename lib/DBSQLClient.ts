@@ -1,5 +1,7 @@
 import thrift from 'thrift';
 import os from 'os';
+import fs from 'fs';
+import tls from 'tls';
 
 import { EventEmitter } from 'events';
 import TCLIService from '../thrift/TCLIService';
@@ -14,7 +16,7 @@ import IAuthentication from './connection/contracts/IAuthentication';
 import HttpConnection from './connection/connections/HttpConnection';
 import IConnectionOptions from './connection/contracts/IConnectionOptions';
 import HiveDriverError from './errors/HiveDriverError';
-import { buildUserAgentString } from './utils';
+import { buildUserAgentString, normalizePemBytes } from './utils';
 import IBackend from './contracts/IBackend';
 import { InternalConnectionOptions } from './contracts/InternalConnectionOptions';
 import ThriftBackend from './thrift-backend/ThriftBackend';
@@ -190,7 +192,51 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
     this.logger.log(LogLevel.info, 'Created DBSQLClient');
   }
 
+  // Node folds `NODE_EXTRA_CA_CERTS` into the default trust store ONLY when the
+  // `ca` option is left unset — and `tls.rootCertificates` does not include those
+  // extra roots. Since we set `ca` explicitly to append `customCaCert`, we must
+  // re-read `NODE_EXTRA_CA_CERTS` ourselves so callers relying on it (e.g. a
+  // corporate proxy) do not silently lose those roots.
+  private static getExtraCaCerts(): Array<string> {
+    const extraCertsPath = process.env.NODE_EXTRA_CA_CERTS;
+    if (!extraCertsPath) {
+      return [];
+    }
+    try {
+      return [fs.readFileSync(extraCertsPath, 'utf8')];
+    } catch {
+      // Node itself silently ignores an unreadable NODE_EXTRA_CA_CERTS; mirror that.
+      return [];
+    }
+  }
+
   private getConnectionOptions(options: ConnectionOptions): IConnectionOptions {
+    // mTLS requires both a client certificate and its private key. If exactly one is
+    // supplied, Node fails deep in the TLS handshake with an opaque error, so surface
+    // a clear client-side message instead.
+    const hasClientCert = options.clientCert !== undefined;
+    const hasClientKey = options.clientKey !== undefined;
+    if (hasClientCert !== hasClientKey) {
+      throw new HiveDriverError(
+        `DBSQLClient: mutual TLS requires both clientCert and clientKey; only \`${
+          hasClientCert ? 'clientCert' : 'clientKey'
+        }\` was supplied. Provide the matching ${hasClientCert ? '`clientKey` (private key)' : '`clientCert`'}.`,
+      );
+    }
+
+    // Validate the PEM inputs up front with the same ordered BEGIN…END check the
+    // kernel path uses (normalizePemBytes), so a truncated/headerless/DER blob is
+    // rejected here with a named, actionable error instead of surfacing as an
+    // opaque failure deep in Node's TLS handshake.
+    const clientCert =
+      options.clientCert === undefined
+        ? undefined
+        : normalizePemBytes(options.clientCert, 'clientCert', 'certificate', 'DBSQLClient');
+    const clientKey =
+      options.clientKey === undefined
+        ? undefined
+        : normalizePemBytes(options.clientKey, 'clientKey', 'private key', 'DBSQLClient');
+
     return {
       host: options.host,
       port: options.port || 443,
@@ -198,6 +244,26 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
       https: true,
       socketTimeout: options.socketTimeout,
       proxy: options.proxy,
+      // `customCaCert` is ADDITIVE: Node's `ca` option replaces the system trust
+      // store, so we append the custom cert to the built-in roots AND any roots
+      // supplied via NODE_EXTRA_CA_CERTS to keep public Databricks warehouses
+      // trusted while also trusting the caller's CA.
+      ca:
+        options.customCaCert === undefined
+          ? undefined
+          : [
+              ...tls.rootCertificates,
+              ...DBSQLClient.getExtraCaCerts(),
+              // Push the normalized Buffer as-is (Node's `ca` accepts a mixed
+              // Array<string | Buffer>) to match the cert/key treatment and keep
+              // byte-fidelity for Buffer inputs instead of round-tripping through utf-8.
+              normalizePemBytes(options.customCaCert, 'customCaCert', 'certificate', 'DBSQLClient'),
+            ],
+      // Client certificate + key for mutual TLS (mTLS). Both must be supplied together.
+      cert: clientCert,
+      key: clientKey,
+      // Validate the server certificate unless the caller explicitly opts out.
+      rejectUnauthorized: options.checkServerCertificate ?? true,
       headers: {
         'User-Agent': buildUserAgentString(options.userAgentEntry),
       },
