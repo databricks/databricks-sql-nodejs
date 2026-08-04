@@ -79,7 +79,8 @@ export type ConnectionOptions = {
    * PEM-encoded CA certificate (string or `Buffer`) added to the trust store
    * **on top of** the system roots — for TLS-inspecting proxies or on-prem
    * internal CAs. Because it is additive, connections to public Databricks
-   * warehouses (trusted via the system roots) keep working.
+   * warehouses (trusted via the system roots) keep working. Roots supplied via
+   * the `NODE_EXTRA_CA_CERTS` environment variable are also preserved.
    *
    * Mirrors the `customCaCert` option on the SEA backend.
    */

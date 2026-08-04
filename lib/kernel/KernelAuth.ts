@@ -321,11 +321,13 @@ function normalizePemBytes(value: Buffer | string, optionName: string, kind: 'ce
  *   master verify toggle is on). Mirrors Python's `tls_verify_hostname`.
  * - `customCaCert` accepts a PEM string or `Buffer`; normalised to a
  *   `Buffer` via {@link normalizePemBytes}.
- * - `clientCertPem` / `clientKeyPem` carry the mutual-TLS client identity.
- *   They must be supplied **together** — supplying only one is rejected
- *   here with an actionable error (rather than waiting for the kernel's
- *   `InvalidArgument` at `openSession`). Each accepts a PEM string or
- *   `Buffer`, normalised the same way.
+ * - `clientCertPem` / `clientKeyPem` (or their public aliases
+ *   `clientCert` / `clientKey`) carry the mutual-TLS client identity. The
+ *   internal `*Pem` names win when both are present. They must be supplied
+ *   **together** — supplying only one is rejected here with an actionable
+ *   error (rather than waiting for the kernel's `InvalidArgument` at
+ *   `openSession`). Each accepts a PEM string or `Buffer`, normalised the
+ *   same way.
  *
  * Throws `HiveDriverError` when a cert/key is empty, mis-typed, lacks the
  * expected PEM header, or when only one half of the mTLS pair is set.
@@ -334,8 +336,17 @@ export function buildKernelTlsOptions(options: ConnectionOptions): KernelTlsOpti
   // Read the kernel-only fields through the purpose-built internal options type
   // rather than an ad-hoc inline cast, so the shape can't silently drift from
   // its declaration and a typo'd key fails to compile.
-  const { checkServerCertificate, checkServerCertificateHostname, customCaCert, clientCertPem, clientKeyPem } =
-    options as ConnectionOptions & InternalConnectionOptions;
+  const merged = options as ConnectionOptions & InternalConnectionOptions;
+  const { checkServerCertificate, checkServerCertificateHostname, customCaCert } = merged;
+
+  // The public mTLS options are `clientCert`/`clientKey` (see `ConnectionOptions`);
+  // the internal kernel-only aliases are `clientCertPem`/`clientKeyPem`. Accept
+  // both here — preferring the explicit internal alias when present — so a caller
+  // who sets the public `clientCert`/`clientKey` and runs on the kernel backend
+  // still gets mTLS configured instead of having their client identity silently
+  // dropped.
+  const clientCertPem = merged.clientCertPem ?? merged.clientCert;
+  const clientKeyPem = merged.clientKeyPem ?? merged.clientKey;
 
   const tls: KernelTlsOptions = {};
 

@@ -172,6 +172,20 @@ describe('KernelAuth mTLS options (buildKernelTlsOptions)', () => {
     expect(tls.clientKeyPem).to.equal(key);
   });
 
+  it('accepts the public clientCert/clientKey aliases (kernel path still gets mTLS)', () => {
+    const tls = buildKernelTlsOptions(opts({ clientCert: CERT_PEM, clientKey: KEY_PEM }));
+    expect(tls.clientCertPem?.toString('utf8')).to.equal(CERT_PEM);
+    expect(tls.clientKeyPem?.toString('utf8')).to.equal(KEY_PEM);
+  });
+
+  it('prefers the internal clientCertPem/clientKeyPem over the public aliases when both are set', () => {
+    const tls = buildKernelTlsOptions(
+      opts({ clientCertPem: CERT_PEM, clientKeyPem: KEY_PEM, clientCert: 'nope', clientKey: 'nope' }),
+    );
+    expect(tls.clientCertPem?.toString('utf8')).to.equal(CERT_PEM);
+    expect(tls.clientKeyPem?.toString('utf8')).to.equal(KEY_PEM);
+  });
+
   it('rejects supplying only the client cert', () => {
     expect(() => buildKernelTlsOptions(opts({ clientCertPem: CERT_PEM }))).to.throw(
       HiveDriverError,

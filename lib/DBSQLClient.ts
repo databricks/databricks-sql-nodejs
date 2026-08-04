@@ -1,5 +1,6 @@
 import thrift from 'thrift';
 import os from 'os';
+import fs from 'fs';
 import tls from 'tls';
 
 import { EventEmitter } from 'events';
@@ -191,7 +192,38 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
     this.logger.log(LogLevel.info, 'Created DBSQLClient');
   }
 
+  // Node folds `NODE_EXTRA_CA_CERTS` into the default trust store ONLY when the
+  // `ca` option is left unset — and `tls.rootCertificates` does not include those
+  // extra roots. Since we set `ca` explicitly to append `customCaCert`, we must
+  // re-read `NODE_EXTRA_CA_CERTS` ourselves so callers relying on it (e.g. a
+  // corporate proxy) do not silently lose those roots.
+  private static getExtraCaCerts(): Array<string> {
+    const extraCertsPath = process.env.NODE_EXTRA_CA_CERTS;
+    if (!extraCertsPath) {
+      return [];
+    }
+    try {
+      return [fs.readFileSync(extraCertsPath, 'utf8')];
+    } catch {
+      // Node itself silently ignores an unreadable NODE_EXTRA_CA_CERTS; mirror that.
+      return [];
+    }
+  }
+
   private getConnectionOptions(options: ConnectionOptions): IConnectionOptions {
+    // mTLS requires both a client certificate and its private key. If exactly one is
+    // supplied, Node fails deep in the TLS handshake with an opaque error, so surface
+    // a clear client-side message instead.
+    const hasClientCert = options.clientCert !== undefined;
+    const hasClientKey = options.clientKey !== undefined;
+    if (hasClientCert !== hasClientKey) {
+      throw new HiveDriverError(
+        `DBSQLClient: mutual TLS requires both clientCert and clientKey; only \`${
+          hasClientCert ? 'clientCert' : 'clientKey'
+        }\` was supplied. Provide the matching ${hasClientCert ? '`clientKey` (private key)' : '`clientCert`'}.`,
+      );
+    }
+
     return {
       host: options.host,
       port: options.port || 443,
@@ -200,9 +232,13 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
       socketTimeout: options.socketTimeout,
       proxy: options.proxy,
       // `customCaCert` is ADDITIVE: Node's `ca` option replaces the system trust
-      // store, so we append the custom cert to the built-in roots to keep public
-      // Databricks warehouses trusted while also trusting the caller's CA.
-      ca: options.customCaCert === undefined ? undefined : [...tls.rootCertificates, options.customCaCert.toString()],
+      // store, so we append the custom cert to the built-in roots AND any roots
+      // supplied via NODE_EXTRA_CA_CERTS to keep public Databricks warehouses
+      // trusted while also trusting the caller's CA.
+      ca:
+        options.customCaCert === undefined
+          ? undefined
+          : [...tls.rootCertificates, ...DBSQLClient.getExtraCaCerts(), options.customCaCert.toString()],
       // Client certificate + key for mutual TLS (mTLS). Both must be supplied together.
       cert: options.clientCert,
       key: options.clientKey,

@@ -1,5 +1,6 @@
 import { expect, AssertionError } from 'chai';
 import sinon from 'sinon';
+import fs from 'fs';
 import DBSQLClient, { ThriftLibrary } from '../../lib/DBSQLClient';
 import DBSQLSession from '../../lib/DBSQLSession';
 import ThriftBackend from '../../lib/thrift-backend/ThriftBackend';
@@ -101,6 +102,32 @@ describe('DBSQLClient.connect', () => {
     expect(ca.length).to.be.greaterThan(1);
   });
 
+  it('should preserve NODE_EXTRA_CA_CERTS roots when customCaCert is set', async () => {
+    const client = new DBSQLClient();
+    const customCaCert = '-----BEGIN CERTIFICATE-----\ncustom\n-----END CERTIFICATE-----\n';
+    const extraCaCert = '-----BEGIN CERTIFICATE-----\nextra\n-----END CERTIFICATE-----\n';
+
+    const previousEnv = process.env.NODE_EXTRA_CA_CERTS;
+    process.env.NODE_EXTRA_CA_CERTS = '/path/to/extra-ca.pem';
+    const readFileSync = sinon.stub(fs, 'readFileSync').returns(extraCaCert);
+    try {
+      const connectionOptions = client['getConnectionOptions']({ ...connectOptions, customCaCert });
+
+      const ca = connectionOptions.ca as Array<string>;
+      expect(ca).to.include(customCaCert);
+      // Roots injected via NODE_EXTRA_CA_CERTS must survive the additive rebuild,
+      // otherwise callers relying on that env var lose their trust anchors.
+      expect(ca).to.include(extraCaCert);
+    } finally {
+      readFileSync.restore();
+      if (previousEnv === undefined) {
+        delete process.env.NODE_EXTRA_CA_CERTS;
+      } else {
+        process.env.NODE_EXTRA_CA_CERTS = previousEnv;
+      }
+    }
+  });
+
   it('should not set client cert/key when mTLS options are omitted', async () => {
     const client = new DBSQLClient();
 
@@ -121,6 +148,22 @@ describe('DBSQLClient.connect', () => {
 
     expect(connectionOptions.cert).to.equal('client-cert');
     expect(connectionOptions.key).to.equal('client-key');
+  });
+
+  it('should throw if only clientCert is supplied for mutual TLS', async () => {
+    const client = new DBSQLClient();
+
+    expect(() => client['getConnectionOptions']({ ...connectOptions, clientCert: 'client-cert' })).to.throw(
+      /only `clientCert` was supplied/,
+    );
+  });
+
+  it('should throw if only clientKey is supplied for mutual TLS', async () => {
+    const client = new DBSQLClient();
+
+    expect(() => client['getConnectionOptions']({ ...connectOptions, clientKey: 'client-key' })).to.throw(
+      /only `clientKey` was supplied/,
+    );
   });
 
   it('should initialize connection state', async () => {
