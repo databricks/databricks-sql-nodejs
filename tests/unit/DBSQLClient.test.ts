@@ -95,9 +95,9 @@ describe('DBSQLClient.connect', () => {
     const connectionOptions = client['getConnectionOptions']({ ...connectOptions, customCaCert });
 
     expect(connectionOptions.ca).to.be.an('array');
-    const ca = connectionOptions.ca as Array<string>;
-    // The custom cert must be present...
-    expect(ca).to.include(customCaCert);
+    const ca = connectionOptions.ca as Array<Buffer | string>;
+    // The custom cert must be present, pushed as a Buffer (byte-fidelity, parity with cert/key)...
+    expect(ca.map((entry) => entry.toString('utf8'))).to.include(customCaCert);
     // ...alongside the built-in system roots (so public warehouses still validate).
     expect(ca.length).to.be.greaterThan(1);
   });
@@ -113,11 +113,13 @@ describe('DBSQLClient.connect', () => {
     try {
       const connectionOptions = client['getConnectionOptions']({ ...connectOptions, customCaCert });
 
-      const ca = connectionOptions.ca as Array<string>;
-      expect(ca).to.include(customCaCert);
+      const ca = connectionOptions.ca as Array<Buffer | string>;
+      const caStrings = ca.map((entry) => entry.toString('utf8'));
+      // The custom cert is pushed as a Buffer (byte-fidelity, parity with cert/key).
+      expect(caStrings).to.include(customCaCert);
       // Roots injected via NODE_EXTRA_CA_CERTS must survive the additive rebuild,
       // otherwise callers relying on that env var lose their trust anchors.
-      expect(ca).to.include(extraCaCert);
+      expect(caStrings).to.include(extraCaCert);
     } finally {
       readFileSync.restore();
       if (previousEnv === undefined) {

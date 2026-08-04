@@ -254,7 +254,10 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
           : [
               ...tls.rootCertificates,
               ...DBSQLClient.getExtraCaCerts(),
-              normalizePemBytes(options.customCaCert, 'customCaCert', 'certificate', 'DBSQLClient').toString(),
+              // Push the normalized Buffer as-is (Node's `ca` accepts a mixed
+              // Array<string | Buffer>) to match the cert/key treatment and keep
+              // byte-fidelity for Buffer inputs instead of round-tripping through utf-8.
+              normalizePemBytes(options.customCaCert, 'customCaCert', 'certificate', 'DBSQLClient'),
             ],
       // Client certificate + key for mutual TLS (mTLS). Both must be supplied together.
       cert: clientCert,
