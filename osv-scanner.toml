@@ -30,29 +30,3 @@
 # This file starts empty -- populate iteratively as the first scan run
 # surfaces real false positives or dev-only findings worth excluding.
 # Do not pre-populate with speculative suppressions.
-
-# brace-expansion DoS advisories, both with NO published fix as of
-# 2026-08-05: the advisories name 1.1.17/1.1.18 and 2.1.4 as fixed, but
-# npm's latest published releases are 1.1.16 and 2.1.3. So there is
-# nothing to bump to -- we already bumped as far as the registry allows
-# (1.1.15 -> 1.1.16, 2.1.1 -> 2.1.3, which cleared the earlier
-# GHSA-3jxr-9vmj-r5cp).
-#
-# Dev-only: brace-expansion reaches us solely through the eslint /
-# glob / test-exclude toolchains via minimatch. `npm ls brace-expansion
-# --omit=dev` is empty, and both lockfile entries are marked
-# "dev": true, so it is not reachable from the published dist/.
-# The impact is DoS (ReDoS / OOM) on adversarial brace patterns, which
-# would require untrusted input to our own lint/test globs.
-#
-# Revisit when 1.1.18 / 2.1.4 land on npm and drop these entries.
-
-[[IgnoredVulns]]
-id = "GHSA-mh99-v99m-4gvg"
-ignoreUntil = "2027-02-05T00:00:00Z"
-reason = "dev-only (eslint/glob/test-exclude -> minimatch); not reachable from shipped dist/. No published fix: advisory lists 1.1.17 as fixed but 1.1.16 is npm's latest 1.x."
-
-[[IgnoredVulns]]
-id = "GHSA-rgw5-rvv9-x895"
-ignoreUntil = "2027-02-05T00:00:00Z"
-reason = "dev-only (eslint/glob/test-exclude -> minimatch); not reachable from shipped dist/. No published fix: advisory lists 1.1.18/2.1.4 as fixed but npm's latest are 1.1.16/2.1.3."
