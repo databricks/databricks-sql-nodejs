@@ -155,6 +155,8 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
 
       preserveBigNumericPrecision: false,
 
+      disableRowMaterialization: false,
+
       // Telemetry defaults are sourced from DEFAULT_TELEMETRY_CONFIG so
       // every component reads from the same single frozen const. Mapping the
       // unprefixed TelemetryConfiguration keys to the `telemetry`-prefixed
@@ -619,6 +621,11 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
     // Opt-in: preserve DECIMAL (string) / BIGINT (bigint) precision in results.
     if (options.preserveBigNumericPrecision !== undefined) {
       this.config.preserveBigNumericPrecision = options.preserveBigNumericPrecision;
+    }
+
+    // Opt-in: fetch and parse batches but skip per-cell row materialization.
+    if (options.disableRowMaterialization !== undefined) {
+      this.config.disableRowMaterialization = options.disableRowMaterialization;
     }
 
     // Retry-policy knobs. These live in ClientConfig (consumed by the Thrift
