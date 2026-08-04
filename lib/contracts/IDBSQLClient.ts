@@ -77,10 +77,17 @@ export type ConnectionOptions = {
 
   /**
    * PEM-encoded CA certificate (string or `Buffer`) added to the trust store
-   * **on top of** the system roots — for TLS-inspecting proxies or on-prem
+   * **on top of** the built-in roots — for TLS-inspecting proxies or on-prem
    * internal CAs. Because it is additive, connections to public Databricks
-   * warehouses (trusted via the system roots) keep working. Roots supplied via
-   * the `NODE_EXTRA_CA_CERTS` environment variable are also preserved.
+   * warehouses keep working.
+   *
+   * Note: supplying this rebuilds the trust store from Node's **bundled Mozilla
+   * roots** (`tls.rootCertificates`) plus any roots from the `NODE_EXTRA_CA_CERTS`
+   * environment variable, then appends this certificate. It does **not** include
+   * OS-installed roots that Node would otherwise consult (e.g. on Node >= 22 run
+   * with `--use-system-ca`). If you rely on an enterprise root installed in the
+   * OS trust store, add it explicitly via `NODE_EXTRA_CA_CERTS` or `customCaCert`
+   * when using this option.
    *
    * Mirrors the `customCaCert` option on the SEA backend.
    */
