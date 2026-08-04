@@ -16,7 +16,7 @@ import IAuthentication from './connection/contracts/IAuthentication';
 import HttpConnection from './connection/connections/HttpConnection';
 import IConnectionOptions from './connection/contracts/IConnectionOptions';
 import HiveDriverError from './errors/HiveDriverError';
-import { buildUserAgentString } from './utils';
+import { buildUserAgentString, normalizePemBytes } from './utils';
 import IBackend from './contracts/IBackend';
 import { InternalConnectionOptions } from './contracts/InternalConnectionOptions';
 import ThriftBackend from './thrift-backend/ThriftBackend';
@@ -224,6 +224,19 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
       );
     }
 
+    // Validate the PEM inputs up front with the same ordered BEGIN…END check the
+    // kernel path uses (normalizePemBytes), so a truncated/headerless/DER blob is
+    // rejected here with a named, actionable error instead of surfacing as an
+    // opaque failure deep in Node's TLS handshake.
+    const clientCert =
+      options.clientCert === undefined
+        ? undefined
+        : normalizePemBytes(options.clientCert, 'clientCert', 'certificate', 'DBSQLClient');
+    const clientKey =
+      options.clientKey === undefined
+        ? undefined
+        : normalizePemBytes(options.clientKey, 'clientKey', 'private key', 'DBSQLClient');
+
     return {
       host: options.host,
       port: options.port || 443,
@@ -238,10 +251,14 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
       ca:
         options.customCaCert === undefined
           ? undefined
-          : [...tls.rootCertificates, ...DBSQLClient.getExtraCaCerts(), options.customCaCert.toString()],
+          : [
+              ...tls.rootCertificates,
+              ...DBSQLClient.getExtraCaCerts(),
+              normalizePemBytes(options.customCaCert, 'customCaCert', 'certificate', 'DBSQLClient').toString(),
+            ],
       // Client certificate + key for mutual TLS (mTLS). Both must be supplied together.
-      cert: options.clientCert,
-      key: options.clientKey,
+      cert: clientCert,
+      key: clientKey,
       // Validate the server certificate unless the caller explicitly opts out.
       rejectUnauthorized: options.checkServerCertificate ?? true,
       headers: {

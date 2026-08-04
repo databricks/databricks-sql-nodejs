@@ -140,14 +140,37 @@ describe('DBSQLClient.connect', () => {
   it('should map clientCert/clientKey to cert/key for mutual TLS', async () => {
     const client = new DBSQLClient();
 
+    const clientCert = '-----BEGIN CERTIFICATE-----\nclient-cert\n-----END CERTIFICATE-----\n';
+    const clientKey = '-----BEGIN PRIVATE KEY-----\nclient-key\n-----END PRIVATE KEY-----\n';
     const connectionOptions = client['getConnectionOptions']({
       ...connectOptions,
-      clientCert: 'client-cert',
-      clientKey: 'client-key',
+      clientCert,
+      clientKey,
     });
 
-    expect(connectionOptions.cert).to.equal('client-cert');
-    expect(connectionOptions.key).to.equal('client-key');
+    // Normalised to a Buffer of the PEM bytes (parity with the kernel path).
+    expect((connectionOptions.cert as Buffer).toString('utf8')).to.equal(clientCert);
+    expect((connectionOptions.key as Buffer).toString('utf8')).to.equal(clientKey);
+  });
+
+  it('should reject a malformed PEM clientCert with a named error (parity with the kernel path)', async () => {
+    const client = new DBSQLClient();
+
+    expect(() =>
+      client['getConnectionOptions']({
+        ...connectOptions,
+        clientCert: 'not-a-pem',
+        clientKey: '-----BEGIN PRIVATE KEY-----\nk\n-----END PRIVATE KEY-----\n',
+      }),
+    ).to.throw(/`clientCert` string does not look like a PEM certificate/);
+  });
+
+  it('should reject a malformed PEM customCaCert with a named error (parity with the kernel path)', async () => {
+    const client = new DBSQLClient();
+
+    expect(() => client['getConnectionOptions']({ ...connectOptions, customCaCert: 'not-a-pem' })).to.throw(
+      /`customCaCert` string does not look like a PEM certificate/,
+    );
   });
 
   it('should throw if only clientCert is supplied for mutual TLS', async () => {

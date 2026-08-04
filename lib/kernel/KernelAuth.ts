@@ -16,7 +16,7 @@ import { ConnectionOptions } from '../contracts/IDBSQLClient';
 import { InternalConnectionOptions } from '../contracts/InternalConnectionOptions';
 import AuthenticationError from '../errors/AuthenticationError';
 import HiveDriverError from '../errors/HiveDriverError';
-import { buildUserAgentString } from '../utils';
+import { buildUserAgentString, normalizePemBytes } from '../utils';
 
 /**
  * Default local listener port for the U2M authorization-code callback.
@@ -268,50 +268,6 @@ export function isBlankOrReserved(s: string): boolean {
 const MAX_U32 = 0xffffffff;
 
 /**
- * Normalise a PEM input (`string` or `Buffer`) accepted on the public
- * surface into the `Buffer` the napi shape requires. Does a light,
- * ordered BEGIN…END sanity check so a truncated/headerless blob (or a
- * stray page that merely contains the literals out of order, e.g. a
- * proxy-intercept page) is rejected here rather than surfacing as an
- * opaque kernel TLS error. The bytes are NOT fully parsed in JS — that
- * is deferred to the kernel, which returns a meaningful error on a
- * malformed PEM/key.
- *
- * `kind` selects the expected block: `'certificate'` matches a
- * `CERTIFICATE` block; `'private key'` matches any `… PRIVATE KEY` block
- * (PKCS#8 `PRIVATE KEY`, PKCS#1 `RSA PRIVATE KEY`, SEC1 `EC PRIVATE KEY`).
- *
- * Throws `HiveDriverError` when the value is empty or (for strings)
- * lacks the expected PEM header.
- */
-function normalizePemBytes(value: Buffer | string, optionName: string, kind: 'certificate' | 'private key'): Buffer {
-  if (typeof value === 'string') {
-    const re =
-      kind === 'certificate'
-        ? /-----BEGIN CERTIFICATE-----[\s\S]+?-----END CERTIFICATE-----/
-        : /-----BEGIN [A-Z0-9 ]*PRIVATE KEY-----[\s\S]+?-----END [A-Z0-9 ]*PRIVATE KEY-----/;
-    if (!re.test(value)) {
-      const expected =
-        kind === 'certificate'
-          ? "a '-----BEGIN CERTIFICATE-----' … '-----END CERTIFICATE-----' block"
-          : "a 'BEGIN … PRIVATE KEY' / 'END … PRIVATE KEY' PEM block (PKCS#8, PKCS#1, or SEC1)";
-      throw new HiveDriverError(
-        `kernel backend: \`${optionName}\` string does not look like a PEM ${kind} (expected ${expected}). ` +
-          'Pass PEM text or a Buffer of PEM bytes.',
-      );
-    }
-    return Buffer.from(value, 'utf8');
-  }
-  if (Buffer.isBuffer(value)) {
-    if (value.length === 0) {
-      throw new HiveDriverError(`kernel backend: \`${optionName}\` Buffer is empty.`);
-    }
-    return value;
-  }
-  throw new HiveDriverError(`kernel backend: \`${optionName}\` must be a PEM string or a Buffer.`);
-}
-
-/**
  * Normalise the public TLS options into the napi shape.
  *
  * - `checkServerCertificate` passes through verbatim (only when set; an
@@ -359,7 +315,7 @@ export function buildKernelTlsOptions(options: ConnectionOptions): KernelTlsOpti
   }
 
   if (customCaCert !== undefined) {
-    tls.customCaCert = normalizePemBytes(customCaCert, 'customCaCert', 'certificate');
+    tls.customCaCert = normalizePemBytes(customCaCert, 'customCaCert', 'certificate', 'kernel backend');
   }
 
   // mTLS client identity. Enforce both-or-neither up front so a caller who
@@ -376,8 +332,18 @@ export function buildKernelTlsOptions(options: ConnectionOptions): KernelTlsOpti
     );
   }
   if (hasCert && hasKey) {
-    tls.clientCertPem = normalizePemBytes(clientCertPem as Buffer | string, 'clientCertPem', 'certificate');
-    tls.clientKeyPem = normalizePemBytes(clientKeyPem as Buffer | string, 'clientKeyPem', 'private key');
+    tls.clientCertPem = normalizePemBytes(
+      clientCertPem as Buffer | string,
+      'clientCertPem',
+      'certificate',
+      'kernel backend',
+    );
+    tls.clientKeyPem = normalizePemBytes(
+      clientKeyPem as Buffer | string,
+      'clientKeyPem',
+      'private key',
+      'kernel backend',
+    );
   }
 
   return tls;
