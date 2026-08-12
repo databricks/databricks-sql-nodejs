@@ -28,8 +28,10 @@ describe('kernel native binding — packaging (native/kernel/index.js)', () => {
   // depend on the module system's `__dirname`.
   const indexJs = readFileSync(join(process.cwd(), 'native/kernel/index.js'), 'utf8');
 
-  // Every `require('@databricks/...')` fallback in the generated router.
-  const required = Array.from(indexJs.matchAll(/require\('(@databricks\/[^']+)'\)/g)).map((m) => m[1]);
+  // Every fallback package, including CLI v3's package.json version checks.
+  const required = Array.from(indexJs.matchAll(/require\('(@databricks\/[^']+)'\)/g)).map((m) =>
+    m[1].replace(/\/package\.json$/, ''),
+  );
 
   it('declares at least one @databricks/* npm fallback', () => {
     expect(required.length, 'no @databricks/* require() found in the router').to.be.greaterThan(0);
