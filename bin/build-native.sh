@@ -5,7 +5,17 @@ set -euo pipefail
 driver_repo=$(pwd)
 kernel_repo=${DATABRICKS_SQL_KERNEL_REPO:-../../databricks-sql-kernel}
 napi_dir="${kernel_repo}/napi"
-napi_major=$(sed -nE 's/^napi = \{ version = "([0-9]+).*/\1/p' "${napi_dir}/Cargo.toml")
+napi_major=$(
+  cargo metadata --format-version 1 --locked --manifest-path "${napi_dir}/Cargo.toml" |
+    node -e '
+      const metadata = JSON.parse(require("fs").readFileSync(0, "utf8"));
+      const rootId = metadata.resolve.root ?? metadata.workspace_members[0];
+      const root = metadata.resolve.nodes.find(({ id }) => id === rootId);
+      const napiId = root?.deps.find(({ name }) => name === "napi")?.pkg;
+      const version = metadata.packages.find(({ id }) => id === napiId)?.version;
+      process.stdout.write(version?.split(".")[0] ?? "");
+    '
+)
 
 # napi-rs v2 and v3 derive macros expect different CLI environment variables.
 case "${napi_major}" in
