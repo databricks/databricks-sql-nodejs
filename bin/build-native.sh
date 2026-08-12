@@ -31,8 +31,13 @@ case "${napi_major}" in
     ;;
 esac
 
-read -r -a build_profile <<< "${BUILD_PROFILE:---release}"
+build_profile=${BUILD_PROFILE---release}
 
 cd "${napi_dir}"
-"${cli[@]}" build --platform "${build_profile[@]}"
+if [[ -n "${build_profile//[[:space:]]/}" ]]; then
+  read -r -a build_profile_args <<< "${build_profile}"
+  "${cli[@]}" build --platform "${build_profile_args[@]}"
+else
+  "${cli[@]}" build --platform
+fi
 cp index.* "${driver_repo}/native/kernel/"
