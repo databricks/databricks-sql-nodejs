@@ -122,7 +122,9 @@ flow: bug-fix
 # prompts/retrospective_system.md, so the engine's built-in base prompt is used.
 # (A set-but-missing system_prompt file would be a hard error; an UNSET key uses
 # the base. Add the key later only if you write a repo-specific additive prompt.)
-# The learning log is created on first write — no seed file needed.
+# The log is seeded at `log_path` (see `.claude/knowledge/learning-log.md`) so the
+# author phase has something to read before the first retrospective PR lands; the
+# retrospective appends dated sections to that same file thereafter.
 retrospective:
   # Pin the model explicitly for parity with the sibling bots (reviewer-bot.yml /
   # engineer-bot.yml both route to databricks-claude-opus-4-8). Learning
