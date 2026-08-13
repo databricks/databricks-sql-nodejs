@@ -126,14 +126,11 @@ flow: bug-fix
 # author phase has something to read before the first retrospective PR lands; the
 # retrospective appends dated sections to that same file thereafter.
 retrospective:
-  # Pin the model explicitly for parity with the sibling bots (reviewer-bot.yml /
-  # engineer-bot.yml both route to databricks-claude-opus-4-8). Learning
-  # extraction is the task that most benefits from the strongest model, so we do
-  # NOT leave it to the engine default — an unpinned key would silently track
-  # whatever that default is and could drift quality/cost out from under us.
-  # (translate_endpoint discards the model path segment, so this key is the only
-  # place the effective retrospective model is chosen.)
-  model: databricks-claude-opus-4-8
+  # No `model:` key: it is RETIRED in the engine (retrospective.py warns
+  # "`retrospective.model` is no longer honored") — the learning run always uses
+  # the engine-owned engineer-bot model (databricks-claude-opus-4-8[1m], override
+  # via the ENGINEER_BOT_MODEL_OVERRIDE workflow env). Setting it here only emits a
+  # per-run ::warning::. Matches the other driver repos' retrospective blocks.
   log_path: .claude/knowledge/learning-log.md   # MUST match author.knowledge_log above
   branch_prefix: ai/learning-pr-
   pr_label: engineer-bot-learning
