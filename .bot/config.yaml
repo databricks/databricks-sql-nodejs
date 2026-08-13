@@ -124,6 +124,14 @@ flow: bug-fix
 # the base. Add the key later only if you write a repo-specific additive prompt.)
 # The learning log is created on first write — no seed file needed.
 retrospective:
+  # Pin the model explicitly for parity with the sibling bots (reviewer-bot.yml /
+  # engineer-bot.yml both route to databricks-claude-opus-4-8). Learning
+  # extraction is the task that most benefits from the strongest model, so we do
+  # NOT leave it to the engine default — an unpinned key would silently track
+  # whatever that default is and could drift quality/cost out from under us.
+  # (translate_endpoint discards the model path segment, so this key is the only
+  # place the effective retrospective model is chosen.)
+  model: databricks-claude-opus-4-8
   log_path: .claude/knowledge/learning-log.md   # MUST match author.knowledge_log above
   branch_prefix: ai/learning-pr-
   pr_label: engineer-bot-learning
