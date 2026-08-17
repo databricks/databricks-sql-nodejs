@@ -51,6 +51,12 @@ client
   });
 ```
 
+## Configuration
+
+See [CONNECTION_PARAMETERS.md](CONNECTION_PARAMETERS.md) for every connection,
+session, and per-statement parameter the driver accepts, and whether each one
+applies to the Thrift backend (default), the SEA backend, or both.
+
 ## Telemetry
 
 The driver emits connection, statement, and CloudFetch metrics plus

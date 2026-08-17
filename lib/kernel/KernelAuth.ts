@@ -451,21 +451,18 @@ export function buildKernelHttpOptions(options: ConnectionOptions): KernelHttpOp
  *     a browser, listens on localhost:8030, exchanges the code, persists
  *     to `~/.config/databricks-sql-kernel/oauth/{sha256}.json`).
  *
- *     **Flow selection — DELIBERATE DIVERGENCE FROM THRIFT.** Thrift's
+ *     **Flow selection — MIRRORS THRIFT.** Thrift's
  *     `DBSQLClient.createAuthProvider` (`DBSQLClient.ts:216`) keys off the
  *     *secret* (`oauthClientSecret === undefined ? U2M : M2M`), so a custom
- *     `oauthClientId` with no secret runs U2M with that id. kernel instead keys
- *     off `oauthClientId` *presence* (id present → M2M, absent → U2M). The
- *     trade-off: keying off the id means a caller who set an id but
- *     typoed/forgot the secret gets the actionable M2M "secret is required"
- *     error instead of being silently routed to U2M (which would hide their
- *     intent). The cost is two real behavioural gaps vs Thrift:
- *       1. `oauthClientId` + no secret → Thrift runs U2M; kernel throws
- *          `AuthenticationError` (M2M secret required).
- *       2. kernel U2M has NO custom-client-id support — the kernel hardcodes
- *          `client_id = "databricks-cli"`, and kernel rejects any `oauthClientId`
- *          on the U2M arm. Thrift U2M honours a custom `clientId`.
- *     Both are documented limitations of the M0 kernel OAuth surface, not bugs.
+ *     `oauthClientId` with no secret runs U2M with that id. This adapter keys
+ *     off the same signal: `oauthClientSecret === undefined` ⇒ U2M, else M2M
+ *     (see `buildKernelConnectionOptions` below). A custom `oauthClientId` is
+ *     forwarded verbatim on the U2M arm; when absent the napi binding applies
+ *     its own default `client_id`. The adapter therefore does NOT throw an M2M
+ *     "secret required" error for `oauthClientId` + no secret, and does NOT
+ *     reject a custom `oauthClientId` on U2M — those decisions, if the native
+ *     binding makes them, happen below the TypeScript layer and are not
+ *     observable from this repo.
  *
  * Out of scope on the OAuth paths (rejected with a clear error):
  *   - `azureTenantId` / `useDatabricksOAuthInAzure` → Microsoft Entra
