@@ -84,21 +84,25 @@ column.
 
 ## TLS / SSL
 
-> **Important Thrift caveat.** The public `connect()` surface on the Thrift
-> backend does **not** expose any TLS customization. `getConnectionOptions`
-> (`lib/DBSQLClient.ts`) maps only `host` / `port` / `path` / `socketTimeout` /
-> `proxy` / `User-Agent`; the internal `IConnectionOptions.ca/cert/key` fields
-> are never populated from a public option, and `HttpConnection` hardcodes
-> `rejectUnauthorized: false`. All TLS-verification and custom-CA / mTLS
-> controls below are therefore **kernel-only** in practice.
+> **Thrift TLS is public and secure-by-default.** `checkServerCertificate`,
+> `customCaCert`, `clientCert`, and `clientKey` are declared on the public
+> `ConnectionOptions` (`lib/contracts/IDBSQLClient.ts`) and honored on the
+> Thrift (default) backend. `getConnectionOptions` (`lib/DBSQLClient.ts`) maps
+> `customCaCert` → `ca` (**additively**, on top of `tls.rootCertificates` +
+> `NODE_EXTRA_CA_CERTS`), `clientCert` → `cert`, and `clientKey` → `key`, with a
+> both-or-neither mTLS guard and `normalizePemBytes` PEM validation. It sets
+> `rejectUnauthorized: options.checkServerCertificate ?? true`, and
+> `HttpConnection` reads `this.options.rejectUnauthorized ?? true` — i.e.
+> **verification is on by default**; you must pass `checkServerCertificate:
+> false` to accept any certificate.
 
-| Option                                 | Thrift | Kernel | Gap                                                                                             |
-| -------------------------------------- | :----: | :----: | ----------------------------------------------------------------------------------------------- |
-| `checkServerCertificate`               |   ❌   |   ✅   | **Kernel-only.** Master verify toggle (secure-by-default; set `false` for accept-anything).     |
-| `checkServerCertificateHostname`       |   ❌   |   ✅   | **Kernel-only.** Independent hostname-vs-SNI check; no-op when `checkServerCertificate: false`. |
-| `customCaCert` (PEM string / `Buffer`) |   ❌   |   ✅   | **Kernel-only.** Added on top of system roots.                                                  |
-| `clientCertPem` (mTLS)                 |   ❌   |   ✅   | **Kernel-only.** Must be paired with `clientKeyPem`; supplying one alone is rejected.           |
-| `clientKeyPem` (mTLS)                  |   ❌   |   ✅   | **Kernel-only.** PKCS#8 recommended.                                                            |
+| Option                                 | Thrift | Kernel | Gap                                                                                                                                   |
+| -------------------------------------- | :----: | :----: | ------------------------------------------------------------------------------------------------------------------------------------- |
+| `checkServerCertificate`               |   ✅   |   ✅   | Master verify toggle on both, secure-by-default: Thrift uses `options.checkServerCertificate ?? true`. Set `false` to accept-anything. |
+| `checkServerCertificateHostname`       |   ❌   |   ✅   | **Kernel-only.** Independent hostname-vs-SNI check; no-op when `checkServerCertificate: false`. No Thrift equivalent.                  |
+| `customCaCert` (PEM string / `Buffer`) |   ✅   |   ✅   | Honored on both; added on top of system roots. Thrift maps it to `ca` additively (`tls.rootCertificates` + `NODE_EXTRA_CA_CERTS`).     |
+| `clientCert` (mTLS)                    |   ✅   |   ✅   | Honored on both; maps to `cert`. Must be paired with `clientKey`; supplying one alone throws a client-side error.                      |
+| `clientKey` (mTLS)                     |   ✅   |   ✅   | Honored on both; maps to `key`. Must be paired with `clientCert`. PKCS#8 recommended.                                                  |
 
 ## Results & type rendering
 
@@ -161,9 +165,11 @@ regardless of `useKernel`.
 ### Supported on Kernel, no Thrift public equivalent
 
 1. `maxConnections` (connection-pool sizing).
-2. TLS controls: `checkServerCertificate`, `checkServerCertificateHostname`,
-   `customCaCert`, `clientCertPem`, `clientKeyPem`. The Thrift backend exposes
-   **no** public TLS options and hardcodes `rejectUnauthorized: false`.
+2. `checkServerCertificateHostname` — the independent hostname-vs-SNI check has
+   no public Thrift equivalent. (The other TLS controls —
+   `checkServerCertificate`, `customCaCert`, `clientCert`, `clientKey` — **are**
+   public and honored on the Thrift backend, which verifies certificates by
+   default via `checkServerCertificate ?? true`; see the TLS / SSL section.)
 
 ### Behavioral divergences to watch
 
