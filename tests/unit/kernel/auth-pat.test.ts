@@ -53,6 +53,28 @@ describe('KernelAuth — PAT auth options builder', () => {
       }
     });
 
+    it('forwards a federation client id on PAT auth', () => {
+      const native = buildKernelConnectionOptions({
+        host: 'example.cloud.databricks.com',
+        path: '/sql/1.0/warehouses/abc',
+        token: 'dapi-fake-pat',
+        identityFederationClientId: 'federation-client',
+      });
+
+      expect(native.identityFederationClientId).to.equal('federation-client');
+    });
+
+    it('omits an empty federation client id', () => {
+      const native = buildKernelConnectionOptions({
+        host: 'example.cloud.databricks.com',
+        path: '/sql/1.0/warehouses/abc',
+        token: 'dapi-fake-pat',
+        identityFederationClientId: '',
+      });
+
+      expect(native).not.to.have.property('identityFederationClientId');
+    });
+
     it('prepends `/` to a path missing the leading slash', () => {
       const opts: ConnectionOptions = {
         host: 'example.cloud.databricks.com',

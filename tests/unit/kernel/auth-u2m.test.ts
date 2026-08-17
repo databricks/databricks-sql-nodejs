@@ -40,6 +40,17 @@ describe('KernelAuth + KernelBackend — OAuth U2M auth flow', () => {
       });
     });
 
+    it('forwards a federation client id on U2M auth', () => {
+      const native = buildKernelConnectionOptions({
+        host: 'example.cloud.databricks.com',
+        path: '/sql/1.0/warehouses/abc',
+        authType: 'databricks-oauth',
+        identityFederationClientId: 'federation-client',
+      });
+
+      expect(native.identityFederationClientId).to.equal('federation-client');
+    });
+
     it('defaults U2M oauthScopes to Thrift parity (sql offline_access)', () => {
       const native = buildKernelConnectionOptions({
         host: 'example.cloud.databricks.com',

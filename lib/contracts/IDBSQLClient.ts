@@ -14,6 +14,8 @@ type AuthOptions =
   | {
       authType?: 'access-token';
       token: string;
+      /** Kernel backend: selects mandatory SP-wide Workload Identity Federation. */
+      identityFederationClientId?: string;
     }
   | {
       authType: 'databricks-oauth';
@@ -26,6 +28,8 @@ type AuthOptions =
       // U2M flow to `['sql', 'offline_access']` (parity with the Thrift driver's
       // `defaultOAuthScopes`), overriding the kernel's bare `all-apis offline_access`.
       oauthScopes?: Array<string>;
+      /** Kernel backend: selects mandatory SP-wide Workload Identity Federation. */
+      identityFederationClientId?: string;
     }
   | {
       authType: 'custom';

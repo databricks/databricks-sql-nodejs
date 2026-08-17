@@ -43,6 +43,19 @@ describe('KernelAuth + KernelBackend — OAuth M2M auth flow', () => {
       });
     });
 
+    it('forwards a federation client id on M2M auth', () => {
+      const native = buildKernelConnectionOptions({
+        host: 'example.cloud.databricks.com',
+        path: '/sql/1.0/warehouses/abc',
+        authType: 'databricks-oauth',
+        oauthClientId: 'client-uuid',
+        oauthClientSecret: 'dose-fake-secret',
+        identityFederationClientId: 'federation-client',
+      });
+
+      expect(native.identityFederationClientId).to.equal('federation-client');
+    });
+
     it('defaults M2M oauthScopes to all-apis (Thrift + kernel parity)', () => {
       const native = buildKernelConnectionOptions({
         host: 'example.cloud.databricks.com',
@@ -190,6 +203,7 @@ describe('KernelAuth + KernelBackend — OAuth M2M auth flow', () => {
         authType: 'databricks-oauth',
         oauthClientId: 'client-uuid',
         oauthClientSecret: 'dose-fake-secret',
+        identityFederationClientId: 'federation-client',
       });
 
       const session = await backend.openSession({});
@@ -207,6 +221,7 @@ describe('KernelAuth + KernelBackend — OAuth M2M auth flow', () => {
         oauthClientId: 'client-uuid',
         oauthClientSecret: 'dose-fake-secret',
         oauthScopes: ['all-apis'],
+        identityFederationClientId: 'federation-client',
       });
 
       await session.close();

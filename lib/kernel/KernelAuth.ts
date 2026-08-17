@@ -61,6 +61,9 @@ const DEFAULT_OAUTH_CLIENT_ID = 'databricks-sql-connector';
  *                   everything else (client_id, scopes, callback timeout,
  *                   token_url_override) uses kernel defaults.
  *
+ * A non-empty `identityFederationClientId` selects mandatory SP-wide
+ * workload-identity token exchange for every auth mode.
+ *
  * The `authMode` string literals MUST match the napi-emitted `AuthMode`
  * variant names verbatim (`'Pat'`, `'OAuthM2m'`, `'OAuthU2m'` — napi-rs's
  * `#[napi(string_enum)]` without an explicit case option emits the
@@ -212,10 +215,19 @@ export interface KernelProxyOptions {
   };
 }
 
+export interface KernelFederationOptions {
+  /**
+   * SP-wide Workload Identity Federation client id. Omitted selects BYOT /
+   * account-wide WIF.
+   */
+  identityFederationClientId?: string;
+}
+
 export type KernelNativeConnectionOptions = KernelSessionDefaults &
   KernelTlsOptions &
   KernelHttpOptions &
   KernelProxyOptions &
+  KernelFederationOptions &
   (
     | {
         hostName: string;
@@ -556,7 +568,8 @@ export function buildKernelConnectionOptions(options: ConnectionOptions): Kernel
     maxConnections?: number;
   } & KernelTlsOptions &
     KernelHttpOptions &
-    KernelProxyOptions = {
+    KernelProxyOptions &
+    KernelFederationOptions = {
     hostName: options.host,
     httpPath: prependSlash(options.path),
     // Match the NodeJS Thrift driver, which surfaces INTERVAL columns as
@@ -575,6 +588,11 @@ export function buildKernelConnectionOptions(options: ConnectionOptions): Kernel
     // HTTP(S) proxy — the same `ConnectionOptions.proxy` the Thrift path uses.
     ...buildKernelProxyOptions(options),
   };
+
+  const { identityFederationClientId } = options as { identityFederationClientId?: string };
+  if (identityFederationClientId) {
+    base.identityFederationClientId = identityFederationClientId;
+  }
 
   // kernel-only pool sizing; read via cast to match how this function reads the
   // other kernel-specific options (TLS) — they live on the internal options
