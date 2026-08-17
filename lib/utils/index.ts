@@ -4,6 +4,7 @@ import formatProgress, { ProgressUpdateTransformer } from './formatProgress';
 import LZ4 from './lz4';
 import * as ProtocolVersion from './protocolVersion';
 import serializeQueryTags from './queryTags';
+import normalizePemBytes from './normalizePemBytes';
 
 export {
   definedOrError,
@@ -13,4 +14,5 @@ export {
   LZ4,
   ProtocolVersion,
   serializeQueryTags,
+  normalizePemBytes,
 };

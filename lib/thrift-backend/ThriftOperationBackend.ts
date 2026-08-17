@@ -334,7 +334,10 @@ export default class ThriftOperationBackend implements IOperationBackend {
             this.context,
             new ArrowResultHandler(this.context, this._data, metadata),
             metadata,
-            { preserveBigNumericPrecision: this.context.getConfig().preserveBigNumericPrecision ?? false },
+            {
+              preserveBigNumericPrecision: this.context.getConfig().preserveBigNumericPrecision ?? false,
+              disableRowMaterialization: this.context.getConfig().disableRowMaterialization ?? false,
+            },
           );
           break;
         case TSparkRowSetType.URL_BASED_SET:
@@ -342,7 +345,10 @@ export default class ThriftOperationBackend implements IOperationBackend {
             this.context,
             new CloudFetchResultHandler(this.context, this._data, metadata, this.id),
             metadata,
-            { preserveBigNumericPrecision: this.context.getConfig().preserveBigNumericPrecision ?? false },
+            {
+              preserveBigNumericPrecision: this.context.getConfig().preserveBigNumericPrecision ?? false,
+              disableRowMaterialization: this.context.getConfig().disableRowMaterialization ?? false,
+            },
           );
           break;
         // no default

@@ -32,6 +32,10 @@ export interface ClientConfig {
   // Thrift and kernel backends. See `ConnectionOptions.preserveBigNumericPrecision`.
   preserveBigNumericPrecision?: boolean;
 
+  // When true, fetched Arrow batches are counted but not materialized into JS
+  // row objects. Off by default. See `ConnectionOptions.disableRowMaterialization`.
+  disableRowMaterialization?: boolean;
+
   // Telemetry configuration
   telemetryEnabled?: boolean;
   telemetryBatchSize?: number;

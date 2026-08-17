@@ -19,7 +19,11 @@ export default interface IConnectionOptions {
   socketTimeout?: number;
   proxy?: ProxyOptions;
 
-  ca?: Buffer | string;
+  ca?: Buffer | string | Array<Buffer | string>;
   cert?: Buffer | string;
   key?: Buffer | string;
+
+  // Whether the TLS server certificate is validated against the trusted CA set.
+  // When omitted the connection provider treats it as `true` (validation enabled).
+  rejectUnauthorized?: boolean;
 }

@@ -60,6 +60,54 @@ export type ConnectionOptions = {
   enableMetricViewMetadata?: boolean;
 
   /**
+   * Verify the server's TLS certificate on the primary Thrift transport.
+   * Secure-by-default: omitting this leaves full chain + hostname verification
+   * enabled (`true`), matching Node's `https` default, the JDBC/ODBC drivers,
+   * and the SEA/kernel backend.
+   *
+   * Setting it to `false` disables server certificate verification entirely
+   * (any self-signed, expired, or wrong-hostname certificate is accepted),
+   * which exposes the connection — including bearer-token auth headers — to
+   * man-in-the-middle attacks. Only use `false` for local development against a
+   * trusted endpoint, and prefer supplying `customCaCert` instead.
+   *
+   * Mirrors the `checkServerCertificate` option on the SEA backend.
+   */
+  checkServerCertificate?: boolean;
+
+  /**
+   * PEM-encoded CA certificate (string or `Buffer`) added to the trust store
+   * **on top of** the built-in roots — for TLS-inspecting proxies or on-prem
+   * internal CAs. Because it is additive, connections to public Databricks
+   * warehouses keep working.
+   *
+   * Note: supplying this rebuilds the trust store from Node's **bundled Mozilla
+   * roots** (`tls.rootCertificates`) plus any roots from the `NODE_EXTRA_CA_CERTS`
+   * environment variable, then appends this certificate. It does **not** include
+   * OS-installed roots that Node would otherwise consult (e.g. on Node >= 22 run
+   * with `--use-system-ca`). If you rely on an enterprise root installed in the
+   * OS trust store, add it explicitly via `NODE_EXTRA_CA_CERTS` or `customCaCert`
+   * when using this option.
+   *
+   * Mirrors the `customCaCert` option on the SEA backend.
+   */
+  customCaCert?: Buffer | string;
+
+  /**
+   * PEM-encoded client certificate (string or `Buffer`) presented to the server
+   * for mutual TLS (mTLS). Must be supplied together with `clientKey`. Leave
+   * both unset for the usual token/OAuth flows, which do not require a client
+   * certificate.
+   */
+  clientCert?: Buffer | string;
+
+  /**
+   * PEM-encoded private key (string or `Buffer`) for `clientCert`, used for
+   * mutual TLS (mTLS). Must be supplied together with `clientCert`.
+   */
+  clientKey?: Buffer | string;
+
+  /**
    * Retry-policy knobs governing how the driver retries retryable requests.
    * They apply to **both** backends: the Thrift `HttpRetryPolicy` reads them
    * directly, and on the kernel (SEA) path they are forwarded to the kernel
@@ -90,6 +138,15 @@ export type ConnectionOptions = {
    * kernel backends. Defaults to `false` to preserve the existing representation.
    */
   preserveBigNumericPrecision?: boolean;
+
+  /**
+   * Skip materializing fetched rows into JS objects — the driver still fetches,
+   * decompresses and parses each Arrow batch, but returns `null` row placeholders
+   * instead of running the per-cell type conversion. Only the row count is then
+   * meaningful, so this is for throughput benchmarks that measure fetch cost
+   * without the per-cell decode. Applies to both backends. Defaults to `false`.
+   */
+  disableRowMaterialization?: boolean;
 
   /**
    * Extra HTTP headers attached to driver-owned out-of-band requests

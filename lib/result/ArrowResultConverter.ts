@@ -204,6 +204,10 @@ export default class ArrowResultConverter implements IResultsProvider<Array<any>
   // path keeps its long-standing `number` representation unchanged.
   private readonly preserveBigNumericPrecision: boolean;
 
+  // When true, skip per-cell materialization and return `null` row placeholders
+  // (only the row count is meaningful). See `ConnectionOptions.disableRowMaterialization`.
+  private readonly disableRowMaterialization: boolean;
+
   private recordBatchReader?: IterableIterator<RecordBatch<TypeMap>>;
 
   // Remaining rows in current Arrow batch (not the record batch!)
@@ -225,12 +229,16 @@ export default class ArrowResultConverter implements IResultsProvider<Array<any>
     context: IClientContext,
     source: IResultsProvider<ArrowBatch>,
     { schema }: { schema?: TTableSchema },
-    { preserveBigNumericPrecision = false }: { preserveBigNumericPrecision?: boolean } = {},
+    {
+      preserveBigNumericPrecision = false,
+      disableRowMaterialization = false,
+    }: { preserveBigNumericPrecision?: boolean; disableRowMaterialization?: boolean } = {},
   ) {
     this.context = context;
     this.source = source;
     this.schema = getSchemaColumns(schema);
     this.preserveBigNumericPrecision = preserveBigNumericPrecision;
+    this.disableRowMaterialization = disableRowMaterialization;
   }
 
   public async hasMore() {
@@ -262,9 +270,13 @@ export default class ArrowResultConverter implements IResultsProvider<Array<any>
       // Consume a record batch fetched during previous call to `fetchNext`
       const table = new Table(this.prefetchedRecordBatch);
       this.prefetchedRecordBatch = undefined;
-      // Get table rows, but not more than remaining count
-      const arrowRows = table.toArray().slice(0, this.remainingRows);
-      const result = this.getRows(table.schema, arrowRows);
+      // Get table rows, but not more than remaining count. When materialization
+      // is disabled, skip `toArray()`/`getRows()` and return `null` placeholders
+      // (filled, not sparse, so `fetchAll`'s `.flat()` keeps the count).
+      const batchRows = Math.min(table.numRows, this.remainingRows);
+      const result = this.disableRowMaterialization
+        ? new Array(batchRows).fill(null)
+        : this.getRows(table.schema, table.toArray().slice(0, this.remainingRows));
 
       // Reduce remaining rows count by a count of rows we just processed.
       // If the remaining count reached zero - we're done with current arrow

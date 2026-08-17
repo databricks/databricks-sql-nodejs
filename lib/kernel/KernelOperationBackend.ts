@@ -788,6 +788,7 @@ export default class KernelOperationBackend implements IOperationBackend {
     // converter renders DECIMAL as an exact string and BIGINT as a `bigint`.
     const converter = new ArrowResultConverter(this.context, this.resultsProvider, metadata, {
       preserveBigNumericPrecision: this.context.getConfig().preserveBigNumericPrecision ?? false,
+      disableRowMaterialization: this.context.getConfig().disableRowMaterialization ?? false,
     });
     this.resultSlicer = new ResultSlicer(this.context, converter);
     return this.resultSlicer;
