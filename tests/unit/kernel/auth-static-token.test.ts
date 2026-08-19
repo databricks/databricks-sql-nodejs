@@ -16,6 +16,7 @@ import { expect } from 'chai';
 import expectNativeConnectionOptions from './_helpers/nativeOptions';
 import { buildKernelConnectionOptions } from '../../../lib/kernel/KernelAuth';
 import AuthenticationError from '../../../lib/errors/AuthenticationError';
+import HiveDriverError from '../../../lib/errors/HiveDriverError';
 
 describe('KernelAuth — static-token auth options builder', () => {
   it('maps a static token to the native bearer-token mode', () => {
@@ -86,6 +87,24 @@ describe('KernelAuth — static-token auth options builder', () => {
           staticToken,
         } as any),
       ).to.throw(AuthenticationError, /non-empty token.*`staticToken`/);
+    }
+  });
+
+  it('rejects conflicting token and OAuth credentials', () => {
+    for (const conflicting of [
+      { token: 'dapi-pat' },
+      { oauthClientId: 'oauth-client' },
+      { oauthClientSecret: 'oauth-secret' },
+    ]) {
+      expect(() =>
+        buildKernelConnectionOptions({
+          host: 'example.cloud.databricks.com',
+          path: '/sql/1.0/warehouses/abc',
+          authType: 'static-token',
+          staticToken: 'header.payload.signature',
+          ...conflicting,
+        } as any),
+      ).to.throw(HiveDriverError, /cannot supply `staticToken` alongside/);
     }
   });
 });
