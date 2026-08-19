@@ -656,12 +656,10 @@ export function buildKernelConnectionOptions(options: ConnectionOptions): Kernel
           'on the same connection. Pick one auth mode.',
       );
     }
-    return {
-      ...base,
-      authMode: 'Pat',
-      token: staticToken,
-      ...(enableTokenFederation && federationClientId ? { identityFederationClientId: federationClientId } : {}),
-    };
+    if (enableTokenFederation) {
+      base.identityFederationClientId = federationClientId || undefined;
+    }
+    return { ...base, authMode: 'Pat', token: staticToken };
   }
 
   if (authType === 'databricks-oauth') {

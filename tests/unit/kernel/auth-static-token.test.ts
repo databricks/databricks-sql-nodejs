@@ -64,17 +64,19 @@ describe('KernelAuth — static-token auth options builder', () => {
     }
   });
 
-  it('omits an empty federationClientId', () => {
-    const native = buildKernelConnectionOptions({
-      host: 'example.cloud.databricks.com',
-      path: '/sql/1.0/warehouses/abc',
-      authType: 'static-token',
-      staticToken: 'header.payload.signature',
-      enableTokenFederation: true,
-      federationClientId: '',
-    });
+  it('selects account-wide federation when enabled without a client id', () => {
+    for (const federationClientId of [undefined, '']) {
+      const native = buildKernelConnectionOptions({
+        host: 'example.cloud.databricks.com',
+        path: '/sql/1.0/warehouses/abc',
+        authType: 'static-token',
+        staticToken: 'header.payload.signature',
+        enableTokenFederation: true,
+        federationClientId,
+      });
 
-    expect(native).not.to.have.property('identityFederationClientId');
+      expect(native).to.have.property('identityFederationClientId', undefined);
+    }
   });
 
   it('rejects a missing or blank static token', () => {
