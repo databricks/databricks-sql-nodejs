@@ -61,8 +61,9 @@ const DEFAULT_OAUTH_CLIENT_ID = 'databricks-sql-connector';
  *                   everything else (client_id, scopes, callback timeout,
  *                   token_url_override) uses kernel defaults.
  *
- * A non-empty `identityFederationClientId` selects mandatory SP-wide
- * workload-identity token exchange for every auth mode.
+ * `static-token` reuses the native PAT bearer-token mode. When its
+ * `enableTokenFederation` option is true, a non-empty `federationClientId`
+ * is forwarded under the native name `identityFederationClientId`.
  *
  * The `authMode` string literals MUST match the napi-emitted `AuthMode`
  * variant names verbatim (`'Pat'`, `'OAuthM2m'`, `'OAuthU2m'` — napi-rs's
@@ -455,6 +456,10 @@ export function buildKernelHttpOptions(options: ConnectionOptions): KernelHttpOp
  *   - PAT: `authType: 'access-token'` (or undefined, which already means
  *     PAT throughout the existing driver — see
  *     `DBSQLClient.createAuthProvider`).
+ *   - Static token: `authType: 'static-token'` + `staticToken`. The token is
+ *     forwarded through the native PAT bearer-token mode. Optional SP-wide
+ *     token federation is enabled by `enableTokenFederation` and selected by
+ *     `federationClientId`.
  *   - OAuth M2M: `authType: 'databricks-oauth'` + `oauthClientId` +
  *     `oauthClientSecret`. Kernel handles OIDC discovery, client_credentials
  *     exchange, and re-auth on expiry internally.
@@ -589,11 +594,6 @@ export function buildKernelConnectionOptions(options: ConnectionOptions): Kernel
     ...buildKernelProxyOptions(options),
   };
 
-  const { identityFederationClientId } = options as { identityFederationClientId?: string };
-  if (identityFederationClientId) {
-    base.identityFederationClientId = identityFederationClientId;
-  }
-
   // kernel-only pool sizing; read via cast to match how this function reads the
   // other kernel-specific options (TLS) — they live on the internal options
   // surface, not the published public `ConnectionOptions` `.d.ts`.
@@ -637,6 +637,25 @@ export function buildKernelConnectionOptions(options: ConnectionOptions): Kernel
       );
     }
     return { ...base, authMode: 'Pat', token };
+  }
+
+  if (authType === 'static-token') {
+    const { staticToken, enableTokenFederation, federationClientId } = options as {
+      staticToken?: string;
+      enableTokenFederation?: boolean;
+      federationClientId?: string;
+    };
+    if (typeof staticToken !== 'string' || isBlankOrReserved(staticToken)) {
+      throw new AuthenticationError(
+        "kernel backend: a non-empty token must be supplied via `staticToken` when using `authType: 'static-token'`.",
+      );
+    }
+    return {
+      ...base,
+      authMode: 'Pat',
+      token: staticToken,
+      ...(enableTokenFederation && federationClientId ? { identityFederationClientId: federationClientId } : {}),
+    };
   }
 
   if (authType === 'databricks-oauth') {
@@ -712,7 +731,7 @@ export function buildKernelConnectionOptions(options: ConnectionOptions): Kernel
 
   throw new HiveDriverError(
     `kernel backend: unsupported auth mode '${authType}'. ` +
-      "Supported modes on the kernel backend today: 'access-token' (PAT) and 'databricks-oauth' " +
+      "Supported modes on the kernel backend today: 'access-token' (PAT), 'static-token', and 'databricks-oauth' " +
       '(M2M with oauthClientId+oauthClientSecret, or U2M with neither).',
   );
 }
