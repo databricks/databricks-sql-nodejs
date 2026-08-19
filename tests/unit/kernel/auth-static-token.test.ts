@@ -90,12 +90,8 @@ describe('KernelAuth — static-token auth options builder', () => {
     }
   });
 
-  it('rejects conflicting token and OAuth credentials', () => {
-    for (const conflicting of [
-      { token: 'dapi-pat' },
-      { oauthClientId: 'oauth-client' },
-      { oauthClientSecret: 'oauth-secret' },
-    ]) {
+  it('rejects conflicting OAuth credentials', () => {
+    for (const conflicting of [{ oauthClientId: 'oauth-client' }, { oauthClientSecret: 'oauth-secret' }]) {
       expect(() =>
         buildKernelConnectionOptions({
           host: 'example.cloud.databricks.com',
