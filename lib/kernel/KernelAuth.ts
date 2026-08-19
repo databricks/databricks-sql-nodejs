@@ -640,9 +640,8 @@ export function buildKernelConnectionOptions(options: ConnectionOptions): Kernel
   }
 
   if (authType === 'static-token') {
-    const { staticToken, token, enableTokenFederation, federationClientId } = options as {
+    const { staticToken, enableTokenFederation, federationClientId } = options as {
       staticToken?: string;
-      token?: string;
       enableTokenFederation?: boolean;
       federationClientId?: string;
     };
@@ -651,10 +650,10 @@ export function buildKernelConnectionOptions(options: ConnectionOptions): Kernel
         "kernel backend: a non-empty token must be supplied via `staticToken` when using `authType: 'static-token'`.",
       );
     }
-    if (token !== undefined || oauth.oauthClientId !== undefined || oauth.oauthClientSecret !== undefined) {
+    if (oauth.oauthClientId !== undefined || oauth.oauthClientSecret !== undefined) {
       throw new HiveDriverError(
-        'kernel backend: cannot supply `staticToken` alongside `token` or ' +
-          '`oauthClientId`/`oauthClientSecret` on the same connection. Pick one auth mode.',
+        'kernel backend: cannot supply `staticToken` alongside `oauthClientId`/`oauthClientSecret` ' +
+          'on the same connection. Pick one auth mode.',
       );
     }
     return {
