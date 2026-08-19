@@ -1008,20 +1008,26 @@ describe('DBSQLOperation', () => {
       const originalData = [1, 2, 3, 4, 5, 6, 7, 8, 9, 0];
 
       const tempData = [...originalData];
-      const fetchChunkStub = sinon.stub(operation, 'fetchChunk').callsFake(async (): Promise<Array<any>> => {
-        return tempData.splice(0, 3);
-      });
-      const hasMoreRowsStub = sinon.stub(operation, 'hasMoreRows').callsFake(async () => {
+      // Warning: this check is implementation-specific.
+      // `fetchAll` holds the per-operation fetch lock across the entire drain, so
+      // it calls the *non-locking* internal primitives (`fetchChunkInternal` /
+      // `hasMoreRowsInternal`) rather than the public `fetchChunk` / `hasMoreRows`
+      // (which re-acquire the same lock and would self-deadlock). Stub the
+      // internals that the drain loop actually invokes.
+      const fetchChunkStub = sinon
+        .stub(operation as any, 'fetchChunkInternal')
+        .callsFake(async (): Promise<Array<any>> => {
+          return tempData.splice(0, 3);
+        });
+      const hasMoreRowsStub = sinon.stub(operation as any, 'hasMoreRowsInternal').callsFake(async () => {
         return tempData.length > 0;
       });
 
       const fetchedData = await operation.fetchAll();
 
-      // Warning: this check is implementation-specific
-      // `fetchAll` should wait for operation to complete. In current implementation
-      // it does so by calling `fetchChunk` at least once, which internally does
-      // all the job. But since here we stub `fetchChunk` it won't really wait,
-      // therefore here we ensure it was called at least once
+      // `fetchAll` should wait for the operation to complete; in the current
+      // implementation it does so by draining via `fetchChunkInternal` at least
+      // once, which internally does all the work.
       expect(fetchChunkStub.callCount).to.be.gte(1);
 
       expect(fetchChunkStub.called).to.be.true;
