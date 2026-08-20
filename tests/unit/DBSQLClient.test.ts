@@ -335,6 +335,32 @@ describe('DBSQLClient.connect', () => {
     expect(client['authProvider']).to.be.instanceOf(PlainHttpAuthentication);
   });
 
+  it('useKernel: true warns when a custom authProvider is supplied (it cannot be plumbed through)', async () => {
+    const client = new DBSQLClient();
+    const logSpy = sinon.spy((client as any).logger, 'log');
+
+    // The kernel owns auth via the native binding, so a JS-side authProvider
+    // is ignored — but the drop must be warned, not silent.
+    const kernelOptions = { ...connectOptions, token: 'dapiXXXX', useKernel: true } as any;
+
+    try {
+      await client.connect(kernelOptions, new AuthProviderStub());
+    } catch (error) {
+      if (error instanceof AssertionError || !(error instanceof Error)) {
+        throw error;
+      }
+      // Expected: KernelBackend connect() rejects (native binding absent). The
+      // warning is emitted before the backend connects.
+    }
+
+    const warned = logSpy
+      .getCalls()
+      .some((c) => c.args[0] === LogLevel.warn && /custom authProvider was supplied with useKernel/.test(c.args[1]));
+    expect(warned).to.be.true;
+
+    logSpy.restore();
+  });
+
   it('populates config.customHeaders with org-id parsed from ?o= (SPOG)', async () => {
     const client = new DBSQLClient();
     await client.connect({ ...connectOptions, path: '/sql/1.0/warehouses/abc?o=12345678901234' });
@@ -345,6 +371,36 @@ describe('DBSQLClient.connect', () => {
     const client = new DBSQLClient();
     await client.connect({ ...connectOptions, path: '/sql/1.0/warehouses/abc' });
     expect(client.getConfig().customHeaders).to.be.undefined;
+  });
+});
+
+describe('DBSQLClient.mapAuthType (telemetry authType)', () => {
+  it('labels databricks-oauth + oauthJwtKeyFile as oauth-m2m-jwt ONLY on the kernel path', () => {
+    const client = new DBSQLClient();
+
+    const kernelJwt = {
+      ...connectOptions,
+      token: undefined,
+      authType: 'databricks-oauth',
+      oauthJwtKeyFile: '/keys/jwt.pem',
+      useKernel: true,
+    } as any;
+    expect(client['mapAuthType'](kernelJwt)).to.equal('oauth-m2m-jwt');
+  });
+
+  it('does NOT label a Thrift-path connection oauth-m2m-jwt even if oauthJwtKeyFile is set (no useKernel)', () => {
+    const client = new DBSQLClient();
+
+    // oauthJwtKeyFile is a kernel-only internal option; on the Thrift path a
+    // no-secret OAuth connection actually runs U2M (external-browser), so the
+    // label must reflect that rather than mislabeling it oauth-m2m-jwt.
+    const thriftJwt = {
+      ...connectOptions,
+      token: undefined,
+      authType: 'databricks-oauth',
+      oauthJwtKeyFile: '/keys/jwt.pem',
+    } as any;
+    expect(client['mapAuthType'](thriftJwt)).to.equal('external-browser');
   });
 });
 

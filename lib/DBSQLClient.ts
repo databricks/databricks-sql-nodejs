@@ -501,9 +501,12 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
         // JWT private-key M2M (kernel-only) presents no `oauthClientSecret`,
         // so without this check it would misreport as `external-browser`
         // (U2M) — the opposite of its machine-to-machine nature. The field
-        // lives on the internal options surface (see InternalConnectionOptions).
-        const { oauthJwtKeyFile } = options as ConnectionOptions & InternalConnectionOptions;
-        if (oauthJwtKeyFile !== undefined) {
+        // lives on the internal options surface (see InternalConnectionOptions)
+        // and is only honored on the kernel path; gate the label on `useKernel`
+        // so a Thrift-path connection (which has no JWT branch and would run
+        // the U2M browser flow) isn't mislabeled `oauth-m2m-jwt`.
+        const { oauthJwtKeyFile, useKernel } = options as ConnectionOptions & InternalConnectionOptions;
+        if (useKernel && oauthJwtKeyFile !== undefined) {
           return 'oauth-m2m-jwt';
         }
         return options.oauthClientSecret === undefined ? 'external-browser' : 'oauth-m2m';
@@ -744,6 +747,18 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
     // hand over only a minimal PAT provider when a `token` is present, and
     // `undefined` otherwise. Mirrors Python's use_kernel auth-provider handling.
     if (internalOptions.useKernel) {
+      // The kernel owns auth via the native binding, so a JS-side custom
+      // `authProvider` (deprecated arg) genuinely can't be plumbed through.
+      // Warn rather than drop it silently, so a caller who passes one alongside
+      // `useKernel` can diagnose why their provider isn't used.
+      if (authProvider) {
+        this.logger.log(
+          LogLevel.warn,
+          'DBSQLClient: a custom authProvider was supplied with useKernel; it is ignored because the ' +
+            'kernel backend owns authentication via the native binding. Configure auth through the ' +
+            'connection options (token / OAuth fields) instead.',
+        );
+      }
       const { token } = options as { token?: string };
       this.authProvider =
         typeof token === 'string' && token.length > 0
