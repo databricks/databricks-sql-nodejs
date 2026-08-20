@@ -26,22 +26,6 @@ type AuthOptions =
       // U2M flow to `['sql', 'offline_access']` (parity with the Thrift driver's
       // `defaultOAuthScopes`), overriding the kernel's bare `all-apis offline_access`.
       oauthScopes?: Array<string>;
-      // JWT private-key M2M (RFC 7523 client assertion) — KERNEL BACKEND ONLY
-      // (`useKernel: true`). Supplying `oauthJwtKeyFile` selects the JWT
-      // client-assertion flow: the kernel signs a short-lived assertion with the
-      // private key instead of sending a client secret. Requires `oauthClientId`
-      // and `oauthJwtKid`. Optional `oauthJwtPassphrase` (encrypted PKCS#8 key),
-      // `oauthJwtAlgorithm` (default `RS256`), `oauthScopes`, and `tokenUrl` (the
-      // IdP token endpoint — required when auth is against an external IdP such as
-      // Entra ID, which is where `private_key_jwt` is supported). Mutually
-      // exclusive with `oauthClientSecret`.
-      oauthJwtKeyFile?: string;
-      oauthJwtKid?: string;
-      oauthJwtPassphrase?: string;
-      oauthJwtAlgorithm?: string;
-      // OAuth token endpoint override (kernel backend). Points the M2M /
-      // JWT client-assertion grant at the workspace's IdP token endpoint.
-      tokenUrl?: string;
     }
   | {
       authType: 'custom';

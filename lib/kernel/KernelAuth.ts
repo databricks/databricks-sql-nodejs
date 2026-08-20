@@ -629,9 +629,13 @@ export function buildKernelConnectionOptions(options: ConnectionOptions): Kernel
         "kernel backend: a non-empty PAT must be supplied via `token` when using `authType: 'access-token'`.",
       );
     }
-    if (oauth.oauthClientId !== undefined || oauth.oauthClientSecret !== undefined) {
+    if (
+      oauth.oauthClientId !== undefined ||
+      oauth.oauthClientSecret !== undefined ||
+      oauth.oauthJwtKeyFile !== undefined
+    ) {
       throw new HiveDriverError(
-        'kernel backend: cannot supply both `token` and `oauthClientId`/`oauthClientSecret` ' +
+        'kernel backend: cannot supply both `token` and `oauthClientId`/`oauthClientSecret`/`oauthJwtKeyFile` ' +
           "on the same connection. Pick one: 'access-token' (PAT) uses `token`; " +
           "'databricks-oauth' uses the OAuth fields.",
       );

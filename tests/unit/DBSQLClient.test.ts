@@ -284,6 +284,57 @@ describe('DBSQLClient.connect', () => {
     }
   });
 
+  it('useKernel: true with an OAuth flow installs NO auth provider (kernel owns auth; no eager browser flow)', async () => {
+    const client = new DBSQLClient();
+
+    // `useKernel` + `databricks-oauth` (U2M: no secret, no token). The kernel
+    // owns the full auth lifecycle here, so `connect()` must NOT build the
+    // connector's own OAuth provider (which would eagerly open a browser /
+    // run the token exchange at connect() time via a telemetry client). The
+    // authProvider is assigned before the backend connects, so it is set even
+    // though the subsequent KernelBackend connect() rejects (absent native
+    // binding in CI / no live workspace).
+    const kernelOAuthOptions = {
+      ...connectOptions,
+      token: undefined,
+      authType: 'databricks-oauth',
+      useKernel: true,
+    } as any;
+
+    try {
+      await client.connect(kernelOAuthOptions);
+    } catch (error) {
+      if (error instanceof AssertionError || !(error instanceof Error)) {
+        throw error;
+      }
+      // Expected: KernelBackend connect() rejects (native binding absent / no
+      // live workspace). The contract under test is the authProvider decision,
+      // which happened before the throw.
+    }
+
+    expect(client['authProvider']).to.be.undefined;
+  });
+
+  it('useKernel: true with a token installs a PAT-only PlainHttpAuthentication provider', async () => {
+    const client = new DBSQLClient();
+
+    // `useKernel` + a PAT: the connector hands the kernel a minimal PAT
+    // provider (for the telemetry / feature-flag clients) rather than
+    // undefined, and still must NOT build an OAuth provider.
+    const kernelPatOptions = { ...connectOptions, token: 'dapiXXXX', useKernel: true } as any;
+
+    try {
+      await client.connect(kernelPatOptions);
+    } catch (error) {
+      if (error instanceof AssertionError || !(error instanceof Error)) {
+        throw error;
+      }
+      // Expected: KernelBackend connect() rejects (native binding absent).
+    }
+
+    expect(client['authProvider']).to.be.instanceOf(PlainHttpAuthentication);
+  });
+
   it('populates config.customHeaders with org-id parsed from ?o= (SPOG)', async () => {
     const client = new DBSQLClient();
     await client.connect({ ...connectOptions, path: '/sql/1.0/warehouses/abc?o=12345678901234' });

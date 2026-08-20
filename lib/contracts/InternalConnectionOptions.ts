@@ -74,4 +74,55 @@ export interface InternalConnectionOptions {
    * @internal kernel path only.
    */
   clientKeyPem?: Buffer | string;
+
+  /**
+   * kernel-only: JWT private-key M2M (RFC 7523 client assertion). Supplying
+   * `oauthJwtKeyFile` (alongside `authType: 'databricks-oauth'`) selects the
+   * JWT client-assertion flow: the kernel signs a short-lived assertion with
+   * the private key instead of sending a client secret. Requires
+   * `oauthClientId` (the assertion issuer/subject) and `oauthJwtKid` (the key
+   * id written into the JWT header). Mutually exclusive with
+   * `oauthClientSecret`.
+   *
+   * These live on the internal options surface — NOT the public
+   * `databricks-oauth` `AuthOptions` — because the Thrift backend has no
+   * JWT client-assertion path; exposing them publicly would let a Thrift
+   * caller set them and have them silently ignored. The kernel path reads
+   * them via the `InternalConnectionOptions` cast, exactly like `useKernel`
+   * and the TLS knobs above.
+   * @internal kernel path only.
+   */
+  oauthJwtKeyFile?: string;
+
+  /**
+   * kernel-only: key id written into the JWT assertion header so the IdP can
+   * select the registered public key. Required when `oauthJwtKeyFile` is set.
+   * @internal kernel path only.
+   */
+  oauthJwtKid?: string;
+
+  /**
+   * kernel-only: passphrase for an encrypted PKCS#8 private key
+   * (`oauthJwtKeyFile`). Omit for an unencrypted key.
+   * @internal kernel path only.
+   */
+  oauthJwtPassphrase?: string;
+
+  /**
+   * kernel-only: JWT signing algorithm for the client assertion. Defaults to
+   * `RS256` in the kernel when omitted.
+   * @internal kernel path only.
+   */
+  oauthJwtAlgorithm?: string;
+
+  /**
+   * kernel-only: OAuth token-endpoint override. Points the M2M /
+   * JWT client-assertion grant at the workspace's IdP token endpoint —
+   * required when auth is against an external IdP such as Entra ID, which is
+   * where `private_key_jwt` is supported. Applies to both shared-secret M2M
+   * and JWT M2M (auth-method-agnostic, matching JDBC's
+   * `OAuth2ConnAuthTokenEndpoint`).
+   * @internal kernel path only.
+   */
+  tokenUrl?: string;
 }

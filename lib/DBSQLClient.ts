@@ -497,8 +497,17 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
    */
   private mapAuthType(options: ConnectionOptions): string {
     switch (options.authType) {
-      case 'databricks-oauth':
+      case 'databricks-oauth': {
+        // JWT private-key M2M (kernel-only) presents no `oauthClientSecret`,
+        // so without this check it would misreport as `external-browser`
+        // (U2M) — the opposite of its machine-to-machine nature. The field
+        // lives on the internal options surface (see InternalConnectionOptions).
+        const { oauthJwtKeyFile } = options as ConnectionOptions & InternalConnectionOptions;
+        if (oauthJwtKeyFile !== undefined) {
+          return 'oauth-m2m-jwt';
+        }
         return options.oauthClientSecret === undefined ? 'external-browser' : 'oauth-m2m';
+      }
       case 'custom':
         return 'custom';
       case 'token-provider':

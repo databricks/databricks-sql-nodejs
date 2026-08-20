@@ -105,6 +105,22 @@ describe('KernelAuth — OAuth M2M JWT private-key auth flow', () => {
     );
   });
 
+  it('rejects a PAT `token` supplied alongside `oauthJwtKeyFile` (ambiguous)', () => {
+    // A JWT key under the PAT path (authType access-token) would otherwise be
+    // silently dropped; the PAT-branch ambiguity guard must reject it, just as
+    // it does for oauthClientId / oauthClientSecret.
+    expect(() =>
+      buildKernelConnectionOptions({
+        host: 'example.azuredatabricks.net',
+        path: '/sql/1.0/warehouses/abc',
+        authType: 'access-token',
+        token: 'dapiXXXX',
+        oauthJwtKeyFile: '/keys/jwt.pem',
+        oauthJwtKid: 'kid-1',
+      } as ConnectionOptions),
+    ).to.throw(HiveDriverError, /both `token` and .*`oauthJwtKeyFile`/);
+  });
+
   it('rejects persistence on the JWT M2M path', () => {
     expect(() =>
       buildKernelConnectionOptions({
