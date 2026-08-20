@@ -61,9 +61,9 @@ const DEFAULT_OAUTH_CLIENT_ID = 'databricks-sql-connector';
  *                   everything else (client_id, scopes, callback timeout,
  *                   token_url_override) uses kernel defaults.
  *
- * `static-token` reuses the native PAT bearer-token mode. When its
- * `enableTokenFederation` option is true, a non-empty `federationClientId`
- * is forwarded under the native name `identityFederationClientId`.
+ * `static-token` reuses the native PAT bearer-token mode, where federation is
+ * always enabled. `enableTokenFederation` is ignored; a non-empty
+ * `federationClientId` selects SP-wide WIF and omission selects account-wide.
  *
  * The `authMode` string literals MUST match the napi-emitted `AuthMode`
  * variant names verbatim (`'Pat'`, `'OAuthM2m'`, `'OAuthU2m'` — napi-rs's
@@ -457,9 +457,9 @@ export function buildKernelHttpOptions(options: ConnectionOptions): KernelHttpOp
  *     PAT throughout the existing driver — see
  *     `DBSQLClient.createAuthProvider`).
  *   - Static token: `authType: 'static-token'` + `staticToken`. The token is
- *     forwarded through the native PAT bearer-token mode. Optional SP-wide
- *     token federation is enabled by `enableTokenFederation` and selected by
- *     `federationClientId`.
+ *     forwarded through the native PAT bearer-token mode, where federation is
+ *     always enabled. `federationClientId` selects SP-wide WIF; omission
+ *     selects account-wide WIF. `enableTokenFederation` is ignored.
  *   - OAuth M2M: `authType: 'databricks-oauth'` + `oauthClientId` +
  *     `oauthClientSecret`. Kernel handles OIDC discovery, client_credentials
  *     exchange, and re-auth on expiry internally.
@@ -640,9 +640,8 @@ export function buildKernelConnectionOptions(options: ConnectionOptions): Kernel
   }
 
   if (authType === 'static-token') {
-    const { staticToken, enableTokenFederation, federationClientId } = options as {
+    const { staticToken, federationClientId } = options as {
       staticToken?: string;
-      enableTokenFederation?: boolean;
       federationClientId?: string;
     };
     if (typeof staticToken !== 'string' || isBlankOrReserved(staticToken)) {
@@ -656,9 +655,7 @@ export function buildKernelConnectionOptions(options: ConnectionOptions): Kernel
           'on the same connection. Pick one auth mode.',
       );
     }
-    if (enableTokenFederation) {
-      base.identityFederationClientId = federationClientId || undefined;
-    }
+    base.identityFederationClientId = federationClientId || undefined;
     return { ...base, authMode: 'Pat', token: staticToken };
   }
 

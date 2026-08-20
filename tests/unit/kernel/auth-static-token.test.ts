@@ -33,24 +33,12 @@ describe('KernelAuth — static-token auth options builder', () => {
       intervalsAsString: true,
       authMode: 'Pat',
       token: 'header.payload.signature',
+      identityFederationClientId: undefined,
     });
   });
 
-  it('forwards federationClientId when token federation is enabled', () => {
-    const native = buildKernelConnectionOptions({
-      host: 'example.cloud.databricks.com',
-      path: '/sql/1.0/warehouses/abc',
-      authType: 'static-token',
-      staticToken: 'header.payload.signature',
-      enableTokenFederation: true,
-      federationClientId: 'federation-client',
-    });
-
-    expect(native.identityFederationClientId).to.equal('federation-client');
-  });
-
-  it('does not forward federationClientId when token federation is disabled', () => {
-    for (const enableTokenFederation of [undefined, false]) {
+  it('forwards federationClientId regardless of enableTokenFederation', () => {
+    for (const enableTokenFederation of [undefined, false, true]) {
       const native = buildKernelConnectionOptions({
         host: 'example.cloud.databricks.com',
         path: '/sql/1.0/warehouses/abc',
@@ -60,22 +48,24 @@ describe('KernelAuth — static-token auth options builder', () => {
         federationClientId: 'federation-client',
       });
 
-      expect(native).not.to.have.property('identityFederationClientId');
+      expect(native.identityFederationClientId).to.equal('federation-client');
     }
   });
 
-  it('selects account-wide federation when enabled without a client id', () => {
-    for (const federationClientId of [undefined, '']) {
-      const native = buildKernelConnectionOptions({
-        host: 'example.cloud.databricks.com',
-        path: '/sql/1.0/warehouses/abc',
-        authType: 'static-token',
-        staticToken: 'header.payload.signature',
-        enableTokenFederation: true,
-        federationClientId,
-      });
+  it('selects account-wide federation without a client id regardless of enableTokenFederation', () => {
+    for (const enableTokenFederation of [undefined, false, true]) {
+      for (const federationClientId of [undefined, '']) {
+        const native = buildKernelConnectionOptions({
+          host: 'example.cloud.databricks.com',
+          path: '/sql/1.0/warehouses/abc',
+          authType: 'static-token',
+          staticToken: 'header.payload.signature',
+          enableTokenFederation,
+          federationClientId,
+        });
 
-      expect(native).to.have.property('identityFederationClientId', undefined);
+        expect(native).to.have.property('identityFederationClientId', undefined);
+      }
     }
   });
 
