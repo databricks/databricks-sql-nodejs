@@ -67,6 +67,36 @@ describe('KernelAuth + KernelBackend — OAuth M2M auth flow', () => {
       expect((native as { oauthScopes?: string[] }).oauthScopes).to.deep.equal(['sql', 'offline_access']);
     });
 
+    it('forwards a caller-supplied tokenUrl on the shared-secret M2M branch', () => {
+      // tokenUrl is auth-method-agnostic (matches JDBC's OAuth2ConnAuthTokenEndpoint):
+      // it applies to shared-secret M2M as well as the JWT path, pointing the
+      // client-credentials grant at an external IdP token endpoint.
+      const native = buildKernelConnectionOptions({
+        host: 'example.cloud.databricks.com',
+        path: '/sql/1.0/warehouses/abc',
+        authType: 'databricks-oauth',
+        oauthClientId: 'client-uuid',
+        oauthClientSecret: 'dose-fake-secret',
+        tokenUrl: 'https://login.microsoftonline.com/tenant/oauth2/v2.0/token',
+      } as ConnectionOptions);
+      expect(native.authMode).to.equal('OAuthM2m');
+      expect((native as { tokenUrl?: string }).tokenUrl).to.equal(
+        'https://login.microsoftonline.com/tenant/oauth2/v2.0/token',
+      );
+    });
+
+    it('omits tokenUrl on the shared-secret M2M branch when not supplied', () => {
+      const native = buildKernelConnectionOptions({
+        host: 'example.cloud.databricks.com',
+        path: '/sql/1.0/warehouses/abc',
+        authType: 'databricks-oauth',
+        oauthClientId: 'client-uuid',
+        oauthClientSecret: 'dose-fake-secret',
+      });
+      expect(native.authMode).to.equal('OAuthM2m');
+      expect(native).to.not.have.property('tokenUrl');
+    });
+
     it('prepends `/` to the path on the M2M branch too', () => {
       const opts: ConnectionOptions = {
         host: 'example.cloud.databricks.com',
