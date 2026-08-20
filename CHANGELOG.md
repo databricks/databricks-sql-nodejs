@@ -1,5 +1,9 @@
 # Release History
 
+## Unreleased
+
+- Kernel backend (`useKernel: true`): OAuth **M2M with a JWT private-key client assertion** (RFC 7523) is now supported. On the `databricks-oauth` auth type, supplying `oauthJwtKeyFile` (with `oauthClientId` + `oauthJwtKid`, optional `oauthJwtPassphrase` / `oauthJwtAlgorithm` / `oauthScopes`, and `tokenUrl` for the IdP token endpoint) selects the JWT client-assertion flow: the kernel signs a short-lived assertion with the private key instead of sending a client secret, and owns the token lifecycle. A private-key file is treated as unambiguous JWT M2M intent and is mutually exclusive with `oauthClientSecret`. `tokenUrl` points the grant at the workspace's OAuth IdP (e.g. Entra ID for Azure Databricks), which is required because Databricks-native OIDC does not advertise the `private_key_jwt` method. Also fixes the kernel path to not eagerly build the connector's own OAuth provider (which could start the U2M browser flow before the kernel is consulted). Verified end-to-end against an Azure Databricks warehouse via Entra ID. Requires a `@databricks/databricks-sql-kernel` build with JWT + `tokenUrl` support.
+
 ## 2.0.0
 
 **Breaking changes — completes the security cleanup that 1.17.0 could not do without breaking changes.**

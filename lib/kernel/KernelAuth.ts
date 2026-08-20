@@ -230,6 +230,19 @@ export type KernelNativeConnectionOptions = KernelSessionDefaults &
         oauthClientId: string;
         oauthClientSecret: string;
         oauthScopes?: Array<string>;
+        tokenUrl?: string;
+      }
+    | {
+        hostName: string;
+        httpPath: string;
+        authMode: 'OAuthM2mJwt';
+        oauthClientId: string;
+        jwtKeyFile: string;
+        jwtKid: string;
+        jwtPassphrase?: string;
+        jwtAlgorithm?: string;
+        oauthScopes?: Array<string>;
+        tokenUrl?: string;
       }
     | {
         hostName: string;
@@ -602,6 +615,11 @@ export function buildKernelConnectionOptions(options: ConnectionOptions): Kernel
     azureTenantId?: string;
     useDatabricksOAuthInAzure?: boolean;
     persistence?: unknown;
+    oauthJwtKeyFile?: string;
+    oauthJwtKid?: string;
+    oauthJwtPassphrase?: string;
+    oauthJwtAlgorithm?: string;
+    tokenUrl?: string;
   };
 
   if (authType === undefined || authType === 'access-token') {
@@ -635,6 +653,55 @@ export function buildKernelConnectionOptions(options: ConnectionOptions): Kernel
           'is not supported. The workspace-OIDC discovery path handles Azure workspaces ' +
           'today without these options.',
       );
+    }
+
+    // JWT private-key M2M (RFC 7523 client assertion). A private-key file is
+    // unambiguous JWT M2M intent, so this is checked before the U2M/M2M
+    // secret split. The kernel signs a short-lived assertion with the key
+    // (`authMode: 'OAuthM2mJwt'`) instead of sending a client secret. Requires
+    // `oauthClientId` (assertion issuer/subject) and `oauthJwtKid` (key id).
+    // Mutually exclusive with `oauthClientSecret`.
+    if (oauth.oauthJwtKeyFile !== undefined) {
+      if (oauth.oauthClientSecret !== undefined) {
+        throw new HiveDriverError(
+          'kernel backend: cannot supply both `oauthJwtKeyFile` (JWT private-key M2M) ' +
+            'and `oauthClientSecret` (shared-secret M2M). Pick one.',
+        );
+      }
+      if (oauth.persistence !== undefined) {
+        throw new HiveDriverError(
+          'kernel backend: `persistence` is not supported on JWT private-key M2M ' +
+            '(M2M tokens have no refresh token; the kernel re-issues on expiry).',
+        );
+      }
+      if (oauth.oauthClientId === undefined) {
+        throw new AuthenticationError(
+          'kernel backend: JWT private-key M2M (`oauthJwtKeyFile`) requires `oauthClientId` ' +
+            '(the service principal / OAuth client id used as the assertion issuer and subject).',
+        );
+      }
+      if (oauth.oauthJwtKid === undefined) {
+        throw new AuthenticationError(
+          'kernel backend: JWT private-key M2M (`oauthJwtKeyFile`) requires `oauthJwtKid` ' +
+            '(the key id written into the JWT header so the IdP can select the registered public key).',
+        );
+      }
+      const jwt = {
+        ...base,
+        authMode: 'OAuthM2mJwt' as const,
+        oauthClientId: oauth.oauthClientId,
+        jwtKeyFile: oauth.oauthJwtKeyFile,
+        jwtKid: oauth.oauthJwtKid,
+        // Configurable (parity with pyo3); defaults to `['all-apis']` in the kernel.
+        oauthScopes:
+          Array.isArray(oauth.oauthScopes) && oauth.oauthScopes.length > 0 ? oauth.oauthScopes : M2M_DEFAULT_SCOPES,
+      };
+      return {
+        ...jwt,
+        ...(oauth.oauthJwtPassphrase !== undefined ? { jwtPassphrase: oauth.oauthJwtPassphrase } : {}),
+        ...(oauth.oauthJwtAlgorithm !== undefined ? { jwtAlgorithm: oauth.oauthJwtAlgorithm } : {}),
+        ...(oauth.tokenUrl !== undefined ? { tokenUrl: oauth.tokenUrl } : {}),
+      };
     }
 
     // Flow selector + client-id resolution mirror the Thrift driver EXACTLY
@@ -680,9 +747,9 @@ export function buildKernelConnectionOptions(options: ConnectionOptions): Kernel
           '(M2M tokens have no refresh token; the kernel re-issues on expiry).',
       );
     }
-    return {
+    const m2m = {
       ...base,
-      authMode: 'OAuthM2m',
+      authMode: 'OAuthM2m' as const,
       // Thrift: `getClientId()` = `oauthClientId ?? defaultClientId`.
       oauthClientId: oauth.oauthClientId ?? DEFAULT_OAUTH_CLIENT_ID,
       oauthClientSecret: oauth.oauthClientSecret,
@@ -690,6 +757,7 @@ export function buildKernelConnectionOptions(options: ConnectionOptions): Kernel
       oauthScopes:
         Array.isArray(oauth.oauthScopes) && oauth.oauthScopes.length > 0 ? oauth.oauthScopes : M2M_DEFAULT_SCOPES,
     };
+    return oauth.tokenUrl !== undefined ? { ...m2m, tokenUrl: oauth.tokenUrl } : m2m;
   }
 
   throw new HiveDriverError(

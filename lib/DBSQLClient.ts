@@ -721,14 +721,31 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
     // hit endpoints that don't carry the workspace in their URL path.
     this.config.customHeaders = this.buildCustomHeaders(options.path, options.customHeaders);
 
-    this.authProvider = this.createAuthProvider(options, authProvider);
-
-    this.connectionProvider = this.createConnectionProvider(options);
-
     // M0: `useKernel` is consumed via a non-exported internal-options cast so it
     // doesn't ship in the public `.d.ts`. Mirrors Python's `kwargs.get("use_kernel")`
     // pattern (see databricks-sql-python/src/databricks/sql/session.py).
     const internalOptions = options as ConnectionOptions & InternalConnectionOptions;
+
+    // On the kernel path the kernel owns the full auth lifecycle (it resolves
+    // M2M / U2M / JWT purely from the raw options via `buildKernelConnectionOptions`).
+    // We must NOT build the connector's own OAuth provider here: for OAuth it
+    // eagerly runs the U2M browser flow / M2M token exchange at connect() time
+    // (a telemetry / feature-flag client calls `authProvider.authenticate()`),
+    // racing — and conflicting with — the kernel's auth. So for `useKernel` we
+    // hand over only a minimal PAT provider when a `token` is present, and
+    // `undefined` otherwise. Mirrors Python's use_kernel auth-provider handling.
+    if (internalOptions.useKernel) {
+      const { token } = options as { token?: string };
+      this.authProvider =
+        typeof token === 'string' && token.length > 0
+          ? new PlainHttpAuthentication({ username: 'token', password: token, context: this })
+          : undefined;
+    } else {
+      this.authProvider = this.createAuthProvider(options, authProvider);
+    }
+
+    this.connectionProvider = this.createConnectionProvider(options);
+
     const backend = internalOptions.useKernel
       ? new KernelBackend({ context: this })
       : new ThriftBackend({
