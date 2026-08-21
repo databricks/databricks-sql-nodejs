@@ -418,13 +418,13 @@ function makeBinding(connection: KernelConnection): KernelNativeBinding & {
   return Object.assign(binding, { openSessionStub });
 }
 
-function makeContext(logger?: IDBSQLLogger): IClientContext {
+function makeContext(logger?: IDBSQLLogger, configOverrides: Partial<ClientConfig> = {}): IClientContext {
   const log: IDBSQLLogger = logger ?? {
     log(_level: LogLevel, _message: string): void {
       // no-op
     },
   };
-  const config = {} as ClientConfig;
+  const config = configOverrides as ClientConfig;
   return {
     getConfig: () => config,
     getLogger: () => log,
@@ -549,6 +549,95 @@ describe('KernelBackend', () => {
       token: 'dapi-token',
       intervalsAsString: true,
     });
+  });
+
+  it('openSession() forwards kernel-owned telemetry config and runtime identity to napi binding', async () => {
+    const savedEnv = process.env.DATABRICKS_TELEMETRY_DISABLED;
+    delete process.env.DATABRICKS_TELEMETRY_DISABLED;
+
+    const connection = new FakeNativeConnection();
+    const binding = makeBinding(connection);
+    const backend = new KernelBackend({
+      context: makeContext(undefined, {
+        telemetryEnabled: false,
+        telemetryBatchSize: 17,
+        telemetryFlushIntervalMs: 1_000,
+        telemetryMaxRetries: 2,
+        telemetryBackoffBaseMs: 50,
+        telemetryCloseTimeoutMs: 2_500,
+        telemetryCircuitBreakerThreshold: 3,
+        telemetryCircuitBreakerTimeout: 60_000,
+      }),
+      nativeBinding: binding,
+    });
+
+    try {
+      await backend.connect({
+        host: 'workspace.example',
+        path: '/sql/1.0/warehouses/xyz',
+        token: 'dapi-token',
+      } as ConnectionOptions);
+
+      await backend.openSession({});
+
+      const args = binding.openSessionStub.firstCall.args[0] as Record<string, unknown>;
+      expect(args.driverName).to.equal('nodejs-sql-driver');
+      expect(args.driverVersion).to.be.a('string').and.not.equal('');
+      expect(args.runtimeName).to.equal('Node.js');
+      expect(args.runtimeVersion).to.equal(process.version);
+      expect(args.runtimeVendor).to.equal('Node.js Foundation');
+      expect(args.osName).to.equal(process.platform);
+      expect(args.osVersion).to.be.a('string').and.not.equal('');
+      expect(args.osArch).to.be.a('string').and.not.equal('');
+      expect(args.localeName).to.be.a('string').and.not.equal('');
+      expect(args.charSetEncoding).to.equal('UTF-8');
+      expect(args.processName).to.be.a('string').and.not.equal('');
+      expect(args.telemetryEnabled).to.equal(false);
+      expect(args.telemetryBatchSize).to.equal(17);
+      expect(args.telemetryFlushIntervalMs).to.equal(1_000);
+      expect(args.telemetryMaxRetries).to.equal(2);
+      expect(args.telemetryRetryDelayMs).to.equal(50);
+      expect(args.telemetryCloseFlushTimeoutMs).to.equal(2_500);
+      expect(args.telemetryCircuitBreakerEnabled).to.equal(undefined);
+      expect(args.telemetryCircuitBreakerThreshold).to.equal(3);
+      expect(args.telemetryCircuitBreakerTimeoutMs).to.equal(60_000);
+    } finally {
+      if (savedEnv === undefined) {
+        delete process.env.DATABRICKS_TELEMETRY_DISABLED;
+      } else {
+        process.env.DATABRICKS_TELEMETRY_DISABLED = savedEnv;
+      }
+    }
+  });
+
+  it('openSession() forwards env-disabled kernel telemetry even when config enables telemetry', async () => {
+    const savedEnv = process.env.DATABRICKS_TELEMETRY_DISABLED;
+    process.env.DATABRICKS_TELEMETRY_DISABLED = 'true';
+
+    const connection = new FakeNativeConnection();
+    const binding = makeBinding(connection);
+    const backend = new KernelBackend({
+      context: makeContext(undefined, { telemetryEnabled: true }),
+      nativeBinding: binding,
+    });
+
+    try {
+      await backend.connect({
+        host: 'workspace.example',
+        path: '/sql/1.0/warehouses/xyz',
+        token: 'dapi-token',
+      } as ConnectionOptions);
+      await backend.openSession({});
+
+      const args = binding.openSessionStub.firstCall.args[0] as { telemetryEnabled?: boolean };
+      expect(args.telemetryEnabled).to.equal(false);
+    } finally {
+      if (savedEnv === undefined) {
+        delete process.env.DATABRICKS_TELEMETRY_DISABLED;
+      } else {
+        process.env.DATABRICKS_TELEMETRY_DISABLED = savedEnv;
+      }
+    }
   });
 
   it('openSession() serializes session-level queryTags into sessionConf.QUERY_TAGS', async () => {
