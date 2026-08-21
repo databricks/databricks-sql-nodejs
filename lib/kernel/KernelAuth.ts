@@ -12,11 +12,16 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import os from 'os';
 import { ConnectionOptions } from '../contracts/IDBSQLClient';
+import { ClientConfig } from '../contracts/IClientContext';
 import { InternalConnectionOptions } from '../contracts/InternalConnectionOptions';
 import AuthenticationError from '../errors/AuthenticationError';
 import HiveDriverError from '../errors/HiveDriverError';
 import { buildUserAgentString, normalizePemBytes } from '../utils';
+import driverVersion from '../version';
+import { DRIVER_NAME } from '../telemetry/types';
+import { sanitizeProcessName } from '../telemetry/telemetryUtils';
 
 /**
  * Default local listener port for the U2M authorization-code callback.
@@ -127,6 +132,25 @@ export interface KernelSessionDefaults {
   retryOverallTimeoutSecs?: number;
 }
 
+export interface KernelTelemetryOptions {
+  /** Driver/runtime identity forwarded to kernel-owned telemetry. */
+  driverName?: string;
+  driverVersion?: string;
+  runtimeName?: string;
+  runtimeVersion?: string;
+  runtimeVendor?: string;
+  osName?: string;
+  osVersion?: string;
+  osArch?: string;
+  clientAppName?: string;
+  localeName?: string;
+  charSetEncoding?: string;
+  processName?: string;
+  /** Kernel-owned telemetry switch and batching. */
+  telemetryEnabled?: boolean;
+  telemetryBatchSize?: number;
+}
+
 /**
  * TLS options shared across all auth-mode variants. Mirror the napi
  * binding's `ConnectionOptions.checkServerCertificate` / `.customCaCert`
@@ -215,6 +239,7 @@ export interface KernelProxyOptions {
 export type KernelNativeConnectionOptions = KernelSessionDefaults &
   KernelTlsOptions &
   KernelHttpOptions &
+  KernelTelemetryOptions &
   KernelProxyOptions &
   (
     | {
@@ -518,6 +543,61 @@ export function buildKernelRetryOptions(config: {
   if (Number.isFinite(config.retryMaxAttempts)) out.retryMaxAttempts = clampU32(config.retryMaxAttempts as number);
   if (Number.isFinite(config.retriesTimeout)) out.retryOverallTimeoutSecs = msToSecs(config.retriesTimeout as number);
   return out;
+}
+
+function getLocaleName(env: NodeJS.ProcessEnv = process.env): string {
+  try {
+    const lang = env.LANG || env.LC_ALL || env.LC_MESSAGES || '';
+    const match = lang.match(/^([a-z]{2}_[A-Z]{2})/);
+    return match?.[1] ?? 'en_US';
+  } catch {
+    return 'en_US';
+  }
+}
+
+function getProcessName(): string {
+  try {
+    if (process.title && process.title !== 'node') {
+      return sanitizeProcessName(process.title) || 'node';
+    }
+    const scriptPath = process.argv?.[1];
+    if (scriptPath) {
+      return sanitizeProcessName(scriptPath).replace(/\.[^.]*$/, '') || 'node';
+    }
+    return 'node';
+  } catch {
+    return 'node';
+  }
+}
+
+export function isTelemetryDisabledByEnv(env: NodeJS.ProcessEnv = process.env): boolean {
+  const raw = env.DATABRICKS_TELEMETRY_DISABLED;
+  const trimmed = typeof raw === 'string' ? raw.trim() : '';
+  return trimmed.length > 0 && /^(1|true|yes|on)$/i.test(trimmed);
+}
+
+export function buildKernelTelemetryOptions(config: Pick<ClientConfig, 'telemetryEnabled' | 'telemetryBatchSize'>) {
+  const telemetry: KernelTelemetryOptions = {
+    driverName: DRIVER_NAME,
+    driverVersion,
+    runtimeName: 'Node.js',
+    runtimeVersion: process.version,
+    runtimeVendor: 'Node.js Foundation',
+    osName: process.platform,
+    osVersion: os.release(),
+    osArch: os.arch(),
+    clientAppName: undefined,
+    localeName: getLocaleName(),
+    charSetEncoding: 'UTF-8',
+    processName: getProcessName(),
+    telemetryEnabled: (config.telemetryEnabled ?? true) && !isTelemetryDisabledByEnv(),
+  };
+
+  if (Number.isFinite(config.telemetryBatchSize)) {
+    telemetry.telemetryBatchSize = config.telemetryBatchSize;
+  }
+
+  return telemetry;
 }
 
 /**

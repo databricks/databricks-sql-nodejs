@@ -406,6 +406,33 @@ export interface ConnectionOptions {
    * (~49.7 days) far exceeds any sensible socket timeout.
    */
   socketTimeoutMs?: number
+  /**
+   * Driver/system metadata for kernel-owned telemetry. These fields mirror
+   * the connector telemetry system configuration and are applied when the
+   * kernel constructs its telemetry exporter.
+   */
+  driverName?: string
+  driverVersion?: string
+  runtimeName?: string
+  runtimeVersion?: string
+  runtimeVendor?: string
+  osName?: string
+  osVersion?: string
+  osArch?: string
+  clientAppName?: string
+  localeName?: string
+  charSetEncoding?: string
+  processName?: string
+  /**
+   * Whether kernel-owned telemetry is enabled for this session. The wrapper
+   * should pass the user-facing telemetry opt-out here and avoid emitting
+   * duplicate wrapper telemetry on the kernel path.
+   */
+  telemetryEnabled?: boolean
+  /**
+   * Maximum number of kernel telemetry metrics to batch before flushing.
+   */
+  telemetryBatchSize?: number
 }
 /**
  * Open a Databricks SQL session and return an opaque `Connection`

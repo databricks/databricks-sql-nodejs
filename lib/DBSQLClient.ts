@@ -729,7 +729,8 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
     // doesn't ship in the public `.d.ts`. Mirrors Python's `kwargs.get("use_kernel")`
     // pattern (see databricks-sql-python/src/databricks/sql/session.py).
     const internalOptions = options as ConnectionOptions & InternalConnectionOptions;
-    const backend = internalOptions.useKernel
+    const useKernel = internalOptions.useKernel === true;
+    const backend = useKernel
       ? new KernelBackend({ context: this })
       : new ThriftBackend({
           context: this,
@@ -777,7 +778,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
           `Telemetry remains controlled by the runtime config and feature flag.`,
       );
     }
-    if (this.config.telemetryEnabled && !envDisabled) {
+    if (!useKernel && this.config.telemetryEnabled && !envDisabled) {
       await this.initializeTelemetry();
     }
 
