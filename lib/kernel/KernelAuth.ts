@@ -777,6 +777,12 @@ export function buildKernelConnectionOptions(options: ConnectionOptions): Kernel
             'app-registration client id) alongside `oauthClientSecret`.',
         );
       }
+      // `oauthScopes` is intentionally NOT forwarded here (and the `AzureSpM2m`
+      // union member has no such field), unlike the generic `OAuthM2m` arm below
+      // which honors an override. Entra service-principal tokens use a fixed
+      // `<resource>/.default` scope that the kernel derives from the Azure app id;
+      // a caller-supplied scope override is meaningless to that flow, so it is
+      // dropped by design rather than plumbed through.
       const azure = {
         ...base,
         authMode: 'AzureSpM2m' as const,
