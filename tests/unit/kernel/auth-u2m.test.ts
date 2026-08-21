@@ -100,7 +100,10 @@ describe('KernelAuth + KernelBackend — OAuth U2M auth flow', () => {
       expect(native.httpPath).to.equal('/sql/1.0/warehouses/abc');
     });
 
-    it('rejects azureTenantId on the U2M path with the Entra-direct error', () => {
+    it('rejects Entra-direct U2M (Azure host, no secret, no useDatabricksOAuthInAzure)', () => {
+      // On an Azure host the default is the Entra-direct flow; the kernel has no
+      // direct-Entra browser U2M, so this is rejected with a pointer to the
+      // in-house flag (or Thrift). azureTenantId does not change that.
       const opts: ConnectionOptions = {
         host: 'adb-12345.0.azuredatabricks.net',
         path: '/sql/1.0/warehouses/abc',
@@ -110,11 +113,14 @@ describe('KernelAuth + KernelBackend — OAuth U2M auth flow', () => {
 
       expect(() => buildKernelConnectionOptions(opts)).to.throw(
         HiveDriverError,
-        /Azure-direct OAuth.*is not supported/,
+        /Entra-direct\) OAuth U2M is not supported/,
       );
     });
 
-    it('rejects useDatabricksOAuthInAzure on the U2M path', () => {
+    it('routes Azure host + useDatabricksOAuthInAzure:true (no secret) to in-house OAuthU2m', () => {
+      // `useDatabricksOAuthInAzure: true` opts into the in-house
+      // (workspace-federated) browser flow, which the kernel runs against Azure
+      // Databricks workspaces — so this is the U2M happy path, not a rejection.
       const opts: ConnectionOptions = {
         host: 'adb-12345.0.azuredatabricks.net',
         path: '/sql/1.0/warehouses/abc',
@@ -122,10 +128,15 @@ describe('KernelAuth + KernelBackend — OAuth U2M auth flow', () => {
         useDatabricksOAuthInAzure: true,
       };
 
-      expect(() => buildKernelConnectionOptions(opts)).to.throw(
-        HiveDriverError,
-        /Azure-direct OAuth.*is not supported/,
-      );
+      const native = buildKernelConnectionOptions(opts);
+      expectNativeConnectionOptions(native, {
+        hostName: 'adb-12345.0.azuredatabricks.net',
+        httpPath: '/sql/1.0/warehouses/abc',
+        intervalsAsString: true,
+        authMode: 'OAuthU2m',
+        oauthRedirectPort: 8030,
+        oauthScopes: ['sql', 'offline_access'],
+      });
     });
 
     it('rejects a `persistence` hook on U2M citing the AuthConfig::External kernel-plumbing gap', () => {

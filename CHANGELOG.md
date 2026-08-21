@@ -1,5 +1,9 @@
 # Release History
 
+## Unreleased
+
+- Kernel backend (`useKernel: true`): **Azure Entra (Azure AD) auth is now threaded through the kernel path.** On `authType: 'databricks-oauth'`, `useDatabricksOAuthInAzure` selects the flavour on an Azure host (mirroring the Thrift `OAuthManager.getManager`): `true` → the in-house workspace-federated flow, which the kernel runs natively (browser U2M → `OAuthU2m`, client-credentials M2M → `OAuthM2m`, both via workspace-OIDC discovery, which works against Azure workspaces); absent/`false` on an Azure host → the Entra-direct flow — with a secret it maps to the kernel's Azure service-principal M2M (`AzureSpM2m`, the Entra SP creds ride `oauthClientId`/`oauthClientSecret`, `azureTenantId` optional and auto-discovered when omitted), and without a secret (Entra-direct browser U2M, which the kernel does not implement) it is rejected with a pointer to `useDatabricksOAuthInAzure: true` or the Thrift backend. On a non-Azure host these flags are inert. Requires a `databricks-sql-kernel` native module that exposes the Azure SP surface ([databricks-sql-kernel#280](https://github.com/databricks/databricks-sql-kernel/pull/280)). (PECOBLR-4141 / PECOBLR-4120)
+
 ## 2.0.0
 
 **Breaking changes — completes the security cleanup that 1.17.0 could not do without breaking changes.**
