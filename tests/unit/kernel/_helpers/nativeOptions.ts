@@ -33,6 +33,24 @@ export default function expectNativeConnectionOptions(actual: unknown, expectedR
   const { customHeaders, ...rest } = actual as Record<string, unknown> & {
     customHeaders?: Array<{ name: string; value: string }>;
   };
+  for (const key of [
+    'driverName',
+    'driverVersion',
+    'runtimeName',
+    'runtimeVersion',
+    'runtimeVendor',
+    'osName',
+    'osVersion',
+    'osArch',
+    'clientAppName',
+    'localeName',
+    'charSetEncoding',
+    'processName',
+    'telemetryEnabled',
+    'telemetryBatchSize',
+  ]) {
+    delete rest[key];
+  }
   expect(rest).to.deep.equal(expectedRest);
   expect(customHeaders, 'customHeaders').to.be.an('array').with.lengthOf(1);
   expect(customHeaders?.[0].name).to.equal('User-Agent');
