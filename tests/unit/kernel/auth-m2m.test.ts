@@ -173,6 +173,34 @@ describe('KernelAuth + KernelBackend — OAuth M2M auth flow', () => {
       });
     });
 
+    it('treats a blank/reserved azureTenantId as omitted (kernel auto-discovers)', () => {
+      // A tenant that resolves to `''`, whitespace, or the `'undefined'`/`'null'`
+      // shell-export artifacts is degenerate: forwarding it verbatim would
+      // suppress the kernel's `/aad/auth` auto-discovery and yield a malformed
+      // AAD URL. It must fall back to auto-discovery, matching this arm's
+      // oauthClientId/oauthClientSecret hygiene and the Thrift empty-tenant guard.
+      for (const badTenant of ['', '   ', 'undefined', 'NULL']) {
+        const opts: ConnectionOptions = {
+          host: 'adb-12345.0.azuredatabricks.net',
+          path: '/sql/1.0/warehouses/abc',
+          authType: 'databricks-oauth',
+          oauthClientId: 'entra-app-id',
+          oauthClientSecret: 'entra-secret',
+          azureTenantId: badTenant,
+        };
+
+        const native = buildKernelConnectionOptions(opts);
+        expectNativeConnectionOptions(native, {
+          hostName: 'adb-12345.0.azuredatabricks.net',
+          httpPath: '/sql/1.0/warehouses/abc',
+          intervalsAsString: true,
+          authMode: 'AzureSpM2m',
+          azureClientId: 'entra-app-id',
+          azureClientSecret: 'entra-secret',
+        });
+      }
+    });
+
     it('rejects Azure host + secret without an oauthClientId (Entra app has no default)', () => {
       // Divergence from the regular M2M path (which defaults a missing
       // oauthClientId to the built-in client): the Entra-direct azure-sp-m2m

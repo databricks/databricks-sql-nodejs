@@ -776,7 +776,16 @@ export function buildKernelConnectionOptions(options: ConnectionOptions): Kernel
         azureClientId,
         azureClientSecret,
       };
-      return oauth.azureTenantId !== undefined ? { ...azure, azureTenantId: oauth.azureTenantId } : azure;
+      // Forward `azureTenantId` only when it's a real value. A blank/reserved
+      // string (`''`, whitespace, `'undefined'`/`'null'` shell-export artifacts)
+      // is treated as omitted so the kernel auto-discovers the tenant from the
+      // workspace `/aad/auth` redirect, rather than being handed a degenerate
+      // tenant that suppresses discovery and yields a malformed AAD URL. Matches
+      // this arm's `oauthClientId`/`oauthClientSecret` hygiene above and the
+      // Thrift `AzureOAuthManager` empty-tenant fallback.
+      return oauth.azureTenantId !== undefined && !isBlankOrReserved(oauth.azureTenantId)
+        ? { ...azure, azureTenantId: oauth.azureTenantId }
+        : azure;
     }
 
     // Flow selector + client-id resolution mirror the Thrift driver EXACTLY
