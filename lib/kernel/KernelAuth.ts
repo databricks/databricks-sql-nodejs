@@ -280,14 +280,17 @@ const AZURE_HOST_SUFFIXES = ['.azuredatabricks.net', '.databricks.azure.us', '.d
 
 /**
  * True when `host` is an Azure Databricks workspace host. Normalises the input
- * the same way `getManager` does (lowercase, strip scheme + any path) so a
- * caller passing a bare host or a full URL is treated identically.
+ * the same way `getManager` does (trim surrounding whitespace, lowercase, strip
+ * scheme, then drop any path and explicit `:port`) so a caller passing a bare
+ * host, a padded string, or a full URL with a port is treated identically.
  */
 function isAzureHost(host: string): boolean {
   const normalized = host
+    .trim()
     .toLowerCase()
     .replace(/^https?:\/\//, '')
-    .split('/')[0];
+    .split('/')[0]
+    .split(':')[0];
   return AZURE_HOST_SUFFIXES.some((suffix) => normalized.endsWith(suffix));
 }
 
@@ -543,7 +546,7 @@ export function buildKernelHttpOptions(options: ConnectionOptions): KernelHttpOp
  *
  * Throws:
  *   - `AuthenticationError` for missing/blank required credentials.
- *   - `HiveDriverError` for unsupported auth modes / Entra-direct U2M /
+ *   - `HiveDriverError` for unsupported auth modes /
  *     custom persistence / ambiguous combinations.
  */
 /**
@@ -737,6 +740,16 @@ export function buildKernelConnectionOptions(options: ConnectionOptions): Kernel
       oauth.useDatabricksOAuthInAzure !== true &&
       oauth.oauthClientSecret !== undefined
     ) {
+      // Entra-direct SP M2M is a client-credentials flow (no refresh token), so
+      // `persistence` is rejected here for parity with the workspace-OIDC M2M and
+      // U2M arms below (and matching the contract docblock's "persistence on M2M
+      // → rejected" note). Otherwise a caller's hook would be silently dropped.
+      if (oauth.persistence !== undefined) {
+        throw new HiveDriverError(
+          'kernel backend: `persistence` is not supported on Azure service-principal M2M ' +
+            '(M2M tokens have no refresh token; the kernel re-issues on expiry).',
+        );
+      }
       const azureClientId = oauth.oauthClientId;
       if (azureClientId === undefined) {
         throw new HiveDriverError(

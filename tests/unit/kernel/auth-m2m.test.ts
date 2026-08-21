@@ -173,6 +173,26 @@ describe('KernelAuth + KernelBackend — OAuth M2M auth flow', () => {
       });
     });
 
+    it('rejects Azure host + secret without an oauthClientId (Entra app has no default)', () => {
+      // Divergence from the regular M2M path (which defaults a missing
+      // oauthClientId to the built-in client): the Entra-direct azure-sp-m2m
+      // branch requires an explicit `oauthClientId` (the Entra app-registration
+      // client id has no sensible default) and rejects rather than silently
+      // defaulting on the Azure path.
+      const opts: ConnectionOptions = {
+        host: 'adb-12345.0.azuredatabricks.net',
+        path: '/sql/1.0/warehouses/abc',
+        authType: 'databricks-oauth',
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        oauthClientSecret: 'entra-secret',
+      } as any;
+
+      expect(() => buildKernelConnectionOptions(opts)).to.throw(
+        HiveDriverError,
+        /Azure service-principal M2M requires `oauthClientId`/,
+      );
+    });
+
     it('routes Azure host + useDatabricksOAuthInAzure:true + secret to in-house OAuthM2m', () => {
       // `useDatabricksOAuthInAzure: true` opts into the in-house
       // (workspace-federated) flow — for M2M that is the kernel's generic
