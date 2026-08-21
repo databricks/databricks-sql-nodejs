@@ -733,8 +733,8 @@ export function buildKernelConnectionOptions(options: ConnectionOptions): Kernel
     // (`databricks-sql-connector`) + `sql offline_access` scopes, exactly like
     // AWS/GCP. Handing the kernel the Thrift Azure Entra-direct app / scope instead
     // would derail its in-house flow to a broken AAD authorize URL.
-    // The `oauthClientSecret !== undefined` check is inline (not extracted to a
-    // const) so TypeScript narrows it to `string` for the AzureSpM2m literal below.
+    // The `oauthClientSecret !== undefined` check is inline so TypeScript narrows
+    // the field to `string` inside the branch (for the AzureSpM2m literal below).
     if (
       isAzureHost(options.host) &&
       oauth.useDatabricksOAuthInAzure !== true &&
@@ -750,8 +750,21 @@ export function buildKernelConnectionOptions(options: ConnectionOptions): Kernel
             '(M2M tokens have no refresh token; the kernel re-issues on expiry).',
         );
       }
+      // Reject a present-but-degenerate secret (`''`, whitespace, or the reserved
+      // `'undefined'`/`'null'` shell-export strings) up front. Unlike the generic
+      // `OAuthM2m` arm below — which forwards such values verbatim for byte-for-byte
+      // Thrift parity — this Azure arm has no parity contract (it already rejects a
+      // missing id outright), so a blank credential is as unusable as a missing one
+      // and would only surface an opaque Entra `invalid_client` downstream.
+      const azureClientSecret = oauth.oauthClientSecret;
+      if (isBlankOrReserved(azureClientSecret)) {
+        throw new HiveDriverError(
+          'kernel backend: Azure service-principal M2M requires a non-blank `oauthClientSecret` ' +
+            '(the Entra app-registration client secret).',
+        );
+      }
       const azureClientId = oauth.oauthClientId;
-      if (azureClientId === undefined) {
+      if (typeof azureClientId !== 'string' || isBlankOrReserved(azureClientId)) {
         throw new HiveDriverError(
           'kernel backend: Azure service-principal M2M requires `oauthClientId` (the Entra ' +
             'app-registration client id) alongside `oauthClientSecret`.',
@@ -761,7 +774,7 @@ export function buildKernelConnectionOptions(options: ConnectionOptions): Kernel
         ...base,
         authMode: 'AzureSpM2m' as const,
         azureClientId,
-        azureClientSecret: oauth.oauthClientSecret,
+        azureClientSecret,
       };
       return oauth.azureTenantId !== undefined ? { ...azure, azureTenantId: oauth.azureTenantId } : azure;
     }

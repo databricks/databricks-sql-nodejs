@@ -193,6 +193,44 @@ describe('KernelAuth + KernelBackend — OAuth M2M auth flow', () => {
       );
     });
 
+    it('rejects Azure host + secret with a blank/reserved oauthClientId (as unusable as missing)', () => {
+      // Unlike the generic M2M arm (which forwards `''` verbatim for Thrift
+      // parity), the Entra-direct azure-sp-m2m branch has no parity contract and
+      // rejects a missing id outright — so a blank/reserved id is treated the same
+      // rather than reaching the kernel as an opaque `invalid_client`.
+      for (const badId of ['', '   ', 'undefined', 'NULL']) {
+        const opts: ConnectionOptions = {
+          host: 'adb-12345.0.azuredatabricks.net',
+          path: '/sql/1.0/warehouses/abc',
+          authType: 'databricks-oauth',
+          oauthClientId: badId,
+          oauthClientSecret: 'entra-secret',
+        };
+
+        expect(() => buildKernelConnectionOptions(opts), `for oauthClientId=${JSON.stringify(badId)}`).to.throw(
+          HiveDriverError,
+          /Azure service-principal M2M requires `oauthClientId`/,
+        );
+      }
+    });
+
+    it('rejects Azure host + a blank/reserved oauthClientSecret (as unusable as missing)', () => {
+      for (const badSecret of ['   ', 'undefined', 'NULL']) {
+        const opts: ConnectionOptions = {
+          host: 'adb-12345.0.azuredatabricks.net',
+          path: '/sql/1.0/warehouses/abc',
+          authType: 'databricks-oauth',
+          oauthClientId: 'entra-app-id',
+          oauthClientSecret: badSecret,
+        };
+
+        expect(() => buildKernelConnectionOptions(opts), `for oauthClientSecret=${JSON.stringify(badSecret)}`).to.throw(
+          HiveDriverError,
+          /Azure service-principal M2M requires a non-blank `oauthClientSecret`/,
+        );
+      }
+    });
+
     it('routes Azure host + useDatabricksOAuthInAzure:true + secret to in-house OAuthM2m', () => {
       // `useDatabricksOAuthInAzure: true` opts into the in-house
       // (workspace-federated) flow — for M2M that is the kernel's generic
