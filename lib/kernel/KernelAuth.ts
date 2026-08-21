@@ -511,22 +511,23 @@ export function buildKernelHttpOptions(options: ConnectionOptions): KernelHttpOp
  *     binding makes them, happen below the TypeScript layer and are not
  *     observable from this repo.
  *
- * Azure (Entra) on the OAuth path — mirrors Thrift `OAuthManager.getManager`,
- * with `useDatabricksOAuthInAzure` selecting the flavour on an Azure host:
- *   - `useDatabricksOAuthInAzure: true` → **in-house** (workspace-federated).
- *     The kernel runs it natively via workspace-OIDC discovery — U2M browser
- *     flow (`OAuthU2m`) and M2M client-credentials (`OAuthM2m`) — so it is NOT
- *     rejected. `azureTenantId` is ignored here (the in-house flow does not use
- *     it), matching Thrift.
- *   - absent/`false` on an Azure host → **Entra-direct**:
- *       - with a secret → Azure service-principal M2M (`AzureSpM2m`); the Entra
- *         SP creds ride `oauthClientId`/`oauthClientSecret`, `azureTenantId`
- *         optional (kernel auto-discovers).
- *       - without a secret → Entra-direct browser U2M, which the kernel does
- *         not implement → **rejected** with a pointer to
- *         `useDatabricksOAuthInAzure: true` or the Thrift backend.
- *   - On a non-Azure host these flags are inert (the in-house flow is the only
- *     one), matching Thrift.
+ * Azure (Entra) on the OAuth path. The kernel runs a single, cloud-blind
+ * in-house U2M flow and workspace-OIDC M2M; only Entra-direct **M2M** gets a
+ * dedicated kernel mode:
+ *   - **U2M (no secret), any cloud, any `useDatabricksOAuthInAzure`** →
+ *     `OAuthU2m`. The kernel uses the workspace's OIDC-discovered authorize
+ *     endpoint (`{host}/oidc/v1/authorize`) verbatim; that in-house
+ *     workspace-federated flow works against Azure workspaces too (they federate
+ *     the browser login to Entra server-side — verified E2E). So Azure U2M is
+ *     NOT special-cased and NOT rejected — it forwards the in-house app
+ *     (`databricks-sql-connector`) + `sql offline_access`, exactly like AWS/GCP.
+ *   - **M2M (secret) with `useDatabricksOAuthInAzure: true`** (or non-Azure) →
+ *     `OAuthM2m` (workspace-OIDC client-credentials).
+ *   - **M2M (secret) on an Azure host with `useDatabricksOAuthInAzure` absent/
+ *     `false`** (Entra-direct) → Azure service-principal M2M (`AzureSpM2m`); the
+ *     Entra SP creds ride `oauthClientId`/`oauthClientSecret`, `azureTenantId`
+ *     optional (kernel auto-discovers).
+ *   - On a non-Azure host `useDatabricksOAuthInAzure` is inert.
  *
  * Out of scope on the OAuth paths (rejected with a clear error):
  *   - `persistence` on M2M → M2M tokens are not cached (re-issuing is
@@ -710,31 +711,32 @@ export function buildKernelConnectionOptions(options: ConnectionOptions): Kernel
       );
     }
 
-    // Azure routing. `useDatabricksOAuthInAzure` selects the in-house
-    // (workspace-federated) flow vs the Entra-direct flow, mirroring the Thrift
-    // driver's `OAuthManager.getManager`: on an Azure host, `true` → in-house,
-    // absent/false → Entra-direct. The kernel runs the in-house flow natively
-    // via workspace-OIDC discovery (U2M browser flow AND M2M client-credentials
-    // — Azure workspaces serve `/oidc/.well-known/...`), but has NO Entra-direct
-    // browser U2M; Entra-direct SP M2M maps to the kernel's dedicated
-    // azure-sp-m2m. On a non-Azure host these flags are inert (the in-house flow
-    // is the only one), matching Thrift.
-    const entraDirect = isAzureHost(options.host) && oauth.useDatabricksOAuthInAzure !== true;
-    if (entraDirect) {
-      if (oauth.oauthClientSecret === undefined) {
-        // Entra-direct browser U2M — the kernel has no direct-Entra U2M flow.
-        throw new HiveDriverError(
-          'kernel backend: Azure AD (Entra-direct) OAuth U2M is not supported. Set ' +
-            '`useDatabricksOAuthInAzure: true` to use the in-house workspace-federated browser ' +
-            'flow (which the kernel runs against Azure Databricks workspaces), or use the Thrift ' +
-            'backend (default) for the Entra-direct flow.',
-        );
-      }
-      // Entra-direct service-principal M2M → the kernel's azure-sp-m2m. The Entra
-      // SP credentials ride the generic `oauthClientId` / `oauthClientSecret`
-      // (Thrift convention); forward them as `azureClientId` / `azureClientSecret`.
-      // `azureTenantId` is optional — the kernel auto-discovers it from the
-      // workspace `/aad/auth` redirect when omitted.
+    // Azure Entra-direct **M2M** → the kernel's dedicated azure-sp-m2m. Mirroring
+    // the Thrift driver's `OAuthManager.getManager`, an Azure host with
+    // `useDatabricksOAuthInAzure` NOT set to true (the Entra-direct default) plus a
+    // secret is an Entra service-principal client-credentials flow: the Entra SP
+    // credentials ride the generic `oauthClientId` / `oauthClientSecret` (Thrift
+    // convention); forward them as `azureClientId` / `azureClientSecret`.
+    // `azureTenantId` is optional — the kernel auto-discovers it from the workspace
+    // `/aad/auth` redirect when omitted.
+    //
+    // Azure **U2M** is deliberately NOT special-cased and NOT rejected. The kernel
+    // runs a single, cloud-blind in-house U2M flow: it uses the workspace's
+    // OIDC-discovered authorize endpoint (`{host}/oidc/v1/authorize`) verbatim, and
+    // that in-house workspace-federated flow works against Azure workspaces (the
+    // workspace federates the browser login to Entra server-side; verified E2E). So
+    // ALL U2M — including Azure, with or without `useDatabricksOAuthInAzure` — falls
+    // through to the standard `OAuthU2m` path below, which forwards the in-house app
+    // (`databricks-sql-connector`) + `sql offline_access` scopes, exactly like
+    // AWS/GCP. Handing the kernel the Thrift Azure Entra-direct app / scope instead
+    // would derail its in-house flow to a broken AAD authorize URL.
+    // The `oauthClientSecret !== undefined` check is inline (not extracted to a
+    // const) so TypeScript narrows it to `string` for the AzureSpM2m literal below.
+    if (
+      isAzureHost(options.host) &&
+      oauth.useDatabricksOAuthInAzure !== true &&
+      oauth.oauthClientSecret !== undefined
+    ) {
       const azureClientId = oauth.oauthClientId;
       if (azureClientId === undefined) {
         throw new HiveDriverError(

@@ -100,10 +100,13 @@ describe('KernelAuth + KernelBackend — OAuth U2M auth flow', () => {
       expect(native.httpPath).to.equal('/sql/1.0/warehouses/abc');
     });
 
-    it('rejects Entra-direct U2M (Azure host, no secret, no useDatabricksOAuthInAzure)', () => {
-      // On an Azure host the default is the Entra-direct flow; the kernel has no
-      // direct-Entra browser U2M, so this is rejected with a pointer to the
-      // in-house flag (or Thrift). azureTenantId does not change that.
+    it('routes Azure U2M (no secret, no useDatabricksOAuthInAzure) to in-house OAuthU2m', () => {
+      // Azure U2M is NOT rejected and NOT special-cased: the kernel runs a single
+      // cloud-blind in-house workspace-federated U2M flow (it uses the workspace's
+      // OIDC-discovered authorize endpoint verbatim), which works against Azure
+      // workspaces. So it routes to OAuthU2m with the in-house app +
+      // sql/offline_access regardless of useDatabricksOAuthInAzure. azureTenantId
+      // is inert on the kernel U2M path.
       const opts: ConnectionOptions = {
         host: 'adb-12345.0.azuredatabricks.net',
         path: '/sql/1.0/warehouses/abc',
@@ -111,10 +114,15 @@ describe('KernelAuth + KernelBackend — OAuth U2M auth flow', () => {
         azureTenantId: 'tenant-uuid',
       };
 
-      expect(() => buildKernelConnectionOptions(opts)).to.throw(
-        HiveDriverError,
-        /Entra-direct\) OAuth U2M is not supported/,
-      );
+      const native = buildKernelConnectionOptions(opts);
+      expectNativeConnectionOptions(native, {
+        hostName: 'adb-12345.0.azuredatabricks.net',
+        httpPath: '/sql/1.0/warehouses/abc',
+        intervalsAsString: true,
+        authMode: 'OAuthU2m',
+        oauthRedirectPort: 8030,
+        oauthScopes: ['sql', 'offline_access'],
+      });
     });
 
     it('routes Azure host + useDatabricksOAuthInAzure:true (no secret) to in-house OAuthU2m', () => {
