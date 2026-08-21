@@ -714,8 +714,8 @@ export function buildKernelConnectionOptions(options: ConnectionOptions): Kernel
       );
     }
 
-    // Azure Entra-direct **M2M** → the kernel's dedicated azure-sp-m2m. Mirroring
-    // the Thrift driver's `OAuthManager.getManager`, an Azure host with
+    // Azure Entra-direct **M2M** → the kernel's dedicated azure-sp-m2m. Closely
+    // mirroring the Thrift driver's `OAuthManager.getManager`, an Azure host with
     // `useDatabricksOAuthInAzure` NOT set to true (the Entra-direct default) plus a
     // secret is an Entra service-principal client-credentials flow: the Entra SP
     // credentials ride the generic `oauthClientId` / `oauthClientSecret` (Thrift
@@ -733,6 +733,13 @@ export function buildKernelConnectionOptions(options: ConnectionOptions): Kernel
     // (`databricks-sql-connector`) + `sql offline_access` scopes, exactly like
     // AWS/GCP. Handing the kernel the Thrift Azure Entra-direct app / scope instead
     // would derail its in-house flow to a broken AAD authorize URL.
+    //
+    // One deliberate divergence from Thrift: `isAzureHost` uses the full suffix
+    // superset (incl. `.databricks.azure.us`) for every branch, whereas Thrift's
+    // `useDatabricksOAuthInAzure`-true arm omits `.databricks.azure.us` and so
+    // throws `OAuth is not supported` for a US-gov host in that mode. Here such a
+    // host falls through to the in-house flow (accepted) instead — intentional,
+    // since the kernel's in-house flow is cloud-blind and reachable everywhere.
     // The `oauthClientSecret !== undefined` check is inline so TypeScript narrows
     // the field to `string` inside the branch (for the AzureSpM2m literal below).
     if (
