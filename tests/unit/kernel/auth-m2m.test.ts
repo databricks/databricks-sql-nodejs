@@ -173,6 +173,34 @@ describe('KernelAuth + KernelBackend — OAuth M2M auth flow', () => {
       });
     });
 
+    it('normalizes the host before Azure suffix matching (scheme, port, path, padding, case)', () => {
+      // `isAzureHost` strips a `http(s)://` scheme, drops any path and explicit
+      // `:port`, trims surrounding whitespace, and lowercases before matching the
+      // Azure suffixes. Feed each of those non-normalized shapes and assert the
+      // connection still routes to the Entra-direct `AzureSpM2m` path — a
+      // regression in the normalization would silently misroute to the in-house
+      // `OAuthM2m` and go uncaught otherwise.
+      const azureHostVariants = [
+        'https://adb-12345.0.azuredatabricks.net:443/sql/1.0/warehouses/abc',
+        'http://adb-12345.0.azuredatabricks.net:8443',
+        '  ADB-12345.0.AzureDatabricks.NET  ',
+        'adb-12345.0.databricks.azure.us',
+      ];
+
+      for (const host of azureHostVariants) {
+        const opts: ConnectionOptions = {
+          host,
+          path: '/sql/1.0/warehouses/abc',
+          authType: 'databricks-oauth',
+          oauthClientId: 'entra-app-id',
+          oauthClientSecret: 'entra-secret',
+        };
+
+        const native = buildKernelConnectionOptions(opts);
+        expect(native.authMode, `for host=${JSON.stringify(host)}`).to.equal('AzureSpM2m');
+      }
+    });
+
     it('treats a blank/reserved azureTenantId as omitted (kernel auto-discovers)', () => {
       // A tenant that resolves to `''`, whitespace, or the `'undefined'`/`'null'`
       // shell-export artifacts is degenerate: forwarding it verbatim would
