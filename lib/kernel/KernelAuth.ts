@@ -280,9 +280,12 @@ const AZURE_HOST_SUFFIXES = ['.azuredatabricks.net', '.databricks.azure.us', '.d
 
 /**
  * True when `host` is an Azure Databricks workspace host. Normalises the input
- * the same way `getManager` does (trim surrounding whitespace, lowercase, strip
- * scheme, then drop any path and explicit `:port`) so a caller passing a bare
- * host, a padded string, or a full URL with a port is treated identically.
+ * more aggressively than the Thrift driver's `getManager` (which only
+ * lowercases and strips a leading `https://`): here we also trim surrounding
+ * whitespace, strip either scheme, then drop any path and explicit `:port`, so
+ * a caller passing a bare host, a padded string, or a full URL with a port is
+ * treated identically. The suffix set matches `getManager`, so routing stays a
+ * superset — not a byte-for-byte match — of Thrift's.
  */
 function isAzureHost(host: string): boolean {
   const normalized = host
