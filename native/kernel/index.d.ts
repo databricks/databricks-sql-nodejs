@@ -581,7 +581,7 @@ export interface ArrowSchema {
  * Authentication mode selector crossing the napi boundary. The string
  * literals are what napi-rs emits from this `#[napi(string_enum)]` — the
  * NodeJS SEA adapter (`KernelAuth`) matches them verbatim (`'Pat'`,
- * `'OAuthM2m'`, `'OAuthU2m'`).
+ * `'OAuthM2m'`, `'OAuthU2m'`, `'AzureSpM2m'`).
  *
  * Mirrors the kernel [`AuthConfig`] variants this binding supports.
  * `OAuthFederation` / `External` are intentionally not exposed yet — the
@@ -594,10 +594,25 @@ export declare const enum AuthMode {
   /** OAuth 2.0 machine-to-machine — `oauthClientId` + `oauthClientSecret`. */
   OAuthM2m = 'OAuthM2m',
   /**
+   * OAuth 2.0 machine-to-machine with a JWT private-key client
+   * assertion — `oauthClientId` + `jwtKeyFile` + `jwtKid`.
+   */
+  OAuthM2mJwt = 'OAuthM2mJwt',
+  /**
    * OAuth 2.0 user-to-machine (browser flow) — optional `oauthClientId`
    * + `oauthRedirectPort`.
    */
-  OAuthU2m = 'OAuthU2m'
+  OAuthU2m = 'OAuthU2m',
+  /**
+   * Azure Entra service-principal M2M — `azureClientId` +
+   * `azureClientSecret` (+ optional `azureTenantId` /
+   * `azureWorkspaceResourceId`). The kernel builds the Entra token
+   * endpoint + `.default` scope, auto-discovers the tenant from the
+   * workspace when `azureTenantId` is omitted, and — when
+   * `azureWorkspaceResourceId` is set — additionally sends the SP
+   * management token for an RBAC-only service principal.
+   */
+  AzureSpM2m = 'AzureSpM2m'
 }
 
 /**
@@ -608,6 +623,8 @@ export declare const enum AuthMode {
  * - `OAuthM2m` — `oauthClientId` + `oauthClientSecret` required.
  * - `OAuthU2m` — `oauthClientId` / `oauthRedirectPort` optional
  *   (defaults to the `databricks-sql-connector` client on port 8030).
+ * - `AzureSpM2m` — `azureClientId` + `azureClientSecret` required
+ *   (+ optional `azureTenantId` / `azureWorkspaceResourceId`).
  *
  * Catalog / schema / sessionConf are applied once at session creation
  * and remain in effect for every statement run on the resulting
@@ -654,10 +671,62 @@ export interface ConnectionOptions {
    */
   oauthScopes?: Array<string>
   /**
+   * OAuth token endpoint override. When omitted the kernel discovers the
+   * endpoint via the workspace's OIDC configuration. Set it to point the
+   * client-credentials / JWT client-assertion grant at the workspace's
+   * configured IdP token endpoint (e.g. Entra ID for Azure Databricks),
+   * which is required when that IdP — not Databricks-native OIDC — is the
+   * authority for [`AuthMode::OAuthM2m`] / [`AuthMode::OAuthM2mJwt`].
+   */
+  tokenUrl?: string
+  /**
+   * Path to the PEM private-key file. Required for
+   * [`AuthMode::OAuthM2mJwt`].
+   */
+  jwtKeyFile?: string
+  /** JWT key id (`kid`). Required for [`AuthMode::OAuthM2mJwt`]. */
+  jwtKid?: string
+  /**
+   * Passphrase for an encrypted PKCS#8 key. Optional for
+   * [`AuthMode::OAuthM2mJwt`] (omit for an unencrypted key).
+   */
+  jwtPassphrase?: string
+  /**
+   * JWT signing algorithm (`RS256`/`384`/`512`, `PS256`/`384`/`512`,
+   * `ES256`, `ES384`). Optional for [`AuthMode::OAuthM2mJwt`]
+   * (omitted ⇒ kernel default `RS256`).
+   */
+  jwtAlgorithm?: string
+  /**
    * SP-wide Workload Identity Federation client id used during mandatory
    * token exchange. Omitted selects BYOT / account-wide WIF.
    */
   identityFederationClientId?: string
+  /**
+   * Azure Entra app-registration client id. Required for
+   * [`AuthMode::AzureSpM2m`]; ignored otherwise.
+   */
+  azureClientId?: string
+  /**
+   * Azure Entra app-registration client secret. Required for
+   * [`AuthMode::AzureSpM2m`].
+   */
+  azureClientSecret?: string
+  /**
+   * Azure Entra tenant id. Optional for [`AuthMode::AzureSpM2m`];
+   * omitted ⇒ the kernel auto-discovers it from the workspace's
+   * `/aad/auth` redirect (matching the Thrift connector).
+   */
+  azureTenantId?: string
+  /**
+   * Azure workspace ARM resource id. Optional for [`AuthMode::AzureSpM2m`];
+   * when set the kernel also sends the SP management token
+   * (`X-Databricks-Azure-SP-Management-Token`) + the
+   * `X-Databricks-Azure-Workspace-Resource-Id` header, so a service
+   * principal with an Azure RBAC role but no workspace membership can
+   * authenticate. Omitted ⇒ the data token authenticates alone.
+   */
+  azureWorkspaceResourceId?: string
   /**
    * Default catalog for statements executed on this session.
    * Routed through the kernel's `DefaultOpts` and onto the SEA
@@ -676,6 +745,66 @@ export interface ConnectionOptions {
    * `session_confs`. Unknown keys are rejected server-side.
    */
   sessionConf?: Record<string, string>
+  /**
+   * Driver name reported in telemetry system configuration. Omitted ⇒
+   * kernel default.
+   */
+  driverName?: string
+  /**
+   * Driver version reported in telemetry system configuration. Omitted ⇒
+   * kernel default.
+   */
+  driverVersion?: string
+  /**
+   * Runtime name reported in telemetry system configuration. Omitted ⇒
+   * kernel default.
+   */
+  runtimeName?: string
+  /**
+   * Runtime version reported in telemetry system configuration. Omitted ⇒
+   * kernel default.
+   */
+  runtimeVersion?: string
+  /**
+   * Runtime vendor reported in telemetry system configuration. Omitted ⇒
+   * kernel default.
+   */
+  runtimeVendor?: string
+  /**
+   * Operating system name reported in telemetry system configuration.
+   * Omitted ⇒ kernel default.
+   */
+  osName?: string
+  /**
+   * Operating system version reported in telemetry system configuration.
+   * Omitted ⇒ kernel default.
+   */
+  osVersion?: string
+  /**
+   * Operating system architecture reported in telemetry system
+   * configuration. Omitted ⇒ kernel default.
+   */
+  osArch?: string
+  /**
+   * Client application name reported in telemetry system configuration.
+   * Omitted ⇒ absent unless the kernel can infer a default.
+   */
+  clientAppName?: string
+  /**
+   * Locale name reported in telemetry system configuration. Omitted ⇒
+   * kernel default.
+   */
+  localeName?: string
+  /**
+   * Character-set encoding reported in telemetry system configuration.
+   * Omitted ⇒ kernel default.
+   */
+  charSetEncoding?: string
+  /**
+   * Process name reported in telemetry system configuration. Omitted ⇒
+   * kernel default.
+   */
+  processName?: string
   /**
    * Maximum number of pooled HTTP connections per host. Routes
    * through the kernel's [`HttpConfig::pool_max_idle_per_host`].
@@ -832,6 +961,33 @@ export interface ConnectionOptions {
    * [`HttpConfig::overall_timeout`].
    */
   retryOverallTimeoutSecs?: number
+  /**
+   * Enable kernel telemetry export. Omitted / `false` keeps telemetry
+   * disabled. When enabled, the kernel records operation telemetry below the
+   * binding layer and exports through the Databricks SQL driver telemetry
+   * endpoint.
+   */
+  telemetryEnabled?: boolean
+  /**
+   * Number of telemetry events buffered before a flush. Omitted ⇒ kernel
+   * default. Must be greater than zero when supplied.
+   */
+  telemetryBatchSize?: number
+  /**
+   * Periodic telemetry flush interval in milliseconds. Omitted ⇒ kernel
+   * default. Must be greater than zero when supplied.
+   */
+  telemetryFlushIntervalMs?: number
+  /** Maximum telemetry export retries. `0` disables telemetry export retries. */
+  telemetryMaxRetries?: number
+  /** Fixed telemetry retry delay in milliseconds. `0` means immediate retry. */
+  telemetryRetryDelayMs?: number
+  /**
+   * Maximum time explicit close waits for telemetry final flush, in
+   * milliseconds. Omitted ⇒ kernel default. Must be greater than zero when
+   * supplied.
+   */
+  telemetryCloseFlushTimeoutMs?: number
   /**
    * Programmatic HTTP/HTTPS proxy ([`ProxyInput`]) to route all kernel
    * traffic through. Carries the proxy `url`, optional basic-auth
