@@ -47,17 +47,18 @@ export interface KernelBackendOptions {
  * kernel-backed implementation of `IBackend`.
  *
  * **M0 dispatch model:** the napi binding's `openSession()` already
- * builds a kernel `Session` from PAT + hostname + httpPath, so there is
+ * builds a kernel `Session` from auth options + hostname + httpPath, so there is
  * no "connect" round-trip before `openSession` — `connect()` only
- * captures the `ConnectionOptions` and validates that PAT auth is in
- * use. The actual session open happens inside `openSession()`.
+ * captures and validates the `ConnectionOptions`. The actual session open
+ * happens inside `openSession()`.
  *
  * **Auth validation:** delegates to `buildKernelConnectionOptions` from
  * `KernelAuth`, which mirrors the existing DBSQLClient validation pattern
  * (slash-prepended httpPath, AuthenticationError on missing token or
  * blank OAuth credentials, HiveDriverError on unsupported authType /
  * Azure-direct / ambiguous credential combinations). M2M and U2M
- * routing key off `oauthClientId` presence; see KernelAuth.ts.
+ * routing key off `oauthClientSecret` presence (mirroring Thrift); see
+ * KernelAuth.ts.
  *
  * **Why we don't use IClientContext's connectionProvider here:** that
  * provider is the Thrift HTTP transport. The kernel owns its own
@@ -83,9 +84,8 @@ export default class KernelBackend implements IBackend {
   }
 
   public async connect(options: ConnectionOptions): Promise<void> {
-    // Validate PAT auth + capture the napi-binding option shape.
-    // Any non-PAT mode (or a missing/empty token) throws here, before
-    // we ever touch the native binding.
+    // Validate auth + capture the napi-binding option shape before touching
+    // the native binding.
     // Forward the driver's retry config to the kernel, which owns the retry
     // loop on the kernel path. This keeps kernel and Thrift governed by one retry
     // config (the same `ClientConfig` knobs the Thrift `HttpRetryPolicy` reads),

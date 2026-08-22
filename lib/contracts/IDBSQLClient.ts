@@ -46,7 +46,9 @@ type AuthOptions =
   | {
       authType: 'static-token';
       staticToken: string;
+      /** Ignored by the kernel backend, where token federation is always enabled. */
       enableTokenFederation?: boolean;
+      /** Selects SP-wide federation; omitted selects account-wide federation. */
       federationClientId?: string;
     };
 

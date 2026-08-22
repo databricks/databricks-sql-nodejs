@@ -61,6 +61,10 @@ const DEFAULT_OAUTH_CLIENT_ID = 'databricks-sql-connector';
  *                   everything else (client_id, scopes, callback timeout,
  *                   token_url_override) uses kernel defaults.
  *
+ * `static-token` reuses the native PAT bearer-token mode, where federation is
+ * always enabled. `enableTokenFederation` is ignored; a non-empty
+ * `federationClientId` selects SP-wide WIF and omission selects account-wide.
+ *
  * The `authMode` string literals MUST match the napi-emitted `AuthMode`
  * variant names verbatim (`'Pat'`, `'OAuthM2m'`, `'OAuthU2m'` — napi-rs's
  * `#[napi(string_enum)]` without an explicit case option emits the
@@ -212,10 +216,19 @@ export interface KernelProxyOptions {
   };
 }
 
+export interface KernelFederationOptions {
+  /**
+   * SP-wide Workload Identity Federation client id. Omitted selects BYOT /
+   * account-wide WIF.
+   */
+  identityFederationClientId?: string;
+}
+
 export type KernelNativeConnectionOptions = KernelSessionDefaults &
   KernelTlsOptions &
   KernelHttpOptions &
   KernelProxyOptions &
+  KernelFederationOptions &
   (
     | {
         hostName: string;
@@ -239,6 +252,14 @@ export type KernelNativeConnectionOptions = KernelSessionDefaults &
         oauthScopes?: Array<string>;
         oauthClientId?: string;
       }
+    | {
+        hostName: string;
+        httpPath: string;
+        authMode: 'AzureSpM2m';
+        azureClientId: string;
+        azureClientSecret: string;
+        azureTenantId?: string;
+      }
   );
 
 function prependSlash(str: string): string {
@@ -246,6 +267,34 @@ function prependSlash(str: string): string {
     return `/${str}`;
   }
   return str;
+}
+
+/**
+ * Azure Databricks host suffixes — the superset the Thrift driver's
+ * `OAuthManager.getManager` recognises (`.azuredatabricks.net`,
+ * `.databricks.azure.us`, `.databricks.azure.cn`). Used to decide whether an
+ * OAuth connection is on Azure and therefore subject to the in-house-vs-
+ * Entra-direct split.
+ */
+const AZURE_HOST_SUFFIXES = ['.azuredatabricks.net', '.databricks.azure.us', '.databricks.azure.cn'];
+
+/**
+ * True when `host` is an Azure Databricks workspace host. Normalises the input
+ * more aggressively than the Thrift driver's `getManager` (which only
+ * lowercases and strips a leading `https://`): here we also trim surrounding
+ * whitespace, strip either scheme, then drop any path and explicit `:port`, so
+ * a caller passing a bare host, a padded string, or a full URL with a port is
+ * treated identically. The suffix set matches `getManager`, so routing stays a
+ * superset — not a byte-for-byte match — of Thrift's.
+ */
+function isAzureHost(host: string): boolean {
+  const normalized = host
+    .trim()
+    .toLowerCase()
+    .replace(/^https?:\/\//, '')
+    .split('/')[0]
+    .split(':')[0];
+  return AZURE_HOST_SUFFIXES.some((suffix) => normalized.endsWith(suffix));
 }
 
 /**
@@ -443,6 +492,10 @@ export function buildKernelHttpOptions(options: ConnectionOptions): KernelHttpOp
  *   - PAT: `authType: 'access-token'` (or undefined, which already means
  *     PAT throughout the existing driver — see
  *     `DBSQLClient.createAuthProvider`).
+ *   - Static token: `authType: 'static-token'` + `staticToken`. The token is
+ *     forwarded through the native PAT bearer-token mode, where federation is
+ *     always enabled. `federationClientId` selects SP-wide WIF; omission
+ *     selects account-wide WIF. `enableTokenFederation` is ignored.
  *   - OAuth M2M: `authType: 'databricks-oauth'` + `oauthClientId` +
  *     `oauthClientSecret`. Kernel handles OIDC discovery, client_credentials
  *     exchange, and re-auth on expiry internally.
@@ -451,27 +504,38 @@ export function buildKernelHttpOptions(options: ConnectionOptions): KernelHttpOp
  *     a browser, listens on localhost:8030, exchanges the code, persists
  *     to `~/.config/databricks-sql-kernel/oauth/{sha256}.json`).
  *
- *     **Flow selection — DELIBERATE DIVERGENCE FROM THRIFT.** Thrift's
+ *     **Flow selection — MIRRORS THRIFT.** Thrift's
  *     `DBSQLClient.createAuthProvider` (`DBSQLClient.ts:216`) keys off the
  *     *secret* (`oauthClientSecret === undefined ? U2M : M2M`), so a custom
- *     `oauthClientId` with no secret runs U2M with that id. kernel instead keys
- *     off `oauthClientId` *presence* (id present → M2M, absent → U2M). The
- *     trade-off: keying off the id means a caller who set an id but
- *     typoed/forgot the secret gets the actionable M2M "secret is required"
- *     error instead of being silently routed to U2M (which would hide their
- *     intent). The cost is two real behavioural gaps vs Thrift:
- *       1. `oauthClientId` + no secret → Thrift runs U2M; kernel throws
- *          `AuthenticationError` (M2M secret required).
- *       2. kernel U2M has NO custom-client-id support — the kernel hardcodes
- *          `client_id = "databricks-cli"`, and kernel rejects any `oauthClientId`
- *          on the U2M arm. Thrift U2M honours a custom `clientId`.
- *     Both are documented limitations of the M0 kernel OAuth surface, not bugs.
+ *     `oauthClientId` with no secret runs U2M with that id. This adapter keys
+ *     off the same signal: `oauthClientSecret === undefined` ⇒ U2M, else M2M
+ *     (see `buildKernelConnectionOptions` below). A custom `oauthClientId` is
+ *     forwarded verbatim on the U2M arm; when absent the napi binding applies
+ *     its own default `client_id`. The adapter therefore does NOT throw an M2M
+ *     "secret required" error for `oauthClientId` + no secret, and does NOT
+ *     reject a custom `oauthClientId` on U2M — those decisions, if the native
+ *     binding makes them, happen below the TypeScript layer and are not
+ *     observable from this repo.
+ *
+ * Azure (Entra) on the OAuth path. The kernel runs a single, cloud-blind
+ * in-house U2M flow and workspace-OIDC M2M; only Entra-direct **M2M** gets a
+ * dedicated kernel mode:
+ *   - **U2M (no secret), any cloud, any `useDatabricksOAuthInAzure`** →
+ *     `OAuthU2m`. The kernel uses the workspace's OIDC-discovered authorize
+ *     endpoint (`{host}/oidc/v1/authorize`) verbatim; that in-house
+ *     workspace-federated flow works against Azure workspaces too (they federate
+ *     the browser login to Entra server-side — verified E2E). So Azure U2M is
+ *     NOT special-cased and NOT rejected — it forwards the in-house app
+ *     (`databricks-sql-connector`) + `sql offline_access`, exactly like AWS/GCP.
+ *   - **M2M (secret) with `useDatabricksOAuthInAzure: true`** (or non-Azure) →
+ *     `OAuthM2m` (workspace-OIDC client-credentials).
+ *   - **M2M (secret) on an Azure host with `useDatabricksOAuthInAzure` absent/
+ *     `false`** (Entra-direct) → Azure service-principal M2M (`AzureSpM2m`); the
+ *     Entra SP creds ride `oauthClientId`/`oauthClientSecret`, `azureTenantId`
+ *     optional (kernel auto-discovers).
+ *   - On a non-Azure host `useDatabricksOAuthInAzure` is inert.
  *
  * Out of scope on the OAuth paths (rejected with a clear error):
- *   - `azureTenantId` / `useDatabricksOAuthInAzure` → Microsoft Entra
- *     direct flow. The kernel uses workspace-OIDC discovery (which works
- *     against Azure workspaces too — they serve `/oidc/.well-known/...`)
- *     and does not implement the Entra-direct scope-rewrite path.
  *   - `persistence` on M2M → M2M tokens are not cached (re-issuing is
  *     cheap; no refresh token).
  *   - `persistence` on U2M → custom token store is a parity gap;
@@ -485,7 +549,7 @@ export function buildKernelHttpOptions(options: ConnectionOptions): KernelHttpOp
  *
  * Throws:
  *   - `AuthenticationError` for missing/blank required credentials.
- *   - `HiveDriverError` for unsupported auth modes / Azure-direct /
+ *   - `HiveDriverError` for unsupported auth modes /
  *     custom persistence / ambiguous combinations.
  */
 /**
@@ -559,7 +623,8 @@ export function buildKernelConnectionOptions(options: ConnectionOptions): Kernel
     maxConnections?: number;
   } & KernelTlsOptions &
     KernelHttpOptions &
-    KernelProxyOptions = {
+    KernelProxyOptions &
+    KernelFederationOptions = {
     hostName: options.host,
     httpPath: prependSlash(options.path),
     // Match the NodeJS Thrift driver, which surfaces INTERVAL columns as
@@ -624,6 +689,26 @@ export function buildKernelConnectionOptions(options: ConnectionOptions): Kernel
     return { ...base, authMode: 'Pat', token };
   }
 
+  if (authType === 'static-token') {
+    const { staticToken, federationClientId } = options as {
+      staticToken?: string;
+      federationClientId?: string;
+    };
+    if (typeof staticToken !== 'string' || isBlankOrReserved(staticToken)) {
+      throw new AuthenticationError(
+        "kernel backend: a non-empty token must be supplied via `staticToken` when using `authType: 'static-token'`.",
+      );
+    }
+    if (oauth.oauthClientId !== undefined || oauth.oauthClientSecret !== undefined) {
+      throw new HiveDriverError(
+        'kernel backend: cannot supply `staticToken` alongside `oauthClientId`/`oauthClientSecret` ' +
+          'on the same connection. Pick one auth mode.',
+      );
+    }
+    base.identityFederationClientId = federationClientId || undefined;
+    return { ...base, authMode: 'Pat', token: staticToken };
+  }
+
   if (authType === 'databricks-oauth') {
     if ((options as { token?: string }).token !== undefined) {
       throw new HiveDriverError(
@@ -632,12 +717,91 @@ export function buildKernelConnectionOptions(options: ConnectionOptions): Kernel
       );
     }
 
-    if (oauth.azureTenantId !== undefined || oauth.useDatabricksOAuthInAzure === true) {
-      throw new HiveDriverError(
-        'kernel backend: Azure-direct OAuth (azureTenantId / useDatabricksOAuthInAzure) ' +
-          'is not supported. The workspace-OIDC discovery path handles Azure workspaces ' +
-          'today without these options.',
-      );
+    // Azure Entra-direct **M2M** → the kernel's dedicated azure-sp-m2m. Closely
+    // mirroring the Thrift driver's `OAuthManager.getManager`, an Azure host with
+    // `useDatabricksOAuthInAzure` NOT set to true (the Entra-direct default) plus a
+    // secret is an Entra service-principal client-credentials flow: the Entra SP
+    // credentials ride the generic `oauthClientId` / `oauthClientSecret` (Thrift
+    // convention); forward them as `azureClientId` / `azureClientSecret`.
+    // `azureTenantId` is optional — the kernel auto-discovers it from the workspace
+    // `/aad/auth` redirect when omitted.
+    //
+    // Azure **U2M** is deliberately NOT special-cased and NOT rejected. The kernel
+    // runs a single, cloud-blind in-house U2M flow: it uses the workspace's
+    // OIDC-discovered authorize endpoint (`{host}/oidc/v1/authorize`) verbatim, and
+    // that in-house workspace-federated flow works against Azure workspaces (the
+    // workspace federates the browser login to Entra server-side; verified E2E). So
+    // ALL U2M — including Azure, with or without `useDatabricksOAuthInAzure` — falls
+    // through to the standard `OAuthU2m` path below, which forwards the in-house app
+    // (`databricks-sql-connector`) + `sql offline_access` scopes, exactly like
+    // AWS/GCP. Handing the kernel the Thrift Azure Entra-direct app / scope instead
+    // would derail its in-house flow to a broken AAD authorize URL.
+    //
+    // One deliberate divergence from Thrift: `isAzureHost` uses the full suffix
+    // superset (incl. `.databricks.azure.us`) for every branch, whereas Thrift's
+    // `useDatabricksOAuthInAzure`-true arm omits `.databricks.azure.us` and so
+    // throws `OAuth is not supported` for a US-gov host in that mode. Here such a
+    // host falls through to the in-house flow (accepted) instead — intentional,
+    // since the kernel's in-house flow is cloud-blind and reachable everywhere.
+    // The `oauthClientSecret !== undefined` check is inline so TypeScript narrows
+    // the field to `string` inside the branch (for the AzureSpM2m literal below).
+    if (
+      isAzureHost(options.host) &&
+      oauth.useDatabricksOAuthInAzure !== true &&
+      oauth.oauthClientSecret !== undefined
+    ) {
+      // Entra-direct SP M2M is a client-credentials flow (no refresh token), so
+      // `persistence` is rejected here for parity with the workspace-OIDC M2M and
+      // U2M arms below (and matching the contract docblock's "persistence on M2M
+      // → rejected" note). Otherwise a caller's hook would be silently dropped.
+      if (oauth.persistence !== undefined) {
+        throw new HiveDriverError(
+          'kernel backend: `persistence` is not supported on Azure service-principal M2M ' +
+            '(M2M tokens have no refresh token; the kernel re-issues on expiry).',
+        );
+      }
+      // Reject a present-but-degenerate secret (`''`, whitespace, or the reserved
+      // `'undefined'`/`'null'` shell-export strings) up front. Unlike the generic
+      // `OAuthM2m` arm below — which forwards such values verbatim for byte-for-byte
+      // Thrift parity — this Azure arm has no parity contract (it already rejects a
+      // missing id outright), so a blank credential is as unusable as a missing one
+      // and would only surface an opaque Entra `invalid_client` downstream.
+      const azureClientSecret = oauth.oauthClientSecret;
+      if (isBlankOrReserved(azureClientSecret)) {
+        throw new HiveDriverError(
+          'kernel backend: Azure service-principal M2M requires a non-blank `oauthClientSecret` ' +
+            '(the Entra app-registration client secret).',
+        );
+      }
+      const azureClientId = oauth.oauthClientId;
+      if (typeof azureClientId !== 'string' || isBlankOrReserved(azureClientId)) {
+        throw new HiveDriverError(
+          'kernel backend: Azure service-principal M2M requires `oauthClientId` (the Entra ' +
+            'app-registration client id) alongside `oauthClientSecret`.',
+        );
+      }
+      // `oauthScopes` is intentionally NOT forwarded here (and the `AzureSpM2m`
+      // union member has no such field), unlike the generic `OAuthM2m` arm below
+      // which honors an override. Entra service-principal tokens use a fixed
+      // `<resource>/.default` scope that the kernel derives from the Azure app id;
+      // a caller-supplied scope override is meaningless to that flow, so it is
+      // dropped by design rather than plumbed through.
+      const azure = {
+        ...base,
+        authMode: 'AzureSpM2m' as const,
+        azureClientId,
+        azureClientSecret,
+      };
+      // Forward `azureTenantId` only when it's a real value. A blank/reserved
+      // string (`''`, whitespace, `'undefined'`/`'null'` shell-export artifacts)
+      // is treated as omitted so the kernel auto-discovers the tenant from the
+      // workspace `/aad/auth` redirect, rather than being handed a degenerate
+      // tenant that suppresses discovery and yields a malformed AAD URL. Matches
+      // this arm's `oauthClientId`/`oauthClientSecret` hygiene above and the
+      // Thrift `AzureOAuthManager` empty-tenant fallback.
+      return oauth.azureTenantId !== undefined && !isBlankOrReserved(oauth.azureTenantId)
+        ? { ...azure, azureTenantId: oauth.azureTenantId }
+        : azure;
     }
 
     // Flow selector + client-id resolution mirror the Thrift driver EXACTLY
@@ -697,7 +861,7 @@ export function buildKernelConnectionOptions(options: ConnectionOptions): Kernel
 
   throw new HiveDriverError(
     `kernel backend: unsupported auth mode '${authType}'. ` +
-      "Supported modes on the kernel backend today: 'access-token' (PAT) and 'databricks-oauth' " +
+      "Supported modes on the kernel backend today: 'access-token' (PAT), 'static-token', and 'databricks-oauth' " +
       '(M2M with oauthClientId+oauthClientSecret, or U2M with neither).',
   );
 }

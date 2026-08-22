@@ -127,23 +127,170 @@ describe('KernelAuth + KernelBackend — OAuth M2M auth flow', () => {
       expect((native as { oauthClientId?: string }).oauthClientId).to.equal('client-uuid');
     });
 
-    it('rejects azureTenantId with a clear Entra-direct-out-of-scope error', () => {
+    it('routes Azure host + secret (Entra-direct default) to azure-sp-m2m, forwarding the tenant', () => {
+      // On an Azure host with no `useDatabricksOAuthInAzure`, the default is the
+      // Entra-direct flow — for M2M that is the kernel's azure-sp-m2m. The Entra
+      // SP creds ride oauthClientId/oauthClientSecret; azureTenantId is forwarded
+      // (optional — the kernel auto-discovers it when omitted).
       const opts: ConnectionOptions = {
         host: 'adb-12345.0.azuredatabricks.net',
         path: '/sql/1.0/warehouses/abc',
         authType: 'databricks-oauth',
-        oauthClientId: 'client-uuid',
-        oauthClientSecret: 'dose-fake-secret',
+        oauthClientId: 'entra-app-id',
+        oauthClientSecret: 'entra-secret',
         azureTenantId: 'tenant-uuid',
       };
 
+      const native = buildKernelConnectionOptions(opts);
+      expectNativeConnectionOptions(native, {
+        hostName: 'adb-12345.0.azuredatabricks.net',
+        httpPath: '/sql/1.0/warehouses/abc',
+        intervalsAsString: true,
+        authMode: 'AzureSpM2m',
+        azureClientId: 'entra-app-id',
+        azureClientSecret: 'entra-secret',
+        azureTenantId: 'tenant-uuid',
+      });
+    });
+
+    it('routes Azure host + secret without a tenant to azure-sp-m2m (kernel auto-discovers)', () => {
+      const opts: ConnectionOptions = {
+        host: 'adb-12345.0.azuredatabricks.net',
+        path: '/sql/1.0/warehouses/abc',
+        authType: 'databricks-oauth',
+        oauthClientId: 'entra-app-id',
+        oauthClientSecret: 'entra-secret',
+      };
+
+      const native = buildKernelConnectionOptions(opts);
+      expectNativeConnectionOptions(native, {
+        hostName: 'adb-12345.0.azuredatabricks.net',
+        httpPath: '/sql/1.0/warehouses/abc',
+        intervalsAsString: true,
+        authMode: 'AzureSpM2m',
+        azureClientId: 'entra-app-id',
+        azureClientSecret: 'entra-secret',
+      });
+    });
+
+    it('normalizes the host before Azure suffix matching (scheme, port, path, padding, case)', () => {
+      // `isAzureHost` strips a `http(s)://` scheme, drops any path and explicit
+      // `:port`, trims surrounding whitespace, and lowercases before matching the
+      // Azure suffixes. Feed each of those non-normalized shapes and assert the
+      // connection still routes to the Entra-direct `AzureSpM2m` path — a
+      // regression in the normalization would silently misroute to the in-house
+      // `OAuthM2m` and go uncaught otherwise.
+      const azureHostVariants = [
+        'https://adb-12345.0.azuredatabricks.net:443/sql/1.0/warehouses/abc',
+        'http://adb-12345.0.azuredatabricks.net:8443',
+        '  ADB-12345.0.AzureDatabricks.NET  ',
+        'adb-12345.0.databricks.azure.us',
+      ];
+
+      for (const host of azureHostVariants) {
+        const opts: ConnectionOptions = {
+          host,
+          path: '/sql/1.0/warehouses/abc',
+          authType: 'databricks-oauth',
+          oauthClientId: 'entra-app-id',
+          oauthClientSecret: 'entra-secret',
+        };
+
+        const native = buildKernelConnectionOptions(opts);
+        expect(native.authMode, `for host=${JSON.stringify(host)}`).to.equal('AzureSpM2m');
+      }
+    });
+
+    it('treats a blank/reserved azureTenantId as omitted (kernel auto-discovers)', () => {
+      // A tenant that resolves to `''`, whitespace, or the `'undefined'`/`'null'`
+      // shell-export artifacts is degenerate: forwarding it verbatim would
+      // suppress the kernel's `/aad/auth` auto-discovery and yield a malformed
+      // AAD URL. It must fall back to auto-discovery, matching this arm's
+      // oauthClientId/oauthClientSecret hygiene and the Thrift empty-tenant guard.
+      for (const badTenant of ['', '   ', 'undefined', 'NULL']) {
+        const opts: ConnectionOptions = {
+          host: 'adb-12345.0.azuredatabricks.net',
+          path: '/sql/1.0/warehouses/abc',
+          authType: 'databricks-oauth',
+          oauthClientId: 'entra-app-id',
+          oauthClientSecret: 'entra-secret',
+          azureTenantId: badTenant,
+        };
+
+        const native = buildKernelConnectionOptions(opts);
+        expectNativeConnectionOptions(native, {
+          hostName: 'adb-12345.0.azuredatabricks.net',
+          httpPath: '/sql/1.0/warehouses/abc',
+          intervalsAsString: true,
+          authMode: 'AzureSpM2m',
+          azureClientId: 'entra-app-id',
+          azureClientSecret: 'entra-secret',
+        });
+      }
+    });
+
+    it('rejects Azure host + secret without an oauthClientId (Entra app has no default)', () => {
+      // Divergence from the regular M2M path (which defaults a missing
+      // oauthClientId to the built-in client): the Entra-direct azure-sp-m2m
+      // branch requires an explicit `oauthClientId` (the Entra app-registration
+      // client id has no sensible default) and rejects rather than silently
+      // defaulting on the Azure path.
+      const opts: ConnectionOptions = {
+        host: 'adb-12345.0.azuredatabricks.net',
+        path: '/sql/1.0/warehouses/abc',
+        authType: 'databricks-oauth',
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        oauthClientSecret: 'entra-secret',
+      } as any;
+
       expect(() => buildKernelConnectionOptions(opts)).to.throw(
         HiveDriverError,
-        /Azure-direct OAuth.*is not supported/,
+        /Azure service-principal M2M requires `oauthClientId`/,
       );
     });
 
-    it('rejects useDatabricksOAuthInAzure with the same Entra-direct error', () => {
+    it('rejects Azure host + secret with a blank/reserved oauthClientId (as unusable as missing)', () => {
+      // Unlike the generic M2M arm (which forwards `''` verbatim for Thrift
+      // parity), the Entra-direct azure-sp-m2m branch has no parity contract and
+      // rejects a missing id outright — so a blank/reserved id is treated the same
+      // rather than reaching the kernel as an opaque `invalid_client`.
+      for (const badId of ['', '   ', 'undefined', 'NULL']) {
+        const opts: ConnectionOptions = {
+          host: 'adb-12345.0.azuredatabricks.net',
+          path: '/sql/1.0/warehouses/abc',
+          authType: 'databricks-oauth',
+          oauthClientId: badId,
+          oauthClientSecret: 'entra-secret',
+        };
+
+        expect(() => buildKernelConnectionOptions(opts), `for oauthClientId=${JSON.stringify(badId)}`).to.throw(
+          HiveDriverError,
+          /Azure service-principal M2M requires `oauthClientId`/,
+        );
+      }
+    });
+
+    it('rejects Azure host + a blank/reserved oauthClientSecret (as unusable as missing)', () => {
+      for (const badSecret of ['   ', 'undefined', 'NULL']) {
+        const opts: ConnectionOptions = {
+          host: 'adb-12345.0.azuredatabricks.net',
+          path: '/sql/1.0/warehouses/abc',
+          authType: 'databricks-oauth',
+          oauthClientId: 'entra-app-id',
+          oauthClientSecret: badSecret,
+        };
+
+        expect(() => buildKernelConnectionOptions(opts), `for oauthClientSecret=${JSON.stringify(badSecret)}`).to.throw(
+          HiveDriverError,
+          /Azure service-principal M2M requires a non-blank `oauthClientSecret`/,
+        );
+      }
+    });
+
+    it('routes Azure host + useDatabricksOAuthInAzure:true + secret to in-house OAuthM2m', () => {
+      // `useDatabricksOAuthInAzure: true` opts into the in-house
+      // (workspace-federated) flow — for M2M that is the kernel's generic
+      // workspace-OIDC client-credentials (OAuthM2m), which works on Azure hosts.
       const opts: ConnectionOptions = {
         host: 'adb-12345.0.azuredatabricks.net',
         path: '/sql/1.0/warehouses/abc',
@@ -153,10 +300,16 @@ describe('KernelAuth + KernelBackend — OAuth M2M auth flow', () => {
         useDatabricksOAuthInAzure: true,
       };
 
-      expect(() => buildKernelConnectionOptions(opts)).to.throw(
-        HiveDriverError,
-        /Azure-direct OAuth.*is not supported/,
-      );
+      const native = buildKernelConnectionOptions(opts);
+      expectNativeConnectionOptions(native, {
+        hostName: 'adb-12345.0.azuredatabricks.net',
+        httpPath: '/sql/1.0/warehouses/abc',
+        intervalsAsString: true,
+        authMode: 'OAuthM2m',
+        oauthClientId: 'client-uuid',
+        oauthClientSecret: 'dose-fake-secret',
+        oauthScopes: ['all-apis'],
+      });
     });
 
     it('rejects a `persistence` hook on M2M (no cache needed)', () => {

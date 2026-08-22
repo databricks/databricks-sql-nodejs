@@ -111,8 +111,8 @@ describe('KernelAuth — PAT auth options builder', () => {
       );
     });
 
-    it('rejects external-token, static-token, and custom auth modes', () => {
-      const authTypes = ['external-token', 'static-token', 'custom'] as const;
+    it('rejects external-token and custom auth modes', () => {
+      const authTypes = ['external-token', 'custom'] as const;
       for (const authType of authTypes) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const opts = {
