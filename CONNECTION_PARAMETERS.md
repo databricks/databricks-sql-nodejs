@@ -62,7 +62,7 @@ column.
 | `oauthScopes`                                  | `Array<string>`                                              |    ❌    |    ✅    | U2M `['sql','offline_access']`, M2M `['all-apis']` | **Thrift ignores `oauthScopes`** — `createAuthProvider` never threads it into `DatabricksOAuth`, so `authenticate()` always falls back to `defaultOAuthScopes` (`['sql','offline_access']`). Only the kernel honors a custom `oauthScopes`; its defaults happen to match Thrift's fallback.                                                           |
 | `oauthClientId` (U2M)                          | `string`                                                     |    ✅    |    ✅    | napi default `client_id` when absent               | The kernel adapter (`buildKernelConnectionOptions`) forwards a custom `oauthClientId` verbatim on the U2M arm; when it is absent the napi binding applies its own default `client_id`. Whether the native binding then honors or rejects a custom id is not observable from this repo — the TypeScript layer neither hardcodes an id nor rejects one. |
 | `oauthClientId` + no secret                    | `string`                                                     | ✅ (U2M) | ✅ (U2M) | —                                                  | **Parity.** The kernel keys flow selection off `oauthClientSecret` presence exactly like Thrift, so `oauthClientId` + no secret routes to **U2M** (with the id forwarded) — it does **not** throw an M2M "secret required" error.                                                                                                                     |
-| `azureTenantId` / `useDatabricksOAuthInAzure`  | `string` / `boolean`                                         |    ✅    |    ⚠️    | —                                                  | **Honored on both.** Kernel: on an Azure host, `databricks-oauth` **M2M** (secret present) with `useDatabricksOAuthInAzure` absent/`false` routes to Entra-direct service-principal M2M (native `AzureSpM2m` mode, creds ride `oauthClientId`/`oauthClientSecret`); `true` routes to workspace-OIDC M2M. `azureTenantId` is optional (kernel auto-discovers from the workspace `/aad/auth` redirect when omitted). **U2M** ignores the flag — the kernel's cloud-blind in-house flow works against Azure. One divergence: the kernel treats `.databricks.azure.us` as Azure in every arm, whereas Thrift's `useDatabricksOAuthInAzure`-true arm does not. (`lib/kernel/KernelAuth.ts` `buildKernelConnectionOptions`.) |
+| `azureTenantId` / `useDatabricksOAuthInAzure`  | `string` / `boolean`                                         |    ✅    |    ✅    | —                                                  | **Honored on both.** By design the kernel routes **all U2M** (no secret, any cloud) to its cloud-blind in-house OAuth U2M flow — there is no Azure-specific U2M mode, so `useDatabricksOAuthInAzure` is inert on U2M and every Azure workspace (including `.databricks.azure.us` US-gov) is always supported. `useDatabricksOAuthInAzure` selects only the **M2M** mechanism on an Azure host: absent/`false` → Entra-direct service-principal M2M (native `AzureSpM2m` mode, creds ride `oauthClientId`/`oauthClientSecret`, `azureTenantId` optional — kernel auto-discovers from the workspace `/aad/auth` redirect when omitted); `true` → workspace-OIDC M2M. (`lib/kernel/KernelAuth.ts` `buildKernelConnectionOptions`.) |
 | `persistence` (custom OAuth token store)       | `OAuthPersistence`                                           |    ✅    |    ❌    | —                                                  | **Thrift-only.** Kernel throws; it auto-persists U2M tokens to `~/.config/databricks-sql-kernel/oauth/` and does not cache M2M.                                                                                                                                                                                                                       |
 | `enableTokenFederation` / `federationClientId` | `boolean` / `string`                                         |    ✅    |    ⚠️    | `false` / —                                        | On the kernel backend these options apply only to `static-token`. Federation is always enabled, so `enableTokenFederation` is ignored; an omitted or empty client ID selects account-wide WIF and a non-empty ID selects SP-wide WIF. Thrift honors the boolean and also supports these options for `token-provider` and `external-token`.            |
 
@@ -186,12 +186,12 @@ backend, so they are read regardless of `useKernel`. Defaults are sourced from
   kernel path (kernel default kept).
 - **`configuration`** is allowlist-filtered on the kernel path but forwarded
   more freely on Thrift.
-- **Azure OAuth flow selection** differs in mechanism. Both backends honor
-  `azureTenantId` / `useDatabricksOAuthInAzure`, but the kernel routes Entra-
-  direct M2M through a dedicated native `AzureSpM2m` mode (auto-discovering the
-  tenant when `azureTenantId` is omitted) and treats U2M as cloud-blind, while
-  Thrift builds the Azure authorize URL in-process. The kernel also treats
-  `.databricks.azure.us` as Azure in every arm; Thrift's
-  `useDatabricksOAuthInAzure`-true arm does not.
+- **Azure OAuth** is honored on both, but the mechanism differs. The kernel
+  runs a cloud-blind in-house flow for **all U2M**, so every Azure workspace —
+  including `.databricks.azure.us` (US-gov) — is always supported; Thrift's
+  `useDatabricksOAuthInAzure`-true arm instead rejects US-gov hosts. For
+  **M2M** the kernel routes Entra-direct through a native `AzureSpM2m` mode
+  (auto-discovering `azureTenantId` when omitted), whereas Thrift builds the
+  Azure authorize URL in-process.
 
 > All kernel-path behavior reflects the **M0 stub** and is subject to change.
