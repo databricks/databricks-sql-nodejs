@@ -251,6 +251,7 @@ export type KernelNativeConnectionOptions = KernelSessionDefaults &
         oauthRedirectPort: number;
         oauthScopes?: Array<string>;
         oauthClientId?: string;
+        tokenCacheEnabled?: boolean;
       }
     | {
         hostName: string;
@@ -669,6 +670,7 @@ export function buildKernelConnectionOptions(options: ConnectionOptions): Kernel
     oauthScopes?: Array<string>;
     azureTenantId?: string;
     useDatabricksOAuthInAzure?: boolean;
+    tokenCacheEnabled?: boolean;
     persistence?: unknown;
   };
 
@@ -833,6 +835,9 @@ export function buildKernelConnectionOptions(options: ConnectionOptions): Kernel
         // Scopes default to Thrift parity (`sql offline_access`); overridable.
         oauthScopes:
           Array.isArray(oauth.oauthScopes) && oauth.oauthScopes.length > 0 ? oauth.oauthScopes : U2M_DEFAULT_SCOPES,
+        // Token cache is disabled by default for security (silent-no-persist parity);
+        // explicitly set to false unless the caller opts in.
+        tokenCacheEnabled: oauth.tokenCacheEnabled ?? false,
       };
       // clientId: Thrift uses `oauthClientId ?? default`. Forward it verbatim
       // when set; when absent the napi applies the same default
