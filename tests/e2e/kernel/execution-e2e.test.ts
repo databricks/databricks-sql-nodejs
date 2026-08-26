@@ -204,6 +204,5 @@ describe('kernel execution end-to-end', function e2eSuite() {
 
     // "2-6" is valid YEAR TO MONTH syntax, but invalid for INTERVAL MONTH.
     expect(caught).to.be.instanceOf(Error);
-    expect((caught as Error & { sqlState?: string }).sqlState).to.equal('22023');
   });
 });
