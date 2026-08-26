@@ -56,7 +56,15 @@ function decimalPrecisionScale(v: string): string {
   return `${precision},${scale}`;
 }
 
-/** Convert a parameter to the raw napi shape without dropping SQL type qualifiers. */
+/**
+ * Reduce a `DBSQLParameter | DBSQLParameterValue` to the napi
+ * `RawParameterInput` (`{ name?, sqlType, value? }`) accepted by the kernel's
+ * raw-parameter path. Reuses `DBSQLParameter.toSparkParameter` — the same
+ * type-inference + value-stringification the Thrift backend uses — then adapts
+ * the type name where required:
+ * - DECIMAL → `DECIMAL(p,s)` (parenthesised form required)
+ * - a missing value ⇒ SQL NULL.
+ */
 function toRawParameterInput(value: DBSQLParameter | DBSQLParameterValue): KernelNativeRawParameterInput {
   const param = value instanceof DBSQLParameter ? value : new DBSQLParameter({ value });
   const spark = param.toSparkParameter();
@@ -76,7 +84,12 @@ function toRawParameterInput(value: DBSQLParameter | DBSQLParameterValue): Kerne
   return { sqlType, value: stringValue };
 }
 
-/** Build positional raw parameters; the kernel assigns their 1-based ordinals. */
+/**
+ * Convert the public `ordinalParameters` option into the napi
+ * `rawParams` array (1-based `?` placeholders). Returns `undefined`
+ * when none were supplied, so the caller can keep the minimal no-options
+ * call shape.
+ */
 export function buildKernelPositionalParams(
   ordinalParameters?: Array<DBSQLParameter | DBSQLParameterValue>,
 ): Array<KernelNativeRawParameterInput> | undefined {
@@ -89,7 +102,12 @@ export function buildKernelPositionalParams(
   });
 }
 
-/** Build named raw parameters while preserving marker names. */
+/**
+ * Convert the public `namedParameters` option (`Record<name, value>`) into
+ * the napi `rawParams` array (`:name` placeholders). Each value reuses the
+ * same `toRawParameterInput` mapping (DECIMAL → DECIMAL(p,s), NULL → VOID, …),
+ * then carries its name. Returns `undefined` when none were supplied.
+ */
 export function buildKernelNamedParams(
   namedParameters?: Record<string, DBSQLParameter | DBSQLParameterValue>,
 ): Array<KernelNativeRawParameterInput> | undefined {

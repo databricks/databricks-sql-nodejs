@@ -54,7 +54,12 @@ export type KernelArrowSchema = NativeArrowSchema;
 export type KernelConnection = NativeConnection;
 export type KernelStatement = NativeStatement;
 
-// Re-export the napi-generated parameter types to stay aligned with the kernel.
+// Per-statement execution options and bound-parameter inputs are kernel
+// concerns: the napi binding generates the canonical shapes (`positionalParams`
+// / `namedParams` as `TypedValueInput` / `NamedTypedValueInput`, `rawParams` as
+// `RawParameterInput`, plus `rowLimit`, `statementConf`, `queryTags`). We re-export
+// rather than re-declare so the driver-side param codec can never drift from
+// the kernel contract.
 export type KernelNativeExecuteOptions = NativeExecuteOptions;
 export type KernelNativeTypedValueInput = NativeTypedValueInput;
 export type KernelNativeNamedTypedValueInput = NativeNamedTypedValueInput;
