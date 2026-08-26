@@ -731,6 +731,23 @@ describe('KernelSessionBackend', () => {
     expect(options.rawParams?.[0]).to.deep.equal({ name: 'x', sqlType: 'INTEGER', value: '7' });
   });
 
+  it('executeStatement (runAsync: true) forwards named NULL and empty string through napi rawParams', async () => {
+    const connection = new FakeNativeConnection();
+    const session = makeSession(connection);
+    await session.executeStatement('SELECT :null_value, :empty_value', {
+      namedParameters: { null_value: null, empty_value: '' },
+      runAsync: true,
+    });
+    const options = connection.lastOptions as {
+      rawParams?: Array<{ name?: string; sqlType: string; value?: string }>;
+    };
+    expect(connection.lastAsyncStatement, 'runAsync should use submitStatement').to.not.equal(undefined);
+    expect(options.rawParams).to.deep.equal([
+      { name: 'null_value', sqlType: 'VOID' },
+      { name: 'empty_value', sqlType: 'STRING', value: '' },
+    ]);
+  });
+
   it('executeStatement preserves a qualified INTERVAL type in napi rawParams', async () => {
     const connection = new FakeNativeConnection();
     const session = makeSession(connection);

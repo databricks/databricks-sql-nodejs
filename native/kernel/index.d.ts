@@ -1041,8 +1041,7 @@ export interface ConnectionOptions {
  * `rowLimit` (SEA `row_limit`) is exposed here and threaded onto the kernel
  * `StatementSpec`. `positionalParams` (`?`) and `namedParams` (`:name`)
  * carry bound query parameters, decoded via `params::parse_typed_value`.
- * `rawParams` carries pre-marshalled parameters whose SQL type must be
- * preserved verbatim on the SEA wire (for example `INTERVAL MONTH`).
+ * `rawParams` forwards pre-marshalled SEA parameters unchanged.
  * (There is no `queryTimeoutSecs`: it abused the SEA `wait_timeout` inline-hold
  * window and was removed — a real per-statement timeout is `STATEMENT_TIMEOUT`.)
  *
@@ -1109,16 +1108,9 @@ export interface ExecuteOptions {
    */
   namedParams?: Array<NamedTypedValueInput>
   /**
-   * Pre-marshalled SEA parameters. The SQL type and string value are sent
-   * verbatim through `StatementSpec::param_raw`, bypassing `TypedValue`
-   * conversion. This preserves qualified types such as `INTERVAL MONTH`
-   * and `INTERVAL DAY` that the generic `TypedValue::Interval` cannot
-   * represent.
-   *
-   * Omit `name` for positional parameters (ordinals are assigned 1-based
-   * in array order); include it for named parameters. Raw parameters are
-   * mutually exclusive with `positionalParams` / `namedParams`, and a raw
-   * list cannot mix named and positional markers.
+   * Pre-marshalled parameters passed through `StatementSpec::param_raw`.
+   * Omit `name` for positional values. Raw parameters cannot be mixed with
+   * typed parameters or combine named and positional markers.
    */
   rawParams?: Array<RawParameterInput>
 }
@@ -1271,18 +1263,8 @@ export interface TypedValueInput {
 }
 
 /**
- * JS-visible pre-marshalled SEA parameter.
- *
- * Unlike [`TypedValueInput`], this shape bypasses the kernel's
- * `(sql_type, value) -> TypedValue` codec and preserves `sql_type` verbatim on
- * the SEA wire. This is required for qualified types such as
- * `INTERVAL MONTH` and `INTERVAL DAY`, whose qualifier cannot be represented
- * by the kernel's generic `TypedValue::Interval` variant.
- *
- * `name: None` denotes a positional marker; the kernel assigns 1-based
- * ordinals in array order. `name: Some(...)` denotes a named marker. A single
- * statement must not mix named and positional raw parameters, or raw and
- * typed parameters; `StatementSpec` enforces both rules before dispatch.
+ * A pre-marshalled SEA parameter that preserves `sql_type` verbatim.
+ * Omit `name` for positional markers; the kernel assigns their ordinals.
  */
 export interface RawParameterInput {
   /** Named marker name. Omit for a positional marker. */

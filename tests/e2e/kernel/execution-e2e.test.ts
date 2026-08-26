@@ -122,6 +122,55 @@ describe('kernel execution end-to-end', function e2eSuite() {
     await client.close();
   });
 
+  it('binds ordinary positional parameters through rawParams', async () => {
+    const client = new DBSQLClient();
+
+    await client.connect({
+      host: hostName as string,
+      path: httpPath as string,
+      token: token as string,
+      useKernel: true,
+    } as ConnectionOptions & InternalConnectionOptions);
+
+    const session = await client.openSession({ initialCatalog: 'main' });
+    let operation;
+    try {
+      operation = await session.executeStatement('SELECT ? AS p_int, ? AS p_string, ? AS p_bool', {
+        ordinalParameters: [42, 'hello', true],
+      });
+      expect(await operation.fetchAll()).to.deep.equal([{ p_int: 42, p_string: 'hello', p_bool: true }]);
+    } finally {
+      await operation?.close();
+      await session.close();
+      await client.close();
+    }
+  });
+
+  it('binds named NULL and empty string through rawParams on the async path', async () => {
+    const client = new DBSQLClient();
+
+    await client.connect({
+      host: hostName as string,
+      path: httpPath as string,
+      token: token as string,
+      useKernel: true,
+    } as ConnectionOptions & InternalConnectionOptions);
+
+    const session = await client.openSession({ initialCatalog: 'main' });
+    let operation;
+    try {
+      operation = await session.executeStatement('SELECT :null_value AS null_value, :empty_value AS empty_value', {
+        namedParameters: { null_value: null, empty_value: '' },
+        runAsync: true,
+      });
+      expect(await operation.fetchAll()).to.deep.equal([{ null_value: null, empty_value: '' }]);
+    } finally {
+      await operation?.close();
+      await session.close();
+      await client.close();
+    }
+  });
+
   it('preserves INTERVAL MONTH on the SEA wire', async () => {
     const client = new DBSQLClient();
 
