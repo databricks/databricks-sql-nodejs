@@ -26,6 +26,13 @@ type AuthOptions =
       // U2M flow to `['sql', 'offline_access']` (parity with the Thrift driver's
       // `defaultOAuthScopes`), overriding the kernel's bare `all-apis offline_access`.
       oauthScopes?: Array<string>;
+      // Enable the kernel's built-in on-disk OAuth token cache for U2M flows only.
+      // When `true`, the kernel persists the U2M refresh token (AES-256 encrypted) to
+      // `~/.config/databricks-sql-kernel/oauth/`. When `false` or omitted, tokens remain
+      // in-memory only (the default, for security and silent-no-persist behavior parity).
+      // Has no effect on M2M or other auth types. This option is distinct from the
+      // Thrift `persistence` custom-store hook, which is not yet supported on the kernel.
+      tokenCacheEnabled?: boolean;
     }
   | {
       authType: 'custom';

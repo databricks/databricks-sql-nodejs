@@ -680,6 +680,13 @@ export interface ConnectionOptions {
    */
   tokenUrl?: string
   /**
+   * U2M on-disk token-cache control (kernel path). Omitted ⇒ the kernel
+   * default (cache enabled, encrypted under a machine-local key, survives
+   * restarts). `false` disables on-disk persistence (re-login each fresh
+   * process); `true` keeps it enabled. Applies to [`AuthMode::OAuthU2m`].
+   */
+  tokenCacheEnabled?: boolean
+  /**
    * Path to the PEM private-key file. Required for
    * [`AuthMode::OAuthM2mJwt`].
    */

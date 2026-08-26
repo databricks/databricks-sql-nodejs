@@ -37,6 +37,7 @@ describe('KernelAuth + KernelBackend — OAuth U2M auth flow', () => {
         authMode: 'OAuthU2m',
         oauthRedirectPort: 8030,
         oauthScopes: ['sql', 'offline_access'],
+        tokenCacheEnabled: false,
       });
     });
 
@@ -122,6 +123,7 @@ describe('KernelAuth + KernelBackend — OAuth U2M auth flow', () => {
         authMode: 'OAuthU2m',
         oauthRedirectPort: 8030,
         oauthScopes: ['sql', 'offline_access'],
+        tokenCacheEnabled: false,
       });
     });
 
@@ -144,7 +146,33 @@ describe('KernelAuth + KernelBackend — OAuth U2M auth flow', () => {
         authMode: 'OAuthU2m',
         oauthRedirectPort: 8030,
         oauthScopes: ['sql', 'offline_access'],
+        tokenCacheEnabled: false,
       });
+    });
+
+    it('disables tokenCacheEnabled by default (silent-no-persist parity)', () => {
+      const opts: ConnectionOptions = {
+        host: 'example.cloud.databricks.com',
+        path: '/sql/1.0/warehouses/abc',
+        authType: 'databricks-oauth',
+      };
+
+      const native = buildKernelConnectionOptions(opts);
+      expect(native.authMode).to.equal('OAuthU2m');
+      expect((native as { tokenCacheEnabled?: boolean }).tokenCacheEnabled).to.equal(false);
+    });
+
+    it('honors tokenCacheEnabled: true to enable the kernel on-disk token cache', () => {
+      const opts: ConnectionOptions = {
+        host: 'example.cloud.databricks.com',
+        path: '/sql/1.0/warehouses/abc',
+        authType: 'databricks-oauth',
+        tokenCacheEnabled: true,
+      } as ConnectionOptions;
+
+      const native = buildKernelConnectionOptions(opts);
+      expect(native.authMode).to.equal('OAuthU2m');
+      expect((native as { tokenCacheEnabled?: boolean }).tokenCacheEnabled).to.equal(true);
     });
 
     it('rejects a `persistence` hook on U2M citing the AuthConfig::External kernel-plumbing gap', () => {
@@ -187,6 +215,7 @@ describe('KernelAuth + KernelBackend — OAuth U2M auth flow', () => {
         authMode: 'OAuthU2m',
         oauthRedirectPort: 8030,
         oauthScopes: ['sql', 'offline_access'],
+        tokenCacheEnabled: false,
       });
 
       await session.close();
