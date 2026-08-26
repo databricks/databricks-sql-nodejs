@@ -14,7 +14,7 @@
 
 import { DBSQLParameter, DBSQLParameterValue } from '../DBSQLParameter';
 import ParameterError from '../errors/ParameterError';
-import { KernelNativeTypedValueInput, KernelNativeNamedTypedValueInput } from './KernelNativeLoader';
+import { KernelNativeRawParameterInput } from './KernelNativeLoader';
 import assertBindableValue from './KernelInputValidation';
 
 /**
@@ -56,17 +56,8 @@ function decimalPrecisionScale(v: string): string {
   return `${precision},${scale}`;
 }
 
-/**
- * Reduce a `DBSQLParameter | DBSQLParameterValue` to the napi
- * `TypedValueInput` (`{ sqlType, value? }`) the kernel's positional-param
- * codec (`parse_typed_value`) accepts. Reuses `DBSQLParameter.toSparkParameter`
- * — the same type-inference + value-stringification the Thrift backend uses —
- * then adapts the type name to the codec's expectations:
- * - DECIMAL → `DECIMAL(p,s)` (parenthesised form required)
- * - INTERVAL * → `INTERVAL` (the codec's single interval type name)
- * - a missing value ⇒ SQL NULL (`parse_typed_value` maps `value: None` to NULL).
- */
-function toTypedValueInput(value: DBSQLParameter | DBSQLParameterValue): KernelNativeTypedValueInput {
+/** Convert a parameter to the raw napi shape without dropping SQL type qualifiers. */
+function toRawParameterInput(value: DBSQLParameter | DBSQLParameterValue): KernelNativeRawParameterInput {
   const param = value instanceof DBSQLParameter ? value : new DBSQLParameter({ value });
   const spark = param.toSparkParameter();
   const stringValue = spark.value?.stringValue ?? undefined;
@@ -81,44 +72,32 @@ function toTypedValueInput(value: DBSQLParameter | DBSQLParameterValue): KernelN
   const upper = sqlType.toUpperCase();
   if (upper === 'DECIMAL') {
     sqlType = `DECIMAL(${decimalPrecisionScale(stringValue)})`;
-  } else if (upper.startsWith('INTERVAL')) {
-    sqlType = 'INTERVAL';
   }
   return { sqlType, value: stringValue };
 }
 
-/**
- * Convert the public `ordinalParameters` option into the napi
- * `positionalParams` array (1-based `?` placeholders). Returns `undefined`
- * when none were supplied, so the caller can keep the minimal no-options
- * call shape.
- */
+/** Build positional raw parameters; the kernel assigns their 1-based ordinals. */
 export function buildKernelPositionalParams(
   ordinalParameters?: Array<DBSQLParameter | DBSQLParameterValue>,
-): Array<KernelNativeTypedValueInput> | undefined {
+): Array<KernelNativeRawParameterInput> | undefined {
   if (ordinalParameters === undefined || ordinalParameters.length === 0) {
     return undefined;
   }
   return ordinalParameters.map((value, i) => {
     assertBindableValue(value, `ordinalParameters[${i}]`);
-    return toTypedValueInput(value);
+    return toRawParameterInput(value);
   });
 }
 
-/**
- * Convert the public `namedParameters` option (`Record<name, value>`) into
- * the napi `namedParams` array (`:name` placeholders). Each value reuses the
- * same `toTypedValueInput` mapping (DECIMAL → DECIMAL(p,s), NULL → VOID, …),
- * then carries its name. Returns `undefined` when none were supplied.
- */
+/** Build named raw parameters while preserving marker names. */
 export function buildKernelNamedParams(
   namedParameters?: Record<string, DBSQLParameter | DBSQLParameterValue>,
-): Array<KernelNativeNamedTypedValueInput> | undefined {
+): Array<KernelNativeRawParameterInput> | undefined {
   if (namedParameters === undefined || Object.keys(namedParameters).length === 0) {
     return undefined;
   }
   return Object.keys(namedParameters).map((name) => {
     assertBindableValue(namedParameters[name], `namedParameters[${name}]`);
-    return { name, ...toTypedValueInput(namedParameters[name]) };
+    return { name, ...toRawParameterInput(namedParameters[name]) };
   });
 }

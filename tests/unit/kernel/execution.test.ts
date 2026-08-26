@@ -27,6 +27,7 @@ import ParameterError from '../../../lib/errors/ParameterError';
 import OperationStateError, { OperationStateErrorCode } from '../../../lib/errors/OperationStateError';
 import { ConnectionOptions } from '../../../lib/contracts/IDBSQLClient';
 import { OperationState } from '../../../lib/contracts/OperationStatus';
+import { DBSQLParameter, DBSQLParameterType } from '../../../lib/DBSQLParameter';
 
 // -----------------------------------------------------------------------------
 // Fakes — minimal stand-ins for the napi-rs generated surface and the
@@ -708,26 +709,36 @@ describe('KernelSessionBackend', () => {
     expect(connection.statementToReturn.cancelled, 'cancel reaches the terminal statement').to.equal(true);
   });
 
-  it('executeStatement forwards ordinalParameters as napi positionalParams', async () => {
+  it('executeStatement forwards ordinalParameters through napi rawParams', async () => {
     const connection = new FakeNativeConnection();
     const session = makeSession(connection);
     await session.executeStatement('SELECT ?', { ordinalParameters: [42, 'hi'] });
-    const options = connection.lastOptions as { positionalParams?: Array<{ sqlType: string; value?: string }> };
+    const options = connection.lastOptions as { rawParams?: Array<{ sqlType: string; value?: string }> };
     expect(options, 'options should be passed').to.not.equal(undefined);
-    expect(options.positionalParams).to.have.length(2);
-    expect(options.positionalParams?.[0]).to.deep.equal({ sqlType: 'INTEGER', value: '42' });
-    expect(options.positionalParams?.[1]).to.deep.equal({ sqlType: 'STRING', value: 'hi' });
+    expect(options.rawParams).to.have.length(2);
+    expect(options.rawParams?.[0]).to.deep.equal({ sqlType: 'INTEGER', value: '42' });
+    expect(options.rawParams?.[1]).to.deep.equal({ sqlType: 'STRING', value: 'hi' });
   });
 
-  it('executeStatement forwards namedParameters as napi namedParams (:name carried)', async () => {
+  it('executeStatement forwards namedParameters through napi rawParams (:name carried)', async () => {
     const connection = new FakeNativeConnection();
     const session = makeSession(connection);
     await session.executeStatement('SELECT :x', { namedParameters: { x: 7 } });
     const options = connection.lastOptions as {
-      namedParams?: Array<{ name: string; sqlType: string; value?: string }>;
+      rawParams?: Array<{ name?: string; sqlType: string; value?: string }>;
     };
-    expect(options.namedParams).to.have.length(1);
-    expect(options.namedParams?.[0]).to.deep.equal({ name: 'x', sqlType: 'INTEGER', value: '7' });
+    expect(options.rawParams).to.have.length(1);
+    expect(options.rawParams?.[0]).to.deep.equal({ name: 'x', sqlType: 'INTEGER', value: '7' });
+  });
+
+  it('executeStatement preserves a qualified INTERVAL type in napi rawParams', async () => {
+    const connection = new FakeNativeConnection();
+    const session = makeSession(connection);
+    await session.executeStatement('SELECT ?', {
+      ordinalParameters: [new DBSQLParameter({ type: DBSQLParameterType.INTERVALMONTH, value: '2-6' })],
+    });
+    const options = connection.lastOptions as { rawParams?: Array<{ sqlType: string; value?: string }> };
+    expect(options.rawParams).to.deep.equal([{ sqlType: 'INTERVAL MONTH', value: '2-6' }]);
   });
 
   it('executeStatement sends no options object on the no-params path', async () => {

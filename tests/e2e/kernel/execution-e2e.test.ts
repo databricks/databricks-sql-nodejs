@@ -13,7 +13,7 @@
 // limitations under the License.
 
 import { expect } from 'chai';
-import { DBSQLClient } from '../../../lib';
+import { DBSQLClient, DBSQLParameter, DBSQLParameterType } from '../../../lib';
 import { ConnectionOptions } from '../../../lib/contracts/IDBSQLClient';
 import { InternalConnectionOptions } from '../../../lib/contracts/InternalConnectionOptions';
 
@@ -120,5 +120,41 @@ describe('kernel execution end-to-end', function e2eSuite() {
 
     await session.close();
     await client.close();
+  });
+
+  it('preserves INTERVAL MONTH on the SEA wire', async () => {
+    const client = new DBSQLClient();
+
+    await client.connect({
+      host: hostName as string,
+      path: httpPath as string,
+      token: token as string,
+      useKernel: true,
+    } as ConnectionOptions & InternalConnectionOptions);
+
+    const session = await client.openSession({ initialCatalog: 'main' });
+    let operation;
+    let caught: unknown;
+    try {
+      operation = await session.executeStatement('SELECT ?', {
+        ordinalParameters: [
+          new DBSQLParameter({
+            type: DBSQLParameterType.INTERVALMONTH,
+            value: '2-6',
+          }),
+        ],
+      });
+      await operation.fetchAll();
+    } catch (error) {
+      caught = error;
+    } finally {
+      await operation?.close();
+      await session.close();
+      await client.close();
+    }
+
+    // "2-6" is valid YEAR TO MONTH syntax, but invalid for INTERVAL MONTH.
+    expect(caught).to.be.instanceOf(Error);
+    expect((caught as Error & { sqlState?: string }).sqlState).to.equal('22023');
   });
 });
