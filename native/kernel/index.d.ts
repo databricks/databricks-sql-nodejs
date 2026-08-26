@@ -687,13 +687,6 @@ export interface ConnectionOptions {
    */
   tokenCacheEnabled?: boolean
   /**
-   * Optional passphrase for the U2M on-disk token cache (AES-256 key).
-   * Omitted/blank ⇒ a machine-local derived key. Supplying one is stronger.
-   * A passphrase with no explicit `tokenCacheEnabled` implies enabled.
-   * Applies to [`AuthMode::OAuthU2m`].
-   */
-  tokenCachePassphrase?: string
-  /**
    * Path to the PEM private-key file. Required for
    * [`AuthMode::OAuthM2mJwt`].
    */
