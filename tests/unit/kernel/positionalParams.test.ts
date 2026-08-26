@@ -34,7 +34,7 @@ describe('KernelPositionalParams.buildKernelPositionalParams', () => {
   const decimal = (value: string) => () =>
     buildKernelPositionalParams([new DBSQLParameter({ type: DBSQLParameterType.DECIMAL, value })]);
 
-  it('emits DECIMAL in the parenthesised DECIMAL(p,s) form required on the SEA wire', () => {
+  it('emits DECIMAL in the parenthesised DECIMAL(p,s) form the kernel codec requires', () => {
     expect(decimal('99.99')()).to.deep.equal([{ sqlType: 'DECIMAL(4,2)', value: '99.99' }]);
     expect(decimal('-123')()).to.deep.equal([{ sqlType: 'DECIMAL(3,0)', value: '-123' }]);
   });

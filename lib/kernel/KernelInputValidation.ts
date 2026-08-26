@@ -25,8 +25,9 @@ import ParameterError from '../errors/ParameterError';
  * rejection. `DBSQLParameter`, `Int64`, `Date`, and JS primitives are allowed.
  *
  * Parameter-marker counting and arity validation are intentionally NOT done
- * here: the kernel/server boundary owns those checks, so duplicating the
- * SQL-walk JS-side would only risk drift. The driver's sole bind-time job is this
+ * here: the kernel's `statement::params` codec owns that check and binds
+ * exactly one placeholder style per statement, so duplicating the SQL-walk
+ * JS-side would only risk drift. The driver's sole bind-time job is this
  * cheap, type-shape gate before the value crosses the napi boundary.
  */
 export default function assertBindableValue(value: DBSQLParameter | DBSQLParameterValue, label: string): void {
