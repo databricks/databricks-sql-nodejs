@@ -88,6 +88,10 @@ describe('kernel-auth e2e — OAuth U2M token cache (interactive)', function sui
 
   const cacheDir = kernelOAuthCacheDir();
   let backupDir: string | undefined;
+  // Only true once the gate has passed AND the backup has been taken. The
+  // `after` hook keys its destructive cleanup off this so a skipped run (gate
+  // env vars absent) never touches the developer's real on-disk cache.
+  let suiteActive = false;
 
   // Interactive browser login + live warehouse round-trip; give the human time.
   this.timeout(300_000);
@@ -103,9 +107,14 @@ describe('kernel-auth e2e — OAuth U2M token cache (interactive)', function sui
       backupDir = `${cacheDir}.e2e-backup-${process.pid}`;
       fs.renameSync(cacheDir, backupDir);
     }
+    suiteActive = true;
   });
 
   after(() => {
+    // A skipped run took no backup — leave the developer's cache untouched.
+    if (!suiteActive) {
+      return;
+    }
     // Remove whatever the test wrote, then restore the user's originals.
     if (fs.existsSync(cacheDir)) {
       fs.rmSync(cacheDir, { recursive: true, force: true });
