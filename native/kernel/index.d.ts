@@ -687,6 +687,13 @@ export interface ConnectionOptions {
    */
   tokenCacheEnabled?: boolean
   /**
+   * Optional passphrase for the U2M on-disk token cache (AES-256 key).
+   * Omitted/blank ⇒ a machine-local derived key. Supplying one is stronger.
+   * A passphrase with no explicit `tokenCacheEnabled` implies enabled.
+   * Applies to [`AuthMode::OAuthU2m`].
+   */
+  tokenCachePassphrase?: string
+  /**
    * Path to the PEM private-key file. Required for
    * [`AuthMode::OAuthM2mJwt`].
    */
@@ -1223,6 +1230,19 @@ export interface ProxyInput {
 }
 
 /**
+ * A pre-marshalled SEA parameter that preserves `sql_type` verbatim.
+ * Omit `name` for positional markers; the kernel assigns their ordinals.
+ */
+export interface RawParameterInput {
+  /** Named marker name. Omit for a positional marker. */
+  name?: string
+  /** Databricks SQL type name sent verbatim to SEA. */
+  sqlType: string
+  /** String-encoded value. `None` represents SQL NULL. */
+  value?: string
+}
+
+/**
  * Live-retarget the bridge's level (one of
  * `off`/`error`/`warn`/`info`/`debug`/`trace`, case-insensitive).
  */
@@ -1259,19 +1279,6 @@ export interface TypedValueInput {
    * regardless of `sql_type` — matches the connector's
    * `VoidParameter` shape and the pyo3 binding's contract.
    */
-  value?: string
-}
-
-/**
- * A pre-marshalled SEA parameter that preserves `sql_type` verbatim.
- * Omit `name` for positional markers; the kernel assigns their ordinals.
- */
-export interface RawParameterInput {
-  /** Named marker name. Omit for a positional marker. */
-  name?: string
-  /** Databricks SQL type name sent verbatim to SEA. */
-  sqlType: string
-  /** String-encoded value. `None` represents SQL NULL. */
   value?: string
 }
 
