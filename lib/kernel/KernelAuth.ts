@@ -822,8 +822,9 @@ export function buildKernelConnectionOptions(options: ConnectionOptions): Kernel
         throw new HiveDriverError(
           'kernel backend: `persistence` (custom OAuth token store) is not yet wired through ' +
             'to the kernel — requires `AuthConfig::External` plumbing. ' +
-            'Today the kernel auto-persists U2M tokens to ' +
-            '`~/.config/databricks-sql-kernel/oauth/` which works for the standard flow; ' +
+            'The kernel offers an optional built-in on-disk token cache at ' +
+            '`~/.config/databricks-sql-kernel/oauth/`, controlled by `tokenCacheEnabled` ' +
+            '(disabled by default); ' +
             "the JS-supplied hook (matching thrift's `OAuthPersistence` interface) lands " +
             'when the kernel exposes it.',
         );
