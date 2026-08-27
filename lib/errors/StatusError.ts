@@ -1,44 +1,21 @@
-import HiveDriverError from './HiveDriverError';
+import { TStatus } from '../../thrift/TCLIService_types';
 
-/** Protocol-neutral details for constructing a driver StatusError. */
-export interface StatusErrorOptions {
-  message?: string;
-  code?: number;
-  sqlState?: string;
-  infoMessages?: ReadonlyArray<string>;
-}
+export default class StatusError implements Error {
+  public name: string;
 
-/**
- * Legacy shape accepted by the original constructor. Keeping this structural
- * type means existing Thrift call sites remain source-compatible without making
- * StatusError itself depend on generated Thrift types.
- */
-interface LegacyStatusErrorOptions {
-  statusCode?: number;
-  errorMessage?: string;
-  errorCode?: number;
-  sqlState?: string;
-  infoMessages?: ReadonlyArray<string>;
-}
-
-export default class StatusError extends HiveDriverError {
-  public name = 'Status Error';
+  public message: string;
 
   public code: number;
 
-  public sqlState?: string;
+  public stack?: string;
 
-  constructor(options: StatusErrorOptions | LegacyStatusErrorOptions) {
-    const { message, code } = options as StatusErrorOptions;
-    const { errorMessage, errorCode } = options as LegacyStatusErrorOptions;
-    const normalizedMessage = message ?? errorMessage ?? '';
-    super(normalizedMessage);
+  constructor(status: TStatus) {
+    this.name = 'Status Error';
+    this.message = status.errorMessage || '';
+    this.code = status.errorCode || -1;
 
-    this.code = code ?? errorCode ?? -1;
-    this.sqlState = options.sqlState;
-
-    if (Array.isArray(options.infoMessages)) {
-      this.stack = options.infoMessages.join('\n');
+    if (Array.isArray(status.infoMessages)) {
+      this.stack = status.infoMessages.join('\n');
     }
   }
 }

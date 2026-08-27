@@ -25,7 +25,6 @@ import IDBSQLLogger, { LogLevel } from '../../../lib/contracts/IDBSQLLogger';
 import HiveDriverError from '../../../lib/errors/HiveDriverError';
 import ParameterError from '../../../lib/errors/ParameterError';
 import OperationStateError, { OperationStateErrorCode } from '../../../lib/errors/OperationStateError';
-import StatusError from '../../../lib/errors/StatusError';
 import { ConnectionOptions } from '../../../lib/contracts/IDBSQLClient';
 import { OperationState } from '../../../lib/contracts/OperationStatus';
 import { DBSQLParameter, DBSQLParameterType } from '../../../lib/DBSQLParameter';
@@ -839,51 +838,22 @@ describe('KernelSessionBackend', () => {
     expect(conf?.query_tags).to.contain('team:x').and.to.not.equal('manual-raw-value');
   });
 
-  it('maps a direct request rejection with no statement id to StatusError', async () => {
-    const envelope = `__databricks_error__:${JSON.stringify({
-      code: 'SqlError',
-      message: 'SUBMIT_BOOM',
-      sqlState: '22023',
-      queryId: '',
-    })}`;
-    const connection = new FakeNativeConnection();
-    connection.throwOnExecute = new Error(envelope);
-    const session = makeSession(connection);
-    let thrown: unknown;
-    try {
-      await session.executeStatement('SELECT 1', {});
-    } catch (err) {
-      thrown = err;
+  it('maps a submit-time kernel error via logAndMapError on both paths', async () => {
+    const envelope = `__databricks_error__:${JSON.stringify({ code: 'SqlError', message: 'SUBMIT_BOOM' })}`;
+    for (const opts of [{}, { runAsync: true }]) {
+      const connection = new FakeNativeConnection();
+      connection.throwOnExecute = new Error(envelope); // fails executeStatementDirect / submitStatement
+      const session = makeSession(connection);
+      let thrown: unknown;
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        await session.executeStatement('SELECT 1', opts);
+      } catch (err) {
+        thrown = err;
+      }
+      expect(thrown, `path ${JSON.stringify(opts)}`).to.be.instanceOf(HiveDriverError);
+      expect((thrown as Error).message).to.match(/SUBMIT_BOOM/);
     }
-
-    expect(thrown).to.be.instanceOf(StatusError);
-    expect(thrown).to.not.be.instanceOf(OperationStateError);
-    expect((thrown as Error).message).to.match(/SUBMIT_BOOM/);
-    expect((thrown as StatusError).sqlState).to.equal('22023');
-  });
-
-  it('keeps a direct terminal failure with a statement id as OperationStateError', async () => {
-    const connection = new FakeNativeConnection();
-    connection.throwOnExecute = new Error(
-      `__databricks_error__:${JSON.stringify({
-        code: 'SqlError',
-        message: 'TABLE_OR_VIEW_NOT_FOUND',
-        sqlState: '42P01',
-        queryId: '01ef-real-statement-id',
-      })}`,
-    );
-    const session = makeSession(connection);
-    let thrown: unknown;
-    try {
-      await session.executeStatement('SELECT * FROM missing_table', {});
-    } catch (err) {
-      thrown = err;
-    }
-
-    expect(thrown).to.be.instanceOf(OperationStateError);
-    expect(thrown).to.not.be.instanceOf(StatusError);
-    expect((thrown as OperationStateError).errorCode).to.equal(OperationStateErrorCode.Error);
-    expect((thrown as OperationStateError & { sqlState?: string }).sqlState).to.equal('42P01');
   });
 
   // Unsupported-on-kernel per-statement HINTS are NO-OPs (not errors) so Thrift-
@@ -1162,16 +1132,12 @@ describe('KernelOperationBackend — async (submitStatement) path', () => {
     expect(running?.numModifiedRows).to.equal(undefined);
   });
 
-  it('waitUntilReady() maps a failed statement with an id to OperationStateError', async () => {
+  it('waitUntilReady() surfaces the kernel error envelope on a Failed statement', async () => {
     const stmt = new FakeAsyncStatement('Failed');
     // The kernel rejects awaitResult() with a sentinel-framed structured error;
-    // a non-empty queryId means a real operation reached a failed state.
+    // decodeNapiKernelError turns it into a typed HiveDriverError.
     stmt.awaitResultError = new Error(
-      `__databricks_error__:${JSON.stringify({
-        code: 'SqlError',
-        message: 'TABLE_OR_VIEW_NOT_FOUND',
-        queryId: '01ef-real-statement-id',
-      })}`,
+      `__databricks_error__:${JSON.stringify({ code: 'SqlError', message: 'TABLE_OR_VIEW_NOT_FOUND' })}`,
     );
     const op = makeAsyncOp(stmt);
     let thrown: unknown;
@@ -1180,8 +1146,7 @@ describe('KernelOperationBackend — async (submitStatement) path', () => {
     } catch (err) {
       thrown = err;
     }
-    expect(thrown).to.be.instanceOf(OperationStateError);
-    expect((thrown as OperationStateError).errorCode).to.equal(OperationStateErrorCode.Error);
+    expect(thrown).to.be.instanceOf(HiveDriverError);
     expect((thrown as Error).message).to.match(/TABLE_OR_VIEW_NOT_FOUND/);
   });
 
