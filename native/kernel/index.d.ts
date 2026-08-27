@@ -1041,6 +1041,7 @@ export interface ConnectionOptions {
  * `rowLimit` (SEA `row_limit`) is exposed here and threaded onto the kernel
  * `StatementSpec`. `positionalParams` (`?`) and `namedParams` (`:name`)
  * carry bound query parameters, decoded via `params::parse_typed_value`.
+ * `rawParams` forwards pre-marshalled SEA parameters unchanged.
  * (There is no `queryTimeoutSecs`: it abused the SEA `wait_timeout` inline-hold
  * window and was removed — a real per-statement timeout is `STATEMENT_TIMEOUT`.)
  *
@@ -1106,6 +1107,12 @@ export interface ExecuteOptions {
    * mutually exclusive at the SQL level (`?` vs `:name`).
    */
   namedParams?: Array<NamedTypedValueInput>
+  /**
+   * Pre-marshalled parameters passed through `StatementSpec::param_raw`.
+   * Omit `name` for positional values. Raw parameters cannot be mixed with
+   * typed parameters or combine named and positional markers.
+   */
+  rawParams?: Array<RawParameterInput>
 }
 
 /**
@@ -1213,6 +1220,19 @@ export interface ProxyInput {
   username?: string
   password?: string
   bypassHosts?: string
+}
+
+/**
+ * A pre-marshalled SEA parameter that preserves `sql_type` verbatim.
+ * Omit `name` for positional markers; the kernel assigns their ordinals.
+ */
+export interface RawParameterInput {
+  /** Named marker name. Omit for a positional marker. */
+  name?: string
+  /** Databricks SQL type name sent verbatim to SEA. */
+  sqlType: string
+  /** String-encoded value. `None` represents SQL NULL. */
+  value?: string
 }
 
 /**

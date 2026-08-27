@@ -34,6 +34,7 @@ import type {
   ArrowBatch as NativeArrowBatch,
   ArrowSchema as NativeArrowSchema,
   ExecuteOptions as NativeExecuteOptions,
+  RawParameterInput as NativeRawParameterInput,
   AsyncStatement as NativeAsyncStatement,
   AsyncResultHandle as NativeAsyncResultHandle,
   CancellableExecution as NativeCancellableExecution,
@@ -51,15 +52,10 @@ export type KernelArrowSchema = NativeArrowSchema;
 export type KernelConnection = NativeConnection;
 export type KernelStatement = NativeStatement;
 
-// rawParams is available in the source-pinned kernel before its published types.
-export interface KernelNativeRawParameterInput {
-  name?: string;
-  sqlType: string;
-  value?: string;
-}
-export type KernelNativeExecuteOptions = NativeExecuteOptions & {
-  rawParams?: KernelNativeRawParameterInput[];
-};
+// Per-statement execution options and raw-parameter inputs come directly from
+// the generated kernel contract so the driver-side codec cannot drift.
+export type KernelNativeExecuteOptions = NativeExecuteOptions;
+export type KernelNativeRawParameterInput = NativeRawParameterInput;
 
 // Async-submit surface: `Connection.submitStatement` returns an
 // `AsyncStatement` (status / awaitResult / cancel / close); `awaitResult`
