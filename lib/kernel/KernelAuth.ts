@@ -697,10 +697,15 @@ export function buildKernelTelemetryOptions(
   if (Number.isFinite(config.telemetryFlushIntervalMs) && config.telemetryFlushIntervalMs! > 0) {
     telemetry.telemetryFlushIntervalMs = config.telemetryFlushIntervalMs;
   }
-  if (Number.isFinite(config.telemetryMaxRetries)) {
+  // `telemetryMaxRetries` and `telemetryRetryDelayMs` (from `telemetryBackoffBaseMs`)
+  // both document `0` as valid, so we don't require `> 0` like the fields above. But
+  // both are user-settable `ConnectionOptions` knobs, and a negative value mapped onto
+  // the kernel's unsigned retry count would be rejected or wrap — so guard `>= 0` to
+  // keep `0` valid while falling back to the kernel default for negatives.
+  if (Number.isFinite(config.telemetryMaxRetries) && config.telemetryMaxRetries! >= 0) {
     telemetry.telemetryMaxRetries = config.telemetryMaxRetries;
   }
-  if (Number.isFinite(config.telemetryBackoffBaseMs)) {
+  if (Number.isFinite(config.telemetryBackoffBaseMs) && config.telemetryBackoffBaseMs! >= 0) {
     telemetry.telemetryRetryDelayMs = config.telemetryBackoffBaseMs;
   }
   if (Number.isFinite(config.telemetryCloseTimeoutMs) && config.telemetryCloseTimeoutMs! > 0) {
