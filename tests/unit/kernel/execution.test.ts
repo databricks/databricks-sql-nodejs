@@ -598,7 +598,7 @@ describe('KernelBackend', () => {
       expect(args.telemetryMaxRetries).to.equal(2);
       expect(args.telemetryRetryDelayMs).to.equal(50);
       expect(args.telemetryCloseFlushTimeoutMs).to.equal(2_500);
-      expect(args.telemetryCircuitBreakerEnabled).to.equal(undefined);
+      expect(args.telemetryCircuitBreakerEnabled).to.equal(true);
       expect(args.telemetryCircuitBreakerThreshold).to.equal(3);
       expect(args.telemetryCircuitBreakerTimeoutMs).to.equal(60_000);
     } finally {

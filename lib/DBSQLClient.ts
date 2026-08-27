@@ -40,7 +40,7 @@ import TelemetryClientProvider from './telemetry/TelemetryClientProvider';
 import TelemetryEventEmitter from './telemetry/TelemetryEventEmitter';
 import MetricsAggregator from './telemetry/MetricsAggregator';
 import { DriverConfiguration, DRIVER_NAME, TelemetryEventType, DEFAULT_TELEMETRY_CONFIG } from './telemetry/types';
-import { safeEmit } from './telemetry/telemetryUtils';
+import { safeEmit, isTelemetryDisabledByEnv } from './telemetry/telemetryUtils';
 import driverVersion from './version';
 
 function prependSlash(str: string): string {
@@ -764,7 +764,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
     // expecting to enable telemetry.
     const envKill = process.env.DATABRICKS_TELEMETRY_DISABLED;
     const trimmedEnvKill = typeof envKill === 'string' ? envKill.trim() : '';
-    const envDisabled = trimmedEnvKill.length > 0 && /^(1|true|yes|on)$/i.test(trimmedEnvKill);
+    const envDisabled = isTelemetryDisabledByEnv();
     // Surface the misconfiguration: an ops engineer who sees the var name and
     // tries to "set it to false to keep telemetry on" otherwise gets the
     // opposite of what they expect (the var is then silently ignored, runtime

@@ -21,7 +21,7 @@ import HiveDriverError from '../errors/HiveDriverError';
 import { buildUserAgentString, normalizePemBytes } from '../utils';
 import driverVersion from '../version';
 import { DRIVER_NAME } from '../telemetry/types';
-import { sanitizeProcessName } from '../telemetry/telemetryUtils';
+import { sanitizeProcessName, isTelemetryDisabledByEnv } from '../telemetry/telemetryUtils';
 
 /**
  * Default local listener port for the U2M authorization-code callback.
@@ -622,7 +622,7 @@ export function buildKernelRetryOptions(config: {
 
 function getLocaleName(env: NodeJS.ProcessEnv = process.env): string {
   try {
-    const lang = env.LANG || env.LC_ALL || env.LC_MESSAGES || '';
+    const lang = env.LC_ALL || env.LC_MESSAGES || env.LANG || '';
     const match = lang.match(/^([a-z]{2}_[A-Z]{2})/);
     return match?.[1] ?? 'en_US';
   } catch {
@@ -645,11 +645,10 @@ function getProcessName(): string {
   }
 }
 
-export function isTelemetryDisabledByEnv(env: NodeJS.ProcessEnv = process.env): boolean {
-  const raw = env.DATABRICKS_TELEMETRY_DISABLED;
-  const trimmed = typeof raw === 'string' ? raw.trim() : '';
-  return trimmed.length > 0 && /^(1|true|yes|on)$/i.test(trimmed);
-}
+// Re-exported from the shared telemetry helper so the kernel opt-out and the
+// Thrift-path opt-out (DBSQLClient) parse `DATABRICKS_TELEMETRY_DISABLED`
+// through one implementation and can never drift.
+export { isTelemetryDisabledByEnv };
 
 export function buildKernelTelemetryOptions(
   config: Pick<
@@ -677,6 +676,13 @@ export function buildKernelTelemetryOptions(
     localeName: getLocaleName(),
     charSetEncoding: 'UTF-8',
     processName: getProcessName(),
+    // The JS/Thrift telemetry path always runs with a per-host circuit breaker
+    // (`CircuitBreakerRegistry` creates one unconditionally). Enable the kernel's
+    // breaker too so the `telemetryCircuitBreakerThreshold` / `...TimeoutMs` knobs
+    // forwarded below actually take effect — the napi `.d.ts` documents those two
+    // as applying only when the breaker is enabled, so if the kernel defaults it
+    // off they would silently do nothing.
+    telemetryCircuitBreakerEnabled: true,
     telemetryEnabled: (config.telemetryEnabled ?? true) && !isTelemetryDisabledByEnv(),
   };
 
