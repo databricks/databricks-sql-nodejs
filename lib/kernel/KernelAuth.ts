@@ -686,10 +686,15 @@ export function buildKernelTelemetryOptions(
     telemetryEnabled: (config.telemetryEnabled ?? true) && !isTelemetryDisabledByEnv(),
   };
 
-  if (Number.isFinite(config.telemetryBatchSize)) {
+  // `batchSize`, `flushIntervalMs`, and `closeFlushTimeoutMs` share the same napi
+  // contract constraint as the breaker fields below (`Must be greater than zero when
+  // supplied`), so a caller-supplied `0`/negative would forward verbatim and surface
+  // as a hard kernel `openSession` rejection. Treat any non-positive value as a
+  // misconfiguration and fall back to the kernel defaults, matching the breaker guard.
+  if (Number.isFinite(config.telemetryBatchSize) && config.telemetryBatchSize! > 0) {
     telemetry.telemetryBatchSize = config.telemetryBatchSize;
   }
-  if (Number.isFinite(config.telemetryFlushIntervalMs)) {
+  if (Number.isFinite(config.telemetryFlushIntervalMs) && config.telemetryFlushIntervalMs! > 0) {
     telemetry.telemetryFlushIntervalMs = config.telemetryFlushIntervalMs;
   }
   if (Number.isFinite(config.telemetryMaxRetries)) {
@@ -698,7 +703,7 @@ export function buildKernelTelemetryOptions(
   if (Number.isFinite(config.telemetryBackoffBaseMs)) {
     telemetry.telemetryRetryDelayMs = config.telemetryBackoffBaseMs;
   }
-  if (Number.isFinite(config.telemetryCloseTimeoutMs)) {
+  if (Number.isFinite(config.telemetryCloseTimeoutMs) && config.telemetryCloseTimeoutMs! > 0) {
     telemetry.telemetryCloseFlushTimeoutMs = config.telemetryCloseTimeoutMs;
   }
   // The breaker is forced on above, and the napi contract requires threshold/timeout
