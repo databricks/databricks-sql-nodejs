@@ -171,6 +171,35 @@ describe('kernel execution end-to-end', function e2eSuite() {
     }
   });
 
+  it('binds a valid INTERVAL MONTH on the SEA wire', async () => {
+    const client = new DBSQLClient();
+
+    await client.connect({
+      host: hostName as string,
+      path: httpPath as string,
+      token: token as string,
+      useKernel: true,
+    } as ConnectionOptions & InternalConnectionOptions);
+
+    const session = await client.openSession({ initialCatalog: 'main' });
+    let operation;
+    try {
+      operation = await session.executeStatement("SELECT ? = INTERVAL '13' MONTH AS matches", {
+        ordinalParameters: [
+          new DBSQLParameter({
+            type: DBSQLParameterType.INTERVALMONTH,
+            value: '13',
+          }),
+        ],
+      });
+      expect(await operation.fetchAll()).to.deep.equal([{ matches: true }]);
+    } finally {
+      await operation?.close();
+      await session.close();
+      await client.close();
+    }
+  });
+
   it('preserves INTERVAL MONTH on the SEA wire', async () => {
     const client = new DBSQLClient();
 
