@@ -33,6 +33,31 @@ export default function expectNativeConnectionOptions(actual: unknown, expectedR
   const { customHeaders, ...rest } = actual as Record<string, unknown> & {
     customHeaders?: Array<{ name: string; value: string }>;
   };
+
+  // The runtime-identity + telemetry block is injected by `KernelBackend` on
+  // the `openSession` path (via `buildKernelTelemetryOptions`), but NOT by the
+  // direct `buildKernelConnectionOptions` callers. When it is present, assert
+  // the shape of the always-present keys here so every `openSession` caller
+  // keeps them covered — otherwise a wrong-shape or spurious identity/telemetry
+  // value on a non-telemetry path would pass silently once the keys are
+  // stripped below. The exact config-derived telemetry values (batch size,
+  // retries, env-disable) stay pinned by the dedicated telemetry tests.
+  if ('driverName' in rest) {
+    expect(rest.driverName, 'driverName').to.equal('nodejs-sql-driver');
+    expect(rest.driverVersion, 'driverVersion').to.be.a('string').and.not.equal('');
+    expect(rest.runtimeName, 'runtimeName').to.equal('Node.js');
+    expect(rest.runtimeVersion, 'runtimeVersion').to.equal(process.version);
+    expect(rest.runtimeVendor, 'runtimeVendor').to.equal('Node.js Foundation');
+    expect(rest.osName, 'osName').to.equal(process.platform);
+    expect(rest.osVersion, 'osVersion').to.be.a('string').and.not.equal('');
+    expect(rest.osArch, 'osArch').to.be.a('string').and.not.equal('');
+    expect(rest.localeName, 'localeName').to.be.a('string').and.not.equal('');
+    expect(rest.charSetEncoding, 'charSetEncoding').to.equal('UTF-8');
+    expect(rest.processName, 'processName').to.be.a('string').and.not.equal('');
+    expect(rest.telemetryEnabled, 'telemetryEnabled').to.be.a('boolean');
+    expect(rest.telemetryCircuitBreakerEnabled, 'telemetryCircuitBreakerEnabled').to.equal(true);
+  }
+
   for (const key of [
     'driverName',
     'driverVersion',
