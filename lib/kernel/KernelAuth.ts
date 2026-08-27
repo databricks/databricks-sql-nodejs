@@ -701,10 +701,15 @@ export function buildKernelTelemetryOptions(
   if (Number.isFinite(config.telemetryCloseTimeoutMs)) {
     telemetry.telemetryCloseFlushTimeoutMs = config.telemetryCloseTimeoutMs;
   }
-  if (Number.isFinite(config.telemetryCircuitBreakerThreshold)) {
+  // The breaker is forced on above, and the napi contract requires threshold/timeout
+  // to be strictly positive when it is enabled. A caller-supplied `0` (or negative)
+  // would otherwise be forwarded verbatim and surface as a hard kernel `openSession`
+  // rejection, so treat any non-positive value as a misconfiguration and fall back to
+  // the kernel defaults (5 / 60000) instead.
+  if (Number.isFinite(config.telemetryCircuitBreakerThreshold) && config.telemetryCircuitBreakerThreshold! > 0) {
     telemetry.telemetryCircuitBreakerThreshold = config.telemetryCircuitBreakerThreshold;
   }
-  if (Number.isFinite(config.telemetryCircuitBreakerTimeout)) {
+  if (Number.isFinite(config.telemetryCircuitBreakerTimeout) && config.telemetryCircuitBreakerTimeout! > 0) {
     telemetry.telemetryCircuitBreakerTimeoutMs = config.telemetryCircuitBreakerTimeout;
   }
 

@@ -5,6 +5,7 @@ import DBSQLClient, { ThriftLibrary } from '../../lib/DBSQLClient';
 import DBSQLSession from '../../lib/DBSQLSession';
 import ThriftBackend from '../../lib/thrift-backend/ThriftBackend';
 import KernelBackend from '../../lib/kernel/KernelBackend';
+import * as KernelNativeLoader from '../../lib/kernel/KernelNativeLoader';
 
 import PlainHttpAuthentication from '../../lib/connection/auth/PlainHttpAuthentication';
 import DatabricksOAuth from '../../lib/connection/auth/DatabricksOAuth';
@@ -963,6 +964,13 @@ describe('DBSQLClient telemetry paths', () => {
       delete process.env.DATABRICKS_TELEMETRY_DISABLED;
       const client = new DBSQLClient();
       const initStub = sinon.stub(client as any, 'initializeTelemetry').resolves();
+      // DBSQLClient constructs `new KernelBackend({ context: this })` without
+      // injecting a `nativeBinding`, so the KernelBackend constructor calls
+      // `getKernelNative()`, which throws where the native `.node` artifact
+      // isn't built (e.g. CI). Stub the loader so construction succeeds and the
+      // assertion below tests the `!useKernel` telemetry gate rather than the
+      // presence of a built kernel artifact.
+      sinon.stub(KernelNativeLoader, 'getKernelNative').returns({} as any);
       sinon.stub(KernelBackend.prototype, 'connect').resolves();
       sinon.stub(KernelBackend.prototype, 'close').resolves();
 
