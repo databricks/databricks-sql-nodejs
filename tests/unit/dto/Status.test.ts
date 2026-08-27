@@ -1,6 +1,8 @@
 import { expect } from 'chai';
 import { TStatusCode } from '../../../thrift/TCLIService_types';
 import Status from '../../../lib/dto/Status';
+import StatusError from '../../../lib/errors/StatusError';
+import HiveDriverError from '../../../lib/errors/HiveDriverError';
 
 describe('StatusFactory', () => {
   it('should be success', () => {
@@ -72,17 +74,28 @@ describe('StatusFactory', () => {
 
   describe('assert', () => {
     it('should throw exception on error status', () => {
-      const error = expect(() => {
+      let caught: unknown;
+      try {
         Status.assert({
           statusCode: TStatusCode.ERROR_STATUS,
           errorMessage: 'error',
-          errorCode: 1,
+          errorCode: 0,
+          sqlState: '22023',
           infoMessages: ['line1', 'line2'],
         });
-      }).to.throw('error');
-      error.with.property('stack', 'line1\nline2');
-      error.with.property('code', 1);
-      error.with.property('name', 'Status Error');
+      } catch (error) {
+        caught = error;
+      }
+
+      expect(caught).to.be.instanceOf(StatusError);
+      expect(caught).to.be.instanceOf(HiveDriverError);
+      expect(caught).to.be.instanceOf(Error);
+      const statusError = caught as StatusError;
+      expect(statusError.message).to.equal('error');
+      expect(statusError.stack).to.equal('line1\nline2');
+      expect(statusError.code).to.equal(0);
+      expect(statusError.sqlState).to.equal('22023');
+      expect(statusError.name).to.equal('Status Error');
     });
 
     it('should throw exception on invalid handle status', () => {

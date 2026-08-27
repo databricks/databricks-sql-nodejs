@@ -16,6 +16,7 @@ import { expect } from 'chai';
 import { DBSQLClient, DBSQLParameter, DBSQLParameterType } from '../../../lib';
 import { ConnectionOptions } from '../../../lib/contracts/IDBSQLClient';
 import { InternalConnectionOptions } from '../../../lib/contracts/InternalConnectionOptions';
+import StatusError from '../../../lib/errors/StatusError';
 
 /**
  * kernel-execution end-to-end test.
@@ -171,7 +172,7 @@ describe('kernel execution end-to-end', function e2eSuite() {
     }
   });
 
-  it('preserves INTERVAL MONTH on the SEA wire', async () => {
+  it('binds qualified INTERVAL MONTH and INTERVAL DAY values', async () => {
     const client = new DBSQLClient();
 
     await client.connect({
@@ -182,27 +183,81 @@ describe('kernel execution end-to-end', function e2eSuite() {
     } as ConnectionOptions & InternalConnectionOptions);
 
     const session = await client.openSession({ initialCatalog: 'main' });
-    let operation;
-    let caught: unknown;
+    let monthOperation;
+    let dayOperation;
     try {
-      operation = await session.executeStatement('SELECT ?', {
+      monthOperation = await session.executeStatement("SELECT ? = INTERVAL '13' MONTH AS matches", {
         ordinalParameters: [
           new DBSQLParameter({
             type: DBSQLParameterType.INTERVALMONTH,
-            value: '2-6',
+            value: '13',
           }),
         ],
       });
-      await operation.fetchAll();
-    } catch (error) {
-      caught = error;
+      expect(await monthOperation.fetchAll()).to.deep.equal([{ matches: true }]);
+      await monthOperation.close();
+      monthOperation = undefined;
+
+      dayOperation = await session.executeStatement("SELECT ? = INTERVAL '3' DAY AS matches", {
+        ordinalParameters: [
+          new DBSQLParameter({
+            type: DBSQLParameterType.INTERVALDAY,
+            value: '3',
+          }),
+        ],
+      });
+      expect(await dayOperation.fetchAll()).to.deep.equal([{ matches: true }]);
     } finally {
-      await operation?.close();
+      await monthOperation?.close();
+      await dayOperation?.close();
       await session.close();
       await client.close();
     }
+  });
 
-    // "2-6" is valid YEAR TO MONTH syntax, but invalid for INTERVAL MONTH.
-    expect(caught).to.be.instanceOf(Error);
+  it('maps malformed qualified INTERVAL request failures to StatusError', async () => {
+    const client = new DBSQLClient();
+
+    await client.connect({
+      host: hostName as string,
+      path: httpPath as string,
+      token: token as string,
+      useKernel: true,
+    } as ConnectionOptions & InternalConnectionOptions);
+
+    const session = await client.openSession({ initialCatalog: 'main' });
+    const expectCastFailure = async (
+      parameterType: DBSQLParameterType,
+      value: string,
+      targetType: string,
+      expectedWireType: string,
+    ) => {
+      let operation;
+      let caught: unknown;
+      try {
+        operation = await session.executeStatement(`SELECT CAST(? AS ${targetType}) AS value`, {
+          ordinalParameters: [new DBSQLParameter({ type: parameterType, value })],
+        });
+        await operation.fetchAll();
+      } catch (error) {
+        caught = error;
+      } finally {
+        await operation?.close();
+      }
+
+      expect(caught).to.be.instanceOf(StatusError);
+      expect((caught as StatusError).sqlState).to.equal('22023');
+      expect((caught as StatusError).message).to.include(expectedWireType);
+    };
+
+    try {
+      // Each value is valid for the wider CAST target but malformed for the
+      // qualified parameter type sent on the wire.
+      await expectCastFailure(DBSQLParameterType.INTERVALMONTH, '2-6', 'INTERVAL YEAR TO MONTH', 'INTERVAL MONTH');
+      await expectCastFailure(DBSQLParameterType.INTERVALDAY, '3 04:05:06', 'INTERVAL DAY TO SECOND', 'INTERVAL DAY');
+    } finally {
+      await session.close();
+      await client.close();
+    }
   });
 });

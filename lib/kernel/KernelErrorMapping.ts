@@ -2,6 +2,7 @@ import HiveDriverError from '../errors/HiveDriverError';
 import AuthenticationError from '../errors/AuthenticationError';
 import OperationStateError, { OperationStateErrorCode } from '../errors/OperationStateError';
 import ParameterError from '../errors/ParameterError';
+import StatusError from '../errors/StatusError';
 
 /**
  * Sentinel prefix the napi binding's `napi_err_from_kernel` puts on
@@ -27,6 +28,11 @@ export interface KernelErrorShape {
   message: string;
   /** Optional SQLSTATE — five-char alphanumeric, when the kernel was able to surface it. */
   sqlstate?: string;
+  /**
+   * Server statement id attached to SQL failures. An empty id means the
+   * ExecuteStatement request itself was rejected before an operation existed.
+   */
+  queryId?: string;
 }
 
 /**
@@ -120,10 +126,12 @@ function defineErrorMetadata<K extends string, V>(error: Error, key: K, value: V
  *   Cancelled                          → OperationStateError(Canceled)
  *   Timeout                            → OperationStateError(Timeout)
  *   InvalidArgument                    → ParameterError
+ *   SqlError, empty queryId            → StatusError
+ *   SqlError, non-empty/missing queryId→ OperationStateError(Error)
  *   NetworkError, Unavailable,
  *   NotFound, ResourceExhausted,
  *   DataLoss, Internal,
- *   InvalidStatementHandle, SqlError   → HiveDriverError
+ *   InvalidStatementHandle             → HiveDriverError
  *
  * Unknown `code` values (e.g. if the kernel adds a new variant) fall through
  * to HiveDriverError so the driver never silently drops an error. The kernel's
@@ -133,7 +141,7 @@ function defineErrorMetadata<K extends string, V>(error: Error, key: K, value: V
  * class is returned.
  */
 export function mapKernelErrorToJsError(kErr: KernelErrorShape): ErrorWithSqlState {
-  const { code, message, sqlstate } = kErr;
+  const { code, message, sqlstate, queryId } = kErr;
 
   let error: ErrorWithSqlState;
 
@@ -160,16 +168,22 @@ export function mapKernelErrorToJsError(kErr: KernelErrorShape): ErrorWithSqlSta
       break;
 
     case 'SqlError': {
-      // A server-reported SQL execution failure (kernel `SqlError`, e.g. a
-      // bad query, missing table, divide-by-zero, invalid cast). The Thrift
-      // backend surfaces the same situation as `OperationStateError(Error)`
-      // when the operation reaches ERROR_STATE (see DBSQLOperation), so map
-      // SqlError to the same class for backend parity. OperationStateError
-      // extends HiveDriverError, so existing `instanceof HiveDriverError`
-      // catches are unaffected.
-      const stateError = new OperationStateError(OperationStateErrorCode.Error);
-      stateError.message = message;
-      error = stateError;
+      if (queryId === '') {
+        // SEA uses an empty statement id when ExecuteStatement rejects the
+        // request before creating an operation. Thrift surfaces that response
+        // through Status.assert(), so use the same StatusError here.
+        error = new StatusError({
+          message,
+          sqlState: sqlstate,
+        });
+      } else {
+        // A non-empty statement id identifies a real operation that reached a
+        // failed terminal state. Missing ids retain this conservative default
+        // for compatibility with older kernels that did not attach queryId.
+        const stateError = new OperationStateError(OperationStateErrorCode.Error);
+        stateError.message = message;
+        error = stateError;
+      }
       break;
     }
 
@@ -304,10 +318,14 @@ export function decodeNapiKernelError(err: unknown): Error {
   const code = envelope.code as string;
   const msg = envelope.message as string;
   const sqlState = typeof envelope.sqlState === 'string' ? envelope.sqlState : undefined;
+  const queryId = typeof envelope.queryId === 'string' ? envelope.queryId : undefined;
 
-  const jsErr = mapKernelErrorToJsError({ code, message: msg, sqlstate: sqlState });
+  const jsErr = mapKernelErrorToJsError({ code, message: msg, sqlstate: sqlState, queryId });
 
   const meta = buildKernelMetadata(envelope);
+  if (jsErr instanceof StatusError && meta.vendorCode !== undefined) {
+    jsErr.code = meta.vendorCode;
+  }
   // Skip the namespace attachment entirely when no fields validated
   // through — keeps `err.kernelMetadata` absent rather than `{}` for
   // simple envelopes (the common case). Key-count check so new

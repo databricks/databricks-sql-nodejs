@@ -10,6 +10,7 @@ import HiveDriverError from '../../../lib/errors/HiveDriverError';
 import AuthenticationError from '../../../lib/errors/AuthenticationError';
 import OperationStateError, { OperationStateErrorCode } from '../../../lib/errors/OperationStateError';
 import ParameterError from '../../../lib/errors/ParameterError';
+import StatusError from '../../../lib/errors/StatusError';
 
 describe('KernelErrorMapping.mapKernelErrorToJsError', () => {
   // The 13 kernel ErrorCode variants — kept in sync with src/kernel_error.rs:66-134.
@@ -77,7 +78,10 @@ describe('KernelErrorMapping.mapKernelErrorToJsError', () => {
     },
     {
       code: 'SqlError',
-      expectedClass: HiveDriverError,
+      expectedClass: OperationStateError,
+      extra: (err) => {
+        expect((err as OperationStateError).errorCode).to.equal(OperationStateErrorCode.Error);
+      },
     },
   ];
 
@@ -172,6 +176,69 @@ describe('KernelErrorMapping.mapKernelErrorToJsError', () => {
       expect(descriptor!.enumerable).to.equal(false);
       expect(descriptor!.writable).to.equal(true);
       expect(descriptor!.configurable).to.equal(true);
+    });
+  });
+
+  describe('SqlError origin', () => {
+    it('maps an empty queryId to StatusError when no operation was created', () => {
+      const err = mapKernelErrorToJsError({
+        code: 'SqlError',
+        message: 'Invalid interval value',
+        sqlstate: '22023',
+        queryId: '',
+      });
+
+      expect(err).to.be.instanceOf(StatusError);
+      expect(err).to.be.instanceOf(HiveDriverError);
+      expect(err).to.not.be.instanceOf(OperationStateError);
+      expect(err.message).to.equal('Invalid interval value');
+      expect(err.sqlState).to.equal('22023');
+    });
+
+    it('maps a non-empty queryId to OperationStateError for a failed operation', () => {
+      const err = mapKernelErrorToJsError({
+        code: 'SqlError',
+        message: 'TABLE_OR_VIEW_NOT_FOUND',
+        sqlstate: '42P01',
+        queryId: '01ef-abcd',
+      });
+
+      expect(err).to.be.instanceOf(OperationStateError);
+      expect(err).to.not.be.instanceOf(StatusError);
+      expect((err as OperationStateError).errorCode).to.equal(OperationStateErrorCode.Error);
+      expect(err.sqlState).to.equal('42P01');
+    });
+
+    it('keeps OperationStateError as the conservative default when queryId is missing', () => {
+      const err = mapKernelErrorToJsError({
+        code: 'SqlError',
+        message: 'legacy kernel SQL error',
+      });
+
+      expect(err).to.be.instanceOf(OperationStateError);
+      expect(err).to.not.be.instanceOf(StatusError);
+    });
+
+    it('keeps the server vendor code and diagnostics on a decoded StatusError', () => {
+      const envelope = new Error(
+        `__databricks_error__:${JSON.stringify({
+          code: 'SqlError',
+          message: 'Invalid interval value',
+          sqlState: '22023',
+          vendorCode: 0,
+          queryId: '',
+          displayMessage: 'Cannot cast value to INTERVAL',
+          errorDetailsJson: '{"errorClass":"CAST_INVALID_INPUT"}',
+        })}`,
+      );
+      const err = decodeNapiKernelError(envelope) as StatusError & ErrorWithSqlState;
+
+      expect(err).to.be.instanceOf(StatusError);
+      expect(err.code).to.equal(0);
+      expect(err.sqlState).to.equal('22023');
+      expect(err.kernelMetadata?.queryId).to.equal('');
+      expect(err.kernelMetadata?.displayMessage).to.equal('Cannot cast value to INTERVAL');
+      expect(err.kernelMetadata?.errorDetailsJson).to.equal('{"errorClass":"CAST_INVALID_INPUT"}');
     });
   });
 

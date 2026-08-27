@@ -5,7 +5,9 @@ import DBSQLSession, { numberToInt64 } from '../../lib/DBSQLSession';
 import InfoValue from '../../lib/dto/InfoValue';
 import Status from '../../lib/dto/Status';
 import DBSQLOperation from '../../lib/DBSQLOperation';
-import { TSessionHandle, TProtocolVersion } from '../../thrift/TCLIService_types';
+import StatusError from '../../lib/errors/StatusError';
+import OperationStateError from '../../lib/errors/OperationStateError';
+import { TSessionHandle, TProtocolVersion, TStatusCode } from '../../thrift/TCLIService_types';
 import ClientContextStub from './.stubs/ClientContextStub';
 import { createSessionForTest } from './.stubs/createSessionForTest';
 
@@ -74,6 +76,32 @@ describe('DBSQLSession', () => {
       const session = createSessionForTest({ handle: sessionHandleStub, context: new ClientContextStub() });
       const result = await session.executeStatement('SELECT * FROM table', { maxRows: null });
       expect(result).instanceOf(DBSQLOperation);
+    });
+
+    it('should surface an immediate execution failure as a StatusError with SQLSTATE', async () => {
+      const context = new ClientContextStub();
+      context.driver.executeStatementResp = {
+        status: {
+          statusCode: TStatusCode.ERROR_STATUS,
+          sqlState: '22023',
+          errorCode: 123,
+          errorMessage: 'Invalid interval value',
+        },
+      };
+      const session = createSessionForTest({ handle: sessionHandleStub, context });
+
+      let caught: unknown;
+      try {
+        await session.executeStatement('SELECT CAST(? AS INTERVAL YEAR TO MONTH)');
+      } catch (error) {
+        caught = error;
+      }
+
+      expect(caught).to.be.instanceOf(StatusError);
+      expect(caught).to.be.instanceOf(Error);
+      expect(caught).to.not.be.instanceOf(OperationStateError);
+      expect((caught as StatusError).code).to.equal(123);
+      expect((caught as StatusError).sqlState).to.equal('22023');
     });
 
     describe('Arrow support', () => {
