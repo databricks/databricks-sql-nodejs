@@ -34,8 +34,6 @@ import type {
   ArrowBatch as NativeArrowBatch,
   ArrowSchema as NativeArrowSchema,
   ExecuteOptions as NativeExecuteOptions,
-  TypedValueInput as NativeTypedValueInput,
-  NamedTypedValueInput as NativeNamedTypedValueInput,
   AsyncStatement as NativeAsyncStatement,
   AsyncResultHandle as NativeAsyncResultHandle,
   CancellableExecution as NativeCancellableExecution,
@@ -62,8 +60,6 @@ export interface KernelNativeRawParameterInput {
 export type KernelNativeExecuteOptions = NativeExecuteOptions & {
   rawParams?: KernelNativeRawParameterInput[];
 };
-export type KernelNativeTypedValueInput = NativeTypedValueInput;
-export type KernelNativeNamedTypedValueInput = NativeNamedTypedValueInput;
 
 // Async-submit surface: `Connection.submitStatement` returns an
 // `AsyncStatement` (status / awaitResult / cancel / close); `awaitResult`
