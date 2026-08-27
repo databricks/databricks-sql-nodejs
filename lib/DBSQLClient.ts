@@ -521,8 +521,10 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
    */
   private getLocaleName(): string {
     try {
-      // Try to get from environment variables
-      const lang = process.env.LANG || process.env.LC_ALL || process.env.LC_MESSAGES || '';
+      // Try to get from environment variables. Use POSIX precedence
+      // (LC_ALL > LC_MESSAGES > LANG) so this matches the kernel path's
+      // getLocaleName and telemetry localeName stays backend-invariant.
+      const lang = process.env.LC_ALL || process.env.LC_MESSAGES || process.env.LANG || '';
       if (lang) {
         // LANG format is typically "en_US.UTF-8", extract "en_US"
         const match = lang.match(/^([a-z]{2}_[A-Z]{2})/);
