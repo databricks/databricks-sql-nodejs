@@ -766,7 +766,10 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
     // expecting to enable telemetry.
     const envKill = process.env.DATABRICKS_TELEMETRY_DISABLED;
     const trimmedEnvKill = typeof envKill === 'string' ? envKill.trim() : '';
-    const envDisabled = isTelemetryDisabledByEnv();
+    // Reuse the already-trimmed value to short-circuit the common (unset) case;
+    // `isTelemetryDisabledByEnv()` stays the single source of truth for the
+    // recognized-value parsing so the Thrift and kernel opt-outs can't drift.
+    const envDisabled = trimmedEnvKill.length > 0 && isTelemetryDisabledByEnv();
     // Surface the misconfiguration: an ops engineer who sees the var name and
     // tries to "set it to false to keep telemetry on" otherwise gets the
     // opposite of what they expect (the var is then silently ignored, runtime
