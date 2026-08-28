@@ -675,6 +675,62 @@ describe('KernelBackend', () => {
     }
   });
 
+  it('openSession() warns and omits out-of-range telemetry knobs, falling back to kernel defaults', async () => {
+    const savedEnv = process.env.DATABRICKS_TELEMETRY_DISABLED;
+    delete process.env.DATABRICKS_TELEMETRY_DISABLED;
+
+    const warnings: Array<{ level: LogLevel; message: string }> = [];
+    const logger: IDBSQLLogger = {
+      log(level: LogLevel, message: string): void {
+        warnings.push({ level, message });
+      },
+    };
+
+    const connection = new FakeNativeConnection();
+    const binding = makeBinding(connection);
+    const backend = new KernelBackend({
+      context: makeContext(logger, {
+        // `0` is out of range for the `> 0` guard; negative is out of range for the `>= 0` guard.
+        telemetryBatchSize: 0,
+        telemetryCircuitBreakerThreshold: -1,
+        telemetryMaxRetries: -5,
+      }),
+      nativeBinding: binding,
+    });
+
+    try {
+      await backend.connect({
+        host: 'workspace.example',
+        path: '/sql/1.0/warehouses/xyz',
+        token: 'dapi-token',
+      } as ConnectionOptions);
+      await backend.openSession({});
+
+      const args = binding.openSessionStub.firstCall.args[0] as Record<string, unknown>;
+      // Rejected knobs are omitted from the forwarded napi options so the kernel default applies.
+      expect(args.telemetryBatchSize).to.equal(undefined);
+      expect(args.telemetryCircuitBreakerThreshold).to.equal(undefined);
+      expect(args.telemetryMaxRetries).to.equal(undefined);
+
+      const warnFor = (name: string) =>
+        warnings.find((w) => w.level === LogLevel.warn && w.message.includes(`'${name}'`));
+      expect(warnFor('telemetryBatchSize'), 'expected a warn for telemetryBatchSize').to.not.equal(undefined);
+      expect(warnFor('telemetryBatchSize')!.message).to.contain('greater than zero');
+      expect(
+        warnFor('telemetryCircuitBreakerThreshold'),
+        'expected a warn for telemetryCircuitBreakerThreshold',
+      ).to.not.equal(undefined);
+      expect(warnFor('telemetryMaxRetries'), 'expected a warn for telemetryMaxRetries').to.not.equal(undefined);
+      expect(warnFor('telemetryMaxRetries')!.message).to.contain('zero or greater');
+    } finally {
+      if (savedEnv === undefined) {
+        delete process.env.DATABRICKS_TELEMETRY_DISABLED;
+      } else {
+        process.env.DATABRICKS_TELEMETRY_DISABLED = savedEnv;
+      }
+    }
+  });
+
   it('openSession() serializes session-level queryTags into sessionConf.QUERY_TAGS', async () => {
     const connection = new FakeNativeConnection();
     const binding = makeBinding(connection);
