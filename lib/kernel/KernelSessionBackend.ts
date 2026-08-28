@@ -298,11 +298,10 @@ export default class KernelSessionBackend implements ISessionBackend {
     }
 
     const execOptions: KernelNativeExecuteOptions = {};
-    if (positionalParams !== undefined) {
-      execOptions.positionalParams = positionalParams;
-    }
-    if (namedParams !== undefined) {
-      execOptions.namedParams = namedParams;
+    // Raw binding preserves qualified SQL types such as INTERVAL MONTH.
+    const rawParams = positionalParams ?? namedParams;
+    if (rawParams !== undefined) {
+      execOptions.rawParams = rawParams;
     }
     // NB: `queryTimeout` is intentionally NOT forwarded — it is a no-op on kernel
     // (SQL Warehouses use `STATEMENT_TIMEOUT`; mapping it to `wait_timeout` would
