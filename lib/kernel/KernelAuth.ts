@@ -761,6 +761,13 @@ export function buildKernelTelemetryOptions(
   } else {
     warnRejected('telemetryCloseTimeoutMs', config.telemetryCloseTimeoutMs, 'greater than zero');
   }
+  // We forward `telemetryCircuitBreakerThreshold`/`telemetryCircuitBreakerTimeoutMs`
+  // but intentionally leave `telemetryCircuitBreakerEnabled` unset: breaker activation
+  // is delegated to the kernel default. The threshold/timeout only take effect when
+  // the kernel enables the breaker; when it is disabled they are inert. There is no
+  // driver-side enable knob in `ClientConfig` to forward, so the enable decision lives
+  // entirely with the kernel default (mirroring the `telemetryEnabled` opt-in above).
+  //
   // The napi contract requires threshold/timeout to be strictly positive when
   // supplied. A caller-supplied `0` (or negative) would otherwise be forwarded
   // verbatim and surface as a hard kernel `openSession` rejection, so treat any
