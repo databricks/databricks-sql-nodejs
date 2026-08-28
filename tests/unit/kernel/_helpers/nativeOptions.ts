@@ -54,8 +54,6 @@ export default function expectNativeConnectionOptions(actual: unknown, expectedR
     expect(rest.localeName, 'localeName').to.be.a('string').and.not.equal('');
     expect(rest.charSetEncoding, 'charSetEncoding').to.equal('UTF-8');
     expect(rest.processName, 'processName').to.be.a('string').and.not.equal('');
-    expect(rest.telemetryEnabled, 'telemetryEnabled').to.be.a('boolean');
-    expect(rest.telemetryCircuitBreakerEnabled, 'telemetryCircuitBreakerEnabled').to.equal(true);
   }
 
   for (const key of [

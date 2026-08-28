@@ -98,7 +98,7 @@ export default class KernelBackend implements IBackend {
     this.nativeOptions = {
       ...buildKernelConnectionOptions(options),
       ...buildKernelRetryOptions(this.context.getConfig()),
-      ...buildKernelTelemetryOptions(this.context.getConfig()),
+      ...buildKernelTelemetryOptions(this.context.getConfig(), options),
     };
 
     // Bridge the Rust kernel's `tracing` logs into the SAME `DBSQLLogger` the

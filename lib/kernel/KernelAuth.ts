@@ -662,6 +662,7 @@ export function buildKernelTelemetryOptions(
     | 'telemetryCircuitBreakerThreshold'
     | 'telemetryCircuitBreakerTimeout'
   >,
+  options: Pick<ConnectionOptions, 'telemetryEnabled'> = {},
 ) {
   const telemetry: KernelTelemetryOptions = {
     driverName: DRIVER_NAME,
@@ -676,15 +677,12 @@ export function buildKernelTelemetryOptions(
     localeName: getLocaleName(),
     charSetEncoding: 'UTF-8',
     processName: getProcessName(),
-    // The JS/Thrift telemetry path always runs with a per-host circuit breaker
-    // (`CircuitBreakerRegistry` creates one unconditionally). Enable the kernel's
-    // breaker too so the `telemetryCircuitBreakerThreshold` / `...TimeoutMs` knobs
-    // forwarded below actually take effect — the napi `.d.ts` documents those two
-    // as applying only when the breaker is enabled, so if the kernel defaults it
-    // off they would silently do nothing.
-    telemetryCircuitBreakerEnabled: true,
-    telemetryEnabled: (config.telemetryEnabled ?? true) && !isTelemetryDisabledByEnv(),
   };
+
+  const envDisabled = isTelemetryDisabledByEnv();
+  if (options.telemetryEnabled !== undefined || envDisabled) {
+    telemetry.telemetryEnabled = (options.telemetryEnabled ?? true) && !envDisabled;
+  }
 
   // `batchSize`, `flushIntervalMs`, and `closeFlushTimeoutMs` share the same napi
   // contract constraint as the breaker fields below (`Must be greater than zero when
@@ -711,11 +709,10 @@ export function buildKernelTelemetryOptions(
   if (Number.isFinite(config.telemetryCloseTimeoutMs) && config.telemetryCloseTimeoutMs! > 0) {
     telemetry.telemetryCloseFlushTimeoutMs = config.telemetryCloseTimeoutMs;
   }
-  // The breaker is forced on above, and the napi contract requires threshold/timeout
-  // to be strictly positive when it is enabled. A caller-supplied `0` (or negative)
-  // would otherwise be forwarded verbatim and surface as a hard kernel `openSession`
-  // rejection, so treat any non-positive value as a misconfiguration and fall back to
-  // the kernel defaults (5 / 60000) instead.
+  // The napi contract requires threshold/timeout to be strictly positive when
+  // supplied. A caller-supplied `0` (or negative) would otherwise be forwarded
+  // verbatim and surface as a hard kernel `openSession` rejection, so treat any
+  // non-positive value as a misconfiguration and delegate to the kernel default.
   if (Number.isFinite(config.telemetryCircuitBreakerThreshold) && config.telemetryCircuitBreakerThreshold! > 0) {
     telemetry.telemetryCircuitBreakerThreshold = config.telemetryCircuitBreakerThreshold;
   }

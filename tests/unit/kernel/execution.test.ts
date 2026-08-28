@@ -576,6 +576,7 @@ describe('KernelBackend', () => {
         host: 'workspace.example',
         path: '/sql/1.0/warehouses/xyz',
         token: 'dapi-token',
+        telemetryEnabled: false,
       } as ConnectionOptions);
 
       await backend.openSession({});
@@ -598,7 +599,7 @@ describe('KernelBackend', () => {
       expect(args.telemetryMaxRetries).to.equal(2);
       expect(args.telemetryRetryDelayMs).to.equal(50);
       expect(args.telemetryCloseFlushTimeoutMs).to.equal(2_500);
-      expect(args.telemetryCircuitBreakerEnabled).to.equal(true);
+      expect(args.telemetryCircuitBreakerEnabled).to.equal(undefined);
       expect(args.telemetryCircuitBreakerThreshold).to.equal(3);
       expect(args.telemetryCircuitBreakerTimeoutMs).to.equal(60_000);
     } finally {
@@ -631,6 +632,40 @@ describe('KernelBackend', () => {
 
       const args = binding.openSessionStub.firstCall.args[0] as { telemetryEnabled?: boolean };
       expect(args.telemetryEnabled).to.equal(false);
+    } finally {
+      if (savedEnv === undefined) {
+        delete process.env.DATABRICKS_TELEMETRY_DISABLED;
+      } else {
+        process.env.DATABRICKS_TELEMETRY_DISABLED = savedEnv;
+      }
+    }
+  });
+
+  it('openSession() omits telemetryEnabled when the caller did not explicitly configure telemetry', async () => {
+    const savedEnv = process.env.DATABRICKS_TELEMETRY_DISABLED;
+    delete process.env.DATABRICKS_TELEMETRY_DISABLED;
+
+    const connection = new FakeNativeConnection();
+    const binding = makeBinding(connection);
+    const backend = new KernelBackend({
+      context: makeContext(undefined, { telemetryEnabled: true }),
+      nativeBinding: binding,
+    });
+
+    try {
+      await backend.connect({
+        host: 'workspace.example',
+        path: '/sql/1.0/warehouses/xyz',
+        token: 'dapi-token',
+      } as ConnectionOptions);
+      await backend.openSession({});
+
+      const args = binding.openSessionStub.firstCall.args[0] as {
+        telemetryEnabled?: boolean;
+        telemetryCircuitBreakerEnabled?: boolean;
+      };
+      expect(args.telemetryEnabled).to.equal(undefined);
+      expect(args.telemetryCircuitBreakerEnabled).to.equal(undefined);
     } finally {
       if (savedEnv === undefined) {
         delete process.env.DATABRICKS_TELEMETRY_DISABLED;
