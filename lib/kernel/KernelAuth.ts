@@ -16,6 +16,7 @@ import os from 'os';
 import { ConnectionOptions } from '../contracts/IDBSQLClient';
 import { ClientConfig } from '../contracts/IClientContext';
 import { InternalConnectionOptions } from '../contracts/InternalConnectionOptions';
+import IDBSQLLogger, { LogLevel } from '../contracts/IDBSQLLogger';
 import AuthenticationError from '../errors/AuthenticationError';
 import HiveDriverError from '../errors/HiveDriverError';
 import { buildUserAgentString, normalizePemBytes } from '../utils';
@@ -667,7 +668,23 @@ export function buildKernelTelemetryOptions(
     | 'telemetryCircuitBreakerTimeout'
   >,
   options: Pick<ConnectionOptions, 'telemetryEnabled'> = {},
+  logger?: IDBSQLLogger,
 ) {
+  // Surface a rejected telemetry knob for parity with the `DATABRICKS_TELEMETRY_DISABLED`
+  // misconfiguration warn in `DBSQLClient.connect`: a caller-supplied out-of-range value
+  // (e.g. `telemetryBatchSize: 0`) is silently dropped in favour of the kernel default,
+  // so without this the user gets no feedback that their setting was discarded. Only
+  // warns when the knob was actually supplied (`Number.isFinite`) but out of range —
+  // an unset knob (`undefined`) is the normal case, not a misconfiguration.
+  const warnRejected = (name: string, value: number | undefined, constraint: string) => {
+    if (Number.isFinite(value)) {
+      logger?.log(
+        LogLevel.warn,
+        `Ignoring telemetry option '${name}'=${value}: value must be ${constraint}. ` +
+          `Falling back to the kernel default.`,
+      );
+    }
+  };
   const telemetry: KernelTelemetryOptions = {
     driverName: DRIVER_NAME,
     driverVersion,
@@ -695,23 +712,36 @@ export function buildKernelTelemetryOptions(
   // misconfiguration and fall back to the kernel defaults, matching the breaker guard.
   if (Number.isFinite(config.telemetryBatchSize) && config.telemetryBatchSize! > 0) {
     telemetry.telemetryBatchSize = config.telemetryBatchSize;
+  } else {
+    warnRejected('telemetryBatchSize', config.telemetryBatchSize, 'greater than zero');
   }
   if (Number.isFinite(config.telemetryFlushIntervalMs) && config.telemetryFlushIntervalMs! > 0) {
     telemetry.telemetryFlushIntervalMs = config.telemetryFlushIntervalMs;
+  } else {
+    warnRejected('telemetryFlushIntervalMs', config.telemetryFlushIntervalMs, 'greater than zero');
   }
   // `telemetryMaxRetries` and `telemetryRetryDelayMs` (from `telemetryBackoffBaseMs`)
-  // both document `0` as valid, so we don't require `> 0` like the fields above. But
-  // both are user-settable `ConnectionOptions` knobs, and a negative value mapped onto
-  // the kernel's unsigned retry count would be rejected or wrap — so guard `>= 0` to
-  // keep `0` valid while falling back to the kernel default for negatives.
+  // both document `0` as valid, so we don't require `> 0` like the fields above. Only
+  // `telemetryMaxRetries` is a user-settable `ConnectionOptions` knob (copied by
+  // `copyDefinedTelemetryOptions`); `telemetryBackoffBaseMs` is internal and only ever
+  // arrives from `DEFAULT_TELEMETRY_CONFIG.backoffBaseMs`, so it can't be user-negative
+  // today. We still guard both `>= 0` uniformly: a negative mapped onto the kernel's
+  // unsigned retry count would be rejected or wrap, so `>= 0` keeps `0` valid while
+  // falling back to the kernel default for negatives.
   if (Number.isFinite(config.telemetryMaxRetries) && config.telemetryMaxRetries! >= 0) {
     telemetry.telemetryMaxRetries = config.telemetryMaxRetries;
+  } else {
+    warnRejected('telemetryMaxRetries', config.telemetryMaxRetries, 'zero or greater');
   }
   if (Number.isFinite(config.telemetryBackoffBaseMs) && config.telemetryBackoffBaseMs! >= 0) {
     telemetry.telemetryRetryDelayMs = config.telemetryBackoffBaseMs;
+  } else {
+    warnRejected('telemetryBackoffBaseMs', config.telemetryBackoffBaseMs, 'zero or greater');
   }
   if (Number.isFinite(config.telemetryCloseTimeoutMs) && config.telemetryCloseTimeoutMs! > 0) {
     telemetry.telemetryCloseFlushTimeoutMs = config.telemetryCloseTimeoutMs;
+  } else {
+    warnRejected('telemetryCloseTimeoutMs', config.telemetryCloseTimeoutMs, 'greater than zero');
   }
   // The napi contract requires threshold/timeout to be strictly positive when
   // supplied. A caller-supplied `0` (or negative) would otherwise be forwarded
@@ -719,9 +749,13 @@ export function buildKernelTelemetryOptions(
   // non-positive value as a misconfiguration and delegate to the kernel default.
   if (Number.isFinite(config.telemetryCircuitBreakerThreshold) && config.telemetryCircuitBreakerThreshold! > 0) {
     telemetry.telemetryCircuitBreakerThreshold = config.telemetryCircuitBreakerThreshold;
+  } else {
+    warnRejected('telemetryCircuitBreakerThreshold', config.telemetryCircuitBreakerThreshold, 'greater than zero');
   }
   if (Number.isFinite(config.telemetryCircuitBreakerTimeout) && config.telemetryCircuitBreakerTimeout! > 0) {
     telemetry.telemetryCircuitBreakerTimeoutMs = config.telemetryCircuitBreakerTimeout;
+  } else {
+    warnRejected('telemetryCircuitBreakerTimeout', config.telemetryCircuitBreakerTimeout, 'greater than zero');
   }
 
   return telemetry;
