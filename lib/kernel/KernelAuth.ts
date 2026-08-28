@@ -653,7 +653,11 @@ export { isTelemetryDisabledByEnv };
 export function buildKernelTelemetryOptions(
   config: Pick<
     ClientConfig,
-    | 'telemetryEnabled'
+    // NOTE: `telemetryEnabled` is intentionally NOT in this Pick. On the kernel
+    // path the enable decision is opt-in via `ConnectionOptions.telemetryEnabled`
+    // (plus the `DATABRICKS_TELEMETRY_DISABLED` env kill-switch) — the driver's
+    // default-true `config.telemetryEnabled` does not propagate here, so leaving
+    // it out keeps the signature honest rather than advertising a knob we ignore.
     | 'telemetryBatchSize'
     | 'telemetryFlushIntervalMs'
     | 'telemetryMaxRetries'
