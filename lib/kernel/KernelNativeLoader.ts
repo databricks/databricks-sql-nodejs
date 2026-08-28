@@ -34,8 +34,7 @@ import type {
   ArrowBatch as NativeArrowBatch,
   ArrowSchema as NativeArrowSchema,
   ExecuteOptions as NativeExecuteOptions,
-  TypedValueInput as NativeTypedValueInput,
-  NamedTypedValueInput as NativeNamedTypedValueInput,
+  RawParameterInput as NativeRawParameterInput,
   AsyncStatement as NativeAsyncStatement,
   AsyncResultHandle as NativeAsyncResultHandle,
   CancellableExecution as NativeCancellableExecution,
@@ -53,15 +52,10 @@ export type KernelArrowSchema = NativeArrowSchema;
 export type KernelConnection = NativeConnection;
 export type KernelStatement = NativeStatement;
 
-// Per-statement execution options and bound-parameter inputs are kernel
-// concerns: the napi binding generates the canonical shapes (`positionalParams`
-// / `namedParams` as `TypedValueInput` / `NamedTypedValueInput`, plus
-// `rowLimit`, `statementConf`, `queryTags`). We re-export
-// rather than re-declare so the driver-side param codec can never drift from
-// the kernel contract.
+// Per-statement execution options and raw-parameter inputs come directly from
+// the generated kernel contract so the driver-side codec cannot drift.
 export type KernelNativeExecuteOptions = NativeExecuteOptions;
-export type KernelNativeTypedValueInput = NativeTypedValueInput;
-export type KernelNativeNamedTypedValueInput = NativeNamedTypedValueInput;
+export type KernelNativeRawParameterInput = NativeRawParameterInput;
 
 // Async-submit surface: `Connection.submitStatement` returns an
 // `AsyncStatement` (status / awaitResult / cancel / close); `awaitResult`

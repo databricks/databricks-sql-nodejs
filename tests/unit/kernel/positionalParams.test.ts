@@ -63,15 +63,15 @@ describe('KernelPositionalParams.buildKernelPositionalParams', () => {
     expect(decimal('')).to.throw(ParameterError, /not a plain decimal numeral/);
   });
 
-  it('collapses every INTERVAL subtype to the kernel codec\'s single "INTERVAL" type name', () => {
+  it('preserves qualified INTERVAL types for the kernel raw binder', () => {
     expect(
       buildKernelPositionalParams([
-        new DBSQLParameter({ type: DBSQLParameterType.INTERVALMONTH, value: '13' }),
+        new DBSQLParameter({ type: DBSQLParameterType.INTERVALMONTH, value: '2-6' }),
         new DBSQLParameter({ type: DBSQLParameterType.INTERVALDAY, value: '1 02:03:04' }),
       ]),
     ).to.deep.equal([
-      { sqlType: 'INTERVAL', value: '13' },
-      { sqlType: 'INTERVAL', value: '1 02:03:04' },
+      { sqlType: 'INTERVAL MONTH', value: '2-6' },
+      { sqlType: 'INTERVAL DAY', value: '1 02:03:04' },
     ]);
   });
 
@@ -126,5 +126,13 @@ describe('KernelPositionalParams.buildKernelNamedParams', () => {
 
   it('maps a named NULL to a value-less VOID input (with the name)', () => {
     expect(buildKernelNamedParams({ x: null })).to.deep.equal([{ name: 'x', sqlType: 'VOID' }]);
+  });
+
+  it('preserves a named qualified INTERVAL type', () => {
+    expect(
+      buildKernelNamedParams({
+        duration: new DBSQLParameter({ type: DBSQLParameterType.INTERVALMONTH, value: '2-6' }),
+      }),
+    ).to.deep.equal([{ name: 'duration', sqlType: 'INTERVAL MONTH', value: '2-6' }]);
   });
 });
