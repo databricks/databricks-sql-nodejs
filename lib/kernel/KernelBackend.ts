@@ -22,7 +22,12 @@ import HiveDriverError from '../errors/HiveDriverError';
 import { serializeQueryTags } from '../utils';
 import { getKernelNative, KernelNativeBinding, KernelConnection } from './KernelNativeLoader';
 import { decodeNapiKernelError } from './KernelErrorMapping';
-import { buildKernelConnectionOptions, buildKernelRetryOptions, KernelNativeConnectionOptions } from './KernelAuth';
+import {
+  buildKernelConnectionOptions,
+  buildKernelRetryOptions,
+  buildKernelTelemetryOptions,
+  KernelNativeConnectionOptions,
+} from './KernelAuth';
 import { installKernelLogBridge } from './KernelLogging';
 import KernelSessionBackend from './KernelSessionBackend';
 
@@ -93,6 +98,7 @@ export default class KernelBackend implements IBackend {
     this.nativeOptions = {
       ...buildKernelConnectionOptions(options),
       ...buildKernelRetryOptions(this.context.getConfig()),
+      ...buildKernelTelemetryOptions(this.context.getConfig(), options, this.context.getLogger()),
     };
 
     // Bridge the Rust kernel's `tracing` logs into the SAME `DBSQLLogger` the

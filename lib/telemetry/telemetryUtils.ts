@@ -255,6 +255,21 @@ export function sanitizeProcessName(name: string | undefined): string {
 }
 
 /**
+ * Parse the `DATABRICKS_TELEMETRY_DISABLED` hard kill switch. Recognized truthy
+ * values are `1`, `true`, `yes`, `on` (case-insensitive, surrounding whitespace
+ * trimmed); anything else (empty, `0`, `false`, `no`, `off`, unrecognized)
+ * returns `false` and leaves telemetry under the runtime config's control.
+ *
+ * Single source of truth for both the Thrift path (DBSQLClient) and the kernel
+ * path (KernelAuth) so the two opt-outs can never drift.
+ */
+export function isTelemetryDisabledByEnv(env: NodeJS.ProcessEnv = process.env): boolean {
+  const raw = env.DATABRICKS_TELEMETRY_DISABLED;
+  const trimmed = typeof raw === 'string' ? raw.trim() : '';
+  return trimmed.length > 0 && /^(1|true|yes|on)$/i.test(trimmed);
+}
+
+/**
  * Run a telemetry emit at a call site, swallowing all exceptions and logging
  * at debug level. Replaces the copy-pasted try/catch + getTelemetryEmitter?.()
  * scaffold at every emit site. Telemetry must never break the driver.

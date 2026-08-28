@@ -12,11 +12,17 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import os from 'os';
 import { ConnectionOptions } from '../contracts/IDBSQLClient';
+import { ClientConfig } from '../contracts/IClientContext';
 import { InternalConnectionOptions } from '../contracts/InternalConnectionOptions';
+import IDBSQLLogger, { LogLevel } from '../contracts/IDBSQLLogger';
 import AuthenticationError from '../errors/AuthenticationError';
 import HiveDriverError from '../errors/HiveDriverError';
 import { buildUserAgentString, normalizePemBytes } from '../utils';
+import driverVersion from '../version';
+import { DRIVER_NAME } from '../telemetry/types';
+import { sanitizeProcessName, isTelemetryDisabledByEnv } from '../telemetry/telemetryUtils';
 
 /**
  * Default local listener port for the U2M authorization-code callback.
@@ -131,6 +137,32 @@ export interface KernelSessionDefaults {
   retryOverallTimeoutSecs?: number;
 }
 
+export interface KernelTelemetryOptions {
+  /** Driver/runtime identity forwarded to kernel-owned telemetry. */
+  driverName?: string;
+  driverVersion?: string;
+  runtimeName?: string;
+  runtimeVersion?: string;
+  runtimeVendor?: string;
+  osName?: string;
+  osVersion?: string;
+  osArch?: string;
+  clientAppName?: string;
+  localeName?: string;
+  charSetEncoding?: string;
+  processName?: string;
+  /** Kernel-owned telemetry switch and batching. */
+  telemetryEnabled?: boolean;
+  telemetryBatchSize?: number;
+  telemetryFlushIntervalMs?: number;
+  telemetryMaxRetries?: number;
+  telemetryRetryDelayMs?: number;
+  telemetryCloseFlushTimeoutMs?: number;
+  telemetryCircuitBreakerEnabled?: boolean;
+  telemetryCircuitBreakerThreshold?: number;
+  telemetryCircuitBreakerTimeoutMs?: number;
+}
+
 /**
  * TLS options shared across all auth-mode variants. Mirror the napi
  * binding's `ConnectionOptions.checkServerCertificate` / `.customCaCert`
@@ -227,6 +259,7 @@ export interface KernelFederationOptions {
 export type KernelNativeConnectionOptions = KernelSessionDefaults &
   KernelTlsOptions &
   KernelHttpOptions &
+  KernelTelemetryOptions &
   KernelProxyOptions &
   KernelFederationOptions &
   (
@@ -586,6 +619,171 @@ export function buildKernelRetryOptions(config: {
   if (Number.isFinite(config.retryMaxAttempts)) out.retryMaxAttempts = clampU32(config.retryMaxAttempts as number);
   if (Number.isFinite(config.retriesTimeout)) out.retryOverallTimeoutSecs = msToSecs(config.retriesTimeout as number);
   return out;
+}
+
+function getLocaleName(env: NodeJS.ProcessEnv = process.env): string {
+  try {
+    const lang = env.LC_ALL || env.LC_MESSAGES || env.LANG || '';
+    const match = lang.match(/^([a-z]{2}_[A-Z]{2})/);
+    return match?.[1] ?? 'en_US';
+  } catch {
+    return 'en_US';
+  }
+}
+
+function getProcessName(): string {
+  try {
+    if (process.title && process.title !== 'node') {
+      return sanitizeProcessName(process.title) || 'node';
+    }
+    const scriptPath = process.argv?.[1];
+    if (scriptPath) {
+      return sanitizeProcessName(scriptPath).replace(/\.[^.]*$/, '') || 'node';
+    }
+    return 'node';
+  } catch {
+    return 'node';
+  }
+}
+
+// Re-exported from the shared telemetry helper so the kernel opt-out and the
+// Thrift-path opt-out (DBSQLClient) parse `DATABRICKS_TELEMETRY_DISABLED`
+// through one implementation and can never drift.
+export { isTelemetryDisabledByEnv };
+
+/**
+ * Build the kernel telemetry options block from the driver's `ClientConfig`.
+ *
+ * **Always-forward is intentional, mirroring `buildKernelRetryOptions`.** On the
+ * real `DBSQLClient` path `getDefaultConfig()` seeds every one of these knobs from
+ * `DEFAULT_TELEMETRY_CONFIG`, so they are never `undefined` and always propagate to
+ * the kernel's `openSession` — the driver's telemetry-tuning defaults deliberately
+ * govern both backends from one `ClientConfig` (same rationale as the retry knobs),
+ * rather than letting the kernel's independent defaults apply. The kernel's own
+ * `"Omitted ⇒ kernel default"` branch is therefore only reachable via a bare
+ * `configOverrides`-style config (e.g. unit tests), not the default-populated one a
+ * live client uses. The `Number.isFinite(...) && > 0` guards below are NOT an
+ * opt-in gate: they exist to reject a caller-supplied out-of-range value (warning
+ * via `warnRejected`) and to tolerate sparse test configs, not to compare against
+ * the default.
+ */
+export function buildKernelTelemetryOptions(
+  config: Pick<
+    ClientConfig,
+    // NOTE: `telemetryEnabled` is intentionally NOT in this Pick. On the kernel
+    // path the enable decision is opt-in via `ConnectionOptions.telemetryEnabled`
+    // (plus the `DATABRICKS_TELEMETRY_DISABLED` env kill-switch) — the driver's
+    // default-true `config.telemetryEnabled` does not propagate here, so leaving
+    // it out keeps the signature honest rather than advertising a knob we ignore.
+    | 'telemetryBatchSize'
+    | 'telemetryFlushIntervalMs'
+    | 'telemetryMaxRetries'
+    | 'telemetryBackoffBaseMs'
+    | 'telemetryCloseTimeoutMs'
+    | 'telemetryCircuitBreakerThreshold'
+    | 'telemetryCircuitBreakerTimeout'
+  >,
+  options: Pick<ConnectionOptions, 'telemetryEnabled'> = {},
+  logger?: IDBSQLLogger,
+) {
+  // Surface a rejected telemetry knob for parity with the `DATABRICKS_TELEMETRY_DISABLED`
+  // misconfiguration warn in `DBSQLClient.connect`: a caller-supplied out-of-range value
+  // (e.g. `telemetryBatchSize: 0`) is silently dropped in favour of the kernel default,
+  // so without this the user gets no feedback that their setting was discarded. Only
+  // warns when the knob was actually supplied (`Number.isFinite`) but out of range —
+  // an unset knob (`undefined`) is never a misconfiguration. On the live `DBSQLClient`
+  // path these knobs are always populated from `DEFAULT_TELEMETRY_CONFIG`, so the
+  // `undefined` branch is the sparse-config (e.g. unit-test) case, not the norm.
+  const warnRejected = (name: string, value: number | undefined, constraint: string) => {
+    if (Number.isFinite(value)) {
+      logger?.log(
+        LogLevel.warn,
+        `Ignoring telemetry option '${name}'=${value}: value must be ${constraint}. ` +
+          `Falling back to the kernel default.`,
+      );
+    }
+  };
+  const telemetry: KernelTelemetryOptions = {
+    driverName: DRIVER_NAME,
+    driverVersion,
+    runtimeName: 'Node.js',
+    runtimeVersion: process.version,
+    runtimeVendor: 'Node.js Foundation',
+    osName: process.platform,
+    osVersion: os.release(),
+    osArch: os.arch(),
+    clientAppName: undefined,
+    localeName: getLocaleName(),
+    charSetEncoding: 'UTF-8',
+    processName: getProcessName(),
+  };
+
+  const envDisabled = isTelemetryDisabledByEnv();
+  if (options.telemetryEnabled !== undefined || envDisabled) {
+    telemetry.telemetryEnabled = (options.telemetryEnabled ?? true) && !envDisabled;
+  }
+
+  // `batchSize`, `flushIntervalMs`, and `closeFlushTimeoutMs` share the same napi
+  // contract constraint as the breaker fields below (`Must be greater than zero when
+  // supplied`), so a caller-supplied `0`/negative would forward verbatim and surface
+  // as a hard kernel `openSession` rejection. Treat any non-positive value as a
+  // misconfiguration and fall back to the kernel defaults, matching the breaker guard.
+  if (Number.isFinite(config.telemetryBatchSize) && config.telemetryBatchSize! > 0) {
+    telemetry.telemetryBatchSize = config.telemetryBatchSize;
+  } else {
+    warnRejected('telemetryBatchSize', config.telemetryBatchSize, 'greater than zero');
+  }
+  if (Number.isFinite(config.telemetryFlushIntervalMs) && config.telemetryFlushIntervalMs! > 0) {
+    telemetry.telemetryFlushIntervalMs = config.telemetryFlushIntervalMs;
+  } else {
+    warnRejected('telemetryFlushIntervalMs', config.telemetryFlushIntervalMs, 'greater than zero');
+  }
+  // `telemetryMaxRetries` and `telemetryRetryDelayMs` (from `telemetryBackoffBaseMs`)
+  // both document `0` as valid, so we don't require `> 0` like the fields above. Only
+  // `telemetryMaxRetries` is a user-settable `ConnectionOptions` knob (copied by
+  // `copyDefinedTelemetryOptions`); `telemetryBackoffBaseMs` is internal and only ever
+  // arrives from `DEFAULT_TELEMETRY_CONFIG.backoffBaseMs`, so it can't be user-negative
+  // today. We still guard both `>= 0` uniformly: a negative mapped onto the kernel's
+  // unsigned retry count would be rejected or wrap, so `>= 0` keeps `0` valid while
+  // falling back to the kernel default for negatives.
+  if (Number.isFinite(config.telemetryMaxRetries) && config.telemetryMaxRetries! >= 0) {
+    telemetry.telemetryMaxRetries = config.telemetryMaxRetries;
+  } else {
+    warnRejected('telemetryMaxRetries', config.telemetryMaxRetries, 'zero or greater');
+  }
+  if (Number.isFinite(config.telemetryBackoffBaseMs) && config.telemetryBackoffBaseMs! >= 0) {
+    telemetry.telemetryRetryDelayMs = config.telemetryBackoffBaseMs;
+  } else {
+    warnRejected('telemetryBackoffBaseMs', config.telemetryBackoffBaseMs, 'zero or greater');
+  }
+  if (Number.isFinite(config.telemetryCloseTimeoutMs) && config.telemetryCloseTimeoutMs! > 0) {
+    telemetry.telemetryCloseFlushTimeoutMs = config.telemetryCloseTimeoutMs;
+  } else {
+    warnRejected('telemetryCloseTimeoutMs', config.telemetryCloseTimeoutMs, 'greater than zero');
+  }
+  // We forward `telemetryCircuitBreakerThreshold`/`telemetryCircuitBreakerTimeoutMs`
+  // but intentionally leave `telemetryCircuitBreakerEnabled` unset: breaker activation
+  // is delegated to the kernel default. The threshold/timeout only take effect when
+  // the kernel enables the breaker; when it is disabled they are inert. There is no
+  // driver-side enable knob in `ClientConfig` to forward, so the enable decision lives
+  // entirely with the kernel default (mirroring the `telemetryEnabled` opt-in above).
+  //
+  // The napi contract requires threshold/timeout to be strictly positive when
+  // supplied. A caller-supplied `0` (or negative) would otherwise be forwarded
+  // verbatim and surface as a hard kernel `openSession` rejection, so treat any
+  // non-positive value as a misconfiguration and delegate to the kernel default.
+  if (Number.isFinite(config.telemetryCircuitBreakerThreshold) && config.telemetryCircuitBreakerThreshold! > 0) {
+    telemetry.telemetryCircuitBreakerThreshold = config.telemetryCircuitBreakerThreshold;
+  } else {
+    warnRejected('telemetryCircuitBreakerThreshold', config.telemetryCircuitBreakerThreshold, 'greater than zero');
+  }
+  if (Number.isFinite(config.telemetryCircuitBreakerTimeout) && config.telemetryCircuitBreakerTimeout! > 0) {
+    telemetry.telemetryCircuitBreakerTimeoutMs = config.telemetryCircuitBreakerTimeout;
+  } else {
+    warnRejected('telemetryCircuitBreakerTimeout', config.telemetryCircuitBreakerTimeout, 'greater than zero');
+  }
+
+  return telemetry;
 }
 
 /**

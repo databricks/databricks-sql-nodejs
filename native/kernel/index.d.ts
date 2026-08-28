@@ -1002,6 +1002,20 @@ export interface ConnectionOptions {
    * supplied.
    */
   telemetryCloseFlushTimeoutMs?: number
+  /** Enable telemetry circuit-breaker protection. Omitted ⇒ kernel default. */
+  telemetryCircuitBreakerEnabled?: boolean
+  /**
+   * Consecutive telemetry export failures before opening the circuit.
+   * Omitted ⇒ kernel default. Must be greater than zero when the circuit
+   * breaker is enabled.
+   */
+  telemetryCircuitBreakerThreshold?: number
+  /**
+   * Time the telemetry circuit stays open before a half-open probe, in
+   * milliseconds. Omitted ⇒ kernel default. Must be greater than zero when
+   * supplied.
+   */
+  telemetryCircuitBreakerTimeoutMs?: number
   /**
    * Programmatic HTTP/HTTPS proxy ([`ProxyInput`]) to route all kernel
    * traffic through. Carries the proxy `url`, optional basic-auth

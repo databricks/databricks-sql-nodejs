@@ -40,7 +40,7 @@ import TelemetryClientProvider from './telemetry/TelemetryClientProvider';
 import TelemetryEventEmitter from './telemetry/TelemetryEventEmitter';
 import MetricsAggregator from './telemetry/MetricsAggregator';
 import { DriverConfiguration, DRIVER_NAME, TelemetryEventType, DEFAULT_TELEMETRY_CONFIG } from './telemetry/types';
-import { safeEmit } from './telemetry/telemetryUtils';
+import { safeEmit, isTelemetryDisabledByEnv } from './telemetry/telemetryUtils';
 import driverVersion from './version';
 
 function prependSlash(str: string): string {
@@ -521,8 +521,10 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
    */
   private getLocaleName(): string {
     try {
-      // Try to get from environment variables
-      const lang = process.env.LANG || process.env.LC_ALL || process.env.LC_MESSAGES || '';
+      // Try to get from environment variables. Use POSIX precedence
+      // (LC_ALL > LC_MESSAGES > LANG) so this matches the kernel path's
+      // getLocaleName and telemetry localeName stays backend-invariant.
+      const lang = process.env.LC_ALL || process.env.LC_MESSAGES || process.env.LANG || '';
       if (lang) {
         // LANG format is typically "en_US.UTF-8", extract "en_US"
         const match = lang.match(/^([a-z]{2}_[A-Z]{2})/);
@@ -729,7 +731,8 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
     // doesn't ship in the public `.d.ts`. Mirrors Python's `kwargs.get("use_kernel")`
     // pattern (see databricks-sql-python/src/databricks/sql/session.py).
     const internalOptions = options as ConnectionOptions & InternalConnectionOptions;
-    const backend = internalOptions.useKernel
+    const useKernel = internalOptions.useKernel === true;
+    const backend = useKernel
       ? new KernelBackend({ context: this })
       : new ThriftBackend({
           context: this,
@@ -763,7 +766,10 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
     // expecting to enable telemetry.
     const envKill = process.env.DATABRICKS_TELEMETRY_DISABLED;
     const trimmedEnvKill = typeof envKill === 'string' ? envKill.trim() : '';
-    const envDisabled = trimmedEnvKill.length > 0 && /^(1|true|yes|on)$/i.test(trimmedEnvKill);
+    // Reuse the already-trimmed value to short-circuit the common (unset) case;
+    // `isTelemetryDisabledByEnv()` stays the single source of truth for the
+    // recognized-value parsing so the Thrift and kernel opt-outs can't drift.
+    const envDisabled = trimmedEnvKill.length > 0 && isTelemetryDisabledByEnv();
     // Surface the misconfiguration: an ops engineer who sees the var name and
     // tries to "set it to false to keep telemetry on" otherwise gets the
     // opposite of what they expect (the var is then silently ignored, runtime
@@ -777,7 +783,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
           `Telemetry remains controlled by the runtime config and feature flag.`,
       );
     }
-    if (this.config.telemetryEnabled && !envDisabled) {
+    if (!useKernel && this.config.telemetryEnabled && !envDisabled) {
       await this.initializeTelemetry();
     }
 
