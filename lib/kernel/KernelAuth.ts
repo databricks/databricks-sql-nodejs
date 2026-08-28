@@ -651,6 +651,22 @@ function getProcessName(): string {
 // through one implementation and can never drift.
 export { isTelemetryDisabledByEnv };
 
+/**
+ * Build the kernel telemetry options block from the driver's `ClientConfig`.
+ *
+ * **Always-forward is intentional, mirroring `buildKernelRetryOptions`.** On the
+ * real `DBSQLClient` path `getDefaultConfig()` seeds every one of these knobs from
+ * `DEFAULT_TELEMETRY_CONFIG`, so they are never `undefined` and always propagate to
+ * the kernel's `openSession` — the driver's telemetry-tuning defaults deliberately
+ * govern both backends from one `ClientConfig` (same rationale as the retry knobs),
+ * rather than letting the kernel's independent defaults apply. The kernel's own
+ * `"Omitted ⇒ kernel default"` branch is therefore only reachable via a bare
+ * `configOverrides`-style config (e.g. unit tests), not the default-populated one a
+ * live client uses. The `Number.isFinite(...) && > 0` guards below are NOT an
+ * opt-in gate: they exist to reject a caller-supplied out-of-range value (warning
+ * via `warnRejected`) and to tolerate sparse test configs, not to compare against
+ * the default.
+ */
 export function buildKernelTelemetryOptions(
   config: Pick<
     ClientConfig,
@@ -675,7 +691,9 @@ export function buildKernelTelemetryOptions(
   // (e.g. `telemetryBatchSize: 0`) is silently dropped in favour of the kernel default,
   // so without this the user gets no feedback that their setting was discarded. Only
   // warns when the knob was actually supplied (`Number.isFinite`) but out of range —
-  // an unset knob (`undefined`) is the normal case, not a misconfiguration.
+  // an unset knob (`undefined`) is never a misconfiguration. On the live `DBSQLClient`
+  // path these knobs are always populated from `DEFAULT_TELEMETRY_CONFIG`, so the
+  // `undefined` branch is the sparse-config (e.g. unit-test) case, not the norm.
   const warnRejected = (name: string, value: number | undefined, constraint: string) => {
     if (Number.isFinite(value)) {
       logger?.log(
