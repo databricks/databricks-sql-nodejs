@@ -1,13 +1,13 @@
 # Release History
 
-## Unreleased
+## 2.1.0
 
-- Kernel backend (`useKernel: true`): upgrade published native packages from `0.2.0` to `1.0.0`.
-- Kernel backend (`useKernel: true`): preserve qualified `INTERVAL MONTH` and
-  `INTERVAL DAY` parameter types on the SEA wire by using the kernel raw-parameter
-  path.
-- Kernel backend source builds (`useKernel: true`, built from `KERNEL_REV`): `getTypeInfo()` now matches the Thrift backend's canonical 18-column, 20-row type-info result. Customer-facing npm installs require a follow-up bump to a published native package containing this Kernel change. ([databricks-sql-kernel#291](https://github.com/databricks/databricks-sql-kernel/pull/291), PECOBLR-4166)
-- Kernel backend (`useKernel: true`): **Azure Entra (Azure AD) auth is now threaded through the kernel path.** On `authType: 'databricks-oauth'`: **U2M** (no secret) always routes to `OAuthU2m` — the kernel runs one cloud-blind in-house workspace-federated browser flow (it uses the workspace's OIDC-discovered authorize endpoint verbatim), which works against Azure workspaces, so Azure U2M forwards the in-house app (`databricks-sql-connector`) + `sql offline_access` scopes exactly like AWS/GCP, regardless of `useDatabricksOAuthInAzure` (verified E2E against a live Azure workspace). **M2M** (secret): `useDatabricksOAuthInAzure: true` (or non-Azure) → `OAuthM2m` (workspace-OIDC client-credentials); an Azure host with `useDatabricksOAuthInAzure` absent/`false` → the Entra-direct Azure service-principal M2M (`AzureSpM2m`, the Entra SP creds ride `oauthClientId`/`oauthClientSecret`, `azureTenantId` optional and auto-discovered when omitted). On a non-Azure host `useDatabricksOAuthInAzure` is inert. The `AzureSpM2m` path requires a `databricks-sql-kernel` native module that exposes the Azure SP surface — landed on `main` via [databricks-sql-kernel#282](https://github.com/databricks/databricks-sql-kernel/pull/282) (which the pinned `KERNEL_REV` `ef1a6f2` carries; the surface was originally proposed in [#280](https://github.com/databricks/databricks-sql-kernel/pull/280), which never reached `main`); U2M works on any kernel build. (PECOBLR-4141 / PECOBLR-4120)
+- **Security behavior change:** verify Thrift TLS certificates by default; add custom CA and mTLS options. (#463)
+- Upgrade the kernel backend to native package 1.0.0, including `getTypeInfo()` parity and interval-type fixes. (#512, #514, #516)
+- Add kernel Azure Entra authentication, static-token federation, and optional U2M token caching. (#501, #505, #509, #513)
+- Forward telemetry options to the kernel backend. (#506)
+- Add `disableRowMaterialization` for fetch-throughput benchmarks. (#465)
+- Add a connection-parameter reference comparing Thrift and SEA/kernel. (#457)
 
 ## 2.0.0
 
