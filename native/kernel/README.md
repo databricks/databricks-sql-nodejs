@@ -62,7 +62,7 @@ platform — each containing a single `.node` binary. `native/kernel/index.js`
 `process.platform` / `process.arch` at load time.
 
 > **Status:** the per-platform packages are published on npm (kernel
-> `0.2.0`) and declared in the driver's `optionalDependencies`, pinned to
+> `1.0.0`) and declared in the driver's `optionalDependencies`, pinned to
 > that exact version. `npm install` resolves only the package matching the
 > consumer's `process.platform` / `process.arch`; the others are skipped
 > (that is what `optionalDependencies` tolerates), so installing on an
