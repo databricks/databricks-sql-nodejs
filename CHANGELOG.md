@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Kernel backend (`useKernel: true`): upgrade published native packages from `0.2.0` to `1.0.0`.
 - Kernel backend (`useKernel: true`): preserve qualified `INTERVAL MONTH` and
   `INTERVAL DAY` parameter types on the SEA wire by using the kernel raw-parameter
   path.
