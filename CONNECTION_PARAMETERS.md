@@ -1,203 +1,186 @@
 # Connection parameter reference
 
-This document lists **every public connection / session parameter** the
-Node.js connector accepts, and — because the driver ships two backends —
-whether each parameter is honored on the **Thrift** backend (the default),
-the **SEA / Kernel** backend (opt-in via `useKernel: true`), or both.
+This document lists every typed public parameter accepted by
+`DBSQLClient.connect`, `DBSQLClient.openSession`, and
+`DBSQLSession.executeStatement`, plus the internal or deprecated connection
+inputs that the runtime still recognizes. Because the driver ships two
+backends, each table states whether the parameter is honored by the **Thrift**
+backend (the default), the **SEA / Kernel** backend, or both.
 
-The goal is to make protocol gaps explicit: a parameter honored on one
-backend but ignored (or rejected) on the other is called out in the **Note**
-column.
-
-> **Backend selection.** The connector defaults to Thrift. The SEA backend is
-> selected by passing `useKernel: true`, an **internal, unstable (M0)** option
-> that is intentionally absent from the published `.d.ts` and may be removed
-> without notice (`lib/contracts/InternalConnectionOptions.ts`). Treat every
-> "Kernel" column below as describing an experimental path.
+> **Backend selection.** The connector defaults to Thrift. Pass the internal,
+> unstable `useKernel: true` option to select Kernel. It is intentionally absent
+> from the published `.d.ts` and may be removed without notice.
 
 ## Legend
 
-| Symbol | Meaning                                                             |
-| ------ | ------------------------------------------------------------------- |
-| ✅     | Honored — the option is read and forwarded to the backend.          |
-| ❌     | Ignored or rejected — see the Note column.                          |
-| ⚠️     | Partially supported or behaves differently from the other backend.  |
-| —      | Not applicable / no public equivalent / no default on this backend. |
+| Symbol | Meaning                                                          |
+| ------ | ---------------------------------------------------------------- |
+| ✅     | Honored by the backend.                                          |
+| ❌     | Ignored, rejected, or unsupported by the backend.                |
+| ⚠️     | Honored only for some values, flows, or requests; read the note. |
+| —      | Not applicable or no default on this backend.                    |
 
 ## Sources of truth
 
-- Public option shape ← `lib/contracts/IDBSQLClient.ts` (`ConnectionOptions`,
-  `AuthOptions`, `OpenSessionRequest`) and `lib/contracts/IDBSQLSession.ts`
-  (`ExecuteStatementOptions`).
-- Default values ← `DBSQLClientDefaults` (`lib/DBSQLClient.ts`) and
-  `DEFAULT_TELEMETRY_CONFIG` (`lib/telemetry/types.ts`).
-- Internal / kernel-only flags ← `lib/contracts/InternalConnectionOptions.ts`.
-- Thrift wiring ← `lib/DBSQLClient.ts` (`getConnectionOptions`,
-  `createAuthProvider`), `lib/thrift-backend/ThriftBackend.ts`,
+- Public option shapes: `lib/contracts/IDBSQLClient.ts` and
+  `lib/contracts/IDBSQLSession.ts`.
+- Internal Kernel options: `lib/contracts/InternalConnectionOptions.ts` and
+  the runtime-only casts in `lib/kernel/KernelAuth.ts`.
+- Defaults: `DBSQLClient.getDefaultConfig`, `DEFAULT_TELEMETRY_CONFIG`, and
+  `native/kernel/index.d.ts`.
+- Thrift wiring: `lib/DBSQLClient.ts`, `lib/thrift-backend/ThriftBackend.ts`,
+  `lib/thrift-backend/ThriftSessionBackend.ts`, and
   `lib/connection/connections/HttpConnection.ts`.
-- Kernel wiring ← `lib/kernel/KernelAuth.ts` (`buildKernelConnectionOptions`,
-  `buildKernelTlsOptions`, `buildKernelHttpOptions`, `buildKernelProxyOptions`,
-  `buildKernelRetryOptions`), `lib/kernel/KernelBackend.ts`,
+- Kernel wiring: `lib/kernel/KernelAuth.ts`, `lib/kernel/KernelBackend.ts`, and
   `lib/kernel/KernelSessionBackend.ts`.
-- Kernel-core parameter semantics ← databricks-sql-kernel
-  [`docs/connection-parameters.md`](https://github.com/databricks/databricks-sql-kernel/pull/184).
 
 ---
 
-## Connection identity
+## Connection identity and backend selection
 
-| Option           | Type     | Thrift | Kernel | Default Value | Note                                                                                                                                                   |
-| ---------------- | -------- | :----: | :----: | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `host`           | `string` |   ✅   |   ✅   | — (required)  | Required on both.                                                                                                                                      |
-| `path`           | `string` |   ✅   |   ✅   | — (required)  | HTTP path; on the kernel path the org id is auto-parsed from a `?o=<id>` query param and sent as `x-databricks-org-id`.                                |
-| `port`           | `number` |   ✅   |   ⚠️   | `443`         | Thrift defaults to `443` (`options.port \|\| 443`). The kernel derives host/port from `host` + `path`; a standalone `port` is not separately threaded. |
-| `userAgentEntry` | `string` |   ✅   |   ✅   | —             | Folded into the composed `User-Agent` on both.                                                                                                         |
+| Option                  | Type      | Thrift | Kernel | Default Value | Note                                                                                   |
+| ----------------------- | --------- | :----: | :----: | ------------- | -------------------------------------------------------------------------------------- |
+| `host`                  | `string`  |   ✅   |   ✅   | — (required)  | Required on both.                                                                      |
+| `path`                  | `string`  |   ✅   |   ✅   | — (required)  | Kernel also derives `x-databricks-org-id` from a `?o=<id>` query parameter.            |
+| `port`                  | `number`  |   ✅   |   ❌   | `443` / —     | Kernel ignores this field. Include a non-default port in `host` for Kernel.            |
+| `userAgentEntry`        | `string`  |   ✅   |   ✅   | —             | Folded into the connector `User-Agent` on both.                                        |
+| `useKernel` (internal)  | `boolean` |   —    |   —    | `false`       | Selects the backend: `false`/omitted → Thrift, `true` → Kernel.                        |
+| `clientId` (deprecated) | `string`  |   ✅   |   ✅   | —             | Runtime-only alias for `userAgentEntry`. `userAgentEntry` wins when both are supplied. |
 
 ## Authentication
 
-| Option                                         | Type                                                         | Thrift | Kernel | Default Value                                      | Note                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| ---------------------------------------------- | ------------------------------------------------------------ | :----: | :----: | -------------------------------------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `authType` — supported on both backends        | `'access-token'` \| `'databricks-oauth'` \| `'static-token'` |   ✅   |   ✅   | `'access-token'`                                   | `access-token` uses `token` (PAT) and is the default when `authType` is omitted. `static-token` uses `staticToken`; the kernel maps it to its native bearer-token mode. `databricks-oauth` covers M2M (`oauthClientId` + `oauthClientSecret`), U2M (browser; no secret), and — on an Azure host — Entra-direct service-principal M2M (see the `azureTenantId` / `useDatabricksOAuthInAzure` row).                                                                                                                                                                                                                                                                                                                                                    |
-| `authType` — Thrift-only                       | `'custom'` \| `'token-provider'` \| `'external-token'`       |   ✅   |   ❌   | —                                                  | **Thrift-only.** `custom` uses `provider: IAuthentication`, `token-provider` uses `tokenProvider: ITokenProvider`, and `external-token` uses `getToken: TokenCallback`. The kernel throws `unsupported auth mode` for these modes.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                   |
-| `token` (PAT)                                  | `string`                                                     |   ✅   |   ✅   | — (required for `access-token`)                    | Personal access token for `access-token` (the default mode). Thrift → `PlainHttpAuthentication` HTTP basic auth (username `token`). Kernel → native `Pat` authMode. Kernel rejects a blank/reserved token client-side (`AuthenticationError`) and rejects pairing it with OAuth fields; Thrift forwards it verbatim (a blank surfaces as a server-side 401).                                                                                                                                                                                                                                                                                                                                                                                         |
-| `staticToken`                                  | `string`                                                     |   ✅   |   ✅   | — (required for `static-token`)                    | Bearer/JWT for `static-token`. Thrift → `StaticTokenProvider.fromJWT` wrapped in `TokenProviderAuthenticator` (federation opt-in via `enableTokenFederation`). Kernel → native `Pat` bearer mode with federation always on (`federationClientId` ⇒ SP-wide WIF, omitted ⇒ account-wide). Kernel rejects a blank/reserved value; see the `enableTokenFederation` row.                                                                                                                                                                                                                                                                                                                                                                                 |
-| `oauthScopes`                                  | `Array<string>`                                              |   ❌   |   ✅   | U2M `['sql','offline_access']`, M2M `['all-apis']` | **Thrift ignores `oauthScopes`** — `createAuthProvider` never threads it into `DatabricksOAuth`, so `authenticate()` always falls back to `defaultOAuthScopes` (`['sql','offline_access']`). Only the kernel honors a custom `oauthScopes`; its defaults happen to match Thrift's fallback.                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| `oauthClientId`                                | `string`                                                     |   ✅   |   ✅   | `databricks-sql-connector` when absent             | OAuth client id, used on **both** U2M and M2M. Forwarded verbatim on both backends when set. When absent it defaults to `databricks-sql-connector` — Thrift via `getClientId()` for both flows; kernel via `oauthClientId ?? DEFAULT_OAUTH_CLIENT_ID` on M2M, and by letting the napi binding apply its own (identical) default on U2M. **Parity:** `oauthClientId` + no secret routes to **U2M** with the id forwarded (flow selection keys off `oauthClientSecret` presence — see that row), so it does **not** throw an M2M "secret required" error.                                                                                                                                                                                              |
-| `oauthClientSecret` (M2M)                      | `string`                                                     |   ✅   |   ✅   | —                                                  | M2M client-credentials secret; its **presence** is the U2M-vs-M2M flow selector on both backends (`undefined` ⇒ U2M). Thrift → `DatabricksOAuth.clientSecret`. Kernel → native `oauthClientSecret` (workspace-OIDC M2M) or remapped to `azureClientSecret` (Entra-direct `AzureSpM2m`). A blank/reserved secret is forwarded verbatim and still selects M2M (Thrift parity) — except the Azure SP arm, which rejects it.                                                                                                                                                                                                                                                                                                                             |
-| `azureTenantId` / `useDatabricksOAuthInAzure`  | `string` / `boolean`                                         |   ✅   |   ⚠️   | —                                                  | **Honored on both.** By design the kernel routes **all U2M** (no secret, any cloud) to its cloud-blind in-house OAuth U2M flow — there is no Azure-specific U2M mode, so `useDatabricksOAuthInAzure` is inert on U2M and every Azure workspace (including `.databricks.azure.us` US-gov) is always supported, on any kernel build. `useDatabricksOAuthInAzure` selects only the **M2M** mechanism on an Azure host: absent/`false` → Entra-direct service-principal M2M (native `AzureSpM2m` mode, creds ride `oauthClientId`/`oauthClientSecret`, `azureTenantId` optional — kernel auto-discovers from the workspace `/aad/auth` redirect when omitted); `true` → workspace-OIDC M2M. (`lib/kernel/KernelAuth.ts` `buildKernelConnectionOptions`.) |
-| `persistence` (custom OAuth token store)       | `OAuthPersistence`                                           |   ✅   |   ❌   | —                                                  | **Thrift-only.** Kernel throws (no custom-store hook). Its built-in U2M on-disk cache (`~/.config/databricks-sql-kernel/oauth/`) is **optional**, controlled by `tokenCacheEnabled` and **disabled by default** (`false`/omitted ⇒ in-memory only); it never caches M2M. See the `tokenCacheEnabled` row.                                                                                                                                                                                                                                                                                                                                                                                                                                            |
-| `tokenCacheEnabled` (U2M on-disk cache)        | `boolean`                                                    |   ❌   |   ✅   | `false` (disabled by default)                      | **Kernel U2M-only.** Controls the kernel's built-in on-disk token cache for U2M OAuth flows. When `true`, the refresh token is persisted (AES-256 encrypted) to `~/.config/databricks-sql-kernel/oauth/`. When `false` or omitted (the default), tokens remain in-memory only — silent-no-persist parity. No effect on M2M or other auth types. Distinct from the Thrift `persistence` custom-store hook. TODO: publish only after PR #283 (`tokenCacheEnabled` napi support) ships in `@databricks/databricks-sql-kernel`.                                                                                                                                                                                                                          |
-| `enableTokenFederation` / `federationClientId` | `boolean` / `string`                                         |   ✅   |   ⚠️   | `false` / —                                        | On the kernel backend these options apply only to `static-token`. Federation is always enabled, so `enableTokenFederation` is ignored; an omitted or empty client ID selects account-wide WIF and a non-empty ID selects SP-wide WIF. Thrift honors the boolean and also supports these options for `token-provider` and `external-token`.                                                                                                                                                                                                                                                                                                                                                                                                           |
+| Option                                        | Type                                                         | Thrift | Kernel | Default Value                 | Note                                                                                                                                                                                                                       |
+| --------------------------------------------- | ------------------------------------------------------------ | :----: | :----: | ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `authType` — common modes                     | `'access-token'` \| `'databricks-oauth'` \| `'static-token'` |   ✅   |   ✅   | `'access-token'`              | `access-token` uses `token`; `static-token` uses `staticToken`. OAuth supports U2M and M2M, with the Kernel qualifications below.                                                                                          |
+| `authType` — Thrift-only modes                | `'custom'` \| `'token-provider'` \| `'external-token'`       |   ✅   |   ❌   | —                             | Kernel rejects these auth modes.                                                                                                                                                                                           |
+| `token`                                       | `string`                                                     |   ✅   |   ✅   | required for `access-token`   | Thrift sends the PAT as a Bearer token (`Authorization: Bearer <token>`); Kernel uses native PAT auth. Kernel rejects blank/reserved values client-side.                                                                   |
+| `staticToken`                                 | `string`                                                     |   ✅   |   ✅   | required for `static-token`   | Thrift optionally wraps it in federation. Kernel uses native bearer-token auth with federation always enabled.                                                                                                             |
+| `provider`                                    | `IAuthentication`                                            |   ✅   |   ❌   | required for `custom`         | Custom Thrift authentication provider.                                                                                                                                                                                     |
+| `tokenProvider`                               | `ITokenProvider`                                             |   ✅   |   ❌   | required for `token-provider` | Thrift wraps it with caching and optional federation.                                                                                                                                                                      |
+| `getToken`                                    | `TokenCallback`                                              |   ✅   |   ❌   | required for `external-token` | Callback used by the Thrift external-token provider.                                                                                                                                                                       |
+| `oauthScopes`                                 | `Array<string>`                                              |   ❌   |   ⚠️   | flow-dependent                | Thrift does not pass caller-supplied scopes to `DatabricksOAuth`. Kernel honors them for U2M and workspace-OIDC M2M, but Azure Entra-direct M2M uses its fixed `<resource>/.default` scope.                                |
+| `oauthClientId`                               | `string`                                                     |   ✅   |   ✅   | flow- and cloud-dependent     | In-house OAuth defaults to `databricks-sql-connector`. Thrift Entra-direct defaults to its Azure application id; Kernel Entra-direct M2M requires an explicit id.                                                          |
+| `oauthClientSecret`                           | `string`                                                     |   ✅   |   ✅   | —                             | Presence selects M2M; absence selects U2M on both. Kernel forwards blank values for workspace-OIDC parity, but rejects them in the Azure Entra-direct arm.                                                                 |
+| `azureTenantId` / `useDatabricksOAuthInAzure` | `string` / `boolean`                                         |   ✅   |   ⚠️   | —                             | Kernel ignores both for U2M. On Azure M2M, `useDatabricksOAuthInAzure: false`/omitted selects Entra-direct and `true` selects workspace OIDC; `azureTenantId` applies only to Entra-direct.                                |
+| `persistence`                                 | `OAuthPersistence`                                           |   ✅   |   ❌   | in-memory store / —           | Custom OAuth persistence hook. Kernel rejects it; use `tokenCacheEnabled` for the Kernel U2M cache.                                                                                                                        |
+| `tokenCacheEnabled`                           | `boolean`                                                    |   ❌   |   ✅   | — / `false`                   | Kernel U2M only. Enables its encrypted on-disk refresh-token cache; it has no effect on M2M or other auth types.                                                                                                           |
+| `enableTokenFederation`                       | `boolean`                                                    |   ✅   |   ❌   | `false` / —                   | Thrift federation opt-in. Kernel ignores it because federation is always enabled for `static-token`.                                                                                                                       |
+| `federationClientId`                          | `string`                                                     |   ✅   |   ⚠️   | —                             | Thrift uses it when federation is enabled for token-provider, external-token, or static-token auth. Kernel honors it only for `static-token`; a non-empty value selects SP-wide WIF and omission selects account-wide WIF. |
+| `authProvider` second argument (deprecated)   | `IAuthentication`                                            |   ✅   |   ❌   | —                             | Deprecated second argument to `DBSQLClient.connect`. It overrides Thrift authentication; Kernel ignores it and authenticates from `ConnectionOptions`.                                                                     |
 
-## HTTP client, proxy, retries
+## HTTP client, proxy, and retries
 
-| Option                       | Type                     | Thrift | Kernel | Default Value     | Note                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                          |
-| ---------------------------- | ------------------------ | :----: | :----: | ----------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `socketTimeout`              | `number` (ms)            |   ✅   |   ⚠️   | `900000` (15 min) | Kernel maps it to the request timeout but forwards **only positive** values — `socketTimeout: 0` (Thrift "wait indefinitely") is omitted so the kernel keeps its large default.                                                                                                                                                                                                                                                                                                                                               |
-| `proxy`                      | `ProxyOptions`           |   ✅   |   ⚠️   | —                 | `{protocol, host, port, auth}`. Kernel accepts **`http://` / `https://` only**; a SOCKS `protocol` surfaces a kernel connect error (Thrift supports SOCKS variants).                                                                                                                                                                                                                                                                                                                                                          |
-| `noProxy` (internal)         | `string`                 |   ❌   |   ✅   | —                 | **Thrift ignores `noProxy`** — `getConnectionOptions` never threads it, and `getProxyForUrl: () => proxyUrl` returns the proxy for every URL (no bypass-list logic). Only the kernel honors it, forwarded as `bypassHosts`.                                                                                                                                                                                                                                                                                                   |
-| `customHeaders`              | `Record<string, string>` |   ⚠️   |   ✅   | —                 | **Thrift: out-of-band requests only.** `getConnectionOptions` never threads `customHeaders` into the Thrift query transport (it sets only `User-Agent`); the map is consumed by `buildCustomHeaders` for driver-owned telemetry POSTs / feature-flag GETs and SPOG `x-databricks-org-id` injection, not the primary transport or OAuth/OIDC token requests. Kernel applies them to every request (dropping reserved `Authorization` / `x-databricks-org-id`, rejecting CR/LF/NUL, appending the connector `User-Agent` last). |
-| `retryMaxAttempts`           | `number`                 |   ✅   |   ✅   | `5`               | Total-attempt semantics on both; kernel converts to retries-after-first.                                                                                                                                                                                                                                                                                                                                                                                                                                                      |
-| `retriesTimeout`             | `number` (ms)            |   ✅   |   ✅   | `900000` (15 min) | Kernel converts ms → whole seconds.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                           |
-| `retryDelayMin`              | `number` (ms)            |   ✅   |   ✅   | `1000` (1 s)      | Kernel converts ms → seconds.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| `retryDelayMax`              | `number` (ms)            |   ✅   |   ✅   | `60000` (60 s)    | Kernel converts ms → seconds.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
-| `maxConnections` (pool size) | `number` (internal)      |   ❌   |   ✅   | kernel default    | **Kernel-only** (`InternalConnectionOptions`). Thrift has no connection pool.                                                                                                                                                                                                                                                                                                                                                                                                                                                 |
+| Option                      | Type                     | Thrift | Kernel | Default Value       | Note                                                                                                                                                                                                                                            |
+| --------------------------- | ------------------------ | :----: | :----: | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `socketTimeout`             | `number` (ms)            |   ✅   |   ⚠️   | `900000` / `120000` | Kernel forwards only positive values. `0` means no timeout on Thrift but is omitted on Kernel, which then keeps its 120-second default.                                                                                                         |
+| `proxy`                     | `ProxyOptions`           |   ✅   |   ⚠️   | —                   | `{protocol, host, port, auth}`. Kernel supports HTTP/HTTPS proxies only; Thrift also supports the declared SOCKS variants.                                                                                                                      |
+| `noProxy` (internal)        | `string`                 |   ❌   |   ⚠️   | —                   | Runtime-only Kernel bypass list, forwarded as `bypassHosts` only when an explicit `proxy` is also supplied.                                                                                                                                     |
+| `customHeaders`             | `Record<string, string>` |   ⚠️   |   ✅   | —                   | Thrift applies these only to driver-owned telemetry and feature-flag requests, not the primary transport or OAuth. Kernel applies them after dropping reserved auth/org headers, validating control characters, and appending the connector UA. |
+| `retryMaxAttempts`          | `number`                 |   ✅   |   ✅   | `5`                 | Total attempts, including the initial request. Kernel converts this to its retries-after-first representation internally.                                                                                                                       |
+| `retriesTimeout`            | `number` (ms)            |   ✅   |   ✅   | `900000`            | Kernel converts milliseconds to whole seconds.                                                                                                                                                                                                  |
+| `retryDelayMin`             | `number` (ms)            |   ✅   |   ✅   | `1000`              | Kernel converts milliseconds to whole seconds.                                                                                                                                                                                                  |
+| `retryDelayMax`             | `number` (ms)            |   ✅   |   ✅   | `60000`             | Kernel converts milliseconds to whole seconds.                                                                                                                                                                                                  |
+| `maxConnections` (internal) | `number`                 |   ❌   |   ✅   | — / Kernel default  | Kernel connection-pool size. Must be a positive integer within the napi `u32` range.                                                                                                                                                            |
 
 ## TLS / SSL
 
-> **Thrift TLS is public and secure-by-default.** `checkServerCertificate`,
-> `customCaCert`, `clientCert`, and `clientKey` are declared on the public
-> `ConnectionOptions` (`lib/contracts/IDBSQLClient.ts`) and honored on the
-> Thrift (default) backend. `getConnectionOptions` (`lib/DBSQLClient.ts`) maps
-> `customCaCert` → `ca` (**additively**, on top of `tls.rootCertificates` +
-> `NODE_EXTRA_CA_CERTS`), `clientCert` → `cert`, and `clientKey` → `key`, with a
-> both-or-neither mTLS guard and `normalizePemBytes` PEM validation. It sets
-> `rejectUnauthorized: options.checkServerCertificate ?? true`, and
-> `HttpConnection` reads `this.options.rejectUnauthorized ?? true` — i.e.
-> **verification is on by default**; you must pass `checkServerCertificate:
-false` to accept any certificate.
+Both backends verify server certificates by default. Prefer `customCaCert` to
+disabling verification.
 
-| Option                           | Type               | Thrift | Kernel | Default Value | Note                                                                                                                                    |
-| -------------------------------- | ------------------ | :----: | :----: | ------------- | --------------------------------------------------------------------------------------------------------------------------------------- |
-| `checkServerCertificate`         | `boolean`          |   ✅   |   ✅   | `true`        | Master verify toggle on both, secure-by-default: Thrift uses `options.checkServerCertificate ?? true`. Set `false` to accept-anything.  |
-| `checkServerCertificateHostname` | `boolean` (kernel) |   ❌   |   ✅   | `true`        | **Kernel-only.** Independent hostname-vs-SNI check; no-op when `checkServerCertificate: false`. No Thrift equivalent.                   |
-| `customCaCert`                   | `Buffer \| string` |   ✅   |   ✅   | —             | PEM. Honored on both; added on top of system roots. Thrift maps it to `ca` additively (`tls.rootCertificates` + `NODE_EXTRA_CA_CERTS`). |
-| `clientCert` (mTLS)              | `Buffer \| string` |   ✅   |   ✅   | —             | Honored on both; maps to `cert`. Must be paired with `clientKey`; supplying one alone throws a client-side error.                       |
-| `clientKey` (mTLS)               | `Buffer \| string` |   ✅   |   ✅   | —             | Honored on both; maps to `key`. Must be paired with `clientCert`. PKCS#8 recommended.                                                   |
+| Option                                      | Type               | Thrift | Kernel | Default Value | Note                                                                                                                                          |
+| ------------------------------------------- | ------------------ | :----: | :----: | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `checkServerCertificate`                    | `boolean`          |   ✅   |   ✅   | `true`        | Master verification toggle. `false` disables chain and hostname verification.                                                                 |
+| `checkServerCertificateHostname` (internal) | `boolean`          |   ❌   |   ✅   | — / `true`    | Independent Kernel hostname-vs-SNI check; no-op when `checkServerCertificate` is `false`.                                                     |
+| `customCaCert`                              | `Buffer \| string` |   ✅   |   ✅   | —             | Additional PEM CA. Thrift uses Node bundled roots plus `NODE_EXTRA_CA_CERTS`, then appends this CA; Kernel adds it to its normal trust roots. |
+| `clientCert`                                | `Buffer \| string` |   ✅   |   ✅   | —             | Public mTLS client certificate. Must be paired with `clientKey`.                                                                              |
+| `clientKey`                                 | `Buffer \| string` |   ✅   |   ✅   | —             | Public mTLS private key. Must be paired with `clientCert`; PKCS#8 is recommended for Kernel portability.                                      |
+| `clientCertPem` / `clientKeyPem` (internal) | `Buffer \| string` |   ❌   |   ✅   | —             | Runtime-only Kernel aliases for the public mTLS pair. They take precedence over `clientCert`/`clientKey` when both pairs are supplied.        |
 
-## Results & type rendering
+## Results and type rendering
 
-| Option                        | Type      | Thrift | Kernel | Default Value | Note                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                       |
-| ----------------------------- | --------- | :----: | :----: | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `preserveBigNumericPrecision` | `boolean` |   ✅   |   ✅   | `false`       | DECIMAL → exact string, BIGINT → `bigint` on both.                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                                         |
-| `enableMetricViewMetadata`    | `boolean` |   ✅   |   ⚠️   | `false`       | **Auto-injected for both backends** in `DBSQLClient.openSession`, which sets `spark.sql.thriftserver.metadata.metricview.enabled=true` on `request.configuration` before dispatch. `KernelBackend` folds that into `sessionOptions.sessionConf`, so the conf **does** reach the kernel session config. (`ThriftBackend.ts` performs a second, redundant injection on the Thrift path.) The kernel-side gap is that the key is a non-allowlisted session conf, so it is likely dropped by the kernel's case-insensitive allowlist (see "Session defaults") — not that it is never injected. |
+| Option                        | Type      | Thrift | Kernel | Default Value | Note                                                                                                                                   |
+| ----------------------------- | --------- | :----: | :----: | ------------- | -------------------------------------------------------------------------------------------------------------------------------------- |
+| `preserveBigNumericPrecision` | `boolean` |   ✅   |   ✅   | `false`       | Returns DECIMAL as an exact string and BIGINT as `bigint` on both.                                                                     |
+| `disableRowMaterialization`   | `boolean` |   ✅   |   ✅   | `false`       | Fetches and parses Arrow batches but returns `null` row placeholders instead of converting cells. Intended for fetch-throughput tests. |
+| `enableMetricViewMetadata`    | `boolean` |   ✅   |   ⚠️   | `false`       | Injected into session configuration on both paths. Kernel may drop its non-allowlisted configuration key.                              |
 
 ## Session defaults (`openSession(request)`)
 
-| Option                          | Type                                          | Thrift | Kernel | Default Value | Note                                                                                                                                                                           |
-| ------------------------------- | --------------------------------------------- | :----: | :----: | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `initialCatalog`                | `string`                                      |   ✅   |   ✅   | —             | Kernel → `DefaultOpts.catalog` on `CreateSession`.                                                                                                                             |
-| `initialSchema`                 | `string`                                      |   ✅   |   ✅   | —             | Kernel → `DefaultOpts.schema`.                                                                                                                                                 |
-| `configuration` (session confs) | `{ [key: string]: string }`                   |   ✅   |   ⚠️   | —             | Kernel matches keys **case-insensitively against an allowlist** and uppercases them; **non-allowlisted keys are dropped with a warning**. Thrift forwards the map more freely. |
-| `queryTags`                     | `Record<string, string \| null \| undefined>` |   ✅   |   ✅   | —             | Both serialize into the reserved `QUERY_TAGS` conf; `queryTags` takes precedence over `configuration.QUERY_TAGS`.                                                              |
+| Option           | Type                                          | Thrift | Kernel | Default Value | Note                                                                                                                                            |
+| ---------------- | --------------------------------------------- | :----: | :----: | ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------- |
+| `initialCatalog` | `string`                                      |   ✅   |   ✅   | —             | Initial catalog for the session.                                                                                                                |
+| `initialSchema`  | `string`                                      |   ✅   |   ✅   | —             | Initial schema for the session.                                                                                                                 |
+| `configuration`  | `{ [key: string]: string }`                   |   ✅   |   ⚠️   | —             | Kernel matches keys case-insensitively against an allowlist and drops non-allowlisted keys with a warning. Thrift forwards the map more freely. |
+| `queryTags`      | `Record<string, string \| null \| undefined>` |   ✅   |   ✅   | —             | Both serialize this into the reserved `QUERY_TAGS` session conf. It takes precedence over `configuration.QUERY_TAGS`.                           |
 
 ## Telemetry
 
-All `telemetry*` options live in the driver-layer `ClientConfig`, not in either
-backend, so they are read regardless of `useKernel`. Defaults are sourced from
-`DEFAULT_TELEMETRY_CONFIG` (`lib/telemetry/types.ts`).
+Thrift uses the driver-layer telemetry implementation. Kernel uses its native
+telemetry implementation, so only the options explicitly forwarded by
+`buildKernelTelemetryOptions` apply to Kernel.
 
-| Option                             | Type          | Thrift | Kernel | Default Value | Note                                                |
-| ---------------------------------- | ------------- | :----: | :----: | ------------- | --------------------------------------------------- |
-| `telemetryEnabled`                 | `boolean`     |   ✅   |   ✅   | `true`        | Enabled by default, gated by a server feature flag. |
-| `telemetryBatchSize`               | `number`      |   ✅   |   ✅   | `100`         | Metrics per export batch.                           |
-| `telemetryFlushIntervalMs`         | `number` (ms) |   ✅   |   ✅   | `5000`        | Periodic flush interval.                            |
-| `telemetryMaxRetries`              | `number`      |   ✅   |   ✅   | `3`           | Export retry attempts.                              |
-| `telemetryAuthenticatedExport`     | `boolean`     |   ✅   |   ✅   | `true`        | Export via the authenticated endpoint.              |
-| `telemetryCircuitBreakerThreshold` | `number`      |   ✅   |   ✅   | `5`           | Consecutive failures before the breaker opens.      |
-| `telemetryCircuitBreakerTimeout`   | `number` (ms) |   ✅   |   ✅   | `60000`       | Breaker open duration.                              |
-| `telemetryCloseTimeoutMs`          | `number` (ms) |   ✅   |   ✅   | `2000`        | Caps `client.close()` shutdown latency.             |
-| `telemetryMaxStatementMetrics`     | `number`      |   ✅   |   ✅   | `5000`        | Hard cap for the per-statement aggregation map.     |
-| `telemetryMaxPendingMetrics`       | `number`      |   ✅   |   ✅   | `500`         | Cap on buffered, not-yet-exported metrics.          |
+| Option                             | Type          | Thrift | Kernel | Default Value    | Note                                                                                                                                                         |
+| ---------------------------------- | ------------- | :----: | :----: | ---------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `telemetryEnabled`                 | `boolean`     |   ✅   |   ✅   | `true` / `false` | Thrift is enabled by default but gated by a workspace feature flag. Kernel is opt-in: pass `true` explicitly. `DATABRICKS_TELEMETRY_DISABLED` disables both. |
+| `telemetryBatchSize`               | `number`      |   ✅   |   ✅   | `100`            | Events per export batch.                                                                                                                                     |
+| `telemetryFlushIntervalMs`         | `number` (ms) |   ✅   |   ✅   | `5000`           | Periodic flush interval.                                                                                                                                     |
+| `telemetryMaxRetries`              | `number`      |   ✅   |   ✅   | `3`              | Export retry attempts after the initial request.                                                                                                             |
+| `telemetryAuthenticatedExport`     | `boolean`     |   ✅   |   ❌   | `true` / —       | Selects the authenticated endpoint only in the Thrift driver-layer exporter. It is not forwarded to Kernel.                                                  |
+| `telemetryCircuitBreakerThreshold` | `number`      |   ✅   |   ⚠️   | `5`              | Forwarded to Kernel, but effective there only when the native telemetry circuit breaker is enabled.                                                          |
+| `telemetryCircuitBreakerTimeout`   | `number` (ms) |   ✅   |   ⚠️   | `60000`          | Forwarded to Kernel, but effective there only when the native telemetry circuit breaker is enabled.                                                          |
+| `telemetryCloseTimeoutMs`          | `number` (ms) |   ✅   |   ✅   | `2000`           | Maximum wait for the final telemetry flush.                                                                                                                  |
+| `telemetryMaxStatementMetrics`     | `number`      |   ✅   |   ❌   | `5000` / —       | Thrift driver-layer aggregation-map cap. It is not forwarded to Kernel.                                                                                      |
+| `telemetryMaxPendingMetrics`       | `number`      |   ✅   |   ❌   | `500` / —        | Thrift driver-layer pending-buffer cap. It is not forwarded to Kernel.                                                                                       |
 
-> **Telemetry _events_ differ by backend.** The config knobs above are
-> backend-agnostic (driver layer), but the kernel owns result fetching
-> internally, so it emits fewer per-statement / CloudFetch telemetry events than
-> the Thrift path.
+> Telemetry events also differ by backend. Kernel owns execution and result
+> fetching below the TypeScript layer, so its event set is not identical to the
+> Thrift driver-layer event set.
 
 ## Per-statement options (`session.executeStatement(sql, options)`)
 
-| Option                                 | Type                                | Thrift | Kernel | Default Value | Note                                                                                                                                                                                                                                                                                                                                |
-| -------------------------------------- | ----------------------------------- | :----: | :----: | ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `maxRows`                              | `number \| bigint \| Int64 \| null` |   ✅   |   ✅   | `100000`      | Kernel applies it at fetch time in the facade rather than on the request.                                                                                                                                                                                                                                                           |
-| `useCloudFetch`                        | `boolean`                           |   ✅   |   ❌   | `true`        | **Thrift-only.** Kernel ignores it (logs a no-op warning); CloudFetch is governed by the kernel's result configuration, not per-statement.                                                                                                                                                                                          |
-| `useLZ4Compression`                    | `boolean`                           |   ✅   |   ❌   | `true`        | **Thrift-only.** Kernel ignores it (no-op warning); the kernel auto-detects and decompresses `LZ4_FRAME` from the server result manifest.                                                                                                                                                                                           |
-| `stagingAllowedLocalPath` (volume ops) | `string \| string[]`                |   ✅   |   ❌   | —             | **Thrift-only.** Not supported on the kernel path.                                                                                                                                                                                                                                                                                  |
-| `runAsync`                             | `boolean`                           |   ⚠️   |   ✅   | `false`       | Deprecated. **Thrift:** no-op — the path always submits async (`runAsync: true` on the wire) and polls during fetch; the option is not read. **Kernel:** selects the execution path — `false`/unset (default) runs the blocking direct-results path (cancellable mid-compute); `true` submits and polls (returns a pending handle). |
+| Option                    | Type                                                    | Thrift | Kernel | Default Value | Note                                                                                                                                                                      |
+| ------------------------- | ------------------------------------------------------- | :----: | :----: | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `queryTimeout`            | `number \| bigint \| Int64`                             |   ✅   |   ❌   | —             | Thrift sends this server-side timeout for Compute clusters. Kernel ignores it; SQL Warehouses use `STATEMENT_TIMEOUT`.                                                    |
+| `runAsync`                | `boolean`                                               |   ❌   |   ✅   | — / `false`   | Thrift always sends asynchronously and ignores the option. Kernel `false`/omitted uses direct execution; `true` submits and polls. This execute option is not deprecated. |
+| `maxRows`                 | `number \| bigint \| Int64 \| null`                     |   ✅   |   ❌   | `100000` / —  | Thrift uses it for the initial Direct Results row count; `null` disables Direct Results. Kernel does not retain or forward the supplied value.                            |
+| `useCloudFetch`           | `boolean`                                               |   ✅   |   ❌   | `true` / —    | Kernel logs and ignores this per-statement hint; Kernel result fetching owns its CloudFetch behavior.                                                                     |
+| `useLZ4Compression`       | `boolean`                                               |   ✅   |   ❌   | `true` / —    | Thrift uses it when supported and when the result is not CloudFetch. Kernel owns and auto-detects result compression.                                                     |
+| `stagingAllowedLocalPath` | `string \| string[]`                                    |   ✅   |   ❌   | —             | Local allowlist for Thrift volume/staging operations. Kernel volume operations are unsupported.                                                                           |
+| `namedParameters`         | `Record<string, DBSQLParameter \| DBSQLParameterValue>` |   ✅   |   ✅   | —             | Named SQL parameters. Cannot be combined with non-empty `ordinalParameters`. Thrift requires a protocol that supports parameterized queries.                              |
+| `ordinalParameters`       | `Array<DBSQLParameter \| DBSQLParameterValue>`          |   ✅   |   ✅   | —             | Positional SQL parameters. Cannot be combined with non-empty `namedParameters`.                                                                                           |
+| `queryTags`               | `Record<string, string \| null \| undefined>`           |   ✅   |   ✅   | —             | Serialized into the per-statement `query_tags` conf overlay on both.                                                                                                      |
+| `rowLimit`                | `number`                                                |   ❌   |   ✅   | —             | Kernel-only server-side row cap. Thrift logs and ignores it.                                                                                                              |
+| `statementConf`           | `Record<string, string>`                                |   ❌   |   ✅   | —             | Kernel-only per-statement Spark conf overlay. Structured `queryTags` overwrite its `query_tags` key when non-empty.                                                       |
+
+## Metadata-operation request parameters
+
+The public session metadata methods also accept request objects. These are not
+connection options, but are included so the reference covers the complete
+session parameter surface.
+
+| Methods                         | Option(s)                                                                                                                 | Thrift | Kernel | Note                                                                                                                               |
+| ------------------------------- | ------------------------------------------------------------------------------------------------------------------------- | :----: | :----: | ---------------------------------------------------------------------------------------------------------------------------------- |
+| Request-object metadata methods | `maxRows`                                                                                                                 |   ✅   |   ❌   | Thrift uses it for Direct Results. Kernel currently drops it rather than applying it at fetch time.                                |
+| Request-object metadata methods | `runAsync` (deprecated)                                                                                                   |   ❌   |   ❌   | The caller value is ignored. Thrift derives wire async behavior from protocol support; Kernel metadata calls are already terminal. |
+| `getSchemas`                    | `catalogName`, `schemaName`                                                                                               |   ✅   |   ✅   | Optional filters.                                                                                                                  |
+| `getTables`                     | `catalogName`, `schemaName`, `tableName`, `tableTypes`                                                                    |   ✅   |   ✅   | Optional filters.                                                                                                                  |
+| `getColumns`                    | `catalogName`, `schemaName`, `tableName`, `columnName`                                                                    |   ✅   |   ✅   | Optional filters.                                                                                                                  |
+| `getFunctions`                  | `catalogName`, `schemaName`, `functionName`                                                                               |   ✅   |   ✅   | `functionName` is required.                                                                                                        |
+| `getPrimaryKeys`                | `catalogName`, `schemaName`, `tableName`                                                                                  |   ✅   |   ⚠️   | Schema and table are required. Kernel additionally requires a non-empty `catalogName`; Thrift can resolve an omitted catalog.      |
+| `getCrossReference`             | `parentCatalogName`, `parentSchemaName`, `parentTableName`, `foreignCatalogName`, `foreignSchemaName`, `foreignTableName` |   ✅   |   ✅   | All six fields are required.                                                                                                       |
+| `getInfo`                       | `infoType`                                                                                                                |   ⚠️   |   ⚠️   | Both effectively support the three values the Databricks server answers: server name, DBMS name, and DBMS version.                 |
 
 ---
 
-## Summary of gaps
+## Main backend gaps
 
-### Supported on Thrift, missing / ignored on Kernel
+Thrift-only capabilities include custom/token-provider authentication, custom
+OAuth persistence, SOCKS proxies, authenticated/driver-buffer telemetry knobs,
+query timeout, Direct Results `maxRows`, per-statement CloudFetch/LZ4 hints, and
+volume operations.
 
-1. `enableMetricViewMetadata` — auto-injected for both backends in
-   `DBSQLClient.openSession`, but the conf key is likely dropped by the
-   kernel's session-conf allowlist, so it has no effect on the kernel path.
-2. Auth types `custom`, `token-provider`, and `external-token`.
-3. `persistence` (custom OAuth token store).
-4. SOCKS proxies.
-5. Per-statement `useCloudFetch`, `useLZ4Compression`,
-   `stagingAllowedLocalPath`.
+Kernel-only capabilities include connection-pool sizing, proxy bypass hosts,
+independent TLS hostname verification, optional U2M disk caching, and
+per-statement `rowLimit`/`statementConf`.
 
-### Supported on Kernel, no Thrift public equivalent
-
-1. `maxConnections` (connection-pool sizing).
-2. `checkServerCertificateHostname` — the independent hostname-vs-SNI check has
-   no public Thrift equivalent. (The other TLS controls —
-   `checkServerCertificate`, `customCaCert`, `clientCert`, `clientKey` — **are**
-   public and honored on the Thrift backend, which verifies certificates by
-   default via `checkServerCertificate ?? true`; see the TLS / SSL section.)
-3. `tokenCacheEnabled` — enables the kernel's built-in on-disk token cache for
-   U2M OAuth flows only (defaults to disabled for silent-no-persist parity). Distinct
-   from the Thrift `persistence` custom-store hook.
-
-### Behavioral divergences to watch
-
-- **U2M flow selection** keys off `oauthClientSecret` presence on the kernel
-  path, matching Thrift: no secret ⇒ U2M, secret present ⇒ M2M. A custom
-  `oauthClientId` (with no secret) is forwarded on the U2M arm rather than
-  triggering an M2M "secret required" error.
-- **`socketTimeout: 0`** means "indefinite" on Thrift but is dropped on the
-  kernel path (kernel default kept).
-- **`configuration`** is allowlist-filtered on the kernel path but forwarded
-  more freely on Thrift.
-- **Azure OAuth** is honored on both, but the mechanism differs. The kernel
-  runs a cloud-blind in-house flow for **all U2M**, so every Azure workspace —
-  including `.databricks.azure.us` (US-gov) — is always supported; Thrift's
-  `useDatabricksOAuthInAzure`-true arm instead rejects US-gov hosts. For
-  **M2M** the kernel routes Entra-direct through a native `AzureSpM2m` mode
-  (auto-discovering `azureTenantId` when omitted), whereas Thrift builds the
-  Azure authorize URL in-process.
-
-> All kernel-path behavior reflects the **M0 stub** and is subject to change.
+The Kernel path remains internal and unstable; its behavior may change.
