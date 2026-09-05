@@ -85,3 +85,7 @@ initial dated section below.
 ### 2026-09-01: learnings since 2026-08-31T17:26:11Z
 - **Context:** PR #516 (kernel native packages 0.2.0→1.0.0) regenerated `package-lock.json` through Databricks' internal npm proxy; a reviewer caught all 16 kernel `resolved` URLs pointing at `https://npm-proxy.cloud.databricks.com/...` instead of `https://registry.npmjs.org/...`, which breaks `npm ci` for external contributors and public CI.
   **Rule:** When refreshing `package-lock.json`, verify `resolved` URLs point at the public registry (`registry.npmjs.org`), not an internal proxy host — npm records whatever host it fetched from, so regenerate with `npm install --registry=https://registry.npmjs.org` (content-addressed `integrity` hashes stay identical) before merging.
+
+### 2026-09-05: learnings since 2026-09-04T17:26:13Z
+- **Context:** PR #519 corrected the connection-parameter reference, flipping the Kernel (SEA) `port` column from partial (⚠️) to unsupported (❌): the Thrift backend honors a standalone `port` (default 443), but the Kernel backend derives host/port from `host` + `path` and ignores a separate `port` field.
+  **Rule:** On the Kernel/SEA backend a standalone `port` option is ignored — embed any non-default port in `host` itself; only the Thrift backend threads `port` separately.
