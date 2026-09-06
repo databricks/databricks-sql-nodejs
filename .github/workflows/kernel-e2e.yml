@@ -383,6 +383,67 @@ jobs:
             });
 
   # ───────────────────────────────────────────────────────────────
+  # Packaged-binary variant. Instead of `build:native`, install the
+  # published @databricks/databricks-sql-kernel-<triple> npm package
+  # (via the kernel optionalDependencies, resolved through JFrog db-npm)
+  # and run SELECT 1 against THAT — the exact path a released driver
+  # takes, which the build:native job never exercises. Same gate /
+  # runner / warehouse as the main job; no custom check (its own job
+  # status is the signal).
+  # ───────────────────────────────────────────────────────────────
+  run-kernel-e2e-packaged:
+    needs: detect-changes
+    if: needs.detect-changes.outputs.run_tests == 'true'
+    runs-on:
+      group: databricks-protected-runner-group
+      labels: linux-ubuntu-latest
+    environment: azure-prod
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      DATABRICKS_PECOTESTING_SERVER_HOSTNAME: ${{ secrets.DATABRICKS_HOST }}
+      DATABRICKS_PECOTESTING_HTTP_PATH: ${{ secrets.TEST_PECO_WAREHOUSE_HTTP_PATH }}
+      DATABRICKS_PECOTESTING_TOKEN_PERSONAL: ${{ secrets.DATABRICKS_TOKEN }}
+    steps:
+      - name: Check out driver
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
+        with:
+          ref: ${{ needs.detect-changes.outputs.head_sha }}
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 20
+
+      - name: Set up JFrog (npm registry proxy)
+        uses: ./.github/actions/setup-jfrog
+
+      - name: Install deps incl. the published kernel (no build:native)
+        # `npm ci` installs the kernel optionalDependency matching this runner
+        # (linux-x64-gnu) from JFrog db-npm — NOT a locally built binary. Remove
+        # any stray native/kernel/*.node first so the committed router can only
+        # resolve the npm-installed package.
+        run: |
+          set -euo pipefail
+          rm -f native/kernel/index*.node
+          npm ci
+
+      - name: Assert the binding loads from the npm package (not native/kernel)
+        run: |
+          node -e "
+            const resolved = require.resolve('@databricks/databricks-sql-kernel-linux-x64-gnu');
+            if (!resolved.includes('node_modules/@databricks/databricks-sql-kernel-linux-x64-gnu')) {
+              throw new Error('expected the binary from node_modules, got: ' + resolved);
+            }
+            const b = require('./native/kernel');
+            if (typeof b.version !== 'function') throw new Error('napi binding failed to load');
+            console.log('packaged kernel binding loaded from npm, version=', b.version());
+          "
+
+      - name: Run SELECT 1 e2e against the packaged binary
+        run: NODE_OPTIONS="--max-old-space-size=4096" npx nyc --report-dir coverage_kernel_e2e_packaged mocha --config tests/e2e/.mocharc.js "tests/e2e/kernel/select-one-e2e.test.ts"
+
+  # ───────────────────────────────────────────────────────────────
   # Auto-pass the Kernel E2E check in the merge queue when no kernel-
   # relevant files changed.
   # ───────────────────────────────────────────────────────────────
