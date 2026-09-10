@@ -37,10 +37,13 @@ export default class ThriftBackend implements IBackend {
 
   private connectionOptions?: ConnectionOptions;
 
-  // KernelBackend(s) created for Reyden (KP001) fallback. Tracked so their
-  // process-global log-bridge listeners are released on close() — otherwise each
-  // fallback session would leak an onLevelChange listener for the process lifetime.
-  private fallbackKernelBackends: KernelBackend[] = [];
+  // A single KernelBackend reused for every Reyden (KP001) fallback session on this
+  // connection. connect() installs a process-global log-bridge listener, so it is created
+  // once (connectionOptions are fixed after connect) and released in close() — rather than
+  // constructing one per openSession and leaking a listener each time.
+  private fallbackKernelBackend?: KernelBackend;
+
+  private fallbackKernelBackendConnect?: Promise<KernelBackend>;
 
   constructor({ context, onConnectionEvent }: ThriftBackendOptions) {
     this.context = context;
@@ -127,7 +130,13 @@ export default class ThriftBackend implements IBackend {
         try {
           return await this.openSessionWithKernelBackend(request);
         } catch (kernelError) {
-          if (kernelError && typeof kernelError === 'object') {
+          // Preserve the Thrift KP001 as the kernel error's cause, but don't clobber a cause
+          // the kernel error may already carry.
+          if (
+            kernelError &&
+            typeof kernelError === 'object' &&
+            (kernelError as { cause?: unknown }).cause === undefined
+          ) {
             (kernelError as { cause?: unknown }).cause = error;
           }
           logger.log(LogLevel.error, 'Reyden: both Thrift (KP001) and SEA fallback failed');
@@ -189,12 +198,26 @@ export default class ThriftBackend implements IBackend {
     const logger = this.context.getLogger();
     logger.log(LogLevel.debug, 'Reyden: opening session via KernelBackend (SEA)');
 
-    // Create a KernelBackend and connect/open. Track it so close() releases the
-    // log-bridge listener that connect() installs.
-    const kernelBackend = this.createKernelBackend();
-    this.fallbackKernelBackends.push(kernelBackend);
-    await kernelBackend.connect(this.connectionOptions);
+    const kernelBackend = await this.getFallbackKernelBackend(this.connectionOptions);
     return kernelBackend.openSession(request);
+  }
+
+  // Lazily creates and connects the single fallback KernelBackend, reused across every
+  // fallback session so repeated opens don't accumulate backends / log-bridge listeners.
+  // On a connect failure the memoized attempt is cleared so a later open can retry.
+  private getFallbackKernelBackend(connectionOptions: ConnectionOptions): Promise<KernelBackend> {
+    if (!this.fallbackKernelBackendConnect) {
+      this.fallbackKernelBackendConnect = (async () => {
+        const kernelBackend = this.createKernelBackend();
+        await kernelBackend.connect(connectionOptions);
+        this.fallbackKernelBackend = kernelBackend;
+        return kernelBackend;
+      })().catch((error) => {
+        this.fallbackKernelBackendConnect = undefined;
+        throw error;
+      });
+    }
+    return this.fallbackKernelBackendConnect;
   }
 
   // Seam so tests can inject a fake KernelBackend without the native binding.
@@ -203,10 +226,13 @@ export default class ThriftBackend implements IBackend {
   }
 
   public async close(): Promise<void> {
-    // Release the process-global log-bridge listener(s) held by any Reyden-fallback
-    // KernelBackend. DBSQLClient owns the rest of the connection lifecycle and clears
-    // its own state (connectionProvider, authProvider, thrift client) after this returns.
-    await Promise.all(this.fallbackKernelBackends.map((backend) => backend.close()));
-    this.fallbackKernelBackends = [];
+    // Release the process-global log-bridge listener held by the Reyden-fallback KernelBackend.
+    // DBSQLClient owns the rest of the connection lifecycle and clears its own state
+    // (connectionProvider, authProvider, thrift client) after this returns.
+    if (this.fallbackKernelBackend) {
+      await this.fallbackKernelBackend.close();
+      this.fallbackKernelBackend = undefined;
+      this.fallbackKernelBackendConnect = undefined;
+    }
   }
 }

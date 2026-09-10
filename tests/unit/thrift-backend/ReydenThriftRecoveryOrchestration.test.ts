@@ -126,7 +126,7 @@ describe('Reyden Thrift Auto-Recovery — Orchestration', () => {
     expect(thrown.cause).to.equal(thriftError);
   });
 
-  it('closes the fallback KernelBackend on close(), releasing its log-bridge listener', async () => {
+  it('reuses one fallback KernelBackend across sessions and closes it on close()', async () => {
     const backend = makeBackend();
     const fakeKernel = {
       connect: sandbox.stub().resolves(),
@@ -135,14 +135,19 @@ describe('Reyden Thrift Auto-Recovery — Orchestration', () => {
     };
     sandbox.stub(backend as any, 'openSessionWithThrift').rejects(kp001Error());
     // Inject the fake via the createKernelBackend seam and let the REAL
-    // openSessionWithKernelBackend run (connect + track), so close() must release it.
-    sandbox.stub(backend as any, 'createKernelBackend').returns(fakeKernel as any);
+    // openSessionWithKernelBackend run (connect + reuse), so close() must release it.
+    const createStub = sandbox.stub(backend as any, 'createKernelBackend').returns(fakeKernel as any);
 
-    await backend.openSession({} as any);
+    await backend.openSession({} as any); // reactive recovery marks the cache
+    await backend.openSession({} as any); // second open hits the pre-check → same fallback backend
+
+    // A single KernelBackend is created and connected once, not one per session.
+    expect(createStub.calledOnce).to.be.true;
     expect(fakeKernel.connect.calledOnce).to.be.true;
-    expect(fakeKernel.close.called).to.be.false; // still open
+    expect(fakeKernel.openSession.calledTwice).to.be.true;
+    expect(fakeKernel.close.called).to.be.false; // not closed until close()
 
     await backend.close();
-    expect(fakeKernel.close.calledOnce).to.be.true; // released on ThriftBackend.close()
+    expect(fakeKernel.close.calledOnce).to.be.true; // released once on ThriftBackend.close()
   });
 });
