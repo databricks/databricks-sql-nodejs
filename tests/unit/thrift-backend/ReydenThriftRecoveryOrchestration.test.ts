@@ -125,4 +125,24 @@ describe('Reyden Thrift Auto-Recovery — Orchestration', () => {
     expect(thrown).to.equal(kernelError);
     expect(thrown.cause).to.equal(thriftError);
   });
+
+  it('closes the fallback KernelBackend on close(), releasing its log-bridge listener', async () => {
+    const backend = makeBackend();
+    const fakeKernel = {
+      connect: sandbox.stub().resolves(),
+      openSession: sandbox.stub().resolves({ marker: 'kernel-session' } as any),
+      close: sandbox.stub().resolves(),
+    };
+    sandbox.stub(backend as any, 'openSessionWithThrift').rejects(kp001Error());
+    // Inject the fake via the createKernelBackend seam and let the REAL
+    // openSessionWithKernelBackend run (connect + track), so close() must release it.
+    sandbox.stub(backend as any, 'createKernelBackend').returns(fakeKernel as any);
+
+    await backend.openSession({} as any);
+    expect(fakeKernel.connect.calledOnce).to.be.true;
+    expect(fakeKernel.close.called).to.be.false; // still open
+
+    await backend.close();
+    expect(fakeKernel.close.calledOnce).to.be.true; // released on ThriftBackend.close()
+  });
 });

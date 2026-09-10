@@ -1,4 +1,5 @@
 import { expect } from 'chai';
+import sinon from 'sinon';
 import reydenCache from '../../../lib/ReydenWarehouseCache';
 import ThriftBackend from '../../../lib/thrift-backend/ThriftBackend';
 import StatusError from '../../../lib/errors/StatusError';
@@ -95,6 +96,36 @@ describe('Reyden Warehouse Cache', () => {
       reydenCache.clear();
       expect(reydenCache.size()).to.equal(0);
       expect(reydenCache.isKnownReyden('host1.com', 'warehouse-1')).to.be.undefined;
+    });
+  });
+
+  describe('Cache TTL Expiry', () => {
+    let clock: sinon.SinonFakeTimers;
+
+    beforeEach(() => {
+      clock = sinon.useFakeTimers();
+    });
+
+    afterEach(() => {
+      clock.restore();
+    });
+
+    it('keeps an entry until the 6h TTL, then evicts it on access', () => {
+      const host = 'example.com';
+      const warehouseId = 'warehouse-ttl';
+      const sixHoursMs = 6 * 60 * 60 * 1000;
+
+      reydenCache.markReyden(host, warehouseId);
+      expect(reydenCache.isKnownReyden(host, warehouseId)).to.be.true;
+
+      // At exactly the TTL boundary the entry is still valid (strict >).
+      clock.tick(sixHoursMs);
+      expect(reydenCache.isKnownReyden(host, warehouseId)).to.be.true;
+
+      // One tick past the TTL: expired, evicted on access.
+      clock.tick(1);
+      expect(reydenCache.isKnownReyden(host, warehouseId)).to.be.undefined;
+      expect(reydenCache.size()).to.equal(0);
     });
   });
 });

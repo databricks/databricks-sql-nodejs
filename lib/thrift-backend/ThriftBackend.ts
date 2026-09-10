@@ -37,6 +37,11 @@ export default class ThriftBackend implements IBackend {
 
   private connectionOptions?: ConnectionOptions;
 
+  // KernelBackend(s) created for Reyden (KP001) fallback. Tracked so their
+  // process-global log-bridge listeners are released on close() — otherwise each
+  // fallback session would leak an onLevelChange listener for the process lifetime.
+  private fallbackKernelBackends: KernelBackend[] = [];
+
   constructor({ context, onConnectionEvent }: ThriftBackendOptions) {
     this.context = context;
     this.onConnectionEvent = onConnectionEvent;
@@ -184,14 +189,24 @@ export default class ThriftBackend implements IBackend {
     const logger = this.context.getLogger();
     logger.log(LogLevel.debug, 'Reyden: opening session via KernelBackend (SEA)');
 
-    // Create a new KernelBackend instance and connect/open
-    const kernelBackend = new KernelBackend({ context: this.context });
+    // Create a KernelBackend and connect/open. Track it so close() releases the
+    // log-bridge listener that connect() installs.
+    const kernelBackend = this.createKernelBackend();
+    this.fallbackKernelBackends.push(kernelBackend);
     await kernelBackend.connect(this.connectionOptions);
     return kernelBackend.openSession(request);
   }
 
+  // Seam so tests can inject a fake KernelBackend without the native binding.
+  protected createKernelBackend(): KernelBackend {
+    return new KernelBackend({ context: this.context });
+  }
+
   public async close(): Promise<void> {
-    // DBSQLClient owns the connection lifecycle and clears its own state
-    // (connectionProvider, authProvider, thrift client) after this returns.
+    // Release the process-global log-bridge listener(s) held by any Reyden-fallback
+    // KernelBackend. DBSQLClient owns the rest of the connection lifecycle and clears
+    // its own state (connectionProvider, authProvider, thrift client) after this returns.
+    await Promise.all(this.fallbackKernelBackends.map((backend) => backend.close()));
+    this.fallbackKernelBackends = [];
   }
 }
