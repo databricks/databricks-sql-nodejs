@@ -77,9 +77,22 @@ class ReydenWarehouseCache {
    * Mark a warehouse as being Reyden (KP001 rejection detected).
    */
   public markReyden(host: string, warehouseId: string): void {
-    const key = this.getKey(host, warehouseId);
-    this.cache.set(key, {
-      timestamp: Date.now(),
+    const now = Date.now();
+
+    // Opportunistic sweep: markReyden runs only on an actual Thrift rejection
+    // (rare), so purging every expired entry here is near-free and bounds the
+    // cache to warehouses seen within the TTL window. The per-key lazy eviction
+    // in isKnownReyden only reclaims entries that are looked up again, so an
+    // entry that is never queried after marking would otherwise persist for the
+    // life of the process.
+    for (const [existingKey, entry] of this.cache) {
+      if (now - entry.timestamp > TTL_MS) {
+        this.cache.delete(existingKey);
+      }
+    }
+
+    this.cache.set(this.getKey(host, warehouseId), {
+      timestamp: now,
       isReyden: true,
     });
   }

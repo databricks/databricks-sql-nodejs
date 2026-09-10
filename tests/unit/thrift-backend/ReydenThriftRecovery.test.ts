@@ -127,6 +127,23 @@ describe('Reyden Warehouse Cache', () => {
       expect(reydenCache.isKnownReyden(host, warehouseId)).to.be.undefined;
       expect(reydenCache.size()).to.equal(0);
     });
+
+    it('sweeps expired entries when a new warehouse is marked', () => {
+      const sixHoursMs = 6 * 60 * 60 * 1000;
+
+      reydenCache.markReyden('host-a.com', 'warehouse-a');
+      expect(reydenCache.size()).to.equal(1);
+
+      // Advance past the TTL so the first entry is expired, then mark a second
+      // warehouse. markReyden sweeps the expired entry rather than only adding —
+      // proven by the size dropping back to 1 without warehouse-a ever being
+      // looked up (a lookup would otherwise trigger the lazy per-key eviction).
+      clock.tick(sixHoursMs + 1);
+      reydenCache.markReyden('host-b.com', 'warehouse-b');
+
+      expect(reydenCache.size()).to.equal(1);
+      expect(reydenCache.isKnownReyden('host-b.com', 'warehouse-b')).to.be.true;
+    });
   });
 });
 
