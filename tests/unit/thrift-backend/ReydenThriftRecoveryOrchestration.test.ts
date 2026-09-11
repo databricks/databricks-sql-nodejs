@@ -104,7 +104,7 @@ describe('Reyden Thrift Auto-Recovery — Orchestration', () => {
 
     expect(thrown).to.equal(genericError);
     expect(kernelStub.called).to.be.false; // No kernel fallback for a non-Reyden error.
-    expect(reydenCache.isKnownReyden(HOST, WAREHOUSE_ID)).to.be.undefined; // Not marked.
+    expect(reydenCache.isKnownReyden(HOST, WAREHOUSE_ID)).to.be.false; // Not marked.
   });
 
   it('preserves the Thrift rejection as cause when the kernel fallback also fails', async () => {

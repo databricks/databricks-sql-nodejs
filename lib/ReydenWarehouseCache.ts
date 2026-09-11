@@ -18,7 +18,6 @@ const TTL_MS = 6 * 60 * 60 * 1000; // 6 hours
 
 interface CacheEntry {
   timestamp: number;
-  isReyden: boolean;
 }
 
 class ReydenWarehouseCache {
@@ -54,23 +53,27 @@ class ReydenWarehouseCache {
 
   /**
    * Checks if a warehouse is known to be Reyden (requiring SEA fallback).
-   * Returns undefined if the warehouse is not in the cache or the entry has expired.
+   *
+   * Membership is presence-based: the cache only ever records known-Reyden
+   * warehouses (via markReyden), so an unexpired entry means Reyden and the
+   * absence of one means "not known" — there is no negative-cache state.
+   * Returns false when the warehouse is not in the cache or the entry expired.
    */
-  public isKnownReyden(host: string, warehouseId: string): boolean | undefined {
+  public isKnownReyden(host: string, warehouseId: string): boolean {
     const key = this.getKey(host, warehouseId);
     const entry = this.cache.get(key);
 
     if (!entry) {
-      return undefined;
+      return false;
     }
 
     // Opportunistically evict expired entries on access
     if (this.isExpired(entry)) {
       this.cache.delete(key);
-      return undefined;
+      return false;
     }
 
-    return entry.isReyden;
+    return true;
   }
 
   /**
@@ -91,10 +94,7 @@ class ReydenWarehouseCache {
       }
     }
 
-    this.cache.set(this.getKey(host, warehouseId), {
-      timestamp: now,
-      isReyden: true,
-    });
+    this.cache.set(this.getKey(host, warehouseId), { timestamp: now });
   }
 
   /**

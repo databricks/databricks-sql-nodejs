@@ -46,7 +46,7 @@ describe('Reyden Warehouse Cache', () => {
       const host = 'example.com';
       const warehouseId = 'warehouse-123';
 
-      expect(reydenCache.isKnownReyden(host, warehouseId)).to.be.undefined;
+      expect(reydenCache.isKnownReyden(host, warehouseId)).to.be.false;
       reydenCache.markReyden(host, warehouseId);
       expect(reydenCache.isKnownReyden(host, warehouseId)).to.be.true;
     });
@@ -66,7 +66,7 @@ describe('Reyden Warehouse Cache', () => {
       reydenCache.markReyden(host, 'warehouse-1');
 
       expect(reydenCache.isKnownReyden(host, 'warehouse-1')).to.be.true;
-      expect(reydenCache.isKnownReyden(host, 'warehouse-2')).to.be.undefined;
+      expect(reydenCache.isKnownReyden(host, 'warehouse-2')).to.be.false;
     });
 
     it('should isolate entries by host', () => {
@@ -75,7 +75,7 @@ describe('Reyden Warehouse Cache', () => {
       reydenCache.markReyden('host1.com', warehouseId);
 
       expect(reydenCache.isKnownReyden('host1.com', warehouseId)).to.be.true;
-      expect(reydenCache.isKnownReyden('host2.com', warehouseId)).to.be.undefined;
+      expect(reydenCache.isKnownReyden('host2.com', warehouseId)).to.be.false;
     });
 
     it('should have cache size method', () => {
@@ -95,7 +95,7 @@ describe('Reyden Warehouse Cache', () => {
 
       reydenCache.clear();
       expect(reydenCache.size()).to.equal(0);
-      expect(reydenCache.isKnownReyden('host1.com', 'warehouse-1')).to.be.undefined;
+      expect(reydenCache.isKnownReyden('host1.com', 'warehouse-1')).to.be.false;
     });
   });
 
@@ -124,7 +124,7 @@ describe('Reyden Warehouse Cache', () => {
 
       // One tick past the TTL: expired, evicted on access.
       clock.tick(1);
-      expect(reydenCache.isKnownReyden(host, warehouseId)).to.be.undefined;
+      expect(reydenCache.isKnownReyden(host, warehouseId)).to.be.false;
       expect(reydenCache.size()).to.equal(0);
     });
 
