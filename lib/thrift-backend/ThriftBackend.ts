@@ -37,12 +37,12 @@ export default class ThriftBackend implements IBackend {
 
   private connectionOptions?: ConnectionOptions;
 
-  // A single KernelBackend reused for every Reyden (KP001) fallback session on this
-  // connection. connect() installs a process-global log-bridge listener, so it is created
-  // once (connectionOptions are fixed after connect) and released in close() — rather than
-  // constructing one per openSession and leaking a listener each time.
-  private fallbackKernelBackend?: KernelBackend;
-
+  // The memoized connect for a single KernelBackend, reused across every Reyden (KP001)
+  // fallback session on this connection. connect() installs a process-global log-bridge
+  // listener, so the backend is created once (connectionOptions are fixed after connect)
+  // and released in close() — rather than constructing one per openSession and leaking a
+  // listener each time. This promise is the single source of truth for the fallback
+  // backend; its resolved value is the backend.
   private fallbackKernelBackendConnect?: Promise<KernelBackend>;
 
   constructor({ context, onConnectionEvent }: ThriftBackendOptions) {
@@ -210,7 +210,6 @@ export default class ThriftBackend implements IBackend {
       this.fallbackKernelBackendConnect = (async () => {
         const kernelBackend = this.createKernelBackend();
         await kernelBackend.connect(connectionOptions);
-        this.fallbackKernelBackend = kernelBackend;
         return kernelBackend;
       })().catch((error) => {
         this.fallbackKernelBackendConnect = undefined;
@@ -230,13 +229,11 @@ export default class ThriftBackend implements IBackend {
     // DBSQLClient owns the rest of the connection lifecycle and clears its own state
     // (connectionProvider, authProvider, thrift client) after this returns.
     //
-    // Await the in-flight connect attempt rather than only the resolved backend:
-    // getFallbackKernelBackend assigns this.fallbackKernelBackend only after connect()
-    // resolves, so a close() racing an unresolved fallback connect would otherwise skip
-    // it and leak the listener the pending connect is about to install. Clear both fields
-    // first so the state is consistent even if the awaited close() throws.
+    // Await the in-flight connect rather than a resolved-backend field: the connect
+    // installs the listener only once it resolves, so a close() racing an unresolved
+    // fallback connect must still wait for it and release the backend it produces.
+    // Clear the field first so the state is consistent even if the awaited close() throws.
     const pendingConnect = this.fallbackKernelBackendConnect;
-    this.fallbackKernelBackend = undefined;
     this.fallbackKernelBackendConnect = undefined;
     if (pendingConnect) {
       const kernelBackend = await pendingConnect.catch(() => undefined);
