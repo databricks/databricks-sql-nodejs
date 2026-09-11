@@ -7,12 +7,15 @@ export default class StatusError implements Error {
 
   public code: number;
 
+  public sqlState?: string;
+
   public stack?: string;
 
   constructor(status: TStatus) {
     this.name = 'Status Error';
     this.message = status.errorMessage || '';
     this.code = status.errorCode || -1;
+    this.sqlState = status.sqlState;
 
     if (Array.isArray(status.infoMessages)) {
       this.stack = status.infoMessages.join('\n');
