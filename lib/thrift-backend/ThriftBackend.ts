@@ -229,10 +229,18 @@ export default class ThriftBackend implements IBackend {
     // Release the process-global log-bridge listener held by the Reyden-fallback KernelBackend.
     // DBSQLClient owns the rest of the connection lifecycle and clears its own state
     // (connectionProvider, authProvider, thrift client) after this returns.
-    if (this.fallbackKernelBackend) {
-      await this.fallbackKernelBackend.close();
-      this.fallbackKernelBackend = undefined;
-      this.fallbackKernelBackendConnect = undefined;
+    //
+    // Await the in-flight connect attempt rather than only the resolved backend:
+    // getFallbackKernelBackend assigns this.fallbackKernelBackend only after connect()
+    // resolves, so a close() racing an unresolved fallback connect would otherwise skip
+    // it and leak the listener the pending connect is about to install. Clear both fields
+    // first so the state is consistent even if the awaited close() throws.
+    const pendingConnect = this.fallbackKernelBackendConnect;
+    this.fallbackKernelBackend = undefined;
+    this.fallbackKernelBackendConnect = undefined;
+    if (pendingConnect) {
+      const kernelBackend = await pendingConnect.catch(() => undefined);
+      await kernelBackend?.close();
     }
   }
 }

@@ -150,4 +150,35 @@ describe('Reyden Thrift Auto-Recovery — Orchestration', () => {
     await backend.close();
     expect(fakeKernel.close.calledOnce).to.be.true; // released once on ThriftBackend.close()
   });
+
+  it('closes a fallback KernelBackend whose connect is still in flight when close() runs', async () => {
+    // Race: close() is called while the fallback connect has not yet resolved, so
+    // the resolved-backend field is still unset. close() must await the in-flight
+    // connect and release the backend it produces, or the log-bridge listener that
+    // connect() installs leaks on an orphaned backend nobody closes.
+    reydenCache.markReyden(HOST, WAREHOUSE_ID); // pre-check → straight to the kernel fallback
+
+    const backend = makeBackend();
+    let resolveConnect: () => void = () => {};
+    const connectPromise = new Promise<void>((resolve) => {
+      resolveConnect = resolve;
+    });
+    const fakeKernel = {
+      connect: sandbox.stub().returns(connectPromise),
+      openSession: sandbox.stub().resolves({ marker: 'kernel-session' } as any),
+      close: sandbox.stub().resolves(),
+    };
+    sandbox.stub(backend as any, 'createKernelBackend').returns(fakeKernel as any);
+
+    const openPromise = backend.openSession({} as any); // parks on the in-flight connect
+    const closePromise = backend.close(); // races the unresolved connect
+
+    resolveConnect(); // let the connect (and the parked open) complete
+    await openPromise;
+    await closePromise;
+
+    // The backend the racing connect produced is closed, not orphaned.
+    expect(fakeKernel.connect.calledOnce).to.be.true;
+    expect(fakeKernel.close.calledOnce).to.be.true;
+  });
 });
