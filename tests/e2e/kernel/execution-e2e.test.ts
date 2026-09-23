@@ -93,7 +93,7 @@ describe('kernel execution end-to-end', function e2eSuite() {
     await client.close();
   });
 
-  it('passes sessionConfig (Spark conf) through openSession.configuration', async () => {
+  it('passes session configuration through openSession.configuration', async () => {
     const client = new DBSQLClient();
 
     await client.connect({
@@ -103,19 +103,17 @@ describe('kernel execution end-to-end', function e2eSuite() {
       useKernel: true,
     } as ConnectionOptions & InternalConnectionOptions);
 
-    // Sanity-check that supplying session-level Spark conf does not
-    // break openSession. The SEA wire applies these as `parameters` on
-    // every executeStatement; we don't observe them in the response
-    // for M0, but the absence of an error proves the napi binding
-    // accepts and forwards the map.
+    // Use a supported SQL session parameter and verify that it affects
+    // statement execution, proving the napi binding forwards the map.
     const session = await client.openSession({
       initialCatalog: 'main',
       configuration: {
-        'spark.sql.session.timeZone': 'UTC',
+        TIMEZONE: 'America/Los_Angeles',
       },
     });
 
-    const operation = await session.executeStatement('SELECT 1', {});
+    const operation = await session.executeStatement('SELECT current_timezone() AS timezone', {});
+    expect(await operation.fetchAll()).to.deep.equal([{ timezone: 'America/Los_Angeles' }]);
     await operation.close();
 
     await session.close();
