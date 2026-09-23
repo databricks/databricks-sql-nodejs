@@ -1,5 +1,9 @@
 # Release History
 
+## Unreleased
+
+- Upgrade the kernel backend native packages to 1.1.0; the kernel dependency is now stable and no longer experimental.
+
 ## 2.1.0
 
 - **Security behavior change:** verify Thrift TLS certificates by default; add custom CA and mTLS options. (#463)
