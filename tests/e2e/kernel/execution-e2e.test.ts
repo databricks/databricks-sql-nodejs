@@ -112,12 +112,15 @@ describe('kernel execution end-to-end', function e2eSuite() {
       },
     });
 
-    const operation = await session.executeStatement('SELECT current_timezone() AS timezone', {});
-    expect(await operation.fetchAll()).to.deep.equal([{ timezone: 'America/Los_Angeles' }]);
-    await operation.close();
-
-    await session.close();
-    await client.close();
+    let operation;
+    try {
+      operation = await session.executeStatement('SELECT current_timezone() AS timezone', {});
+      expect(await operation.fetchAll()).to.deep.equal([{ timezone: 'America/Los_Angeles' }]);
+    } finally {
+      await operation?.close();
+      await session.close();
+      await client.close();
+    }
   });
 
   it('binds ordinary positional parameters through rawParams', async () => {
