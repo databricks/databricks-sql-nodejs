@@ -1,8 +1,9 @@
 # Release History
 
-## Unreleased
+## 2.2.0
 
 - Upgrade the kernel backend native packages to 1.1.0; the kernel dependency is now stable and no longer experimental.
+- Automatically recover default Thrift connections to Reyden/Real-Time SQL warehouses onto the kernel backend while preserving structured SQL errors. (#523)
 
 ## 2.1.0
 
