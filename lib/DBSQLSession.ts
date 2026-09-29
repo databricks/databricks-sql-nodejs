@@ -22,6 +22,7 @@ import InfoValue from './dto/InfoValue';
 import CloseableCollection from './utils/CloseableCollection';
 import { LogLevel } from './contracts/IDBSQLLogger';
 import HiveDriverError from './errors/HiveDriverError';
+import ParameterError from './errors/ParameterError';
 import StagingError from './errors/StagingError';
 import IClientContext from './contracts/IClientContext';
 import ISessionBackend from './contracts/ISessionBackend';
@@ -293,7 +294,14 @@ export default class DBSQLSession implements IDBSQLSession {
    * @returns DBSQLOperation
    */
   public async getFunctions(request: FunctionsRequest): Promise<IOperation> {
-    return this.wrapOperation(await this.runBackend(() => this.backend.getFunctions(request)));
+    return this.wrapOperation(
+      await this.runBackend(() => {
+        if (typeof request?.functionName !== 'string') {
+          throw new ParameterError('functionName must be a string');
+        }
+        return this.backend.getFunctions(request);
+      }),
+    );
   }
 
   public async getPrimaryKeys(request: PrimaryKeysRequest): Promise<IOperation> {
