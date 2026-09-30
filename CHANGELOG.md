@@ -1,5 +1,9 @@
 # Release History
 
+## Unreleased
+
+- Fix Thrift `getFunctions()` to report the requested `FUNCTION_CAT`, matching JDBC and kernel.
+
 ## 2.2.0
 
 - Upgrade the kernel backend native packages to 1.1.0; the kernel dependency is now stable and no longer experimental.

@@ -29,6 +29,7 @@ interface ThriftOperationBackendOptions {
   handle: TOperationHandle;
   directResults?: TSparkDirectResults;
   context: IClientContext;
+  functionCatalog?: string | null;
 }
 
 async function delay(ms?: number): Promise<void> {
@@ -75,6 +76,8 @@ function thriftRowSetTypeToResultFormat(type: TSparkRowSetType): ResultFormat {
 export default class ThriftOperationBackend implements IOperationBackend {
   private readonly context: IClientContext;
 
+  private readonly functionCatalog?: string | null;
+
   private readonly operationHandle: TOperationHandle;
 
   private readonly _data: RowSetProvider;
@@ -91,9 +94,10 @@ export default class ThriftOperationBackend implements IOperationBackend {
 
   private resultHandler?: ResultSlicer<any>;
 
-  constructor({ handle, directResults, context }: ThriftOperationBackendOptions) {
+  constructor({ handle, directResults, context, functionCatalog }: ThriftOperationBackendOptions) {
     this.operationHandle = handle;
     this.context = context;
+    this.functionCatalog = functionCatalog;
 
     const useOnlyPrefetchedResults = Boolean(directResults?.closeOperation);
 
@@ -164,7 +168,13 @@ export default class ThriftOperationBackend implements IOperationBackend {
       return [];
     }
 
-    return resultHandler.fetchNext({ limit, disableBuffering });
+    const rows = await resultHandler.fetchNext({ limit, disableBuffering });
+    if (this.functionCatalog === undefined) {
+      return rows;
+    }
+
+    // Native GetFunctions leaves FUNCTION_CAT empty; match JDBC and kernel.
+    return rows.map((row) => (row === null ? row : { ...row, FUNCTION_CAT: this.functionCatalog }));
   }
 
   public async hasMore(): Promise<boolean> {
