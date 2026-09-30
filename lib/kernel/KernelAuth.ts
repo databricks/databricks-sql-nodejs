@@ -116,6 +116,12 @@ export interface KernelSessionDefaults {
    */
   complexTypesAsJson?: boolean;
   /**
+   * Render GEOMETRY / GEOGRAPHY as EWKT strings (`true`) or canonical
+   * `struct<srid:int32,wkb:binary>` values (`false`). Omitted keeps the kernel
+   * string default. Applied locally by the kernel and never sent to SEA.
+   */
+  geospatialAsString?: boolean;
+  /**
    * Per-session kernel connection-pool size
    * (kernel `ConnectionOptions.max_connections`). Validated as a positive
    * integer within the napi `u32` range by `buildKernelConnectionOptions`.
@@ -819,6 +825,7 @@ export function buildKernelConnectionOptions(options: ConnectionOptions): Kernel
     hostName: string;
     httpPath: string;
     intervalsAsString: boolean;
+    geospatialAsString?: boolean;
     maxConnections?: number;
   } & KernelTlsOptions &
     KernelHttpOptions &
@@ -842,6 +849,15 @@ export function buildKernelConnectionOptions(options: ConnectionOptions): Kernel
     // HTTP(S) proxy — the same `ConnectionOptions.proxy` the Thrift path uses.
     ...buildKernelProxyOptions(options),
   };
+
+  if (options.geospatialAsString !== undefined) {
+    if (typeof options.geospatialAsString !== 'boolean') {
+      throw new HiveDriverError(
+        `kernel backend: \`geospatialAsString\` must be a boolean; got ${typeof options.geospatialAsString}.`,
+      );
+    }
+    base.geospatialAsString = options.geospatialAsString;
+  }
 
   // kernel-only pool sizing; read via cast to match how this function reads the
   // other kernel-specific options (TLS) — they live on the internal options

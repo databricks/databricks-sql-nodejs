@@ -1,5 +1,9 @@
 # Release History
 
+## Unreleased
+
+- Add `geospatialAsString` for kernel-backed GEOMETRY / GEOGRAPHY results. String mode returns EWKT; binary mode returns the canonical `{ srid, wkb }` Arrow value.
+
 ## 2.2.0
 
 - Upgrade the kernel backend native packages to 1.1.0; the kernel dependency is now stable and no longer experimental.
