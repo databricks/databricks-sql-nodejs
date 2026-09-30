@@ -5,6 +5,8 @@ import DBSQLSession, { numberToInt64 } from '../../lib/DBSQLSession';
 import InfoValue from '../../lib/dto/InfoValue';
 import Status from '../../lib/dto/Status';
 import DBSQLOperation from '../../lib/DBSQLOperation';
+import ISessionBackend from '../../lib/contracts/ISessionBackend';
+import ParameterError from '../../lib/errors/ParameterError';
 import { TSessionHandle, TProtocolVersion } from '../../thrift/TCLIService_types';
 import ClientContextStub from './.stubs/ClientContextStub';
 import { createSessionForTest } from './.stubs/createSessionForTest';
@@ -450,6 +452,28 @@ describe('DBSQLSession', () => {
   });
 
   describe('getFunctions', () => {
+    it('rejects a missing or non-string functionName before calling the backend', async () => {
+      const getFunctions = sinon.stub();
+      const session = new DBSQLSession({
+        backend: { id: 'test', getFunctions } as unknown as ISessionBackend,
+        context: new ClientContextStub(),
+      });
+      const invalidRequests = [undefined, null, {}, { functionName: null }, { functionName: 123 }];
+
+      await Promise.all(
+        invalidRequests.map(async (request) => {
+          try {
+            await session.getFunctions(request as unknown as Parameters<DBSQLSession['getFunctions']>[0]);
+            expect.fail('Expected getFunctions to reject an invalid functionName');
+          } catch (error) {
+            expect(error).instanceOf(ParameterError);
+            expect((error as Error).message).equal('functionName must be a string');
+          }
+        }),
+      );
+      expect(getFunctions.called).false;
+    });
+
     it('should run operation', async () => {
       const session = createSessionForTest({ handle: sessionHandleStub, context: new ClientContextStub() });
       const result = await session.getFunctions({
@@ -457,6 +481,12 @@ describe('DBSQLSession', () => {
         schemaName: 'schema',
         functionName: 'avg',
       });
+      expect(result).instanceOf(DBSQLOperation);
+    });
+
+    it('accepts an empty functionName string', async () => {
+      const session = createSessionForTest({ handle: sessionHandleStub, context: new ClientContextStub() });
+      const result = await session.getFunctions({ functionName: '' });
       expect(result).instanceOf(DBSQLOperation);
     });
 
