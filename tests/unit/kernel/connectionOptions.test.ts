@@ -40,6 +40,29 @@ describe('KernelAuth connection options — intervalsAsString default', () => {
   });
 });
 
+describe('KernelAuth connection options — geospatial result representation', () => {
+  it('omits geospatialAsString by default so the kernel owns its default', () => {
+    const native = buildKernelConnectionOptions(opts({})) as { geospatialAsString?: boolean };
+    expect(native.geospatialAsString).to.equal(undefined);
+  });
+
+  for (const value of [true, false]) {
+    it(`forwards geospatialAsString=${value}`, () => {
+      const native = buildKernelConnectionOptions(opts({ geospatialAsString: value })) as {
+        geospatialAsString?: boolean;
+      };
+      expect(native.geospatialAsString).to.equal(value);
+    });
+  }
+
+  it('rejects non-boolean values at runtime', () => {
+    expect(() => buildKernelConnectionOptions(opts({ geospatialAsString: 'false' }))).to.throw(
+      HiveDriverError,
+      /must be a boolean/,
+    );
+  });
+});
+
 describe('KernelAuth connection options — maxConnections', () => {
   it('forwards a valid positive integer', () => {
     const native = buildKernelConnectionOptions(opts({ maxConnections: 10 })) as { maxConnections?: number };
