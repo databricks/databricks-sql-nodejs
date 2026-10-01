@@ -40,6 +40,29 @@ describe('KernelAuth connection options — intervalsAsString default', () => {
   });
 });
 
+describe('KernelAuth connection options — geospatial result representation', () => {
+  it('enables native geospatial support by default', () => {
+    const native = buildKernelConnectionOptions(opts({})) as { enableGeoSpatialSupport?: boolean };
+    expect(native.enableGeoSpatialSupport).to.equal(true);
+  });
+
+  for (const value of [true, false]) {
+    it(`forwards enableGeoSpatialSupport=${value}`, () => {
+      const native = buildKernelConnectionOptions(opts({ enableGeoSpatialSupport: value })) as {
+        enableGeoSpatialSupport?: boolean;
+      };
+      expect(native.enableGeoSpatialSupport).to.equal(value);
+    });
+  }
+
+  it('rejects non-boolean values at runtime', () => {
+    expect(() => buildKernelConnectionOptions(opts({ enableGeoSpatialSupport: 'false' }))).to.throw(
+      HiveDriverError,
+      /must be a boolean/,
+    );
+  });
+});
+
 describe('KernelAuth connection options — maxConnections', () => {
   it('forwards a valid positive integer', () => {
     const native = buildKernelConnectionOptions(opts({ maxConnections: 10 })) as { maxConnections?: number };

@@ -116,6 +116,12 @@ export interface KernelSessionDefaults {
    */
   complexTypesAsJson?: boolean;
   /**
+   * Enable native GEOMETRY / GEOGRAPHY values. `true` (the default) returns
+   * canonical `struct<srid:int32,wkb:binary>` values; `false` returns WKT /
+   * EWKT strings. Applied locally by the kernel and never sent to SEA.
+   */
+  enableGeoSpatialSupport?: boolean;
+  /**
    * Per-session kernel connection-pool size
    * (kernel `ConnectionOptions.max_connections`). Validated as a positive
    * integer within the napi `u32` range by `buildKernelConnectionOptions`.
@@ -819,6 +825,7 @@ export function buildKernelConnectionOptions(options: ConnectionOptions): Kernel
     hostName: string;
     httpPath: string;
     intervalsAsString: boolean;
+    enableGeoSpatialSupport: boolean;
     maxConnections?: number;
   } & KernelTlsOptions &
     KernelHttpOptions &
@@ -833,6 +840,9 @@ export function buildKernelConnectionOptions(options: ConnectionOptions): Kernel
     // (native Arrow) — they already decode identically to Thrift via the
     // shared Arrow converter, so `complexTypesAsJson` is not forced on.
     intervalsAsString: true,
+    // Match the public driver contract and the kernel default: geospatial
+    // support is enabled unless the caller explicitly requests WKT / EWKT.
+    enableGeoSpatialSupport: true,
     // TLS knobs (server-cert verification toggle + custom CA + mTLS client
     // identity). Validated and normalised (string PEM → Buffer) here so the
     // napi shape only sees a Buffer.
@@ -842,6 +852,15 @@ export function buildKernelConnectionOptions(options: ConnectionOptions): Kernel
     // HTTP(S) proxy — the same `ConnectionOptions.proxy` the Thrift path uses.
     ...buildKernelProxyOptions(options),
   };
+
+  if (options.enableGeoSpatialSupport !== undefined) {
+    if (typeof options.enableGeoSpatialSupport !== 'boolean') {
+      throw new HiveDriverError(
+        `kernel backend: \`enableGeoSpatialSupport\` must be a boolean; got ${typeof options.enableGeoSpatialSupport}.`,
+      );
+    }
+    base.enableGeoSpatialSupport = options.enableGeoSpatialSupport;
+  }
 
   // kernel-only pool sizing; read via cast to match how this function reads the
   // other kernel-specific options (TLS) — they live on the internal options

@@ -158,6 +158,17 @@ export type ConnectionOptions = {
   disableRowMaterialization?: boolean;
 
   /**
+   * Enable native kernel-backed `GEOMETRY` and `GEOGRAPHY` results. `true`
+   * (the default) returns the canonical Arrow value as
+   * `{ srid: number, wkb: Buffer }`; `false` returns WKT / EWKT strings.
+   * This is a client-side conversion choice and is never forwarded to the SQL
+   * Execution API.
+   *
+   * Only the kernel backend uses this option.
+   */
+  enableGeoSpatialSupport?: boolean;
+
+  /**
    * Extra HTTP headers attached to driver-owned out-of-band requests
    * (telemetry POSTs and feature-flag GETs). Not applied to the primary
    * Thrift transport or to OAuth/OIDC token requests.
