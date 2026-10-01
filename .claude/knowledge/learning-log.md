@@ -119,3 +119,7 @@ initial dated section below.
 ### 2026-09-30: learnings since 2026-09-29T17:31:05Z
 - **Context:** PR #533 added required-parameter validation to `DBSQLSession.getFunctions`, guarding with `typeof request?.functionName !== 'string'` (not a truthiness check) and adding an explicit test that an empty-string `functionName` is still accepted.
   **Rule:** When validating a required string request field, gate on `typeof x !== 'string'` rather than falsy checks (`!x`) so that legitimate empty strings pass, and add a test asserting the empty-string case is accepted to lock in that distinction.
+
+### 2026-10-01: learnings since 2026-09-30T17:30:46Z
+- **Context:** PR #536 fixed Thrift `getFunctions()` by stamping the requested `catalogName` onto every result row's `FUNCTION_CAT`; the reviewer flagged that this wipes real server values when the catalog is omitted (`null`) and mislabels rows when it is a wildcard/pattern (`%`, `_`), since Thrift metadata catalog args are search patterns whereas JDBC's are exact names.
+  **Rule:** When rewriting a metadata result column (e.g. `FUNCTION_CAT`) from a request parameter to match JDBC/kernel parity, do NOT blindly stamp it onto every row — Thrift catalog/schema/table args can be omitted or wildcard patterns, so handle the null and pattern cases (pass server values through) instead of discarding/mislabeling them, and verify parity against a live warehouse before locking the behavior into tests.
