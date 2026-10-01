@@ -158,15 +158,15 @@ export type ConnectionOptions = {
   disableRowMaterialization?: boolean;
 
   /**
-   * Select the kernel-backed result representation for `GEOMETRY` and
-   * `GEOGRAPHY` columns. `true` returns EWKT strings; `false` returns the
-   * canonical Arrow value as `{ srid: number, wkb: Buffer }`. Omitted uses the
-   * kernel default (currently EWKT strings). This is a client-side conversion
-   * choice and is never forwarded to the SQL Execution API.
+   * Enable native kernel-backed `GEOMETRY` and `GEOGRAPHY` results. `true`
+   * (the default) returns the canonical Arrow value as
+   * `{ srid: number, wkb: Buffer }`; `false` returns WKT / EWKT strings.
+   * This is a client-side conversion choice and is never forwarded to the SQL
+   * Execution API.
    *
    * Only the kernel backend uses this option.
    */
-  geospatialAsString?: boolean;
+  enableGeoSpatialSupport?: boolean;
 
   /**
    * Extra HTTP headers attached to driver-owned out-of-band requests

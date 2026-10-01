@@ -98,12 +98,12 @@ disabling verification.
 
 ## Results and type rendering
 
-| Option                        | Type      | Thrift | Kernel | Default Value           | Note                                                                                                                                                                         |
-| ----------------------------- | --------- | :----: | :----: | ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `preserveBigNumericPrecision` | `boolean` |   ✅   |   ✅   | `false`                 | Returns DECIMAL as an exact string and BIGINT as `bigint` on both.                                                                                                           |
-| `disableRowMaterialization`   | `boolean` |   ✅   |   ✅   | `false`                 | Fetches and parses Arrow batches but returns `null` row placeholders instead of converting cells. Intended for fetch-throughput tests.                                       |
-| `geospatialAsString`          | `boolean` |   ❌   |   ✅   | Kernel default (`true`) | Returns GEOMETRY / GEOGRAPHY as EWKT strings when `true`, or canonical `{ srid: number, wkb: Buffer }` values when `false`. The choice is local and is not forwarded to SEA. |
-| `enableMetricViewMetadata`    | `boolean` |   ✅   |   ⚠️   | `false`                 | Injected into session configuration on both paths. Kernel may drop its non-allowlisted configuration key.                                                                    |
+| Option                        | Type      | Thrift | Kernel | Default Value | Note                                                                                                                                                                               |
+| ----------------------------- | --------- | :----: | :----: | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `preserveBigNumericPrecision` | `boolean` |   ✅   |   ✅   | `false`       | Returns DECIMAL as an exact string and BIGINT as `bigint` on both.                                                                                                                 |
+| `disableRowMaterialization`   | `boolean` |   ✅   |   ✅   | `false`       | Fetches and parses Arrow batches but returns `null` row placeholders instead of converting cells. Intended for fetch-throughput tests.                                             |
+| `enableGeoSpatialSupport`     | `boolean` |   ❌   |   ✅   | `true`        | Returns GEOMETRY / GEOGRAPHY as canonical `{ srid: number, wkb: Buffer }` values when `true`, or WKT / EWKT strings when `false`. The choice is local and is not forwarded to SEA. |
+| `enableMetricViewMetadata`    | `boolean` |   ✅   |   ⚠️   | `false`       | Injected into session configuration on both paths. Kernel may drop its non-allowlisted configuration key.                                                                          |
 
 ## Session defaults (`openSession(request)`)
 

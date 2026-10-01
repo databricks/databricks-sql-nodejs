@@ -41,22 +41,22 @@ describe('KernelAuth connection options — intervalsAsString default', () => {
 });
 
 describe('KernelAuth connection options — geospatial result representation', () => {
-  it('omits geospatialAsString by default so the kernel owns its default', () => {
-    const native = buildKernelConnectionOptions(opts({})) as { geospatialAsString?: boolean };
-    expect(native.geospatialAsString).to.equal(undefined);
+  it('enables native geospatial support by default', () => {
+    const native = buildKernelConnectionOptions(opts({})) as { enableGeoSpatialSupport?: boolean };
+    expect(native.enableGeoSpatialSupport).to.equal(true);
   });
 
   for (const value of [true, false]) {
-    it(`forwards geospatialAsString=${value}`, () => {
-      const native = buildKernelConnectionOptions(opts({ geospatialAsString: value })) as {
-        geospatialAsString?: boolean;
+    it(`forwards enableGeoSpatialSupport=${value}`, () => {
+      const native = buildKernelConnectionOptions(opts({ enableGeoSpatialSupport: value })) as {
+        enableGeoSpatialSupport?: boolean;
       };
-      expect(native.geospatialAsString).to.equal(value);
+      expect(native.enableGeoSpatialSupport).to.equal(value);
     });
   }
 
   it('rejects non-boolean values at runtime', () => {
-    expect(() => buildKernelConnectionOptions(opts({ geospatialAsString: 'false' }))).to.throw(
+    expect(() => buildKernelConnectionOptions(opts({ enableGeoSpatialSupport: 'false' }))).to.throw(
       HiveDriverError,
       /must be a boolean/,
     );

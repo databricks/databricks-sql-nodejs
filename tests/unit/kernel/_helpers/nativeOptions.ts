@@ -81,7 +81,7 @@ export default function expectNativeConnectionOptions(actual: unknown, expectedR
   ]) {
     delete rest[key];
   }
-  expect(rest).to.deep.equal(expectedRest);
+  expect(rest).to.deep.equal({ enableGeoSpatialSupport: true, ...expectedRest });
   expect(customHeaders, 'customHeaders').to.be.an('array').with.lengthOf(1);
   expect(customHeaders?.[0].name).to.equal('User-Agent');
   expect(customHeaders?.[0].value).to.match(/NodejsDatabricksSqlConnector\//);
