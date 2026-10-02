@@ -514,6 +514,21 @@ describe('DBSQLSession', () => {
   });
 
   describe('getPrimaryKeys', () => {
+    it('should omit null namespace fields and preserve empty strings for Thrift', async () => {
+      for (const catalogName of [undefined, null, '', 'catalog']) {
+        for (const schemaName of [undefined, null, '', 'schema']) {
+          const context = new ClientContextStub();
+          const session = createSessionForTest({ handle: sessionHandleStub, context });
+          // eslint-disable-next-line no-await-in-loop
+          const result = await session.getPrimaryKeys({ catalogName, schemaName, tableName: 't1' });
+          expect(result).instanceOf(DBSQLOperation);
+          expect(context.driver.getPrimaryKeysReq?.catalogName).to.equal(catalogName ?? undefined);
+          expect(context.driver.getPrimaryKeysReq?.schemaName).to.equal(schemaName ?? undefined);
+          expect(context.driver.getPrimaryKeysReq?.tableName).to.equal('t1');
+        }
+      }
+    });
+
     it('should run operation', async () => {
       const session = createSessionForTest({ handle: sessionHandleStub, context: new ClientContextStub() });
       const result = await session.getPrimaryKeys({

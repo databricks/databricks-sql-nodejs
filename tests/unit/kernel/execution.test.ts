@@ -1094,25 +1094,19 @@ describe('KernelSessionBackend', () => {
     ]);
   });
 
-  it('getPrimaryKeys rejects an omitted catalog up front (the kernel requires one)', async () => {
+  it('getPrimaryKeys forwards null, omitted, and empty namespace names unchanged', async () => {
     const connection = new FakeNativeConnection();
     const session = makeSession(connection);
-    for (const request of [
-      { schemaName: 'def', tableName: 't' },
-      { catalogName: '', schemaName: 'def', tableName: 't' },
-    ]) {
-      let thrown: unknown;
-      try {
+    const expected: unknown[][] = [];
+    for (const catalogName of [undefined, null, '', 'main']) {
+      for (const schemaName of [undefined, null, '', 'def']) {
         // eslint-disable-next-line no-await-in-loop
-        await session.getPrimaryKeys(request);
-      } catch (err) {
-        thrown = err;
+        const operation = await session.getPrimaryKeys({ catalogName, schemaName, tableName: 't' });
+        expect(operation).to.be.instanceOf(KernelOperationBackend);
+        expected.push(['getPrimaryKeys', catalogName, schemaName, 't']);
       }
-      expect(thrown, `expected reject for ${JSON.stringify(request)}`).to.be.instanceOf(HiveDriverError);
-      expect((thrown as Error).message).to.match(/requires a catalog/);
     }
-    // The kernel call must NOT be reached (no empty-identifier sent over FFI).
-    expect(connection.metadataCalls.filter((c) => c[0] === 'getPrimaryKeys')).to.have.length(0);
+    expect(connection.metadataCalls).to.deep.equal(expected);
   });
 
   it('getInfo synthesizes the three server-answered info types and rejects the rest', async () => {
