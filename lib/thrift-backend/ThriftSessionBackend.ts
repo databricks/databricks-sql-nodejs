@@ -302,8 +302,8 @@ export default class ThriftSessionBackend implements ISessionBackend {
     const driver = await this.context.getDriver();
     const response = await driver.getPrimaryKeys({
       sessionHandle: this.sessionHandle,
-      catalogName: request.catalogName ?? undefined,
-      schemaName: request.schemaName ?? undefined,
+      catalogName: request.catalogName,
+      schemaName: request.schemaName,
       tableName: request.tableName,
       runAsync: this.getRunAsyncForMetadataOperations(),
       ...getDirectResultsOptions(request.maxRows, this.context.getConfig()),

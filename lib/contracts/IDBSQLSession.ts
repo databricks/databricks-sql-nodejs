@@ -122,8 +122,8 @@ export type FunctionsRequest = {
 };
 
 export type PrimaryKeysRequest = {
-  catalogName?: string | null;
-  schemaName?: string | null;
+  catalogName?: string;
+  schemaName: string;
   tableName: string;
   /**
    * @deprecated This option is no longer supported and will be removed in future releases

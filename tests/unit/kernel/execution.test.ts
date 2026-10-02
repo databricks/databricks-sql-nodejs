@@ -21,6 +21,7 @@ import KernelSessionBackend from '../../../lib/kernel/KernelSessionBackend';
 import KernelOperationBackend from '../../../lib/kernel/KernelOperationBackend';
 import { KernelNativeBinding, KernelConnection, KernelStatement } from '../../../lib/kernel/KernelNativeLoader';
 import IClientContext, { ClientConfig } from '../../../lib/contracts/IClientContext';
+import { PrimaryKeysRequest } from '../../../lib/contracts/IDBSQLSession';
 import IDBSQLLogger, { LogLevel } from '../../../lib/contracts/IDBSQLLogger';
 import HiveDriverError from '../../../lib/errors/HiveDriverError';
 import ParameterError from '../../../lib/errors/ParameterError';
@@ -1101,7 +1102,11 @@ describe('KernelSessionBackend', () => {
     for (const catalogName of [undefined, null, '', 'main']) {
       for (const schemaName of [undefined, null, '', 'def']) {
         // eslint-disable-next-line no-await-in-loop
-        const operation = await session.getPrimaryKeys({ catalogName, schemaName, tableName: 't' });
+        const operation = await session.getPrimaryKeys({
+          catalogName,
+          schemaName,
+          tableName: 't',
+        } as PrimaryKeysRequest);
         expect(operation).to.be.instanceOf(KernelOperationBackend);
         expected.push(['getPrimaryKeys', catalogName, schemaName, 't']);
       }
