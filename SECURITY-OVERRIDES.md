@@ -13,12 +13,13 @@ This file documents the provenance and exit condition for each override. **When 
 
 ## Entries
 
-### `basic-ftp: ^5.3.1`
+### `basic-ftp: ^6.2.1`
 
 - **Class**: runtime
 - **Path**: `proxy-agent → pac-proxy-agent → get-uri → basic-ftp`
-- **CVEs cleared**: GHSA-5rq4-664w-9x2c, GHSA-6v7q-wjvx-w8wg, GHSA-rp42-5vxx-qpwr, GHSA-rpmf-866q-6p89
-- **Exit**: `get-uri` bumps its `basic-ftp` dep range to include `^5.3.1`.
+- **CVEs cleared**: GHSA-5rq4-664w-9x2c, GHSA-6v7q-wjvx-w8wg, GHSA-rp42-5vxx-qpwr, GHSA-rpmf-866q-6p89, GHSA-c475-qrg2-pj4r
+- **Why an override is needed**: `get-uri` (through 8.0.1) caps `basic-ftp` at `^5.3.1`, below the 6.2.1 fix. The `Client` API get-uri uses is unchanged in 6.x; the 6.0 major only defaults `allowSeparateTransferHost` to `false`, so a PASV reply naming a different host is rejected.
+- **Exit**: `get-uri` widens its `basic-ftp` range to include `^6.2.1`.
 
 ### `@75lb/deep-merge: ^1.1.2`
 
