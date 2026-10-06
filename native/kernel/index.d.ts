@@ -380,8 +380,8 @@ export declare class Connection {
    */
   listColumns(catalog?: string | undefined | null, schemaPattern?: string | undefined | null, tablePattern?: string | undefined | null, columnPattern?: string | undefined | null): Promise<Statement>
   /**
-   * Functions visible to the session. `catalog` is exact;
-   * `schemaPattern` and `functionPattern` are SQL LIKE.
+   * Functions visible to the session. An empty `catalog` is forwarded to
+   * SEA for native `GetFunctions`; `schemaPattern` and `functionPattern` are SQL LIKE.
    */
   listFunctions(catalog?: string | undefined | null, schemaPattern?: string | undefined | null, functionPattern?: string | undefined | null): Promise<Statement>
   /**
@@ -403,13 +403,14 @@ export declare class Connection {
    * Primary keys for the given table. All three identifiers are
    * exact — ODBC `SQLPrimaryKeys` does not support patterns.
    */
-  getPrimaryKeys(catalog: string, schema: string, table: string): Promise<Statement>
+  getPrimaryKeys(catalog: string | undefined | null, schema: string | undefined | null, table: string): Promise<Statement>
   /**
-   * Foreign-key relationships. The foreign side must be fully
-   * specified (catalog + schema + table); the parent side is
-   * optional. All identifiers are exact — no LIKE patterns.
+   * Foreign-key relationships. The parent side is optional. When the
+   * foreign table is omitted, returns an empty result without issuing a
+   * server statement. When it is provided, its catalog and schema are
+   * required. All identifiers are exact — no LIKE patterns.
    */
-  getCrossReference(parentCatalog: string | undefined | null, parentSchema: string | undefined | null, parentTable: string | undefined | null, foreignCatalog: string, foreignSchema: string, foreignTable: string): Promise<Statement>
+  getCrossReference(parentCatalog?: string | undefined | null, parentSchema?: string | undefined | null, parentTable?: string | undefined | null, foreignCatalog?: string | undefined | null, foreignSchema?: string | undefined | null, foreignTable?: string | undefined | null): Promise<Statement>
 }
 
 /**

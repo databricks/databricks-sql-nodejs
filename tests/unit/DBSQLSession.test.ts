@@ -5,6 +5,7 @@ import DBSQLSession, { numberToInt64 } from '../../lib/DBSQLSession';
 import InfoValue from '../../lib/dto/InfoValue';
 import Status from '../../lib/dto/Status';
 import DBSQLOperation from '../../lib/DBSQLOperation';
+import { PrimaryKeysRequest } from '../../lib/contracts/IDBSQLSession';
 import ISessionBackend from '../../lib/contracts/ISessionBackend';
 import ParameterError from '../../lib/errors/ParameterError';
 import { TSessionHandle, TProtocolVersion } from '../../thrift/TCLIService_types';
@@ -514,6 +515,25 @@ describe('DBSQLSession', () => {
   });
 
   describe('getPrimaryKeys', () => {
+    it('should forward null, omitted, and empty namespace names unchanged for Thrift', async () => {
+      for (const catalogName of [undefined, null, '', 'catalog']) {
+        for (const schemaName of [undefined, null, '', 'schema']) {
+          const context = new ClientContextStub();
+          const session = createSessionForTest({ handle: sessionHandleStub, context });
+          // eslint-disable-next-line no-await-in-loop
+          const result = await session.getPrimaryKeys({
+            catalogName,
+            schemaName,
+            tableName: 't1',
+          } as PrimaryKeysRequest);
+          expect(result).instanceOf(DBSQLOperation);
+          expect(context.driver.getPrimaryKeysReq?.catalogName).to.equal(catalogName);
+          expect(context.driver.getPrimaryKeysReq?.schemaName).to.equal(schemaName);
+          expect(context.driver.getPrimaryKeysReq?.tableName).to.equal('t1');
+        }
+      }
+    });
+
     it('should run operation', async () => {
       const session = createSessionForTest({ handle: sessionHandleStub, context: new ClientContextStub() });
       const result = await session.getPrimaryKeys({
