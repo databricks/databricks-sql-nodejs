@@ -33,5 +33,5 @@
 
 [[IgnoredVulns]]
 id = "GHSA-vfj7-8cjw-p6xm"
-ignoreUntil = 2027-04-05
+ignoreUntil = 2026-12-06
 reason = "braces: no fixed release (3.0.3 is latest). Dev-only (mocha -> chokidar, globby -> fast-glob -> micromatch); not in shipped dist/."
