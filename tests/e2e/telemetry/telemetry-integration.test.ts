@@ -17,7 +17,7 @@
 import { expect } from 'chai';
 import sinon from 'sinon';
 import { DBSQLClient } from '../../../lib';
-import FeatureFlagCache from '../../../lib/telemetry/FeatureFlagCache';
+import FeatureFlagCache from '../../../lib/FeatureFlagCache';
 import TelemetryClientProvider from '../../../lib/telemetry/TelemetryClientProvider';
 import TelemetryEventEmitter from '../../../lib/telemetry/TelemetryEventEmitter';
 import MetricsAggregator from '../../../lib/telemetry/MetricsAggregator';
@@ -163,7 +163,7 @@ describe('Telemetry Integration', () => {
       const client = new DBSQLClient();
 
       // Stub feature flag to return false
-      const featureFlagStub = sinon.stub(FeatureFlagCache.prototype, 'isTelemetryEnabled').resolves(false);
+      const featureFlagStub = sinon.stub(FeatureFlagCache.prototype, 'getBoolean').resolves(false);
 
       try {
         await client.connect({
@@ -271,7 +271,7 @@ describe('Telemetry Integration', () => {
 
       // Stub feature flag to throw an error
       const featureFlagStub = sinon
-        .stub(FeatureFlagCache.prototype, 'isTelemetryEnabled')
+        .stub(FeatureFlagCache.prototype, 'getBoolean')
         .rejects(new Error('Feature flag fetch failed'));
 
       try {

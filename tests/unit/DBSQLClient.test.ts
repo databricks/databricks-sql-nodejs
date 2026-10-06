@@ -22,7 +22,7 @@ import AuthProviderStub from './.stubs/AuthProviderStub';
 import ConnectionProviderStub from './.stubs/ConnectionProviderStub';
 import { TProtocolVersion } from '../../thrift/TCLIService_types';
 import TelemetryClientProvider from '../../lib/telemetry/TelemetryClientProvider';
-import FeatureFlagCache from '../../lib/telemetry/FeatureFlagCache';
+import FeatureFlagCache from '../../lib/FeatureFlagCache';
 import TelemetryEventEmitter from '../../lib/telemetry/TelemetryEventEmitter';
 import { LogLevel } from '../../lib/contracts/IDBSQLLogger';
 
@@ -1127,8 +1127,9 @@ describe('DBSQLClient telemetry paths', () => {
     it('releases the prior refcount when connect() is called twice', async () => {
       const client = new DBSQLClient();
       // Stub out feature-flag fetch to return true so the telemetry path runs.
-      sinon.stub(FeatureFlagCache.prototype, 'isTelemetryEnabled').resolves(true);
+      sinon.stub(FeatureFlagCache.prototype, 'getBoolean').resolves(true);
       const releaseSpy = sinon.spy(TelemetryClientProvider.prototype, 'releaseClient');
+      const releaseFlagsSpy = sinon.spy(FeatureFlagCache.prototype, 'releaseContext');
 
       await client.connect(connectOptions);
       // Sanity: refcount on host should be 1 after first connect.
@@ -1137,17 +1138,19 @@ describe('DBSQLClient telemetry paths', () => {
       // Second connect to a different host should release the prior refcount.
       await client.connect({ ...connectOptions, host: '127.0.0.2' });
       expect(releaseSpy.called, 'releaseClient should fire on reconnect').to.be.true;
+      expect(releaseFlagsSpy.calledWith(connectOptions.host)).to.be.true;
       // The old host should have decremented to 0 (closed and removed).
       expect(TelemetryClientProvider.getInstance().getRefCount(connectOptions.host)).to.equal(0);
 
       await client.close();
+      expect(releaseFlagsSpy.callCount).to.equal(2);
     });
   });
 
   describe('telemetry refcount release path on init failure', () => {
     it('releases refcount when feature flag fetch throws', async () => {
       const client = new DBSQLClient();
-      sinon.stub(FeatureFlagCache.prototype, 'isTelemetryEnabled').rejects(new Error('boom'));
+      sinon.stub(FeatureFlagCache.prototype, 'getBoolean').rejects(new Error('boom'));
       const releaseSpy = sinon.spy(TelemetryClientProvider.prototype, 'releaseClient');
 
       await client.connect(connectOptions);
@@ -1166,7 +1169,7 @@ describe('DBSQLClient telemetry paths', () => {
       const thriftClient = new ThriftClientStub();
       sinon.stub(client, 'getClient').returns(Promise.resolve(thriftClient));
       // Need a working emitter so we can spy on emitConnectionOpen.
-      sinon.stub(FeatureFlagCache.prototype, 'isTelemetryEnabled').resolves(true);
+      sinon.stub(FeatureFlagCache.prototype, 'getBoolean').resolves(true);
 
       const emitSpy = sinon.spy(TelemetryEventEmitter.prototype, 'emitConnectionOpen');
 
@@ -1196,7 +1199,7 @@ describe('DBSQLClient telemetry paths', () => {
 
     it('returns a populated snapshot when telemetry is enabled', async () => {
       const client = new DBSQLClient();
-      sinon.stub(FeatureFlagCache.prototype, 'isTelemetryEnabled').resolves(true);
+      sinon.stub(FeatureFlagCache.prototype, 'getBoolean').resolves(true);
       await client.connect(connectOptions);
       const stats = client.getTelemetryStats();
       expect(stats, 'stats should be populated when telemetry is on').to.not.be.undefined;

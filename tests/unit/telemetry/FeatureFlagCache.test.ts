@@ -16,7 +16,8 @@
 
 import { expect } from 'chai';
 import sinon from 'sinon';
-import FeatureFlagCache, { FeatureFlagContext } from '../../../lib/telemetry/FeatureFlagCache';
+import { Response } from 'node-fetch';
+import FeatureFlagCache from '../../../lib/FeatureFlagCache';
 import ClientContextStub from '../.stubs/ClientContextStub';
 import { LogLevel } from '../../../lib/contracts/IDBSQLLogger';
 
@@ -24,6 +25,7 @@ describe('FeatureFlagCache', () => {
   let clock: sinon.SinonFakeTimers;
 
   beforeEach(() => {
+    (FeatureFlagCache as any).sharedContexts.clear();
     clock = sinon.useFakeTimers();
   });
 
@@ -42,7 +44,7 @@ describe('FeatureFlagCache', () => {
       expect(ctx).to.not.be.undefined;
       expect(ctx.refCount).to.equal(1);
       expect(ctx.cacheDuration).to.equal(15 * 60 * 1000); // 15 minutes
-      expect(ctx.telemetryEnabled).to.be.undefined;
+      expect(ctx.flags).to.be.undefined;
       expect(ctx.lastFetched).to.be.undefined;
     });
 
@@ -123,12 +125,12 @@ describe('FeatureFlagCache', () => {
     });
   });
 
-  describe('isTelemetryEnabled', () => {
+  describe('getBoolean', () => {
     it('should return false for non-existent host', async () => {
       const context = new ClientContextStub();
       const cache = new FeatureFlagCache(context);
 
-      const enabled = await cache.isTelemetryEnabled('non-existent-host.databricks.com');
+      const enabled = await cache.getBoolean('non-existent-host.databricks.com', 'flag');
       expect(enabled).to.be.false;
     });
 
@@ -137,11 +139,11 @@ describe('FeatureFlagCache', () => {
       const cache = new FeatureFlagCache(context);
       const host = 'test-host.databricks.com';
 
-      // Stub the private fetchFeatureFlag method
-      const fetchStub = sinon.stub(cache as any, 'fetchFeatureFlag').resolves(true);
+      // Stub the private fetchFeatureFlags method
+      const fetchStub = sinon.stub(cache as any, 'fetchFeatureFlags').resolves(new Map([['flag', 'true']]));
 
       cache.getOrCreateContext(host);
-      const enabled = await cache.isTelemetryEnabled(host);
+      const enabled = await cache.getBoolean(host, 'flag');
 
       expect(fetchStub.calledOnce).to.be.true;
       expect(fetchStub.calledWith(host)).to.be.true;
@@ -155,19 +157,19 @@ describe('FeatureFlagCache', () => {
       const cache = new FeatureFlagCache(context);
       const host = 'test-host.databricks.com';
 
-      const fetchStub = sinon.stub(cache as any, 'fetchFeatureFlag').resolves(true);
+      const fetchStub = sinon.stub(cache as any, 'fetchFeatureFlags').resolves(new Map([['flag', 'true']]));
 
       cache.getOrCreateContext(host);
 
       // First call - should fetch
-      await cache.isTelemetryEnabled(host);
+      await cache.getBoolean(host, 'flag');
       expect(fetchStub.calledOnce).to.be.true;
 
       // Advance time by 10 minutes (less than 15 minute TTL)
       clock.tick(10 * 60 * 1000);
 
       // Second call - should use cached value
-      const enabled = await cache.isTelemetryEnabled(host);
+      const enabled = await cache.getBoolean(host, 'flag');
       expect(fetchStub.calledOnce).to.be.true; // Still only called once
       expect(enabled).to.be.true;
 
@@ -179,14 +181,14 @@ describe('FeatureFlagCache', () => {
       const cache = new FeatureFlagCache(context);
       const host = 'test-host.databricks.com';
 
-      const fetchStub = sinon.stub(cache as any, 'fetchFeatureFlag');
-      fetchStub.onFirstCall().resolves(true);
-      fetchStub.onSecondCall().resolves(false);
+      const fetchStub = sinon.stub(cache as any, 'fetchFeatureFlags');
+      fetchStub.onFirstCall().resolves(new Map([['flag', 'true']]));
+      fetchStub.onSecondCall().resolves(new Map([['flag', 'false']]));
 
       cache.getOrCreateContext(host);
 
       // First call - should fetch
-      const enabled1 = await cache.isTelemetryEnabled(host);
+      const enabled1 = await cache.getBoolean(host, 'flag');
       expect(enabled1).to.be.true;
       expect(fetchStub.calledOnce).to.be.true;
 
@@ -194,7 +196,7 @@ describe('FeatureFlagCache', () => {
       clock.tick(16 * 60 * 1000);
 
       // Second call - should refetch due to expiration
-      const enabled2 = await cache.isTelemetryEnabled(host);
+      const enabled2 = await cache.getBoolean(host, 'flag');
       expect(enabled2).to.be.false;
       expect(fetchStub.calledTwice).to.be.true;
 
@@ -207,10 +209,10 @@ describe('FeatureFlagCache', () => {
       const cache = new FeatureFlagCache(context);
       const host = 'test-host.databricks.com';
 
-      const fetchStub = sinon.stub(cache as any, 'fetchFeatureFlag').rejects(new Error('Network error'));
+      const fetchStub = sinon.stub(cache as any, 'fetchFeatureFlags').rejects(new Error('Network error'));
 
       cache.getOrCreateContext(host);
-      const enabled = await cache.isTelemetryEnabled(host);
+      const enabled = await cache.getBoolean(host, 'flag');
 
       expect(enabled).to.be.false;
       expect(logSpy.calledWith(LogLevel.debug, 'Error fetching feature flag: Network error')).to.be.true;
@@ -219,31 +221,31 @@ describe('FeatureFlagCache', () => {
       logSpy.restore();
     });
 
-    it('should not propagate exceptions from fetchFeatureFlag', async () => {
+    it('should not propagate exceptions from fetchFeatureFlags', async () => {
       const context = new ClientContextStub();
       const cache = new FeatureFlagCache(context);
       const host = 'test-host.databricks.com';
 
-      const fetchStub = sinon.stub(cache as any, 'fetchFeatureFlag').rejects(new Error('Network error'));
+      const fetchStub = sinon.stub(cache as any, 'fetchFeatureFlags').rejects(new Error('Network error'));
 
       cache.getOrCreateContext(host);
 
       // Should not throw
-      const enabled = await cache.isTelemetryEnabled(host);
+      const enabled = await cache.getBoolean(host, 'flag');
       expect(enabled).to.equal(false);
 
       fetchStub.restore();
     });
 
-    it('should return false when telemetryEnabled is undefined', async () => {
+    it('should return false when the flag is missing', async () => {
       const context = new ClientContextStub();
       const cache = new FeatureFlagCache(context);
       const host = 'test-host.databricks.com';
 
-      const fetchStub = sinon.stub(cache as any, 'fetchFeatureFlag').resolves(undefined);
+      const fetchStub = sinon.stub(cache as any, 'fetchFeatureFlags').resolves(undefined);
 
       cache.getOrCreateContext(host);
-      const enabled = await cache.isTelemetryEnabled(host);
+      const enabled = await cache.getBoolean(host, 'flag');
 
       expect(enabled).to.be.false;
 
@@ -251,8 +253,8 @@ describe('FeatureFlagCache', () => {
     });
   });
 
-  describe('fetchFeatureFlag', () => {
-    it('should return false as placeholder implementation', async () => {
+  describe('fetchFeatureFlags', () => {
+    it('should default to false when the HTTP request fails', async () => {
       const context = new ClientContextStub();
       const cache = new FeatureFlagCache(context);
       const host = 'test-host.databricks.com';
@@ -262,11 +264,11 @@ describe('FeatureFlagCache', () => {
       // (bogus) host; under mocha's 2s default this passed only when the
       // DNS failure happened to resolve quickly — flaky across runners /
       // Node versions (it timed out on Node 14/16/18 in CI). The behavior
-      // under test is just that `fetchFeatureFlag` resolves to `false`.
+      // under test is just that `fetchFeatureFlags` resolves to `false`.
       const fetchStub = sinon.stub(cache as any, 'fetchWithRetry').rejects(new Error('network disabled in test'));
 
-      // Access private method through any cast
-      const result = await (cache as any).fetchFeatureFlag(host);
+      cache.getOrCreateContext(host);
+      const result = await cache.getBoolean(host, 'flag');
       expect(result).to.be.false;
 
       fetchStub.restore();
@@ -279,7 +281,7 @@ describe('FeatureFlagCache', () => {
       const cache = new FeatureFlagCache(context);
       const host = 'test-host.databricks.com';
 
-      const fetchStub = sinon.stub(cache as any, 'fetchFeatureFlag').resolves(true);
+      const fetchStub = sinon.stub(cache as any, 'fetchFeatureFlags').resolves(new Map([['flag', 'true']]));
 
       // Simulate 3 connections to same host
       cache.getOrCreateContext(host);
@@ -287,9 +289,9 @@ describe('FeatureFlagCache', () => {
       cache.getOrCreateContext(host);
 
       // All connections check telemetry - should only fetch once
-      await cache.isTelemetryEnabled(host);
-      await cache.isTelemetryEnabled(host);
-      await cache.isTelemetryEnabled(host);
+      await cache.getBoolean(host, 'flag');
+      await cache.getBoolean(host, 'flag');
+      await cache.getBoolean(host, 'flag');
 
       expect(fetchStub.calledOnce).to.be.true;
 
@@ -299,7 +301,7 @@ describe('FeatureFlagCache', () => {
       cache.releaseContext(host);
 
       // Context should be removed
-      const enabled = await cache.isTelemetryEnabled(host);
+      const enabled = await cache.getBoolean(host, 'flag');
       expect(enabled).to.be.false; // No context, returns false
 
       fetchStub.restore();
@@ -311,15 +313,15 @@ describe('FeatureFlagCache', () => {
       const host1 = 'host1.databricks.com';
       const host2 = 'host2.databricks.com';
 
-      const fetchStub = sinon.stub(cache as any, 'fetchFeatureFlag');
-      fetchStub.withArgs(host1).resolves(true);
-      fetchStub.withArgs(host2).resolves(false);
+      const fetchStub = sinon.stub(cache as any, 'fetchFeatureFlags');
+      fetchStub.withArgs(host1).resolves(new Map([['flag', 'true']]));
+      fetchStub.withArgs(host2).resolves(new Map([['flag', 'false']]));
 
       cache.getOrCreateContext(host1);
       cache.getOrCreateContext(host2);
 
-      const enabled1 = await cache.isTelemetryEnabled(host1);
-      const enabled2 = await cache.isTelemetryEnabled(host2);
+      const enabled1 = await cache.getBoolean(host1, 'flag');
+      const enabled2 = await cache.getBoolean(host2, 'flag');
 
       expect(enabled1).to.be.true;
       expect(enabled2).to.be.false;
@@ -346,7 +348,7 @@ describe('FeatureFlagCache', () => {
       const cache = new FeatureFlagCache(context);
       const stub = sinon.stub(cache as any, 'fetchWithRetry').returns(makeJsonResponse({ flags: [] }));
 
-      await (cache as any).fetchFeatureFlag('host.example.com');
+      await (cache as any).fetchFeatureFlags('host.example.com');
 
       expect(stub.calledOnce).to.be.true;
       const init = stub.firstCall.args[1] as { headers: Record<string, string> };
@@ -359,11 +361,80 @@ describe('FeatureFlagCache', () => {
       const cache = new FeatureFlagCache(context);
       const stub = sinon.stub(cache as any, 'fetchWithRetry').returns(makeJsonResponse({ flags: [] }));
 
-      await (cache as any).fetchFeatureFlag('host.example.com');
+      await (cache as any).fetchFeatureFlags('host.example.com');
 
       const init = stub.firstCall.args[1] as { headers: Record<string, string> };
       expect(init.headers).to.not.have.property('x-databricks-org-id');
       stub.restore();
     });
+  });
+
+  it('reads all six types from one GET without telemetry or a session', async () => {
+    const cases = [
+      ['getBoolean', 'true', true],
+      ['getBoolean', '"true"', false],
+      ['getInt32', '2147483647', 2147483647],
+      ['getInt32', '2147483648', undefined],
+      ['getInt64', '9223372036854775807', BigInt('9223372036854775807')],
+      ['getInt64', '-9223372036854775808', BigInt('-9223372036854775808')],
+      ['getInt64', '9223372036854775808', undefined],
+      ['getInt64', '1.5', undefined],
+      ['getInt64', '01', undefined],
+      ['getInt64', 'true', undefined],
+      ['getDouble', '1.25', 1.25],
+      ['getDouble', '1e400', undefined],
+      ['getString', '"hello"', 'hello'],
+      ['getString', 'null', undefined],
+      ['getStringList', '["a","b"]', ['a', 'b']],
+      ['getStringList', '[null]', undefined],
+      ['getString', 'invalid', undefined],
+    ];
+    const cache = new FeatureFlagCache(new ClientContextStub());
+    cache.getOrCreateContext('test-host');
+    const fetchStub = sinon.stub(cache as any, 'fetchWithRetry').resolves(
+      new Response(
+        JSON.stringify({
+          flags: cases.map(([, value], index) => ({ name: String(index), value })),
+          ttl_seconds: 60,
+        }),
+      ),
+    );
+    await Promise.all(
+      cases.map(async ([method, , expected], index) => {
+        expect(await (cache as any)[method as string]('test-host', String(index))).to.deep.equal(expected);
+      }),
+    );
+    expect(await cache.getString('test-host', 'missing', 'fallback')).to.equal('fallback');
+    expect(fetchStub.calledOnce).to.be.true;
+  });
+
+  it('shares values per workspace, refreshes with the current caller, and defaults on failure', async () => {
+    const first = new FeatureFlagCache(new ClientContextStub({ customHeaders: { 'x-databricks-org-id': '1' } }));
+    const current = new FeatureFlagCache(new ClientContextStub({ customHeaders: { 'X-Databricks-Org-Id': '1' } }));
+    const other = new FeatureFlagCache(new ClientContextStub({ customHeaders: { 'x-databricks-org-id': '2' } }));
+    expect(first.getOrCreateContext('host-a')).to.equal(current.getOrCreateContext('host-b'));
+    expect(other.getOrCreateContext('host-a')).to.not.equal(first.getOrCreateContext('host-a'));
+    const response = (value: string) =>
+      new Response(
+        JSON.stringify({
+          flags: [{ name: 'flag', value }],
+          ttl_seconds: 60,
+        }),
+      );
+    const firstFetch = sinon.stub(first as any, 'fetchWithRetry').resolves(response('true'));
+    const currentFetch = sinon.stub(current as any, 'fetchWithRetry').resolves(response('false'));
+    expect(await Promise.all([first.getBoolean('host-a', 'flag'), current.getBoolean('host-b', 'flag')])).to.deep.equal(
+      [true, true],
+    );
+    expect(currentFetch.called).to.be.false;
+    clock.tick(61000);
+    expect(await current.getBoolean('host-b', 'flag')).to.be.false;
+    expect(firstFetch.calledOnce).to.be.true;
+    expect(currentFetch.calledOnce).to.be.true;
+    clock.tick(61000);
+    currentFetch.rejects(new Error('offline'));
+    expect(await current.getBoolean('host-b', 'flag', true)).to.be.true;
+    expect(await current.getBoolean('host-b', 'flag')).to.be.false;
+    expect(currentFetch.calledTwice).to.be.true;
   });
 });
