@@ -31,7 +31,7 @@ export interface FeatureFlagContext {
 }
 
 /**
- * Shared feature-flag values, independent of telemetry or an opened session.
+ * Shared feature-flag values per workspace.
  * Acquire/release a context per consumer; each reader uses its caller's auth.
  * Responsibilities:
  *   - dedupe in-flight fetches (thundering-herd protection);
@@ -135,7 +135,7 @@ export default class FeatureFlagCache {
 
   async getInt32(host: string, name: string, defaultValue?: number): Promise<number | undefined> {
     const value = await this.getInt64(host, name);
-    return value !== undefined && value >= -2147483648 && value <= 2147483647 ? Number(value) : defaultValue;
+    return value !== undefined && BigInt.asIntN(32, value) === value ? Number(value) : defaultValue;
   }
 
   async getInt64(host: string, name: string, defaultValue?: bigint): Promise<bigint | undefined> {
@@ -143,7 +143,7 @@ export default class FeatureFlagCache {
     // Parse integer text directly: JSON.parse would round values beyond 2^53.
     if (!raw || !/^-?(0|[1-9]\d*)$/.test(raw)) return defaultValue;
     const value = BigInt(raw);
-    return value >= BigInt('-9223372036854775808') && value <= BigInt('9223372036854775807') ? value : defaultValue;
+    return BigInt.asIntN(64, value) === value ? value : defaultValue;
   }
 
   async getDouble(host: string, name: string, defaultValue?: number): Promise<number | undefined> {
@@ -227,12 +227,7 @@ export default class FeatureFlagCache {
     }
   }
 
-  /**
-   * Retries transient network errors once before giving up. Without a retry
-   * a single hiccup would leave telemetry disabled for the full cache TTL
-   * (15 min). One retry gives an ephemeral DNS / connection-reset failure
-   * a second chance without pushing sustained load at a broken endpoint.
-   */
+  /** Retries transient failures using the connection's retry policy. */
   private async fetchWithRetry(url: string, init: RequestInit): Promise<Response> {
     const connectionProvider = await this.context.getConnectionProvider();
     const agent = await connectionProvider.getAgent();
