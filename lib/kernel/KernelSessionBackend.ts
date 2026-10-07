@@ -393,19 +393,8 @@ export default class KernelSessionBackend implements ISessionBackend {
 
   public async getPrimaryKeys(request: PrimaryKeysRequest): Promise<IOperationBackend> {
     this.failIfClosed();
-    // The kernel requires a catalog for primary-key lookup (`Identifier::new`
-    // rejects an empty string). The Thrift backend can forward an undefined
-    // catalog and let the server resolve a default; the kernel path cannot,
-    // so reject up front with a clear, actionable message rather than passing
-    // `''` and surfacing the kernel's opaque "identifier must not be empty".
-    if (request.catalogName === undefined || request.catalogName === '') {
-      throw new HiveDriverError(
-        'kernel getPrimaryKeys requires a catalog — pass `catalogName` explicitly. (The Thrift backend ' +
-          'can omit it and let the server resolve a default; the kernel kernel path requires it.)',
-      );
-    }
     return this.runMetadata(() =>
-      this.connection.getPrimaryKeys(request.catalogName as string, request.schemaName, request.tableName),
+      this.connection.getPrimaryKeys(request.catalogName, request.schemaName, request.tableName),
     );
   }
 

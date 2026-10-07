@@ -285,6 +285,7 @@ export default class ThriftSessionBackend implements ISessionBackend {
   }
 
   public async getFunctions(request: FunctionsRequest): Promise<IOperationBackend> {
+    const functionCatalog = request.catalogName ?? null;
     const driver = await this.context.getDriver();
     const response = await driver.getFunctions({
       sessionHandle: this.sessionHandle,
@@ -294,7 +295,7 @@ export default class ThriftSessionBackend implements ISessionBackend {
       runAsync: this.getRunAsyncForMetadataOperations(),
       ...getDirectResultsOptions(request.maxRows, this.context.getConfig()),
     });
-    return this.createOperationBackend(response);
+    return this.createOperationBackend(response, functionCatalog);
   }
 
   public async getPrimaryKeys(request: PrimaryKeysRequest): Promise<IOperationBackend> {
@@ -335,13 +336,14 @@ export default class ThriftSessionBackend implements ISessionBackend {
     return new Status(response.status);
   }
 
-  private createOperationBackend(response: OperationResponseShape): IOperationBackend {
+  private createOperationBackend(response: OperationResponseShape, functionCatalog?: string | null): IOperationBackend {
     Status.assert(response.status);
     const handle = definedOrError(response.operationHandle);
     return new ThriftOperationBackend({
       handle,
       directResults: response.directResults,
       context: this.context,
+      functionCatalog,
     });
   }
 }

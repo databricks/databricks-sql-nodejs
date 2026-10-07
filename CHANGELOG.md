@@ -4,6 +4,7 @@
 
 - Add the default-enabled `enableGeoSpatialSupport` option for kernel-backed GEOMETRY / GEOGRAPHY results. Enabled mode returns the canonical `{ srid, wkb }` Arrow value; disabled mode returns WKT / EWKT.
 - Pin transitive `brace-expansion` 1.x / 2.x and `ip-address` dependencies to patched releases for GHSA-6j4f-fj2g-mc7p, GHSA-qhr7-859c-m2p7, and GHSA-2p57-rm9w-gvfp.
+- Fix Thrift `getFunctions()` to report the requested `FUNCTION_CAT`, matching JDBC and kernel.
 
 ## 2.2.0
 

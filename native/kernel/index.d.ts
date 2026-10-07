@@ -380,8 +380,8 @@ export declare class Connection {
    */
   listColumns(catalog?: string | undefined | null, schemaPattern?: string | undefined | null, tablePattern?: string | undefined | null, columnPattern?: string | undefined | null): Promise<Statement>
   /**
-   * Functions visible to the session. `catalog` is exact;
-   * `schemaPattern` and `functionPattern` are SQL LIKE.
+   * Functions visible to the session. An empty `catalog` is forwarded to
+   * SEA for native `GetFunctions`; `schemaPattern` and `functionPattern` are SQL LIKE.
    */
   listFunctions(catalog?: string | undefined | null, schemaPattern?: string | undefined | null, functionPattern?: string | undefined | null): Promise<Statement>
   /**
@@ -403,7 +403,7 @@ export declare class Connection {
    * Primary keys for the given table. All three identifiers are
    * exact — ODBC `SQLPrimaryKeys` does not support patterns.
    */
-  getPrimaryKeys(catalog: string, schema: string, table: string): Promise<Statement>
+  getPrimaryKeys(catalog: string | undefined | null, schema: string | undefined | null, table: string): Promise<Statement>
   /**
    * Foreign-key relationships. The parent side is optional. When the
    * foreign table is omitted, returns an empty result without issuing a
