@@ -587,7 +587,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
       // breaker counters and HTTP batches don't fragment per-instance.
       this.telemetryClient = TelemetryClientProvider.getInstance().getOrCreateClient(this, this.host);
 
-      const enabled = await this.getFeatureFlagCache().getBoolean(
+      const enabled = await this.featureFlagCache?.getBoolean(
         this.host,
         'databricks.partnerplatform.clientConfigsFeatureFlags.enableTelemetryForNodeJs',
       );
@@ -752,6 +752,9 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
     // pattern (see databricks-sql-python/src/databricks/sql/session.py).
     const internalOptions = options as ConnectionOptions & InternalConnectionOptions;
     const useKernel = internalOptions.useKernel === true;
+    if (!useKernel) {
+      this.getFeatureFlagCache();
+    }
     const backend = useKernel
       ? new KernelBackend({ context: this })
       : new ThriftBackend({
@@ -774,6 +777,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
       } catch (closeErr) {
         // Swallow; the original error is what the caller needs to see.
       }
+      this.releaseFeatureFlagCache();
       throw err;
     }
     this.backend = backend;
@@ -910,8 +914,12 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
    * method on shutdown so the aggregator drains its remaining metrics.
    */
   public async close(): Promise<void> {
-    await this.sessions.closeAll();
-    await this.backend?.close();
+    try {
+      await this.sessions.closeAll();
+      await this.backend?.close();
+    } finally {
+      this.releaseFeatureFlagCache();
+    }
 
     this.backend = undefined;
 
@@ -930,8 +938,6 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
     // Drop the emitter ref so post-close calls (e.g. session.close racing
     // with client.close) cannot smuggle events into the closed aggregator.
     this.telemetryEmitter = undefined;
-
-    this.releaseFeatureFlagCache();
 
     this.client = undefined;
     this.connectionProvider = undefined;

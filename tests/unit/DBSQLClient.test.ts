@@ -1,6 +1,7 @@
 import { expect, AssertionError } from 'chai';
 import sinon from 'sinon';
 import fs from 'fs';
+import { Response } from 'node-fetch';
 import DBSQLClient, { ThriftLibrary } from '../../lib/DBSQLClient';
 import DBSQLSession from '../../lib/DBSQLSession';
 import ThriftBackend from '../../lib/thrift-backend/ThriftBackend';
@@ -47,6 +48,11 @@ function makeStubbedClient(thriftClient: ThriftClientStub = new ThriftClientStub
 }
 
 describe('DBSQLClient.connect', () => {
+  beforeEach(() => {
+    sinon.stub(FeatureFlagCache.prototype as any, 'fetchFeatureFlags').resolves(new Map());
+  });
+  afterEach(() => sinon.restore());
+
   it('should prepend "/" to path if it is missing', async () => {
     const client = new DBSQLClient();
 
@@ -895,7 +901,94 @@ describe('DBSQLClient.enableMetricViewMetadata', () => {
   });
 });
 
+describe('DBSQLClient feature flag lifecycle', () => {
+  const options = {
+    ...connectOptions,
+    host: 'test.cloud.databricks.com',
+    path: '/sql/1.0/warehouses/test?o=123',
+    telemetryEnabled: false,
+  };
+  const contexts = (FeatureFlagCache as any).sharedContexts as Map<string, unknown>;
+
+  beforeEach(() => contexts.clear());
+  afterEach(() => {
+    sinon.restore();
+    contexts.clear();
+  });
+
+  for (const oauth of [false, true]) {
+    it(`loads flags only when read with telemetry disabled (${oauth ? 'OAuth' : 'PAT'})`, async () => {
+      const auth = sinon
+        .stub(DatabricksOAuth.prototype, 'authenticate')
+        .resolves({ Authorization: 'Bearer oauth-token' });
+      const fetch = sinon
+        .stub(FeatureFlagCache.prototype as any, 'fetchWithRetry')
+        .resolves(new Response(JSON.stringify({ flags: [{ name: 'sampleLimit', value: '42' }] })));
+      const connect = sinon.stub(ThriftBackend.prototype, 'connect').resolves();
+      sinon.stub(ThriftBackend.prototype, 'close').resolves();
+      const clients = [new DBSQLClient(), new DBSQLClient()];
+      const oauthOptions: ConnectionOptions = {
+        host: options.host,
+        path: options.path,
+        authType: 'databricks-oauth',
+        telemetryEnabled: false,
+      };
+      await Promise.all(clients.map((client) => client.connect(oauth ? oauthOptions : options)));
+      expect(fetch.called).to.be.false;
+      await Promise.all(
+        clients.map(async (client) => {
+          expect(await (client as any).getFeatureFlagCache().getInt32(options.host, 'sampleLimit')).to.equal(42);
+          expect(client.getTelemetryStats()).to.be.undefined;
+        }),
+      );
+      expect(connect.callCount).to.equal(2);
+      expect(fetch.callCount).to.equal(1);
+      const { headers } = fetch.firstCall.args[1];
+      expect(headers.Authorization).to.equal(oauth ? 'Bearer oauth-token' : `Bearer ${options.token}`);
+      expect(headers['x-databricks-org-id']).to.equal('123');
+      expect(auth.callCount).to.equal(oauth ? 1 : 0);
+      await clients[0].close();
+      expect(contexts.has('workspace:123')).to.be.true;
+      await clients[1].close();
+      expect(contexts.has('workspace:123')).to.be.false;
+    });
+  }
+
+  it('continues connecting when the flag GET fails', async () => {
+    const fetch = sinon.stub(FeatureFlagCache.prototype as any, 'fetchWithRetry').rejects(new Error('offline'));
+    const connect = sinon.stub(ThriftBackend.prototype, 'connect').resolves();
+    sinon.stub(ThriftBackend.prototype, 'close').resolves();
+    const client = new DBSQLClient();
+    await client.connect(options);
+    expect(connect.calledOnce).to.be.true;
+    expect(fetch.called).to.be.false;
+    expect(await (client as any).getFeatureFlagCache().getBoolean(options.host, 'missing')).to.be.false;
+    await client.close();
+  });
+
+  for (const failingMethod of ['connect', 'close'] as const) {
+    it(`releases flags when backend ${failingMethod} fails`, async () => {
+      const connect = sinon.stub(ThriftBackend.prototype, 'connect').resolves();
+      const close = sinon.stub(ThriftBackend.prototype, 'close').resolves();
+      const error = new Error('backend failed');
+      (failingMethod === 'connect' ? connect : close).rejects(error);
+      const client = new DBSQLClient();
+      try {
+        await client.connect(options);
+        await client.close();
+        expect.fail('backend should fail');
+      } catch (caught) {
+        expect(caught).to.equal(error);
+      }
+      expect(contexts.has('workspace:123')).to.be.false;
+    });
+  }
+});
+
 describe('DBSQLClient telemetry paths', () => {
+  beforeEach(() => {
+    sinon.stub(FeatureFlagCache.prototype as any, 'fetchFeatureFlags').resolves(new Map());
+  });
   // Reset the process-wide singleton between tests so refcount + cached
   // feature flags from one test don't leak into the next. Mirrors the e2e
   // suite's afterEach pattern but scoped to unit-level state.
@@ -978,6 +1071,7 @@ describe('DBSQLClient telemetry paths', () => {
         await client.connect({ ...connectOptions, telemetryEnabled: true, useKernel: true } as any);
 
         expect(initStub.callCount).to.equal(0);
+        expect(((FeatureFlagCache.prototype as any).fetchFeatureFlags as sinon.SinonStub).called).to.be.false;
       } finally {
         await client.close();
       }
