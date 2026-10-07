@@ -106,7 +106,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
 
   // Telemetry components — `telemetryClient` is the shared per-host owner
   // (process-wide via TelemetryClientProvider). The exporter, aggregator,
-  // circuit-breaker registry and feature-flag cache live on it. Each
+  // and circuit-breaker registry live on it. Each
   // DBSQLClient still owns its own `telemetryEmitter` so it respects its
   // own `telemetryEnabled` flag.
   private host?: string;

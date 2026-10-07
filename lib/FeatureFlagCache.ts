@@ -225,7 +225,8 @@ export default class FeatureFlagCache {
       return new Map();
     } catch (error: any) {
       logger.log(LogLevel.debug, `Error fetching feature flag from ${host}: ${error.message}`);
-      // Preserve the existing failure policy: use defaults until the next TTL.
+      // Preserve the existing policy: use consumer defaults until the next TTL.
+      // Retrying on every read would add request latency during an outage.
       return new Map();
     }
   }
