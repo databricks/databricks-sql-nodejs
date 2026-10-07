@@ -73,11 +73,12 @@ function loadConfigOrSkip(suite: Mocha.Suite): TestConfig | null {
 
 describe('Telemetry Integration', () => {
   let config: TestConfig | null = null;
+  const flagContexts = (FeatureFlagCache as any).sharedContexts as Map<string, unknown>;
 
   // The e2e test runner executes many suites before this one; any earlier
   // DBSQLClient connect leaves a TelemetryClient in the process-wide singleton
-  // for the test host. Reset before our first test so the FF cache and
-  // refcount spies in this suite observe a clean lineage.
+  // for the test host. Reset before our first test so the refcount spies
+  // in this suite observe a clean lineage.
   before(function () {
     config = loadConfigOrSkip(this.test!.parent!);
     if (!config) {
@@ -87,16 +88,15 @@ describe('Telemetry Integration', () => {
     TelemetryClientProvider.__resetInstanceForTests();
   });
 
-  // Reset the process-wide singleton between tests so refcount + cached
-  // feature flags from one test don't leak into the next. Combined with the
-  // `before` reset above, every test sees a fresh provider regardless of
-  // what other e2e suites did first.
+  // Reset telemetry and feature flags separately; they have independent lifetimes.
   beforeEach(() => {
     TelemetryClientProvider.__resetInstanceForTests();
+    flagContexts.clear();
   });
 
   afterEach(() => {
     TelemetryClientProvider.__resetInstanceForTests();
+    flagContexts.clear();
     sinon.restore();
   });
 
@@ -138,7 +138,8 @@ describe('Telemetry Integration', () => {
 
       const client = new DBSQLClient();
 
-      const featureFlagCacheSpy = sinon.spy(FeatureFlagCache.prototype, 'getOrCreateContext');
+      const featureFlagReadSpy = sinon.spy(FeatureFlagCache.prototype, 'getBoolean');
+      const telemetryProviderSpy = sinon.spy(TelemetryClientProvider.prototype, 'getOrCreateClient');
 
       try {
         await client.connect({
@@ -149,11 +150,14 @@ describe('Telemetry Integration', () => {
         });
 
         // Verify telemetry was not initialized
-        expect(featureFlagCacheSpy.called).to.be.false;
+        expect(featureFlagReadSpy.called).to.be.false;
+        expect(telemetryProviderSpy.called).to.be.false;
+        expect(client.getTelemetryStats()).to.be.undefined;
 
         await client.close();
       } finally {
-        featureFlagCacheSpy.restore();
+        featureFlagReadSpy.restore();
+        telemetryProviderSpy.restore();
       }
     });
 
@@ -308,10 +312,9 @@ describe('Telemetry Integration', () => {
 
       const client = new DBSQLClient();
 
-      // Stub getOrCreateContext to throw
-      const contextStub = sinon
-        .stub(FeatureFlagCache.prototype, 'getOrCreateContext')
-        .throws(new Error('Context creation failed'));
+      const fetchStub = sinon
+        .stub(FeatureFlagCache.prototype as any, 'fetchWithRetry')
+        .rejects(new Error('Feature flag fetch failed'));
 
       try {
         // Connection should succeed even if telemetry fails
@@ -322,6 +325,9 @@ describe('Telemetry Integration', () => {
           telemetryEnabled: true,
         });
 
+        expect(fetchStub.calledOnce).to.be.true;
+        expect(client.getTelemetryStats()).to.be.undefined;
+
         // Should be able to open a session
         const session = await client.openSession({
           initialCatalog: config!.catalog,
@@ -331,7 +337,7 @@ describe('Telemetry Integration', () => {
         await session.close();
         await client.close();
       } finally {
-        contextStub.restore();
+        fetchStub.restore();
       }
     });
 
