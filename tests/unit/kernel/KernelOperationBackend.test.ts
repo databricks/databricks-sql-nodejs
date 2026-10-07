@@ -257,6 +257,47 @@ describe('KernelOperationBackend — M0 datatype round-trip via napi → ArrowRe
     expect(row.s).to.deep.equal({ a: 1, b: 'hi' });
   });
 
+  it('surfaces geospatial string and binary values in idiomatic JS shapes', async () => {
+    const wkb = new Uint8Array([
+      0x01, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0xf0, 0x3f, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+      0x00, 0x40,
+    ]);
+    const geoType = new Struct([
+      new Field('srid', new Int32(), false),
+      new Field(
+        'wkb',
+        new Binary(),
+        false,
+        new Map([
+          ['geometry', 'true'],
+          ['srid', '-1'],
+        ]),
+      ),
+    ]);
+    const schema = new Schema([
+      withTypeName(new Field('geom_text', new Utf8(), true), 'GEOMETRY'),
+      withTypeName(new Field('geom_binary', geoType, true), 'GEOMETRY'),
+    ]);
+    const stub = new StatementStub(ipcSchemaOnly(schema), [
+      ipcFromColumns(schema, {
+        geom_text: ['SRID=4326;POINT(1 2)', null],
+        geom_binary: [{ srid: 4326, wkb }, null],
+      }),
+    ]);
+    const backend = new KernelOperationBackend({
+      statement: stub,
+      context: new ClientContextStub(),
+    });
+
+    const rows = (await backend.fetchChunk({ limit: 100 })) as Array<Record<string, unknown>>;
+    expect(rows[0].geom_text).to.equal('SRID=4326;POINT(1 2)');
+    expect(rows[0].geom_binary).to.deep.equal({
+      srid: 4326,
+      wkb: Buffer.from(wkb),
+    });
+    expect(rows[1]).to.deep.equal({ geom_text: null, geom_binary: null });
+  });
+
   it('streams multiple batches and reports hasMore correctly', async () => {
     const schema = new Schema([withTypeName(new Field('x', new Int32(), true), 'INT')]);
     const schemaIpc = ipcSchemaOnly(schema);
