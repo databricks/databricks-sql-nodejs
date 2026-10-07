@@ -129,8 +129,11 @@ export default class FeatureFlagCache {
   }
 
   async getBoolean(host: string, name: string, defaultValue = false): Promise<boolean> {
-    const value = await this.getValue(host, name);
-    return typeof value === 'boolean' ? value : defaultValue;
+    // Accept legacy mixed-case boolean literals as well as canonical JSON.
+    const value = (await this.getRawValue(host, name))?.trim().toLowerCase();
+    if (value === 'true') return true;
+    if (value === 'false') return false;
+    return defaultValue;
   }
 
   async getInt32(host: string, name: string, defaultValue?: number): Promise<number | undefined> {

@@ -371,7 +371,7 @@ describe('FeatureFlagCache', () => {
 
   it('reads all six types from one GET without telemetry or a session', async () => {
     const cases = [
-      ['getBoolean', 'true', true],
+      ['getBoolean', 'True', true],
       ['getBoolean', '"true"', false],
       ['getInt32', '2147483647', 2147483647],
       ['getInt32', '2147483648', undefined],
@@ -422,13 +422,13 @@ describe('FeatureFlagCache', () => {
         }),
       );
     const firstFetch = sinon.stub(first as any, 'fetchWithRetry').resolves(response('true'));
-    const currentFetch = sinon.stub(current as any, 'fetchWithRetry').resolves(response('false'));
+    const currentFetch = sinon.stub(current as any, 'fetchWithRetry').resolves(response('FALSE'));
     expect(await Promise.all([first.getBoolean('host-a', 'flag'), current.getBoolean('host-b', 'flag')])).to.deep.equal(
       [true, true],
     );
     expect(currentFetch.called).to.be.false;
     clock.tick(61000);
-    expect(await current.getBoolean('host-b', 'flag')).to.be.false;
+    expect(await current.getBoolean('host-b', 'flag', true)).to.be.false;
     expect(firstFetch.calledOnce).to.be.true;
     expect(currentFetch.calledOnce).to.be.true;
     clock.tick(61000);
