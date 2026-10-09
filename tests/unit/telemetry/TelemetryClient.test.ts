@@ -150,34 +150,6 @@ describe('TelemetryClient', () => {
     });
   });
 
-  describe('feature-flag context registration (F1)', () => {
-    it('should register the host with the feature-flag cache on construction', () => {
-      const context = new ClientContextStub();
-      const client = new TelemetryClient(context, HOST);
-
-      // Without F1's wiring, isTelemetryEnabled returns false because the
-      // contexts map is empty. With F1, the constructor registers the host
-      // so the cache is ready to fetch the flag.
-      const cache = client.getFeatureFlagCache();
-      // Internal access for assertion only — tests on getInstance/resetInstance
-      // would otherwise leak across the singleton.
-      const ctx = (cache as any).contexts.get(HOST);
-      expect(ctx, 'context should exist after TelemetryClient construction').to.exist;
-      expect(ctx.refCount, 'refCount should be 1 after registration').to.equal(1);
-    });
-
-    it('should release the feature-flag context on close', async () => {
-      const context = new ClientContextStub();
-      const client = new TelemetryClient(context, HOST);
-      const cache = client.getFeatureFlagCache();
-
-      await client.close();
-
-      const ctx = (cache as any).contexts.get(HOST);
-      expect(ctx, 'context should be removed on close (refCount → 0)').to.be.undefined;
-    });
-  });
-
   describe('multi-context FIFO', () => {
     it('registerContext appends contexts in registration order', () => {
       const ctxA = new ClientContextStub();

@@ -37,6 +37,7 @@ import CloseableCollection from './utils/CloseableCollection';
 import IConnectionProvider from './connection/contracts/IConnectionProvider';
 import TelemetryClient from './telemetry/TelemetryClient';
 import TelemetryClientProvider from './telemetry/TelemetryClientProvider';
+import FeatureFlagCache from './FeatureFlagCache';
 import TelemetryEventEmitter from './telemetry/TelemetryEventEmitter';
 import MetricsAggregator from './telemetry/MetricsAggregator';
 import { DriverConfiguration, DRIVER_NAME, TelemetryEventType, DEFAULT_TELEMETRY_CONFIG } from './telemetry/types';
@@ -105,7 +106,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
 
   // Telemetry components — `telemetryClient` is the shared per-host owner
   // (process-wide via TelemetryClientProvider). The exporter, aggregator,
-  // circuit-breaker registry and feature-flag cache live on it. Each
+  // and circuit-breaker registry live on it. Each
   // DBSQLClient still owns its own `telemetryEmitter` so it respects its
   // own `telemetryEnabled` flag.
   private host?: string;
@@ -117,6 +118,8 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
   private useProxy?: boolean;
 
   private telemetryClient?: TelemetryClient;
+
+  private featureFlagCache?: FeatureFlagCache;
 
   private telemetryEmitter?: TelemetryEventEmitter;
 
@@ -579,13 +582,15 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
     try {
       // Acquire (or create) the per-host TelemetryClient from the
       // process-wide provider. The shared client owns the circuit-breaker
-      // registry, feature-flag cache, exporter, and aggregator. Multiple
+      // registry, exporter, and aggregator. Multiple
       // DBSQLClient instances on the same host share these resources so
       // breaker counters and HTTP batches don't fragment per-instance.
       this.telemetryClient = TelemetryClientProvider.getInstance().getOrCreateClient(this, this.host);
 
-      // Use the shared feature-flag cache (registered in the previous step).
-      const enabled = await this.telemetryClient.getFeatureFlagCache().isTelemetryEnabled(this.host);
+      const enabled = await this.featureFlagCache?.getBoolean(
+        this.host,
+        'databricks.partnerplatform.clientConfigsFeatureFlags.enableTelemetryForNodeJs',
+      );
 
       if (!enabled) {
         // Release our refcount immediately; we won't be emitting.
@@ -610,7 +615,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
     } catch (error: any) {
       // Swallow all telemetry initialization errors. If we acquired a refcount
       // before the throw, release it — otherwise the per-host TelemetryClient
-      // (and its flush timer / exporter / FFCache) leaks for the lifetime of
+      // (and its flush timer / exporter) leaks for the lifetime of
       // the process on long-running supervisors that retry-connect.
       if (this.telemetryClient) {
         try {
@@ -626,6 +631,20 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
       }
       this.logger.log(LogLevel.debug, `Telemetry initialization error: ${error?.message ?? error}`);
     }
+  }
+
+  // Also usable after driver auth/transport setup, before selecting a backend.
+  private getFeatureFlagCache(): FeatureFlagCache {
+    if (!this.featureFlagCache) {
+      this.featureFlagCache = new FeatureFlagCache(this);
+      this.featureFlagCache.getOrCreateContext(this.host!);
+    }
+    return this.featureFlagCache;
+  }
+
+  private releaseFeatureFlagCache(): void {
+    if (this.featureFlagCache && this.host) this.featureFlagCache.releaseContext(this.host);
+    this.featureFlagCache = undefined;
   }
 
   /**
@@ -661,6 +680,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
       this.telemetryClient = undefined;
       this.telemetryEmitter = undefined;
     }
+    this.releaseFeatureFlagCache();
     // Re-arm: the new connection is a fresh client-config lineage even if
     // the host is the same.
     this.driverConfigShipped = false;
@@ -732,6 +752,9 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
     // pattern (see databricks-sql-python/src/databricks/sql/session.py).
     const internalOptions = options as ConnectionOptions & InternalConnectionOptions;
     const useKernel = internalOptions.useKernel === true;
+    if (!useKernel) {
+      this.getFeatureFlagCache();
+    }
     const backend = useKernel
       ? new KernelBackend({ context: this })
       : new ThriftBackend({
@@ -754,6 +777,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
       } catch (closeErr) {
         // Swallow; the original error is what the caller needs to see.
       }
+      this.releaseFeatureFlagCache();
       throw err;
     }
     this.backend = backend;
@@ -890,8 +914,12 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
    * method on shutdown so the aggregator drains its remaining metrics.
    */
   public async close(): Promise<void> {
-    await this.sessions.closeAll();
-    await this.backend?.close();
+    try {
+      await this.sessions.closeAll();
+      await this.backend?.close();
+    } finally {
+      this.releaseFeatureFlagCache();
+    }
 
     this.backend = undefined;
 
