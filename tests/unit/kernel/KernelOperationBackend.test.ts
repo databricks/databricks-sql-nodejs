@@ -131,7 +131,7 @@ function ipcSchemaOnly(schema: Schema): Buffer {
   // tableToIPC on an empty table produces a schema-only stream.
   const struct = makeData({
     type: new Struct(schema.fields),
-    children: schema.fields.map((f) => makeData({ type: f.type as any, length: 0, nullCount: 0 })),
+    children: schema.fields.map((f) => vectorFromArray([], f.type).data[0]),
     length: 0,
     nullCount: 0,
   });
@@ -274,14 +274,18 @@ describe('KernelOperationBackend — M0 datatype round-trip via napi → ArrowRe
         ]),
       ),
     ]);
+    const nestedType = new Struct([new Field('geom', geoType, true), new Field('blob', new Binary(), true)]);
+    const blob = new Uint8Array([0xde, 0xad, 0xbe, 0xef]);
     const schema = new Schema([
       withTypeName(new Field('geom_text', new Utf8(), true), 'GEOMETRY'),
       withTypeName(new Field('geom_binary', geoType, true), 'GEOMETRY'),
+      withTypeName(new Field('nested', nestedType, true), 'STRUCT'),
     ]);
     const stub = new StatementStub(ipcSchemaOnly(schema), [
       ipcFromColumns(schema, {
         geom_text: ['SRID=4326;POINT(1 2)', null],
         geom_binary: [{ srid: 4326, wkb }, null],
+        nested: [{ geom: { srid: 4326, wkb }, blob }, null],
       }),
     ]);
     const backend = new KernelOperationBackend({
@@ -291,11 +295,19 @@ describe('KernelOperationBackend — M0 datatype round-trip via napi → ArrowRe
 
     const rows = (await backend.fetchChunk({ limit: 100 })) as Array<Record<string, unknown>>;
     expect(rows[0].geom_text).to.equal('SRID=4326;POINT(1 2)');
+    expect(Buffer.isBuffer((rows[0].geom_binary as { wkb: unknown }).wkb)).to.equal(true);
     expect(rows[0].geom_binary).to.deep.equal({
       srid: 4326,
       wkb: Buffer.from(wkb),
     });
-    expect(rows[1]).to.deep.equal({ geom_text: null, geom_binary: null });
+    const nested = rows[0].nested as { geom: { srid: number; wkb: unknown }; blob: unknown };
+    expect(Buffer.isBuffer(nested.geom.wkb)).to.equal(true);
+    expect(Buffer.isBuffer(nested.blob)).to.equal(true);
+    expect(nested).to.deep.equal({
+      geom: { srid: 4326, wkb: Buffer.from(wkb) },
+      blob: Buffer.from(blob),
+    });
+    expect(rows[1]).to.deep.equal({ geom_text: null, geom_binary: null, nested: null });
   });
 
   it('streams multiple batches and reports hasMore correctly', async () => {
