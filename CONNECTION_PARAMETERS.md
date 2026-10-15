@@ -106,8 +106,8 @@ disabling verification.
 
 ## Metadata catalog filters
 
-| Option                      | Type      | Thrift | Kernel | Default Value | Note                                                                                                          |
-| --------------------------- | --------- | :----: | :----: | ------------- | ------------------------------------------------------------------------------------------------------------- |
+| Option                      | Type      | Thrift | Kernel | Default Value | Note                                                                                                            |
+| --------------------------- | --------- | :----: | :----: | ------------- | --------------------------------------------------------------------------------------------------------------- |
 | `escapeMetadataCatalogName` | `boolean` |   ✅   |   ✅   | `false`       | Escapes unescaped `_` in catalog filters; existing `\_` escapes and `%` wildcards are preserved, matching JDBC. |
 
 Set `escapeMetadataCatalogName: true` in `client.connect(...)` to treat catalog
