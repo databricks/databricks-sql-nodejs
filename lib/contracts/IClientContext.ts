@@ -25,6 +25,7 @@ export interface ClientConfig {
 
   useLZ4Compression: boolean;
   enableMetricViewMetadata?: boolean;
+  escapeMetadataCatalogName?: boolean;
 
   // When true, DECIMAL values are returned as exact strings and 64-bit
   // integers as JS `bigint`, instead of being coerced to a lossy `number`.

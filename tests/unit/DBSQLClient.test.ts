@@ -793,6 +793,28 @@ describe('DBSQLClient retry-policy ConnectionOptions', () => {
   });
 });
 
+describe('DBSQLClient.escapeMetadataCatalogName', () => {
+  beforeEach(() => {
+    sinon.stub(FeatureFlagCache.prototype as any, 'fetchFeatureFlags').resolves(new Map());
+  });
+  afterEach(() => sinon.restore());
+
+  it('defaults to false and accepts opt-in and opt-out on connect', async () => {
+    const client = new DBSQLClient();
+    expect(client.getConfig().escapeMetadataCatalogName).to.be.false;
+
+    await client.connect({ ...connectOptions, telemetryEnabled: false });
+    expect(client.getConfig().escapeMetadataCatalogName).to.be.false;
+
+    await client.connect({ ...connectOptions, telemetryEnabled: false, escapeMetadataCatalogName: true });
+    expect(client.getConfig().escapeMetadataCatalogName).to.be.true;
+
+    await client.connect({ ...connectOptions, telemetryEnabled: false, escapeMetadataCatalogName: false });
+    expect(client.getConfig().escapeMetadataCatalogName).to.be.false;
+    await client.close();
+  });
+});
+
 describe('DBSQLClient.enableMetricViewMetadata', () => {
   it('should store enableMetricViewMetadata config when enabled', async () => {
     const client = new DBSQLClient();

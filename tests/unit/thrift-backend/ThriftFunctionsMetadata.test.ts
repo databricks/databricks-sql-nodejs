@@ -103,6 +103,20 @@ describe('Thrift getFunctions FUNCTION_CAT', () => {
         }
       }
 
+      it('keeps escape characters out of FUNCTION_CAT when catalog escaping is enabled', async () => {
+        const context = createContext(resultFormat);
+        context.configOverrides.escapeMetadataCatalogName = true;
+        const session = createSessionForTest({ handle: sessionHandle, context });
+        const operation = await session.getFunctions({ catalogName: 'comparator_tests', functionName: '%' });
+
+        expect(context.driver.getFunctionsReq?.catalogName).to.equal('comparator\\_tests');
+        expect(await operation.fetchAll()).to.deep.equal([
+          { FUNCTION_CAT: 'comparator_tests', FUNCTION_NAME: 'avg' },
+          { FUNCTION_CAT: 'comparator_tests', FUNCTION_NAME: 'sum' },
+        ]);
+        await session.close();
+      });
+
       it('preserves the catalog captured before the Thrift request completes', async () => {
         const context = createContext(resultFormat);
         const request = { catalogName: 'original_catalog', functionName: '%' };

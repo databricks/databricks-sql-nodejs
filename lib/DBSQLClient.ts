@@ -157,6 +157,8 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
 
       useLZ4Compression: true,
 
+      escapeMetadataCatalogName: false,
+
       preserveBigNumericPrecision: false,
 
       disableRowMaterialization: false,
@@ -694,6 +696,10 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
     // Store enableMetricViewMetadata configuration
     if (options.enableMetricViewMetadata !== undefined) {
       this.config.enableMetricViewMetadata = options.enableMetricViewMetadata;
+    }
+
+    if (options.escapeMetadataCatalogName !== undefined) {
+      this.config.escapeMetadataCatalogName = options.escapeMetadataCatalogName;
     }
 
     // Opt-in: preserve DECIMAL (string) / BIGINT (bigint) precision in results.

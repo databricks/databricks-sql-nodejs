@@ -32,6 +32,7 @@ import ParameterError from '../errors/ParameterError';
 import { DBSQLParameter, DBSQLParameterValue } from '../DBSQLParameter';
 import { LogLevel } from '../contracts/IDBSQLLogger';
 import ThriftOperationBackend from './ThriftOperationBackend';
+import escapeCatalogName from '../utils/escapeCatalogName';
 
 interface OperationResponseShape {
   status: TStatus;
@@ -151,6 +152,10 @@ export default class ThriftSessionBackend implements ISessionBackend {
     return ProtocolVersion.supportsAsyncMetadataOperations(this.serverProtocolVersion) ? true : undefined;
   }
 
+  private maybeEscapeCatalogName(catalogName: string | undefined): string | undefined {
+    return this.context.getConfig().escapeMetadataCatalogName ? escapeCatalogName(catalogName) : catalogName;
+  }
+
   public get id(): string {
     const sessionId = this.sessionHandle?.sessionId?.guid;
     return sessionId ? stringify(sessionId) : NIL;
@@ -238,7 +243,7 @@ export default class ThriftSessionBackend implements ISessionBackend {
     const driver = await this.context.getDriver();
     const response = await driver.getSchemas({
       sessionHandle: this.sessionHandle,
-      catalogName: request.catalogName,
+      catalogName: this.maybeEscapeCatalogName(request.catalogName),
       schemaName: request.schemaName,
       runAsync: this.getRunAsyncForMetadataOperations(),
       ...getDirectResultsOptions(request.maxRows, this.context.getConfig()),
@@ -250,7 +255,7 @@ export default class ThriftSessionBackend implements ISessionBackend {
     const driver = await this.context.getDriver();
     const response = await driver.getTables({
       sessionHandle: this.sessionHandle,
-      catalogName: request.catalogName,
+      catalogName: this.maybeEscapeCatalogName(request.catalogName),
       schemaName: request.schemaName,
       tableName: request.tableName,
       tableTypes: request.tableTypes,
@@ -274,7 +279,7 @@ export default class ThriftSessionBackend implements ISessionBackend {
     const driver = await this.context.getDriver();
     const response = await driver.getColumns({
       sessionHandle: this.sessionHandle,
-      catalogName: request.catalogName,
+      catalogName: this.maybeEscapeCatalogName(request.catalogName),
       schemaName: request.schemaName,
       tableName: request.tableName,
       columnName: request.columnName,
@@ -289,7 +294,7 @@ export default class ThriftSessionBackend implements ISessionBackend {
     const driver = await this.context.getDriver();
     const response = await driver.getFunctions({
       sessionHandle: this.sessionHandle,
-      catalogName: request.catalogName,
+      catalogName: this.maybeEscapeCatalogName(request.catalogName),
       schemaName: request.schemaName,
       functionName: request.functionName,
       runAsync: this.getRunAsyncForMetadataOperations(),

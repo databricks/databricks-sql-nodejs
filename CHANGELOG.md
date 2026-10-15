@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Add `escapeMetadataCatalogName` (default `false`) to escape catalog underscores in Thrift and kernel metadata requests.
 - Fix Thrift `getFunctions()` to report the requested `FUNCTION_CAT`, matching JDBC and kernel.
 
 ## 2.2.0
