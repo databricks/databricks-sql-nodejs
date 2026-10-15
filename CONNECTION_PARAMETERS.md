@@ -104,6 +104,23 @@ disabling verification.
 | `disableRowMaterialization`   | `boolean` |   ✅   |   ✅   | `false`       | Fetches and parses Arrow batches but returns `null` row placeholders instead of converting cells. Intended for fetch-throughput tests. |
 | `enableMetricViewMetadata`    | `boolean` |   ✅   |   ⚠️   | `false`       | Injected into session configuration on both paths. Kernel may drop its non-allowlisted configuration key.                              |
 
+## Metadata catalog filters
+
+| Option                      | Type      | Thrift | Kernel | Default Value | Note                                                                                                          |
+| --------------------------- | --------- | :----: | :----: | ------------- | ------------------------------------------------------------------------------------------------------------- |
+| `escapeMetadataCatalogName` | `boolean` |   ✅   |   ✅   | `false`       | Escapes unescaped `_` in catalog filters; existing `\_` escapes and `%` wildcards are preserved, matching JDBC. |
+
+Set `escapeMetadataCatalogName: true` in `client.connect(...)` to treat catalog
+underscores literally in metadata requests. For example, `comparator_tests`
+matches that catalog rather than also matching `comparatorXtests`. Schema,
+table, column, and function name patterns are unaffected.
+
+Thrift applies this to `getSchemas`, `getTables`, `getColumns`, and
+`getFunctions`. Kernel applies it to `getTables`, avoiding catalog enumeration
+for names without `%` wildcards; its other methods already use exact catalog
+identifiers. `getPrimaryKeys` and `getCrossReference` use exact catalog
+identifiers on both backends.
+
 ## Session defaults (`openSession(request)`)
 
 | Option           | Type                                          | Thrift | Kernel | Default Value | Note                                                                                                                                            |

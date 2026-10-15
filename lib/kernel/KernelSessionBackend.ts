@@ -14,6 +14,7 @@
 
 import { v4 as uuidv4 } from 'uuid';
 import ISessionBackend from '../contracts/ISessionBackend';
+import escapeCatalogName from '../utils/escapeCatalogName';
 import IOperationBackend from '../contracts/IOperationBackend';
 import IClientContext from '../contracts/IClientContext';
 import {
@@ -367,8 +368,12 @@ export default class KernelSessionBackend implements ISessionBackend {
 
   public async getTables(request: TablesRequest): Promise<IOperationBackend> {
     this.failIfClosed();
+    // Other kernel metadata methods already take exact catalog identifiers.
+    const catalogName = this.context.getConfig().escapeMetadataCatalogName
+      ? escapeCatalogName(request.catalogName)
+      : request.catalogName;
     return this.runMetadata(() =>
-      this.connection.listTables(request.catalogName, request.schemaName, request.tableName, request.tableTypes),
+      this.connection.listTables(catalogName, request.schemaName, request.tableName, request.tableTypes),
     );
   }
 
