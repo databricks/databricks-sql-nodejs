@@ -69,6 +69,13 @@ export type ConnectionOptions = {
   enableMetricViewMetadata?: boolean;
 
   /**
+   * Escape unescaped `_` in metadata catalog filters on both backends.
+   * Existing `\_` escapes and `%` wildcards are preserved, matching JDBC.
+   * Defaults to `false` to preserve the current metadata behavior.
+   */
+  escapeMetadataCatalogName?: boolean;
+
+  /**
    * Verify the server's TLS certificate on the primary Thrift transport.
    * Secure-by-default: omitting this leaves full chain + hostname verification
    * enabled (`true`), matching Node's `https` default, the JDBC/ODBC drivers,

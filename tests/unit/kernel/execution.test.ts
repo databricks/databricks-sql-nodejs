@@ -1097,6 +1097,57 @@ describe('KernelSessionBackend', () => {
     ]);
   });
 
+  for (const enabled of [undefined, false, true]) {
+    for (const [catalogName, escaped] of [
+      [undefined, undefined],
+      ['', ''],
+      ['main', 'main'],
+      ['comparator_tests', 'comparator\\_tests'],
+      ['a\\_b_c', 'a\\_b\\_c'],
+      [String.raw`my\\_cat`, String.raw`my\\_cat`],
+      ['a_b%c', 'a\\_b%c'],
+      ['%', '%'],
+    ]) {
+      it(`handles catalog ${JSON.stringify(catalogName)} with escapeMetadataCatalogName=${enabled}`, async () => {
+        const connection = new FakeNativeConnection();
+        const session = new KernelSessionBackend({
+          connection,
+          context: makeContext(undefined, { escapeMetadataCatalogName: enabled }),
+        });
+        const request = Object.freeze({
+          catalogName,
+          schemaName: 'schema_%',
+          tableName: 'table_%',
+          columnName: 'column_%',
+          functionName: 'function_%',
+        });
+        await session.getSchemas(request);
+        await session.getTables(request);
+        await session.getColumns(request);
+        await session.getFunctions(request);
+        await session.getPrimaryKeys(request);
+        await session.getCrossReference({
+          parentCatalogName: 'parent_catalog',
+          parentSchemaName: 's',
+          parentTableName: 't',
+          foreignCatalogName: 'foreign_catalog',
+          foreignSchemaName: 's',
+          foreignTableName: 'f',
+        });
+
+        expect(connection.metadataCalls).to.deep.equal([
+          ['listSchemas', catalogName, 'schema_%'],
+          ['listTables', enabled ? escaped : catalogName, 'schema_%', 'table_%', undefined],
+          ['listColumns', catalogName, 'schema_%', 'table_%', 'column_%'],
+          ['listFunctions', catalogName, 'schema_%', 'function_%'],
+          ['getPrimaryKeys', catalogName, 'schema_%', 'table_%'],
+          ['getCrossReference', 'parent_catalog', 's', 't', 'foreign_catalog', 's', 'f'],
+        ]);
+        await session.close();
+      });
+    }
+  }
+
   it('getPrimaryKeys forwards null, omitted, and empty namespace names unchanged', async () => {
     const connection = new FakeNativeConnection();
     const session = makeSession(connection);

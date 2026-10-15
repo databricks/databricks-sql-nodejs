@@ -31,8 +31,8 @@ const MAX_CLIENTS_SOFT_LIMIT = 128;
 /**
  * Process-wide registry of `TelemetryClient`s, one per host. Multiple
  * `DBSQLClient` instances connecting to the same host share the same
- * `TelemetryClient`, which owns the host-scoped circuit breaker, feature
- * flag cache, exporter, and aggregator.
+ * `TelemetryClient`, which owns the host-scoped circuit breaker,
+ * exporter, and aggregator. Feature flags have a separate workspace cache.
  *
  * Singleton because the resources we're sharing — circuit-breaker counters,
  * batched HTTP exports — are correct only at process scope. Per-`DBSQLClient`
@@ -65,7 +65,7 @@ class TelemetryClientProvider {
    * Reset the process-wide singleton. Test-only — name-prefixed so
    * production callsites can't reach for it accidentally via autocomplete.
    * Resetting in production drops every host's circuit-breaker counters,
-   * feature-flag cache, exporter, and pending-metric buffer at once.
+   * exporter and pending-metric buffer at once.
    *
    * @internal Test-only. Production code MUST NOT call this.
    */

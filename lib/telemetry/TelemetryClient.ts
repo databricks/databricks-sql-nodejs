@@ -23,7 +23,6 @@ import IAuthentication from '../connection/contracts/IAuthentication';
 import { CircuitBreakerRegistry, CircuitBreakerState } from './CircuitBreaker';
 import DatabricksTelemetryExporter from './DatabricksTelemetryExporter';
 import MetricsAggregator from './MetricsAggregator';
-import FeatureFlagCache from './FeatureFlagCache';
 
 /**
  * Per-host telemetry resource owner. Held by `TelemetryClientProvider`
@@ -31,7 +30,7 @@ import FeatureFlagCache from './FeatureFlagCache';
  * connects to the same host.
  *
  * Owns the host-scoped triad — `MetricsAggregator`, `DatabricksTelemetryExporter`,
- * `CircuitBreakerRegistry`, `FeatureFlagCache` — and implements `IClientContext`
+ * `CircuitBreakerRegistry` — and implements `IClientContext`
  * itself so those owned components have a stable context that outlives any
  * single `DBSQLClient`. The first registered `DBSQLClient`'s logger and config
  * are snapshotted; subsequent registrants donate their connection providers
@@ -42,8 +41,6 @@ import FeatureFlagCache from './FeatureFlagCache';
  * - Circuit-breaker state for `host` is correct only if all clients hitting
  *   the same endpoint share counters (5 failures means 5 actual failures, not
  *   5×N for N independent `DBSQLClient` instances).
- * - Feature-flag cache has a per-host TTL; deduping the GET prevents
- *   thundering-herd on cold cache.
  * - Metric batches mix events from every active client to the same host —
  *   one HTTP POST per `flushIntervalMs` instead of N.
  */
@@ -55,8 +52,6 @@ class TelemetryClient implements IClientContext {
   private readonly config: ClientConfig;
 
   private readonly circuitBreakerRegistry: CircuitBreakerRegistry;
-
-  private readonly featureFlagCache: FeatureFlagCache;
 
   private readonly exporter: DatabricksTelemetryExporter;
 
@@ -87,10 +82,6 @@ class TelemetryClient implements IClientContext {
     });
 
     this.circuitBreakerRegistry = new CircuitBreakerRegistry(this);
-    this.featureFlagCache = new FeatureFlagCache(this);
-    // Register this host with the feature-flag cache so isTelemetryEnabled()
-    // does not short-circuit to false. close() releases via releaseContext().
-    this.featureFlagCache.getOrCreateContext(host);
     this.exporter = new DatabricksTelemetryExporter(this, host, this.circuitBreakerRegistry);
     this.aggregator = new MetricsAggregator(this, this.exporter);
 
@@ -283,10 +274,6 @@ class TelemetryClient implements IClientContext {
     return this.aggregator;
   }
 
-  getFeatureFlagCache(): FeatureFlagCache {
-    return this.featureFlagCache;
-  }
-
   /**
    * Operator-visible snapshot of telemetry state for this host. Synchronous,
    * never throws — intended for health-check endpoints, shutdown banners,
@@ -332,11 +319,6 @@ class TelemetryClient implements IClientContext {
       this.exporter.dispose();
     } catch (err) {
       this.logger.log(LogLevel.debug, `TelemetryClient exporter dispose error: ${(err as Error).message}`);
-    }
-    try {
-      this.featureFlagCache.releaseContext(this.host);
-    } catch (err) {
-      this.logger.log(LogLevel.debug, `TelemetryClient FFCache release error: ${(err as Error).message}`);
     }
     this.logger.log(LogLevel.debug, `Closed TelemetryClient for host: ${this.host}`);
   }
