@@ -17,6 +17,7 @@ describe('Thrift metadata catalog escaping', () => {
       ['_a__b_', '\\_a\\_\\_b\\_'],
       ['comparator\\_tests', 'comparator\\_tests'],
       ['a\\_b_c', 'a\\_b\\_c'],
+      [String.raw`my\\_cat`, String.raw`my\\_cat`],
       ['a_b%c', 'a\\_b%c'],
       ['%', '%'],
     ]) {
