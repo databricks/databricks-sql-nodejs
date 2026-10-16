@@ -13,7 +13,7 @@
 // limitations under the License.
 
 import { RecordBatchReader, MessageReader, MessageHeader, Schema, Field, DataType, TypeMap } from 'apache-arrow';
-import { TTableSchema, TTypeId, TPrimitiveTypeEntry } from '../../thrift/TCLIService_types';
+import { TTableSchema, TTypeId, TPrimitiveTypeEntry, TTypeQualifiers } from '../../thrift/TCLIService_types';
 import { rewriteDurationToInt64, DURATION_UNIT_METADATA_KEY } from './KernelArrowIpcDurationFix';
 import HiveDriverError from '../errors/HiveDriverError';
 
@@ -264,6 +264,20 @@ export function arrowSchemaToThriftSchema(arrowSchema: Schema<TypeMap>): TTableS
     const primitiveEntry: TPrimitiveTypeEntry = {
       type: arrowTypeToTTypeId(field),
     };
+    if (primitiveEntry.type === TTypeId.DECIMAL_TYPE) {
+      const qualifiers: TTypeQualifiers['qualifiers'] = {};
+      const decimal = DataType.isDecimal(field.type) ? field.type : undefined;
+      for (const key of ['precision', 'scale'] as const) {
+        // Prefer manifest qualifiers, including for text-encoded decimals.
+        // Native Arrow decimals also carry these when metadata is absent.
+        const text = field.metadata.get(`databricks.type_${key}`);
+        const parsed = text !== undefined && /^-?\d+$/.test(text) ? Number(text) : NaN;
+        const minimum = key === 'precision' ? 1 : -0x80000000;
+        const value = Number.isInteger(parsed) && parsed >= minimum && parsed <= 0x7fffffff ? parsed : decimal?.[key];
+        if (value !== undefined) qualifiers[key] = { i32Value: value };
+      }
+      if (Object.keys(qualifiers).length > 0) primitiveEntry.typeQualifiers = { qualifiers };
+    }
     return {
       columnName: field.name,
       typeDesc: {
