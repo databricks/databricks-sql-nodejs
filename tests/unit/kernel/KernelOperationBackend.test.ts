@@ -211,6 +211,11 @@ describe('KernelOperationBackend — M0 datatype round-trip via napi → ArrowRe
     expect((row.bin as Buffer).equals(Buffer.from([0xde, 0xad, 0xbe, 0xef]))).to.equal(true);
     // DECIMAL: Phase-1 scale-aware coercion via Arrow's Decimal type → 1.5
     expect(row.dec).to.equal(1.5);
+    const metadata = await backend.getResultMetadata();
+    const decimalColumn = metadata.schema?.columns.find((column) => column.columnName === 'dec');
+    expect(decimalColumn?.typeDesc.types[0].primitiveEntry?.typeQualifiers).to.deep.equal({
+      qualifiers: { precision: { i32Value: 10 }, scale: { i32Value: 2 } },
+    });
     // TIMESTAMP: Phase-1 produces JS Date for arrow timestamps
     expect(row.ts).to.be.instanceOf(Date);
     expect((row.ts as Date).toISOString()).to.equal('2026-05-15T12:00:00.000Z');
@@ -218,6 +223,19 @@ describe('KernelOperationBackend — M0 datatype round-trip via napi → ArrowRe
     expect(row.iv).to.equal('1-0');
 
     // After consuming the single batch, the backend should report no more rows.
+    expect(await backend.hasMore()).to.equal(false);
+  });
+
+  it('preserves decimal qualifiers for a schema-only result with zero scale', async () => {
+    const schema = new Schema([new Field('amount', new Decimal(0, 38, 128), true)]);
+    const backend = new KernelOperationBackend({
+      statement: new StatementStub(ipcSchemaOnly(schema), []),
+      context: new ClientContextStub(),
+    });
+    const metadata = await backend.getResultMetadata();
+    expect(metadata.schema?.columns[0].typeDesc.types[0].primitiveEntry?.typeQualifiers).to.deep.equal({
+      qualifiers: { precision: { i32Value: 38 }, scale: { i32Value: 0 } },
+    });
     expect(await backend.hasMore()).to.equal(false);
   });
 
