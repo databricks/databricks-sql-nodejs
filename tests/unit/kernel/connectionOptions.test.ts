@@ -41,9 +41,9 @@ describe('KernelAuth connection options — intervalsAsString default', () => {
 });
 
 describe('KernelAuth connection options — geospatial result representation', () => {
-  it('enables native geospatial support by default', () => {
+  it('defaults to string geospatial results', () => {
     const native = buildKernelConnectionOptions(opts({})) as { enableGeoSpatialSupport?: boolean };
-    expect(native.enableGeoSpatialSupport).to.equal(true);
+    expect(native.enableGeoSpatialSupport).to.equal(false);
   });
 
   for (const value of [true, false]) {

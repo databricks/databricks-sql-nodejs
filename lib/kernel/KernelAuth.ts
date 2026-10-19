@@ -116,8 +116,8 @@ export interface KernelSessionDefaults {
    */
   complexTypesAsJson?: boolean;
   /**
-   * Enable native GEOMETRY / GEOGRAPHY values. `true` (the default) returns
-   * canonical `struct<srid:int32,wkb:binary>` values; `false` returns WKT /
+   * Enable native GEOMETRY / GEOGRAPHY values. `true` returns
+   * canonical `struct<srid:int32,wkb:binary>` values; `false` (the default) returns WKT /
    * EWKT strings. Applied locally by the kernel and never sent to SEA.
    */
   enableGeoSpatialSupport?: boolean;
@@ -840,9 +840,9 @@ export function buildKernelConnectionOptions(options: ConnectionOptions): Kernel
     // (native Arrow) — they already decode identically to Thrift via the
     // shared Arrow converter, so `complexTypesAsJson` is not forced on.
     intervalsAsString: true,
-    // Match the public driver contract and the kernel default: geospatial
-    // support is enabled unless the caller explicitly requests WKT / EWKT.
-    enableGeoSpatialSupport: true,
+    // Preserve string results by default, including automatic kernel recovery.
+    // Callers can explicitly opt into native geospatial values.
+    enableGeoSpatialSupport: false,
     // TLS knobs (server-cert verification toggle + custom CA + mTLS client
     // identity). Validated and normalised (string PEM → Buffer) here so the
     // napi shape only sees a Buffer.
