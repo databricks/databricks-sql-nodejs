@@ -1,12 +1,14 @@
 # Release History
 
-## Unreleased
+## 2.3.0
 
-- Add the `enableGeoSpatialSupport` option (default `false`) for kernel-backed GEOMETRY / GEOGRAPHY results. Enabled mode returns the canonical `{ srid, wkb }` Arrow value; disabled mode returns WKT / EWKT.
-- Preserve DECIMAL precision and scale qualifiers in kernel-backed result metadata, matching the Thrift path.
-- Pin transitive `brace-expansion` 1.x / 2.x and `ip-address` dependencies for repository and CI installs to patched releases for GHSA-6j4f-fj2g-mc7p, GHSA-qhr7-859c-m2p7, GHSA-j6r3-76f7-8jcv, and GHSA-h3mg-xc3c-68pw.
-- Add `escapeMetadataCatalogName` (default `false`) to escape catalog underscores in Thrift and kernel metadata requests.
-- Fix Thrift `getFunctions()` to report the requested `FUNCTION_CAT`, matching JDBC and kernel.
+- Upgrade the native kernel backend to 1.2.0.
+- Add the `enableGeoSpatialSupport` option (default `false`): kernel GEOMETRY / GEOGRAPHY results return WKT / EWKT by default, or `{ srid, wkb }` when enabled.
+- Preserve DECIMAL precision and scale in kernel result metadata.
+- Add `escapeMetadataCatalogName` (default `false`) to escape catalog underscores in metadata requests.
+- Fix `getFunctions()` catalog metadata and required-name validation; accept omitted or empty namespaces in kernel `getPrimaryKeys()`.
+- Generalize the driver feature-flag cache and initialize it independently of telemetry.
+- Update security overrides for `brace-expansion` and `ip-address`.
 
 ## 2.2.0
 
