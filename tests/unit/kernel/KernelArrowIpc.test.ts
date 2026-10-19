@@ -13,8 +13,14 @@
 // limitations under the License.
 
 import { expect } from 'chai';
-import { tableFromArrays, RecordBatchStreamWriter } from 'apache-arrow';
-import { countRowsInIpc, decodeIpcSchema, patchIpcBytes } from '../../../lib/kernel/KernelArrowIpc';
+import { tableFromArrays, RecordBatchStreamWriter, Schema, Field, Decimal, Utf8, Int32 } from 'apache-arrow';
+import {
+  arrowSchemaToThriftSchema,
+  countRowsInIpc,
+  decodeIpcSchema,
+  patchIpcBytes,
+} from '../../../lib/kernel/KernelArrowIpc';
+import { TTypeId } from '../../../thrift/TCLIService_types';
 import { rewriteDurationToInt64 } from '../../../lib/kernel/KernelArrowIpcDurationFix';
 import HiveDriverError from '../../../lib/errors/HiveDriverError';
 
@@ -98,5 +104,59 @@ describe('KernelArrowIpc.decodeIpcSchema', () => {
 
   it('throws a typed HiveDriverError (not a raw TypeError) on an empty payload', () => {
     expect(() => decodeIpcSchema(Buffer.alloc(0))).to.throw(HiveDriverError);
+  });
+});
+
+describe('KernelArrowIpc.arrowSchemaToThriftSchema decimal qualifiers', () => {
+  for (const [precision, scale] of [
+    [10, 2],
+    [38, 0],
+    [38, 38],
+    [10, -2],
+  ]) {
+    it(`preserves Arrow DECIMAL(${precision},${scale}) precision and scale`, () => {
+      const schema = new Schema([new Field('amount', new Decimal(scale, precision, 128), true)]);
+      expect(arrowSchemaToThriftSchema(schema).columns[0].typeDesc.types[0].primitiveEntry).to.deep.equal({
+        type: TTypeId.DECIMAL_TYPE,
+        typeQualifiers: { qualifiers: { precision: { i32Value: precision }, scale: { i32Value: scale } } },
+      });
+    });
+  }
+
+  for (const type of [new Utf8(), new Decimal(2, 10, 128)]) {
+    it(`prefers logical decimal qualifiers over the ${type} physical type`, () => {
+      const metadata = new Map([
+        ['databricks.type_name', 'DECIMAL'],
+        ['databricks.type_precision', '20'],
+        ['databricks.type_scale', '0'],
+      ]);
+      const schema = new Schema([new Field('amount', type, true, metadata)]);
+      expect(arrowSchemaToThriftSchema(schema).columns[0].typeDesc.types[0].primitiveEntry).to.deep.equal({
+        type: TTypeId.DECIMAL_TYPE,
+        typeQualifiers: { qualifiers: { precision: { i32Value: 20 }, scale: { i32Value: 0 } } },
+      });
+    });
+  }
+
+  for (const invalid of ['', 'invalid', '10.5', '2147483648']) {
+    it(`falls back to Arrow for invalid decimal qualifiers ${JSON.stringify(invalid)}`, () => {
+      const metadata = new Map([
+        ['databricks.type_precision', invalid],
+        ['databricks.type_scale', invalid],
+      ]);
+      const schema = new Schema([new Field('amount', new Decimal(2, 10, 128), true, metadata)]);
+      expect(
+        arrowSchemaToThriftSchema(schema).columns[0].typeDesc.types[0].primitiveEntry?.typeQualifiers,
+      ).to.deep.equal({ qualifiers: { precision: { i32Value: 10 }, scale: { i32Value: 2 } } });
+    });
+  }
+
+  it('does not invent missing qualifiers or attach decimal qualifiers to other types', () => {
+    const schema = new Schema([
+      new Field('unknown_decimal', new Utf8(), true, new Map([['databricks.type_name', 'DECIMAL']])),
+      new Field('integer', new Int32(), true, new Map([['databricks.type_precision', '10']])),
+    ]);
+    const entries = arrowSchemaToThriftSchema(schema).columns.map((column) => column.typeDesc.types[0].primitiveEntry);
+    expect(entries).to.deep.equal([{ type: TTypeId.DECIMAL_TYPE }, { type: TTypeId.INT_TYPE }]);
   });
 });
