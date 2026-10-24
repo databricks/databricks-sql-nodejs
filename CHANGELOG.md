@@ -1,8 +1,9 @@
 # Release History
 
-## Unreleased
+## 2.4.0
 
-- Upgrade the native kernel backend to 1.3.0.
+- Upgrade the native kernel backend to 1.3.0, including security fixes in the SQL kernel bindings.
+- Update locked `follow-redirects` and `ip-address` versions to remediate security findings.
 
 ## 2.3.0
 
