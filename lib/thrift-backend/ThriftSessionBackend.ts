@@ -9,6 +9,8 @@ import {
   TSparkParameter,
   TProtocolVersion,
   TExecuteStatementReq,
+  TStatusCode,
+  TOperationState,
 } from '../../thrift/TCLIService_types';
 import ISessionBackend from '../contracts/ISessionBackend';
 import IOperationBackend from '../contracts/IOperationBackend';
@@ -33,6 +35,9 @@ import { DBSQLParameter, DBSQLParameterValue } from '../DBSQLParameter';
 import { LogLevel } from '../contracts/IDBSQLLogger';
 import ThriftOperationBackend from './ThriftOperationBackend';
 import escapeCatalogName from '../utils/escapeCatalogName';
+import EmptyOperationBackend from './EmptyOperationBackend';
+import isObjectNotFound from './metadataErrors';
+import primaryKeysSchema from './primaryKeysSchema';
 
 interface OperationResponseShape {
   status: TStatus;
@@ -313,7 +318,24 @@ export default class ThriftSessionBackend implements ISessionBackend {
       runAsync: this.getRunAsyncForMetadataOperations(),
       ...getDirectResultsOptions(request.maxRows, this.context.getConfig()),
     });
-    return this.createOperationBackend(response);
+    const notFound = response.status.statusCode === TStatusCode.ERROR_STATUS && isObjectNotFound(response.status);
+    if (notFound && !response.operationHandle) {
+      return new EmptyOperationBackend(primaryKeysSchema);
+    }
+    if (!notFound) {
+      Status.assert(response.status);
+    }
+    return new ThriftOperationBackend({
+      handle: definedOrError(response.operationHandle),
+      context: this.context,
+      directResults: notFound
+        ? {
+            ...response.directResults,
+            operationStatus: { status: response.status, operationState: TOperationState.ERROR_STATE },
+          }
+        : response.directResults,
+      emptyResultOnNotFound: primaryKeysSchema,
+    });
   }
 
   public async getCrossReference(request: CrossReferenceRequest): Promise<IOperationBackend> {
