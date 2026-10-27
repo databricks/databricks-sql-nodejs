@@ -144,7 +144,7 @@ export default class ThriftOperationBackend implements IOperationBackend {
   }
 
   public hasResultSet(): boolean {
-    return Boolean(this.operationHandle.hasResultSet);
+    return Boolean(this.emptyResultOnNotFound || this.operationHandle.hasResultSet);
   }
 
   public async fetchChunk({

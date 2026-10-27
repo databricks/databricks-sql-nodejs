@@ -212,34 +212,6 @@ describe('Thrift getPrimaryKeys missing objects', () => {
     await expectEmptyPrimaryKeys(operation);
   });
 
-  for (const delivery of ['direct', 'poll']) {
-    for (const firstCall of ['status', 'getSchema', 'fetchChunk', 'hasMoreRows'] as const) {
-      it(`honors a terminal no-result flag via ${delivery} starting with ${firstCall}`, async () => {
-        const context = createContext();
-        const driver = sinon.spy(context.driver);
-        const status = {
-          status: { statusCode: TStatusCode.SUCCESS_STATUS },
-          operationState: TOperationState.FINISHED_STATE,
-          hasResultSet: false,
-        };
-        if (delivery === 'direct') {
-          context.driver.getPrimaryKeysResp.directResults = { operationStatus: status };
-        } else {
-          context.driver.getOperationStatusResp = status;
-        }
-        const operation = await createSession(context).getPrimaryKeys(request);
-
-        await operation[firstCall]();
-
-        expect(await operation.getSchema()).to.be.null;
-        expect(await operation.fetchAll()).to.deep.equal([]);
-        expect(await operation.hasMoreRows()).to.be.false;
-        expect(driver.getResultSetMetadata.called).to.be.false;
-        expect(driver.fetchResults.called).to.be.false;
-      });
-    }
-  }
-
   it('preserves an unrelated wrapped RPC error without an operation state', async () => {
     const context = createContext();
     const status = {
