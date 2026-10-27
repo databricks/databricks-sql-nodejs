@@ -147,13 +147,12 @@ export default class DBSQLOperation implements IOperation {
 
   private async fetchChunkInternal(options?: FetchOptions): Promise<Array<object>> {
     await this.failIfClosed();
+    await this.waitUntilReadyThroughBackend(options);
+    await this.failIfClosed();
 
     if (!this.backend.hasResultSet()) {
       return [];
     }
-
-    await this.waitUntilReadyThroughBackend(options);
-    await this.failIfClosed();
 
     const defaultMaxRows = this.context.getConfig().fetchChunkDefaultMaxRows;
     const limit = options?.maxRows ?? defaultMaxRows;
@@ -247,10 +246,9 @@ export default class DBSQLOperation implements IOperation {
         return false;
       }
 
-      // Wait for operation to finish before checking for more rows
-      // This ensures metadata can be fetched successfully
-      if (this.backend.hasResultSet()) {
-        await this.waitUntilReadyThroughBackend();
+      await this.waitUntilReadyThroughBackend();
+      if (!this.backend.hasResultSet()) {
+        return false;
       }
 
       // If we fetched all the data from server - check if there's anything buffered in result handler
@@ -261,12 +259,11 @@ export default class DBSQLOperation implements IOperation {
   public async getSchema(options?: GetSchemaOptions): Promise<TTableSchema | null> {
     return this.withErrorTelemetry(async () => {
       await this.failIfClosed();
+      await this.waitUntilReadyThroughBackend(options);
 
       if (!this.backend.hasResultSet()) {
         return null;
       }
-
-      await this.waitUntilReadyThroughBackend(options);
 
       this.context.getLogger().log(LogLevel.debug, `Fetching schema for operation with id: ${this.id}`);
       if (this.backend instanceof ThriftOperationBackend) {

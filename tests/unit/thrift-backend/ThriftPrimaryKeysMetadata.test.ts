@@ -81,6 +81,8 @@ describe('Thrift getPrimaryKeys missing objects', () => {
     { sqlState: 'HY000', errorMessage: '[SCHEMA_NOT_FOUND] Missing schema' },
     { sqlState: '42P01', errorMessage: '[TABLE_OR_VIEW_NOT_FOUND] Missing table' },
     { sqlState: '22023', errorMessage: '[INVALID_PARAMETER_VALUE] Invalid catalog' },
+    { sqlState: '22023', errorMessage: '[INVALID_PARAMETER_VALUE.LENGTH] Identifier is too long' },
+    { sqlState: '42501', errorMessage: '[INSUFFICIENT_PERMISSIONS] Wrapped cause: SCHEMA_NOT_FOUND' },
   ];
 
   for (const error of notFoundErrors) {
@@ -210,6 +212,80 @@ describe('Thrift getPrimaryKeys missing objects', () => {
     await expectEmptyPrimaryKeys(operation);
   });
 
+  for (const delivery of ['direct', 'poll']) {
+    for (const firstCall of ['status', 'getSchema', 'fetchChunk', 'hasMoreRows'] as const) {
+      it(`honors a terminal no-result flag via ${delivery} starting with ${firstCall}`, async () => {
+        const context = createContext();
+        const driver = sinon.spy(context.driver);
+        const status = {
+          status: { statusCode: TStatusCode.SUCCESS_STATUS },
+          operationState: TOperationState.FINISHED_STATE,
+          hasResultSet: false,
+        };
+        if (delivery === 'direct') {
+          context.driver.getPrimaryKeysResp.directResults = { operationStatus: status };
+        } else {
+          context.driver.getOperationStatusResp = status;
+        }
+        const operation = await createSession(context).getPrimaryKeys(request);
+
+        await operation[firstCall]();
+
+        expect(await operation.getSchema()).to.be.null;
+        expect(await operation.fetchAll()).to.deep.equal([]);
+        expect(await operation.hasMoreRows()).to.be.false;
+        expect(driver.getResultSetMetadata.called).to.be.false;
+        expect(driver.fetchResults.called).to.be.false;
+      });
+    }
+  }
+
+  it('preserves an unrelated wrapped RPC error without an operation state', async () => {
+    const context = createContext();
+    const status = {
+      statusCode: TStatusCode.ERROR_STATUS,
+      sqlState: '22023',
+      errorMessage: '[INTERNAL_ERROR] Wrapped cause: Invalid parameter value for tableName',
+    };
+    context.driver.getOperationStatusResp = { status };
+    const operation = await createSession(context).getPrimaryKeys(request);
+
+    await assert.rejects(operation.fetchAll(), (error) => {
+      expect(error).to.be.instanceOf(StatusError);
+      expect(error).to.have.property('sqlState', status.sqlState);
+      expect(error).to.have.property('message', status.errorMessage);
+      return true;
+    });
+  });
+
+  for (const delivery of ['initial', 'direct', 'poll']) {
+    it(`can cancel after converting a ${delivery} failure to an empty result`, async () => {
+      const context = createContext();
+      const driver = sinon.spy(context.driver);
+      if (delivery === 'initial') {
+        context.driver.getPrimaryKeysResp = {
+          status: { statusCode: TStatusCode.ERROR_STATUS, sqlState: '42704' },
+        };
+      } else if (delivery === 'direct') {
+        context.driver.getPrimaryKeysResp.directResults = { operationStatus: missingSchemaStatus() };
+      } else {
+        context.driver.getOperationStatusResp = missingSchemaStatus();
+      }
+      const operation = await createSession(context).getPrimaryKeys(request);
+      await expectEmptyPrimaryKeys(operation);
+
+      expect((await operation.cancel()).isSuccess).to.be.true;
+      expect((await operation.cancel()).isSuccess).to.be.true;
+      expect(driver.cancelOperation.callCount).to.equal(delivery === 'initial' ? 0 : 1);
+      expect(await operation.hasMoreRows()).to.be.false;
+      await assert.rejects(operation.fetchAll(), (error) => {
+        expect(error).to.be.instanceOf(OperationStateError);
+        expect(error).to.have.property('errorCode', OperationStateErrorCode.Canceled);
+        return true;
+      });
+    });
+  }
+
   it('does not recover invalid-handle RPC errors', async () => {
     const context = createContext();
     context.driver.getOperationStatusResp = {
@@ -259,6 +335,19 @@ describe('Thrift getPrimaryKeys missing objects', () => {
       });
     });
   }
+
+  it('preserves a terminal error observed before result access', async () => {
+    const context = createContext();
+    const failure = { ...missingSchemaStatus(), sqlState: '42501', errorMessage: 'Permission denied' };
+    context.driver.getOperationStatusResp = failure;
+    const operation = await createSession(context).getPrimaryKeys(request);
+
+    expect((await operation.status()).operationState).to.equal(TOperationState.ERROR_STATE);
+    for (const method of ['getSchema', 'fetchChunk', 'hasMoreRows'] as const) {
+      // eslint-disable-next-line no-await-in-loop
+      await assert.rejects(operation[method](), OperationStateError);
+    }
+  });
 
   for (const [operationState, errorCode] of [
     [TOperationState.CANCELED_STATE, OperationStateErrorCode.Canceled],
