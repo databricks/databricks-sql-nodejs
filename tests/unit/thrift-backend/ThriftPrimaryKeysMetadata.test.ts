@@ -115,6 +115,31 @@ describe('Thrift getPrimaryKeys missing objects', () => {
     }
   }
 
+  for (const delivery of ['initial', 'direct', 'poll'] as const) {
+    it(`isolates schema mutations from ${delivery} fallback results across sessions`, async () => {
+      const contexts = { initial: createContext(), direct: createContext(), poll: createContext() };
+      contexts.initial.driver.getPrimaryKeysResp = {
+        status: { statusCode: TStatusCode.ERROR_STATUS, sqlState: '42704' },
+      };
+      contexts.direct.driver.getPrimaryKeysResp.directResults = { operationStatus: missingSchemaStatus() };
+      contexts.poll.driver.getOperationStatusResp = missingSchemaStatus();
+      const operation = await createSession(contexts[delivery]).getPrimaryKeys(request);
+      const schema = await operation.getSchema();
+      assert.ok(schema);
+
+      schema.columns[0].columnName = 'renamed';
+      schema.columns[0].typeDesc.types[0].primitiveEntry!.type = TTypeId.BOOLEAN_TYPE;
+      schema.columns.pop();
+
+      await Promise.all(
+        Object.values(contexts).map(async (context) => {
+          const nextOperation = await createSession(context).getPrimaryKeys(request);
+          await expectEmptyPrimaryKeys(nextOperation);
+        }),
+      );
+    });
+  }
+
   it('closes a real handle returned with an initial error', async () => {
     const context = createContext();
     context.driver.getPrimaryKeysResp.status = {

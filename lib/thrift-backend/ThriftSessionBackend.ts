@@ -37,7 +37,7 @@ import ThriftOperationBackend from './ThriftOperationBackend';
 import escapeCatalogName from '../utils/escapeCatalogName';
 import EmptyOperationBackend from './EmptyOperationBackend';
 import isObjectNotFound from './metadataErrors';
-import primaryKeysSchema from './primaryKeysSchema';
+import createPrimaryKeysSchema from './primaryKeysSchema';
 
 interface OperationResponseShape {
   status: TStatus;
@@ -320,7 +320,7 @@ export default class ThriftSessionBackend implements ISessionBackend {
     });
     const notFound = response.status.statusCode === TStatusCode.ERROR_STATUS && isObjectNotFound(response.status);
     if (notFound && !response.operationHandle) {
-      return new EmptyOperationBackend(primaryKeysSchema);
+      return new EmptyOperationBackend(createPrimaryKeysSchema());
     }
     if (!notFound) {
       Status.assert(response.status);
@@ -334,7 +334,7 @@ export default class ThriftSessionBackend implements ISessionBackend {
             operationStatus: { status: response.status, operationState: TOperationState.ERROR_STATE },
           }
         : response.directResults,
-      emptyResultOnNotFound: primaryKeysSchema,
+      emptyResultOnNotFound: createPrimaryKeysSchema(),
     });
   }
 
