@@ -9,7 +9,7 @@
 # just the artifact we have in mind. The alternative
 # ([[PackageOverrides]] with `vulnerability.ignore = true`) is
 # per-package but blanket-ignores ALL vulnerabilities on that package,
-# which is much worse. OSV-Scanner v2.3.8 does NOT support an
+# which is much worse. OSV-Scanner v2.7.0 does NOT support an
 # intersection ("this CVE on this package only").
 #
 # See google.github.io/osv-scanner/configuration/ for the schema.
@@ -17,7 +17,7 @@
 # CONVENTION: use suppressions sparingly, only with a strong reason
 # (unreachable code path + no fix available, or dev-only + not shipped).
 # EVERY [[IgnoredVulns]] entry MUST set `ignoreUntil = YYYY-MM-DD`
-# (~6 months out). OSV-Scanner v2.3.8 honors it natively; when it lapses
+# (~6 months out). OSV-Scanner v2.7.0 honors it natively; when it lapses
 # the finding re-surfaces, forcing a re-review instead of a permanent
 # silent ignore.
 #
