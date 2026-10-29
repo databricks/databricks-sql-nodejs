@@ -36,7 +36,7 @@ jobs:
           fi
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
-          node-version: 20
+          node-version: 22.23.4
       - uses: ./.github/actions/setup-jfrog
       - name: Cache node modules
         uses: actions/cache@668228422ae6a00e4ad889ee87cd7109ec5666a7 # v5.0.4
@@ -63,12 +63,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # LTS versions: 16/18/20 are the currently-supported floor; 22
-        # is the active LTS and 24 is the new LTS. Node 14 was dropped
-        # because the modern npm ecosystem (e.g. @dabh/diagnostics@2.0.7+
-        # via winston) ships ES2021 syntax (||=) that Node 14's V8 cannot
-        # parse. Node 14 has been EOL upstream since April 2023.
-        node-version: ['20', '22', '24', '26']
+        # Test the minimum patched release in each supported Node.js line.
+        node-version: ['22.23.4', '24.22.1', '26.12.1']
     env:
       cache-name: cache-node-modules
       NYC_REPORT_DIR: coverage_unit_node${{ matrix.node-version }}
@@ -120,7 +116,13 @@ jobs:
         # Matches the unit-test matrix so e2e catches Node-version-specific
         # behaviors (TLS/cipher defaults, native fetch interaction, lz4 ABI,
         # OAuth crypto APIs) that unit tests with mocked I/O can't surface.
-        node-version: ['20', '22', '24', '26']
+        include:
+          - node-version: '22.23.4'
+            node-suffix: '22_23_4'
+          - node-version: '24.22.1'
+            node-suffix: '24_22_1'
+          - node-version: '26.12.1'
+            node-suffix: '26_12_1'
     env:
       E2E_HOST: ${{ secrets.DATABRICKS_HOST }}
       E2E_PATH: ${{ secrets.TEST_PECO_WAREHOUSE_HTTP_PATH }}
@@ -129,7 +131,7 @@ jobs:
       # don't collide on shared E2E table names. Use underscore (not
       # hyphen) — hyphens aren't valid in SQL unquoted identifiers,
       # and tests build identifiers as `..._${E2E_TABLE_SUFFIX}`.
-      E2E_TABLE_SUFFIX: ${{ github.sha }}_node${{ matrix.node-version }}
+      E2E_TABLE_SUFFIX: ${{ github.sha }}_node${{ matrix.node-suffix }}
       E2E_CATALOG: peco
       E2E_SCHEMA: default
       E2E_VOLUME: e2etests

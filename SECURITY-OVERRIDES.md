@@ -55,7 +55,7 @@ This file documents the provenance and exit condition for each override. **When 
 - **Class**: dev (mocha)
 - **Path**: `mocha → serialize-javascript`
 - **CVEs cleared**: GHSA-5c6j-r48x-rmvq (XSS via prototype pollution)
-- **Note**: the patched line requires Node ≥ 20, which is satisfied by `engines.node >= 20`.
+- **Note**: the patched line requires Node ≥ 20, which is satisfied by the supported Node 22.23.4 minimum.
 - **Exit**: mocha bumps its declared range to the patched line.
 
 ### `uuid: ^11.1.1`

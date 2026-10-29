@@ -11,7 +11,7 @@ The Databricks SQL Driver for Node.js is a Javascript driver for applications th
 
 ## Requirements
 
-- Node.js 20 or newer
+- Node.js 22.23.4+, 24.22.1+, 26.12.1+, or a later release
 
 ## Installation
 

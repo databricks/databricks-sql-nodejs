@@ -1,5 +1,9 @@
 # Release History
 
+## Unreleased
+
+- **Breaking:** require Node.js versions containing the CVE-2026-111497 Brotli decoder fix: 22.23.4+, 24.22.1+, or 26.12.1+. Node.js 20, 23, and 25 are no longer supported because those end-of-life lines have no fix.
+
 ## 2.4.0
 
 - Upgrade the native kernel backend to 1.3.0, including security fixes in the SQL kernel bindings.
