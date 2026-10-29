@@ -1,6 +1,6 @@
 # Release History
 
-## Unreleased
+## 3.0.0
 
 - **Breaking:** require Node.js versions containing the CVE-2026-111497 Brotli decoder fix: 22.23.4+, 24.22.1+, or 26.12.1+. Node.js 20, 23, and 25 are no longer supported because those end-of-life lines have no fix.
 
