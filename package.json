@@ -8,8 +8,9 @@
     "example": "examples",
     "test": "tests"
   },
+  "//": "Node.js 20, 23, and 25 are EOL without fixes for CVE-2026-111497; the supported 22, 24, and 26 release lines require their first patched versions.",
   "engines": {
-    "node": ">=20.0.0"
+    "node": ">=22.23.4 <23 || >=24.22.1 <25 || >=26.12.1"
   },
   "scripts": {
     "prepare": "npm run build",

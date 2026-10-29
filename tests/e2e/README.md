@@ -16,11 +16,11 @@ These tests run against a real Databricks SQL warehouse. They're invoked by `npm
 
 ## CI parallelism
 
-The `e2e-test` job in `.github/workflows/main.yml` runs as a matrix across Node 20/22/24/26. All entries point at the same workspace, catalog, schema, and volume.
+The `e2e-test` job in `.github/workflows/main.yml` runs against the minimum patched releases in each supported line: Node 22.23.4, 24.22.1, and 26.12.1. All entries point at the same workspace, catalog, schema, and volume.
 
 Per-test isolation is achieved by:
 
-- **Tables**: all DDL in tests is templated against `${E2E_TABLE_SUFFIX}`, which in CI is `${{ github.sha }}_node${{ matrix.node-version }}`. Underscores not hyphens — SQL unquoted identifiers don't allow `-`.
+- **Tables**: all DDL in tests is templated against `${E2E_TABLE_SUFFIX}`, which in CI is `${{ github.sha }}_node${{ matrix.node-suffix }}`. The matrix suffix uses underscores because dots and hyphens aren't valid within these SQL unquoted identifiers.
 - **Volume files**: `tests/e2e/staging_ingestion.test.ts` generates per-file `uuid.v4()` names. Multiple matrix entries can read/write the volume concurrently without collisions.
 
 No test creates or drops the shared catalog/schema/volume. If you add a test that does, you'll need to suffix-unique the resource name too — verify before merging.
