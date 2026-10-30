@@ -320,6 +320,13 @@ export default class ThriftSessionBackend implements ISessionBackend {
     });
     const notFound = response.status.statusCode === TStatusCode.ERROR_STATUS && isObjectNotFound(response.status);
     if (notFound && !response.operationHandle) {
+      this.context.getLogger().log(
+        LogLevel.debug,
+        `Returning empty primary keys for missing object: ${JSON.stringify({
+          sqlState: response.status.sqlState,
+          message: response.status.errorMessage,
+        })}`,
+      );
       return new EmptyOperationBackend(createPrimaryKeysSchema());
     }
     if (!notFound) {

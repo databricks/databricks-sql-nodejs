@@ -24,7 +24,7 @@ const expectedColumns = [
   ['TABLE_SCHEM', TTypeId.STRING_TYPE],
   ['TABLE_NAME', TTypeId.STRING_TYPE],
   ['COLUMN_NAME', TTypeId.STRING_TYPE],
-  ['KEY_SEQ', TTypeId.INT_TYPE],
+  ['KEQ_SEQ', TTypeId.INT_TYPE],
   ['PK_NAME', TTypeId.STRING_TYPE],
 ];
 
@@ -357,7 +357,7 @@ describe('Thrift getPrimaryKeys missing objects', () => {
       const context = createContext();
       context.driver.getResultSetMetadataResp.schema = {
         columns: expectedColumns.map(([name, type], index) => ({
-          columnName: name === 'KEY_SEQ' ? 'KEQ_SEQ' : String(name),
+          columnName: String(name),
           typeDesc: { types: [{ primitiveEntry: { type: type as TTypeId } }] },
           position: index + 1,
         })),

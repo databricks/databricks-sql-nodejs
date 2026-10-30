@@ -400,6 +400,13 @@ export default class ThriftOperationBackend implements IOperationBackend {
       response.status.statusCode !== TStatusCode.INVALID_HANDLE_STATUS &&
       (isObjectNotFound(response) || isObjectNotFound(response.status))
     ) {
+      this.context.getLogger().log(
+        LogLevel.debug,
+        `Returning empty primary keys for missing object: ${JSON.stringify({
+          sqlState: response.sqlState ?? response.status.sqlState,
+          message: response.errorMessage ?? response.displayMessage ?? response.status.errorMessage,
+        })}`,
+      );
       this.metadata = synthesizeThriftResultSetMetadata({
         schema: this.emptyResultOnNotFound,
         resultFormat: ResultFormat.ColumnBased,
