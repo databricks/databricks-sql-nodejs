@@ -7,6 +7,8 @@ import {
   TSparkRowSetType,
   TCloseOperationResp,
   TOperationState,
+  TStatusCode,
+  TTableSchema,
 } from '../../thrift/TCLIService_types';
 import IOperationBackend, { IOperationBackendWaitOptions } from '../contracts/IOperationBackend';
 import IClientContext from '../contracts/IClientContext';
@@ -24,12 +26,15 @@ import ArrowResultConverter from '../result/ArrowResultConverter';
 import ResultSlicer from '../result/ResultSlicer';
 import { definedOrError } from '../utils';
 import HiveDriverError from '../errors/HiveDriverError';
+import isObjectNotFound from './metadataErrors';
+import { synthesizeThriftResultSetMetadata } from './wireSynthesis';
 
 interface ThriftOperationBackendOptions {
   handle: TOperationHandle;
   directResults?: TSparkDirectResults;
   context: IClientContext;
   functionCatalog?: string | null;
+  emptyResultOnNotFound?: TTableSchema;
 }
 
 async function delay(ms?: number): Promise<void> {
@@ -78,6 +83,8 @@ export default class ThriftOperationBackend implements IOperationBackend {
 
   private readonly functionCatalog?: string | null;
 
+  private readonly emptyResultOnNotFound?: TTableSchema;
+
   private readonly operationHandle: TOperationHandle;
 
   private readonly _data: RowSetProvider;
@@ -94,10 +101,18 @@ export default class ThriftOperationBackend implements IOperationBackend {
 
   private resultHandler?: ResultSlicer<any>;
 
-  constructor({ handle, directResults, context, functionCatalog }: ThriftOperationBackendOptions) {
+  constructor({
+    handle,
+    directResults,
+    context,
+    functionCatalog,
+    emptyResultOnNotFound,
+  }: ThriftOperationBackendOptions) {
     this.operationHandle = handle;
     this.context = context;
     this.functionCatalog = functionCatalog;
+    this.emptyResultOnNotFound = emptyResultOnNotFound;
+    this.metadata = directResults?.resultSetMetadata;
 
     const useOnlyPrefetchedResults = Boolean(directResults?.closeOperation);
 
@@ -105,7 +120,6 @@ export default class ThriftOperationBackend implements IOperationBackend {
       this.processOperationStatusResponse(directResults.operationStatus);
     }
 
-    this.metadata = directResults?.resultSetMetadata;
     this._data = new RowSetProvider(
       this.context,
       this.operationHandle,
@@ -130,7 +144,7 @@ export default class ThriftOperationBackend implements IOperationBackend {
   }
 
   public hasResultSet(): boolean {
-    return Boolean(this.operationHandle.hasResultSet);
+    return Boolean(this.emptyResultOnNotFound || this.operationHandle.hasResultSet);
   }
 
   public async fetchChunk({
@@ -377,6 +391,37 @@ export default class ThriftOperationBackend implements IOperationBackend {
   }
 
   private processOperationStatusResponse(response: TGetOperationStatusResp) {
+    const isError =
+      response.operationState === TOperationState.ERROR_STATE ||
+      (response.operationState == null && response.status.statusCode === TStatusCode.ERROR_STATUS);
+    if (
+      this.emptyResultOnNotFound &&
+      isError &&
+      response.status.statusCode !== TStatusCode.INVALID_HANDLE_STATUS &&
+      (isObjectNotFound(response) || isObjectNotFound(response.status))
+    ) {
+      this.context.getLogger().log(
+        LogLevel.debug,
+        `Returning empty primary keys for missing object: ${JSON.stringify({
+          sqlState: response.sqlState ?? response.status.sqlState,
+          message: response.errorMessage ?? response.displayMessage ?? response.status.errorMessage,
+        })}`,
+      );
+      this.metadata = synthesizeThriftResultSetMetadata({
+        schema: this.emptyResultOnNotFound,
+        resultFormat: ResultFormat.ColumnBased,
+        isStagingOperation: false,
+      });
+      this.resultHandler = new ResultSlicer(this.context, {
+        fetchNext: async () => [],
+        hasMore: async () => false,
+      });
+      response = {
+        status: { statusCode: TStatusCode.SUCCESS_STATUS },
+        operationState: TOperationState.FINISHED_STATE,
+        hasResultSet: true,
+      };
+    }
     Status.assert(response.status);
 
     this.state = response.operationState ?? this.state;
