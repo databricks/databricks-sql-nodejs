@@ -27,6 +27,7 @@ describe('Thrift primary-key metadata', () => {
   [
     { missingObject: 'schema', catalogName: config.catalog, schemaName: missingName },
     { missingObject: 'catalog', catalogName: missingName, schemaName: config.schema },
+    { missingObject: 'table', catalogName: config.catalog, schemaName: config.schema },
   ].forEach(({ missingObject, catalogName, schemaName }) => {
     [1000, null].forEach((maxRows) => {
       it(`returns typed empty primary keys for a missing ${missingObject} with direct results ${
@@ -35,7 +36,7 @@ describe('Thrift primary-key metadata', () => {
         const operation = await session.getPrimaryKeys({
           catalogName,
           schemaName,
-          tableName: 'missing_table',
+          tableName: missingName,
           maxRows,
         });
         try {
