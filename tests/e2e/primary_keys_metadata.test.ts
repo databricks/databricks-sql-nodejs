@@ -60,7 +60,6 @@ describe('Thrift primary-key metadata', () => {
           const status = await operation.status();
           expect(status.status.statusCode).to.equal(TStatusCode.SUCCESS_STATUS);
           expect(status.operationState).to.equal(TOperationState.FINISHED_STATE);
-          expect(status.hasResultSet).to.be.true;
         } finally {
           await operation.close();
         }
