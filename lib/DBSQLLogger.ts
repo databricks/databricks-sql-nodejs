@@ -24,6 +24,11 @@ function resolveLogFilePath(filepath: string): string {
 // Note: this probe is intentionally not side-effect free. It creates missing
 // parent directories and an empty log file (as winston itself would when the
 // transport opens), so the check exercises the exact same open path.
+// Limitations: this is a one-time, synchronous check (statSync/mkdirSync/
+// openSync) run each time a DBSQLLogger is constructed with a `filepath`.
+// Failures that start later (file/dir deleted, permissions changed, disk
+// full, a Windows file lock) are not detected here and can still stall the
+// logger.
 function checkLogFileWritable(filename: string): Error | undefined {
   try {
     fs.mkdirSync(path.dirname(filename), { recursive: true });
