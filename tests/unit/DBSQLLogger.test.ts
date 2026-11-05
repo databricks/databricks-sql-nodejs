@@ -269,6 +269,19 @@ describe('DBSQLLogger file transport path resolution', () => {
     expect(fs.existsSync(filepath)).to.be.true;
   });
 
+  it('does not mkdir an existing directory (mkdir of a Windows drive root throws EPERM)', () => {
+    const mkdirSync = sinon.stub(fs, 'mkdirSync').throws(Object.assign(new Error('EPERM'), { code: 'EPERM' }));
+    try {
+      logger = createLogger(path.join(tmpDir, 'driver.log'));
+    } finally {
+      mkdirSync.restore();
+    }
+
+    expect(mkdirSync.called).to.be.false;
+    expect(logger.transports.file?.dirname).to.equal(tmpDir);
+    expect(logger.transports.file?.filename).to.equal('driver.log');
+  });
+
   it('uses an existing file path unchanged', () => {
     const filepath = path.join(tmpDir, 'existing.log');
     fs.writeFileSync(filepath, '');
