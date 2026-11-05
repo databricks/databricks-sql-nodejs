@@ -418,6 +418,44 @@ describe('DBSQLOperation', () => {
       expect(operation['closed']).to.be.true;
     });
 
+    it('should send a single CloseOperation for concurrent close() calls', async () => {
+      const context = new ClientContextStub();
+      const driver = sinon.spy(context.driver);
+      const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: true }), context });
+      const onClose = sinon.spy();
+      operation.onClose = onClose;
+
+      const results = await Promise.all([operation.close(), operation.close(), operation.close()]);
+
+      expect(driver.closeOperation.callCount).to.be.equal(1);
+      expect(onClose.callCount).to.be.equal(1);
+      results.forEach((status) => expect(status.isSuccess).to.be.true);
+      expect(operation['closed']).to.be.true;
+
+      await operation.close();
+      expect(driver.closeOperation.callCount).to.be.equal(1);
+    });
+
+    it('should propagate in-flight close failure to all concurrent callers and allow retry', async () => {
+      const context = new ClientContextStub();
+      const driver = sinon.spy(context.driver);
+      context.driver.closeOperationResp.status.statusCode = TStatusCode.ERROR_STATUS;
+      const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: true }), context });
+
+      const results = await Promise.allSettled([operation.close(), operation.close(), operation.close()]);
+      expect(driver.closeOperation.callCount).to.be.equal(1);
+      results.forEach((r) => {
+        expect(r.status).to.equal('rejected');
+        expect((r as PromiseRejectedResult).reason).to.be.instanceOf(StatusError);
+      });
+      expect(operation['closed']).to.be.false;
+
+      context.driver.closeOperationResp.status.statusCode = TStatusCode.SUCCESS_STATUS;
+      await operation.close();
+      expect(driver.closeOperation.callCount).to.be.equal(2);
+      expect(operation['closed']).to.be.true;
+    });
+
     it('should return immediately if already closed', async () => {
       const context = new ClientContextStub();
       const driver = sinon.spy(context.driver);

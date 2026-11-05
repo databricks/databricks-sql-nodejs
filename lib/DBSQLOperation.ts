@@ -247,15 +247,33 @@ export default class DBSQLOperation implements IOperation {
   }
 
   /**
-   * Closes operation
+   * Closes operation.
+   *
+   * Concurrent `close()` calls share a single CloseOperation request. If a
+   * `cancel()` is already in flight, `close()` first waits for it to settle
+   * (success or failure) before doing anything else, so CancelOperation and
+   * CloseOperation never race and `onClose` fires only once. As a result,
+   * `close()` can take as long as the pending cancel RPC. That RPC goes
+   * through the same retry policy as every other request, so the wait is
+   * bounded by `retryMaxAttempts` / `retriesTimeout` and the per-request
+   * `socketTimeout`. If the cancel succeeds, `close()` resolves with success
+   * and sends no CloseOperation. If it fails, `close()` continues and sends
+   * CloseOperation as usual.
    * @throws {StatusError}
    */
   public async close(): Promise<Status> {
-    return this.withErrorTelemetry(() => this.closeInternal());
+    return this.closeInternal();
   }
 
   private async closeInternal(): Promise<Status> {
-    const promise = this.doClose();
+    // Deduplicate concurrent close() calls: share a single in-flight
+    // CloseOperation request between all callers. Error telemetry is emitted
+    // inside the shared promise so one failed CloseOperation produces exactly
+    // one error event, regardless of how many callers are awaiting it.
+    if (this.closePromise) {
+      return this.closePromise;
+    }
+    const promise = this.withErrorTelemetry(() => this.doClose());
     this.closePromise = promise;
     // Clear once settled so a failed close doesn't block a later cancel()
     const reset = () => {
