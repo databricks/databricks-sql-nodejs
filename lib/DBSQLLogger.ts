@@ -59,8 +59,10 @@ export default class DBSQLLogger implements IDBSQLLogger {
       if (error) {
         // Logged at `error` so the console transport's level filter can never
         // drop it (e.g. when the logger is configured with `level: error`).
-        // The message is explicitly marked non-fatal so log-based alerting /
-        // readers don't mistake this config fallback for a driver failure.
+        // Trade-off: consumers filtering on the winston `level` field (e.g.
+        // error-level alerting) WILL see this as an error; the "[warn] ...
+        // non-fatal" wording only helps human readers tell this config
+        // fallback apart from a driver failure.
         this.logger.log({
           level: LogLevel.error,
           message: `[warn] Cannot write to log file ${filename}, logging to console only (non-fatal, driver continues normally): ${error.message}`,
