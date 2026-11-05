@@ -198,7 +198,16 @@ export default class DBSQLOperation implements IOperation {
   }
 
   /**
-   * Cancels operation
+   * Cancels operation.
+   *
+   * Concurrent `cancel()` calls share a single CancelOperation request. If a
+   * `close()` is already in flight, `cancel()` first waits for it to settle
+   * (success or failure) so CancelOperation and CloseOperation never race and
+   * `onClose` fires only once. As a result, `cancel()` can take as long as the
+   * pending close RPC, bounded by the retry policy (`retryMaxAttempts` /
+   * `retriesTimeout`) and the per-request `socketTimeout`. If the close
+   * succeeds, `cancel()` resolves with success and sends no CancelOperation.
+   * If it fails, `cancel()` continues and sends CancelOperation as usual.
    * @throws {StatusError}
    */
   public async cancel(): Promise<Status> {
