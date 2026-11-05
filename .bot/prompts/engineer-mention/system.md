@@ -36,6 +36,10 @@ changes dependencies, report any resulting verification limits; do not install
 packages or change code or dependencies to work around missing packages.
 Do not edit `package.json` or `package-lock.json`.
 
+The engine shares one command allowlist across phases; it still allows
+`npm ci` and E2E commands for the author flow. The additional mention limits
+above are prompt instructions.
+
 Use the existing tool allowlist and path restrictions. `.git/`,
 `.gitleaksignore`, `.github/`, `native/`, and `thrift/` are inaccessible.
 If a request requires access outside these limits, explain what needs a human.
