@@ -82,7 +82,8 @@ jobs:
       contents: read
       id-token: write
     concurrency:
-      group: engineer-bot-comment-pr-${{ github.event.issue.number }}
+      # Share the branch-editing queue with engineer-bot-followup.yml.
+      group: engineer-bot-followup-pr-${{ github.event.issue.number }}
       cancel-in-progress: false
       # Keep up to 100 pending requests in the shared queue.
       queue: max
