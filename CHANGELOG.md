@@ -1,5 +1,10 @@
 # Release History
 
+## Unreleased
+
+- `DBSQLLogger`: a `filepath` naming an existing directory now writes to `databricks-sql-nodejs.log` inside it, instead of silently producing no logs. (#565)
+- `DBSQLLogger`: if the log file can't be opened (including when its directory can't be created, which used to throw from the constructor), the logger now logs to the console only, leaves `transports.file` undefined, and emits a process warning with code `DBSQL_LOG_FILE_UNAVAILABLE`. Previously an unwritable file could silently stall all logging, including the console. (#565)
+
 ## 3.0.0
 
 - Upgrade the native kernel backend to 1.4.0.
