@@ -288,6 +288,41 @@ describe('DBSQLOperation', () => {
       }
     });
 
+    it('should send a single CancelOperation for concurrent cancel() calls (STATEMENT-022)', async () => {
+      const context = new ClientContextStub();
+      const driver = sinon.spy(context.driver);
+      const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: true }), context });
+
+      const results = await Promise.all([operation.cancel(), operation.cancel(), operation.cancel()]);
+
+      expect(driver.cancelOperation.callCount).to.be.equal(1);
+      results.forEach((status) => expect(status.isSuccess).to.be.true);
+      expect(operation['cancelled']).to.be.true;
+
+      await operation.cancel();
+      expect(driver.cancelOperation.callCount).to.be.equal(1);
+    });
+
+    it('should propagate in-flight cancel failure to all concurrent callers and allow retry', async () => {
+      const context = new ClientContextStub();
+      const driver = sinon.spy(context.driver);
+      context.driver.cancelOperationResp.status.statusCode = TStatusCode.ERROR_STATUS;
+      const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: true }), context });
+
+      const results = await Promise.allSettled([operation.cancel(), operation.cancel(), operation.cancel()]);
+      expect(driver.cancelOperation.callCount).to.be.equal(1);
+      results.forEach((r) => {
+        expect(r.status).to.equal('rejected');
+        expect((r as PromiseRejectedResult).reason).to.be.instanceOf(StatusError);
+      });
+      expect(operation['cancelled']).to.be.false;
+
+      context.driver.cancelOperationResp.status.statusCode = TStatusCode.SUCCESS_STATUS;
+      await operation.cancel();
+      expect(driver.cancelOperation.callCount).to.be.equal(2);
+      expect(operation['cancelled']).to.be.true;
+    });
+
     it('should reject all methods once cancelled', async () => {
       const context = new ClientContextStub();
       const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: true }), context });

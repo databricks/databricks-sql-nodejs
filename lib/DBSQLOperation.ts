@@ -55,6 +55,8 @@ export default class DBSQLOperation implements IOperation {
 
   private cancelled: boolean = false;
 
+  private cancelPromise?: Promise<Status>;
+
   public readonly _data?: unknown;
 
   private metadata?: ResultMetadata;
@@ -205,10 +207,25 @@ export default class DBSQLOperation implements IOperation {
     if (this.closed || this.cancelled) {
       return Status.success();
     }
-    const result = await this.backend.cancel();
-    this.cancelled = true;
-    this.onClose?.();
-    return result;
+    // Deduplicate concurrent cancel() calls: share a single in-flight
+    // CancelOperation request between all callers (STATEMENT-022)
+    if (!this.cancelPromise) {
+      const promise = (async () => {
+        const result = await this.backend.cancel();
+        this.cancelled = true;
+        this.onClose?.();
+        return result;
+      })();
+      this.cancelPromise = promise;
+      // Allow a retry if cancel failed; on success `cancelled` short-circuits further calls
+      const reset = () => {
+        if (this.cancelPromise === promise) {
+          this.cancelPromise = undefined;
+        }
+      };
+      promise.then(reset, reset);
+    }
+    return this.cancelPromise;
   }
 
   /**
