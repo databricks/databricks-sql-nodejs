@@ -20,10 +20,12 @@ the maintainer explicitly requests them.
 
 The runner provides Node.js 22.23.4, TypeScript 5.5.4, and dependencies installed
 from the default branch. Source is under `lib/`; mocked tests are under
-`tests/unit/`. Verify TypeScript edits with the affected tests using
-`npx mocha --config tests/unit/.mocharc.js tests/unit/<file>.test.ts`, then
+`tests/unit/`. Before running tests or type-checks, run `npm run build` in the
+PR checkout to generate the ignored `lib/version.ts` and compile the PR sources.
+Then verify TypeScript edits with the affected tests using
+`npx mocha --config tests/unit/.mocharc.js tests/unit/<file>.test.ts`, followed by
 `npm test`, `npm run type-check`, `npm run lint`, and `npm run prettier`.
-Run `npm run build` if compiled output is needed. Never weaken or skip tests.
+Never weaken or skip tests.
 
 This job has no live-warehouse test credentials or kernel build. Do not run
 `tests/e2e`, `npm run e2e`, or `npm run build:native`. Report verification that
