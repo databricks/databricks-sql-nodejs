@@ -57,6 +57,8 @@ export default class DBSQLOperation implements IOperation {
 
   private cancelPromise?: Promise<Status>;
 
+  private closePromise?: Promise<Status>;
+
   public readonly _data?: unknown;
 
   private metadata?: ResultMetadata;
@@ -207,6 +209,19 @@ export default class DBSQLOperation implements IOperation {
     if (this.closed || this.cancelled) {
       return Status.success();
     }
+    // If a close is in flight (and no cancel is already shared), wait for it
+    // to settle so we don't send CancelOperation alongside CloseOperation and
+    // fire onClose twice. If close fails, fall through and cancel normally.
+    if (!this.cancelPromise && this.closePromise) {
+      try {
+        await this.closePromise;
+      } catch {
+        // ignore - close() callers receive the error
+      }
+      if (this.closed || this.cancelled) {
+        return Status.success();
+      }
+    }
     // Deduplicate concurrent cancel() calls: share a single in-flight
     // CancelOperation request between all callers (STATEMENT-022).
     // Error telemetry is emitted inside the shared promise so one failed
@@ -240,6 +255,19 @@ export default class DBSQLOperation implements IOperation {
   }
 
   private async closeInternal(): Promise<Status> {
+    const promise = this.doClose();
+    this.closePromise = promise;
+    // Clear once settled so a failed close doesn't block a later cancel()
+    const reset = () => {
+      if (this.closePromise === promise) {
+        this.closePromise = undefined;
+      }
+    };
+    promise.then(reset, reset);
+    return promise;
+  }
+
+  private async doClose(): Promise<Status> {
     // If a cancel is in flight, wait for it to settle so we don't race a
     // CloseOperation against it (and fire onClose twice). A failed cancel is
     // ignored here; close proceeds normally in that case.

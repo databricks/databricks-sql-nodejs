@@ -340,6 +340,38 @@ describe('DBSQLOperation', () => {
       expect(operation['cancelled']).to.be.true;
     });
 
+    it('should not send CancelOperation when cancel() is called while close is in flight', async () => {
+      const context = new ClientContextStub();
+      const driver = sinon.spy(context.driver);
+      const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: true }), context });
+      const onClose = sinon.spy();
+      operation.onClose = onClose;
+
+      const [closeResult, cancelResult] = await Promise.all([operation.close(), operation.cancel()]);
+
+      expect(closeResult.isSuccess).to.be.true;
+      expect(cancelResult.isSuccess).to.be.true;
+      expect(driver.closeOperation.callCount).to.be.equal(1);
+      expect(driver.cancelOperation.callCount).to.be.equal(0);
+      expect(onClose.callCount).to.be.equal(1);
+      expect(operation['closed']).to.be.true;
+    });
+
+    it('should still cancel if an in-flight close fails', async () => {
+      const context = new ClientContextStub();
+      const driver = sinon.spy(context.driver);
+      context.driver.closeOperationResp.status.statusCode = TStatusCode.ERROR_STATUS;
+      const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: true }), context });
+
+      const [closeResult, cancelResult] = await Promise.allSettled([operation.close(), operation.cancel()]);
+
+      expect(closeResult.status).to.equal('rejected');
+      expect(cancelResult.status).to.equal('fulfilled');
+      expect(driver.closeOperation.callCount).to.be.equal(1);
+      expect(driver.cancelOperation.callCount).to.be.equal(1);
+      expect(operation['cancelled']).to.be.true;
+    });
+
     it('should still close if an in-flight cancel fails', async () => {
       const context = new ClientContextStub();
       const driver = sinon.spy(context.driver);
