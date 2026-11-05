@@ -5,24 +5,30 @@ import IDBSQLLogger, { LoggerOptions, LogLevel } from './contracts/IDBSQLLogger'
 
 const DEFAULT_LOG_FILE_NAME = 'databricks-sql-nodejs.log';
 
-// If `filepath` names an existing directory, or ends with a path separator
-// (meaning "directory", even if it doesn't exist yet), write logs to a default
-// file inside it instead of trying to open the directory itself as a file
-// (which fails with an asynchronous EISDIR on the transport stream). A missing
-// directory is created by the winston File transport. Any other value is used
-// as-is.
+// An existing directory resolves to a default file inside it. Anything else is
+// returned as the path winston will open (which drops a trailing separator).
 function resolveLogFilePath(filepath: string): string {
-  if (filepath.endsWith('/') || filepath.endsWith(path.sep)) {
-    return path.join(filepath, DEFAULT_LOG_FILE_NAME);
-  }
   try {
     if (fs.statSync(filepath).isDirectory()) {
       return path.join(filepath, DEFAULT_LOG_FILE_NAME);
     }
   } catch {
-    // path does not exist (or is inaccessible) — treat it as a file path
+    // doesn't exist or isn't accessible: treat it as a file path
   }
-  return filepath;
+  return path.join(path.dirname(filepath), path.basename(filepath));
+}
+
+// winston's File transport swallows errors opening its stream (EISDIR, EACCES,
+// ENOTDIR, ...), after which the logger stalls for all transports once its
+// buffer fills. Check up front that the file can be opened for appending.
+function checkLogFileWritable(filename: string): Error | undefined {
+  try {
+    fs.mkdirSync(path.dirname(filename), { recursive: true });
+    fs.closeSync(fs.openSync(filename, 'a'));
+    return undefined;
+  } catch (error) {
+    return error instanceof Error ? error : new Error(String(error));
+  }
 }
 
 export default class DBSQLLogger implements IDBSQLLogger {
@@ -45,12 +51,17 @@ export default class DBSQLLogger implements IDBSQLLogger {
       transports: [this.transports.console],
     });
     if (filepath) {
-      this.transports.file = new winston.transports.File({
-        filename: resolveLogFilePath(filepath),
-        handleExceptions: true,
-        level,
-      });
-      this.logger.add(this.transports.file);
+      const filename = resolveLogFilePath(filepath);
+      const error = checkLogFileWritable(filename);
+      if (error) {
+        this.logger.log({
+          level: LogLevel.warn,
+          message: `Cannot write to log file ${filename}, logging to console only: ${error.message}`,
+        });
+      } else {
+        this.transports.file = new winston.transports.File({ filename, handleExceptions: true, level });
+        this.logger.add(this.transports.file);
+      }
     }
   }
 

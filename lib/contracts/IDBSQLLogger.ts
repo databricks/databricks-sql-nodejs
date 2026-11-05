@@ -1,9 +1,8 @@
 export interface LoggerOptions {
   /**
-   * Optional: where to write logs, in addition to the console. If it names an
-   * existing directory, or ends with a path separator (a directory that doesn't
-   * exist yet will be created), logs go to `databricks-sql-nodejs.log` inside
-   * that directory. Any other value is used as the log file path.
+   * Optional: a log file to write to, in addition to the console. If it names an
+   * existing directory, logs go to `databricks-sql-nodejs.log` inside it. If the
+   * file can't be opened for writing, the logger warns and logs to the console only.
    */
   filepath?: string;
   level?: LogLevel;
