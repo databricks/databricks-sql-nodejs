@@ -37,7 +37,7 @@ jobs:
           COMMENTER: ${{ github.event.comment.user.login }}
         run: |
           set -euo pipefail
-          if ! permission=$(gh api "repos/$REPO/collaborators/$COMMENTER/permission" --jq '.permission' 2>/dev/null); then
+          if ! permission=$(gh api "repos/$REPO/collaborators/$COMMENTER/permission" --jq '.permission'); then
             echo "allowed=false" >> "$GITHUB_OUTPUT"
             echo "::notice::Skipping @bot request: could not verify commenter write access."
             exit 0
@@ -125,11 +125,7 @@ jobs:
       - name: Scrub JFrog credentials before the agent runs
         run: |
           rm -f ~/.npmrc
-          {
-            echo "JFROG_ACCESS_TOKEN="
-            echo "ACTIONS_ID_TOKEN_REQUEST_TOKEN="
-            echo "ACTIONS_ID_TOKEN_REQUEST_URL="
-          } >> "$GITHUB_ENV"
+          echo "JFROG_ACCESS_TOKEN=" >> "$GITHUB_ENV"
 
       - name: Recheck PR eligibility
         id: pr
@@ -213,6 +209,8 @@ jobs:
           REPO_ROOT: ${{ github.workspace }}/pr
           NPM_CONFIG_OFFLINE: 'true'
         run: |
+          # The runner injects OIDC credentials per step; clear them in this shell.
+          unset JFROG_ACCESS_TOKEN ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL
           git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           python -m databricks_bot_engine.engineer_bot.run --phase mention \
             --bot "$GITHUB_WORKSPACE/.bot" \
