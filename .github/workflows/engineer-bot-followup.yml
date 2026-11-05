@@ -103,6 +103,10 @@ jobs:
       - name: Install connector deps (npm ci)
         run: npm ci
 
+      - name: Restore lockfile after dependency installation
+        # Keep setup-jfrog's registry rewrite out of the agent's changes.
+        run: git restore --source=HEAD --worktree -- package-lock.json
+
       # Scope the JFrog credential away from the model-driven followup step:
       # `npm ci` above consumed ~/.npmrc, and the agent's `npm test` doesn't need
       # the registry. (Addresses the reviewer-bot finding on the odbc onboarding PR.)

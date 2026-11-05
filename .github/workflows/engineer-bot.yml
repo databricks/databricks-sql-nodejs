@@ -81,9 +81,12 @@ jobs:
 
       - name: Install connector deps (npm ci)
         # `prepare` lifecycle runs `npm run build` (tsc) automatically here, so the
-        # dist/ + lib/version.ts are built for the agent. Both are gitignored, so
-        # this leaves no tracked-file churn for publish to trip on.
+        # dist/ + lib/version.ts are built for the agent. Both are gitignored.
         run: npm ci
+
+      - name: Restore lockfile after dependency installation
+        # Keep setup-jfrog's registry rewrite out of the agent's changes.
+        run: git restore --source=HEAD --worktree -- package-lock.json
 
       # Scope the JFrog credential AWAY from the model-driven steps. setup-jfrog
       # wrote ~/.npmrc with an embedded auth token + exported JFROG_ACCESS_TOKEN to
