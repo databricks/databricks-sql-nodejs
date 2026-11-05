@@ -5,6 +5,8 @@ import IDBSQLLogger, { LoggerOptions, LogLevel } from './contracts/IDBSQLLogger'
 
 const DEFAULT_LOG_FILE_NAME = 'databricks-sql-nodejs.log';
 
+export const LOG_FILE_UNAVAILABLE_WARNING_CODE = 'DBSQL_LOG_FILE_UNAVAILABLE';
+
 // An existing directory resolves to a default file inside it. Anything else is
 // returned as the path winston will open (which drops a trailing separator).
 function resolveLogFilePath(filepath: string): string {
@@ -18,20 +20,19 @@ function resolveLogFilePath(filepath: string): string {
   return path.join(path.dirname(filepath), path.basename(filepath));
 }
 
-// winston's File transport swallows errors opening its stream (EISDIR, EACCES,
-// ENOTDIR, ...), after which the logger stalls for all transports once its
-// buffer fills. Check up front that the file can be opened for appending.
-// Note: this probe is intentionally not side-effect free. It creates missing
-// parent directories and an empty log file (as winston itself would when the
-// transport opens), so the check exercises the exact same open path.
-// Limitations: this is a one-time, synchronous check (statSync/mkdirSync/
-// openSync) run each time a DBSQLLogger is constructed with a `filepath`.
-// Failures that start later (file/dir deleted, permissions changed, disk
-// full, a Windows file lock) are not detected here and can still stall the
-// logger. Follow-up (separate change): attach a runtime `error` handler to the
-// File transport that removes it and falls back to console-only logging.
+// winston's File transport only `debug`-logs errors opening its write stream
+// (EISDIR, EACCES, ...), and the logger then stalls for every transport once
+// its buffer fills. Its `stat` errors (e.g. ENOTDIR) are emitted instead and,
+// with no listener, crash the process. So probe the file once up front,
+// creating it and its directory as winston would. Later failures (e.g. disk
+// full) aren't covered. Paths that exist but aren't regular files or
+// directories are left to winston: opening a FIFO blocks until it has a reader.
 function checkLogFileWritable(filename: string): Error | undefined {
   try {
+    const stat = fs.statSync(filename, { throwIfNoEntry: false });
+    if (stat && !stat.isFile() && !stat.isDirectory()) {
+      return undefined;
+    }
     fs.mkdirSync(path.dirname(filename), { recursive: true });
     fs.closeSync(fs.openSync(filename, 'a'));
     return undefined;
@@ -63,15 +64,8 @@ export default class DBSQLLogger implements IDBSQLLogger {
       const filename = resolveLogFilePath(filepath);
       const error = checkLogFileWritable(filename);
       if (error) {
-        // Logged at `error` so the console transport's level filter can never
-        // drop it (e.g. when the logger is configured with `level: error`).
-        // Trade-off: consumers filtering on the winston `level` field (e.g.
-        // error-level alerting) WILL see this as an error; the "[warn] ...
-        // non-fatal" wording only helps human readers tell this config
-        // fallback apart from a driver failure.
-        this.logger.log({
-          level: LogLevel.error,
-          message: `[warn] Cannot write to log file ${filename}, logging to console only (non-fatal, driver continues normally): ${error.message}`,
+        process.emitWarning(`Cannot write to log file ${filename}, logging to console only: ${error.message}`, {
+          code: LOG_FILE_UNAVAILABLE_WARNING_CODE,
         });
       } else {
         this.transports.file = new winston.transports.File({ filename, handleExceptions: true, level });
