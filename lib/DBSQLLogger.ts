@@ -33,7 +33,12 @@ function checkLogFileWritable(filename: string): Error | undefined {
     if (stat && !stat.isFile() && !stat.isDirectory()) {
       return undefined;
     }
-    fs.mkdirSync(path.dirname(filename), { recursive: true });
+    const dir = path.dirname(filename);
+    // Like winston, only create a missing directory: on Windows, mkdir of a
+    // drive root throws EPERM even with `recursive`.
+    if (!fs.existsSync(dir)) {
+      fs.mkdirSync(dir, { recursive: true });
+    }
     fs.closeSync(fs.openSync(filename, 'a'));
     return undefined;
   } catch (error) {
