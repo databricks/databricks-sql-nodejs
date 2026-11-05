@@ -85,8 +85,8 @@ describe('DBSQLLogger file transport path resolution', () => {
 
   // The File transport opens its stream asynchronously; teardown waits for that
   // before closing the logger and deleting the directory.
-  function createLogger(filepath: string): DBSQLLogger {
-    const instance = new DBSQLLogger({ filepath });
+  function createLogger(filepath: string, level?: LogLevel): DBSQLLogger {
+    const instance = new DBSQLLogger({ filepath, level });
     const file = instance.transports.file;
     fileSettled = file
       ? new Promise<void>((resolve) => {
@@ -145,28 +145,30 @@ describe('DBSQLLogger file transport path resolution', () => {
     expect(logger.transports.file?.filename).to.equal('logs');
   });
 
-  it('falls back to console only, with a warning, when the log file cannot be opened', async () => {
-    const notADir = path.join(tmpDir, 'not-a-dir');
-    fs.writeFileSync(notADir, '');
-    const logged: Array<{ level: string; message: string }> = [];
-    const consoleLog = sinon.stub(winston.transports.Console.prototype, 'log').callsFake((...args: unknown[]) => {
-      logged.push(args[0] as { level: string; message: string });
-      (args[1] as () => void)();
-    });
-    try {
-      logger = createLogger(path.join(notADir, 'driver.log'));
-      await new Promise((resolve) => {
-        setImmediate(resolve);
+  for (const level of [LogLevel.info, LogLevel.error]) {
+    it(`falls back to console only, with a notice, when the log file cannot be opened (level: ${level})`, async () => {
+      const notADir = path.join(tmpDir, 'not-a-dir');
+      fs.writeFileSync(notADir, '');
+      const logged: Array<{ level: string; message: string }> = [];
+      const consoleLog = sinon.stub(winston.transports.Console.prototype, 'log').callsFake((...args: unknown[]) => {
+        logged.push(args[0] as { level: string; message: string });
+        (args[1] as () => void)();
       });
+      try {
+        logger = createLogger(path.join(notADir, 'driver.log'), level);
+        await new Promise((resolve) => {
+          setImmediate(resolve);
+        });
 
-      expect(logger.transports.file).to.be.undefined;
-      expect(logged).to.have.length(1);
-      expect(logged[0].level).to.equal(LogLevel.warn);
-      expect(logged[0].message).to.contain('logging to console only');
-    } finally {
-      consoleLog.restore();
-    }
-  });
+        expect(logger.transports.file).to.be.undefined;
+        expect(logged).to.have.length(1);
+        expect(logged[0].level).to.equal(LogLevel.error);
+        expect(logged[0].message).to.contain('logging to console only');
+      } finally {
+        consoleLog.restore();
+      }
+    });
+  }
 
   it('uses a non-existent filepath unchanged', () => {
     const filepath = path.join(tmpDir, 'custom.log');
