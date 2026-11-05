@@ -78,8 +78,10 @@ jobs:
       labels: linux-ubuntu-latest
     timeout-minutes: 30
     concurrency:
+      # Share the branch-editing queue with engineer-bot-mention.yml.
       group: engineer-bot-followup-pr-${{ github.event.pull_request.number }}
       cancel-in-progress: false
+      queue: max
     steps:
       # Checkout FIRST (remote action) so the local `./` composites resolve. Check
       # out the PR head BRANCH (not the merge ref) so fixups push back to it.
@@ -146,6 +148,8 @@ jobs:
           # it fails with a clear error if this is unset.
           REPO_ROOT: ${{ github.workspace }}
         run: |
+          # The runner injects OIDC credentials per step; clear them in this shell.
+          unset JFROG_ACCESS_TOKEN ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL
           git remote set-url origin "https://x-access-token:${GH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
           python -m databricks_bot_engine.engineer_bot.run --phase followup \
             --system-prompt "$GITHUB_WORKSPACE/.bot/prompts/engineer-followup/system.md"

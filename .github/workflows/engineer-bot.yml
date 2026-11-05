@@ -200,6 +200,8 @@ jobs:
           RUNNER_TEMP: ${{ runner.temp }}
           FLOW: ${{ steps.ctx.outputs.flow }}
         run: |
+          # The runner injects OIDC credentials per step; clear them in this shell.
+          unset JFROG_ACCESS_TOKEN ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL
           args=(
             --phase author
             --system-prompt "$GITHUB_WORKSPACE/.bot/prompts/engineer/system.md"
