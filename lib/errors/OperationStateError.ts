@@ -22,10 +22,18 @@ export default class OperationStateError extends HiveDriverError {
 
   public response?: TGetOperationStatusResp;
 
+  // SQLSTATE reported by the server for the failed operation (if any)
+  public sqlState?: string;
+
   constructor(errorCode: OperationStateErrorCode, response?: TGetOperationStatusResp) {
     super(response?.displayMessage ?? errorMessages[errorCode]);
 
     this.errorCode = errorCode;
     this.response = response;
+
+    const sqlState = response?.sqlState ?? response?.status?.sqlState;
+    if (sqlState) {
+      this.sqlState = sqlState;
+    }
   }
 }
