@@ -200,7 +200,7 @@ export default class DBSQLOperation implements IOperation {
    * @throws {StatusError}
    */
   public async cancel(): Promise<Status> {
-    return this.withErrorTelemetry(() => this.cancelInternal());
+    return this.cancelInternal();
   }
 
   private async cancelInternal(): Promise<Status> {
@@ -208,14 +208,17 @@ export default class DBSQLOperation implements IOperation {
       return Status.success();
     }
     // Deduplicate concurrent cancel() calls: share a single in-flight
-    // CancelOperation request between all callers (STATEMENT-022)
+    // CancelOperation request between all callers (STATEMENT-022).
+    // Error telemetry is emitted inside the shared promise so one failed
+    // CancelOperation produces exactly one error event, regardless of how
+    // many callers are awaiting it.
     if (!this.cancelPromise) {
-      const promise = (async () => {
+      const promise = this.withErrorTelemetry(async () => {
         const result = await this.backend.cancel();
         this.cancelled = true;
         this.onClose?.();
         return result;
-      })();
+      });
       this.cancelPromise = promise;
       // Allow a retry if cancel failed; on success `cancelled` short-circuits further calls
       const reset = () => {
@@ -237,6 +240,16 @@ export default class DBSQLOperation implements IOperation {
   }
 
   private async closeInternal(): Promise<Status> {
+    // If a cancel is in flight, wait for it to settle so we don't race a
+    // CloseOperation against it (and fire onClose twice). A failed cancel is
+    // ignored here; close proceeds normally in that case.
+    if (this.cancelPromise) {
+      try {
+        await this.cancelPromise;
+      } catch {
+        // ignore - cancel() callers receive the error
+      }
+    }
     if (this.closed || this.cancelled) {
       return Status.success();
     }

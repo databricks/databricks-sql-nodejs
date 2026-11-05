@@ -323,6 +323,38 @@ describe('DBSQLOperation', () => {
       expect(operation['cancelled']).to.be.true;
     });
 
+    it('should not send CloseOperation when close() is called while cancel is in flight', async () => {
+      const context = new ClientContextStub();
+      const driver = sinon.spy(context.driver);
+      const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: true }), context });
+      const onClose = sinon.spy();
+      operation.onClose = onClose;
+
+      const [cancelResult, closeResult] = await Promise.all([operation.cancel(), operation.close()]);
+
+      expect(cancelResult.isSuccess).to.be.true;
+      expect(closeResult.isSuccess).to.be.true;
+      expect(driver.cancelOperation.callCount).to.be.equal(1);
+      expect(driver.closeOperation.callCount).to.be.equal(0);
+      expect(onClose.callCount).to.be.equal(1);
+      expect(operation['cancelled']).to.be.true;
+    });
+
+    it('should still close if an in-flight cancel fails', async () => {
+      const context = new ClientContextStub();
+      const driver = sinon.spy(context.driver);
+      context.driver.cancelOperationResp.status.statusCode = TStatusCode.ERROR_STATUS;
+      const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: true }), context });
+
+      const [cancelResult, closeResult] = await Promise.allSettled([operation.cancel(), operation.close()]);
+
+      expect(cancelResult.status).to.equal('rejected');
+      expect(closeResult.status).to.equal('fulfilled');
+      expect(driver.cancelOperation.callCount).to.be.equal(1);
+      expect(driver.closeOperation.callCount).to.be.equal(1);
+      expect(operation['closed']).to.be.true;
+    });
+
     it('should reject all methods once cancelled', async () => {
       const context = new ClientContextStub();
       const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: true }), context });
@@ -1234,6 +1266,17 @@ describe('DBSQLOperation', () => {
 
       expect(emitError.calledOnce, 'emitError should fire once on rejected cancel').to.be.true;
       expect(emitError.firstCall.args[0].errorName).to.match(/Status\s?Error/);
+    });
+
+    it('emits a single ERROR telemetry event when concurrent cancel() calls share a failed request', async () => {
+      const { context, emitError } = makeContextWithEmitter();
+      context.driver.cancelOperationResp.status.statusCode = TStatusCode.ERROR_STATUS;
+      const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: true }), context });
+
+      const results = await Promise.allSettled([operation.cancel(), operation.cancel(), operation.cancel()]);
+
+      expect(results.every((r) => r.status === 'rejected')).to.be.true;
+      expect(emitError.calledOnce, 'emitError should fire once per failed CancelOperation').to.be.true;
     });
 
     it('emits ERROR telemetry when close rejects', async () => {
