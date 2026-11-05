@@ -28,7 +28,8 @@ function resolveLogFilePath(filepath: string): string {
 // openSync) run each time a DBSQLLogger is constructed with a `filepath`.
 // Failures that start later (file/dir deleted, permissions changed, disk
 // full, a Windows file lock) are not detected here and can still stall the
-// logger.
+// logger. Follow-up (separate change): attach a runtime `error` handler to the
+// File transport that removes it and falls back to console-only logging.
 function checkLogFileWritable(filename: string): Error | undefined {
   try {
     fs.mkdirSync(path.dirname(filename), { recursive: true });

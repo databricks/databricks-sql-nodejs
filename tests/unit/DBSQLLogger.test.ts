@@ -156,9 +156,15 @@ describe('DBSQLLogger file transport path resolution', () => {
       });
       try {
         logger = createLogger(path.join(notADir, 'driver.log'), level);
-        await new Promise((resolve) => {
-          setImmediate(resolve);
-        });
+        // Delivery to the Console transport goes through winston's stream piping,
+        // so poll rather than assuming it completes within a single tick.
+        const deadline = Date.now() + 2000;
+        while (logged.length === 0 && Date.now() < deadline) {
+          // eslint-disable-next-line no-await-in-loop
+          await new Promise((resolve) => {
+            setTimeout(resolve, 20);
+          });
+        }
 
         expect(logger.transports.file).to.be.undefined;
         expect(logged).to.have.length(1);
