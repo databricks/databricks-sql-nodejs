@@ -67,28 +67,59 @@ describe('DBSQLLogger level subscription', () => {
 describe('DBSQLLogger file transport path resolution', () => {
   let tmpDir: string;
   let logger: DBSQLLogger | undefined;
+  let fileSettled: Promise<void> | undefined;
+
+  // The winston File transport opens its write stream asynchronously after the
+  // constructor returns. Subscribe to `open`/`error` right away so teardown can
+  // wait for it to settle before deleting the directory — otherwise a deferred
+  // open could fail with ENOENT and surface as an uncaught error later.
+  function createLogger(filepath: string): DBSQLLogger {
+    const instance = new DBSQLLogger({ filepath });
+    const file = instance.transports.file;
+    fileSettled = file
+      ? new Promise<void>((resolve) => {
+          file.once('open', () => resolve());
+          file.once('error', () => resolve());
+        })
+      : undefined;
+    return instance;
+  }
 
   beforeEach(() => {
     tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dbsql-logger-'));
   });
 
-  afterEach(() => {
+  afterEach(async () => {
+    if (fileSettled) {
+      await fileSettled;
+    }
     logger?.logger.close();
     logger = undefined;
+    fileSettled = undefined;
     fs.rmSync(tmpDir, { recursive: true, force: true });
   });
 
   it('writes to a default file inside the directory when filepath is an existing directory', () => {
-    logger = new DBSQLLogger({ filepath: tmpDir });
+    logger = createLogger(tmpDir);
 
     expect(logger.transports.file).to.not.be.undefined;
     expect(logger.transports.file?.dirname).to.equal(tmpDir);
     expect(logger.transports.file?.filename).to.equal('databricks-sql-nodejs.log');
   });
 
+  it('treats a non-existent filepath with a trailing separator as a directory', () => {
+    const dir = path.join(tmpDir, 'nested', 'logs');
+    logger = createLogger(`${dir}${path.sep}`);
+
+    expect(logger.transports.file).to.not.be.undefined;
+    expect(logger.transports.file?.dirname).to.equal(dir);
+    expect(logger.transports.file?.filename).to.equal('databricks-sql-nodejs.log');
+    expect(fs.statSync(dir).isDirectory()).to.be.true;
+  });
+
   it('uses a non-existent filepath unchanged', () => {
     const filepath = path.join(tmpDir, 'custom.log');
-    logger = new DBSQLLogger({ filepath });
+    logger = createLogger(filepath);
 
     expect(logger.transports.file).to.not.be.undefined;
     expect(logger.transports.file?.dirname).to.equal(tmpDir);
@@ -98,7 +129,7 @@ describe('DBSQLLogger file transport path resolution', () => {
   it('uses an existing file path unchanged', () => {
     const filepath = path.join(tmpDir, 'existing.log');
     fs.writeFileSync(filepath, '');
-    logger = new DBSQLLogger({ filepath });
+    logger = createLogger(filepath);
 
     expect(logger.transports.file?.dirname).to.equal(tmpDir);
     expect(logger.transports.file?.filename).to.equal('existing.log');

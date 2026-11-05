@@ -5,10 +5,16 @@ import IDBSQLLogger, { LoggerOptions, LogLevel } from './contracts/IDBSQLLogger'
 
 const DEFAULT_LOG_FILE_NAME = 'databricks-sql-nodejs.log';
 
-// If `filepath` names an existing directory, write logs to a file inside it
-// instead of trying to open the directory itself as a file (which fails with an
-// asynchronous EISDIR on the transport stream). Any other value is used as-is.
+// If `filepath` names an existing directory, or ends with a path separator
+// (meaning "directory", even if it doesn't exist yet), write logs to a default
+// file inside it instead of trying to open the directory itself as a file
+// (which fails with an asynchronous EISDIR on the transport stream). A missing
+// directory is created by the winston File transport. Any other value is used
+// as-is.
 function resolveLogFilePath(filepath: string): string {
+  if (filepath.endsWith('/') || filepath.endsWith(path.sep)) {
+    return path.join(filepath, DEFAULT_LOG_FILE_NAME);
+  }
   try {
     if (fs.statSync(filepath).isDirectory()) {
       return path.join(filepath, DEFAULT_LOG_FILE_NAME);
