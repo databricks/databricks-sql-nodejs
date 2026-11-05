@@ -12,6 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import fs from 'fs';
+import os from 'os';
+import path from 'path';
 import { expect } from 'chai';
 import DBSQLLogger from '../../lib/DBSQLLogger';
 import { LogLevel } from '../../lib/contracts/IDBSQLLogger';
@@ -58,5 +61,46 @@ describe('DBSQLLogger level subscription', () => {
     expect(() => logger.setLevel(LogLevel.debug)).to.not.throw();
     expect(seen).to.deep.equal([LogLevel.debug]);
     expect(logger.getLevel()).to.equal(LogLevel.debug);
+  });
+});
+
+describe('DBSQLLogger file transport path resolution', () => {
+  let tmpDir: string;
+  let logger: DBSQLLogger | undefined;
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dbsql-logger-'));
+  });
+
+  afterEach(() => {
+    logger?.logger.close();
+    logger = undefined;
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('writes to a default file inside the directory when filepath is an existing directory', () => {
+    logger = new DBSQLLogger({ filepath: tmpDir });
+
+    expect(logger.transports.file).to.not.be.undefined;
+    expect(logger.transports.file?.dirname).to.equal(tmpDir);
+    expect(logger.transports.file?.filename).to.equal('databricks-sql-nodejs.log');
+  });
+
+  it('uses a non-existent filepath unchanged', () => {
+    const filepath = path.join(tmpDir, 'custom.log');
+    logger = new DBSQLLogger({ filepath });
+
+    expect(logger.transports.file).to.not.be.undefined;
+    expect(logger.transports.file?.dirname).to.equal(tmpDir);
+    expect(logger.transports.file?.filename).to.equal('custom.log');
+  });
+
+  it('uses an existing file path unchanged', () => {
+    const filepath = path.join(tmpDir, 'existing.log');
+    fs.writeFileSync(filepath, '');
+    logger = new DBSQLLogger({ filepath });
+
+    expect(logger.transports.file?.dirname).to.equal(tmpDir);
+    expect(logger.transports.file?.filename).to.equal('existing.log');
   });
 });
