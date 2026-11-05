@@ -43,6 +43,13 @@ async function runWorkload(logger: DBSQLLogger): Promise<Array<Error>> {
     // winston's file transport writes asynchronously
     await delay(1_500);
   } finally {
+    // Close the logger (and its file transport's write stream) before the temp
+    // directory is removed in `afterEach`; give the stream a moment to finish
+    // while the error listeners are still attached, then detach them.
+    logger.logger.close();
+    await delay(200);
+    logger.transports.file?.removeListener('error', onError);
+    logger.logger.removeListener('error', onError);
     process.removeListener('uncaughtException', onError);
   }
 
