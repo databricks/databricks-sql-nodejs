@@ -22,10 +22,28 @@ export default class OperationStateError extends HiveDriverError {
 
   public response?: TGetOperationStatusResp;
 
+  // SQLSTATE reported by the server for the failed operation (if any)
+  public sqlState?: string;
+
   constructor(errorCode: OperationStateErrorCode, response?: TGetOperationStatusResp) {
     super(response?.displayMessage ?? errorMessages[errorCode]);
 
     this.errorCode = errorCode;
     this.response = response;
+
+    // Only the top-level field describes the failed operation: `status` is
+    // always a successful GetOperationStatus RPC status by the time this is thrown.
+    const sqlState = response?.sqlState;
+    if (sqlState) {
+      // Non-enumerable, matching how the kernel backend attaches `sqlState`
+      // (see `defineErrorMetadata` in lib/kernel/KernelErrorMapping.ts), so the
+      // same error class looks identical regardless of backend.
+      Object.defineProperty(this, 'sqlState', {
+        value: sqlState,
+        writable: true,
+        enumerable: false,
+        configurable: true,
+      });
+    }
   }
 }
