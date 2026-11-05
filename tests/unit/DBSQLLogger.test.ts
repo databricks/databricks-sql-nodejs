@@ -179,6 +179,18 @@ describe('DBSQLLogger file transport path resolution', () => {
     expect(logger.transports.file?.filename).to.equal('custom.log');
   });
 
+  it('creates missing parent directories and still attaches the file transport', () => {
+    const nestedDir = path.join(tmpDir, 'a', 'b');
+    const filepath = path.join(nestedDir, 'driver.log');
+    logger = createLogger(filepath);
+
+    expect(logger.transports.file).to.not.be.undefined;
+    expect(logger.transports.file?.dirname).to.equal(nestedDir);
+    expect(logger.transports.file?.filename).to.equal('driver.log');
+    expect(fs.statSync(nestedDir).isDirectory()).to.be.true;
+    expect(fs.existsSync(filepath)).to.be.true;
+  });
+
   it('uses an existing file path unchanged', () => {
     const filepath = path.join(tmpDir, 'existing.log');
     fs.writeFileSync(filepath, '');
