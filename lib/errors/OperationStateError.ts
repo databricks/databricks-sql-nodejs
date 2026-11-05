@@ -33,7 +33,15 @@ export default class OperationStateError extends HiveDriverError {
 
     const sqlState = response?.sqlState ?? response?.status?.sqlState;
     if (sqlState) {
-      this.sqlState = sqlState;
+      // Non-enumerable, matching how the kernel backend attaches `sqlState`
+      // (see `defineErrorMetadata` in lib/kernel/KernelErrorMapping.ts), so the
+      // same error class looks identical regardless of backend.
+      Object.defineProperty(this, 'sqlState', {
+        value: sqlState,
+        writable: true,
+        enumerable: false,
+        configurable: true,
+      });
     }
   }
 }
