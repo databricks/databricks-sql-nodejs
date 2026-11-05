@@ -50,7 +50,7 @@ describe('Operation error codes', () => {
 
     expect(error.errorCode).to.be.eq(OperationStateErrorCode.Error);
 
-    const wireSqlState = error.response?.sqlState ?? error.response?.status?.sqlState;
+    const wireSqlState = error.response?.sqlState;
     expect(wireSqlState, 'server should send a SQLSTATE on the wire').to.be.a('string');
     expect(wireSqlState).to.have.length(5);
 

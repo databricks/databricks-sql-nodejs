@@ -17,18 +17,18 @@ describe('OperationStateError', () => {
     expect(error.sqlState).to.be.eq('22012');
   });
 
-  it('should fall back to response.status.sqlState', () => {
+  it('should not take sqlState from the RPC status', () => {
     const error = new OperationStateError(OperationStateErrorCode.Error, {
-      status: { statusCode: TStatusCode.ERROR_STATUS, sqlState: '42P01' },
+      status: { statusCode: TStatusCode.SUCCESS_STATUS, sqlState: '00000' },
       operationState: TOperationState.ERROR_STATE,
-    }) as OperationStateError & { sqlState?: string };
+    });
 
-    expect(error.sqlState).to.be.eq('42P01');
+    expect(Object.prototype.hasOwnProperty.call(error, 'sqlState')).to.be.false;
   });
 
   it('should attach sqlState with the same descriptor as the kernel backend', () => {
     const thriftError = new OperationStateError(OperationStateErrorCode.Error, {
-      status: { statusCode: TStatusCode.ERROR_STATUS },
+      status: { statusCode: TStatusCode.SUCCESS_STATUS },
       operationState: TOperationState.ERROR_STATE,
       sqlState: '22012',
     });
@@ -44,7 +44,7 @@ describe('OperationStateError', () => {
 
   it('should not define sqlState when the server reports none', () => {
     const error = new OperationStateError(OperationStateErrorCode.Error, {
-      status: { statusCode: TStatusCode.ERROR_STATUS },
+      status: { statusCode: TStatusCode.SUCCESS_STATUS },
       operationState: TOperationState.ERROR_STATE,
     });
 
