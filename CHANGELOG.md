@@ -5,6 +5,8 @@
 - Upgrade the native kernel backend to 1.4.0.
 - **Breaking:** require Node.js versions containing the CVE-2026-111497 Brotli decoder fix: 22.23.4+, 24.22.1+, or 26.12.1+. Node.js 20, 23, and 25 are no longer supported because those end-of-life lines have no fix.
 - Return empty results with the standard schema from Thrift `getPrimaryKeys()` when a catalog, schema, or table is missing, instead of throwing. (#553)
+- Deduplicate concurrent `DBSQLOperation.cancel()` calls so they share a single CancelOperation request and emit one error telemetry event. (#472)
+- **Behavior change:** concurrent `DBSQLOperation.close()` calls now share a single CloseOperation request, and `close()` waits for any in-flight `cancel()` to settle first. If that cancel succeeds, `close()` resolves with success without sending CloseOperation; if it fails, `close()` proceeds normally. `close()` can therefore take as long as the pending cancel RPC, bounded by the retry policy (`retryMaxAttempts` / `retriesTimeout`) and `socketTimeout`. (#472)
 - Update locked `follow-redirects` and `serialize-javascript` versions to remediate security findings.
 
 ## 2.4.0

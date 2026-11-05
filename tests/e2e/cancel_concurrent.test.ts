@@ -2,6 +2,7 @@ import { AssertionError, expect } from 'chai';
 import sinon from 'sinon';
 import { DBSQLClient } from '../../lib';
 import Status from '../../lib/dto/Status';
+import OperationStateError, { OperationStateErrorCode } from '../../lib/errors/OperationStateError';
 
 import config from './utils/config';
 
@@ -47,6 +48,8 @@ describe('Concurrent cancel (STATEMENT-022)', function () {
         if (error instanceof AssertionError) {
           throw error;
         }
+        expect(error).to.be.instanceOf(OperationStateError);
+        expect((error as OperationStateError).errorCode).to.equal(OperationStateErrorCode.Canceled);
       }
     } finally {
       cancelSpy.restore();
