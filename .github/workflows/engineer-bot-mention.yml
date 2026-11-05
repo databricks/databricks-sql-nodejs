@@ -189,8 +189,11 @@ jobs:
           if len(diff) > limit:
               reference += "\n\n[Diff truncated; inspect source files and report any review limitations.]\n"
           path = workspace / "pr/.engineer-mention-pr.diff"
-          with path.open("x") as output:
-              output.write(reference)
+          try:
+              with path.open("x") as output:
+                  output.write(reference)
+          except FileExistsError:
+              raise SystemExit("::error::PR diff reference path must not already exist.")
           path.chmod(0o444)
           PY
           printf '\n/.engineer-mention-pr.diff\n' >> pr/.git/info/exclude
