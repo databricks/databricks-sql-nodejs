@@ -16,8 +16,22 @@ import fs from 'fs';
 import os from 'os';
 import path from 'path';
 import { expect } from 'chai';
+import sinon from 'sinon';
+import winston from 'winston';
 import DBSQLLogger from '../../lib/DBSQLLogger';
 import { LogLevel } from '../../lib/contracts/IDBSQLLogger';
+
+async function waitForFileContent(file: string, text: string, timeoutMs = 2000): Promise<string> {
+  const deadline = Date.now() + timeoutMs;
+  const read = () => (fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : '');
+  while (!read().includes(text) && Date.now() < deadline) {
+    // eslint-disable-next-line no-await-in-loop
+    await new Promise((resolve) => {
+      setTimeout(resolve, 20);
+    });
+  }
+  return read();
+}
 
 describe('DBSQLLogger level subscription', () => {
   it('getLevel reflects the configured level', () => {
@@ -69,10 +83,8 @@ describe('DBSQLLogger file transport path resolution', () => {
   let logger: DBSQLLogger | undefined;
   let fileSettled: Promise<void> | undefined;
 
-  // The winston File transport opens its write stream asynchronously after the
-  // constructor returns. Subscribe to `open`/`error` right away so teardown can
-  // wait for it to settle before deleting the directory — otherwise a deferred
-  // open could fail with ENOENT and surface as an uncaught error later.
+  // The File transport opens its stream asynchronously; teardown waits for that
+  // before closing the logger and deleting the directory.
   function createLogger(filepath: string): DBSQLLogger {
     const instance = new DBSQLLogger({ filepath });
     const file = instance.transports.file;
@@ -107,14 +119,53 @@ describe('DBSQLLogger file transport path resolution', () => {
     expect(logger.transports.file?.filename).to.equal('databricks-sql-nodejs.log');
   });
 
-  it('treats a non-existent filepath with a trailing separator as a directory', () => {
-    const dir = path.join(tmpDir, 'nested', 'logs');
-    logger = createLogger(`${dir}${path.sep}`);
+  it('writes log lines to the default file inside the directory', async () => {
+    logger = createLogger(tmpDir);
+    logger.transports.console.silent = true;
 
-    expect(logger.transports.file).to.not.be.undefined;
-    expect(logger.transports.file?.dirname).to.equal(dir);
+    await logger.log(LogLevel.info, 'hello from DBSQLLogger test');
+
+    const content = await waitForFileContent(path.join(tmpDir, 'databricks-sql-nodejs.log'), 'hello from');
+    expect(content).to.contain('hello from DBSQLLogger test');
+  });
+
+  it('resolves an existing directory with a trailing separator to the default file inside it', () => {
+    logger = createLogger(`${tmpDir}${path.sep}`);
+
+    expect(logger.transports.file?.dirname).to.equal(tmpDir);
     expect(logger.transports.file?.filename).to.equal('databricks-sql-nodejs.log');
-    expect(fs.statSync(dir).isDirectory()).to.be.true;
+  });
+
+  it('keeps writing to an existing file when filepath has a trailing separator', () => {
+    const filepath = path.join(tmpDir, 'logs');
+    fs.writeFileSync(filepath, '');
+    logger = createLogger(`${filepath}${path.sep}`);
+
+    expect(logger.transports.file?.dirname).to.equal(tmpDir);
+    expect(logger.transports.file?.filename).to.equal('logs');
+  });
+
+  it('falls back to console only, with a warning, when the log file cannot be opened', async () => {
+    const notADir = path.join(tmpDir, 'not-a-dir');
+    fs.writeFileSync(notADir, '');
+    const logged: Array<{ level: string; message: string }> = [];
+    const consoleLog = sinon.stub(winston.transports.Console.prototype, 'log').callsFake((...args: unknown[]) => {
+      logged.push(args[0] as { level: string; message: string });
+      (args[1] as () => void)();
+    });
+    try {
+      logger = createLogger(path.join(notADir, 'driver.log'));
+      await new Promise((resolve) => {
+        setImmediate(resolve);
+      });
+
+      expect(logger.transports.file).to.be.undefined;
+      expect(logged).to.have.length(1);
+      expect(logged[0].level).to.equal(LogLevel.warn);
+      expect(logged[0].message).to.contain('logging to console only');
+    } finally {
+      consoleLog.restore();
+    }
   });
 
   it('uses a non-existent filepath unchanged', () => {
