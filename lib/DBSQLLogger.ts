@@ -21,6 +21,9 @@ function resolveLogFilePath(filepath: string): string {
 // winston's File transport swallows errors opening its stream (EISDIR, EACCES,
 // ENOTDIR, ...), after which the logger stalls for all transports once its
 // buffer fills. Check up front that the file can be opened for appending.
+// Note: this probe is intentionally not side-effect free. It creates missing
+// parent directories and an empty log file (as winston itself would when the
+// transport opens), so the check exercises the exact same open path.
 function checkLogFileWritable(filename: string): Error | undefined {
   try {
     fs.mkdirSync(path.dirname(filename), { recursive: true });
@@ -54,8 +57,10 @@ export default class DBSQLLogger implements IDBSQLLogger {
       const filename = resolveLogFilePath(filepath);
       const error = checkLogFileWritable(filename);
       if (error) {
+        // Logged at `error` so the console transport's level filter can never
+        // drop it (e.g. when the logger is configured with `level: error`).
         this.logger.log({
-          level: LogLevel.warn,
+          level: LogLevel.error,
           message: `Cannot write to log file ${filename}, logging to console only: ${error.message}`,
         });
       } else {
