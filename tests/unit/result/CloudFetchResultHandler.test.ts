@@ -10,6 +10,7 @@ import CloudFetchResultHandler from '../../../lib/result/CloudFetchResultHandler
 import ResultsProviderStub from '../.stubs/ResultsProviderStub';
 import { TRowSet, TSparkArrowResultLink, TStatusCode } from '../../../thrift/TCLIService_types';
 import { ArrowBatch } from '../../../lib/result/utils';
+import RetryError, { RetryErrorCode } from '../../../lib/errors/RetryError';
 
 import BaseClientContextStub from '../.stubs/ClientContextStub';
 import { ClientConfig } from '../../../lib/contracts/IClientContext';
@@ -412,6 +413,65 @@ describe('CloudFetchResultHandler', () => {
       expect((context.connectionProvider.getRetryPolicy as SinonStub).called).to.be.true;
       expect(context.invokeWithRetryStub.callCount).to.be.equal(1);
     }
+  });
+
+  it('should add download context and HTTP status to RetryError when retries are exhausted', async () => {
+    const context = new ClientContextStub({ cloudFetchConcurrentDownloads: 1 });
+    const rowSetProvider = new ResultsProviderStub([sampleRowSet1], undefined);
+
+    const result = new CloudFetchResultHandler(context, rowSetProvider, {
+      status: { statusCode: TStatusCode.SUCCESS_STATUS },
+    });
+
+    context.invokeWithRetryStub.callsFake(async () => {
+      throw new RetryError(RetryErrorCode.AttemptsExceeded, {
+        request: new Request('http://example.com/result/1'),
+        response: new Response('', { status: 500, statusText: 'Internal Server Error' }),
+      });
+    });
+
+    let thrown: any;
+    try {
+      await result.fetchNext({ limit: 10000 });
+    } catch (e) {
+      thrown = e;
+    }
+
+    expect(thrown).to.be.instanceOf(RetryError);
+    expect(thrown.errorCode).to.be.equal(RetryErrorCode.AttemptsExceeded);
+    expect(thrown.message).to.contain('CloudFetch');
+    expect(thrown.message).to.contain('HTTP 500');
+    expect(thrown.message).to.contain('Internal Server Error');
+    expect(thrown.message).to.contain('Max retry count exceeded');
+  });
+
+  it('should add download context and network error cause to RetryError when retries are exhausted', async () => {
+    const context = new ClientContextStub({ cloudFetchConcurrentDownloads: 1 });
+    const rowSetProvider = new ResultsProviderStub([sampleRowSet1], undefined);
+
+    const result = new CloudFetchResultHandler(context, rowSetProvider, {
+      status: { statusCode: TStatusCode.SUCCESS_STATUS },
+    });
+
+    context.invokeWithRetryStub.callsFake(async () => {
+      throw new RetryError(
+        RetryErrorCode.AttemptsExceeded,
+        Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' }),
+      );
+    });
+
+    let thrown: any;
+    try {
+      await result.fetchNext({ limit: 10000 });
+    } catch (e) {
+      thrown = e;
+    }
+
+    expect(thrown).to.be.instanceOf(RetryError);
+    expect(thrown.errorCode).to.be.equal(RetryErrorCode.AttemptsExceeded);
+    expect(thrown.message).to.contain('CloudFetch');
+    expect(thrown.message).to.contain('socket hang up');
+    expect(thrown.message).to.contain('Max retry count exceeded');
   });
 
   it('should handle expired links', async () => {

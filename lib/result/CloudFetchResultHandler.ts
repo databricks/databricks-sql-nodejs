@@ -1,6 +1,7 @@
 import fetch, { RequestInfo, RequestInit, Request, Response } from 'node-fetch';
 import { TGetResultSetMetadataResp, TRowSet, TSparkArrowResultLink } from '../../thrift/TCLIService_types';
 import HiveDriverError from '../errors/HiveDriverError';
+import RetryError from '../errors/RetryError';
 import IClientContext from '../contracts/IClientContext';
 import IResultsProvider, { ResultsProviderFetchNextOptions } from './IResultsProvider';
 import { ArrowBatch } from './utils';
@@ -157,15 +158,20 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
     // Pulling `arrayBuffer()` in here lets the retry policy treat those
     // body-stream failures the same as connect-time failures.
     let downloaded: ArrayBuffer | undefined;
-    const result = await retryPolicy.invokeWithRetry(async () => {
-      downloaded = undefined;
-      const request = new Request(url, requestConfig);
-      const response = await fetch(request);
-      if (response.ok) {
-        downloaded = await response.arrayBuffer();
-      }
-      return { request, response };
-    });
+    let result: { request: Request; response: Response };
+    try {
+      result = await retryPolicy.invokeWithRetry(async () => {
+        downloaded = undefined;
+        const request = new Request(url, requestConfig);
+        const response = await fetch(request);
+        if (response.ok) {
+          downloaded = await response.arrayBuffer();
+        }
+        return { request, response };
+      });
+    } catch (error) {
+      throw CloudFetchResultHandler.describeDownloadError(error);
+    }
     // Fall back to reading the body here if the retry policy returned a
     // response without consuming it via our operation (e.g. unit-test stubs
     // that hand back a pre-baked Response without invoking the operation
@@ -175,6 +181,34 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
       downloaded = await result.response.arrayBuffer();
     }
     return { response: result.response, body: downloaded };
+  }
+
+  /**
+   * When the retry policy gives up (`RetryError`), its message is a generic "Max retry count
+   * exceeded" / "Retry timeout exceeded" that hides both the CloudFetch download context and the
+   * actual cause (last HTTP status or network error). Enrich the message while keeping the same
+   * error class, error code and payload so existing `instanceof` / `errorCode` checks still work.
+   */
+  private static describeDownloadError(error: unknown): unknown {
+    if (!(error instanceof RetryError)) {
+      return error;
+    }
+
+    let cause: string | undefined;
+    const { payload } = error;
+    if (payload instanceof Error) {
+      const { code } = payload as Error & { code?: unknown };
+      cause = code ? `${payload.message} (${code})` : payload.message;
+    } else if (payload && typeof payload === 'object' && 'response' in payload) {
+      const { response } = payload as { response?: { status?: number; statusText?: string } };
+      if (response && typeof response.status === 'number') {
+        cause = `HTTP ${response.status}${response.statusText ? `: ${response.statusText}` : ''}`;
+      }
+    }
+
+    const enriched = new RetryError(error.errorCode, payload);
+    enriched.message = `CloudFetch result download failed: ${error.message}${cause ? ` (last error: ${cause})` : ''}`;
+    return enriched;
   }
 
   /**
