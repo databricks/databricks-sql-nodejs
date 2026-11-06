@@ -234,67 +234,53 @@ describe('Query parameters', () => {
 
   // https://github.com/databricks/databricks-sql-nodejs/issues/261
   describe('non-scalar parameter values (issue #261)', () => {
-    const HANG_TIMEOUT_MS = 30000;
-
-    // Run the statement end-to-end against the live warehouse and return whatever error it
-    // produced. A hang (the reported bug) surfaces as a sentinel error after HANG_TIMEOUT_MS
-    // instead of stalling the suite.
-    async function runAndCaptureError(
+    // Non-scalar values are rejected client-side (before any RPC is sent), so executeStatement
+    // rejects immediately; this exercises the real session open/close round-trip around it.
+    async function executeAndCaptureError(
       statement: string,
       options: Parameters<Awaited<ReturnType<typeof openSession>>['executeStatement']>[1],
     ): Promise<unknown> {
       const session = await openSession();
-      let timer: NodeJS.Timeout | undefined;
       try {
-        const run = (async () => {
-          const operation = await session.executeStatement(statement, options);
-          try {
-            await operation.fetchAll();
-          } finally {
-            await operation.close().catch(() => {});
-          }
-        })();
-        const hang = new Promise<never>((_, reject) => {
-          timer = setTimeout(
-            () => reject(new Error(`executeStatement hung for more than ${HANG_TIMEOUT_MS}ms`)),
-            HANG_TIMEOUT_MS,
-          );
-        });
-        await Promise.race([run, hang]);
+        await session.executeStatement(statement, options);
         return undefined;
       } catch (error) {
         return error;
       } finally {
-        if (timer) clearTimeout(timer);
-        // Bound cleanup too: when the bug reproduces, closing the session can hang as well.
-        await Promise.race([
-          session.close().catch(() => {}),
-          new Promise<void>((resolve) => {
-            setTimeout(resolve, 5000).unref();
-          }),
-        ]);
+        await session.close();
       }
     }
 
-    it('should reject an array-of-arrays of ordinal parameters with ParameterError instead of hanging', async function () {
-      this.timeout(HANG_TIMEOUT_MS + 30000);
-      const error = await runAndCaptureError('SELECT ? AS c', { ordinalParameters: [[1], [2], [3]] as never });
+    it('should reject an array-of-arrays of ordinal parameters with ParameterError instead of hanging', async () => {
+      const error = await executeAndCaptureError('SELECT ? AS c', { ordinalParameters: [[1], [2], [3]] as never });
       expect(error).to.be.instanceof(ParameterError);
       expect((error as Error).message).to.match(/array/);
     });
 
-    it('should reject an array value for a named parameter with ParameterError', async function () {
-      this.timeout(HANG_TIMEOUT_MS + 30000);
-      const error = await runAndCaptureError('SELECT :p AS c', { namedParameters: { p: [1, 2] as never } });
+    it('should reject an array value for a named parameter with ParameterError', async () => {
+      const error = await executeAndCaptureError('SELECT :p AS c', { namedParameters: { p: [1, 2] as never } });
       expect(error).to.be.instanceof(ParameterError);
       expect((error as Error).message).to.match(/array/);
     });
 
-    it('should reject a plain-object ordinal parameter value with ParameterError', async function () {
-      this.timeout(HANG_TIMEOUT_MS + 30000);
-      const error = await runAndCaptureError('SELECT ? AS c', { ordinalParameters: [{ a: 1 } as never] });
+    it('should reject a plain-object ordinal parameter value with ParameterError', async () => {
+      const error = await executeAndCaptureError('SELECT ? AS c', { ordinalParameters: [{ a: 1 } as never] });
       expect(error).to.be.instanceof(ParameterError);
       expect((error as Error).message).to.match(/object/);
+    });
+
+    it('should support multi-row inserts with flattened scalar ordinal parameters', async () => {
+      const session = await openSession();
+      try {
+        const operation = await session.executeStatement('SELECT * FROM VALUES (?), (?), (?) AS t(c) ORDER BY c', {
+          ordinalParameters: [1, 2, 3],
+        });
+        const result = await operation.fetchAll();
+        await operation.close();
+        expect(result).to.deep.equal([{ c: 1 }, { c: 2 }, { c: 3 }]);
+      } finally {
+        await session.close();
+      }
     });
   });
 });
