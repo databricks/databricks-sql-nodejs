@@ -1,5 +1,9 @@
 # Release History
 
+## Unreleased
+
+- Report untyped NULL columns as STRING in kernel result metadata, matching Thrift. (#470)
+
 ## 3.0.0
 
 - Upgrade the native kernel backend to 1.4.0.
