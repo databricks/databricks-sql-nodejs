@@ -275,6 +275,8 @@ jobs:
               section = re.search(r"(?ms)^## Unreleased\n(.*?)(?=^## |\Z)", text)
               if section is None:
                   return text, set()
+              if section.start() != re.search(r"(?m)^## ", text).start():
+                  raise SystemExit("::error::Place ## Unreleased above the released versions.")
               released = text[:section.start()] + text[section.end():]
               entries = set(re.findall(r"(?m)^- (\S.*)$", section.group(1)))
               return released, entries
@@ -334,7 +336,7 @@ jobs:
               if [ -n "$PR_URL" ]; then
                 printf '🤖 engineer-bot opened a fix PR: %s\n\nReview before merge.\n' "$PR_URL" > "$BODY"
               elif [ "$VALIDATION_OUTCOME" = "failure" ]; then
-                printf '🤖 engineer-bot produced a fix but changelog or code style checks failed, so no PR was opened. See the [workflow run](%s) for details.\n' "$RUN_URL" > "$BODY"
+                printf '🤖 engineer-bot produced a fix but pre-publication checks failed, so no PR was opened. See the [workflow run](%s) for details.\n' "$RUN_URL" > "$BODY"
               else
                 printf '🤖 engineer-bot produced a fix but could **not** open the PR (push or PR creation failed). See the [workflow run](%s) for details.\n' "$RUN_URL" > "$BODY"
               fi ;;
