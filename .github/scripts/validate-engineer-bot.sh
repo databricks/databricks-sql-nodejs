@@ -15,7 +15,8 @@ if [ -n "$(git status --porcelain --untracked-files=all -- "${protected[@]}")" ]
   echo "::error::Agent changes to package or lint configuration are not allowed."
   exit 1
 fi
-checksum=$(git show HEAD:.github/scripts/engineer-bot-dependency-digest.sh | bash)
+digest_script=$(git show HEAD:.github/scripts/engineer-bot-dependency-digest.sh)
+checksum=$(bash -c "$digest_script")
 if [ "$checksum" != "$TOOLCHAIN_SHA256" ]; then
   echo "::error::Installed dependencies changed during the agent run."
   exit 1

@@ -28,7 +28,7 @@ with tempfile.TemporaryDirectory(prefix='nodejs-bot-gate-regression-') as tempor
     binary.mkdir()
     (binary / 'python').symlink_to(sys.executable)
     npm = binary / 'npm'
-    npm.write_text('#!/usr/bin/env python3\nimport os, sys\nassert all(name not in os.environ for name in ["JFROG_ACCESS_TOKEN", "ACTIONS_ID_TOKEN_REQUEST_TOKEN", "ACTIONS_ID_TOKEN_REQUEST_URL"])\nwith open(os.environ["VALIDATION_LOG"], "a") as log: log.write(" ".join(sys.argv[1:]) + "\\n")\nsys.exit(1 if os.environ.get("VALIDATION_FAIL") == sys.argv[2] else 0)\n')
+    npm.write_text('#!/usr/bin/env python3\nimport os, sys\nassert all(name not in os.environ for name in ["JFROG_ACCESS_TOKEN", "ACTIONS_ID_TOKEN_REQUEST_TOKEN", "ACTIONS_ID_TOKEN_REQUEST_URL"])\nwith open(os.environ["VALIDATION_LOG"], "a") as log: log.write(" ".join(sys.argv[1:]) + "\\n")\nif os.environ.get("VALIDATION_FAIL") == "read-stdin": sys.stdin.read()\nsys.exit(1 if os.environ.get("VALIDATION_FAIL") == sys.argv[2] else 0)\n')
     npm.chmod(0o755)
     count = 0
     for baseline in [BASE, EXISTING]:
@@ -69,6 +69,7 @@ with tempfile.TemporaryDirectory(prefix='nodejs-bot-gate-regression-') as tempor
             ('digest script modification', good, {'.github/scripts/engineer-bot-dependency-digest.sh': 'exit 0\n'}, ['CHANGELOG.md'], '', False, False),
             ('Prettier failure', good, {}, ['CHANGELOG.md'], 'prettier', False, False),
             ('ESLint failure', good, {}, ['CHANGELOG.md'], 'lint', False, False),
+            ('npm reads stdin', good, {}, ['CHANGELOG.md'], 'read-stdin', False, True),
         ]
         if baseline == EXISTING:
             cases += [('duplicate unreleased entry', baseline.replace('- Existing fix.', '- Existing fix.\n- Existing fix.'), {}, ['CHANGELOG.md'], '', False, False)]
@@ -103,7 +104,7 @@ with tempfile.TemporaryDirectory(prefix='nodejs-bot-gate-regression-') as tempor
             log = fixture / 'npm.log'
             log.unlink(missing_ok=True)
             env = {'PATH': f'{binary}:{os.environ["PATH"]}', 'TOUCHED_FILES': '\n'.join(recorded), 'TOOLCHAIN_SHA256': checksum, 'VALIDATION_LOG': str(log), 'VALIDATION_FAIL': failure, 'JFROG_ACCESS_TOKEN': 'test-placeholder', 'ACTIONS_ID_TOKEN_REQUEST_TOKEN': 'test-placeholder', 'ACTIONS_ID_TOKEN_REQUEST_URL': 'test-placeholder'}
-            result = subprocess.run(['bash', '-e', '-o', 'pipefail', '-c', 'git show HEAD:.github/scripts/validate-engineer-bot.sh | bash'], cwd=fixture, env=env, capture_output=True, text=True)
+            result = subprocess.run(['bash', '-e', '-o', 'pipefail', '-c', 'validation_script=$(git show HEAD:.github/scripts/validate-engineer-bot.sh); bash -c "$validation_script"'], cwd=fixture, env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True)
             assert (result.returncode == 0) == expected, (label, result.stdout, result.stderr)
             if label == 'recorded deletion':
                 assert 'pinned bot publisher cannot stage deleted files' in result.stderr
