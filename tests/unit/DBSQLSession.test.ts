@@ -263,6 +263,56 @@ describe('DBSQLSession', () => {
     });
   });
 
+  // https://github.com/databricks/databricks-sql-nodejs/issues/261
+  describe('executeStatement with non-scalar parameter values', () => {
+    const invalidCases: Array<{ desc: string; options: object; pattern: RegExp }> = [
+      { desc: 'ordinal array-of-arrays', options: { ordinalParameters: [[1], [2], [3]] }, pattern: /array/ },
+      { desc: 'named array value', options: { namedParameters: { p: [1, 2] } }, pattern: /array/ },
+      { desc: 'ordinal plain object', options: { ordinalParameters: [{ a: 1 }] }, pattern: /object/ },
+      { desc: 'named plain object', options: { namedParameters: { p: { a: 1 } } }, pattern: /object/ },
+    ];
+
+    for (const { desc, options, pattern } of invalidCases) {
+      it(`should throw ParameterError and not call the driver for ${desc}`, async () => {
+        const context = new ClientContextStub();
+        const driver = sinon.spy(context.driver);
+        const session = createSessionForTest({
+          handle: sessionHandleStub,
+          context,
+          serverProtocolVersion: TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V8,
+        });
+
+        try {
+          await session.executeStatement('SELECT ?', options as never);
+          expect.fail('It should throw an error');
+        } catch (error) {
+          if (error instanceof AssertionError) {
+            throw error;
+          }
+          expect(error).instanceOf(ParameterError);
+          expect((error as Error).message).to.match(pattern);
+        }
+        expect(driver.executeStatement.called).to.be.false;
+      });
+    }
+
+    it('should keep accepting valid scalar values', async () => {
+      const context = new ClientContextStub();
+      const driver = sinon.spy(context.driver);
+      const session = createSessionForTest({
+        handle: sessionHandleStub,
+        context,
+        serverProtocolVersion: TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V8,
+      });
+
+      await session.executeStatement('SELECT ?, ?, ?, ?, ?', {
+        ordinalParameters: [new Date('2023-09-06T03:14:27.843Z'), new Int64(1234), BigInt(1234), null, 'x'],
+      });
+      expect(driver.executeStatement.callCount).to.eq(1);
+      expect(driver.executeStatement.firstCall.args[0].parameters?.length).to.eq(5);
+    });
+  });
+
   describe('executeStatement with queryTags', () => {
     it('should set confOverlay with query_tags when queryTags are provided', async () => {
       const context = new ClientContextStub();

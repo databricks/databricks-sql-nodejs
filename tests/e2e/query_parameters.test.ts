@@ -231,4 +231,70 @@ describe('Query parameters', () => {
       expect(error).to.be.instanceof(ParameterError);
     }
   });
+
+  // https://github.com/databricks/databricks-sql-nodejs/issues/261
+  describe('non-scalar parameter values (issue #261)', () => {
+    const HANG_TIMEOUT_MS = 30000;
+
+    // Run the statement end-to-end against the live warehouse and return whatever error it
+    // produced. A hang (the reported bug) surfaces as a sentinel error after HANG_TIMEOUT_MS
+    // instead of stalling the suite.
+    async function runAndCaptureError(
+      statement: string,
+      options: Parameters<Awaited<ReturnType<typeof openSession>>['executeStatement']>[1],
+    ): Promise<unknown> {
+      const session = await openSession();
+      let timer: NodeJS.Timeout | undefined;
+      try {
+        const run = (async () => {
+          const operation = await session.executeStatement(statement, options);
+          try {
+            await operation.fetchAll();
+          } finally {
+            await operation.close().catch(() => {});
+          }
+        })();
+        const hang = new Promise<never>((_, reject) => {
+          timer = setTimeout(
+            () => reject(new Error(`executeStatement hung for more than ${HANG_TIMEOUT_MS}ms`)),
+            HANG_TIMEOUT_MS,
+          );
+        });
+        await Promise.race([run, hang]);
+        return undefined;
+      } catch (error) {
+        return error;
+      } finally {
+        if (timer) clearTimeout(timer);
+        // Bound cleanup too: when the bug reproduces, closing the session can hang as well.
+        await Promise.race([
+          session.close().catch(() => {}),
+          new Promise<void>((resolve) => {
+            setTimeout(resolve, 5000).unref();
+          }),
+        ]);
+      }
+    }
+
+    it('should reject an array-of-arrays of ordinal parameters with ParameterError instead of hanging', async function () {
+      this.timeout(HANG_TIMEOUT_MS + 30000);
+      const error = await runAndCaptureError('SELECT ? AS c', { ordinalParameters: [[1], [2], [3]] as never });
+      expect(error).to.be.instanceof(ParameterError);
+      expect((error as Error).message).to.match(/array/);
+    });
+
+    it('should reject an array value for a named parameter with ParameterError', async function () {
+      this.timeout(HANG_TIMEOUT_MS + 30000);
+      const error = await runAndCaptureError('SELECT :p AS c', { namedParameters: { p: [1, 2] as never } });
+      expect(error).to.be.instanceof(ParameterError);
+      expect((error as Error).message).to.match(/array/);
+    });
+
+    it('should reject a plain-object ordinal parameter value with ParameterError', async function () {
+      this.timeout(HANG_TIMEOUT_MS + 30000);
+      const error = await runAndCaptureError('SELECT ? AS c', { ordinalParameters: [{ a: 1 } as never] });
+      expect(error).to.be.instanceof(ParameterError);
+      expect((error as Error).message).to.match(/object/);
+    });
+  });
 });
