@@ -198,7 +198,11 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
     const { payload } = error;
     if (payload instanceof Error) {
       const { code } = payload as Error & { code?: unknown };
-      cause = code ? `${payload.message} (${code})` : payload.message;
+      // Network errors (e.g. node-fetch `FetchError`) embed the request URL in their message. For
+      // CloudFetch that is a presigned cloud-storage link whose query string carries credentials,
+      // so redact any URL before it ends up in the top-level message / stack that loggers print.
+      const safeMessage = payload.message.replace(/\b[a-z][a-z0-9+.-]*:\/\/\S+/gi, '<redacted-url>');
+      cause = code ? `${safeMessage} (${code})` : safeMessage;
     } else if (payload && typeof payload === 'object' && 'response' in payload) {
       const { response } = payload as { response?: { status?: number; statusText?: string } };
       if (response && typeof response.status === 'number') {

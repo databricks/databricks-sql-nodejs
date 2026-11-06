@@ -479,6 +479,41 @@ describe('CloudFetchResultHandler', () => {
     expect(thrown.message).to.contain('Max retry count exceeded');
   });
 
+  it('should not leak presigned URLs from network errors into the RetryError message', async () => {
+    const context = new ClientContextStub({ cloudFetchConcurrentDownloads: 1 });
+    const rowSetProvider = new ResultsProviderStub([sampleRowSet1], undefined);
+
+    const result = new CloudFetchResultHandler(context, rowSetProvider, {
+      status: { statusCode: TStatusCode.SUCCESS_STATUS },
+    });
+
+    const presignedUrl = 'https://storage.example.com/results/chunk-0?sig=SECRET_SIGNATURE&se=2026-11-06';
+    const originalError = new RetryError(
+      RetryErrorCode.AttemptsExceeded,
+      Object.assign(new Error(`request to ${presignedUrl} failed, reason: socket hang up`), {
+        code: 'ECONNRESET',
+        type: 'system',
+      }),
+    );
+    context.invokeWithRetryStub.callsFake(async () => {
+      throw originalError;
+    });
+
+    let thrown: any;
+    try {
+      await result.fetchNext({ limit: 10000 });
+    } catch (e) {
+      thrown = e;
+    }
+
+    expect(thrown).to.be.equal(originalError);
+    expect(thrown.message).to.contain('socket hang up');
+    expect(thrown.message).to.contain('ECONNRESET');
+    expect(thrown.message).to.not.contain('SECRET_SIGNATURE');
+    expect(thrown.message).to.not.contain('storage.example.com');
+    expect(thrown.stack).to.not.contain('SECRET_SIGNATURE');
+  });
+
   it('should handle expired links', async () => {
     const context = new ClientContextStub();
     const rowSetProvider = new ResultsProviderStub([sampleExpiredRowSet], undefined);
