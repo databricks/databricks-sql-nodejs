@@ -684,6 +684,31 @@ describe('CloudFetchResultHandler', () => {
     expect(thrown.stack.split('\n')[1]).to.be.equal(frame);
   });
 
+  it('should keep closing delimiters around quoted or parenthesised URLs when scrubbing', async () => {
+    const context = new ClientContextStub({ cloudFetchConcurrentDownloads: 1 });
+    const rowSetProvider = new ResultsProviderStub([sampleRowSet1], undefined);
+
+    const result = new CloudFetchResultHandler(context, rowSetProvider, {
+      status: { statusCode: TStatusCode.SUCCESS_STATUS },
+    });
+
+    const presignedUrl = 'https://storage.example.com/results/chunk-0?sig=SECRET_SIGNATURE&se=2026-11-06';
+    const originalError = new Error(`fetch to '${presignedUrl}'. failed (${presignedUrl})`);
+    context.invokeWithRetryStub.callsFake(async () => {
+      throw originalError;
+    });
+
+    let thrown: any;
+    try {
+      await result.fetchNext({ limit: 10000 });
+    } catch (e) {
+      thrown = e;
+    }
+
+    expect(thrown).to.be.equal(originalError);
+    expect(thrown.message).to.be.equal(`fetch to '<redacted-url>'. failed (<redacted-url>)`);
+  });
+
   it('should handle expired links', async () => {
     const context = new ClientContextStub();
     const rowSetProvider = new ResultsProviderStub([sampleExpiredRowSet], undefined);

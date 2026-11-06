@@ -184,7 +184,13 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
   }
 
   private static redactUrls(text: string): string {
-    return text.replace(/\b[a-z][a-z0-9+.-]*:\/\/\S+/gi, '<redacted-url>');
+    // Match greedily up to whitespace (so a `'` / `)` inside the URL can't leave the credentialed tail
+    // unredacted), then hand back only trailing closing delimiters / sentence punctuation so quoted or
+    // parenthesised URLs keep the surrounding message well-formed.
+    return text.replace(/\b[a-z][a-z0-9+.-]*:\/\/\S+/gi, (url) => {
+      const trailing = /['")\]>.,;:!?]*$/.exec(url)?.[0] ?? '';
+      return `<redacted-url>${trailing}`;
+    });
   }
 
   /**
