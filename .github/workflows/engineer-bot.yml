@@ -172,6 +172,12 @@ jobs:
           chmod 600 "$CONFIG_PATH"
           echo "path=$CONFIG_PATH" >> "$GITHUB_OUTPUT"
 
+      - name: Record installed dependency integrity
+        id: toolchain
+        run: |
+          checksum=$(tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner -cf - node_modules | sha256sum)
+          echo "sha256=$checksum" >> "$GITHUB_OUTPUT"
+
       - name: Run author
         id: author
         # Run from RUNNER_TEMP so the engine-rendered prompt's context file
@@ -199,6 +205,8 @@ jobs:
           REPO_ROOT: ${{ github.workspace }}
           RUNNER_TEMP: ${{ runner.temp }}
           FLOW: ${{ steps.ctx.outputs.flow }}
+          # Keep coverage caches out of the dependency integrity snapshot.
+          CACHE_DIR: ${{ runner.temp }}/engineer-bot-cache
         run: |
           # The runner injects OIDC credentials per step; clear them in this shell.
           unset JFROG_ACCESS_TOKEN ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL
@@ -215,10 +223,12 @@ jobs:
         if: steps.author.outputs.outcome == 'success'
         env:
           TOUCHED_FILES: ${{ steps.author.outputs.touched_files }}
+          TOOLCHAIN_SHA256: ${{ steps.toolchain.outputs.sha256 }}
         run: |
           unset JFROG_ACCESS_TOKEN ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL
           protected=(
             ':(glob)**/package.json' ':(glob)**/package-lock.json'
+            ':(glob)**/.npmrc' ':(glob)**/.yarnrc*' ':(glob)**/.nvmrc'
             ':(glob)**/.eslintrc*' ':(glob)**/.eslintignore'
             ':(glob)**/.prettierrc*' ':(glob)**/.prettierignore'
             ':(glob)**/.editorconfig' ':(glob)**/.gitignore'
@@ -226,6 +236,11 @@ jobs:
           )
           if [ -n "$(git status --porcelain --untracked-files=all -- "${protected[@]}")" ]; then
             echo "::error::Agent changes to package or lint configuration are not allowed."
+            exit 1
+          fi
+          checksum=$(tar --sort=name --mtime=@0 --owner=0 --group=0 --numeric-owner -cf - node_modules | sha256sum)
+          if [ "$checksum" != "$TOOLCHAIN_SHA256" ]; then
+            echo "::error::Installed dependencies changed during the agent run."
             exit 1
           fi
           python - <<'PY'
