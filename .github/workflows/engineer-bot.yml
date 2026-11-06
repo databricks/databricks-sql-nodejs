@@ -213,16 +213,45 @@ jobs:
       - name: Check changelog and code style before publishing
         id: validation
         if: steps.author.outputs.outcome == 'success'
+        env:
+          TOUCHED_FILES: ${{ steps.author.outputs.touched_files }}
         run: |
           unset JFROG_ACCESS_TOKEN ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL
-          if [ -n "$(git status --porcelain --untracked-files=all -- package.json package-lock.json '.eslint*' '.prettier*' 'eslint.config.*' 'prettier.config.*')" ]; then
+          protected=(
+            ':(glob)**/package.json' ':(glob)**/package-lock.json'
+            ':(glob)**/.eslintrc*' ':(glob)**/.eslintignore'
+            ':(glob)**/.prettierrc*' ':(glob)**/.prettierignore'
+            ':(glob)**/.editorconfig' ':(glob)**/.gitignore'
+            ':(glob)**/eslint.config.*' ':(glob)**/prettier.config.*'
+          )
+          if [ -n "$(git status --porcelain --untracked-files=all -- "${protected[@]}")" ]; then
             echo "::error::Agent changes to package or lint configuration are not allowed."
             exit 1
           fi
           python - <<'PY'
           from pathlib import Path
+          import os
           import re
           import subprocess
+
+          def git_paths(*args):
+              output = subprocess.check_output(["git", *args])
+              return {os.fsdecode(path) for path in output.split(b"\0") if path}
+
+          root = Path.cwd().resolve()
+          recorded = set()
+          for raw in os.environ["TOUCHED_FILES"].split("\n"):
+              if raw:
+                  path = (root / raw).resolve()
+                  if path.is_relative_to(root) and path.is_file():
+                      recorded.add(path.relative_to(root).as_posix())
+          changed = (
+              git_paths("diff", "--no-renames", "--name-only", "-z", "HEAD", "--")
+              | git_paths("diff", "--cached", "--no-renames", "--name-only", "-z", "HEAD", "--")
+              | git_paths("ls-files", "--others", "--exclude-standard", "-z")
+          )
+          if "CHANGELOG.md" not in recorded or changed - recorded:
+              raise SystemExit("::error::Record CHANGELOG.md and every changed file with edit_file before publishing.")
 
           def split_unreleased(text):
               section = re.search(r"(?ms)^## Unreleased\n(.*?)(?=^## |\Z)", text)
