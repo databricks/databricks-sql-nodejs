@@ -177,9 +177,12 @@ describe('CloudFetch', () => {
       expect(resultHandler.source.source).to.be.instanceOf(CloudFetchResultHandler);
       const cfResultHandler = resultHandler.source.source;
 
-      // Plain-HTTP local server: let node-fetch pick its default agent for the download
+      // Plain-HTTP local server: let node-fetch pick its default agent for the download.
+      // The stub is scoped to the `fetchChunk` call below and restored right after it, so
+      // later requests on this connection provider (e.g. `session.close()`) keep the real agent
+      // (proxy / custom CA / keep-alive config)
       const connectionProvider = await cfResultHandler.context.getConnectionProvider();
-      sinon.stub(connectionProvider, 'getAgent').resolves(undefined);
+      const getAgentStub = sinon.stub(connectionProvider, 'getAgent').resolves(undefined);
 
       // Redirect every presigned link to the local server that always responds with HTTP 500,
       // keeping the real expiry time and row count returned by the warehouse
@@ -199,6 +202,8 @@ describe('CloudFetch', () => {
         await operation.fetchChunk({ maxRows: 100000, disableBuffering: true });
       } catch (error) {
         thrown = error;
+      } finally {
+        getAgentStub.restore();
       }
 
       expect(thrown).to.be.instanceOf(Error);

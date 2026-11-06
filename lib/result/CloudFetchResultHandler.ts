@@ -197,7 +197,12 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
     try {
       error.message = CloudFetchResultHandler.redactUrls(error.message);
       if (typeof error.stack === 'string') {
-        error.stack = CloudFetchResultHandler.redactUrls(error.stack);
+        // Only the header (message) lines can carry the request URL; leave `    at ...` frames intact so
+        // `file://` locations of ESM modules stay readable.
+        error.stack = error.stack
+          .split('\n')
+          .map((line) => (/^\s+at /.test(line) ? line : CloudFetchResultHandler.redactUrls(line)))
+          .join('\n');
       }
     } catch {
       // ignore

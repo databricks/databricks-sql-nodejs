@@ -615,6 +615,34 @@ describe('CloudFetchResultHandler', () => {
     expect(inspect(thrown, { depth: 5 })).to.not.contain('SECRET_SIGNATURE');
   });
 
+  it('should keep file:// stack frame locations when scrubbing URLs from error stacks', async () => {
+    const context = new ClientContextStub({ cloudFetchConcurrentDownloads: 1 });
+    const rowSetProvider = new ResultsProviderStub([sampleRowSet1], undefined);
+
+    const result = new CloudFetchResultHandler(context, rowSetProvider, {
+      status: { statusCode: TStatusCode.SUCCESS_STATUS },
+    });
+
+    const presignedUrl = 'https://storage.example.com/results/chunk-0?sig=SECRET_SIGNATURE&se=2026-11-06';
+    const frame = '    at fetchChunk (file:///app/node_modules/pkg/x.mjs:12:3)';
+    const originalError = new Error(`request to ${presignedUrl} failed, reason: socket hang up`);
+    originalError.stack = `Error: ${originalError.message}\n${frame}`;
+    context.invokeWithRetryStub.callsFake(async () => {
+      throw originalError;
+    });
+
+    let thrown: any;
+    try {
+      await result.fetchNext({ limit: 10000 });
+    } catch (e) {
+      thrown = e;
+    }
+
+    expect(thrown).to.be.equal(originalError);
+    expect(thrown.stack).to.not.contain('SECRET_SIGNATURE');
+    expect(thrown.stack.split('\n')[1]).to.be.equal(frame);
+  });
+
   it('should handle expired links', async () => {
     const context = new ClientContextStub();
     const rowSetProvider = new ResultsProviderStub([sampleExpiredRowSet], undefined);
