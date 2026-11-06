@@ -37,6 +37,11 @@ export default function assertBindableValue(value: DBSQLParameter | DBSQLParamet
     // nothing to validate. Otherwise validate the unwrapped value: a
     // non-scalar wrapped in `DBSQLParameter` hits the same STRING fallback.
     if (value.type === DBSQLParameterType.VOID) return;
+    // A nested `DBSQLParameter` is not a valid wrapped value: the outer
+    // parameter would fall through to the STRING default with an object value.
+    if ((value.value as unknown) instanceof DBSQLParameter) {
+      throw new ParameterError(`${label} wraps a nested DBSQLParameter; the wrapped value must be a scalar`);
+    }
     assertBindableValue(value.value, label);
     return;
   }
@@ -46,9 +51,17 @@ export default function assertBindableValue(value: DBSQLParameter | DBSQLParamet
       `${label} is an array; compound types (ARRAY/MAP/STRUCT) are not bindable as a parameter value`,
     );
   }
-  if (typeof value === 'object' && !(value instanceof Date) && !(value instanceof Int64)) {
+  if (typeof value === 'object') {
+    if (value instanceof Date || value instanceof Int64) return;
     throw new ParameterError(
       `${label} is an object; only scalar values (string/number/bigint/boolean), Date, and Int64 are bindable`,
+    );
+  }
+  // Allow-list the remaining primitives; rejects e.g. functions and symbols.
+  const kind = typeof value;
+  if (kind !== 'string' && kind !== 'number' && kind !== 'bigint' && kind !== 'boolean') {
+    throw new ParameterError(
+      `${label} is a ${kind}; only scalar values (string/number/bigint/boolean), Date, and Int64 are bindable`,
     );
   }
 }

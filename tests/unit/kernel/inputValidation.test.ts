@@ -50,6 +50,21 @@ describe('KernelInputValidation.assertBindableValue', () => {
     ).to.throw(ParameterError, /object/);
   });
 
+  it('rejects a DBSQLParameter nested inside a DBSQLParameter', () => {
+    expect(() =>
+      assertBindableValue(new DBSQLParameter({ value: new DBSQLParameter({ value: 1 }) as never }), 'p'),
+    ).to.throw(ParameterError, /nested DBSQLParameter/);
+  });
+
+  it('rejects functions and symbols', () => {
+    expect(() => assertBindableValue((() => 1) as never, 'p')).to.throw(ParameterError, /p is a function/);
+    expect(() => assertBindableValue(Symbol('s') as never, 'p')).to.throw(ParameterError, /p is a symbol/);
+    expect(() => assertBindableValue(new DBSQLParameter({ value: (() => 1) as never }), 'p')).to.throw(
+      ParameterError,
+      /function/,
+    );
+  });
+
   it('accepts DBSQLParameter with explicit VOID type regardless of value', () => {
     expect(() =>
       assertBindableValue(new DBSQLParameter({ type: DBSQLParameterType.VOID, value: [1, 2] as never }), 'p'),
