@@ -550,6 +550,71 @@ describe('CloudFetchResultHandler', () => {
     expect(inspect(thrown, { depth: 5 })).to.not.contain('SECRET_SIGNATURE');
   });
 
+  it('should not leak presigned URLs from the HTTP request/response payload of a RetryError', async () => {
+    const context = new ClientContextStub({ cloudFetchConcurrentDownloads: 1 });
+    const rowSetProvider = new ResultsProviderStub([sampleRowSet1], undefined);
+
+    const result = new CloudFetchResultHandler(context, rowSetProvider, {
+      status: { statusCode: TStatusCode.SUCCESS_STATUS },
+    });
+
+    const presignedUrl = 'https://storage.example.com/results/chunk-0?sig=SECRET_SIGNATURE&se=2026-11-06';
+    const originalError = new RetryError(RetryErrorCode.AttemptsExceeded, {
+      request: new Request(presignedUrl),
+      response: new Response('', { status: 503, statusText: 'Service Unavailable', url: presignedUrl } as any),
+    });
+    context.invokeWithRetryStub.callsFake(async () => {
+      throw originalError;
+    });
+
+    let thrown: any;
+    try {
+      await result.fetchNext({ limit: 10000 });
+    } catch (e) {
+      thrown = e;
+    }
+
+    expect(thrown).to.be.equal(originalError);
+    expect(thrown).to.be.instanceOf(RetryError);
+    expect(thrown.errorCode).to.be.equal(RetryErrorCode.AttemptsExceeded);
+    expect(thrown.message).to.contain('HTTP 503: Service Unavailable');
+    expect(thrown.payload.response.status).to.be.equal(503);
+    expect(thrown.payload.response.statusText).to.be.equal('Service Unavailable');
+    expect(thrown.payload.request.url).to.be.equal('https://storage.example.com/results/chunk-0');
+    expect(inspect(thrown, { depth: 10, showHidden: true })).to.not.contain('SECRET_SIGNATURE');
+  });
+
+  it('should not leak presigned URLs from network errors re-thrown without a RetryError wrapper', async () => {
+    const context = new ClientContextStub({ cloudFetchConcurrentDownloads: 1 });
+    const rowSetProvider = new ResultsProviderStub([sampleRowSet1], undefined);
+
+    const result = new CloudFetchResultHandler(context, rowSetProvider, {
+      status: { statusCode: TStatusCode.SUCCESS_STATUS },
+    });
+
+    const presignedUrl = 'https://storage.example.com/results/chunk-0?sig=SECRET_SIGNATURE&se=2026-11-06';
+    const originalError = Object.assign(
+      new Error(`request to ${presignedUrl} failed, reason: unable to verify the first certificate`),
+      { code: 'UNABLE_TO_VERIFY_LEAF_SIGNATURE', type: 'system' },
+    );
+    context.invokeWithRetryStub.callsFake(async () => {
+      throw originalError;
+    });
+
+    let thrown: any;
+    try {
+      await result.fetchNext({ limit: 10000 });
+    } catch (e) {
+      thrown = e;
+    }
+
+    expect(thrown).to.be.equal(originalError);
+    expect(thrown.code).to.be.equal('UNABLE_TO_VERIFY_LEAF_SIGNATURE');
+    expect(thrown.message).to.contain('unable to verify the first certificate');
+    expect(thrown.message).to.not.contain('SECRET_SIGNATURE');
+    expect(inspect(thrown, { depth: 5 })).to.not.contain('SECRET_SIGNATURE');
+  });
+
   it('should handle expired links', async () => {
     const context = new ClientContextStub();
     const rowSetProvider = new ResultsProviderStub([sampleExpiredRowSet], undefined);

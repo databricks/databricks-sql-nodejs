@@ -183,14 +183,46 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
     return { response: result.response, body: downloaded };
   }
 
+  private static redactUrls(text: string): string {
+    return text.replace(/\b[a-z][a-z0-9+.-]*:\/\/\S+/gi, '<redacted-url>');
+  }
+
   /**
-   * When the retry policy gives up (`RetryError`), its message is a generic "Max retry count
-   * exceeded" / "Retry timeout exceeded" that hides both the CloudFetch download context and the
-   * actual cause (last HTTP status or network error). Enrich the message while keeping the same
-   * error class, error code and payload so existing `instanceof` / `errorCode` checks still work.
+   * Network errors (e.g. node-fetch `FetchError`) embed the request URL in their message and stack.
+   * For CloudFetch that is a presigned cloud-storage link whose query string carries credentials,
+   * so scrub any URL in place. Best effort: non-writable properties on exotic error objects must
+   * not mask the original failure.
+   */
+  private static scrubErrorUrls(error: Error): void {
+    try {
+      error.message = CloudFetchResultHandler.redactUrls(error.message);
+      if (typeof error.stack === 'string') {
+        error.stack = CloudFetchResultHandler.redactUrls(error.stack);
+      }
+    } catch {
+      // ignore
+    }
+  }
+
+  /**
+   * Make a download failure safe to log and easier to diagnose:
+   * - Any error escaping the retry policy (wrapped in `RetryError` or re-thrown unchanged, e.g. a
+   *   non-retryable TLS `FetchError`) has URLs scrubbed from its message / stack, since the
+   *   presigned CloudFetch link carries credentials in its query string.
+   * - For `RetryError`, the generic "Max retry count exceeded" / "Retry timeout exceeded" message
+   *   is enriched with the CloudFetch context and the last cause (HTTP status or network error).
+   *   When the payload is an HTTP `{ request, response }` pair, the node-fetch objects (which hold
+   *   the full presigned URL) are replaced with a plain snapshot carrying the status, status text,
+   *   headers and the URL without its query string, so `util.inspect` / structured-logger
+   *   serializers that walk `error.payload` don't print credentials.
+   * The same error instance, class and error code are kept so `instanceof` / `errorCode` checks
+   * still work.
    */
   private static describeDownloadError(error: unknown): unknown {
     if (!(error instanceof RetryError)) {
+      if (error instanceof Error) {
+        CloudFetchResultHandler.scrubErrorUrls(error);
+      }
       return error;
     }
 
@@ -198,26 +230,34 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
     const { payload } = error;
     if (payload instanceof Error) {
       const { code } = payload as Error & { code?: unknown };
-      // Network errors (e.g. node-fetch `FetchError`) embed the request URL in their message. For
-      // CloudFetch that is a presigned cloud-storage link whose query string carries credentials,
-      // so redact any URL before it ends up in the top-level message / stack that loggers print.
-      // The payload itself stays reachable as `error.payload` (and is printed by `util.inspect` and
-      // structured-logger error serializers), so scrub its own message / stack in place as well.
-      const redactUrls = (text: string) => text.replace(/\b[a-z][a-z0-9+.-]*:\/\/\S+/gi, '<redacted-url>');
-      const safeMessage = redactUrls(payload.message);
-      try {
-        payload.message = safeMessage;
-        if (typeof payload.stack === 'string') {
-          payload.stack = redactUrls(payload.stack);
-        }
-      } catch {
-        // Best effort: non-writable properties on exotic error objects must not mask the failure.
-      }
+      CloudFetchResultHandler.scrubErrorUrls(payload);
+      const safeMessage = CloudFetchResultHandler.redactUrls(payload.message);
       cause = code ? `${safeMessage} (${code})` : safeMessage;
     } else if (payload && typeof payload === 'object' && 'response' in payload) {
-      const { response } = payload as { response?: { status?: number; statusText?: string } };
+      const { request, response } = payload as {
+        request?: { method?: string; url?: string };
+        response?: { status?: number; statusText?: string; ok?: boolean; headers?: unknown; url?: string };
+      };
       if (response && typeof response.status === 'number') {
         cause = `HTTP ${response.status}${response.statusText ? `: ${response.statusText}` : ''}`;
+      }
+      const stripQuery = (url?: string) => (typeof url === 'string' ? url.split('?')[0] : undefined);
+      const safePayload = {
+        request: request ? { method: request.method, url: stripQuery(request.url) } : undefined,
+        response: response
+          ? {
+              status: response.status,
+              statusText: response.statusText,
+              ok: response.ok,
+              headers: response.headers,
+              url: stripQuery(response.url),
+            }
+          : undefined,
+      };
+      try {
+        Object.defineProperty(error, 'payload', { value: safePayload });
+      } catch {
+        // Best effort: never mask the original failure.
       }
     }
 
