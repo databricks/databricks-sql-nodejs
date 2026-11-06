@@ -263,6 +263,21 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
             }
           : undefined,
       };
+      // The original `Response` becomes unreachable once replaced below, so nobody could drain its body
+      // afterwards. Drain it now (best effort) so an unread stream doesn't pin a keep-alive socket.
+      try {
+        const body = (response as { body?: unknown } | undefined)?.body as
+          | { on?: (event: string, listener: () => void) => unknown; resume?: () => unknown }
+          | undefined;
+        if (body && typeof body.resume === 'function') {
+          if (typeof body.on === 'function') {
+            body.on('error', () => {});
+          }
+          body.resume();
+        }
+      } catch {
+        // Best effort: never mask the original failure.
+      }
       try {
         Object.defineProperty(error, 'payload', { value: safePayload });
       } catch {
