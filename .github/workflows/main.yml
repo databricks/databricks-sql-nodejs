@@ -24,6 +24,11 @@ jobs:
       labels: linux-ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: '3.11'
+      - name: Check engineer-bot publication validation
+        run: python .github/scripts/tests/test_engineer_bot_validation.py
       - name: Pin lockfileVersion to 2
         # See CONTRIBUTING.md "Dependency Pins". Modern npm writes v3
         # by default; catching drift here prevents silent format upgrades
