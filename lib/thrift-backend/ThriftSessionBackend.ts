@@ -38,7 +38,7 @@ import escapeCatalogName from '../utils/escapeCatalogName';
 import EmptyOperationBackend from './EmptyOperationBackend';
 import isObjectNotFound from './metadataErrors';
 import createPrimaryKeysSchema from './primaryKeysSchema';
-import assertBindableValue from '../kernel/KernelInputValidation';
+import assertBindableValue from '../utils/assertBindableValue';
 
 interface OperationResponseShape {
   status: TStatus;

@@ -14,7 +14,7 @@
 
 import { expect } from 'chai';
 import Int64 from 'node-int64';
-import assertBindableValue from '../../../lib/kernel/KernelInputValidation';
+import assertBindableValue from '../../../lib/utils/assertBindableValue';
 import { DBSQLParameter, DBSQLParameterType } from '../../../lib/DBSQLParameter';
 import ParameterError from '../../../lib/errors/ParameterError';
 
@@ -38,5 +38,20 @@ describe('KernelInputValidation.assertBindableValue', () => {
 
   it('rejects plain objects', () => {
     expect(() => assertBindableValue({ a: 1 } as never, 'p')).to.throw(ParameterError, /object/);
+  });
+
+  it('rejects non-scalar values wrapped in DBSQLParameter', () => {
+    expect(() =>
+      assertBindableValue(new DBSQLParameter({ value: [1, 2] as never }), 'ordinalParameters[0]'),
+    ).to.throw(ParameterError, /ordinalParameters\[0\] is an array/);
+    expect(() =>
+      assertBindableValue(new DBSQLParameter({ type: DBSQLParameterType.STRING, value: { a: 1 } as never }), 'p'),
+    ).to.throw(ParameterError, /object/);
+  });
+
+  it('accepts DBSQLParameter with explicit VOID type regardless of value', () => {
+    expect(() =>
+      assertBindableValue(new DBSQLParameter({ type: DBSQLParameterType.VOID, value: [1, 2] as never }), 'p'),
+    ).to.not.throw();
   });
 });
