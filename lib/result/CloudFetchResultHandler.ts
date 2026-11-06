@@ -206,9 +206,16 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
       }
     }
 
-    const enriched = new RetryError(error.errorCode, payload);
-    enriched.message = `CloudFetch result download failed: ${error.message}${cause ? ` (last error: ${cause})` : ''}`;
-    return enriched;
+    // Mutate the original error rather than creating a new one, so the stack trace still points at
+    // where the retry policy gave up. V8 bakes the message into the `stack` header at construction
+    // time, so rewrite that header too — otherwise loggers that print `err.stack` miss the context.
+    const originalHeader = `${error.name}: ${error.message}`;
+    const message = `CloudFetch result download failed: ${error.message}${cause ? ` (last error: ${cause})` : ''}`;
+    error.message = message;
+    if (typeof error.stack === 'string' && error.stack.startsWith(originalHeader)) {
+      error.stack = `${error.name}: ${message}${error.stack.slice(originalHeader.length)}`;
+    }
+    return error;
   }
 
   /**

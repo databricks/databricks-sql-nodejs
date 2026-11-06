@@ -443,6 +443,8 @@ describe('CloudFetchResultHandler', () => {
     expect(thrown.message).to.contain('HTTP 500');
     expect(thrown.message).to.contain('Internal Server Error');
     expect(thrown.message).to.contain('Max retry count exceeded');
+    expect(thrown.stack.split('\n')[0]).to.be.equal(`Error: ${thrown.message}`);
+    expect(thrown.stack).to.not.contain('describeDownloadError');
   });
 
   it('should add download context and network error cause to RetryError when retries are exhausted', async () => {
@@ -453,11 +455,12 @@ describe('CloudFetchResultHandler', () => {
       status: { statusCode: TStatusCode.SUCCESS_STATUS },
     });
 
+    const originalError = new RetryError(
+      RetryErrorCode.AttemptsExceeded,
+      Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' }),
+    );
     context.invokeWithRetryStub.callsFake(async () => {
-      throw new RetryError(
-        RetryErrorCode.AttemptsExceeded,
-        Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' }),
-      );
+      throw originalError;
     });
 
     let thrown: any;
@@ -467,6 +470,8 @@ describe('CloudFetchResultHandler', () => {
       thrown = e;
     }
 
+    expect(thrown).to.be.equal(originalError);
+    expect(thrown.stack.split('\n')[0]).to.be.equal(`Error: ${thrown.message}`);
     expect(thrown).to.be.instanceOf(RetryError);
     expect(thrown.errorCode).to.be.equal(RetryErrorCode.AttemptsExceeded);
     expect(thrown.message).to.contain('CloudFetch');
