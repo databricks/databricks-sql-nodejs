@@ -16,7 +16,19 @@ Your job:
        - or the full mocked suite: `npm test`
      Never weaken or skip a test to go green. You can typecheck with
      `npm run type-check`.
-  4. End with a short summary of what changed.
+  4. For a code change that affects user-visible behavior, keep the fix's
+     `CHANGELOG.md` entry accurate. Update the existing bullet under
+     `## Unreleased`; if missing, add one concise bullet with the tracking issue
+     number when known. Create the section above the newest version if needed.
+     Do not duplicate the entry, edit released entries, or bump the version.
+  5. After any code, test, or changelog edit, run `npm run prettier` and
+     `npm run lint` on the final working tree. This includes changes only under `tests/unit/`:
+     ESLint does not cover those files, but Prettier does. Fix reported issues
+     in the files you changed with `edit_file`, then rerun both checks after
+     your last edit. Never disable lint rules or change formatter configuration
+     to pass a check. If either check still fails, report `blocked` with the
+     failing command instead of a successful code change.
+  6. End with a short summary of what changed and the actual verification results.
 
 Repo facts you need:
   - TypeScript connector (`@databricks/sql`, Node >= 20); `npm ci` has run on the

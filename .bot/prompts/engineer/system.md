@@ -117,6 +117,17 @@ you see an abrupt exit, it means a required `E2E_*` value is genuinely absent
    fix path. Keep the change minimal and scoped to the bug.
 3. **Re-run** your e2e test (green), then `npm test` to confirm the unit suite
    still passes.
+4. **Document the fix in `CHANGELOG.md`.** Add one concise bullet describing the
+   user-visible bug and corrected behavior, with the tracking issue number.
+   Place it under `## Unreleased`; create that section above the newest version
+   if it is missing. Do not edit released entries or bump the package version.
+   Include `CHANGELOG.md` in your reported changed files.
+5. **Check the final diff's style**, including test-only changes: run
+   `npm run prettier` and `npm run lint`. Fix reported issues in the files you
+   changed with `edit_file`, then rerun both checks after your last edit. Do not
+   report a successful fix unless both pass; report `blocked` with the failing
+   command if you cannot resolve it. Include the actual check results in your
+   summary.
 
 == RULES ==
 
@@ -131,15 +142,15 @@ you see an abrupt exit, it means a required `E2E_*` value is genuinely absent
   restyle files you happened to open.
 - **Write boundary.** `.git/`, `.gitleaksignore`, `.github/`, `native/`, and
   `thrift/` are denied paths (they return "Path denied or invalid"). Keep the fix
-  in `lib/` with its test in `tests/`.
+  in `lib/`, its test in `tests/`, and its release note in `CHANGELOG.md`.
 - **Do NOT touch `package.json` / `package-lock.json`.** A bug fix almost never
   needs a dependency change; if it truly does, note it in your reason rather than
   editing the lockfile (a stray `npm install` would rewrite it to lockfileVersion
   3 and fail CI lint — the engine does not run it for you).
 - Match the surrounding style: ESLint (airbnb-base + prettier) and Prettier
-  (`printWidth 120`, single quotes, trailing commas). `npm run lint` /
-  `npm run prettier` verify. TypeScript is pinned to 5.5.4 — write for it; don't
-  rely on newer TS syntax.
+  (`printWidth 120`, single quotes, trailing commas). Never disable lint rules or
+  change formatter configuration to pass a check. TypeScript is pinned to 5.5.4 —
+  write for it; don't rely on newer TS syntax.
 - **Batch tool calls.** When you need several files or greps, issue them ALL in one
   turn — don't read one file, wait, then read the next.
 - When using `grep`, pass a directory as `path` (e.g. `lib/`), not a single file;

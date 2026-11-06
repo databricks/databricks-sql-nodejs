@@ -210,9 +210,20 @@ jobs:
           [ -n "$FLOW" ] && args+=(--flow "$FLOW")
           python -m databricks_bot_engine.engineer_bot.run "${args[@]}"
 
+      - name: Check changelog and code style before publishing
+        id: validation
+        if: steps.author.outputs.outcome == 'success'
+        run: |
+          if [ ! -s CHANGELOG.md ] || git diff --quiet HEAD -- CHANGELOG.md; then
+            echo "::error::Bug fixes must update CHANGELOG.md before publishing."
+            exit 1
+          fi
+          npm run prettier
+          npm run lint
+
       - name: Open / update fix PR
         id: publish
-        if: steps.author.outputs.outcome == 'success'
+        if: steps.author.outputs.outcome == 'success' && steps.validation.outcome == 'success'
         env:
           GH_TOKEN: ${{ steps.prelude.outputs.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
@@ -240,6 +251,7 @@ jobs:
           REPO: ${{ github.repository }}
           ISSUE: ${{ steps.ctx.outputs.issue_number }}
           OUTCOME: ${{ steps.author.outputs.outcome }}
+          VALIDATION_OUTCOME: ${{ steps.validation.outcome }}
           # `coverage_pr_url` is the engine publish module's PR-URL output key for
           # ALL flows (bug-fix included) — the name is legacy.
           PR_URL: ${{ steps.publish.outputs.coverage_pr_url }}
@@ -253,6 +265,8 @@ jobs:
             success)
               if [ -n "$PR_URL" ]; then
                 printf '🤖 engineer-bot opened a fix PR: %s\n\nReview before merge.\n' "$PR_URL" > "$BODY"
+              elif [ "$VALIDATION_OUTCOME" = "failure" ]; then
+                printf '🤖 engineer-bot produced a fix but changelog or code style checks failed, so no PR was opened. See the [workflow run](%s) for details.\n' "$RUN_URL" > "$BODY"
               else
                 printf '🤖 engineer-bot produced a fix but could **not** open the PR (push or PR creation failed). See the [workflow run](%s) for details.\n' "$RUN_URL" > "$BODY"
               fi ;;

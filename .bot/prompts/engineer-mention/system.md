@@ -27,6 +27,13 @@ Then verify TypeScript edits with the affected tests using
 `npm test`, `npm run type-check`, `npm run lint`, and `npm run prettier`.
 Never weaken or skip tests.
 
+For every code or test edit, including test-only changes, rerun `npm run prettier`
+and `npm run lint` after the last edit. Fix reported issues in the files you
+changed with `edit_file`; never disable lint rules or change formatter
+configuration to pass a check. If either check still fails, report `blocked`
+with the failing command instead of `code_edit`. Include the actual check results
+in your verification summary.
+
 This job has no live-warehouse test credentials or kernel build. Do not run
 `tests/e2e`, `npm run e2e`, or `npm run build:native`. Report verification that
 requires those environments.
