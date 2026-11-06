@@ -2,7 +2,6 @@
 set -euo pipefail
 
 unset JFROG_ACCESS_TOKEN ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL
-script_dir=$(dirname -- "${BASH_SOURCE[0]}")
 protected=(
   ':(glob)**/tsconfig*.json'
   ':(glob)**/package.json' ':(glob)**/package-lock.json'
@@ -16,7 +15,7 @@ if [ -n "$(git status --porcelain --untracked-files=all -- "${protected[@]}")" ]
   echo "::error::Agent changes to package or lint configuration are not allowed."
   exit 1
 fi
-checksum=$(bash "$script_dir/engineer-bot-dependency-digest.sh")
+checksum=$(git show HEAD:.github/scripts/engineer-bot-dependency-digest.sh | bash)
 if [ "$checksum" != "$TOOLCHAIN_SHA256" ]; then
   echo "::error::Installed dependencies changed during the agent run."
   exit 1

@@ -37,6 +37,8 @@ with tempfile.TemporaryDirectory(prefix='nodejs-bot-gate-regression-') as tempor
         git(fixture, 'init', '-q')
         for name, content in [('CHANGELOG.md', baseline), ('.eslintrc', '{}\n'), ('package.json', '{}\n'), ('.gitignore', 'dist/\nlib/version.ts\n*.log\nnode_modules/\n'), ('lib/source.ts', 'export const value = 1;\n')]:
             write(fixture, name, content)
+        for name in ['validate-engineer-bot.sh', 'engineer-bot-dependency-digest.sh']:
+            write(fixture, '.github/scripts/' + name, SCRIPT.with_name(name).read_text())
         git(fixture, 'add', '.')
         git(fixture, '-c', 'user.name=Workflow Test', '-c', 'user.email=workflow-test@example.com', 'commit', '--signoff', '-qm', 'validation baseline')
         good = VALID if baseline == BASE else baseline.replace('- Existing fix.', '- Existing fix.\n- New fix. (#261)')
@@ -63,6 +65,8 @@ with tempfile.TemporaryDirectory(prefix='nodejs-bot-gate-regression-') as tempor
             ('dependency addition', good, {'node_modules/prettier-plugin-fixture/index.js': '// added\n'}, ['CHANGELOG.md'], '', False, False),
             ('dependency deletion', good, {'node_modules/tool.js': None}, ['CHANGELOG.md'], '', False, False),
             ('dependency symlink', good, {'node_modules/.bin/prettier': ('symlink', '../other.js')}, ['CHANGELOG.md'], '', False, False),
+            ('validation script modification', good, {'.github/scripts/validate-engineer-bot.sh': 'exit 0\n'}, ['CHANGELOG.md'], '', False, False),
+            ('digest script modification', good, {'.github/scripts/engineer-bot-dependency-digest.sh': 'exit 0\n'}, ['CHANGELOG.md'], '', False, False),
             ('Prettier failure', good, {}, ['CHANGELOG.md'], 'prettier', False, False),
             ('ESLint failure', good, {}, ['CHANGELOG.md'], 'lint', False, False),
         ]
@@ -99,7 +103,7 @@ with tempfile.TemporaryDirectory(prefix='nodejs-bot-gate-regression-') as tempor
             log = fixture / 'npm.log'
             log.unlink(missing_ok=True)
             env = {'PATH': f'{binary}:{os.environ["PATH"]}', 'TOUCHED_FILES': '\n'.join(recorded), 'TOOLCHAIN_SHA256': checksum, 'VALIDATION_LOG': str(log), 'VALIDATION_FAIL': failure, 'JFROG_ACCESS_TOKEN': 'test-placeholder', 'ACTIONS_ID_TOKEN_REQUEST_TOKEN': 'test-placeholder', 'ACTIONS_ID_TOKEN_REQUEST_URL': 'test-placeholder'}
-            result = subprocess.run(['bash', '-e', '-o', 'pipefail', str(SCRIPT)], cwd=fixture, env=env, capture_output=True, text=True)
+            result = subprocess.run(['bash', '-e', '-o', 'pipefail', '-c', 'git show HEAD:.github/scripts/validate-engineer-bot.sh | bash'], cwd=fixture, env=env, capture_output=True, text=True)
             assert (result.returncode == 0) == expected, (label, result.stdout, result.stderr)
             if label == 'recorded deletion':
                 assert 'pinned bot publisher cannot stage deleted files' in result.stderr

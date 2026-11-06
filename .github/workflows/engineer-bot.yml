@@ -224,7 +224,9 @@ jobs:
         env:
           TOUCHED_FILES: ${{ steps.author.outputs.touched_files }}
           TOOLCHAIN_SHA256: ${{ steps.toolchain.outputs.sha256 }}
-        run: bash .github/scripts/validate-engineer-bot.sh
+        run: |
+          unset JFROG_ACCESS_TOKEN ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL
+          git show HEAD:.github/scripts/validate-engineer-bot.sh | bash
 
       - name: Open / update fix PR
         id: publish
