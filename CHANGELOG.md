@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Redact presigned URLs from CloudFetch download errors. For CloudFetch HTTP failures, `RetryError.payload` is now a plain `{ request: { method, url }, response: { status, statusText, ok, headers, url } }` snapshot (URLs without query string) instead of the node-fetch `Request` / `Response` objects, so `payload.response instanceof Response` and `payload.response.text()` / `.json()` no longer apply to these errors.
 - Report untyped NULL columns as STRING in kernel result metadata, matching Thrift. (#470)
 
 ## 3.0.0

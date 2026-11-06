@@ -214,7 +214,11 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
    *   When the payload is an HTTP `{ request, response }` pair, the node-fetch objects (which hold
    *   the full presigned URL) are replaced with a plain snapshot carrying the status, status text,
    *   headers and the URL without its query string, so `util.inspect` / structured-logger
-   *   serializers that walk `error.payload` don't print credentials.
+   *   serializers that walk `error.payload` don't print credentials. Note this changes the observable
+   *   payload shape for CloudFetch HTTP failures: `payload.response` is no longer a node-fetch
+   *   `Response` (so `instanceof Response`, `.text()` / `.json()` do not apply); it is a plain
+   *   `{ status, statusText, ok, headers, url }` object. This is intentional — keeping the original
+   *   `Response` reachable would keep the credentialed URL reachable too.
    * The same error instance, class and error code are kept so `instanceof` / `errorCode` checks
    * still work.
    */
