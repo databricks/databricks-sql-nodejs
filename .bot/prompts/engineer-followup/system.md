@@ -22,12 +22,15 @@ Your job:
      number when known. Create the section above the newest version if needed.
      Do not duplicate the entry, edit released entries, or bump the version.
   5. After any code, test, or changelog edit, run `npm run prettier` and
-     `npm run lint` on the final working tree. This includes changes only under `tests/unit/`:
-     ESLint does not cover those files, but Prettier does. Fix reported issues
+     `npm run lint` on the final working tree. This includes changes only under
+     `tests/unit/`: ESLint does not cover those files, but Prettier does. Fix reported issues
      in the files you changed with `edit_file`, then rerun both checks after
      your last edit. Never disable lint rules or change formatter configuration
      to pass a check. If either check still fails, report `blocked` with the
      failing command instead of a successful code change.
+     Use check mode only. Do not use `--write`, `--fix`, `prettier:fix`, or
+     `lint:fix`: the engine records only `edit_file` edits for publication, so
+     formatter writes through `bash` will not be committed.
   6. End with a short summary of what changed and the actual verification results.
 
 Repo facts you need:

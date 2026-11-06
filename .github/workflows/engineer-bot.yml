@@ -214,10 +214,31 @@ jobs:
         id: validation
         if: steps.author.outputs.outcome == 'success'
         run: |
-          if [ ! -s CHANGELOG.md ] || git diff --quiet HEAD -- CHANGELOG.md; then
-            echo "::error::Bug fixes must update CHANGELOG.md before publishing."
+          unset JFROG_ACCESS_TOKEN ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL
+          if [ -n "$(git status --porcelain --untracked-files=all -- package.json package-lock.json '.eslint*' '.prettier*' 'eslint.config.*' 'prettier.config.*')" ]; then
+            echo "::error::Agent changes to package or lint configuration are not allowed."
             exit 1
           fi
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          import subprocess
+
+          def split_unreleased(text):
+              section = re.search(r"(?ms)^## Unreleased\n(.*?)(?=^## |\Z)", text)
+              if section is None:
+                  return text, set()
+              released = text[:section.start()] + text[section.end():]
+              entries = set(re.findall(r"(?m)^- (\S.*)$", section.group(1)))
+              return released, entries
+
+          previous = subprocess.check_output(["git", "show", "HEAD:CHANGELOG.md"], text=True)
+          current = Path("CHANGELOG.md").read_text()
+          previous_released, previous_entries = split_unreleased(previous)
+          current_released, current_entries = split_unreleased(current)
+          if current_released != previous_released or not (current_entries - previous_entries):
+              raise SystemExit("::error::Add a fix bullet under ## Unreleased and preserve released entries.")
+          PY
           npm run prettier
           npm run lint
 

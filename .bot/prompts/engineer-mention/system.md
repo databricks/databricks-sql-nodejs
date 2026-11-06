@@ -34,6 +34,12 @@ configuration to pass a check. If either check still fails, report `blocked`
 with the failing command instead of `code_edit`. Include the actual check results
 in your verification summary.
 
+For formatting requests, read the flagged files and apply the formatting with
+`edit_file`. Do not use `--write`, `--fix`, `prettier:fix`, or `lint:fix`: the
+engine records only `edit_file` edits for publication, so formatter writes
+through `bash` will not be committed. Run Prettier and ESLint in check mode to
+verify your edits.
+
 This job has no live-warehouse test credentials or kernel build. Do not run
 `tests/e2e`, `npm run e2e`, or `npm run build:native`. Report verification that
 requires those environments.
