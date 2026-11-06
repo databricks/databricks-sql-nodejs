@@ -191,7 +191,8 @@ function arrowTypeToTTypeId(field: Field<DataType>): TTypeId {
       return TTypeId.STRUCT_TYPE;
     case 'NULL':
     case 'VOID':
-      return TTypeId.NULL_TYPE;
+      // Match Thrift's STRING metadata for untyped NULL columns.
+      return TTypeId.STRING_TYPE;
     default:
       break;
   }
