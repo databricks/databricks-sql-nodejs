@@ -41,9 +41,10 @@ describe('KernelInputValidation.assertBindableValue', () => {
   });
 
   it('rejects non-scalar values wrapped in DBSQLParameter', () => {
-    expect(() =>
-      assertBindableValue(new DBSQLParameter({ value: [1, 2] as never }), 'ordinalParameters[0]'),
-    ).to.throw(ParameterError, /ordinalParameters\[0\] is an array/);
+    expect(() => assertBindableValue(new DBSQLParameter({ value: [1, 2] as never }), 'ordinalParameters[0]')).to.throw(
+      ParameterError,
+      /ordinalParameters\[0\] is an array/,
+    );
     expect(() =>
       assertBindableValue(new DBSQLParameter({ type: DBSQLParameterType.STRING, value: { a: 1 } as never }), 'p'),
     ).to.throw(ParameterError, /object/);
