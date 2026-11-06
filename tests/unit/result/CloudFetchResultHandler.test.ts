@@ -1,3 +1,4 @@
+import { inspect } from 'util';
 import { expect, AssertionError } from 'chai';
 import sinon, { SinonStub } from 'sinon';
 import Int64 from 'node-int64';
@@ -447,6 +448,36 @@ describe('CloudFetchResultHandler', () => {
     expect(thrown.stack).to.not.contain('describeDownloadError');
   });
 
+  it('should add download context and HTTP status to RetryError when retry timeout is exceeded', async () => {
+    const context = new ClientContextStub({ cloudFetchConcurrentDownloads: 1 });
+    const rowSetProvider = new ResultsProviderStub([sampleRowSet1], undefined);
+
+    const result = new CloudFetchResultHandler(context, rowSetProvider, {
+      status: { statusCode: TStatusCode.SUCCESS_STATUS },
+    });
+
+    context.invokeWithRetryStub.callsFake(async () => {
+      throw new RetryError(RetryErrorCode.TimeoutExceeded, {
+        request: new Request('http://example.com/result/1'),
+        response: new Response('', { status: 503, statusText: 'Service Unavailable' }),
+      });
+    });
+
+    let thrown: any;
+    try {
+      await result.fetchNext({ limit: 10000 });
+    } catch (e) {
+      thrown = e;
+    }
+
+    expect(thrown).to.be.instanceOf(RetryError);
+    expect(thrown.errorCode).to.be.equal(RetryErrorCode.TimeoutExceeded);
+    expect(thrown.message).to.be.equal(
+      'CloudFetch result download failed: Retry timeout exceeded (last error: HTTP 503: Service Unavailable)',
+    );
+    expect(thrown.stack.split('\n')[0]).to.be.equal(`Error: ${thrown.message}`);
+  });
+
   it('should add download context and network error cause to RetryError when retries are exhausted', async () => {
     const context = new ClientContextStub({ cloudFetchConcurrentDownloads: 1 });
     const rowSetProvider = new ResultsProviderStub([sampleRowSet1], undefined);
@@ -479,7 +510,7 @@ describe('CloudFetchResultHandler', () => {
     expect(thrown.message).to.contain('Max retry count exceeded');
   });
 
-  it('should not leak presigned URLs from network errors into the RetryError message', async () => {
+  it('should not leak presigned URLs from network errors into the RetryError message or payload', async () => {
     const context = new ClientContextStub({ cloudFetchConcurrentDownloads: 1 });
     const rowSetProvider = new ResultsProviderStub([sampleRowSet1], undefined);
 
@@ -512,6 +543,11 @@ describe('CloudFetchResultHandler', () => {
     expect(thrown.message).to.not.contain('SECRET_SIGNATURE');
     expect(thrown.message).to.not.contain('storage.example.com');
     expect(thrown.stack).to.not.contain('SECRET_SIGNATURE');
+    expect(thrown.payload.message).to.contain('socket hang up');
+    expect(thrown.payload.message).to.not.contain('SECRET_SIGNATURE');
+    expect(thrown.payload.stack).to.not.contain('SECRET_SIGNATURE');
+    expect(thrown.payload.code).to.be.equal('ECONNRESET');
+    expect(inspect(thrown, { depth: 5 })).to.not.contain('SECRET_SIGNATURE');
   });
 
   it('should handle expired links', async () => {
