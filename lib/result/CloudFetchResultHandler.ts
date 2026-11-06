@@ -221,7 +221,9 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
    * Make a download failure safe to log and easier to diagnose:
    * - Any error escaping the retry policy (wrapped in `RetryError` or re-thrown unchanged, e.g. a
    *   non-retryable TLS `FetchError`) has URLs scrubbed from its message / stack, since the
-   *   presigned CloudFetch link carries credentials in its query string.
+   *   presigned CloudFetch link carries credentials in its query string. This deliberately applies to
+   *   every `Error`, not only node-fetch `FetchError`s: errors from custom agents / proxies or wrapped
+   *   errors can embed the request URL too, so any `scheme://` text (e.g. a proxy URL) is redacted.
    * - For `RetryError`, the generic "Max retry count exceeded" / "Retry timeout exceeded" message
    *   is enriched with the CloudFetch context and the last cause (HTTP status or network error).
    *   When the payload is an HTTP `{ request, response }` pair, the node-fetch objects (which hold

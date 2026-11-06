@@ -7,6 +7,7 @@ import { ClientConfig } from '../../lib/contracts/IClientContext';
 import CloudFetchResultHandler from '../../lib/result/CloudFetchResultHandler';
 import ArrowResultConverter from '../../lib/result/ArrowResultConverter';
 import ResultSlicer from '../../lib/result/ResultSlicer';
+import RetryError, { RetryErrorCode } from '../../lib/errors/RetryError';
 
 import config from './utils/config';
 
@@ -188,9 +189,11 @@ describe('CloudFetch', () => {
       // keeping the real expiry time and row count returned by the warehouse
       const rowSetProvider = cfResultHandler.source;
       const originalFetchNext = rowSetProvider.fetchNext.bind(rowSetProvider);
+      const originalFileLinks: Array<string> = [];
       sinon.stub(rowSetProvider, 'fetchNext').callsFake(async (...args: Array<any>) => {
         const rowSet = await originalFetchNext(...args);
         rowSet?.resultLinks?.forEach((link: any) => {
+          originalFileLinks.push(link.fileLink);
           link.fileLink = `http://127.0.0.1:${port}/result`;
           link.httpHeaders = {};
         });
@@ -206,12 +209,24 @@ describe('CloudFetch', () => {
         getAgentStub.restore();
       }
 
-      expect(thrown).to.be.instanceOf(Error);
+      // Pin the retry-exhaustion path (not the plain `CloudFetch HTTP error ...` thrown by `downloadLink`)
+      expect(thrown).to.be.instanceOf(RetryError);
+      expect((thrown as RetryError).errorCode).to.be.equal(RetryErrorCode.AttemptsExceeded);
       expect(serverHits).to.be.equal(retryMaxAttempts);
-      const { message } = thrown as Error;
-      expect(message).to.contain('500');
-      expect(message).to.contain('Internal Server Error');
-      expect(message).to.match(/cloudfetch|download/i);
+      const { message } = thrown as RetryError;
+      expect(message).to.contain('CloudFetch result download failed');
+      expect(message).to.contain('Max retry count exceeded');
+      expect(message).to.contain('HTTP 500: Internal Server Error');
+
+      // The real presigned link (host and credentialed query string) must not leak into the message
+      expect(originalFileLinks.length).to.be.gt(0);
+      originalFileLinks.forEach((fileLink) => {
+        const { host, search } = new URL(fileLink);
+        expect(message).to.not.contain(host);
+        if (search) {
+          expect(message).to.not.contain(search);
+        }
+      });
     } finally {
       await new Promise<void>((resolve) => {
         server.close(() => resolve());
