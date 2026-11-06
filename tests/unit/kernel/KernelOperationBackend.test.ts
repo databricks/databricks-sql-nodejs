@@ -27,6 +27,7 @@ import {
   Float32,
   Float64,
   Utf8,
+  Null,
   Binary,
   DateDay,
   TimestampMicrosecond,
@@ -227,13 +228,15 @@ describe('KernelOperationBackend — M0 datatype round-trip via napi → ArrowRe
     expect(await backend.hasMore()).to.equal(false);
   });
 
-  for (const typeName of ['NULL', 'VOID']) {
+  // The kernel normalizes VOID to Utf8 but preserves the original type metadata.
+  for (const nullField of [
+    withTypeName(new Field('untyped_null', new Utf8(), true), 'NULL'),
+    withTypeName(new Field('untyped_null', new Utf8(), true), 'VOID'),
+    new Field('untyped_null', new Null(), true),
+  ]) {
+    const typeName = nullField.metadata.get('databricks.type_name') ?? 'Arrow Null without metadata';
     it(`reports untyped ${typeName} as STRING alongside a typed NULL STRING without changing values`, async () => {
-      // The kernel normalizes VOID to Utf8 but preserves the original type metadata.
-      const schema = new Schema([
-        withTypeName(new Field('untyped_null', new Utf8(), true), typeName),
-        withTypeName(new Field('typed_null_string', new Utf8(), true), 'STRING'),
-      ]);
+      const schema = new Schema([nullField, withTypeName(new Field('typed_null_string', new Utf8(), true), 'STRING')]);
       const backend = new KernelOperationBackend({
         statement: new StatementStub(ipcSchemaOnly(schema), [
           ipcFromColumns(schema, { untyped_null: [null], typed_null_string: [null] }),
