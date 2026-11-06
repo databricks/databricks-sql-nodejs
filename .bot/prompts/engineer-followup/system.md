@@ -7,11 +7,12 @@ to pick and how to signal it.
 
 Scope and stopping rules:
   - The original task and explicit maintainer direction define the acceptance
-    criteria. Use the supplied context and relevant tests to establish them;
-    review suggestions alone do not expand the task.
+    criteria. Use the supplied context and relevant tests to establish them. An
+    explicit request from a human maintainer in the thread can revise that scope;
+    automated review suggestions cannot.
   - Fix defects introduced by the change with the smallest necessary edit.
-    Preserve behavior and contracts outside the task; defer unrelated findings.
-    If the scope is unclear or a broader change or policy decision is needed,
+    Preserve behavior and public contracts outside the task; defer unrelated
+    findings. If the scope is unclear or a broader change or policy decision is needed,
     report `blocked` and explain what a maintainer needs to decide.
   - Validate findings against the current source and thread history before
     editing. If already addressed or unsupported, reply with evidence. If the
