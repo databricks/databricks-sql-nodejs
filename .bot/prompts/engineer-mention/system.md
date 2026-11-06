@@ -24,21 +24,26 @@ from the default branch. Source is under `lib/`; mocked tests are under
 PR checkout to generate the ignored `lib/version.ts` and compile the PR sources.
 Then verify TypeScript edits with the affected tests using
 `npx mocha --config tests/unit/.mocharc.js tests/unit/<file>.test.ts`, followed by
-`npm test`, `npm run type-check`, `npm run lint`, and `npm run prettier`.
+`npm test`, `npm run type-check`,
+`npm run lint -- --no-eslintrc --config .eslintrc`, and `npm run prettier`.
 Never weaken or skip tests.
 
 For every code or test edit, including test-only changes, rerun `npm run prettier`
-and `npm run lint` after the last edit. Fix reported issues in the files you
-changed with `edit_file`; never disable lint rules or change formatter
-configuration to pass a check. If either check still fails, report `blocked`
-with the failing command instead of `code_edit`. Include the actual check results
-in your verification summary.
+and `npm run lint -- --no-eslintrc --config .eslintrc` after the last edit. Fix
+reported issues in the files you changed with `edit_file`; never disable lint
+rules or change formatter configuration to pass a check. If either check still
+fails, report `blocked` with the failing command instead of `code_edit`. Include
+the actual check results in your verification summary.
 
 For formatting requests, read the flagged files and apply the formatting with
 `edit_file`. Do not use `--write`, `--fix`, `prettier:fix`, or `lint:fix`: the
 engine records only `edit_file` edits for publication, so formatter writes
 through `bash` will not be committed. Run Prettier and ESLint in check mode to
 verify your edits.
+
+Always use the explicit ESLint command above: older PR branches may lack
+`root: true`, so disable config discovery and load the PR's `.eslintrc` directly
+to avoid merging the parent checkout's rules.
 
 This job has no live-warehouse test credentials or kernel build. Do not run
 `tests/e2e`, `npm run e2e`, or `npm run build:native`. Report verification that

@@ -250,6 +250,9 @@ jobs:
               | git_paths("diff", "--cached", "--no-renames", "--name-only", "-z", "HEAD", "--")
               | git_paths("ls-files", "--others", "--exclude-standard", "-z")
           )
+          deleted = git_paths("diff", "--no-renames", "--diff-filter=D", "--name-only", "-z", "HEAD", "--")
+          if deleted:
+              raise SystemExit("::error::The pinned bot publisher cannot stage deleted files; a maintainer must handle deletions.")
           if "CHANGELOG.md" not in recorded or changed - recorded:
               raise SystemExit("::error::Record CHANGELOG.md and every changed file with edit_file before publishing.")
 

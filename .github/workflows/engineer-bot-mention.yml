@@ -165,7 +165,6 @@ jobs:
             echo "::error::PR node_modules path must not already exist."
             exit 1
           fi
-          # ESLint can load the parent checkout's config, which needs these dependencies too.
           ln -s ../node_modules pr/node_modules
 
       - name: Prepare PR diff reference
