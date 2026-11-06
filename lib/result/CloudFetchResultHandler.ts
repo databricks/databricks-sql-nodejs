@@ -195,7 +195,9 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
    */
   private static scrubErrorUrls(error: Error): void {
     try {
-      error.message = CloudFetchResultHandler.redactUrls(error.message);
+      if (typeof error.message === 'string') {
+        error.message = CloudFetchResultHandler.redactUrls(error.message);
+      }
       if (typeof error.stack === 'string') {
         // Only the header (message) lines can carry the request URL; leave `    at ...` frames intact so
         // `file://` locations of ESM modules stay readable.
@@ -240,7 +242,16 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
     if (payload instanceof Error) {
       const { code } = payload as Error & { code?: unknown };
       CloudFetchResultHandler.scrubErrorUrls(payload);
-      const safeMessage = CloudFetchResultHandler.redactUrls(payload.message);
+      let safeMessage: string;
+      try {
+        // `message` may be non-string on exotic error subclasses; never let that mask the `RetryError`.
+        const rawMessage: unknown = payload.message;
+        safeMessage = CloudFetchResultHandler.redactUrls(
+          typeof rawMessage === 'string' ? rawMessage : String(rawMessage),
+        );
+      } catch {
+        safeMessage = '<unavailable>';
+      }
       cause = code ? `${safeMessage} (${code})` : safeMessage;
     } else if (payload && typeof payload === 'object' && 'response' in payload) {
       const { request, response } = payload as {

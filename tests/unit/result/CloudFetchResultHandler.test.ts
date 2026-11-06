@@ -1,4 +1,5 @@
 import { inspect } from 'util';
+import { Readable } from 'stream';
 import { expect, AssertionError } from 'chai';
 import sinon, { SinonStub } from 'sinon';
 import Int64 from 'node-int64';
@@ -582,6 +583,46 @@ describe('CloudFetchResultHandler', () => {
     expect(thrown.payload.response.statusText).to.be.equal('Service Unavailable');
     expect(thrown.payload.request.url).to.be.equal('https://storage.example.com/results/chunk-0');
     expect(inspect(thrown, { depth: 10, showHidden: true })).to.not.contain('SECRET_SIGNATURE');
+  });
+
+  it('should drain the body of the final HTTP response when replacing a RetryError payload', async () => {
+    const context = new ClientContextStub({ cloudFetchConcurrentDownloads: 1 });
+    const rowSetProvider = new ResultsProviderStub([sampleRowSet1], undefined);
+
+    const result = new CloudFetchResultHandler(context, rowSetProvider, {
+      status: { statusCode: TStatusCode.SUCCESS_STATUS },
+    });
+
+    const body = new Readable({ read() {} });
+    body.push('error body');
+    body.push(null);
+    const response = new Response(body as any, { status: 503, statusText: 'Service Unavailable' });
+    expect(response.body).to.be.equal(body);
+    const ended = new Promise<void>((resolve) => {
+      body.once('end', () => resolve());
+    });
+
+    const originalError = new RetryError(RetryErrorCode.AttemptsExceeded, {
+      request: new Request('https://storage.example.com/results/chunk-0'),
+      response,
+    });
+    context.invokeWithRetryStub.callsFake(async () => {
+      throw originalError;
+    });
+
+    let thrown: any;
+    try {
+      await result.fetchNext({ limit: 10000 });
+    } catch (e) {
+      thrown = e;
+    }
+
+    expect(thrown).to.be.equal(originalError);
+    expect(body.readableFlowing).to.be.true;
+    await ended;
+
+    // A late stream error must not become an unhandled 'error' event (which would throw).
+    expect(() => body.emit('error', new Error('socket hang up'))).to.not.throw();
   });
 
   it('should not leak presigned URLs from network errors re-thrown without a RetryError wrapper', async () => {
