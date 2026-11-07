@@ -220,6 +220,9 @@ jobs:
           [ -n "$FLOW" ] && args+=(--flow "$FLOW")
           python -m databricks_bot_engine.engineer_bot.run "${args[@]}"
 
+      # Checks accidental omissions and tool misuse on the agent's own runner.
+      # Hostile shell code can tamper with the shared user/environment; this gate
+      # provides validation, not execution isolation.
       - name: Check changelog and code style before publishing
         id: validation
         if: steps.author.outputs.outcome == 'success'
