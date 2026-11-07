@@ -15,6 +15,8 @@ MISPLACED = BASE + '## Unreleased\n\n- Existing fix.\n'
 DUPLICATE_FIX = DUPLICATE.replace('## 3.0.0', '- New fix. (#261)\n\n## 3.0.0')
 RELOCATED_FIX = BASE.replace('## 3.0.0', '## Unreleased\n\n- Existing fix.\n- New fix. (#261)\n\n## 3.0.0')
 REGIONS = '/* eslint-disable no-console */\nconsole.log(1);\n/* eslint-enable no-console */\n/* eslint-disable no-alert */\nalert(1);\n/* eslint-enable no-alert */\n'
+STRUCTURED = EXISTING.replace('## 3.0.0', '### Notes\n\nExisting note.\n\n## 3.0.0')
+STRUCTURED_FIX = STRUCTURED.replace('### Notes', '- New fix. (#261)\n\n### Notes')
 
 
 def git(root, *args):
@@ -103,6 +105,11 @@ sys.exit(1 if os.environ.get("VALIDATION_FAIL") == tool else 0)
             ('removed baseline duplicate', DUPLICATE_FIX.replace('- Existing fix.\n  Existing detail.\n', '', 1), {}, ['CHANGELOG.md'], 'baseline-duplicates', False, False),
             ('increased baseline duplicates', DUPLICATE_FIX.replace('- New fix. (#261)', '- Existing fix.\n  Existing detail.\n- New fix. (#261)'), {}, ['CHANGELOG.md'], 'baseline-duplicates', False, False),
             ('relocated baseline section', RELOCATED_FIX, {}, ['CHANGELOG.md'], 'baseline-misplaced', False, True),
+            ('entry before subsection', STRUCTURED_FIX, {}, ['CHANGELOG.md'], 'baseline-structured', False, True),
+            ('entry after section prose', STRUCTURED.replace('Existing note.', 'Existing note.\n\n- New fix. (#261)'), {}, ['CHANGELOG.md'], 'baseline-structured', False, True),
+            ('removed section prose', STRUCTURED_FIX.replace('Existing note.\n', ''), {}, ['CHANGELOG.md'], 'baseline-structured', False, False),
+            ('rewritten section prose', STRUCTURED_FIX.replace('Existing note.', 'Rewritten note.'), {}, ['CHANGELOG.md'], 'baseline-structured', False, False),
+            ('removed subsection heading', STRUCTURED_FIX.replace('### Notes\n', ''), {}, ['CHANGELOG.md'], 'baseline-structured', False, False),
             ('new block suppression', good, {'lib/source.ts': '/* eslint-disable */\nexport const value = 2;\n'}, ['CHANGELOG.md', 'lib/source.ts'], '', False, False),
             ('new next-line suppression', good, {'lib/source.ts': '// eslint-disable-next-line no-alert\nalert(1);\n'}, ['CHANGELOG.md', 'lib/source.ts'], '', False, False),
             ('new inline suppression', good, {'lib/source.ts': 'alert(1); // eslint-disable-line no-alert\n'}, ['CHANGELOG.md', 'lib/source.ts'], '', False, False),
@@ -171,7 +178,7 @@ sys.exit(1 if os.environ.get("VALIDATION_FAIL") == tool else 0)
             git(fixture, 'clean', '-fdxq')
             validation_base_sha = base_sha
             if failure.startswith('baseline-'):
-                write(fixture, 'CHANGELOG.md', DUPLICATE if failure == 'baseline-duplicates' else MISPLACED)
+                write(fixture, 'CHANGELOG.md', {'baseline-duplicates': DUPLICATE, 'baseline-misplaced': MISPLACED, 'baseline-structured': STRUCTURED}[failure])
                 git(fixture, 'add', '--', 'CHANGELOG.md')
                 git(fixture, '-c', 'user.name=Workflow Test', '-c', 'user.email=workflow-test@example.com', 'commit', '--signoff', '-qm', 'pre-existing changelog quirk')
                 validation_base_sha = git(fixture, 'rev-parse', 'HEAD').stdout.decode().strip()

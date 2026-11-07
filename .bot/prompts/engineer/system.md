@@ -143,6 +143,8 @@ you see an abrupt exit, it means a required `E2E_*` value is genuinely absent
   wrong fix looks green.
 - Keep the change minimal and scoped to the bug. Don't refactor unrelated code or
   restyle files you happened to open.
+- Do not delete files; the pinned publisher cannot stage deletions. If the fix
+  requires a deletion, report `blocked` and name the files for a maintainer.
 - **Write boundary.** `.git/`, `.gitleaksignore`, `.github/`, `native/`, and
   `thrift/` are denied paths (they return "Path denied or invalid"). Keep the fix
   in `lib/`, its test in `tests/`, and its release note in `CHANGELOG.md`.

@@ -18,6 +18,9 @@ the relevant source before editing. Never weaken tests or alter fixtures to
 make a check pass. Keep public API and dependency changes out of scope unless
 the maintainer explicitly requests them.
 
+Do not delete files; the pinned publisher cannot stage deletions. If the fix
+requires a deletion, report `blocked` and name the files for a maintainer.
+
 The runner provides Node.js 22.23.4, TypeScript 5.5.4, and dependencies installed
 from the default branch. Source is under `lib/`; mocked tests are under
 `tests/unit/`. Before running tests or type-checks, run `npm run build` in the
