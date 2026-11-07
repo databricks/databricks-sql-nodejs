@@ -3,6 +3,10 @@ set -euo pipefail
 
 unset JFROG_ACCESS_TOKEN ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL
 export GIT_NO_REPLACE_OBJECTS=1
+export GIT_CONFIG_COUNT=3
+export GIT_CONFIG_KEY_0=core.fsmonitor GIT_CONFIG_VALUE_0=false
+export GIT_CONFIG_KEY_1=core.untrackedCache GIT_CONFIG_VALUE_1=false
+export GIT_CONFIG_KEY_2=core.hooksPath GIT_CONFIG_VALUE_2=/dev/null
 if [ "$(git rev-parse HEAD)" != "$BASE_SHA" ]; then
   echo "::error::The agent changed HEAD from the pre-agent commit."
   exit 1

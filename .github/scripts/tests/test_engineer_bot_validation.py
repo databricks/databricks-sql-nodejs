@@ -13,7 +13,7 @@ EXISTING = BASE.replace('## 3.0.0', '## Unreleased\n\n- Existing fix.\n  Existin
 
 
 def git(root, *args):
-    return subprocess.run(['git', '-c', 'core.hooksPath=/dev/null', '-c', 'commit.gpgsign=false', '-C', str(root), *args], check=True, capture_output=True)
+    return subprocess.run(['git', '-c', 'core.hooksPath=/dev/null', '-c', 'core.fsmonitor=false', '-c', 'core.untrackedCache=false', '-c', 'commit.gpgsign=false', '-C', str(root), *args], check=True, capture_output=True)
 
 
 def write(root, name, content):
@@ -78,6 +78,8 @@ with tempfile.TemporaryDirectory(prefix='nodejs-bot-gate-regression-') as tempor
             ('locally excluded config', good, {'.npmrc': 'script-shell=/bin/false\n'}, ['CHANGELOG.md', '.npmrc'], 'exclude-config', False, False),
             ('globally excluded source', good, {'lib/hidden.ts': '// unrecorded\n'}, ['CHANGELOG.md'], 'global-exclude', False, False),
             ('self-ignoring nested gitignore', good, {'lib/sub/.gitignore': '*\n', 'lib/sub/hidden.ts': '// unrecorded\n'}, ['CHANGELOG.md'], '', False, False),
+            ('configured fsmonitor with valid fix', good, {}, ['CHANGELOG.md'], 'fsmonitor', False, True),
+            ('configured fsmonitor with unrecorded edit', good, {'lib/source.ts': 'export const value = 2;\n'}, ['CHANGELOG.md'], 'fsmonitor', False, False),
             ('new block suppression', good, {'lib/source.ts': '/* eslint-disable */\nexport const value = 2;\n'}, ['CHANGELOG.md', 'lib/source.ts'], '', False, False),
             ('new next-line suppression', good, {'lib/source.ts': '// eslint-disable-next-line no-alert\nalert(1);\n'}, ['CHANGELOG.md', 'lib/source.ts'], '', False, False),
             ('new inline suppression', good, {'lib/source.ts': 'alert(1); // eslint-disable-line no-alert\n'}, ['CHANGELOG.md', 'lib/source.ts'], '', False, False),
@@ -96,6 +98,9 @@ with tempfile.TemporaryDirectory(prefix='nodejs-bot-gate-regression-') as tempor
             ('new ts-nocheck suppression after comment', good, {'lib/source.ts': '// Explain the fix.\n// @ts-nocheck\nconst value: number = "invalid";\n'}, ['CHANGELOG.md', 'lib/source.ts'], '', False, False),
             ('new triple-slash type suppression', good, {'lib/source.ts': '/// @ts-ignore\nconst value: number = "invalid";\n'}, ['CHANGELOG.md', 'lib/source.ts'], '', False, False),
             ('new multiline type suppression', good, {'lib/source.ts': '/**\n * @ts-ignore */\nconst value: number = "invalid";\n'}, ['CHANGELOG.md', 'lib/source.ts'], '', False, False),
+            ('ordinary prose comments', good, {'lib/source.ts': '// eslint flags this because it is unused.\n// global state is reset here.\n// exported for tests.\n/* eslint-config-airbnb provides defaults. */\nexport const value = 2;\n'}, ['CHANGELOG.md', 'lib/source.ts'], '', False, True),
+            ('directive prefix prose', good, {'lib/source.ts': '// eslint-disable-not-a-directive explains the test.\nexport const value = 2;\n'}, ['CHANGELOG.md', 'lib/source.ts'], '', False, True),
+            ('block prose is a real globals suppression', good, {'lib/source.ts': '/* global state is reset here */\nstate();\n'}, ['CHANGELOG.md', 'lib/source.ts'], '', False, False),
             ('directive string fixture', good, {'lib/source.ts': "export const directive = '/* eslint-disable */';\n"}, ['CHANGELOG.md', 'lib/source.ts'], '', False, True),
             ('directive template fixture', good, {'lib/source.ts': 'export const directive = `\n// prettier-ignore\n`;\n'}, ['CHANGELOG.md', 'lib/source.ts'], '', False, True),
             ('moved existing directive', good, {'lib/source.ts': "// A comment.\n// eslint-disable-next-line no-console\nconsole.log('original');\n"}, ['CHANGELOG.md', 'lib/source.ts'], '', False, True),
@@ -124,6 +129,7 @@ with tempfile.TemporaryDirectory(prefix='nodejs-bot-gate-regression-') as tempor
             (fixture / '.git/info/exclude').write_text(exclude_baseline)
             global_excludes.write_text('')
             git(fixture, 'config', '--local', 'core.excludesFile', str(global_excludes))
+            git(fixture, 'config', '--local', 'core.fsmonitor', 'false')
             git(fixture, 'clean', '-fdxq')
             shutil.rmtree(fixture / 'node_modules', ignore_errors=True)
             write(fixture, 'node_modules/tool.js', '// original\n')
@@ -158,11 +164,19 @@ with tempfile.TemporaryDirectory(prefix='nodejs-bot-gate-regression-') as tempor
                 (fixture / '.git/info/exclude').write_text(exclude_baseline + '\n' + hidden + '\n')
             elif failure == 'global-exclude':
                 global_excludes.write_text('lib/hidden.ts\n')
+            elif failure == 'fsmonitor':
+                monitor = fixture / '.git/test-fsmonitor'
+                monitor.write_text('#!/bin/sh\n: > "$FSMONITOR_MARKER"\nexit 1\n')
+                monitor.chmod(0o755)
+                git(fixture, 'config', '--local', 'core.fsmonitor', str(monitor))
             log = fixture / 'npm.log'
             log.unlink(missing_ok=True)
-            env = {'PATH': f'{binary}:{os.environ["PATH"]}', 'BASE_SHA': base_sha, 'GIT_NO_REPLACE_OBJECTS': '1', 'TOUCHED_FILES': '\n'.join(recorded), 'TOOLCHAIN_SHA256': checksum, 'VALIDATION_LOG': str(log), 'VALIDATION_FAIL': failure, 'JFROG_ACCESS_TOKEN': 'test-placeholder', 'ACTIONS_ID_TOKEN_REQUEST_TOKEN': 'test-placeholder', 'ACTIONS_ID_TOKEN_REQUEST_URL': 'test-placeholder'}
+            monitor_marker = fixture / '.git/fsmonitor-invoked'
+            monitor_marker.unlink(missing_ok=True)
+            env = {'PATH': f'{binary}:{os.environ["PATH"]}', 'BASE_SHA': base_sha, 'GIT_NO_REPLACE_OBJECTS': '1', 'TOUCHED_FILES': '\n'.join(recorded), 'TOOLCHAIN_SHA256': checksum, 'VALIDATION_LOG': str(log), 'VALIDATION_FAIL': failure, 'FSMONITOR_MARKER': str(monitor_marker), 'JFROG_ACCESS_TOKEN': 'test-placeholder', 'ACTIONS_ID_TOKEN_REQUEST_TOKEN': 'test-placeholder', 'ACTIONS_ID_TOKEN_REQUEST_URL': 'test-placeholder'}
             result = subprocess.run(['bash', '-e', '-o', 'pipefail', '-c', 'validation_script=$(git show "$BASE_SHA:.github/scripts/validate-engineer-bot.sh"); bash -c "$validation_script"'], cwd=fixture, env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True)
             assert (result.returncode == 0) == expected, (label, result.stdout, result.stderr)
+            assert not monitor_marker.exists(), label
             if label == 'recorded deletion':
                 assert 'pinned bot publisher cannot stage deleted files' in result.stderr
             if label.startswith('dependency '):

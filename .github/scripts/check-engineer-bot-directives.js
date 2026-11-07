@@ -27,10 +27,12 @@ function directives(filename, text) {
       .replace(/(?:\*\/|-->)$/, '')
       .trim()
       .replace(/\s+/g, ' ');
+    const eslintDirective =
+      /^eslint-disable-(?:next-line|line)(?:\s|$)/.test(value) ||
+      (comment.startsWith('/*') && /^(?:eslint(?:-disable|-env)?|globals?|exported)(?:\s|$)/.test(value));
     if (
-      /^(?:eslint(?:-disable(?:-next-line|-line)?|-env)?|globals?|exported|prettier-ignore(?:-[a-z-]+)?)\b/.test(
-        value,
-      ) ||
+      eslintDirective ||
+      /^prettier-ignore(?:-[a-z-]+)?\b/.test(value) ||
       comment.split(/\r?\n/).some((line) => /^[\s/*]*@ts-(?:ignore|expect-error|nocheck)\b/.test(line))
     ) {
       counts.set(value, (counts.get(value) || 0) + 1);
