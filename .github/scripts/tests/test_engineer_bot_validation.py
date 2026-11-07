@@ -41,6 +41,9 @@ with tempfile.TemporaryDirectory(prefix='nodejs-bot-gate-regression-') as tempor
             write(fixture, '.github/scripts/' + name, SCRIPT.with_name(name).read_text())
         git(fixture, 'add', '.')
         git(fixture, '-c', 'user.name=Workflow Test', '-c', 'user.email=workflow-test@example.com', 'commit', '--signoff', '-qm', 'validation baseline')
+        base_sha = git(fixture, 'rev-parse', 'HEAD').stdout.decode().strip()
+        exclude_baseline = (fixture / '.git/info/exclude').read_text()
+        global_excludes = fixture / '.git/test-global-excludes'
         good = VALID if baseline == BASE else baseline.replace('- Existing fix.', '- Existing fix.\n- New fix. (#261)')
         cases = [
             ('valid fix', good, {}, ['CHANGELOG.md'], '', False, True),
@@ -67,6 +70,13 @@ with tempfile.TemporaryDirectory(prefix='nodejs-bot-gate-regression-') as tempor
             ('dependency symlink', good, {'node_modules/.bin/prettier': ('symlink', '../other.js')}, ['CHANGELOG.md'], '', False, False),
             ('validation script modification', good, {'.github/scripts/validate-engineer-bot.sh': 'exit 0\n'}, ['CHANGELOG.md'], '', False, False),
             ('digest script modification', good, {'.github/scripts/engineer-bot-dependency-digest.sh': 'exit 0\n'}, ['CHANGELOG.md'], '', False, False),
+            ('agent committed changes', good, {'lib/source.ts': 'export const value = 2;\n'}, ['CHANGELOG.md', 'lib/source.ts'], 'commit', False, False),
+            ('agent committed validator', good, {'.github/scripts/validate-engineer-bot.sh': 'exit 0\n'}, ['CHANGELOG.md', '.github/scripts/validate-engineer-bot.sh'], 'commit', False, False),
+            ('skip-worktree edit', good, {'lib/source.ts': 'export const value = 2;\n'}, ['CHANGELOG.md'], 'skip-worktree', False, False),
+            ('assume-unchanged edit', good, {'lib/source.ts': 'export const value = 2;\n'}, ['CHANGELOG.md'], 'assume-unchanged', False, False),
+            ('locally excluded source', good, {'lib/hidden.ts': '// unrecorded\n'}, ['CHANGELOG.md'], 'exclude-source', False, False),
+            ('locally excluded config', good, {'.npmrc': 'script-shell=/bin/false\n'}, ['CHANGELOG.md', '.npmrc'], 'exclude-config', False, False),
+            ('globally excluded source', good, {'lib/hidden.ts': '// unrecorded\n'}, ['CHANGELOG.md'], 'global-exclude', False, False),
             ('Prettier failure', good, {}, ['CHANGELOG.md'], 'prettier', False, False),
             ('ESLint failure', good, {}, ['CHANGELOG.md'], 'lint', False, False),
             ('npm reads stdin', good, {}, ['CHANGELOG.md'], 'read-stdin', False, True),
@@ -78,7 +88,12 @@ with tempfile.TemporaryDirectory(prefix='nodejs-bot-gate-regression-') as tempor
                 path = directory + name
                 cases.append(('protected config ' + path, good, {path: '{"changed":true}\n'}, ['CHANGELOG.md', path], '', False, False))
         for label, changelog, files, recorded, failure, staged, expected in cases:
-            git(fixture, 'reset', '--hard', '-q', 'HEAD')
+            git(fixture, 'update-index', '--no-skip-worktree', '--', 'lib/source.ts')
+            git(fixture, 'update-index', '--no-assume-unchanged', '--', 'lib/source.ts')
+            git(fixture, 'reset', '--hard', '-q', base_sha)
+            (fixture / '.git/info/exclude').write_text(exclude_baseline)
+            global_excludes.write_text('')
+            git(fixture, 'config', '--local', 'core.excludesFile', str(global_excludes))
             git(fixture, 'clean', '-fdq')
             shutil.rmtree(fixture / 'node_modules', ignore_errors=True)
             write(fixture, 'node_modules/tool.js', '// original\n')
@@ -101,15 +116,31 @@ with tempfile.TemporaryDirectory(prefix='nodejs-bot-gate-regression-') as tempor
                     write(fixture, name, content)
             if staged:
                 git(fixture, 'add', '--', 'lib/source.ts')
+            if failure == 'commit':
+                git(fixture, 'add', '-A')
+                git(fixture, '-c', 'user.name=Workflow Test', '-c', 'user.email=workflow-test@example.com', 'commit', '--signoff', '-qm', 'agent changes')
+            elif failure in ['skip-worktree', 'assume-unchanged']:
+                git(fixture, 'update-index', '--' + failure, '--', 'lib/source.ts')
+            elif failure in ['exclude-source', 'exclude-config']:
+                hidden = '.npmrc' if failure == 'exclude-config' else 'lib/hidden.ts'
+                (fixture / '.git/info/exclude').write_text(exclude_baseline + '\n' + hidden + '\n')
+            elif failure == 'global-exclude':
+                global_excludes.write_text('lib/hidden.ts\n')
             log = fixture / 'npm.log'
             log.unlink(missing_ok=True)
-            env = {'PATH': f'{binary}:{os.environ["PATH"]}', 'TOUCHED_FILES': '\n'.join(recorded), 'TOOLCHAIN_SHA256': checksum, 'VALIDATION_LOG': str(log), 'VALIDATION_FAIL': failure, 'JFROG_ACCESS_TOKEN': 'test-placeholder', 'ACTIONS_ID_TOKEN_REQUEST_TOKEN': 'test-placeholder', 'ACTIONS_ID_TOKEN_REQUEST_URL': 'test-placeholder'}
-            result = subprocess.run(['bash', '-e', '-o', 'pipefail', '-c', 'validation_script=$(git show HEAD:.github/scripts/validate-engineer-bot.sh); bash -c "$validation_script"'], cwd=fixture, env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True)
+            env = {'PATH': f'{binary}:{os.environ["PATH"]}', 'BASE_SHA': base_sha, 'GIT_NO_REPLACE_OBJECTS': '1', 'TOUCHED_FILES': '\n'.join(recorded), 'TOOLCHAIN_SHA256': checksum, 'VALIDATION_LOG': str(log), 'VALIDATION_FAIL': failure, 'JFROG_ACCESS_TOKEN': 'test-placeholder', 'ACTIONS_ID_TOKEN_REQUEST_TOKEN': 'test-placeholder', 'ACTIONS_ID_TOKEN_REQUEST_URL': 'test-placeholder'}
+            result = subprocess.run(['bash', '-e', '-o', 'pipefail', '-c', 'validation_script=$(git show "$BASE_SHA:.github/scripts/validate-engineer-bot.sh"); bash -c "$validation_script"'], cwd=fixture, env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True)
             assert (result.returncode == 0) == expected, (label, result.stdout, result.stderr)
             if label == 'recorded deletion':
                 assert 'pinned bot publisher cannot stage deleted files' in result.stderr
             if label.startswith('dependency '):
                 assert 'Installed dependencies changed' in result.stdout
+                assert not log.exists()
+            if failure == 'commit':
+                assert 'changed HEAD' in result.stdout
+            if failure in ['skip-worktree', 'assume-unchanged']:
+                assert 'Git index flags' in result.stderr
+            if failure in ['commit', 'skip-worktree', 'assume-unchanged', 'exclude-source', 'exclude-config', 'global-exclude']:
                 assert not log.exists()
             if expected:
                 assert log.read_text() == 'run prettier\nrun lint\n', label
