@@ -1,4 +1,6 @@
+import json
 import os
+import shlex
 import shutil
 from pathlib import Path
 import subprocess
@@ -7,6 +9,13 @@ import tempfile
 
 
 SCRIPT = Path(__file__).resolve().parents[1] / 'validate-engineer-bot.sh'
+package = json.loads((SCRIPT.parents[2] / 'package.json').read_text())
+for name in ['prettier', 'lint']:
+    argv = shlex.split(package['scripts'][name])
+    binary = './node_modules/.bin/' + argv[0]
+    commands = [shlex.split(line) for line in SCRIPT.read_text().splitlines() if line.startswith(binary + ' ')]
+    assert commands == [[binary, *argv[1:]]], f'Keep the publication gate aligned with package.json scripts.{name}'
+
 BASE = '# Release History\n\n## 3.0.0\n\n- Released fix.\n\n## 2.0.0\n\n- Older fix.\n'
 VALID = BASE.replace('## 3.0.0', '## Unreleased\n\n- New fix. (#261)\n\n## 3.0.0')
 EXISTING = BASE.replace('## 3.0.0', '## Unreleased\n\n- Existing fix.\n  Existing detail.\n\n## 3.0.0')
