@@ -8,6 +8,7 @@ import DBSQLOperation from '../../lib/DBSQLOperation';
 import { PrimaryKeysRequest } from '../../lib/contracts/IDBSQLSession';
 import ISessionBackend from '../../lib/contracts/ISessionBackend';
 import ParameterError from '../../lib/errors/ParameterError';
+import { DBSQLParameter } from '../../lib/DBSQLParameter';
 import { TSessionHandle, TProtocolVersion } from '../../thrift/TCLIService_types';
 import ClientContextStub from './.stubs/ClientContextStub';
 import { createSessionForTest } from './.stubs/createSessionForTest';
@@ -260,6 +261,65 @@ describe('DBSQLSession', () => {
         // canDecompressLZ4Result should NOT be set regardless of cloud fetch setting
         expect(req.canDecompressLZ4Result).to.not.be.true;
       });
+    });
+  });
+
+  // https://github.com/databricks/databricks-sql-nodejs/issues/261
+  describe('executeStatement with non-scalar parameter values', () => {
+    const invalidCases: Array<{ desc: string; options: object; pattern: RegExp }> = [
+      { desc: 'ordinal array-of-arrays', options: { ordinalParameters: [[1], [2], [3]] }, pattern: /array/ },
+      { desc: 'named array value', options: { namedParameters: { p: [1, 2] } }, pattern: /array/ },
+      { desc: 'ordinal plain object', options: { ordinalParameters: [{ a: 1 }] }, pattern: /object/ },
+      { desc: 'named plain object', options: { namedParameters: { p: { a: 1 } } }, pattern: /object/ },
+      {
+        desc: 'ordinal array wrapped in DBSQLParameter',
+        options: { ordinalParameters: [new DBSQLParameter({ value: [1, 2] as never })] },
+        pattern: /array/,
+      },
+      // eslint-disable-next-line no-new-wrappers
+      { desc: 'ordinal boxed String', options: { ordinalParameters: [new String('x')] }, pattern: /object/ },
+      // eslint-disable-next-line no-new-wrappers
+      { desc: 'named boxed Number', options: { namedParameters: { p: new Number(1) } }, pattern: /object/ },
+    ];
+
+    for (const { desc, options, pattern } of invalidCases) {
+      it(`should throw ParameterError and not call the driver for ${desc}`, async () => {
+        const context = new ClientContextStub();
+        const driver = sinon.spy(context.driver);
+        const session = createSessionForTest({
+          handle: sessionHandleStub,
+          context,
+          serverProtocolVersion: TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V8,
+        });
+
+        try {
+          await session.executeStatement('SELECT ?', options as never);
+          expect.fail('It should throw an error');
+        } catch (error) {
+          if (error instanceof AssertionError) {
+            throw error;
+          }
+          expect(error).instanceOf(ParameterError);
+          expect((error as Error).message).to.match(pattern);
+        }
+        expect(driver.executeStatement.called).to.be.false;
+      });
+    }
+
+    it('should keep accepting valid scalar values', async () => {
+      const context = new ClientContextStub();
+      const driver = sinon.spy(context.driver);
+      const session = createSessionForTest({
+        handle: sessionHandleStub,
+        context,
+        serverProtocolVersion: TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V8,
+      });
+
+      await session.executeStatement('SELECT ?, ?, ?, ?, ?', {
+        ordinalParameters: [new Date('2023-09-06T03:14:27.843Z'), new Int64(1234), BigInt(1234), null, 'x'],
+      });
+      expect(driver.executeStatement.callCount).to.eq(1);
+      expect(driver.executeStatement.firstCall.args[0].parameters?.length).to.eq(5);
     });
   });
 

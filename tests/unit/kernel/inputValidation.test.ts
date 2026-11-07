@@ -14,11 +14,22 @@
 
 import { expect } from 'chai';
 import Int64 from 'node-int64';
-import assertBindableValue from '../../../lib/kernel/KernelInputValidation';
+import assertBindableValue from '../../../lib/utils/assertBindableValue';
+import kernelAssertBindableValue from '../../../lib/kernel/KernelInputValidation';
 import { DBSQLParameter, DBSQLParameterType } from '../../../lib/DBSQLParameter';
 import ParameterError from '../../../lib/errors/ParameterError';
 
-describe('KernelInputValidation.assertBindableValue', () => {
+describe('KernelInputValidation (deprecated shim)', () => {
+  it('still delegates to assertBindableValue', () => {
+    expect(() => kernelAssertBindableValue(42, 'p')).to.not.throw();
+    expect(() => kernelAssertBindableValue([1, 2, 3] as never, 'ordinalParameters[0]')).to.throw(
+      ParameterError,
+      /ordinalParameters\[0\] is an array/,
+    );
+  });
+});
+
+describe('utils/assertBindableValue', () => {
   it('accepts scalars, Date, Int64, bigint, null, and DBSQLParameter', () => {
     expect(() => assertBindableValue(42, 'p')).to.not.throw();
     expect(() => assertBindableValue('x', 'p')).to.not.throw();
@@ -38,5 +49,45 @@ describe('KernelInputValidation.assertBindableValue', () => {
 
   it('rejects plain objects', () => {
     expect(() => assertBindableValue({ a: 1 } as never, 'p')).to.throw(ParameterError, /object/);
+  });
+
+  it('rejects boxed primitives', () => {
+    // eslint-disable-next-line no-new-wrappers
+    expect(() => assertBindableValue(new String('x') as never, 'p')).to.throw(ParameterError, /p is an object/);
+    // eslint-disable-next-line no-new-wrappers
+    expect(() => assertBindableValue(new Number(1) as never, 'p')).to.throw(ParameterError, /p is an object/);
+    // eslint-disable-next-line no-new-wrappers
+    expect(() => assertBindableValue(new Boolean(true) as never, 'p')).to.throw(ParameterError, /p is an object/);
+  });
+
+  it('rejects non-scalar values wrapped in DBSQLParameter', () => {
+    expect(() => assertBindableValue(new DBSQLParameter({ value: [1, 2] as never }), 'ordinalParameters[0]')).to.throw(
+      ParameterError,
+      /ordinalParameters\[0\] is an array/,
+    );
+    expect(() =>
+      assertBindableValue(new DBSQLParameter({ type: DBSQLParameterType.STRING, value: { a: 1 } as never }), 'p'),
+    ).to.throw(ParameterError, /object/);
+  });
+
+  it('rejects a DBSQLParameter nested inside a DBSQLParameter', () => {
+    expect(() =>
+      assertBindableValue(new DBSQLParameter({ value: new DBSQLParameter({ value: 1 }) as never }), 'p'),
+    ).to.throw(ParameterError, /nested DBSQLParameter/);
+  });
+
+  it('rejects functions and symbols', () => {
+    expect(() => assertBindableValue((() => 1) as never, 'p')).to.throw(ParameterError, /p is a function/);
+    expect(() => assertBindableValue(Symbol('s') as never, 'p')).to.throw(ParameterError, /p is a symbol/);
+    expect(() => assertBindableValue(new DBSQLParameter({ value: (() => 1) as never }), 'p')).to.throw(
+      ParameterError,
+      /function/,
+    );
+  });
+
+  it('accepts DBSQLParameter with explicit VOID type regardless of value', () => {
+    expect(() =>
+      assertBindableValue(new DBSQLParameter({ type: DBSQLParameterType.VOID, value: [1, 2] as never }), 'p'),
+    ).to.not.throw();
   });
 });

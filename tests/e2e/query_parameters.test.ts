@@ -231,4 +231,56 @@ describe('Query parameters', () => {
       expect(error).to.be.instanceof(ParameterError);
     }
   });
+
+  // https://github.com/databricks/databricks-sql-nodejs/issues/261
+  describe('non-scalar parameter values (issue #261)', () => {
+    // Non-scalar values are rejected client-side (before any RPC is sent), so executeStatement
+    // rejects immediately; this exercises the real session open/close round-trip around it.
+    async function executeAndCaptureError(
+      statement: string,
+      options: Parameters<Awaited<ReturnType<typeof openSession>>['executeStatement']>[1],
+    ): Promise<unknown> {
+      const session = await openSession();
+      try {
+        await session.executeStatement(statement, options);
+        return undefined;
+      } catch (error) {
+        return error;
+      } finally {
+        await session.close();
+      }
+    }
+
+    it('should reject an array-of-arrays of ordinal parameters with ParameterError instead of hanging', async () => {
+      const error = await executeAndCaptureError('SELECT ? AS c', { ordinalParameters: [[1], [2], [3]] as never });
+      expect(error).to.be.instanceof(ParameterError);
+      expect((error as Error).message).to.match(/array/);
+    });
+
+    it('should reject an array value for a named parameter with ParameterError', async () => {
+      const error = await executeAndCaptureError('SELECT :p AS c', { namedParameters: { p: [1, 2] as never } });
+      expect(error).to.be.instanceof(ParameterError);
+      expect((error as Error).message).to.match(/array/);
+    });
+
+    it('should reject a plain-object ordinal parameter value with ParameterError', async () => {
+      const error = await executeAndCaptureError('SELECT ? AS c', { ordinalParameters: [{ a: 1 } as never] });
+      expect(error).to.be.instanceof(ParameterError);
+      expect((error as Error).message).to.match(/object/);
+    });
+
+    it('should support multi-row inserts with flattened scalar ordinal parameters', async () => {
+      const session = await openSession();
+      try {
+        const operation = await session.executeStatement('SELECT * FROM VALUES (?), (?), (?) AS t(c) ORDER BY c', {
+          ordinalParameters: [1, 2, 3],
+        });
+        const result = await operation.fetchAll();
+        await operation.close();
+        expect(result).to.deep.equal([{ c: 1 }, { c: 2 }, { c: 3 }]);
+      } finally {
+        await session.close();
+      }
+    });
+  });
 });
