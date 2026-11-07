@@ -1,6 +1,7 @@
 import fetch, { RequestInfo, RequestInit, Request, Response } from 'node-fetch';
 import { TGetResultSetMetadataResp, TRowSet, TSparkArrowResultLink } from '../../thrift/TCLIService_types';
 import HiveDriverError from '../errors/HiveDriverError';
+import RetryError from '../errors/RetryError';
 import IClientContext from '../contracts/IClientContext';
 import IResultsProvider, { ResultsProviderFetchNextOptions } from './IResultsProvider';
 import { ArrowBatch } from './utils';
@@ -157,15 +158,20 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
     // Pulling `arrayBuffer()` in here lets the retry policy treat those
     // body-stream failures the same as connect-time failures.
     let downloaded: ArrayBuffer | undefined;
-    const result = await retryPolicy.invokeWithRetry(async () => {
-      downloaded = undefined;
-      const request = new Request(url, requestConfig);
-      const response = await fetch(request);
-      if (response.ok) {
-        downloaded = await response.arrayBuffer();
-      }
-      return { request, response };
-    });
+    let result: { request: Request; response: Response };
+    try {
+      result = await retryPolicy.invokeWithRetry(async () => {
+        downloaded = undefined;
+        const request = new Request(url, requestConfig);
+        const response = await fetch(request);
+        if (response.ok) {
+          downloaded = await response.arrayBuffer();
+        }
+        return { request, response };
+      });
+    } catch (error) {
+      throw CloudFetchResultHandler.describeDownloadError(error);
+    }
     // Fall back to reading the body here if the retry policy returned a
     // response without consuming it via our operation (e.g. unit-test stubs
     // that hand back a pre-baked Response without invoking the operation
@@ -175,6 +181,58 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
       downloaded = await result.response.arrayBuffer();
     }
     return { response: result.response, body: downloaded };
+  }
+
+  /**
+   * Make a CloudFetch retry-exhaustion failure easier to diagnose (#471): the generic
+   * "Max retry count exceeded" / "Retry timeout exceeded" message of a `RetryError` is enriched with
+   * the CloudFetch context and the last cause — the HTTP status / status text, or for network errors
+   * only the error code / type. Raw network-error messages are deliberately NOT copied, because
+   * node-fetch embeds the presigned (credential-bearing) request URL in them.
+   * The same error instance, class, error code and payload (including the node-fetch
+   * `Request` / `Response` objects) are kept. Errors other than `RetryError` are returned unchanged.
+   */
+  private static describeDownloadError(error: unknown): unknown {
+    if (!(error instanceof RetryError)) {
+      return error;
+    }
+
+    const prefix = 'CloudFetch result download failed: ';
+    // Idempotent: the same instance may come through again (e.g. a custom retry policy rethrowing a
+    // cached error) — don't stack the prefix / cause a second time.
+    if (error.message.startsWith(prefix)) {
+      return error;
+    }
+
+    let cause: string | undefined;
+    const { payload } = error;
+    if (payload instanceof Error) {
+      const { code, type } = payload as Error & { code?: unknown; type?: unknown };
+      if (typeof code === 'string' && code) {
+        cause = `network error ${code}`;
+      } else if (typeof type === 'string' && type) {
+        cause = `network error (${type})`;
+      } else {
+        cause = 'network error';
+      }
+    } else if (payload && typeof payload === 'object' && 'response' in payload) {
+      const { response } = payload as { response?: { status?: unknown; statusText?: unknown } };
+      if (response && typeof response.status === 'number') {
+        const { statusText } = response;
+        cause = `HTTP ${response.status}${typeof statusText === 'string' && statusText ? `: ${statusText}` : ''}`;
+      }
+    }
+
+    // Mutate the original error rather than creating a new one, so the stack trace still points at
+    // where the retry policy gave up. V8 bakes the message into the `stack` header at construction
+    // time, so rewrite that header too — otherwise loggers that print `err.stack` miss the context.
+    const originalHeader = `${error.name}: ${error.message}`;
+    const message = `${prefix}${error.message}${cause ? ` (last error: ${cause})` : ''}`;
+    error.message = message;
+    if (typeof error.stack === 'string' && error.stack.startsWith(originalHeader)) {
+      error.stack = `${error.name}: ${message}${error.stack.slice(originalHeader.length)}`;
+    }
+    return error;
   }
 
   /**
