@@ -127,10 +127,13 @@ you see an abrupt exit, it means a required `E2E_*` value is genuinely absent
    fix path. Keep the change minimal and scoped to the bug.
 3. **Re-run** your e2e test (green), then `npm test` to confirm the unit suite
    still passes.
-4. **Document the fix in `CHANGELOG.md`.** Add one concise bullet describing the
-   user-visible bug and corrected behavior, with the tracking issue number.
-   Place it under `## Unreleased`; create that section above the newest version
-   if it is missing. Do not edit released entries or bump the package version.
+4. **Document the fix in `CHANGELOG.md`.** Append one new concise bullet
+   describing the user-visible bug and corrected behavior, with the tracking
+   issue number. Place it under `## Unreleased`; create that section above the
+   newest version if it is missing. Preserve existing Unreleased entries,
+   their continuation lines, and section headings/prose. Do not edit released
+   entries or bump the package version. If the note requires changing existing
+   content, report `blocked` for a maintainer.
    Include `CHANGELOG.md` in your reported changed files.
 5. **Check the final diff's style**, including test-only changes: run
    `npm run prettier` and `npm run lint`. Fix reported issues in the files you
@@ -169,10 +172,10 @@ you see an abrupt exit, it means a required `E2E_*` value is genuinely absent
 - **Write boundary.** `.git/`, `.gitleaksignore`, `.github/`, `native/`, and
   `thrift/` are denied paths (they return "Path denied or invalid"). Keep the fix
   in `lib/`, its test in `tests/`, and its release note in `CHANGELOG.md`.
-- **Do NOT touch `package.json` / `package-lock.json`.** A bug fix almost never
-  needs a dependency change; if it truly does, note it in your reason rather than
-  editing the lockfile (a stray `npm install` would rewrite it to lockfileVersion
-  3 and fail CI lint — the engine does not run it for you).
+- Do not change dependency manifests or lockfiles, TypeScript configuration,
+  lint/formatter configuration, npm/yarn configuration, `.nvmrc`, `.editorconfig`,
+  or ignore files. If the fix needs one of these changes, report `blocked` for
+  a maintainer.
 - Match the surrounding style: ESLint (airbnb-base + prettier) and Prettier
   (`printWidth 120`, single quotes, trailing commas). Never disable lint rules or
   change formatter configuration to pass a check. TypeScript is pinned to 5.5.4 —
