@@ -1,5 +1,3 @@
-import { inspect } from 'util';
-import { Readable } from 'stream';
 import { expect, AssertionError } from 'chai';
 import sinon, { SinonStub } from 'sinon';
 import Int64 from 'node-int64';
@@ -506,12 +504,12 @@ describe('CloudFetchResultHandler', () => {
     expect(thrown.stack.split('\n')[0]).to.be.equal(`Error: ${thrown.message}`);
     expect(thrown).to.be.instanceOf(RetryError);
     expect(thrown.errorCode).to.be.equal(RetryErrorCode.AttemptsExceeded);
-    expect(thrown.message).to.contain('CloudFetch');
-    expect(thrown.message).to.contain('socket hang up');
-    expect(thrown.message).to.contain('Max retry count exceeded');
+    expect(thrown.message).to.be.equal(
+      'CloudFetch result download failed: Max retry count exceeded (last error: network error ECONNRESET)',
+    );
   });
 
-  it('should not leak presigned URLs from network errors into the RetryError message or payload', async () => {
+  it('should not leak presigned URLs from network errors into the RetryError message', async () => {
     const context = new ClientContextStub({ cloudFetchConcurrentDownloads: 1 });
     const rowSetProvider = new ResultsProviderStub([sampleRowSet1], undefined);
 
@@ -539,19 +537,42 @@ describe('CloudFetchResultHandler', () => {
     }
 
     expect(thrown).to.be.equal(originalError);
-    expect(thrown.message).to.contain('socket hang up');
     expect(thrown.message).to.contain('ECONNRESET');
     expect(thrown.message).to.not.contain('SECRET_SIGNATURE');
     expect(thrown.message).to.not.contain('storage.example.com');
-    expect(thrown.stack).to.not.contain('SECRET_SIGNATURE');
-    expect(thrown.payload.message).to.contain('socket hang up');
-    expect(thrown.payload.message).to.not.contain('SECRET_SIGNATURE');
-    expect(thrown.payload.stack).to.not.contain('SECRET_SIGNATURE');
-    expect(thrown.payload.code).to.be.equal('ECONNRESET');
-    expect(inspect(thrown, { depth: 5 })).to.not.contain('SECRET_SIGNATURE');
+    expect(thrown.stack.split('\n')[0]).to.not.contain('SECRET_SIGNATURE');
   });
 
-  it('should not leak presigned URLs from the HTTP request/response payload of a RetryError', async () => {
+  it('should use the network error type when no code is available', async () => {
+    const context = new ClientContextStub({ cloudFetchConcurrentDownloads: 1 });
+    const rowSetProvider = new ResultsProviderStub([sampleRowSet1], undefined);
+
+    const result = new CloudFetchResultHandler(context, rowSetProvider, {
+      status: { statusCode: TStatusCode.SUCCESS_STATUS },
+    });
+
+    const originalError = new RetryError(
+      RetryErrorCode.AttemptsExceeded,
+      Object.assign(new Error('request to https://storage.example.com/x?sig=SECRET failed'), { type: 'aborted' }),
+    );
+    context.invokeWithRetryStub.callsFake(async () => {
+      throw originalError;
+    });
+
+    let thrown: any;
+    try {
+      await result.fetchNext({ limit: 10000 });
+    } catch (e) {
+      thrown = e;
+    }
+
+    expect(thrown).to.be.equal(originalError);
+    expect(thrown.message).to.be.equal(
+      'CloudFetch result download failed: Max retry count exceeded (last error: network error (aborted))',
+    );
+  });
+
+  it('should preserve the original node-fetch request/response payload of a RetryError', async () => {
     const context = new ClientContextStub({ cloudFetchConcurrentDownloads: 1 });
     const rowSetProvider = new ResultsProviderStub([sampleRowSet1], undefined);
 
@@ -560,10 +581,10 @@ describe('CloudFetchResultHandler', () => {
     });
 
     const presignedUrl = 'https://storage.example.com/results/chunk-0?sig=SECRET_SIGNATURE&se=2026-11-06';
-    const originalError = new RetryError(RetryErrorCode.AttemptsExceeded, {
-      request: new Request(presignedUrl),
-      response: new Response('', { status: 503, statusText: 'Service Unavailable', url: presignedUrl } as any),
-    });
+    const request = new Request(presignedUrl);
+    const response = new Response('', { status: 503, statusText: 'Service Unavailable', url: presignedUrl } as any);
+    const payload = { request, response };
+    const originalError = new RetryError(RetryErrorCode.AttemptsExceeded, payload);
     context.invokeWithRetryStub.callsFake(async () => {
       throw originalError;
     });
@@ -579,13 +600,14 @@ describe('CloudFetchResultHandler', () => {
     expect(thrown).to.be.instanceOf(RetryError);
     expect(thrown.errorCode).to.be.equal(RetryErrorCode.AttemptsExceeded);
     expect(thrown.message).to.contain('HTTP 503: Service Unavailable');
-    expect(thrown.payload.response.status).to.be.equal(503);
-    expect(thrown.payload.response.statusText).to.be.equal('Service Unavailable');
-    expect(thrown.payload.request.url).to.be.equal('https://storage.example.com/results/chunk-0');
-    expect(inspect(thrown, { depth: 10, showHidden: true })).to.not.contain('SECRET_SIGNATURE');
+    expect(thrown.message).to.not.contain('SECRET_SIGNATURE');
+    expect(thrown.payload).to.be.equal(payload);
+    expect(thrown.payload.request).to.be.equal(request);
+    expect(thrown.payload.response).to.be.equal(response);
+    expect(thrown.payload.response).to.be.instanceOf(Response);
   });
 
-  it('should drain the body of the final HTTP response when replacing a RetryError payload', async () => {
+  it('should re-throw errors other than RetryError unchanged', async () => {
     const context = new ClientContextStub({ cloudFetchConcurrentDownloads: 1 });
     const rowSetProvider = new ResultsProviderStub([sampleRowSet1], undefined);
 
@@ -593,51 +615,11 @@ describe('CloudFetchResultHandler', () => {
       status: { statusCode: TStatusCode.SUCCESS_STATUS },
     });
 
-    const body = new Readable({ read() {} });
-    body.push('error body');
-    body.push(null);
-    const response = new Response(body as any, { status: 503, statusText: 'Service Unavailable' });
-    expect(response.body).to.be.equal(body);
-    const ended = new Promise<void>((resolve) => {
-      body.once('end', () => resolve());
+    const originalError = Object.assign(new Error('unable to verify the first certificate'), {
+      code: 'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
     });
-
-    const originalError = new RetryError(RetryErrorCode.AttemptsExceeded, {
-      request: new Request('https://storage.example.com/results/chunk-0'),
-      response,
-    });
-    context.invokeWithRetryStub.callsFake(async () => {
-      throw originalError;
-    });
-
-    let thrown: any;
-    try {
-      await result.fetchNext({ limit: 10000 });
-    } catch (e) {
-      thrown = e;
-    }
-
-    expect(thrown).to.be.equal(originalError);
-    expect(body.readableFlowing).to.be.true;
-    await ended;
-
-    // A late stream error must not become an unhandled 'error' event (which would throw).
-    expect(() => body.emit('error', new Error('socket hang up'))).to.not.throw();
-  });
-
-  it('should not leak presigned URLs from network errors re-thrown without a RetryError wrapper', async () => {
-    const context = new ClientContextStub({ cloudFetchConcurrentDownloads: 1 });
-    const rowSetProvider = new ResultsProviderStub([sampleRowSet1], undefined);
-
-    const result = new CloudFetchResultHandler(context, rowSetProvider, {
-      status: { statusCode: TStatusCode.SUCCESS_STATUS },
-    });
-
-    const presignedUrl = 'https://storage.example.com/results/chunk-0?sig=SECRET_SIGNATURE&se=2026-11-06';
-    const originalError = Object.assign(
-      new Error(`request to ${presignedUrl} failed, reason: unable to verify the first certificate`),
-      { code: 'UNABLE_TO_VERIFY_LEAF_SIGNATURE', type: 'system' },
-    );
+    const originalMessage = originalError.message;
+    const originalStack = originalError.stack;
     context.invokeWithRetryStub.callsFake(async () => {
       throw originalError;
     });
@@ -651,62 +633,8 @@ describe('CloudFetchResultHandler', () => {
 
     expect(thrown).to.be.equal(originalError);
     expect(thrown.code).to.be.equal('UNABLE_TO_VERIFY_LEAF_SIGNATURE');
-    expect(thrown.message).to.contain('unable to verify the first certificate');
-    expect(thrown.message).to.not.contain('SECRET_SIGNATURE');
-    expect(inspect(thrown, { depth: 5 })).to.not.contain('SECRET_SIGNATURE');
-  });
-
-  it('should keep file:// stack frame locations when scrubbing URLs from error stacks', async () => {
-    const context = new ClientContextStub({ cloudFetchConcurrentDownloads: 1 });
-    const rowSetProvider = new ResultsProviderStub([sampleRowSet1], undefined);
-
-    const result = new CloudFetchResultHandler(context, rowSetProvider, {
-      status: { statusCode: TStatusCode.SUCCESS_STATUS },
-    });
-
-    const presignedUrl = 'https://storage.example.com/results/chunk-0?sig=SECRET_SIGNATURE&se=2026-11-06';
-    const frame = '    at fetchChunk (file:///app/node_modules/pkg/x.mjs:12:3)';
-    const originalError = new Error(`request to ${presignedUrl} failed, reason: socket hang up`);
-    originalError.stack = `Error: ${originalError.message}\n${frame}`;
-    context.invokeWithRetryStub.callsFake(async () => {
-      throw originalError;
-    });
-
-    let thrown: any;
-    try {
-      await result.fetchNext({ limit: 10000 });
-    } catch (e) {
-      thrown = e;
-    }
-
-    expect(thrown).to.be.equal(originalError);
-    expect(thrown.stack).to.not.contain('SECRET_SIGNATURE');
-    expect(thrown.stack.split('\n')[1]).to.be.equal(frame);
-  });
-
-  it('should keep closing delimiters around quoted or parenthesised URLs when scrubbing', async () => {
-    const context = new ClientContextStub({ cloudFetchConcurrentDownloads: 1 });
-    const rowSetProvider = new ResultsProviderStub([sampleRowSet1], undefined);
-
-    const result = new CloudFetchResultHandler(context, rowSetProvider, {
-      status: { statusCode: TStatusCode.SUCCESS_STATUS },
-    });
-
-    const presignedUrl = 'https://storage.example.com/results/chunk-0?sig=SECRET_SIGNATURE&se=2026-11-06';
-    const originalError = new Error(`fetch to '${presignedUrl}'. failed (${presignedUrl})`);
-    context.invokeWithRetryStub.callsFake(async () => {
-      throw originalError;
-    });
-
-    let thrown: any;
-    try {
-      await result.fetchNext({ limit: 10000 });
-    } catch (e) {
-      thrown = e;
-    }
-
-    expect(thrown).to.be.equal(originalError);
-    expect(thrown.message).to.be.equal(`fetch to '<redacted-url>'. failed (<redacted-url>)`);
+    expect(thrown.message).to.be.equal(originalMessage);
+    expect(thrown.stack).to.be.equal(originalStack);
   });
 
   it('should handle expired links', async () => {

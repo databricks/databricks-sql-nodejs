@@ -183,124 +183,36 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
     return { response: result.response, body: downloaded };
   }
 
-  private static redactUrls(text: string): string {
-    // Match greedily up to whitespace (so a `'` / `)` inside the URL can't leave the credentialed tail
-    // unredacted), then hand back only trailing closing delimiters / sentence punctuation so quoted or
-    // parenthesised URLs keep the surrounding message well-formed.
-    return text.replace(/\b[a-z][a-z0-9+.-]*:\/\/\S+/gi, (url) => {
-      const trailing = /['")\]>.,;:!?]*$/.exec(url)?.[0] ?? '';
-      return `<redacted-url>${trailing}`;
-    });
-  }
-
   /**
-   * Network errors (e.g. node-fetch `FetchError`) embed the request URL in their message and stack.
-   * For CloudFetch that is a presigned cloud-storage link whose query string carries credentials,
-   * so scrub any URL in place. Best effort: non-writable properties on exotic error objects must
-   * not mask the original failure.
-   */
-  private static scrubErrorUrls(error: Error): void {
-    try {
-      if (typeof error.message === 'string') {
-        error.message = CloudFetchResultHandler.redactUrls(error.message);
-      }
-      if (typeof error.stack === 'string') {
-        // Only the header (message) lines can carry the request URL; leave `    at ...` frames intact so
-        // `file://` locations of ESM modules stay readable.
-        error.stack = error.stack
-          .split('\n')
-          .map((line) => (/^\s+at /.test(line) ? line : CloudFetchResultHandler.redactUrls(line)))
-          .join('\n');
-      }
-    } catch {
-      // ignore
-    }
-  }
-
-  /**
-   * Make a download failure safe to log and easier to diagnose:
-   * - Any error escaping the retry policy (wrapped in `RetryError` or re-thrown unchanged, e.g. a
-   *   non-retryable TLS `FetchError`) has URLs scrubbed from its message / stack, since the
-   *   presigned CloudFetch link carries credentials in its query string. This deliberately applies to
-   *   every `Error`, not only node-fetch `FetchError`s: errors from custom agents / proxies or wrapped
-   *   errors can embed the request URL too, so any `scheme://` text (e.g. a proxy URL) is redacted.
-   * - For `RetryError`, the generic "Max retry count exceeded" / "Retry timeout exceeded" message
-   *   is enriched with the CloudFetch context and the last cause (HTTP status or network error).
-   *   When the payload is an HTTP `{ request, response }` pair, the node-fetch objects (which hold
-   *   the full presigned URL) are replaced with a plain snapshot carrying the status, status text,
-   *   headers and the URL without its query string, so `util.inspect` / structured-logger
-   *   serializers that walk `error.payload` don't print credentials. Note this changes the observable
-   *   payload shape for CloudFetch HTTP failures: `payload.response` is no longer a node-fetch
-   *   `Response` (so `instanceof Response`, `.text()` / `.json()` do not apply); it is a plain
-   *   `{ status, statusText, ok, headers, url }` object. This is intentional — keeping the original
-   *   `Response` reachable would keep the credentialed URL reachable too.
-   * The same error instance, class and error code are kept so `instanceof` / `errorCode` checks
-   * still work.
+   * Make a CloudFetch retry-exhaustion failure easier to diagnose (#471): the generic
+   * "Max retry count exceeded" / "Retry timeout exceeded" message of a `RetryError` is enriched with
+   * the CloudFetch context and the last cause — the HTTP status / status text, or for network errors
+   * only the error code / type. Raw network-error messages are deliberately NOT copied, because
+   * node-fetch embeds the presigned (credential-bearing) request URL in them.
+   * The same error instance, class, error code and payload (including the node-fetch
+   * `Request` / `Response` objects) are kept. Errors other than `RetryError` are returned unchanged.
    */
   private static describeDownloadError(error: unknown): unknown {
     if (!(error instanceof RetryError)) {
-      if (error instanceof Error) {
-        CloudFetchResultHandler.scrubErrorUrls(error);
-      }
       return error;
     }
 
     let cause: string | undefined;
     const { payload } = error;
     if (payload instanceof Error) {
-      const { code } = payload as Error & { code?: unknown };
-      CloudFetchResultHandler.scrubErrorUrls(payload);
-      let safeMessage: string;
-      try {
-        // `message` may be non-string on exotic error subclasses; never let that mask the `RetryError`.
-        const rawMessage: unknown = payload.message;
-        safeMessage = CloudFetchResultHandler.redactUrls(
-          typeof rawMessage === 'string' ? rawMessage : String(rawMessage),
-        );
-      } catch {
-        safeMessage = '<unavailable>';
+      const { code, type } = payload as Error & { code?: unknown; type?: unknown };
+      if (typeof code === 'string' && code) {
+        cause = `network error ${code}`;
+      } else if (typeof type === 'string' && type) {
+        cause = `network error (${type})`;
+      } else {
+        cause = 'network error';
       }
-      cause = code ? `${safeMessage} (${code})` : safeMessage;
     } else if (payload && typeof payload === 'object' && 'response' in payload) {
-      const { request, response } = payload as {
-        request?: { method?: string; url?: string };
-        response?: { status?: number; statusText?: string; ok?: boolean; headers?: unknown; url?: string };
-      };
+      const { response } = payload as { response?: { status?: unknown; statusText?: unknown } };
       if (response && typeof response.status === 'number') {
-        cause = `HTTP ${response.status}${response.statusText ? `: ${response.statusText}` : ''}`;
-      }
-      const stripQuery = (url?: string) => (typeof url === 'string' ? url.split('?')[0] : undefined);
-      const safePayload = {
-        request: request ? { method: request.method, url: stripQuery(request.url) } : undefined,
-        response: response
-          ? {
-              status: response.status,
-              statusText: response.statusText,
-              ok: response.ok,
-              headers: response.headers,
-              url: stripQuery(response.url),
-            }
-          : undefined,
-      };
-      // The original `Response` becomes unreachable once replaced below, so nobody could drain its body
-      // afterwards. Drain it now (best effort) so an unread stream doesn't pin a keep-alive socket.
-      try {
-        const body = (response as { body?: unknown } | undefined)?.body as
-          | { on?: (event: string, listener: () => void) => unknown; resume?: () => unknown }
-          | undefined;
-        if (body && typeof body.resume === 'function') {
-          if (typeof body.on === 'function') {
-            body.on('error', () => {});
-          }
-          body.resume();
-        }
-      } catch {
-        // Best effort: never mask the original failure.
-      }
-      try {
-        Object.defineProperty(error, 'payload', { value: safePayload });
-      } catch {
-        // Best effort: never mask the original failure.
+        const { statusText } = response;
+        cause = `HTTP ${response.status}${typeof statusText === 'string' && statusText ? `: ${statusText}` : ''}`;
       }
     }
 
