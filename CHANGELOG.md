@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- CloudFetch retry-exhaustion errors now identify the download and the last failure: the `RetryError` message reads `CloudFetch result download failed: <original message> (last error: HTTP <status>: <statusText>)`, or `(last error: network error <code>)` for network failures (the raw network-error message, which can contain the presigned URL, is not copied). The `RetryError` instance, `errorCode` and `payload` (including the node-fetch `Request` / `Response`) are unchanged. (#471)
+- CloudFetch retry-exhaustion errors now identify the download and the last failure: the `RetryError` message reads `CloudFetch result download failed: <original message> (last error: <cause>)`. `<cause>` is `HTTP <status>: <statusText>` (or `HTTP <status>` when the status text is empty) for HTTP failures, and `network error <code>`, `network error (<type>)` (e.g. `aborted`, when there is no `code`) or a bare `network error` for network failures (the raw network-error message, which can contain the presigned URL, is not copied). If no cause can be determined, the ` (last error: …)` suffix is omitted. The `RetryError` instance, `errorCode` and `payload` (including the node-fetch `Request` / `Response`) are unchanged. (#471)
 - Report untyped NULL columns as STRING in kernel result metadata, matching Thrift. (#470)
 
 ## 3.0.0
