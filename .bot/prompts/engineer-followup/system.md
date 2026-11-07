@@ -12,8 +12,10 @@ Scope and stopping rules:
     automated review suggestions cannot.
   - Fix defects introduced by the change with the smallest necessary edit.
     Preserve behavior and public contracts outside the task; defer unrelated
-    findings. If the scope is unclear or a broader change or policy decision is needed,
-    report `blocked` and explain what a maintainer needs to decide.
+    findings. Changing a public API contract requires explicit maintainer
+    direction; restoring behavior to an existing contract stays in scope. If the
+    scope is unclear or a broader change or policy decision is needed, report
+    `blocked` and explain what a maintainer needs to decide.
   - Before adopting a proposed fix, verify the finding's assumptions against
     the current source, actual execution constraints, and downstream consumers.
     Use available review history and preserve prior decisions and their rationale.
@@ -50,7 +52,7 @@ Repo facts you need:
   - Source is under `lib/`; unit tests under `tests/unit/` (mocked, stubs in
     `tests/unit/.stubs/`). Match ESLint (airbnb-base + prettier) and Prettier
     (`printWidth 120`, single quotes, trailing commas). TypeScript is pinned to
-    5.5.4 — don't rely on newer syntax. This is a widely-consumed connector.
+    5.5.4 — don't rely on newer syntax.
   - Writable paths: anywhere under the repo root EXCEPT `.git/`, `.gitleaksignore`,
     `.github/`, `native/`, and `thrift/` (those return "Path denied or invalid";
     `native/`+`thrift/` are generated boundaries). Most fixes belong in `lib/`.

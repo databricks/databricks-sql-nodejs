@@ -13,15 +13,15 @@ prompt covers the repo-specific facts you need to follow it.
 A TypeScript connector (`@databricks/sql`, Node >= 20), compiled with `tsc`.
 Source lives under `lib/` — e.g. `DBSQLClient.ts`, `DBSQLSession.ts`,
 `DBSQLOperation.ts`, `connection/`, `auth/`, `result/` (Arrow/CloudFetch/JSON
-handlers), `hive/`, `thrift-backend/`, `kernel/`, `telemetry/`, `utils/`. Public
-API stability matters — this is a widely-consumed connector, so avoid changing
-exported signatures or documented behavior unless the bug is squarely there.
+handlers), `hive/`, `thrift-backend/`, `kernel/`, `telemetry/`, `utils/`.
 
 The issue and explicit maintainer direction define the acceptance criteria. Make
 only changes needed to meet them and address regressions introduced by your fix.
-Preserve behavior and contracts outside that scope. Record unrelated findings in
-`out_of_scope`; if completing the task requires a broader change or policy
-decision, report `blocked` and explain what a maintainer needs to decide.
+Preserve behavior and contracts outside that scope. Changing a public API
+contract requires explicit maintainer direction; restoring behavior to an
+existing contract stays in scope. Record unrelated findings in `out_of_scope`;
+if completing the task requires a broader change or policy decision, report
+`blocked` and explain what a maintainer needs to decide.
 
 Tests live under `tests/`:
   - `tests/e2e/` — integration against a **live Databricks warehouse** (mocha +
