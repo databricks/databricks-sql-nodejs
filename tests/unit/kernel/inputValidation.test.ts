@@ -15,10 +15,21 @@
 import { expect } from 'chai';
 import Int64 from 'node-int64';
 import assertBindableValue from '../../../lib/utils/assertBindableValue';
+import kernelAssertBindableValue from '../../../lib/kernel/KernelInputValidation';
 import { DBSQLParameter, DBSQLParameterType } from '../../../lib/DBSQLParameter';
 import ParameterError from '../../../lib/errors/ParameterError';
 
-describe('KernelInputValidation.assertBindableValue', () => {
+describe('KernelInputValidation (deprecated shim)', () => {
+  it('still delegates to assertBindableValue', () => {
+    expect(() => kernelAssertBindableValue(42, 'p')).to.not.throw();
+    expect(() => kernelAssertBindableValue([1, 2, 3] as never, 'ordinalParameters[0]')).to.throw(
+      ParameterError,
+      /ordinalParameters\[0\] is an array/,
+    );
+  });
+});
+
+describe('utils/assertBindableValue', () => {
   it('accepts scalars, Date, Int64, bigint, null, and DBSQLParameter', () => {
     expect(() => assertBindableValue(42, 'p')).to.not.throw();
     expect(() => assertBindableValue('x', 'p')).to.not.throw();
