@@ -509,6 +509,39 @@ describe('CloudFetchResultHandler', () => {
     );
   });
 
+  it('should not prefix the same RetryError instance twice when it is re-thrown', async () => {
+    const context = new ClientContextStub({ cloudFetchConcurrentDownloads: 1 });
+
+    const originalError = new RetryError(
+      RetryErrorCode.AttemptsExceeded,
+      Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' }),
+    );
+    context.invokeWithRetryStub.callsFake(async () => {
+      throw originalError;
+    });
+
+    const expectedMessage =
+      'CloudFetch result download failed: Max retry count exceeded (last error: network error ECONNRESET)';
+
+    for (let i = 0; i < 2; i += 1) {
+      const result = new CloudFetchResultHandler(context, new ResultsProviderStub([sampleRowSet1], undefined), {
+        status: { statusCode: TStatusCode.SUCCESS_STATUS },
+      });
+
+      let thrown: any;
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        await result.fetchNext({ limit: 10000 });
+      } catch (e) {
+        thrown = e;
+      }
+
+      expect(thrown).to.be.equal(originalError);
+      expect(thrown.message).to.be.equal(expectedMessage);
+      expect(thrown.stack.split('\n')[0]).to.be.equal(`Error: ${expectedMessage}`);
+    }
+  });
+
   it('should not leak presigned URLs from network errors into the RetryError message', async () => {
     const context = new ClientContextStub({ cloudFetchConcurrentDownloads: 1 });
     const rowSetProvider = new ResultsProviderStub([sampleRowSet1], undefined);

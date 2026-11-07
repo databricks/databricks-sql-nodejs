@@ -197,6 +197,13 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
       return error;
     }
 
+    const prefix = 'CloudFetch result download failed: ';
+    // Idempotent: the same instance may come through again (e.g. a custom retry policy rethrowing a
+    // cached error) — don't stack the prefix / cause a second time.
+    if (error.message.startsWith(prefix)) {
+      return error;
+    }
+
     let cause: string | undefined;
     const { payload } = error;
     if (payload instanceof Error) {
@@ -220,7 +227,7 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
     // where the retry policy gave up. V8 bakes the message into the `stack` header at construction
     // time, so rewrite that header too — otherwise loggers that print `err.stack` miss the context.
     const originalHeader = `${error.name}: ${error.message}`;
-    const message = `CloudFetch result download failed: ${error.message}${cause ? ` (last error: ${cause})` : ''}`;
+    const message = `${prefix}${error.message}${cause ? ` (last error: ${cause})` : ''}`;
     error.message = message;
     if (typeof error.stack === 'string' && error.stack.startsWith(originalHeader)) {
       error.stack = `${error.name}: ${message}${error.stack.slice(originalHeader.length)}`;
