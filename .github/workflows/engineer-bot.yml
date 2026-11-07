@@ -79,6 +79,8 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
+          # Keep in sync with bot-prelude/action.yml and main.yml's
+          # CHECK_BOT_DEPENDENCIES selector.
           node-version: '22.23.4'
 
       - name: Setup JFrog
