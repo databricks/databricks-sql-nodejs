@@ -135,6 +135,9 @@ you see an abrupt exit, it means a required `E2E_*` value is genuinely absent
    entries or bump the package version. If the note requires changing existing
    content, report `blocked` for a maintainer.
    Include `CHANGELOG.md` in your reported changed files.
+   Every published author fix requires a release note. If the change is
+   tests-only or has no user-visible behavior to describe, report `blocked`
+   for a maintainer.
 5. **Check the final diff's style**, including test-only changes: run
    `npm run prettier` and `npm run lint`. Fix reported issues in the files you
    changed with `edit_file`, then rerun both checks after your last edit. Do not

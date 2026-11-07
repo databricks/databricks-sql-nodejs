@@ -99,6 +99,7 @@ previous_titles = Counter(entry.splitlines()[0] for entry in previous_entries.el
 current_titles = Counter(entry.splitlines()[0] for entry in current_entries.elements())
 if any(count > max(1, previous_titles[title]) for title, count in current_titles.items()):
     raise SystemExit("::error::Do not add duplicate Unreleased entries.")
+# Every author PR requires a release note; tests-only maintenance requires a maintainer.
 if (current_released != previous_released or current_notes != previous_notes or not previous_entries <= current_entries
         or not (current_entries - previous_entries)):
     raise SystemExit("::error::Append a fix bullet under ## Unreleased and preserve existing entries.")
