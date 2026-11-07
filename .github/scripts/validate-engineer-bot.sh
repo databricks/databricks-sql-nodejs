@@ -51,6 +51,7 @@ index_entries = subprocess.check_output(["git", "ls-files", "-v", "-z"]).split(b
 if any(entry[:1] == b"S" or entry[:1].islower() for entry in index_entries if entry):
     raise SystemExit("::error::Git index flags must not hide working-tree changes.")
 recorded = set()
+# Pinned engine run_author emits touched_files with "\n".join(result.touched_files).
 for raw in os.environ["TOUCHED_FILES"].split("\n"):
     if raw:
         path = (root / raw).resolve()
@@ -68,8 +69,10 @@ if "CHANGELOG.md" not in recorded or changed - recorded:
     raise SystemExit("::error::Record CHANGELOG.md and every changed file with edit_file before publishing.")
 
 def split_unreleased(text, require_first=False):
-    section = re.search(r"(?ms)^## Unreleased\n(.*?)(?=^## |\Z)", text)
+    section = re.search(r"(?ms)^## Unreleased[ \t]*\n(.*?)(?=^## |\Z)", text)
     if section is None:
+        if require_first:
+            raise SystemExit("::error::Use the heading ## Unreleased above the released versions.")
         return text, Counter(), []
     if require_first and section.start() != re.search(r"(?m)^## ", text).start():
         raise SystemExit("::error::Place ## Unreleased above the released versions.")
@@ -102,10 +105,12 @@ if (current_released != previous_released or current_notes != previous_notes or 
 directive_script = subprocess.check_output(
     ["git", "show", f"{base_sha}:.github/scripts/check-engineer-bot-directives.js"], text=True
 )
-subprocess.run(
-    ["node", "-e", directive_script], check=True,
+directive_check = subprocess.run(
+    ["node", "-e", directive_script],
     env={**os.environ, "GATE_PATHS": json.dumps(sorted(recorded & changed))},
 )
+if directive_check.returncode:
+    raise SystemExit(directive_check.returncode)
 PY
 # Invoke verified tools without loading user npm configuration.
 ./node_modules/.bin/prettier . --check
