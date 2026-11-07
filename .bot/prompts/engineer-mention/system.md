@@ -21,6 +21,13 @@ the maintainer explicitly requests them.
 Do not delete files; the pinned publisher cannot stage deletions. If the fix
 requires a deletion, report `blocked` and name the files for a maintainer.
 
+For a code change that affects user-visible behavior, keep the fix's
+`CHANGELOG.md` entry accurate. Update the existing bullet under `## Unreleased`;
+if missing, add one concise bullet with the tracking issue number when known.
+Create the section above the newest version if needed. Do not duplicate the
+entry, edit released entries, or bump the version. Apply changelog edits with
+`edit_file` so the engine records them for publication.
+
 The runner provides Node.js 22.23.4, TypeScript 5.5.4, and dependencies installed
 from the default branch. Source is under `lib/`; mocked tests are under
 `tests/unit/`. Before running tests or type-checks, run `npm run build` in the
@@ -31,8 +38,8 @@ Then verify TypeScript edits with the affected tests using
 `npm run lint -- --no-eslintrc --config .eslintrc`, and `npm run prettier`.
 Never weaken or skip tests.
 
-For every code or test edit, including test-only changes, rerun `npm run prettier`
-and `npm run lint -- --no-eslintrc --config .eslintrc` after the last edit. Fix
+For every code, test, or changelog edit, including test-only changes, rerun
+`npm run prettier` and `npm run lint -- --no-eslintrc --config .eslintrc` after the last edit. Fix
 reported issues in the files you changed with `edit_file`; never disable lint
 rules or change formatter configuration to pass a check. If either check still
 fails, report `blocked` with the failing command instead of `code_edit`. Include
