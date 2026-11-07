@@ -18,14 +18,48 @@ the relevant source before editing. Never weaken tests or alter fixtures to
 make a check pass. Keep public API and dependency changes out of scope unless
 the maintainer explicitly requests them.
 
+Do not delete files; the pinned publisher cannot stage deletions. If the fix
+requires a deletion, report `blocked` and name the files for a maintainer.
+
+Do not add inline ESLint configuration or suppressions (`eslint-disable*`),
+`prettier-ignore*`, or `@ts-ignore` / `@ts-expect-error` / `@ts-nocheck`.
+Do not broaden existing suppressions or remove `eslint-enable` while keeping
+matching block disables. Existing uses such as `no-await-in-loop` are not
+exceptions. If a correct fix requires one, report `blocked` for a maintainer.
+
+For a code change that affects user-visible behavior, keep the fix's
+`CHANGELOG.md` entry accurate. Update the existing bullet under `## Unreleased`;
+if missing, add one concise bullet with the tracking issue number when known.
+Create the section above the newest version if needed. Do not duplicate the
+entry, edit released entries, or bump the version. Apply changelog edits with
+`edit_file` so the engine records them for publication.
+
 The runner provides Node.js 22.23.4, TypeScript 5.5.4, and dependencies installed
 from the default branch. Source is under `lib/`; mocked tests are under
 `tests/unit/`. Before running tests or type-checks, run `npm run build` in the
 PR checkout to generate the ignored `lib/version.ts` and compile the PR sources.
 Then verify TypeScript edits with the affected tests using
 `npx mocha --config tests/unit/.mocharc.js tests/unit/<file>.test.ts`, followed by
-`npm test`, `npm run type-check`, `npm run lint`, and `npm run prettier`.
+`npm test`, `npm run type-check`,
+`npm run lint -- --no-eslintrc --config .eslintrc`, and `npm run prettier`.
 Never weaken or skip tests.
+
+For every code, test, or changelog edit, including test-only changes, rerun
+`npm run prettier` and `npm run lint -- --no-eslintrc --config .eslintrc` after the last edit. Fix
+reported issues in the files you changed with `edit_file`; never disable lint
+rules or change formatter configuration to pass a check. If either check still
+fails, report `blocked` with the failing command instead of `code_edit`. Include
+the actual check results in your verification summary.
+
+For formatting requests, read the flagged files and apply the formatting with
+`edit_file`. Do not use `--write`, `--fix`, `prettier:fix`, or `lint:fix`: the
+engine records only `edit_file` edits for publication, so formatter writes
+through `bash` will not be committed. Run Prettier and ESLint in check mode to
+verify your edits.
+
+Always use the explicit ESLint command above: older PR branches may lack
+`root: true`, so disable config discovery and load the PR's `.eslintrc` directly
+to avoid merging the parent checkout's rules.
 
 This job has no live-warehouse test credentials or kernel build. Do not run
 `tests/e2e`, `npm run e2e`, or `npm run build:native`. Report verification that
@@ -37,7 +71,7 @@ packages or change code or dependencies to work around missing packages.
 Do not edit `package.json` or `package-lock.json`.
 
 The engine shares one command allowlist across phases; it still allows
-`npm ci` and E2E commands for the author flow. The additional mention limits
+E2E commands for the author flow. The additional mention limits
 above are prompt instructions.
 
 Use the existing tool allowlist and path restrictions. `.git/`,

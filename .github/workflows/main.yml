@@ -24,6 +24,9 @@ jobs:
       labels: linux-ubuntu-latest
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0 # v7.0.0
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: '3.11'
       - name: Pin lockfileVersion to 2
         # See CONTRIBUTING.md "Dependency Pins". Modern npm writes v3
         # by default; catching drift here prevents silent format upgrades
@@ -54,6 +57,10 @@ jobs:
           npm ci
           npm run prettier
           npm run lint
+      - name: Check engineer-bot publication validation
+        run: |
+          unset JFROG_ACCESS_TOKEN ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL
+          python .github/scripts/tests/test_engineer_bot_validation.py
 
   unit-test:
     runs-on:
@@ -85,9 +92,20 @@ jobs:
             ${{ runner.os }}-${{ matrix.node-version }}-build-
             ${{ runner.os }}-${{ matrix.node-version }}-
       - name: Run unit tests
+        env:
+          CACHE_DIR: ${{ runner.temp }}/engineer-bot-cache
+          # Match the engineer bot's Node runtime.
+          CHECK_BOT_DEPENDENCIES: ${{ startsWith(matrix.node-version, '22.') }}
         run: |
           npm ci
+          if [ "$CHECK_BOT_DEPENDENCIES" = true ]; then
+            before=$(bash .github/scripts/engineer-bot-dependency-digest.sh)
+          fi
           npm run test
+          if [ "$CHECK_BOT_DEPENDENCIES" = true ]; then
+            after=$(bash .github/scripts/engineer-bot-dependency-digest.sh)
+            [ "$before" = "$after" ] || { echo "::error::Unit tests changed installed dependencies."; exit 1; }
+          fi
       - run: tar -cvf ${{ env.NYC_REPORT_DIR }}.tar ${{ env.NYC_REPORT_DIR }}
       - name: Store coverage report
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

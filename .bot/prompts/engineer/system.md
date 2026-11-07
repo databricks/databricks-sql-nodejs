@@ -96,6 +96,10 @@ mocha via ts-node (no separate compile needed for a test change):
   - The full unit suite: `npm test`   ·   the full e2e suite: `npm run e2e`
   - After editing `lib/` you can typecheck with `npm run type-check`.
 
+Dependencies must stay unchanged. Do not run `npm ci`, `npm install`, or other
+dependency installers; use `npm run build` to rebuild sources. If installed
+dependencies are missing or incompatible, report `blocked` for a maintainer.
+
 **Run a SINGLE spec while iterating** — do not run the whole `npm run e2e` suite
 each loop: it's large, hits the live warehouse, and the noise hides your red→green
 signal. Filter to your own spec with the `npx mocha --config …` form above (the
@@ -123,6 +127,26 @@ you see an abrupt exit, it means a required `E2E_*` value is genuinely absent
    fix path. Keep the change minimal and scoped to the bug.
 3. **Re-run** your e2e test (green), then `npm test` to confirm the unit suite
    still passes.
+4. **Document the fix in `CHANGELOG.md`.** Append one new concise bullet
+   describing the user-visible bug and corrected behavior, with the tracking
+   issue number. Place it under `## Unreleased`; create that section above the
+   newest version if it is missing. Preserve existing Unreleased entries,
+   their continuation lines, and section headings/prose. Do not edit released
+   entries or bump the package version. If the note requires changing existing
+   content, report `blocked` for a maintainer.
+   Include `CHANGELOG.md` in your reported changed files.
+   Every published author fix requires a release note. If the change is
+   tests-only or has no user-visible behavior to describe, report `blocked`
+   for a maintainer.
+5. **Check the final diff's style**, including test-only changes: run
+   `npm run prettier` and `npm run lint`. Fix reported issues in the files you
+   changed with `edit_file`, then rerun both checks after your last edit. Do not
+   report a successful fix unless both pass; report `blocked` with the failing
+   command if you cannot resolve it. Include the actual check results in your
+   summary.
+   Use Prettier and ESLint in check mode only. Do not use `--write`, `--fix`,
+   `prettier:fix`, or `lint:fix`: the engine records only `edit_file` edits for
+   publication, so formatter writes through `bash` will not be committed.
 
 == RULES ==
 
@@ -135,6 +159,13 @@ you see an abrupt exit, it means a required `E2E_*` value is genuinely absent
   wrong fix looks green.
 - Keep the change minimal and scoped to the bug. Don't refactor unrelated code or
   restyle files you happened to open.
+- Do not delete files; the pinned publisher cannot stage deletions. If the fix
+  requires a deletion, report `blocked` and name the files for a maintainer.
+- Do not add inline ESLint configuration or suppressions (`eslint-disable*`),
+  `prettier-ignore*`, or `@ts-ignore` / `@ts-expect-error` / `@ts-nocheck`.
+  Do not broaden existing suppressions or remove `eslint-enable` while keeping
+  matching block disables. Existing uses such as `no-await-in-loop` are not
+  exceptions. If a correct fix requires one, report `blocked` for a maintainer.
 - Check the affected execution path, its constraints, and downstream contracts.
   Verify the final result delivered to its consumers, with focused regression
   tests for changed boundary interactions and failure behavior.
@@ -143,15 +174,15 @@ you see an abrupt exit, it means a required `E2E_*` value is genuinely absent
   verification results, and deferred work accurately.
 - **Write boundary.** `.git/`, `.gitleaksignore`, `.github/`, `native/`, and
   `thrift/` are denied paths (they return "Path denied or invalid"). Keep the fix
-  in `lib/` with its test in `tests/`.
-- **Do NOT touch `package.json` / `package-lock.json`.** A bug fix almost never
-  needs a dependency change; if it truly does, note it in your reason rather than
-  editing the lockfile (a stray `npm install` would rewrite it to lockfileVersion
-  3 and fail CI lint — the engine does not run it for you).
+  in `lib/`, its test in `tests/`, and its release note in `CHANGELOG.md`.
+- Do not change dependency manifests or lockfiles, TypeScript configuration,
+  lint/formatter configuration, npm/yarn configuration, `.nvmrc`, `.editorconfig`,
+  or ignore files. If the fix needs one of these changes, report `blocked` for
+  a maintainer.
 - Match the surrounding style: ESLint (airbnb-base + prettier) and Prettier
-  (`printWidth 120`, single quotes, trailing commas). `npm run lint` /
-  `npm run prettier` verify. TypeScript is pinned to 5.5.4 — write for it; don't
-  rely on newer TS syntax.
+  (`printWidth 120`, single quotes, trailing commas). Never disable lint rules or
+  change formatter configuration to pass a check. TypeScript is pinned to 5.5.4 —
+  write for it; don't rely on newer TS syntax.
 - **Batch tool calls.** When you need several files or greps, issue them ALL in one
   turn — don't read one file, wait, then read the next.
 - When using `grep`, pass a directory as `path` (e.g. `lib/`), not a single file;

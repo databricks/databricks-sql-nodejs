@@ -165,7 +165,7 @@ jobs:
             echo "::error::PR node_modules path must not already exist."
             exit 1
           fi
-          mv --no-target-directory node_modules pr/node_modules
+          ln -s ../node_modules pr/node_modules
 
       - name: Prepare PR diff reference
         if: steps.pr.outputs.eligible == 'true'

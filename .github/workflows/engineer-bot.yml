@@ -66,6 +66,11 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Setup Python
+        uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6.3.0
+        with:
+          python-version: '3.11'
+
       # --- connector deps (mirrors main.yml unit/e2e jobs) ---------------------
       # setup-jfrog rewrites ~/.npmrc + package-lock resolved URLs to the JFrog
       # mirror so `npm ci` works on the egress-blocked runner. `npm ci` (NOT
@@ -74,6 +79,8 @@ jobs:
       - name: Setup Node
         uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
         with:
+          # Keep in sync with bot-prelude/action.yml and main.yml's
+          # CHECK_BOT_DEPENDENCIES selector.
           node-version: '22.23.4'
 
       - name: Setup JFrog
@@ -172,6 +179,14 @@ jobs:
           chmod 600 "$CONFIG_PATH"
           echo "path=$CONFIG_PATH" >> "$GITHUB_OUTPUT"
 
+      - name: Record installed dependency integrity
+        id: toolchain
+        run: |
+          base_sha=$(git rev-parse HEAD)
+          checksum=$(bash .github/scripts/engineer-bot-dependency-digest.sh)
+          echo "base_sha=$base_sha" >> "$GITHUB_OUTPUT"
+          echo "sha256=$checksum" >> "$GITHUB_OUTPUT"
+
       - name: Run author
         id: author
         # Run from RUNNER_TEMP so the engine-rendered prompt's context file
@@ -199,6 +214,8 @@ jobs:
           REPO_ROOT: ${{ github.workspace }}
           RUNNER_TEMP: ${{ runner.temp }}
           FLOW: ${{ steps.ctx.outputs.flow }}
+          # Keep coverage caches out of the dependency integrity snapshot.
+          CACHE_DIR: ${{ runner.temp }}/engineer-bot-cache
         run: |
           # The runner injects OIDC credentials per step; clear them in this shell.
           unset JFROG_ACCESS_TOKEN ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL
@@ -210,9 +227,25 @@ jobs:
           [ -n "$FLOW" ] && args+=(--flow "$FLOW")
           python -m databricks_bot_engine.engineer_bot.run "${args[@]}"
 
+      # Checks accidental omissions and tool misuse on the agent's own runner.
+      # Hostile shell code can tamper with the shared user/environment; this gate
+      # provides validation, not execution isolation.
+      - name: Check changelog and code style before publishing
+        id: validation
+        if: steps.author.outputs.outcome == 'success'
+        env:
+          TOUCHED_FILES: ${{ steps.author.outputs.touched_files }}
+          TOOLCHAIN_SHA256: ${{ steps.toolchain.outputs.sha256 }}
+          BASE_SHA: ${{ steps.toolchain.outputs.base_sha }}
+          GIT_NO_REPLACE_OBJECTS: '1'
+        run: |
+          unset JFROG_ACCESS_TOKEN ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL
+          validation_script=$(git show "$BASE_SHA:.github/scripts/validate-engineer-bot.sh")
+          bash -c "$validation_script"
+
       - name: Open / update fix PR
         id: publish
-        if: steps.author.outputs.outcome == 'success'
+        if: steps.author.outputs.outcome == 'success' && steps.validation.outcome == 'success'
         env:
           GH_TOKEN: ${{ steps.prelude.outputs.token }}
           GITHUB_REPOSITORY: ${{ github.repository }}
@@ -240,6 +273,7 @@ jobs:
           REPO: ${{ github.repository }}
           ISSUE: ${{ steps.ctx.outputs.issue_number }}
           OUTCOME: ${{ steps.author.outputs.outcome }}
+          VALIDATION_OUTCOME: ${{ steps.validation.outcome }}
           # `coverage_pr_url` is the engine publish module's PR-URL output key for
           # ALL flows (bug-fix included) — the name is legacy.
           PR_URL: ${{ steps.publish.outputs.coverage_pr_url }}
@@ -253,6 +287,8 @@ jobs:
             success)
               if [ -n "$PR_URL" ]; then
                 printf '🤖 engineer-bot opened a fix PR: %s\n\nReview before merge.\n' "$PR_URL" > "$BODY"
+              elif [ "$VALIDATION_OUTCOME" = "failure" ]; then
+                printf '🤖 engineer-bot produced a fix but pre-publication checks failed, so no PR was opened. See the [workflow run](%s) for details.\n' "$RUN_URL" > "$BODY"
               else
                 printf '🤖 engineer-bot produced a fix but could **not** open the PR (push or PR creation failed). See the [workflow run](%s) for details.\n' "$RUN_URL" > "$BODY"
               fi ;;
