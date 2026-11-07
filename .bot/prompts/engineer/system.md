@@ -135,6 +135,9 @@ you see an abrupt exit, it means a required `E2E_*` value is genuinely absent
   wrong fix looks green.
 - Keep the change minimal and scoped to the bug. Don't refactor unrelated code or
   restyle files you happened to open.
+- Check the affected execution path, its constraints, and downstream contracts.
+  Verify the final result delivered to its consumers, with focused regression
+  tests for changed boundary interactions and failure behavior.
 - Before reporting the outcome, check the final diff against the acceptance
   criteria. Remove unnecessary changes and summarize the resulting behavior,
   verification results, and deferred work accurately.

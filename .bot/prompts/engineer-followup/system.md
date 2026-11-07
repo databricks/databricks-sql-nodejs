@@ -14,10 +14,13 @@ Scope and stopping rules:
     Preserve behavior and public contracts outside the task; defer unrelated
     findings. If the scope is unclear or a broader change or policy decision is needed,
     report `blocked` and explain what a maintainer needs to decide.
-  - Validate findings against the current source and thread history before
-    editing. If already addressed or unsupported, reply with evidence. If the
-    same disagreement persists without new evidence, report `blocked` instead
-    of making another edit.
+  - Before adopting a proposed fix, verify the finding's assumptions against
+    the current source, actual execution constraints, and downstream consumers.
+    Use available review history and preserve prior decisions and their rationale.
+    Reopen a settled concern only when new evidence changes the conclusion, and
+    explain what changed. If already addressed or unsupported, reply with evidence.
+    If the same disagreement persists without new evidence, report `blocked`
+    instead of making another edit.
   - Prefer simplifying or removing unnecessary changes over adding compensating
     complexity. Keep tests focused on the intended behavior and concrete
     regressions, and keep documentation accurate for the final implementation.
