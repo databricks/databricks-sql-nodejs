@@ -39,7 +39,7 @@ with tempfile.TemporaryDirectory(prefix='nodejs-bot-gate-regression-') as tempor
         fixture = root / ('with-unreleased' if baseline == EXISTING else 'without-unreleased')
         fixture.mkdir()
         git(fixture, 'init', '-q')
-        for name, content in [('CHANGELOG.md', baseline), ('.eslintrc', '{}\n'), ('package.json', '{}\n'), ('.gitignore', 'dist/\nlib/version.ts\n*.log\nnode_modules/\n'), ('lib/source.ts', "// eslint-disable-next-line no-console\nconsole.log('original');\n")]:
+        for name, content in [('CHANGELOG.md', baseline), ('.eslintrc', '{}\n'), ('package.json', '{}\n'), ('.gitignore', 'dist/\nlib/version.ts\n*.log\nnode_modules/\n'), ('lib/source.ts', "// eslint-disable-next-line no-console -- Existing reason.\nconsole.log('original');\n"), ('lib/directives.ts', '/* eslint-disable no-alert, no-console -- Existing reason. */\n'), ('lib/types.ts', '// @ts-ignore -- Existing reason.\nexport const value: number = "invalid";\n')]:
             write(fixture, name, content)
         for name in ['validate-engineer-bot.sh', 'engineer-bot-dependency-digest.sh', 'check-engineer-bot-directives.js']:
             write(fixture, '.github/scripts/' + name, SCRIPT.with_name(name).read_text())
@@ -112,6 +112,15 @@ with tempfile.TemporaryDirectory(prefix='nodejs-bot-gate-regression-') as tempor
             ('directive string fixture', good, {'lib/source.ts': "export const directive = '/* eslint-disable */';\n"}, ['CHANGELOG.md', 'lib/source.ts'], '', False, True),
             ('directive template fixture', good, {'lib/source.ts': 'export const directive = `\n// prettier-ignore\n`;\n'}, ['CHANGELOG.md', 'lib/source.ts'], '', False, True),
             ('moved existing directive', good, {'lib/source.ts': "// A comment.\n// eslint-disable-next-line no-console\nconsole.log('original');\n"}, ['CHANGELOG.md', 'lib/source.ts'], '', False, True),
+            ('reworded directive justification', good, {'lib/source.ts': "// eslint-disable-next-line no-console -- Better explanation.\nconsole.log('original');\n"}, ['CHANGELOG.md', 'lib/source.ts'], '', False, True),
+            ('long justification delimiter', good, {'lib/source.ts': "// eslint-disable-next-line no-console ---- Better explanation.\nconsole.log('original');\n"}, ['CHANGELOG.md', 'lib/source.ts'], '', False, True),
+            ('reflowed existing directive', good, {'lib/directives.ts': '/* eslint-disable\n  no-alert,\n  no-console\n  -- Better explanation. */\n'}, ['CHANGELOG.md', 'lib/directives.ts'], '', False, True),
+            ('reordered existing directive', good, {'lib/directives.ts': '/* eslint-disable no-console, no-alert -- Better explanation. */\n'}, ['CHANGELOG.md', 'lib/directives.ts'], '', False, True),
+            ('quoted existing directive rules', good, {'lib/directives.ts': '/* eslint-disable "no-console", "no-alert" -- Better explanation. */\n'}, ['CHANGELOG.md', 'lib/directives.ts'], '', False, True),
+            ('broadened multi-rule suppression', good, {'lib/directives.ts': '/* eslint-disable no-console, no-alert, no-undef -- Better explanation. */\n'}, ['CHANGELOG.md', 'lib/directives.ts'], '', False, False),
+            ('reworded existing type directive', good, {'lib/types.ts': '// @ts-ignore -- Better explanation.\nexport const value: number = "invalid";\n'}, ['CHANGELOG.md', 'lib/types.ts'], '', False, True),
+            ('broadened type suppression', good, {'lib/types.ts': '// @ts-nocheck -- Better explanation.\nexport const value: number = "invalid";\n'}, ['CHANGELOG.md', 'lib/types.ts'], '', False, False),
+            ('new type suppression in existing justification', good, {'lib/directives.ts': '/* eslint-disable no-alert, no-console -- Better explanation.\n * @ts-ignore */\nexport const value: number = "invalid";\n'}, ['CHANGELOG.md', 'lib/directives.ts'], '', False, False),
             ('broadened existing directive', good, {'lib/source.ts': "// eslint-disable-next-line no-console, no-alert\nconsole.log('original');\n"}, ['CHANGELOG.md', 'lib/source.ts'], '', False, False),
             ('new markdown suppression', good, {'notes.md': '<!-- prettier-ignore -->\ntext\n'}, ['CHANGELOG.md', 'notes.md'], '', False, False),
             ('new-file suppression', good, {'lib/new.ts': '// prettier-ignore\nexport const value = 2;\n'}, ['CHANGELOG.md', 'lib/new.ts'], '', False, False),
