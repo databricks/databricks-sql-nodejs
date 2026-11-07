@@ -8,6 +8,7 @@ import DBSQLOperation from '../../lib/DBSQLOperation';
 import { PrimaryKeysRequest } from '../../lib/contracts/IDBSQLSession';
 import ISessionBackend from '../../lib/contracts/ISessionBackend';
 import ParameterError from '../../lib/errors/ParameterError';
+import { DBSQLParameter } from '../../lib/DBSQLParameter';
 import { TSessionHandle, TProtocolVersion } from '../../thrift/TCLIService_types';
 import ClientContextStub from './.stubs/ClientContextStub';
 import { createSessionForTest } from './.stubs/createSessionForTest';
@@ -270,6 +271,15 @@ describe('DBSQLSession', () => {
       { desc: 'named array value', options: { namedParameters: { p: [1, 2] } }, pattern: /array/ },
       { desc: 'ordinal plain object', options: { ordinalParameters: [{ a: 1 }] }, pattern: /object/ },
       { desc: 'named plain object', options: { namedParameters: { p: { a: 1 } } }, pattern: /object/ },
+      {
+        desc: 'ordinal array wrapped in DBSQLParameter',
+        options: { ordinalParameters: [new DBSQLParameter({ value: [1, 2] as never })] },
+        pattern: /array/,
+      },
+      // eslint-disable-next-line no-new-wrappers
+      { desc: 'ordinal boxed String', options: { ordinalParameters: [new String('x')] }, pattern: /object/ },
+      // eslint-disable-next-line no-new-wrappers
+      { desc: 'named boxed Number', options: { namedParameters: { p: new Number(1) } }, pattern: /object/ },
     ];
 
     for (const { desc, options, pattern } of invalidCases) {

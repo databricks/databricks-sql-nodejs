@@ -40,6 +40,15 @@ describe('KernelInputValidation.assertBindableValue', () => {
     expect(() => assertBindableValue({ a: 1 } as never, 'p')).to.throw(ParameterError, /object/);
   });
 
+  it('rejects boxed primitives', () => {
+    // eslint-disable-next-line no-new-wrappers
+    expect(() => assertBindableValue(new String('x') as never, 'p')).to.throw(ParameterError, /p is an object/);
+    // eslint-disable-next-line no-new-wrappers
+    expect(() => assertBindableValue(new Number(1) as never, 'p')).to.throw(ParameterError, /p is an object/);
+    // eslint-disable-next-line no-new-wrappers
+    expect(() => assertBindableValue(new Boolean(true) as never, 'p')).to.throw(ParameterError, /p is an object/);
+  });
+
   it('rejects non-scalar values wrapped in DBSQLParameter', () => {
     expect(() => assertBindableValue(new DBSQLParameter({ value: [1, 2] as never }), 'ordinalParameters[0]')).to.throw(
       ParameterError,
