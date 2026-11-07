@@ -14,6 +14,7 @@ DUPLICATE = EXISTING.replace('  Existing detail.\n', '  Existing detail.\n- Exis
 MISPLACED = BASE + '## Unreleased\n\n- Existing fix.\n'
 DUPLICATE_FIX = DUPLICATE.replace('## 3.0.0', '- New fix. (#261)\n\n## 3.0.0')
 RELOCATED_FIX = BASE.replace('## 3.0.0', '## Unreleased\n\n- Existing fix.\n- New fix. (#261)\n\n## 3.0.0')
+REGIONS = '/* eslint-disable no-console */\nconsole.log(1);\n/* eslint-enable no-console */\n/* eslint-disable no-alert */\nalert(1);\n/* eslint-enable no-alert */\n'
 
 
 def git(root, *args):
@@ -52,6 +53,7 @@ sys.exit(1 if os.environ.get("VALIDATION_FAIL") == tool else 0)
         git(fixture, 'init', '-q')
         for name, content in [('CHANGELOG.md', baseline), ('.eslintrc', '{}\n'), ('package.json', '{}\n'), ('.gitignore', 'dist/\nlib/version.ts\n*.log\nnode_modules/\n'), ('lib/source.ts', "// eslint-disable-next-line no-console -- Existing reason.\nconsole.log('original');\n"), ('lib/directives.ts', '/* eslint-disable no-alert, no-console -- Existing reason. */\n'), ('lib/types.ts', '// @ts-ignore -- Existing reason.\nexport const value: number = "invalid";\n'), ('lib/region.ts', "/* eslint-disable no-console */\nconsole.log('original');\n/* eslint-enable no-console */\nexport const value = 1;\n")]:
             write(fixture, name, content)
+        write(fixture, 'lib/regions.ts', REGIONS)
         for name in ['validate-engineer-bot.sh', 'engineer-bot-dependency-digest.sh', 'check-engineer-bot-directives.js']:
             write(fixture, '.github/scripts/' + name, SCRIPT.with_name(name).read_text())
         git(fixture, 'add', '.')
@@ -137,6 +139,9 @@ sys.exit(1 if os.environ.get("VALIDATION_FAIL") == tool else 0)
             ('removed region end', good, {'lib/region.ts': "/* eslint-disable no-console */\nconsole.log('original');\nexport const value = 1;\n"}, ['CHANGELOG.md', 'lib/region.ts'], '', False, False),
             ('removed complete region', good, {'lib/region.ts': 'export const value = 1;\n'}, ['CHANGELOG.md', 'lib/region.ts'], '', False, True),
             ('added enable directive', good, {'lib/region.ts': "/* eslint-disable no-console */\n/* eslint-enable no-console */\nconsole.log('original');\n/* eslint-enable no-console */\nexport const value = 1;\n"}, ['CHANGELOG.md', 'lib/region.ts'], '', False, True),
+            ('changed enable rule list', good, {'lib/region.ts': "/* eslint-disable no-console */\nconsole.log('original');\n/* eslint-enable no-alert */\nexport const value = 1;\n"}, ['CHANGELOG.md', 'lib/region.ts'], '', False, False),
+            ('removed unrelated directives', good, {'lib/regions.ts': REGIONS.replace('/* eslint-disable no-console */\n', '').replace('/* eslint-enable no-alert */\n', '')}, ['CHANGELOG.md', 'lib/regions.ts'], '', False, False),
+            ('removed one complete matching region', good, {'lib/regions.ts': REGIONS.replace('/* eslint-disable no-console */\nconsole.log(1);\n/* eslint-enable no-console */\n', '')}, ['CHANGELOG.md', 'lib/regions.ts'], '', False, True),
             ('broadened existing directive', good, {'lib/source.ts': "// eslint-disable-next-line no-console, no-alert\nconsole.log('original');\n"}, ['CHANGELOG.md', 'lib/source.ts'], '', False, False),
             ('new markdown suppression', good, {'notes.md': '<!-- prettier-ignore -->\ntext\n'}, ['CHANGELOG.md', 'notes.md'], '', False, False),
             ('new-file suppression', good, {'lib/new.ts': '// prettier-ignore\nexport const value = 2;\n'}, ['CHANGELOG.md', 'lib/new.ts'], '', False, False),
@@ -222,7 +227,7 @@ sys.exit(1 if os.environ.get("VALIDATION_FAIL") == tool else 0)
                 assert 'pinned bot publisher cannot stage deleted files' in result.stderr
             if label == 'unrecorded shadow module':
                 assert 'Record CHANGELOG.md and every changed file' in result.stderr
-            if label == 'removed region end':
+            if label in ['removed region end', 'changed enable rule list', 'removed unrelated directives']:
                 assert 'Do not remove eslint-enable directives' in result.stderr
                 assert not log.exists()
             if label.startswith('dependency '):

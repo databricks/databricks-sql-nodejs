@@ -69,15 +69,17 @@ for (const filename of JSON.parse(process.env.GATE_PATHS)) {
   // Counts allow directives to move with refactored code; coverage still needs diff review.
   const before = directives(filename, previous);
   const after = directives(filename, fs.readFileSync(filename, 'utf8'));
-  const total = (counts, kind) =>
-    [...counts].reduce(
-      (sum, [directive, count]) => sum + (directive === kind || directive.startsWith(`${kind} `) ? count : 0),
-      0,
-    );
-  const removedDisables = Math.max(0, total(before, 'eslint-disable') - total(after, 'eslint-disable'));
-  if (total(before, 'eslint-enable') - total(after, 'eslint-enable') > removedDisables) {
-    console.error(`::error::Do not remove eslint-enable directives while keeping block disables: ${filename}`);
-    process.exit(1);
+  for (const [directive, count] of before) {
+    if (!/^eslint-enable(?:\s|$)/.test(directive)) continue;
+    const removedEnables = Math.max(0, count - (after.get(directive) || 0));
+    const disable = directive.replace(/^eslint-enable/, 'eslint-disable');
+    const removedDisables = Math.max(0, (before.get(disable) || 0) - (after.get(disable) || 0));
+    if (removedEnables > removedDisables) {
+      console.error(
+        `::error::Do not remove eslint-enable directives while keeping matching block disables: ${filename}`,
+      );
+      process.exit(1);
+    }
   }
   for (const [directive, count] of after) {
     if (!/^eslint-enable(?:\s|$)/.test(directive) && count > (before.get(directive) || 0)) {
