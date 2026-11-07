@@ -14,5 +14,12 @@
 
 import assertBindableValue from '../utils/assertBindableValue';
 
-// Moved to a backend-neutral location; kept as a re-export for compatibility.
-export default assertBindableValue;
+/**
+ * @deprecated Moved to a backend-neutral location — import the default export
+ * of `lib/utils/assertBindableValue` instead. Kept only as a thin shim because
+ * the package has no `exports` map, so `dist/kernel/KernelInputValidation` is a
+ * reachable deep-import path; it will be removed in a future release.
+ */
+export default function kernelAssertBindableValue(...args: Parameters<typeof assertBindableValue>): void {
+  assertBindableValue(...args);
+}
