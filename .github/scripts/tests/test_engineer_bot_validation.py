@@ -82,6 +82,20 @@ with tempfile.TemporaryDirectory(prefix='nodejs-bot-gate-regression-') as tempor
             ('new next-line suppression', good, {'lib/source.ts': '// eslint-disable-next-line no-alert\nalert(1);\n'}, ['CHANGELOG.md', 'lib/source.ts'], '', False, False),
             ('new inline suppression', good, {'lib/source.ts': 'alert(1); // eslint-disable-line no-alert\n'}, ['CHANGELOG.md', 'lib/source.ts'], '', False, False),
             ('new prettier suppression', good, {'lib/source.ts': '// prettier-ignore\nexport const value = 2;\n'}, ['CHANGELOG.md', 'lib/source.ts'], '', False, False),
+            ('new next-line suppression after comment', good, {'lib/source.ts': '// Explain the fix.\n// eslint-disable-next-line no-alert\nalert(1);\n'}, ['CHANGELOG.md', 'lib/source.ts'], '', False, False),
+            ('new block suppression after comment', good, {'lib/source.ts': '/* Explain the fix. */\n/* eslint-disable */\nalert(1);\n'}, ['CHANGELOG.md', 'lib/source.ts'], '', False, False),
+            ('new trailing suppression after comment', good, {'lib/source.ts': 'alert(1); /* Explain the fix. */ /* eslint-disable-line no-alert */\n'}, ['CHANGELOG.md', 'lib/source.ts'], '', False, False),
+            ('new prettier suppression after comment', good, {'lib/source.ts': '// Explain the fix.\n// prettier-ignore\nexport const value = 2;\n'}, ['CHANGELOG.md', 'lib/source.ts'], '', False, False),
+            ('new inline rule config suppression', good, {'lib/source.ts': '/* eslint no-console: "off" */\nconsole.log(1);\n'}, ['CHANGELOG.md', 'lib/source.ts'], '', False, False),
+            ('new environment suppression', good, {'lib/source.ts': '/* eslint-env browser */\nalert(1);\n'}, ['CHANGELOG.md', 'lib/source.ts'], '', False, False),
+            ('new global suppression', good, {'lib/source.ts': '/* global foo */\nfoo();\n'}, ['CHANGELOG.md', 'lib/source.ts'], '', False, False),
+            ('new globals suppression', good, {'lib/source.ts': '/* globals foo */\nfoo();\n'}, ['CHANGELOG.md', 'lib/source.ts'], '', False, False),
+            ('new exported suppression', good, {'lib/source.ts': '/* exported foo */\nvar foo = 1;\n'}, ['CHANGELOG.md', 'lib/source.ts'], '', False, False),
+            ('new ts-ignore suppression', good, {'lib/source.ts': '// @ts-ignore\nconst value: number = "invalid";\n'}, ['CHANGELOG.md', 'lib/source.ts'], '', False, False),
+            ('new ts-expect-error suppression', good, {'lib/source.ts': '// @ts-expect-error\nconst value: number = "invalid";\n'}, ['CHANGELOG.md', 'lib/source.ts'], '', False, False),
+            ('new ts-nocheck suppression after comment', good, {'lib/source.ts': '// Explain the fix.\n// @ts-nocheck\nconst value: number = "invalid";\n'}, ['CHANGELOG.md', 'lib/source.ts'], '', False, False),
+            ('new triple-slash type suppression', good, {'lib/source.ts': '/// @ts-ignore\nconst value: number = "invalid";\n'}, ['CHANGELOG.md', 'lib/source.ts'], '', False, False),
+            ('new multiline type suppression', good, {'lib/source.ts': '/**\n * @ts-ignore */\nconst value: number = "invalid";\n'}, ['CHANGELOG.md', 'lib/source.ts'], '', False, False),
             ('directive string fixture', good, {'lib/source.ts': "export const directive = '/* eslint-disable */';\n"}, ['CHANGELOG.md', 'lib/source.ts'], '', False, True),
             ('directive template fixture', good, {'lib/source.ts': 'export const directive = `\n// prettier-ignore\n`;\n'}, ['CHANGELOG.md', 'lib/source.ts'], '', False, True),
             ('moved existing directive', good, {'lib/source.ts': "// A comment.\n// eslint-disable-next-line no-console\nconsole.log('original');\n"}, ['CHANGELOG.md', 'lib/source.ts'], '', False, True),
@@ -161,7 +175,7 @@ with tempfile.TemporaryDirectory(prefix='nodejs-bot-gate-regression-') as tempor
             if failure in ['commit', 'skip-worktree', 'assume-unchanged', 'exclude-source', 'exclude-config', 'global-exclude']:
                 assert not log.exists()
             if 'suppression' in label or label == 'broadened existing directive':
-                assert 'Do not add lint or formatting suppression directives' in result.stderr
+                assert 'Do not add lint, formatting, or type-check suppression directives' in result.stderr
                 assert not log.exists()
             if expected:
                 assert log.read_text() == 'run prettier\nrun lint\n', label
