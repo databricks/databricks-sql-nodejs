@@ -10,6 +10,10 @@ SCRIPT = Path(__file__).resolve().parents[1] / 'validate-engineer-bot.sh'
 BASE = '# Release History\n\n## 3.0.0\n\n- Released fix.\n\n## 2.0.0\n\n- Older fix.\n'
 VALID = BASE.replace('## 3.0.0', '## Unreleased\n\n- New fix. (#261)\n\n## 3.0.0')
 EXISTING = BASE.replace('## 3.0.0', '## Unreleased\n\n- Existing fix.\n  Existing detail.\n\n## 3.0.0')
+DUPLICATE = EXISTING.replace('  Existing detail.\n', '  Existing detail.\n- Existing fix.\n  Existing detail.\n')
+MISPLACED = BASE + '## Unreleased\n\n- Existing fix.\n'
+DUPLICATE_FIX = DUPLICATE.replace('## 3.0.0', '- New fix. (#261)\n\n## 3.0.0')
+RELOCATED_FIX = BASE.replace('## 3.0.0', '## Unreleased\n\n- Existing fix.\n- New fix. (#261)\n\n## 3.0.0')
 
 
 def git(root, *args):
@@ -80,6 +84,10 @@ with tempfile.TemporaryDirectory(prefix='nodejs-bot-gate-regression-') as tempor
             ('self-ignoring nested gitignore', good, {'lib/sub/.gitignore': '*\n', 'lib/sub/hidden.ts': '// unrecorded\n'}, ['CHANGELOG.md'], '', False, False),
             ('configured fsmonitor with valid fix', good, {}, ['CHANGELOG.md'], 'fsmonitor', False, True),
             ('configured fsmonitor with unrecorded edit', good, {'lib/source.ts': 'export const value = 2;\n'}, ['CHANGELOG.md'], 'fsmonitor', False, False),
+            ('preserved baseline duplicates', DUPLICATE_FIX, {}, ['CHANGELOG.md'], 'baseline-duplicates', False, True),
+            ('removed baseline duplicate', DUPLICATE_FIX.replace('- Existing fix.\n  Existing detail.\n', '', 1), {}, ['CHANGELOG.md'], 'baseline-duplicates', False, False),
+            ('increased baseline duplicates', DUPLICATE_FIX.replace('- New fix. (#261)', '- Existing fix.\n  Existing detail.\n- New fix. (#261)'), {}, ['CHANGELOG.md'], 'baseline-duplicates', False, False),
+            ('relocated baseline section', RELOCATED_FIX, {}, ['CHANGELOG.md'], 'baseline-misplaced', False, True),
             ('new block suppression', good, {'lib/source.ts': '/* eslint-disable */\nexport const value = 2;\n'}, ['CHANGELOG.md', 'lib/source.ts'], '', False, False),
             ('new next-line suppression', good, {'lib/source.ts': '// eslint-disable-next-line no-alert\nalert(1);\n'}, ['CHANGELOG.md', 'lib/source.ts'], '', False, False),
             ('new inline suppression', good, {'lib/source.ts': 'alert(1); // eslint-disable-line no-alert\n'}, ['CHANGELOG.md', 'lib/source.ts'], '', False, False),
@@ -131,6 +139,12 @@ with tempfile.TemporaryDirectory(prefix='nodejs-bot-gate-regression-') as tempor
             git(fixture, 'config', '--local', 'core.excludesFile', str(global_excludes))
             git(fixture, 'config', '--local', 'core.fsmonitor', 'false')
             git(fixture, 'clean', '-fdxq')
+            validation_base_sha = base_sha
+            if failure.startswith('baseline-'):
+                write(fixture, 'CHANGELOG.md', DUPLICATE if failure == 'baseline-duplicates' else MISPLACED)
+                git(fixture, 'add', '--', 'CHANGELOG.md')
+                git(fixture, '-c', 'user.name=Workflow Test', '-c', 'user.email=workflow-test@example.com', 'commit', '--signoff', '-qm', 'pre-existing changelog quirk')
+                validation_base_sha = git(fixture, 'rev-parse', 'HEAD').stdout.decode().strip()
             shutil.rmtree(fixture / 'node_modules', ignore_errors=True)
             write(fixture, 'node_modules/tool.js', '// original\n')
             write(fixture, 'node_modules/other.js', '// other\n')
@@ -173,7 +187,7 @@ with tempfile.TemporaryDirectory(prefix='nodejs-bot-gate-regression-') as tempor
             log.unlink(missing_ok=True)
             monitor_marker = fixture / '.git/fsmonitor-invoked'
             monitor_marker.unlink(missing_ok=True)
-            env = {'PATH': f'{binary}:{os.environ["PATH"]}', 'BASE_SHA': base_sha, 'GIT_NO_REPLACE_OBJECTS': '1', 'TOUCHED_FILES': '\n'.join(recorded), 'TOOLCHAIN_SHA256': checksum, 'VALIDATION_LOG': str(log), 'VALIDATION_FAIL': failure, 'FSMONITOR_MARKER': str(monitor_marker), 'JFROG_ACCESS_TOKEN': 'test-placeholder', 'ACTIONS_ID_TOKEN_REQUEST_TOKEN': 'test-placeholder', 'ACTIONS_ID_TOKEN_REQUEST_URL': 'test-placeholder'}
+            env = {'PATH': f'{binary}:{os.environ["PATH"]}', 'BASE_SHA': validation_base_sha, 'GIT_NO_REPLACE_OBJECTS': '1', 'TOUCHED_FILES': '\n'.join(recorded), 'TOOLCHAIN_SHA256': checksum, 'VALIDATION_LOG': str(log), 'VALIDATION_FAIL': failure, 'FSMONITOR_MARKER': str(monitor_marker), 'JFROG_ACCESS_TOKEN': 'test-placeholder', 'ACTIONS_ID_TOKEN_REQUEST_TOKEN': 'test-placeholder', 'ACTIONS_ID_TOKEN_REQUEST_URL': 'test-placeholder'}
             result = subprocess.run(['bash', '-e', '-o', 'pipefail', '-c', 'validation_script=$(git show "$BASE_SHA:.github/scripts/validate-engineer-bot.sh"); bash -c "$validation_script"'], cwd=fixture, env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True)
             assert (result.returncode == 0) == expected, (label, result.stdout, result.stderr)
             assert not monitor_marker.exists(), label

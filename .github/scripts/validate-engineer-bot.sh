@@ -35,6 +35,7 @@ if [ "$checksum" != "$TOOLCHAIN_SHA256" ]; then
 fi
 python - <<'PY'
 from pathlib import Path
+from collections import Counter
 import json
 import os
 import re
@@ -66,24 +67,24 @@ if deleted:
 if "CHANGELOG.md" not in recorded or changed - recorded:
     raise SystemExit("::error::Record CHANGELOG.md and every changed file with edit_file before publishing.")
 
-def split_unreleased(text):
+def split_unreleased(text, require_first=False):
     section = re.search(r"(?ms)^## Unreleased\n(.*?)(?=^## |\Z)", text)
     if section is None:
-        return text, set()
-    if section.start() != re.search(r"(?m)^## ", text).start():
+        return text, Counter()
+    if require_first and section.start() != re.search(r"(?m)^## ", text).start():
         raise SystemExit("::error::Place ## Unreleased above the released versions.")
     released = text[:section.start()] + text[section.end():]
     blocks = [entry.rstrip() for entry in re.findall(r"(?ms)^- (\S.*?)(?=^- |\Z)", section.group(1))]
-    titles = [entry.splitlines()[0] for entry in blocks]
-    if len(set(titles)) != len(titles):
-        raise SystemExit("::error::Do not duplicate Unreleased entries.")
-    entries = set(blocks)
-    return released, entries
+    return released, Counter(blocks)
 
 previous = subprocess.check_output(["git", "show", f"{base_sha}:CHANGELOG.md"], text=True)
 current = Path("CHANGELOG.md").read_text()
 previous_released, previous_entries = split_unreleased(previous)
-current_released, current_entries = split_unreleased(current)
+current_released, current_entries = split_unreleased(current, require_first=True)
+previous_titles = Counter(entry.splitlines()[0] for entry in previous_entries.elements())
+current_titles = Counter(entry.splitlines()[0] for entry in current_entries.elements())
+if any(count > max(1, previous_titles[title]) for title, count in current_titles.items()):
+    raise SystemExit("::error::Do not add duplicate Unreleased entries.")
 if (current_released != previous_released or not previous_entries <= current_entries
         or not (current_entries - previous_entries)):
     raise SystemExit("::error::Append a fix bullet under ## Unreleased and preserve existing entries.")
