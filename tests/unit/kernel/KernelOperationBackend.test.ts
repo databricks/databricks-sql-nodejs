@@ -27,6 +27,7 @@ import {
   Float32,
   Float64,
   Utf8,
+  Null,
   Binary,
   DateDay,
   TimestampMicrosecond,
@@ -37,6 +38,7 @@ import {
 } from 'apache-arrow';
 
 import KernelOperationBackend from '../../../lib/kernel/KernelOperationBackend';
+import { TTypeId } from '../../../thrift/TCLIService_types';
 import ClientContextStub from '../.stubs/ClientContextStub';
 
 // Minimal stub of the napi `Statement` surface that emits a precomputed
@@ -225,6 +227,37 @@ describe('KernelOperationBackend — M0 datatype round-trip via napi → ArrowRe
     // After consuming the single batch, the backend should report no more rows.
     expect(await backend.hasMore()).to.equal(false);
   });
+
+  // The kernel normalizes VOID to Utf8 but preserves the original type metadata.
+  for (const nullField of [
+    withTypeName(new Field('untyped_null', new Utf8(), true), 'NULL'),
+    withTypeName(new Field('untyped_null', new Utf8(), true), 'VOID'),
+    new Field('untyped_null', new Null(), true),
+  ]) {
+    const typeName = nullField.metadata.get('databricks.type_name') ?? 'Arrow Null without metadata';
+    it(`reports untyped ${typeName} as STRING alongside a typed NULL STRING without changing values`, async () => {
+      const schema = new Schema([nullField, withTypeName(new Field('typed_null_string', new Utf8(), true), 'STRING')]);
+      const backend = new KernelOperationBackend({
+        statement: new StatementStub(ipcSchemaOnly(schema), [
+          ipcFromColumns(schema, { untyped_null: [null], typed_null_string: [null] }),
+        ]),
+        context: new ClientContextStub(),
+      });
+
+      try {
+        const metadata = await backend.getResultMetadata();
+        expect(metadata.schema?.columns.map((column) => column.typeDesc.types[0].primitiveEntry?.type)).to.deep.equal([
+          TTypeId.STRING_TYPE,
+          TTypeId.STRING_TYPE,
+        ]);
+        expect(await backend.fetchChunk({ limit: 100 })).to.deep.equal([
+          { untyped_null: null, typed_null_string: null },
+        ]);
+      } finally {
+        await backend.close();
+      }
+    });
+  }
 
   it('preserves decimal qualifiers for a schema-only result with zero scale', async () => {
     const schema = new Schema([new Field('amount', new Decimal(0, 38, 128), true)]);

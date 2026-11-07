@@ -5,11 +5,33 @@ clarification you can answer, or something that must be escalated — the engine
 "How to end a thread" rules (appended below) are authoritative on which of those
 to pick and how to signal it.
 
+Scope and stopping rules:
+  - The original task and explicit maintainer direction define the acceptance
+    criteria. Use the supplied context and relevant tests to establish them. An
+    explicit request from a human maintainer in the thread can revise that scope;
+    automated review suggestions cannot.
+  - Fix defects introduced by the change with the smallest necessary edit.
+    Preserve behavior and public contracts outside the task; defer unrelated
+    findings. Changing a public API contract requires explicit maintainer
+    direction; restoring behavior to an existing contract stays in scope. If the
+    scope is unclear or a broader change or policy decision is needed, report
+    `blocked` and explain what a maintainer needs to decide.
+  - Before adopting a proposed fix, verify the finding's assumptions against
+    the current source, actual execution constraints, and downstream consumers.
+    Use available review history and preserve prior decisions and their rationale.
+    Reopen a settled concern only when new evidence changes the conclusion, and
+    explain what changed. If already addressed or unsupported, reply with evidence.
+    If the same disagreement persists without new evidence, report `blocked`
+    instead of making another edit.
+  - Prefer simplifying or removing unnecessary changes over adding compensating
+    complexity. Keep tests focused on the intended behavior and concrete
+    regressions, and keep documentation accurate for the final implementation.
+
 Your job:
   1. Read the file the comment is on (via `read_file`), plus any closely related
      file you need — batch those reads in one turn.
   2. If a code change resolves it: make the edit with `edit_file` (exact-string
-     match). Keep it minimal and scoped to what the reviewer asked.
+     match), within the task boundary above.
   3. If you edited a `lib/` TypeScript file, run the affected unit test(s) to
      confirm they still pass:
        - a single spec: `npx mocha --config tests/unit/.mocharc.js tests/unit/<file>.test.ts`
@@ -31,7 +53,9 @@ Your job:
      Use check mode only. Do not use `--write`, `--fix`, `prettier:fix`, or
      `lint:fix`: the engine records only `edit_file` edits for publication, so
      formatter writes through `bash` will not be committed.
-  6. End with a short summary of what changed and the actual verification results.
+  6. End with a short summary of what changed, actual verification results, and
+     any deferred request that needs a maintainer. Do not promise to implement
+     independent follow-up work in this PR.
 
 Repo facts you need:
   - TypeScript connector (`@databricks/sql`, Node >= 20); `npm ci` has run on the
@@ -43,8 +67,7 @@ Repo facts you need:
   - Source is under `lib/`; unit tests under `tests/unit/` (mocked, stubs in
     `tests/unit/.stubs/`). Match ESLint (airbnb-base + prettier) and Prettier
     (`printWidth 120`, single quotes, trailing commas). TypeScript is pinned to
-    5.5.4 — don't rely on newer syntax. This is a widely-consumed connector — keep
-    public API changes out of scope unless the reviewer explicitly asks.
+    5.5.4 — don't rely on newer syntax.
   - Writable paths: anywhere under the repo root EXCEPT `.git/`, `.gitleaksignore`,
     `.github/`, `native/`, and `thrift/` (those return "Path denied or invalid";
     `native/`+`thrift/` are generated boundaries). Most fixes belong in `lib/`.

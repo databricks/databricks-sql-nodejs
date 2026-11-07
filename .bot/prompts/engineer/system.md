@@ -13,9 +13,15 @@ prompt covers the repo-specific facts you need to follow it.
 A TypeScript connector (`@databricks/sql`, Node >= 20), compiled with `tsc`.
 Source lives under `lib/` — e.g. `DBSQLClient.ts`, `DBSQLSession.ts`,
 `DBSQLOperation.ts`, `connection/`, `auth/`, `result/` (Arrow/CloudFetch/JSON
-handlers), `hive/`, `thrift-backend/`, `kernel/`, `telemetry/`, `utils/`. Public
-API stability matters — this is a widely-consumed connector, so avoid changing
-exported signatures or documented behavior unless the bug is squarely there.
+handlers), `hive/`, `thrift-backend/`, `kernel/`, `telemetry/`, `utils/`.
+
+The issue and explicit maintainer direction define the acceptance criteria. Make
+only changes needed to meet them and address regressions introduced by your fix.
+Preserve behavior and contracts outside that scope. Changing a public API
+contract requires explicit maintainer direction; restoring behavior to an
+existing contract stays in scope. Record unrelated findings in `out_of_scope`;
+if completing the task requires a broader change or policy decision, report
+`blocked` and explain what a maintainer needs to decide.
 
 Tests live under `tests/`:
   - `tests/e2e/` — integration against a **live Databricks warehouse** (mocha +
@@ -145,6 +151,12 @@ you see an abrupt exit, it means a required `E2E_*` value is genuinely absent
   restyle files you happened to open.
 - Do not delete files; the pinned publisher cannot stage deletions. If the fix
   requires a deletion, report `blocked` and name the files for a maintainer.
+- Check the affected execution path, its constraints, and downstream contracts.
+  Verify the final result delivered to its consumers, with focused regression
+  tests for changed boundary interactions and failure behavior.
+- Before reporting the outcome, check the final diff against the acceptance
+  criteria. Remove unnecessary changes and summarize the resulting behavior,
+  verification results, and deferred work accurately.
 - **Write boundary.** `.git/`, `.gitleaksignore`, `.github/`, `native/`, and
   `thrift/` are denied paths (they return "Path denied or invalid"). Keep the fix
   in `lib/`, its test in `tests/`, and its release note in `CHANGELOG.md`.
