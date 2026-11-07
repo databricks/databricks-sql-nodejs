@@ -32,10 +32,10 @@ function directives(filename, text) {
       .replace(/\s+/g, ' ');
     const eslintDirective =
       /^eslint-disable-(?:next-line|line)(?:\s|$)/.test(value) ||
-      (comment.startsWith('/*') && /^(?:eslint(?:-disable|-env)?|globals?|exported)(?:\s|$)/.test(value));
+      (comment.startsWith('/*') && /^(?:eslint(?:-disable|-enable|-env)?|globals?|exported)(?:\s|$)/.test(value));
     if (eslintDirective) {
       let directive = value.split(/\s-{2,}\s/, 1)[0];
-      const disable = /^(eslint-disable(?:-next-line|-line)?)(?:\s+(.*))?$/.exec(directive);
+      const disable = /^(eslint-(?:disable(?:-next-line|-line)?|enable))(?:\s+(.*))?$/.exec(directive);
       if (disable) {
         const rules = (disable[2] || '')
           .split(',')
@@ -66,10 +66,21 @@ for (const filename of JSON.parse(process.env.GATE_PATHS)) {
   } catch {
     // New files have no baseline comments.
   }
+  // Counts allow directives to move with refactored code; coverage still needs diff review.
   const before = directives(filename, previous);
   const after = directives(filename, fs.readFileSync(filename, 'utf8'));
+  const total = (counts, kind) =>
+    [...counts].reduce(
+      (sum, [directive, count]) => sum + (directive === kind || directive.startsWith(`${kind} `) ? count : 0),
+      0,
+    );
+  const removedDisables = Math.max(0, total(before, 'eslint-disable') - total(after, 'eslint-disable'));
+  if (total(before, 'eslint-enable') - total(after, 'eslint-enable') > removedDisables) {
+    console.error(`::error::Do not remove eslint-enable directives while keeping block disables: ${filename}`);
+    process.exit(1);
+  }
   for (const [directive, count] of after) {
-    if (count > (before.get(directive) || 0)) {
+    if (!/^eslint-enable(?:\s|$)/.test(directive) && count > (before.get(directive) || 0)) {
       console.error(`::error::Do not add lint, formatting, or type-check suppression directives: ${filename}`);
       process.exit(1);
     }

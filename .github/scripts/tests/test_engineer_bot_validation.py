@@ -31,15 +31,26 @@ with tempfile.TemporaryDirectory(prefix='nodejs-bot-gate-regression-') as tempor
     binary = root / 'bin'
     binary.mkdir()
     (binary / 'python').symlink_to(sys.executable)
-    npm = binary / 'npm'
-    npm.write_text('#!/usr/bin/env python3\nimport os, sys\nassert all(name not in os.environ for name in ["JFROG_ACCESS_TOKEN", "ACTIONS_ID_TOKEN_REQUEST_TOKEN", "ACTIONS_ID_TOKEN_REQUEST_URL"])\nwith open(os.environ["VALIDATION_LOG"], "a") as log: log.write(" ".join(sys.argv[1:]) + "\\n")\nif os.environ.get("VALIDATION_FAIL") == "read-stdin": sys.stdin.read()\nsys.exit(1 if os.environ.get("VALIDATION_FAIL") == sys.argv[2] else 0)\n')
-    npm.chmod(0o755)
+    style_tool = '''#!/usr/bin/env python3
+import os, sys
+assert all(name not in os.environ for name in ["JFROG_ACCESS_TOKEN", "ACTIONS_ID_TOKEN_REQUEST_TOKEN", "ACTIONS_ID_TOKEN_REQUEST_URL", "NODE_OPTIONS", "NODE_PATH"])
+tool = "prettier" if sys.argv[0].endswith("prettier") else "lint"
+expected = [".", "--check"] if tool == "prettier" else ["lib/**/*.{js,ts}", "tests/e2e/**/*.{js,ts}", "--ext", ".js,.ts"]
+assert sys.argv[1:] == expected
+with open(os.environ["VALIDATION_LOG"], "a") as log: log.write(tool + "\\n")
+if os.environ.get("VALIDATION_FAIL") == "read-stdin": sys.stdin.read()
+sys.exit(1 if os.environ.get("VALIDATION_FAIL") == tool else 0)
+'''
+    user_config = root / 'user.npmrc'
+    user_config.write_text('script-shell=/bin/false\n')
+    global_config = root / 'global.npmrc'
+    global_config.write_text('script-shell=/bin/false\n')
     count = 0
     for baseline in [BASE, EXISTING]:
         fixture = root / ('with-unreleased' if baseline == EXISTING else 'without-unreleased')
         fixture.mkdir()
         git(fixture, 'init', '-q')
-        for name, content in [('CHANGELOG.md', baseline), ('.eslintrc', '{}\n'), ('package.json', '{}\n'), ('.gitignore', 'dist/\nlib/version.ts\n*.log\nnode_modules/\n'), ('lib/source.ts', "// eslint-disable-next-line no-console -- Existing reason.\nconsole.log('original');\n"), ('lib/directives.ts', '/* eslint-disable no-alert, no-console -- Existing reason. */\n'), ('lib/types.ts', '// @ts-ignore -- Existing reason.\nexport const value: number = "invalid";\n')]:
+        for name, content in [('CHANGELOG.md', baseline), ('.eslintrc', '{}\n'), ('package.json', '{}\n'), ('.gitignore', 'dist/\nlib/version.ts\n*.log\nnode_modules/\n'), ('lib/source.ts', "// eslint-disable-next-line no-console -- Existing reason.\nconsole.log('original');\n"), ('lib/directives.ts', '/* eslint-disable no-alert, no-console -- Existing reason. */\n'), ('lib/types.ts', '// @ts-ignore -- Existing reason.\nexport const value: number = "invalid";\n'), ('lib/region.ts', "/* eslint-disable no-console */\nconsole.log('original');\n/* eslint-enable no-console */\nexport const value = 1;\n")]:
             write(fixture, name, content)
         for name in ['validate-engineer-bot.sh', 'engineer-bot-dependency-digest.sh', 'check-engineer-bot-directives.js']:
             write(fixture, '.github/scripts/' + name, SCRIPT.with_name(name).read_text())
@@ -64,6 +75,8 @@ with tempfile.TemporaryDirectory(prefix='nodejs-bot-gate-regression-') as tempor
             ('unrecorded staged source', good, {'lib/source.ts': 'export const value = 2;\n'}, ['CHANGELOG.md'], '', True, False),
             ('fully recorded source edit', good, {'lib/source.ts': 'export const value = 2;\n'}, ['CHANGELOG.md', 'lib/source.ts'], '', False, True),
             ('fully recorded new source', good, {'lib/new.ts': 'export const value = 2;\n'}, ['CHANGELOG.md', 'lib/new.ts'], '', False, True),
+            ('unrecorded shadow module', good, {'json.py': 'raise AssertionError("Checkout modules must not be imported")\n'}, ['CHANGELOG.md'], '', False, False),
+            ('recorded shadow module', good, {'subprocess.py': 'raise AssertionError("Checkout modules must not be imported")\n'}, ['CHANGELOG.md', 'subprocess.py'], '', False, True),
             ('recorded deletion', good, {'lib/source.ts': None}, ['CHANGELOG.md', 'lib/source.ts'], '', False, False),
             ('recorded names with whitespace', good, {'lib/with space\t.ts': 'export const value = 2;\n'}, ['CHANGELOG.md', 'lib/with space\t.ts'], '', False, True),
             ('normalized recorded paths', good, {'lib/source.ts': 'export const value = 2;\n'}, ['./CHANGELOG.md', str(fixture / 'lib/source.ts'), 'missing.ts'], '', False, True),
@@ -121,12 +134,15 @@ with tempfile.TemporaryDirectory(prefix='nodejs-bot-gate-regression-') as tempor
             ('reworded existing type directive', good, {'lib/types.ts': '// @ts-ignore -- Better explanation.\nexport const value: number = "invalid";\n'}, ['CHANGELOG.md', 'lib/types.ts'], '', False, True),
             ('broadened type suppression', good, {'lib/types.ts': '// @ts-nocheck -- Better explanation.\nexport const value: number = "invalid";\n'}, ['CHANGELOG.md', 'lib/types.ts'], '', False, False),
             ('new type suppression in existing justification', good, {'lib/directives.ts': '/* eslint-disable no-alert, no-console -- Better explanation.\n * @ts-ignore */\nexport const value: number = "invalid";\n'}, ['CHANGELOG.md', 'lib/directives.ts'], '', False, False),
+            ('removed region end', good, {'lib/region.ts': "/* eslint-disable no-console */\nconsole.log('original');\nexport const value = 1;\n"}, ['CHANGELOG.md', 'lib/region.ts'], '', False, False),
+            ('removed complete region', good, {'lib/region.ts': 'export const value = 1;\n'}, ['CHANGELOG.md', 'lib/region.ts'], '', False, True),
+            ('added enable directive', good, {'lib/region.ts': "/* eslint-disable no-console */\n/* eslint-enable no-console */\nconsole.log('original');\n/* eslint-enable no-console */\nexport const value = 1;\n"}, ['CHANGELOG.md', 'lib/region.ts'], '', False, True),
             ('broadened existing directive', good, {'lib/source.ts': "// eslint-disable-next-line no-console, no-alert\nconsole.log('original');\n"}, ['CHANGELOG.md', 'lib/source.ts'], '', False, False),
             ('new markdown suppression', good, {'notes.md': '<!-- prettier-ignore -->\ntext\n'}, ['CHANGELOG.md', 'notes.md'], '', False, False),
             ('new-file suppression', good, {'lib/new.ts': '// prettier-ignore\nexport const value = 2;\n'}, ['CHANGELOG.md', 'lib/new.ts'], '', False, False),
             ('Prettier failure', good, {}, ['CHANGELOG.md'], 'prettier', False, False),
             ('ESLint failure', good, {}, ['CHANGELOG.md'], 'lint', False, False),
-            ('npm reads stdin', good, {}, ['CHANGELOG.md'], 'read-stdin', False, True),
+            ('style tool reads stdin', good, {}, ['CHANGELOG.md'], 'read-stdin', False, True),
         ]
         if baseline == EXISTING:
             cases += [('duplicate unreleased entry', baseline.replace('- Existing fix.', '- Existing fix.\n- Existing fix.'), {}, ['CHANGELOG.md'], '', False, False)]
@@ -155,12 +171,14 @@ with tempfile.TemporaryDirectory(prefix='nodejs-bot-gate-regression-') as tempor
                 git(fixture, '-c', 'user.name=Workflow Test', '-c', 'user.email=workflow-test@example.com', 'commit', '--signoff', '-qm', 'pre-existing changelog quirk')
                 validation_base_sha = git(fixture, 'rev-parse', 'HEAD').stdout.decode().strip()
             shutil.rmtree(fixture / 'node_modules', ignore_errors=True)
-            write(fixture, 'node_modules/tool.js', '// original\n')
+            write(fixture, 'node_modules/tool.js', style_tool)
+            (fixture / 'node_modules/tool.js').chmod(0o755)
             write(fixture, 'node_modules/other.js', '// other\n')
             write(fixture, 'node_modules/.gitignore', '*\n')
             (fixture / 'node_modules/typescript').symlink_to(SCRIPT.parents[2] / 'node_modules/typescript')
             (fixture / 'node_modules/.bin').mkdir()
             (fixture / 'node_modules/.bin/prettier').symlink_to('../tool.js')
+            (fixture / 'node_modules/.bin/eslint').symlink_to('../tool.js')
             snapshot_result = subprocess.run(['bash', '-e', '-o', 'pipefail', str(SCRIPT.with_name('engineer-bot-dependency-digest.sh'))], cwd=fixture, capture_output=True, check=True)
             checksum = snapshot_result.stdout.decode().strip()
             if changelog is None:
@@ -192,16 +210,21 @@ with tempfile.TemporaryDirectory(prefix='nodejs-bot-gate-regression-') as tempor
                 monitor.write_text('#!/bin/sh\n: > "$FSMONITOR_MARKER"\nexit 1\n')
                 monitor.chmod(0o755)
                 git(fixture, 'config', '--local', 'core.fsmonitor', str(monitor))
-            log = fixture / 'npm.log'
+            log = fixture / 'style.log'
             log.unlink(missing_ok=True)
             monitor_marker = fixture / '.git/fsmonitor-invoked'
             monitor_marker.unlink(missing_ok=True)
-            env = {'PATH': f'{binary}:{os.environ["PATH"]}', 'BASE_SHA': validation_base_sha, 'GIT_NO_REPLACE_OBJECTS': '1', 'TOUCHED_FILES': '\n'.join(recorded), 'TOOLCHAIN_SHA256': checksum, 'VALIDATION_LOG': str(log), 'VALIDATION_FAIL': failure, 'FSMONITOR_MARKER': str(monitor_marker), 'JFROG_ACCESS_TOKEN': 'test-placeholder', 'ACTIONS_ID_TOKEN_REQUEST_TOKEN': 'test-placeholder', 'ACTIONS_ID_TOKEN_REQUEST_URL': 'test-placeholder'}
+            env = {'PATH': f'{binary}:{os.environ["PATH"]}', 'BASE_SHA': validation_base_sha, 'GIT_NO_REPLACE_OBJECTS': '1', 'TOUCHED_FILES': '\n'.join(recorded), 'TOOLCHAIN_SHA256': checksum, 'VALIDATION_LOG': str(log), 'VALIDATION_FAIL': failure, 'FSMONITOR_MARKER': str(monitor_marker), 'NODE_OPTIONS': '--no-warnings', 'NODE_PATH': str(fixture), 'PYTHONPATH': str(fixture), 'NPM_CONFIG_USERCONFIG': str(user_config), 'NPM_CONFIG_GLOBALCONFIG': str(global_config), 'JFROG_ACCESS_TOKEN': 'test-placeholder', 'ACTIONS_ID_TOKEN_REQUEST_TOKEN': 'test-placeholder', 'ACTIONS_ID_TOKEN_REQUEST_URL': 'test-placeholder'}
             result = subprocess.run(['bash', '-e', '-o', 'pipefail', '-c', 'validation_script=$(git show "$BASE_SHA:.github/scripts/validate-engineer-bot.sh"); bash -c "$validation_script"'], cwd=fixture, env=env, stdin=subprocess.DEVNULL, capture_output=True, text=True)
             assert (result.returncode == 0) == expected, (label, result.stdout, result.stderr)
             assert not monitor_marker.exists(), label
             if label == 'recorded deletion':
                 assert 'pinned bot publisher cannot stage deleted files' in result.stderr
+            if label == 'unrecorded shadow module':
+                assert 'Record CHANGELOG.md and every changed file' in result.stderr
+            if label == 'removed region end':
+                assert 'Do not remove eslint-enable directives' in result.stderr
+                assert not log.exists()
             if label.startswith('dependency '):
                 assert 'Installed dependencies changed' in result.stdout
                 assert not log.exists()
@@ -215,8 +238,8 @@ with tempfile.TemporaryDirectory(prefix='nodejs-bot-gate-regression-') as tempor
                 assert 'Do not add lint, formatting, or type-check suppression directives' in result.stderr
                 assert not log.exists()
             if expected:
-                assert log.read_text() == 'run prettier\nrun lint\n', label
+                assert log.read_text() == 'prettier\nlint\n', label
             if failure == 'prettier':
-                assert log.read_text() == 'run prettier\n', label
+                assert log.read_text() == 'prettier\n', label
             count += 1
     print(f'Passed {count} gate cases: nested configs, recorded edits, changelog validation, credential scrubbing, and style failures.')

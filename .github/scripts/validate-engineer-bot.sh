@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-unset JFROG_ACCESS_TOKEN ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL
+unset JFROG_ACCESS_TOKEN ACTIONS_ID_TOKEN_REQUEST_TOKEN ACTIONS_ID_TOKEN_REQUEST_URL NODE_OPTIONS NODE_PATH
 export GIT_NO_REPLACE_OBJECTS=1
 export GIT_CONFIG_COUNT=3
 export GIT_CONFIG_KEY_0=core.fsmonitor GIT_CONFIG_VALUE_0=false
@@ -33,7 +33,7 @@ if [ "$checksum" != "$TOOLCHAIN_SHA256" ]; then
   echo "::error::Installed dependencies changed during the agent run."
   exit 1
 fi
-python - <<'PY'
+python -I - <<'PY'
 from pathlib import Path
 from collections import Counter
 import json
@@ -96,5 +96,6 @@ subprocess.run(
     env={**os.environ, "GATE_PATHS": json.dumps(sorted(recorded & changed))},
 )
 PY
-npm run prettier
-npm run lint
+# Invoke verified tools without loading user npm configuration.
+./node_modules/.bin/prettier . --check
+./node_modules/.bin/eslint 'lib/**/*.{js,ts}' 'tests/e2e/**/*.{js,ts}' --ext .js,.ts
