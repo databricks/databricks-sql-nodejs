@@ -12,5 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import assertBindableValue from '../utils/assertBindableValue';
+
 // Moved to a backend-neutral location; kept as a re-export for compatibility.
-export { default } from '../utils/assertBindableValue';
+export default assertBindableValue;
