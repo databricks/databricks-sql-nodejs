@@ -9,7 +9,7 @@ if [ "$(git rev-parse HEAD)" != "$BASE_SHA" ]; then
 fi
 protected=(
   ':(glob)**/tsconfig*.json'
-  ':(glob)**/package.json' ':(glob)**/package-lock.json'
+  ':(glob)**/package.json' ':(glob)**/package-lock.json' ':(glob)**/package.yaml'
   ':(glob)**/.npmrc' ':(glob)**/.yarnrc*' ':(glob)**/.nvmrc'
   ':(glob)**/.eslintrc*' ':(glob)**/.eslintignore'
   ':(glob)**/.prettierrc*' ':(glob)**/.prettierignore'
@@ -31,6 +31,7 @@ if [ "$checksum" != "$TOOLCHAIN_SHA256" ]; then
 fi
 python - <<'PY'
 from pathlib import Path
+import json
 import os
 import re
 import subprocess
@@ -77,6 +78,13 @@ previous_released, previous_entries = split_unreleased(previous)
 current_released, current_entries = split_unreleased(current)
 if current_released != previous_released or not (current_entries - previous_entries):
     raise SystemExit("::error::Add a fix bullet under ## Unreleased and preserve released entries.")
+directive_script = subprocess.check_output(
+    ["git", "show", f"{base_sha}:.github/scripts/check-engineer-bot-directives.js"], text=True
+)
+subprocess.run(
+    ["node", "-e", directive_script], check=True,
+    env={**os.environ, "GATE_PATHS": json.dumps(sorted(recorded & changed))},
+)
 PY
 npm run prettier
 npm run lint

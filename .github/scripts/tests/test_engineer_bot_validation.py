@@ -35,9 +35,9 @@ with tempfile.TemporaryDirectory(prefix='nodejs-bot-gate-regression-') as tempor
         fixture = root / ('with-unreleased' if baseline == EXISTING else 'without-unreleased')
         fixture.mkdir()
         git(fixture, 'init', '-q')
-        for name, content in [('CHANGELOG.md', baseline), ('.eslintrc', '{}\n'), ('package.json', '{}\n'), ('.gitignore', 'dist/\nlib/version.ts\n*.log\nnode_modules/\n'), ('lib/source.ts', 'export const value = 1;\n')]:
+        for name, content in [('CHANGELOG.md', baseline), ('.eslintrc', '{}\n'), ('package.json', '{}\n'), ('.gitignore', 'dist/\nlib/version.ts\n*.log\nnode_modules/\n'), ('lib/source.ts', "// eslint-disable-next-line no-console\nconsole.log('original');\n")]:
             write(fixture, name, content)
-        for name in ['validate-engineer-bot.sh', 'engineer-bot-dependency-digest.sh']:
+        for name in ['validate-engineer-bot.sh', 'engineer-bot-dependency-digest.sh', 'check-engineer-bot-directives.js']:
             write(fixture, '.github/scripts/' + name, SCRIPT.with_name(name).read_text())
         git(fixture, 'add', '.')
         git(fixture, '-c', 'user.name=Workflow Test', '-c', 'user.email=workflow-test@example.com', 'commit', '--signoff', '-qm', 'validation baseline')
@@ -77,6 +77,16 @@ with tempfile.TemporaryDirectory(prefix='nodejs-bot-gate-regression-') as tempor
             ('locally excluded source', good, {'lib/hidden.ts': '// unrecorded\n'}, ['CHANGELOG.md'], 'exclude-source', False, False),
             ('locally excluded config', good, {'.npmrc': 'script-shell=/bin/false\n'}, ['CHANGELOG.md', '.npmrc'], 'exclude-config', False, False),
             ('globally excluded source', good, {'lib/hidden.ts': '// unrecorded\n'}, ['CHANGELOG.md'], 'global-exclude', False, False),
+            ('new block suppression', good, {'lib/source.ts': '/* eslint-disable */\nexport const value = 2;\n'}, ['CHANGELOG.md', 'lib/source.ts'], '', False, False),
+            ('new next-line suppression', good, {'lib/source.ts': '// eslint-disable-next-line no-alert\nalert(1);\n'}, ['CHANGELOG.md', 'lib/source.ts'], '', False, False),
+            ('new inline suppression', good, {'lib/source.ts': 'alert(1); // eslint-disable-line no-alert\n'}, ['CHANGELOG.md', 'lib/source.ts'], '', False, False),
+            ('new prettier suppression', good, {'lib/source.ts': '// prettier-ignore\nexport const value = 2;\n'}, ['CHANGELOG.md', 'lib/source.ts'], '', False, False),
+            ('directive string fixture', good, {'lib/source.ts': "export const directive = '/* eslint-disable */';\n"}, ['CHANGELOG.md', 'lib/source.ts'], '', False, True),
+            ('directive template fixture', good, {'lib/source.ts': 'export const directive = `\n// prettier-ignore\n`;\n'}, ['CHANGELOG.md', 'lib/source.ts'], '', False, True),
+            ('moved existing directive', good, {'lib/source.ts': "// A comment.\n// eslint-disable-next-line no-console\nconsole.log('original');\n"}, ['CHANGELOG.md', 'lib/source.ts'], '', False, True),
+            ('broadened existing directive', good, {'lib/source.ts': "// eslint-disable-next-line no-console, no-alert\nconsole.log('original');\n"}, ['CHANGELOG.md', 'lib/source.ts'], '', False, False),
+            ('new markdown suppression', good, {'notes.md': '<!-- prettier-ignore -->\ntext\n'}, ['CHANGELOG.md', 'notes.md'], '', False, False),
+            ('new-file suppression', good, {'lib/new.ts': '// prettier-ignore\nexport const value = 2;\n'}, ['CHANGELOG.md', 'lib/new.ts'], '', False, False),
             ('Prettier failure', good, {}, ['CHANGELOG.md'], 'prettier', False, False),
             ('ESLint failure', good, {}, ['CHANGELOG.md'], 'lint', False, False),
             ('npm reads stdin', good, {}, ['CHANGELOG.md'], 'read-stdin', False, True),
@@ -84,7 +94,7 @@ with tempfile.TemporaryDirectory(prefix='nodejs-bot-gate-regression-') as tempor
         if baseline == EXISTING:
             cases += [('duplicate unreleased entry', baseline.replace('- Existing fix.', '- Existing fix.\n- Existing fix.'), {}, ['CHANGELOG.md'], '', False, False)]
         for directory in ['', 'lib/', 'tests/e2e/']:
-            for name in ['package.json', 'package-lock.json', 'tsconfig.json', 'tsconfig.build.json', '.npmrc', '.yarnrc', '.yarnrc.yml', '.nvmrc', '.eslintrc', '.eslintrc.json', '.eslintrc.js', '.eslintignore', '.prettierrc', '.prettierrc.js', '.prettierignore', '.editorconfig', '.gitignore', 'eslint.config.js', 'prettier.config.js']:
+            for name in ['package.json', 'package-lock.json', 'package.yaml', 'tsconfig.json', 'tsconfig.build.json', '.npmrc', '.yarnrc', '.yarnrc.yml', '.nvmrc', '.eslintrc', '.eslintrc.json', '.eslintrc.js', '.eslintignore', '.prettierrc', '.prettierrc.js', '.prettierignore', '.editorconfig', '.gitignore', 'eslint.config.js', 'prettier.config.js']:
                 path = directory + name
                 cases.append(('protected config ' + path, good, {path: '{"changed":true}\n'}, ['CHANGELOG.md', path], '', False, False))
         for label, changelog, files, recorded, failure, staged, expected in cases:
@@ -98,6 +108,7 @@ with tempfile.TemporaryDirectory(prefix='nodejs-bot-gate-regression-') as tempor
             shutil.rmtree(fixture / 'node_modules', ignore_errors=True)
             write(fixture, 'node_modules/tool.js', '// original\n')
             write(fixture, 'node_modules/other.js', '// other\n')
+            (fixture / 'node_modules/typescript').symlink_to(SCRIPT.parents[2] / 'node_modules/typescript')
             (fixture / 'node_modules/.bin').mkdir()
             (fixture / 'node_modules/.bin/prettier').symlink_to('../tool.js')
             snapshot_result = subprocess.run(['bash', '-e', '-o', 'pipefail', str(SCRIPT.with_name('engineer-bot-dependency-digest.sh'))], cwd=fixture, capture_output=True, check=True)
@@ -141,6 +152,9 @@ with tempfile.TemporaryDirectory(prefix='nodejs-bot-gate-regression-') as tempor
             if failure in ['skip-worktree', 'assume-unchanged']:
                 assert 'Git index flags' in result.stderr
             if failure in ['commit', 'skip-worktree', 'assume-unchanged', 'exclude-source', 'exclude-config', 'global-exclude']:
+                assert not log.exists()
+            if 'suppression' in label or label == 'broadened existing directive':
+                assert 'Do not add lint or formatting suppression directives' in result.stderr
                 assert not log.exists()
             if expected:
                 assert log.read_text() == 'run prettier\nrun lint\n', label
