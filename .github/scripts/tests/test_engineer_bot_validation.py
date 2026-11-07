@@ -113,6 +113,8 @@ sys.exit(1 if os.environ.get("VALIDATION_FAIL") == tool else 0)
         )
         cases = [
             ('valid fix', good, {}, ['CHANGELOG.md'], '', False, True),
+            ('asterisk entry', good.replace('- New fix.', '* New fix.'), {}, ['CHANGELOG.md'], '', False, True),
+            ('plus entry', good.replace('- New fix.', '+ New fix.'), {}, ['CHANGELOG.md'], '', False, True),
             (
                 'heading trailing whitespace',
                 good.replace('## Unreleased\n', '## Unreleased \t\n'),

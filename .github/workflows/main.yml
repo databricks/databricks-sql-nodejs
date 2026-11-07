@@ -94,12 +94,18 @@ jobs:
       - name: Run unit tests
         env:
           CACHE_DIR: ${{ runner.temp }}/engineer-bot-cache
+          # Match the engineer bot's Node runtime.
+          CHECK_BOT_DEPENDENCIES: ${{ startsWith(matrix.node-version, '22.') }}
         run: |
           npm ci
-          before=$(bash .github/scripts/engineer-bot-dependency-digest.sh)
+          if [ "$CHECK_BOT_DEPENDENCIES" = true ]; then
+            before=$(bash .github/scripts/engineer-bot-dependency-digest.sh)
+          fi
           npm run test
-          after=$(bash .github/scripts/engineer-bot-dependency-digest.sh)
-          [ "$before" = "$after" ] || { echo "::error::Unit tests changed installed dependencies."; exit 1; }
+          if [ "$CHECK_BOT_DEPENDENCIES" = true ]; then
+            after=$(bash .github/scripts/engineer-bot-dependency-digest.sh)
+            [ "$before" = "$after" ] || { echo "::error::Unit tests changed installed dependencies."; exit 1; }
+          fi
       - run: tar -cvf ${{ env.NYC_REPORT_DIR }}.tar ${{ env.NYC_REPORT_DIR }}
       - name: Store coverage report
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4

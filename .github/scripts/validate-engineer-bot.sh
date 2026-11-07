@@ -80,7 +80,7 @@ def split_unreleased(text, require_first=False):
     blocks, notes = [], []
     entry = None
     for line in section.group(1).splitlines():
-        if line.startswith("- ") and line[2:].strip():
+        if re.match(r"[-*+] ", line) and line[2:].strip():
             entry = [line[2:]]
             blocks.append(entry)
         elif entry is not None and (not line.strip() or line[:1].isspace()):
