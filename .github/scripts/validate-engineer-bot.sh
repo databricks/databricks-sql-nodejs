@@ -18,7 +18,7 @@ protected=(
 )
 tracked_config=$(git diff --no-ext-diff --name-only "$BASE_SHA" -- "${protected[@]}")
 staged_config=$(git diff --cached --no-ext-diff --name-only "$BASE_SHA" -- "${protected[@]}")
-untracked_config=$(git ls-files --others --exclude-per-directory=.gitignore -- "${protected[@]}")
+untracked_config=$(git ls-files --others -- "${protected[@]}" ':(top,exclude)node_modules/**')
 if [ -n "$tracked_config$staged_config$untracked_config" ]; then
   echo "::error::Agent changes to package or lint configuration are not allowed."
   exit 1
@@ -69,15 +69,20 @@ def split_unreleased(text):
     if section.start() != re.search(r"(?m)^## ", text).start():
         raise SystemExit("::error::Place ## Unreleased above the released versions.")
     released = text[:section.start()] + text[section.end():]
-    entries = set(re.findall(r"(?m)^- (\S.*)$", section.group(1)))
+    blocks = [entry.rstrip() for entry in re.findall(r"(?ms)^- (\S.*?)(?=^- |\Z)", section.group(1))]
+    titles = [entry.splitlines()[0] for entry in blocks]
+    if len(set(titles)) != len(titles):
+        raise SystemExit("::error::Do not duplicate Unreleased entries.")
+    entries = set(blocks)
     return released, entries
 
 previous = subprocess.check_output(["git", "show", f"{base_sha}:CHANGELOG.md"], text=True)
 current = Path("CHANGELOG.md").read_text()
 previous_released, previous_entries = split_unreleased(previous)
 current_released, current_entries = split_unreleased(current)
-if current_released != previous_released or not (current_entries - previous_entries):
-    raise SystemExit("::error::Add a fix bullet under ## Unreleased and preserve released entries.")
+if (current_released != previous_released or not previous_entries <= current_entries
+        or not (current_entries - previous_entries)):
+    raise SystemExit("::error::Append a fix bullet under ## Unreleased and preserve existing entries.")
 directive_script = subprocess.check_output(
     ["git", "show", f"{base_sha}:.github/scripts/check-engineer-bot-directives.js"], text=True
 )

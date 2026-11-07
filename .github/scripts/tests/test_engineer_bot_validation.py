@@ -9,7 +9,7 @@ import tempfile
 SCRIPT = Path(__file__).resolve().parents[1] / 'validate-engineer-bot.sh'
 BASE = '# Release History\n\n## 3.0.0\n\n- Released fix.\n\n## 2.0.0\n\n- Older fix.\n'
 VALID = BASE.replace('## 3.0.0', '## Unreleased\n\n- New fix. (#261)\n\n## 3.0.0')
-EXISTING = BASE.replace('## 3.0.0', '## Unreleased\n\n- Existing fix.\n\n## 3.0.0')
+EXISTING = BASE.replace('## 3.0.0', '## Unreleased\n\n- Existing fix.\n  Existing detail.\n\n## 3.0.0')
 
 
 def git(root, *args):
@@ -44,7 +44,7 @@ with tempfile.TemporaryDirectory(prefix='nodejs-bot-gate-regression-') as tempor
         base_sha = git(fixture, 'rev-parse', 'HEAD').stdout.decode().strip()
         exclude_baseline = (fixture / '.git/info/exclude').read_text()
         global_excludes = fixture / '.git/test-global-excludes'
-        good = VALID if baseline == BASE else baseline.replace('- Existing fix.', '- Existing fix.\n- New fix. (#261)')
+        good = VALID if baseline == BASE else baseline.replace('  Existing detail.', '  Existing detail.\n- New fix. (#261)')
         cases = [
             ('valid fix', good, {}, ['CHANGELOG.md'], '', False, True),
             ('unchanged changelog', baseline, {}, ['CHANGELOG.md'], '', False, False),
@@ -77,6 +77,7 @@ with tempfile.TemporaryDirectory(prefix='nodejs-bot-gate-regression-') as tempor
             ('locally excluded source', good, {'lib/hidden.ts': '// unrecorded\n'}, ['CHANGELOG.md'], 'exclude-source', False, False),
             ('locally excluded config', good, {'.npmrc': 'script-shell=/bin/false\n'}, ['CHANGELOG.md', '.npmrc'], 'exclude-config', False, False),
             ('globally excluded source', good, {'lib/hidden.ts': '// unrecorded\n'}, ['CHANGELOG.md'], 'global-exclude', False, False),
+            ('self-ignoring nested gitignore', good, {'lib/sub/.gitignore': '*\n', 'lib/sub/hidden.ts': '// unrecorded\n'}, ['CHANGELOG.md'], '', False, False),
             ('new block suppression', good, {'lib/source.ts': '/* eslint-disable */\nexport const value = 2;\n'}, ['CHANGELOG.md', 'lib/source.ts'], '', False, False),
             ('new next-line suppression', good, {'lib/source.ts': '// eslint-disable-next-line no-alert\nalert(1);\n'}, ['CHANGELOG.md', 'lib/source.ts'], '', False, False),
             ('new inline suppression', good, {'lib/source.ts': 'alert(1); // eslint-disable-line no-alert\n'}, ['CHANGELOG.md', 'lib/source.ts'], '', False, False),
@@ -93,6 +94,11 @@ with tempfile.TemporaryDirectory(prefix='nodejs-bot-gate-regression-') as tempor
         ]
         if baseline == EXISTING:
             cases += [('duplicate unreleased entry', baseline.replace('- Existing fix.', '- Existing fix.\n- Existing fix.'), {}, ['CHANGELOG.md'], '', False, False)]
+            cases += [
+                ('removed pending entry', good.replace('- Existing fix.\n  Existing detail.\n', ''), {}, ['CHANGELOG.md'], '', False, False),
+                ('rewritten pending entry', good.replace('- Existing fix.', '- Rewritten fix.'), {}, ['CHANGELOG.md'], '', False, False),
+                ('rewritten continuation', good.replace('  Existing detail.', '  Rewritten detail.'), {}, ['CHANGELOG.md'], '', False, False),
+            ]
         for directory in ['', 'lib/', 'tests/e2e/']:
             for name in ['package.json', 'package-lock.json', 'package.yaml', 'tsconfig.json', 'tsconfig.build.json', '.npmrc', '.yarnrc', '.yarnrc.yml', '.nvmrc', '.eslintrc', '.eslintrc.json', '.eslintrc.js', '.eslintignore', '.prettierrc', '.prettierrc.js', '.prettierignore', '.editorconfig', '.gitignore', 'eslint.config.js', 'prettier.config.js']:
                 path = directory + name
@@ -104,10 +110,11 @@ with tempfile.TemporaryDirectory(prefix='nodejs-bot-gate-regression-') as tempor
             (fixture / '.git/info/exclude').write_text(exclude_baseline)
             global_excludes.write_text('')
             git(fixture, 'config', '--local', 'core.excludesFile', str(global_excludes))
-            git(fixture, 'clean', '-fdq')
+            git(fixture, 'clean', '-fdxq')
             shutil.rmtree(fixture / 'node_modules', ignore_errors=True)
             write(fixture, 'node_modules/tool.js', '// original\n')
             write(fixture, 'node_modules/other.js', '// other\n')
+            write(fixture, 'node_modules/.gitignore', '*\n')
             (fixture / 'node_modules/typescript').symlink_to(SCRIPT.parents[2] / 'node_modules/typescript')
             (fixture / 'node_modules/.bin').mkdir()
             (fixture / 'node_modules/.bin/prettier').symlink_to('../tool.js')
