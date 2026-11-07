@@ -21,6 +21,12 @@ the maintainer explicitly requests them.
 Do not delete files; the pinned publisher cannot stage deletions. If the fix
 requires a deletion, report `blocked` and name the files for a maintainer.
 
+Do not add inline ESLint configuration or suppressions (`eslint-disable*`),
+`prettier-ignore*`, or `@ts-ignore` / `@ts-expect-error` / `@ts-nocheck`.
+Do not broaden existing suppressions or remove `eslint-enable` while keeping
+matching block disables. Existing uses such as `no-await-in-loop` are not
+exceptions. If a correct fix requires one, report `blocked` for a maintainer.
+
 For a code change that affects user-visible behavior, keep the fix's
 `CHANGELOG.md` entry accurate. Update the existing bullet under `## Unreleased`;
 if missing, add one concise bullet with the tracking issue number when known.
@@ -65,7 +71,7 @@ packages or change code or dependencies to work around missing packages.
 Do not edit `package.json` or `package-lock.json`.
 
 The engine shares one command allowlist across phases; it still allows
-`npm ci` and E2E commands for the author flow. The additional mention limits
+E2E commands for the author flow. The additional mention limits
 above are prompt instructions.
 
 Use the existing tool allowlist and path restrictions. `.git/`,

@@ -64,9 +64,6 @@ pr_body_template: |-
 #     mocha directly). Pinned to `--config` so it can't point mocha elsewhere.
 #   - `npm run build` — recompile TS (`tsc`) after a source edit.
 #   - `npm run type-check` / `npm run lint` / `npm run prettier` — verify style.
-#   - `npm ci` — reinstall against the v2 lockfile if needed (read-only; NEVER
-#     `npm install`, which rewrites package-lock.json to lockfileVersion 3 and
-#     fails the repo's lint gate).
 #   - `git status` — list changed files (generates no diff, takes no --output).
 # `cat`, `ls`, `find`, bare `node`, and diff/log-GENERATING git subcommands are
 # deliberately ABSENT — they read/write arbitrary absolute paths (the bash tool
@@ -80,7 +77,6 @@ bash_allowlist:
   - [npm, run, type-check]
   - [npm, run, lint]
   - [npm, run, prettier]
-  - [npm, ci]
   - [npx, mocha, --config, tests/unit/.mocharc.js]
   - [npx, mocha, --config, tests/e2e/.mocharc.js]
   - [git, status]

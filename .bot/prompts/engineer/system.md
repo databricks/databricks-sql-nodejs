@@ -96,6 +96,10 @@ mocha via ts-node (no separate compile needed for a test change):
   - The full unit suite: `npm test`   ·   the full e2e suite: `npm run e2e`
   - After editing `lib/` you can typecheck with `npm run type-check`.
 
+Dependencies must stay unchanged. Do not run `npm ci`, `npm install`, or other
+dependency installers; use `npm run build` to rebuild sources. If installed
+dependencies are missing or incompatible, report `blocked` for a maintainer.
+
 **Run a SINGLE spec while iterating** — do not run the whole `npm run e2e` suite
 each loop: it's large, hits the live warehouse, and the noise hides your red→green
 signal. Filter to your own spec with the `npx mocha --config …` form above (the
@@ -151,6 +155,11 @@ you see an abrupt exit, it means a required `E2E_*` value is genuinely absent
   restyle files you happened to open.
 - Do not delete files; the pinned publisher cannot stage deletions. If the fix
   requires a deletion, report `blocked` and name the files for a maintainer.
+- Do not add inline ESLint configuration or suppressions (`eslint-disable*`),
+  `prettier-ignore*`, or `@ts-ignore` / `@ts-expect-error` / `@ts-nocheck`.
+  Do not broaden existing suppressions or remove `eslint-enable` while keeping
+  matching block disables. Existing uses such as `no-await-in-loop` are not
+  exceptions. If a correct fix requires one, report `blocked` for a maintainer.
 - Check the affected execution path, its constraints, and downstream contracts.
   Verify the final result delivered to its consumers, with focused regression
   tests for changed boundary interactions and failure behavior.
