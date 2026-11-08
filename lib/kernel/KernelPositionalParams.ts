@@ -15,7 +15,7 @@
 import { DBSQLParameter, DBSQLParameterValue } from '../DBSQLParameter';
 import ParameterError from '../errors/ParameterError';
 import { KernelNativeRawParameterInput } from './KernelNativeLoader';
-import assertBindableValue from './KernelInputValidation';
+import assertBindableValue from '../utils/assertBindableValue';
 
 /**
  * Derive `(precision,scale)` from a decimal value string for the kernel

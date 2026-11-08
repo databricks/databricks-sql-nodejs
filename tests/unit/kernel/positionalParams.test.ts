@@ -102,6 +102,22 @@ describe('KernelPositionalParams.buildKernelPositionalParams', () => {
       { sqlType: 'TIMESTAMP', value: '2024-01-15 10:30:00' },
     ]);
   });
+
+  it('rejects a non-scalar wrapped in DBSQLParameter with the same ParameterError as Thrift', () => {
+    expect(() =>
+      buildKernelPositionalParams([new DBSQLParameter({ type: DBSQLParameterType.STRING, value: { a: 1 } as never })]),
+    ).to.throw(ParameterError, /ordinalParameters\[0\] is an object/);
+    expect(() => buildKernelPositionalParams([new DBSQLParameter({ value: [1, 2] as never })])).to.throw(
+      ParameterError,
+      /ordinalParameters\[0\] is an array/,
+    );
+  });
+
+  it('allows an explicit VOID DBSQLParameter regardless of its wrapped value', () => {
+    expect(
+      buildKernelPositionalParams([new DBSQLParameter({ type: DBSQLParameterType.VOID, value: [1, 2] as never })]),
+    ).to.deep.equal([{ sqlType: 'VOID' }]);
+  });
 });
 
 describe('KernelPositionalParams.buildKernelNamedParams', () => {
@@ -134,5 +150,13 @@ describe('KernelPositionalParams.buildKernelNamedParams', () => {
         duration: new DBSQLParameter({ type: DBSQLParameterType.INTERVALMONTH, value: '2-6' }),
       }),
     ).to.deep.equal([{ name: 'duration', sqlType: 'INTERVAL MONTH', value: '2-6' }]);
+  });
+
+  it('rejects a named non-scalar wrapped in DBSQLParameter with ParameterError', () => {
+    expect(() =>
+      buildKernelNamedParams({
+        p: new DBSQLParameter({ type: DBSQLParameterType.STRING, value: { a: 1 } as never }),
+      }),
+    ).to.throw(ParameterError, /namedParameters\[p\] is an object/);
   });
 });

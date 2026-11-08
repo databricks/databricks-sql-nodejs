@@ -38,6 +38,7 @@ import escapeCatalogName from '../utils/escapeCatalogName';
 import EmptyOperationBackend from './EmptyOperationBackend';
 import isObjectNotFound from './metadataErrors';
 import createPrimaryKeysSchema from './primaryKeysSchema';
+import assertBindableValue from '../utils/assertBindableValue';
 
 interface OperationResponseShape {
   status: TStatus;
@@ -118,16 +119,18 @@ function getQueryParameters(
   if (namedParameters !== undefined) {
     for (const name of Object.keys(namedParameters)) {
       const value = namedParameters[name];
+      assertBindableValue(value, `namedParameters[${name}]`);
       const param = value instanceof DBSQLParameter ? value : new DBSQLParameter({ value });
       result.push(param.toSparkParameter({ name }));
     }
   }
 
   if (ordinalParameters !== undefined) {
-    for (const value of ordinalParameters) {
+    ordinalParameters.forEach((value, i) => {
+      assertBindableValue(value, `ordinalParameters[${i}]`);
       const param = value instanceof DBSQLParameter ? value : new DBSQLParameter({ value });
       result.push(param.toSparkParameter());
-    }
+    });
   }
 
   return result;
