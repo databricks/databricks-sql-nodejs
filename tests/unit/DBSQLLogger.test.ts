@@ -217,6 +217,26 @@ describe('DBSQLLogger file transport path resolution', () => {
       });
     }
 
+    it('falls back to console only for a read-only log file (EACCES)', function readOnlyLogFileTest() {
+      if (process.platform === 'win32' || process.getuid?.() === 0) {
+        this.skip();
+      }
+      const filepath = path.join(tmpDir, 'readonly.log');
+      fs.writeFileSync(filepath, '');
+      fs.chmodSync(filepath, 0o444);
+      try {
+        logger = createLogger(filepath, LogLevel.error);
+
+        expect(logger.transports.file).to.be.undefined;
+        expect(emitWarning.calledOnce).to.be.true;
+        expect(emitWarning.firstCall.args[0]).to.contain('EACCES');
+        expect(emitWarning.firstCall.args[0]).to.contain('logging to console only');
+        expect(emitWarning.firstCall.args[1]).to.deep.equal({ code: LOG_FILE_UNAVAILABLE_WARNING_CODE });
+      } finally {
+        fs.chmodSync(filepath, 0o600);
+      }
+    });
+
     it('keeps delivering console logs after the fallback', async () => {
       fs.mkdirSync(path.join(tmpDir, 'databricks-sql-nodejs.log'));
       const seen: string[] = [];
