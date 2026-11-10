@@ -47,6 +47,13 @@ backend (the default), the **SEA / Kernel** backend, or both.
 | `useKernel` (internal)  | `boolean` |   —    |   —    | `false`       | Selects the backend: `false`/omitted → Thrift, `true` → Kernel.                        |
 | `clientId` (deprecated) | `string`  |   ✅   |   ✅   | —             | Runtime-only alias for `userAgentEntry`. `userAgentEntry` wins when both are supplied. |
 
+The `DBSQLClient` constructor configuration accepts `useCloudFetch` (default
+`true`) on both backends. Set it to `false` before opening a session to fetch
+complete results without cloud-storage downloads. On the kernel backend this
+connection setting takes precedence over case-insensitive copies of
+`can_cloud_download` in session configuration. Per-statement `useCloudFetch`
+overrides remain unsupported on the kernel backend.
+
 ## Authentication
 
 | Option                                        | Type                                                         | Thrift | Kernel | Default Value                 | Note                                                                                                                                                                                                                       |

@@ -152,6 +152,12 @@ export default class KernelBackend implements IBackend {
     if (request.configuration !== undefined) {
       sessionOptions.sessionConf = { ...request.configuration };
     }
+    if (this.context.getConfig().useCloudFetch === false) {
+      sessionOptions.sessionConf = Object.fromEntries(
+        Object.entries(sessionOptions.sessionConf ?? {}).filter(([key]) => key.toLowerCase() !== 'can_cloud_download'),
+      );
+      sessionOptions.sessionConf.can_cloud_download = 'false';
+    }
     // Session-level query tags: serialize into the reserved `QUERY_TAGS`
     // session conf. The kernel allowlists `QUERY_TAGS` (SESSION_CONF_ALLOWLIST)
     // and forwards it onto the SEA `CreateSession` `session_confs`, mirroring
