@@ -10,7 +10,7 @@
 #
 # The engineer BUILDS and TESTS the connector, so it installs deps with `npm ci`
 # (routed through the JFrog mirror by setup-jfrog — the protected runners are
-# egress-blocked from public npm). The bug-fix flow requires a LIVE e2e repro
+# egress-blocked from public npm). Server-observable bugs need a LIVE e2e repro
 # against a warehouse (the general Thrift-backed tests/e2e suite; the kernel
 # native binary is NOT built here — the driver falls back to Thrift). Shared bot
 # setup (mint tokens + Node + install the pinned engine, PAT-free) is the local
@@ -154,7 +154,7 @@ jobs:
 
       - name: Write E2E connection config (token survives the agent env scrub)
         id: e2e_config
-        # The bug-fix flow's REQUIRED e2e repro authenticates via tests/e2e/utils/
+        # The bug-fix flow's e2e repro authenticates via tests/e2e/utils/
         # config.ts, which reads the PAT from E2E_ACCESS_TOKEN. But the author agent
         # runs the suite in a subprocess whose env is scrubbed of every
         # credential-shaped var (engine shared/env_scrub.py strips
@@ -184,7 +184,7 @@ jobs:
           ENGINEER_BOT_MODEL_OVERRIDE: databricks-claude-opus-5-5
           MODEL_ENDPOINT: https://${{ secrets.DATABRICKS_HOST }}/serving-endpoints/databricks-claude-opus-5-5/invocations
           DATABRICKS_TOKEN: ${{ secrets.DATABRICKS_TOKEN }}
-          # Live-warehouse connection env for the agent's REQUIRED e2e repro (the
+          # Live-warehouse connection env for the agent's e2e repro (the
           # 7 E2E_* vars tests/e2e/utils/config.ts validates — a single missing one
           # process.exit(1)s the suite). host/path/catalog/schema/volume/suffix are
           # not credential-shaped so they survive the scrub; the TOKEN can't (it's

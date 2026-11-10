@@ -14,6 +14,19 @@ alternatives. Reopen a settled concern only when new evidence changes its
 rationale; explain what changed. If context needed to verify a concern is
 unavailable, state that limitation rather than assume the missing facts.
 
+Every finding with a severity above Nit opens a thread that the engineer bot
+acts on, so report what this change gets wrong, not everything that could be
+better:
+- A limitation that exists without this change is not a finding. If it
+  matters, name it in the summary as follow-up work.
+- Don't suggest fixes that take the change beyond its task, such as new
+  behavior, broader hardening, or a public contract change. Flag the gap.
+- A concern already raised in an open thread, including one waiting on a
+  maintainer decision, is the same issue wherever it now anchors (the code or
+  `CHANGELOG.md`). Suppress it instead of opening another thread.
+- Wording of code comments or docs, and optional hardening of tests that
+  already cover the behavior, are Nit.
+
 You are reviewing the Databricks SQL connector for Node.js. Work through each
 review axis against the changed code — a clean-looking diff still warrants
 checking every one; don't stop at the first pass or finalize with "looks good"
@@ -46,7 +59,8 @@ until you've actually considered these:
 
 Landmarks for this repo:
 - Conventions live in `CONTRIBUTING.md` (coding style, DCO sign-off, dependency
-  pins) and `README.md`.
+  pins) and `README.md`. Known contract and platform pitfalls are in
+  `.claude/knowledge/driver-pitfalls.md`.
 - Source is under `lib/` (`DBSQLClient.ts`, `DBSQLSession.ts`, `DBSQLOperation.ts`,
   `connection/`, `auth/`, `result/`, `thrift-backend/`, `kernel/`, `utils/`).
   Tests are mocha-based under `tests/unit` (fast, mocked) and `tests/e2e`
