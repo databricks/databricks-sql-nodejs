@@ -735,6 +735,36 @@ describe('KernelBackend', () => {
     }
   });
 
+  [undefined, true, false].forEach((useCloudFetch) => {
+    it(`openSession() honors useCloudFetch=${useCloudFetch}`, async () => {
+      const binding = makeBinding(new FakeNativeConnection());
+      const backend = new KernelBackend({ context: makeContext(undefined, { useCloudFetch }), nativeBinding: binding });
+      await backend.connect({ host: 'h', path: '/p', token: 't' } as ConnectionOptions);
+      const configuration = { TIMEZONE: 'UTC' };
+      await backend.openSession({ configuration });
+      const conf = (binding.openSessionStub.firstCall.args[0] as { sessionConf?: Record<string, string> }).sessionConf;
+      expect(conf?.can_cloud_download).to.equal(useCloudFetch === false ? 'false' : undefined);
+      expect(conf?.TIMEZONE).to.equal('UTC');
+      expect(configuration).to.deep.equal({ TIMEZONE: 'UTC' });
+    });
+  });
+
+  ['can_cloud_download', 'CAN_CLOUD_DOWNLOAD'].forEach((key) => {
+    it(`openSession() gives useCloudFetch=false precedence over ${key}`, async () => {
+      const binding = makeBinding(new FakeNativeConnection());
+      const backend = new KernelBackend({
+        context: makeContext(undefined, { useCloudFetch: false }),
+        nativeBinding: binding,
+      });
+      await backend.connect({ host: 'h', path: '/p', token: 't' } as ConnectionOptions);
+      const configuration = { [key]: 'true', TIMEZONE: 'UTC' };
+      await backend.openSession({ configuration });
+      const conf = (binding.openSessionStub.firstCall.args[0] as { sessionConf?: Record<string, string> }).sessionConf;
+      expect(conf).to.deep.equal({ can_cloud_download: 'false', TIMEZONE: 'UTC' });
+      expect(configuration).to.deep.equal({ [key]: 'true', TIMEZONE: 'UTC' });
+    });
+  });
+
   it('openSession() serializes session-level queryTags into sessionConf.QUERY_TAGS', async () => {
     const connection = new FakeNativeConnection();
     const binding = makeBinding(connection);

@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Honor the client `useCloudFetch: false` default on the kernel backend so complete results can be fetched without cloud-storage downloads.
+
 - Report untyped NULL columns as STRING in kernel result metadata, matching Thrift. (#470)
 - Reject non-scalar query parameter values at bind time with a `ParameterError` on both the Thrift and kernel backends, instead of stringifying them (which could leave a Thrift operation stuck before FINISHED). Newly rejected on the Thrift backend: arrays, plain objects, boxed primitives (e.g. `new String('x')`, `new Number(1)`), functions, symbols, and a `DBSQLParameter` that wraps another `DBSQLParameter`. Primitives, `Date`, `Int64`, and `DBSQLParameter` are still accepted.
 
