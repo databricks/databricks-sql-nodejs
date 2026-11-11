@@ -2,8 +2,7 @@
 
 ## Unreleased
 
-- Honor the client `useCloudFetch: false` default on the kernel backend so complete results can be fetched without cloud-storage downloads.
-
+- Honor the client `useCloudFetch: false` default on the kernel backend so complete results can be fetched without cloud-storage downloads. (#574)
 - Thrift HTTP errors (`THTTPException`) now append server detail from the error headers (at most 500 characters). Kernel-backend errors now carry a non-enumerable `cause` summarizing the kernel error code and message (also at most 500 characters). Reyden fallback preserves KP001 after any existing kernel cause. (#467)
 - Add `Symbol.asyncDispose` to clients, sessions, and operations, delegating to `close()`. Use `asyncDisposable()` with interface-typed results in TypeScript; existing interfaces and factory return types remain unchanged. (#331)
 - CloudFetch retry-exhaustion errors now identify the download and the last failure: the `RetryError` message reads `CloudFetch result download failed: <original message> (last error: <cause>)`. `<cause>` is `HTTP <status>: <statusText>` (or `HTTP <status>` when the status text is empty) for HTTP failures, and `network error <code>`, `network error (<type>)` (e.g. `aborted`, when there is no `code`) or a bare `network error` for network failures (the raw network-error message, which can contain the presigned URL, is not copied). If no cause can be determined, the ` (last error: …)` suffix is omitted. The `RetryError` instance, `errorCode` and `payload` (including the node-fetch `Request` / `Response`) are unchanged. (#471)
