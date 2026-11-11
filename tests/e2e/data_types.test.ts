@@ -2,7 +2,10 @@ import { expect } from 'chai';
 import sinon from 'sinon';
 import { DBSQLClient } from '../../lib';
 import { ClientConfig } from '../../lib/contracts/IClientContext';
+import { ConnectionOptions } from '../../lib/contracts/IDBSQLClient';
 import IDBSQLSession from '../../lib/contracts/IDBSQLSession';
+import { InternalConnectionOptions } from '../../lib/contracts/InternalConnectionOptions';
+import { tryGetKernelNative } from '../../lib/kernel/KernelNativeLoader';
 
 import config from './utils/config';
 
@@ -358,4 +361,49 @@ describe('Data types', () => {
       await session.close();
     }
   });
+
+  for (const useKernel of [false, true]) {
+    it(`preserveBigNumericPrecision returns exact negative DECIMAL values (${
+      useKernel ? 'kernel' : 'Thrift'
+    })`, async function test() {
+      if (useKernel && tryGetKernelNative() === undefined) {
+        this.skip();
+      }
+      const client = new DBSQLClient();
+      await client.connect({
+        host: config.host,
+        path: config.path,
+        token: config.token,
+        preserveBigNumericPrecision: true,
+        useKernel,
+      } as ConnectionOptions & InternalConnectionOptions);
+      try {
+        const session = await client.openSession();
+        try {
+          const records = await execute(
+            session,
+            `SELECT
+              CAST('-12345678901234567890.123456789012345678' AS DECIMAL(38,18)) AS wide_negative,
+              CAST('12345678901234567890.123456789012345678' AS DECIMAL(38,18)) AS wide_positive,
+              CAST('-1234.5678' AS DECIMAL(38,18)) AS negative,
+              CAST('-0.12345678901234567890123456789012345678' AS DECIMAL(38,38)) AS negative_fraction,
+              CAST('-99999999999999999999999999999999999999' AS DECIMAL(38,0)) AS negative_integer`,
+          );
+          expect(records).to.deep.equal([
+            {
+              wide_negative: '-12345678901234567890.123456789012345678',
+              wide_positive: '12345678901234567890.123456789012345678',
+              negative: '-1234.567800000000000000',
+              negative_fraction: '-0.12345678901234567890123456789012345678',
+              negative_integer: '-99999999999999999999999999999999999999',
+            },
+          ]);
+        } finally {
+          await session.close();
+        }
+      } finally {
+        await client.close();
+      }
+    });
+  }
 });
