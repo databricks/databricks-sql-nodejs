@@ -10,6 +10,7 @@ import CloudFetchResultHandler from '../../../lib/result/CloudFetchResultHandler
 import ResultsProviderStub from '../.stubs/ResultsProviderStub';
 import { TRowSet, TSparkArrowResultLink, TStatusCode } from '../../../thrift/TCLIService_types';
 import { ArrowBatch } from '../../../lib/result/utils';
+import RetryError, { RetryErrorCode } from '../../../lib/errors/RetryError';
 
 import BaseClientContextStub from '../.stubs/ClientContextStub';
 import { ClientConfig } from '../../../lib/contracts/IClientContext';
@@ -412,6 +413,261 @@ describe('CloudFetchResultHandler', () => {
       expect((context.connectionProvider.getRetryPolicy as SinonStub).called).to.be.true;
       expect(context.invokeWithRetryStub.callCount).to.be.equal(1);
     }
+  });
+
+  it('should add download context and HTTP status to RetryError when retries are exhausted', async () => {
+    const context = new ClientContextStub({ cloudFetchConcurrentDownloads: 1 });
+    const rowSetProvider = new ResultsProviderStub([sampleRowSet1], undefined);
+
+    const result = new CloudFetchResultHandler(context, rowSetProvider, {
+      status: { statusCode: TStatusCode.SUCCESS_STATUS },
+    });
+
+    context.invokeWithRetryStub.callsFake(async () => {
+      throw new RetryError(RetryErrorCode.AttemptsExceeded, {
+        request: new Request('http://example.com/result/1'),
+        response: new Response('', { status: 500, statusText: 'Internal Server Error' }),
+      });
+    });
+
+    let thrown: any;
+    try {
+      await result.fetchNext({ limit: 10000 });
+    } catch (e) {
+      thrown = e;
+    }
+
+    expect(thrown).to.be.instanceOf(RetryError);
+    expect(thrown.errorCode).to.be.equal(RetryErrorCode.AttemptsExceeded);
+    expect(thrown.message).to.contain('CloudFetch');
+    expect(thrown.message).to.contain('HTTP 500');
+    expect(thrown.message).to.contain('Internal Server Error');
+    expect(thrown.message).to.contain('Max retry count exceeded');
+    expect(thrown.stack.split('\n')[0]).to.be.equal(`Error: ${thrown.message}`);
+    expect(thrown.stack).to.not.contain('describeDownloadError');
+  });
+
+  it('should add download context and HTTP status to RetryError when retry timeout is exceeded', async () => {
+    const context = new ClientContextStub({ cloudFetchConcurrentDownloads: 1 });
+    const rowSetProvider = new ResultsProviderStub([sampleRowSet1], undefined);
+
+    const result = new CloudFetchResultHandler(context, rowSetProvider, {
+      status: { statusCode: TStatusCode.SUCCESS_STATUS },
+    });
+
+    context.invokeWithRetryStub.callsFake(async () => {
+      throw new RetryError(RetryErrorCode.TimeoutExceeded, {
+        request: new Request('http://example.com/result/1'),
+        response: new Response('', { status: 503, statusText: 'Service Unavailable' }),
+      });
+    });
+
+    let thrown: any;
+    try {
+      await result.fetchNext({ limit: 10000 });
+    } catch (e) {
+      thrown = e;
+    }
+
+    expect(thrown).to.be.instanceOf(RetryError);
+    expect(thrown.errorCode).to.be.equal(RetryErrorCode.TimeoutExceeded);
+    expect(thrown.message).to.be.equal(
+      'CloudFetch result download failed: Retry timeout exceeded (last error: HTTP 503: Service Unavailable)',
+    );
+    expect(thrown.stack.split('\n')[0]).to.be.equal(`Error: ${thrown.message}`);
+  });
+
+  it('should add download context and network error cause to RetryError when retries are exhausted', async () => {
+    const context = new ClientContextStub({ cloudFetchConcurrentDownloads: 1 });
+    const rowSetProvider = new ResultsProviderStub([sampleRowSet1], undefined);
+
+    const result = new CloudFetchResultHandler(context, rowSetProvider, {
+      status: { statusCode: TStatusCode.SUCCESS_STATUS },
+    });
+
+    const originalError = new RetryError(
+      RetryErrorCode.AttemptsExceeded,
+      Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' }),
+    );
+    context.invokeWithRetryStub.callsFake(async () => {
+      throw originalError;
+    });
+
+    let thrown: any;
+    try {
+      await result.fetchNext({ limit: 10000 });
+    } catch (e) {
+      thrown = e;
+    }
+
+    expect(thrown).to.be.equal(originalError);
+    expect(thrown.stack.split('\n')[0]).to.be.equal(`Error: ${thrown.message}`);
+    expect(thrown).to.be.instanceOf(RetryError);
+    expect(thrown.errorCode).to.be.equal(RetryErrorCode.AttemptsExceeded);
+    expect(thrown.message).to.be.equal(
+      'CloudFetch result download failed: Max retry count exceeded (last error: network error ECONNRESET)',
+    );
+  });
+
+  it('should not prefix the same RetryError instance twice when it is re-thrown', async () => {
+    const context = new ClientContextStub({ cloudFetchConcurrentDownloads: 1 });
+
+    const originalError = new RetryError(
+      RetryErrorCode.AttemptsExceeded,
+      Object.assign(new Error('socket hang up'), { code: 'ECONNRESET' }),
+    );
+    context.invokeWithRetryStub.callsFake(async () => {
+      throw originalError;
+    });
+
+    const expectedMessage =
+      'CloudFetch result download failed: Max retry count exceeded (last error: network error ECONNRESET)';
+
+    for (let i = 0; i < 2; i += 1) {
+      const result = new CloudFetchResultHandler(context, new ResultsProviderStub([sampleRowSet1], undefined), {
+        status: { statusCode: TStatusCode.SUCCESS_STATUS },
+      });
+
+      let thrown: any;
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        await result.fetchNext({ limit: 10000 });
+      } catch (e) {
+        thrown = e;
+      }
+
+      expect(thrown).to.be.equal(originalError);
+      expect(thrown.message).to.be.equal(expectedMessage);
+      expect(thrown.stack.split('\n')[0]).to.be.equal(`Error: ${expectedMessage}`);
+    }
+  });
+
+  it('should not leak presigned URLs from network errors into the RetryError message', async () => {
+    const context = new ClientContextStub({ cloudFetchConcurrentDownloads: 1 });
+    const rowSetProvider = new ResultsProviderStub([sampleRowSet1], undefined);
+
+    const result = new CloudFetchResultHandler(context, rowSetProvider, {
+      status: { statusCode: TStatusCode.SUCCESS_STATUS },
+    });
+
+    const presignedUrl = 'https://storage.example.com/results/chunk-0?sig=SECRET_SIGNATURE&se=2026-11-06';
+    const originalError = new RetryError(
+      RetryErrorCode.AttemptsExceeded,
+      Object.assign(new Error(`request to ${presignedUrl} failed, reason: socket hang up`), {
+        code: 'ECONNRESET',
+        type: 'system',
+      }),
+    );
+    context.invokeWithRetryStub.callsFake(async () => {
+      throw originalError;
+    });
+
+    let thrown: any;
+    try {
+      await result.fetchNext({ limit: 10000 });
+    } catch (e) {
+      thrown = e;
+    }
+
+    expect(thrown).to.be.equal(originalError);
+    expect(thrown.message).to.contain('ECONNRESET');
+    expect(thrown.message).to.not.contain('SECRET_SIGNATURE');
+    expect(thrown.message).to.not.contain('storage.example.com');
+    expect(thrown.stack.split('\n')[0]).to.not.contain('SECRET_SIGNATURE');
+  });
+
+  it('should use the network error type when no code is available', async () => {
+    const context = new ClientContextStub({ cloudFetchConcurrentDownloads: 1 });
+    const rowSetProvider = new ResultsProviderStub([sampleRowSet1], undefined);
+
+    const result = new CloudFetchResultHandler(context, rowSetProvider, {
+      status: { statusCode: TStatusCode.SUCCESS_STATUS },
+    });
+
+    const originalError = new RetryError(
+      RetryErrorCode.AttemptsExceeded,
+      Object.assign(new Error('request to https://storage.example.com/x?sig=SECRET failed'), { type: 'aborted' }),
+    );
+    context.invokeWithRetryStub.callsFake(async () => {
+      throw originalError;
+    });
+
+    let thrown: any;
+    try {
+      await result.fetchNext({ limit: 10000 });
+    } catch (e) {
+      thrown = e;
+    }
+
+    expect(thrown).to.be.equal(originalError);
+    expect(thrown.message).to.be.equal(
+      'CloudFetch result download failed: Max retry count exceeded (last error: network error (aborted))',
+    );
+  });
+
+  it('should preserve the original node-fetch request/response payload of a RetryError', async () => {
+    const context = new ClientContextStub({ cloudFetchConcurrentDownloads: 1 });
+    const rowSetProvider = new ResultsProviderStub([sampleRowSet1], undefined);
+
+    const result = new CloudFetchResultHandler(context, rowSetProvider, {
+      status: { statusCode: TStatusCode.SUCCESS_STATUS },
+    });
+
+    const presignedUrl = 'https://storage.example.com/results/chunk-0?sig=SECRET_SIGNATURE&se=2026-11-06';
+    const request = new Request(presignedUrl);
+    const response = new Response('', { status: 503, statusText: 'Service Unavailable', url: presignedUrl } as any);
+    const payload = { request, response };
+    const originalError = new RetryError(RetryErrorCode.AttemptsExceeded, payload);
+    context.invokeWithRetryStub.callsFake(async () => {
+      throw originalError;
+    });
+
+    let thrown: any;
+    try {
+      await result.fetchNext({ limit: 10000 });
+    } catch (e) {
+      thrown = e;
+    }
+
+    expect(thrown).to.be.equal(originalError);
+    expect(thrown).to.be.instanceOf(RetryError);
+    expect(thrown.errorCode).to.be.equal(RetryErrorCode.AttemptsExceeded);
+    expect(thrown.message).to.contain('HTTP 503: Service Unavailable');
+    expect(thrown.message).to.not.contain('SECRET_SIGNATURE');
+    expect(thrown.payload).to.be.equal(payload);
+    expect(thrown.payload.request).to.be.equal(request);
+    expect(thrown.payload.response).to.be.equal(response);
+    expect(thrown.payload.response).to.be.instanceOf(Response);
+  });
+
+  it('should re-throw errors other than RetryError unchanged', async () => {
+    const context = new ClientContextStub({ cloudFetchConcurrentDownloads: 1 });
+    const rowSetProvider = new ResultsProviderStub([sampleRowSet1], undefined);
+
+    const result = new CloudFetchResultHandler(context, rowSetProvider, {
+      status: { statusCode: TStatusCode.SUCCESS_STATUS },
+    });
+
+    const originalError = Object.assign(new Error('unable to verify the first certificate'), {
+      code: 'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
+    });
+    const originalMessage = originalError.message;
+    const originalStack = originalError.stack;
+    context.invokeWithRetryStub.callsFake(async () => {
+      throw originalError;
+    });
+
+    let thrown: any;
+    try {
+      await result.fetchNext({ limit: 10000 });
+    } catch (e) {
+      thrown = e;
+    }
+
+    expect(thrown).to.be.equal(originalError);
+    expect(thrown.code).to.be.equal('UNABLE_TO_VERIFY_LEAF_SIGNATURE');
+    expect(thrown.message).to.be.equal(originalMessage);
+    expect(thrown.stack).to.be.equal(originalStack);
   });
 
   it('should handle expired links', async () => {
