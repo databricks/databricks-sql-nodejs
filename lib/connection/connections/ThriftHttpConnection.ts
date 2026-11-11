@@ -18,14 +18,72 @@ export class THTTPException extends Thrift.TApplicationException {
 
   public readonly response: Response;
 
-  constructor(response: Response) {
-    super(
-      Thrift.TApplicationExceptionType.PROTOCOL_ERROR,
-      `Received a response with a bad HTTP status code: ${response.status}`,
-    );
+  constructor(response: Response, detail?: string) {
+    const message = `Received a response with a bad HTTP status code: ${response.status}`;
+    super(Thrift.TApplicationExceptionType.PROTOCOL_ERROR, detail ? `${message}: ${detail}` : message);
     this.statusCode = response.status;
     this.response = response;
   }
+}
+
+// Server error headers, most specific first.
+const errorDetailHeaders = [
+  'x-thriftserver-error-message',
+  'x-databricks-error-or-redirect-message',
+  'x-databricks-reason-phrase',
+];
+
+const MAX_ERROR_DETAIL_LENGTH = 500;
+const MAX_ERROR_BODY_SCAN = 4096;
+
+function normalizeErrorDetail(value: string): string | undefined {
+  const text = value.slice(0, MAX_ERROR_BODY_SCAN).replace(/\s+/g, ' ').trim();
+  if (text.length === 0) {
+    return undefined;
+  }
+  return text.length > MAX_ERROR_DETAIL_LENGTH ? `${text.slice(0, MAX_ERROR_DETAIL_LENGTH)}…` : text;
+}
+
+function getErrorDetailFromBody(body: Buffer): string | undefined {
+  const text = body.toString('utf8', 0, MAX_ERROR_BODY_SCAN).trim();
+  // Skip HTML pages and binary (e.g. Thrift-encoded) payloads
+  // eslint-disable-next-line no-control-regex
+  if (text.startsWith('<') || /[\u0000-\u0008\u000e-\u001f]/.test(text)) {
+    return undefined;
+  }
+  try {
+    const parsed = JSON.parse(text);
+    if (typeof parsed?.message === 'string') {
+      return normalizeErrorDetail(parsed.message);
+    }
+  } catch {
+    // Not JSON - use the text as is
+  }
+  return normalizeErrorDetail(text);
+}
+
+async function createHTTPException(response: Response): Promise<THTTPException> {
+  for (const header of errorDetailHeaders) {
+    const detail = normalizeErrorDetail(response.headers.get(header) ?? '');
+    if (detail) {
+      return new THTTPException(response, detail);
+    }
+  }
+
+  let body: Buffer;
+  try {
+    body = await response.buffer();
+  } catch {
+    return new THTTPException(response);
+  }
+  // The body is consumed now, so expose an equivalent response that can still be read
+  const bufferedResponse = new Response(body, {
+    url: response.url,
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
+  });
+  return new THTTPException(bufferedResponse, getErrorDetailFromBody(body));
 }
 
 // thrift >= 0.25 accepts an optional `maxLength` that @types/thrift doesn't declare.
@@ -152,7 +210,9 @@ export default class ThriftHttpConnection extends EventEmitter {
       })
       .then(({ response }) => {
         if (response.status !== 200) {
-          throw new THTTPException(response);
+          return createHTTPException(response).then((error) => {
+            throw error;
+          });
         }
         // `responseBuffer` is always set when status is 200, since `makeRequest`
         // assigns it before resolving in that branch and the retry loop only

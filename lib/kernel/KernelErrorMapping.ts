@@ -315,5 +315,17 @@ export function decodeNapiKernelError(err: unknown): Error {
   if (Object.keys(meta).length > 0) {
     defineErrorMetadata(jsErr, 'kernelMetadata', meta);
   }
+
+  // Keep the binding error as `cause` (same descriptor as a native
+  // `new Error(msg, { cause })`), without the internal framing prefix.
+  try {
+    err.message = jsonStr;
+    if (typeof err.stack === 'string') {
+      err.stack = err.stack.replace(ERROR_SENTINEL, '');
+    }
+  } catch {
+    // Read-only message/stack: keep the binding error as it is
+  }
+  defineErrorMetadata(jsErr, 'cause', err);
   return jsErr;
 }

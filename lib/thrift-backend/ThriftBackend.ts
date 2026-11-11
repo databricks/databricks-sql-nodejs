@@ -130,14 +130,16 @@ export default class ThriftBackend implements IBackend {
         try {
           return await this.openSessionWithKernelBackend(request);
         } catch (kernelError) {
-          // Preserve the Thrift KP001 as the kernel error's cause, but don't clobber a cause
-          // the kernel error may already carry.
-          if (
-            kernelError &&
-            typeof kernelError === 'object' &&
-            (kernelError as { cause?: unknown }).cause === undefined
-          ) {
-            (kernelError as { cause?: unknown }).cause = error;
+          // Preserve the Thrift KP001 at the end of the kernel error's cause chain, so a
+          // cause the kernel error already carries is not clobbered.
+          if (kernelError && typeof kernelError === 'object') {
+            let tail = kernelError as { cause?: unknown };
+            for (let depth = 0; depth < 10 && tail.cause && typeof tail.cause === 'object'; depth += 1) {
+              tail = tail.cause as { cause?: unknown };
+            }
+            if (tail.cause === undefined) {
+              tail.cause = error;
+            }
           }
           logger.log(LogLevel.error, 'Reyden: both Thrift (KP001) and SEA fallback failed');
           throw kernelError;

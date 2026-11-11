@@ -126,6 +126,27 @@ describe('Reyden Thrift Auto-Recovery — Orchestration', () => {
     expect(thrown.cause).to.equal(thriftError);
   });
 
+  it('appends the Thrift rejection after a cause the kernel error already carries', async () => {
+    const backend = makeBackend();
+    const thriftError = kp001Error();
+    const napiError = new Error('{"code":"Unauthenticated","message":"denied"}');
+    const kernelError = new Error('denied');
+    Object.defineProperty(kernelError, 'cause', { value: napiError, writable: true, configurable: true });
+    sandbox.stub(backend as any, 'openSessionWithThrift').rejects(thriftError);
+    sandbox.stub(backend as any, 'openSessionWithKernelBackend').rejects(kernelError);
+
+    let thrown: any;
+    try {
+      await backend.openSession({} as any);
+    } catch (e) {
+      thrown = e;
+    }
+
+    expect(thrown).to.equal(kernelError);
+    expect(thrown.cause).to.equal(napiError);
+    expect(thrown.cause.cause).to.equal(thriftError);
+  });
+
   it('reuses one fallback KernelBackend across sessions and closes it on close()', async () => {
     const backend = makeBackend();
     const fakeKernel = {

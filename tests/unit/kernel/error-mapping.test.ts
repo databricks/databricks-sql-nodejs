@@ -312,3 +312,42 @@ describe('KernelErrorMapping.decodeNapiKernelError — diagnostics enrichment (T
     expect(err.kernelMetadata?.diagnosticInfo).to.equal('ArithmeticException'); // Thrift: response.errorMessage
   });
 });
+
+describe('KernelErrorMapping.decodeNapiKernelError — cause chain', () => {
+  const SENTINEL = '__databricks_error__:';
+
+  const cases: Array<[string, Function]> = [
+    ['Unauthenticated', AuthenticationError],
+    ['PermissionDenied', AuthenticationError],
+    ['SqlError', OperationStateError],
+    ['Cancelled', OperationStateError],
+    ['InvalidArgument', ParameterError],
+    ['NetworkError', HiveDriverError],
+    ['SomeFutureVariant', HiveDriverError],
+  ];
+
+  cases.forEach(([code, expectedClass]) => {
+    it(`keeps the binding error as a non-enumerable cause for ${code}`, () => {
+      const json = JSON.stringify({ code, message: 'HTTP 403: Invalid access token', httpStatus: 403 });
+      const napiError = new Error(SENTINEL + json);
+
+      const err = decodeNapiKernelError(napiError) as Error & { cause?: unknown };
+
+      expect(err).to.be.instanceOf(expectedClass);
+      expect(err.message).to.equal('HTTP 403: Invalid access token');
+      expect(err.cause).to.equal(napiError);
+      expect(napiError.message).to.equal(json);
+      expect(String(napiError.stack)).to.not.contain(SENTINEL);
+      const descriptor = Object.getOwnPropertyDescriptor(err, 'cause');
+      expect(descriptor?.enumerable).to.equal(false);
+      expect(descriptor?.writable).to.equal(true);
+    });
+  });
+
+  it('adds no cause to binding-side errors that are returned as-is', () => {
+    const plain = new Error('openSession: `token` is required');
+    const err = decodeNapiKernelError(plain) as Error & { cause?: unknown };
+    expect(err).to.equal(plain);
+    expect(err.cause).to.equal(undefined);
+  });
+});

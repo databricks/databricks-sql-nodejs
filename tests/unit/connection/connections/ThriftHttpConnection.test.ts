@@ -2,7 +2,7 @@ import http from 'http';
 import { AddressInfo } from 'net';
 import { expect } from 'chai';
 import thrift, { TBinaryProtocol, TBufferedTransport } from 'thrift';
-import ThriftHttpConnection from '../../../../lib/connection/connections/ThriftHttpConnection';
+import ThriftHttpConnection, { THTTPException } from '../../../../lib/connection/connections/ThriftHttpConnection';
 import NullRetryPolicy from '../../../../lib/connection/connections/NullRetryPolicy';
 import TCLIService from '../../../../thrift/TCLIService';
 import {
@@ -21,6 +21,41 @@ type Receiver = (
   seqid: number,
   maxLength?: number,
 ) => (data: Buffer) => void;
+
+interface Reply {
+  status: number;
+  headers?: Record<string, string>;
+  body?: string | Buffer;
+}
+
+const PREFIX = 'Received a response with a bad HTTP status code';
+
+// Sends one Thrift write to a local server that answers with `reply`, and
+// returns the error handed to the pending Thrift callback.
+async function failWith(reply: Reply, requestHeaders: Record<string, string> = {}): Promise<THTTPException> {
+  const server = http.createServer((req, res) => {
+    req.resume();
+    res.writeHead(reply.status, reply.headers);
+    res.end(reply.body);
+  });
+  await new Promise<void>((resolve) => {
+    server.listen(0, '127.0.0.1', resolve);
+  });
+  try {
+    const { port } = server.address() as AddressInfo;
+    const connection = new ThriftHttpConnection(
+      { url: `http://127.0.0.1:${port}/`, getRetryPolicy: async () => new NullRetryPolicy() },
+      { headers: requestHeaders },
+    );
+    return await new Promise<THTTPException>((resolve) => {
+      connection.client = { _reqs: { 1: (error: unknown) => resolve(error as THTTPException) } } as any;
+      connection.write(Buffer.from('x'), 1);
+    });
+  } finally {
+    server.closeAllConnections();
+    server.close();
+  }
+}
 
 describe('ThriftHttpConnection', () => {
   let server: http.Server;
@@ -103,5 +138,86 @@ describe('ThriftHttpConnection', () => {
     expect(replyLengths).to.have.length(1);
     // The first receiver call peeks at the request's method name; the second decodes the response.
     expect(maxLengths).to.deep.equal([requestLengths[0], replyLengths[0]]);
+  });
+});
+
+describe('ThriftHttpConnection', () => {
+  describe('non-200 responses', () => {
+    it('keeps the bare message when the server sends no detail', async () => {
+      const error = await failWith({ status: 401 });
+      expect(error).to.be.instanceOf(THTTPException);
+      expect(error.message).to.equal(`${PREFIX}: 401`);
+      expect(error.statusCode).to.equal(401);
+    });
+
+    it('appends the Databricks reason-phrase header without consuming the body', async () => {
+      const body = '{"error_code":403,"message":"Invalid access token. [ReqId: abc]"}';
+      const error = await failWith({
+        status: 403,
+        headers: { 'x-databricks-reason-phrase': 'Invalid access token.', 'content-type': 'application/json' },
+        body,
+      });
+      expect(error.message).to.equal(`${PREFIX}: 403: Invalid access token.`);
+      expect(error.statusCode).to.equal(403);
+      expect(await error.response.text()).to.equal(body);
+    });
+
+    it('prefers the Thrift server error header over other detail', async () => {
+      const error = await failWith({
+        status: 404,
+        headers: {
+          'x-thriftserver-error-message': 'ENDPOINT_NOT_FOUND: SQL warehouse does not exist',
+          'x-databricks-reason-phrase': 'Not Found',
+          'content-type': 'application/x-thrift',
+        },
+        body: Buffer.from([0x80, 0x01, 0x00, 0x03, 0x00, 0x00, 0x00, 0x05]),
+      });
+      expect(error.message).to.equal(`${PREFIX}: 404: ENDPOINT_NOT_FOUND: SQL warehouse does not exist`);
+    });
+
+    it('falls back to the JSON body message and keeps the body readable', async () => {
+      const body = '{"error_code":401,"message":"Invalid access token. [ReqId: abc]"}';
+      const error = await failWith({ status: 401, headers: { 'content-type': 'application/json' }, body });
+      expect(error.message).to.equal(`${PREFIX}: 401: Invalid access token. [ReqId: abc]`);
+      expect(error.response.status).to.equal(401);
+      expect(error.response.headers.get('content-type')).to.equal('application/json');
+      expect(await error.response.text()).to.equal(body);
+    });
+
+    it('falls back to a plain-text body', async () => {
+      const error = await failWith({
+        status: 401,
+        headers: { 'content-type': 'application/x-thrift' },
+        body: 'Authentication Error [INVALID_AUTHORIZATION_SPECIFICATION]: Invalid access token\r\n',
+      });
+      expect(error.message).to.equal(
+        `${PREFIX}: 401: Authentication Error [INVALID_AUTHORIZATION_SPECIFICATION]: Invalid access token`,
+      );
+    });
+
+    it('ignores HTML and binary bodies', async () => {
+      const html = await failWith({
+        status: 502,
+        headers: { 'content-type': 'text/html' },
+        body: '<html><body>Bad Gateway</body></html>',
+      });
+      expect(html.message).to.equal(`${PREFIX}: 502`);
+
+      const binary = await failWith({ status: 500, body: Buffer.from([0x80, 0x01, 0x00, 0x03, 0x41, 0x00]) });
+      expect(binary.message).to.equal(`${PREFIX}: 500`);
+    });
+
+    it('collapses whitespace and bounds the detail length', async () => {
+      const error = await failWith({ status: 401, body: `first\n\tline ${'x'.repeat(5000)}` });
+      const detail = error.message.slice(`${PREFIX}: 401: `.length);
+      expect(detail.startsWith('first line xxx')).to.equal(true);
+      expect(detail.length).to.equal(501);
+      expect(detail.endsWith('…')).to.equal(true);
+    });
+
+    it('never echoes request headers', async () => {
+      const error = await failWith({ status: 401 }, { Authorization: 'Bearer dapi-secret-token' });
+      expect(error.message).to.not.include('dapi-secret-token');
+    });
   });
 });
