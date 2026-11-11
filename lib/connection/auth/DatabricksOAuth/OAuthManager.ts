@@ -4,7 +4,7 @@ import AuthenticationError from '../../../errors/AuthenticationError';
 import { LogLevel } from '../../../contracts/IDBSQLLogger';
 import OAuthToken from './OAuthToken';
 import AuthorizationCode from './AuthorizationCode';
-import { OAuthScope, OAuthScopes, scopeDelimiter } from './OAuthScope';
+import { OAuthScope, OAuthScopes, defaultOAuthScopes, scopeDelimiter } from './OAuthScope';
 import IClientContext from '../../../contracts/IClientContext';
 
 export enum OAuthFlow {
@@ -53,7 +53,8 @@ export default abstract class OAuthManager {
 
   protected abstract getCallbackPorts(): Array<number>;
 
-  protected abstract getScopes(requestedScopes: OAuthScopes): OAuthScopes;
+  // `requestedScopes` is undefined when the caller configured none; return the flow's default then.
+  protected abstract getScopes(requestedScopes?: OAuthScopes): OAuthScopes;
 
   protected async getClient(): Promise<BaseClient> {
     // Obtain http agent each time when we need an OAuth client
@@ -144,7 +145,7 @@ export default abstract class OAuthManager {
     }
   }
 
-  private async getTokenU2M(scopes: OAuthScopes): Promise<OAuthToken> {
+  private async getTokenU2M(scopes?: OAuthScopes): Promise<OAuthToken> {
     const client = await this.getClient();
 
     const authCode = new AuthorizationCode({
@@ -170,7 +171,7 @@ export default abstract class OAuthManager {
     return new OAuthToken(accessToken, refreshToken, mappedScopes);
   }
 
-  private async getTokenM2M(scopes: OAuthScopes): Promise<OAuthToken> {
+  private async getTokenM2M(scopes?: OAuthScopes): Promise<OAuthToken> {
     const client = await this.getClient();
 
     const mappedScopes = this.getScopes(scopes);
@@ -190,7 +191,7 @@ export default abstract class OAuthManager {
     return new OAuthToken(accessToken, undefined, mappedScopes);
   }
 
-  public async getToken(scopes: OAuthScopes): Promise<OAuthToken> {
+  public async getToken(scopes?: OAuthScopes): Promise<OAuthToken> {
     switch (this.options.flow) {
       case OAuthFlow.U2M:
         return this.getTokenU2M(scopes);
@@ -260,12 +261,11 @@ export class DatabricksOAuthManager extends OAuthManager {
     return this.options.callbackPorts ?? DatabricksOAuthManager.defaultCallbackPorts;
   }
 
-  protected getScopes(requestedScopes: OAuthScopes): OAuthScopes {
-    if (this.options.flow === OAuthFlow.M2M) {
-      // this is the only allowed scope for M2M flow
-      return [OAuthScope.allAPIs];
+  protected getScopes(requestedScopes?: OAuthScopes): OAuthScopes {
+    if (requestedScopes && requestedScopes.length > 0) {
+      return requestedScopes;
     }
-    return requestedScopes;
+    return this.options.flow === OAuthFlow.M2M ? [OAuthScope.allAPIs] : defaultOAuthScopes;
   }
 }
 
@@ -295,7 +295,7 @@ export class AzureOAuthManager extends OAuthManager {
     return this.options.callbackPorts ?? AzureOAuthManager.defaultCallbackPorts;
   }
 
-  protected getScopes(requestedScopes: OAuthScopes): OAuthScopes {
+  protected getScopes(requestedScopes: OAuthScopes = defaultOAuthScopes): OAuthScopes {
     // There is no corresponding scopes in Azure, instead, access control will be delegated to Databricks.
     // Scope must be the Azure *resource* ID (the Databricks Azure Login App), NOT the tenant ID.
     const resourceId = AzureOAuthManager.datatricksAzureApp;

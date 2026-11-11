@@ -23,6 +23,7 @@ import { buildUserAgentString, normalizePemBytes } from '../utils';
 import driverVersion from '../version';
 import { DRIVER_NAME } from '../telemetry/types';
 import { sanitizeProcessName, isTelemetryDisabledByEnv } from '../telemetry/telemetryUtils';
+import { normalizeOAuthScopes } from '../connection/auth/DatabricksOAuth/OAuthScope';
 
 /**
  * Default local listener port for the U2M authorization-code callback.
@@ -42,11 +43,17 @@ const U2M_DEFAULT_REDIRECT_PORT = 8030;
 // unless the caller overrides via `oauthScopes`.
 const U2M_DEFAULT_SCOPES = ['sql', 'offline_access'];
 
-// M2M OAuth scopes default. Matches the standalone Thrift driver (`getScopes`
-// forces `['all-apis']` for the client-credentials flow) and the kernel's own
-// M2M default (`m2m.rs` → `['all-apis']`). Overridable via `oauthScopes`
-// (parity with pyo3, which forwards `scopes` on M2M).
+// M2M OAuth scopes default. Matches the standalone Thrift driver's
+// client-credentials default and the kernel's own M2M default (`m2m.rs` →
+// `['all-apis']`). Overridable via `oauthScopes` (parity with pyo3, which
+// forwards `scopes` on M2M).
 const M2M_DEFAULT_SCOPES = ['all-apis'];
+
+// Normalized `oauthScopes`, or the flow default when unset or blank.
+function resolveOAuthScopes(scopes: Array<string> | undefined, defaults: Array<string>): Array<string> {
+  const normalized = normalizeOAuthScopes(scopes);
+  return normalized.length > 0 ? normalized : defaults;
+}
 
 // Default OAuth client id — identical to the Thrift driver's
 // `DatabricksOAuthManager.defaultClientId` and the kernel napi's own U2M default.
@@ -1051,8 +1058,7 @@ export function buildKernelConnectionOptions(options: ConnectionOptions): Kernel
         authMode: 'OAuthU2m' as const,
         oauthRedirectPort: U2M_DEFAULT_REDIRECT_PORT,
         // Scopes default to Thrift parity (`sql offline_access`); overridable.
-        oauthScopes:
-          Array.isArray(oauth.oauthScopes) && oauth.oauthScopes.length > 0 ? oauth.oauthScopes : U2M_DEFAULT_SCOPES,
+        oauthScopes: resolveOAuthScopes(oauth.oauthScopes, U2M_DEFAULT_SCOPES),
         // Token cache is disabled by default for security (silent-no-persist parity);
         // explicitly set to false unless the caller opts in.
         tokenCacheEnabled: oauth.tokenCacheEnabled ?? false,
@@ -1077,8 +1083,7 @@ export function buildKernelConnectionOptions(options: ConnectionOptions): Kernel
       oauthClientId: oauth.oauthClientId ?? DEFAULT_OAUTH_CLIENT_ID,
       oauthClientSecret: oauth.oauthClientSecret,
       // Configurable (parity with pyo3); defaults to `['all-apis']`.
-      oauthScopes:
-        Array.isArray(oauth.oauthScopes) && oauth.oauthScopes.length > 0 ? oauth.oauthScopes : M2M_DEFAULT_SCOPES,
+      oauthScopes: resolveOAuthScopes(oauth.oauthScopes, M2M_DEFAULT_SCOPES),
     };
   }
 

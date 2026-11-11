@@ -85,6 +85,28 @@ describe('DatabricksOAuth', () => {
     expect(persistence.token).to.be.equal(oauthManagerSpy.refreshTokenResult);
   });
 
+  it('should pass normalized configured scopes to the manager, or none when unset or blank', async () => {
+    const cases: Array<[Array<string> | undefined, Array<string> | undefined]> = [
+      [[' sql   offline_access '], ['sql', 'offline_access']],
+      [['sql', 'sql'], ['sql']],
+      [['   '], undefined],
+      [[], undefined],
+      [undefined, undefined],
+    ];
+    for (const [scopes, expected] of cases) {
+      const options = { ...optionsStub, scopes };
+      const oauthManager = new OAuthManagerStub(options);
+      const oauthManagerSpy = sinon.spy(oauthManager);
+      const provider = new DatabricksOAuth(options);
+      provider['manager'] = oauthManager;
+
+      // eslint-disable-next-line no-await-in-loop
+      await provider.authenticate();
+      const [requested] = oauthManagerSpy.getToken.firstCall.args as unknown[];
+      expect(requested, JSON.stringify(scopes)).to.deep.equal(expected);
+    }
+  });
+
   it('should configure transport using valid token', async () => {
     const options = { ...optionsStub };
 

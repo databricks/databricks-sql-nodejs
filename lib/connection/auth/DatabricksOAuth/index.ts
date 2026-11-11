@@ -2,7 +2,7 @@ import { HeadersInit } from 'node-fetch';
 import IAuthentication from '../../contracts/IAuthentication';
 import OAuthPersistence, { OAuthPersistenceCache } from './OAuthPersistence';
 import OAuthManager, { OAuthManagerOptions, OAuthFlow } from './OAuthManager';
-import { OAuthScopes, defaultOAuthScopes } from './OAuthScope';
+import { OAuthScopes, normalizeOAuthScopes } from './OAuthScope';
 import IClientContext from '../../../contracts/IClientContext';
 
 export { OAuthFlow };
@@ -34,7 +34,9 @@ export default class DatabricksOAuth implements IAuthentication {
 
     let token = await persistence.read(host);
     if (!token) {
-      token = await this.getManager().getToken(scopes ?? defaultOAuthScopes);
+      const requestedScopes = normalizeOAuthScopes(scopes);
+      // Unset or blank scopes let the manager apply its flow's default
+      token = await this.getManager().getToken(requestedScopes.length > 0 ? requestedScopes : undefined);
     }
 
     token = await this.getManager().refreshAccessToken(token);
