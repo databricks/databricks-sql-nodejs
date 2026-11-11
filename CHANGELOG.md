@@ -8,6 +8,7 @@
 - `DBSQLLogger`: a `filepath` naming an existing directory now writes to `databricks-sql-nodejs.log` inside it, instead of silently producing no logs. (#565)
 - `DBSQLLogger`: if the log file can't be opened (including when its directory can't be created, which used to throw from the constructor), the logger now logs to the console only, leaves `transports.file` undefined, and emits a process warning with code `DBSQL_LOG_FILE_UNAVAILABLE`. Previously an unwritable file could silently stall all logging, including the console. (#565)
 - Kernel backend: `getPrimaryKeys()` without a `tableName` now throws a `ParameterError` (`Invalid argument: tableName may not be null`, SQLSTATE `42000`) instead of an opaque native conversion error. (#479)
+- Upgrade `thrift` to 0.25, which depends on the CommonJS-compatible `uuid@11` instead of the ESM-only `uuid@13`, so `require('@databricks/sql')` works again in Jest and other environments without `require(esm)`. Callback-less calls on the exported `thrift.TCLIService` client now return native Promises instead of Q promises. (#461)
 
 ## 3.0.0
 

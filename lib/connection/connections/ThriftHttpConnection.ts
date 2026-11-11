@@ -28,7 +28,14 @@ export class THTTPException extends Thrift.TApplicationException {
   }
 }
 
-type TTransportType = typeof TBufferedTransport;
+// thrift >= 0.25 accepts an optional `maxLength` that @types/thrift doesn't declare.
+type TTransportType = typeof TBufferedTransport & {
+  receiver(
+    callback: (trans: TBufferedTransport, seqid: number) => void,
+    seqid: number,
+    maxLength?: number,
+  ): (data: Buffer) => void;
+};
 
 interface ThriftHttpConnectionOptions {
   url: string;
@@ -153,7 +160,13 @@ export default class ThriftHttpConnection extends EventEmitter {
         return responseBuffer as Buffer;
       })
       .then((buffer) => {
-        this.transport.receiver((transportWithData) => this.handleThriftResponse(transportWithData), seqId)(buffer);
+        // The whole body is already in memory. Capping at its size stops thrift >= 0.25 from rounding the
+        // receive buffer up to a power of two, which is much slower for multi-MB responses.
+        this.transport.receiver(
+          (transportWithData) => this.handleThriftResponse(transportWithData),
+          seqId,
+          buffer.length,
+        )(buffer);
       })
       .catch((error) => {
         if (error instanceof FetchError) {
