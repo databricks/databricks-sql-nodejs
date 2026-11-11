@@ -141,7 +141,7 @@ export function mapKernelErrorToJsError(kErr: KernelErrorShape): ErrorWithSqlSta
 
   if (kErr.errorCode === 'FILE_TRANSFER_ERROR') {
     error = new StagingError(message);
-  } else
+  } else {
     switch (code as KernelErrorCode) {
       case 'Unauthenticated':
       case 'PermissionDenied':
@@ -194,6 +194,7 @@ export function mapKernelErrorToJsError(kErr: KernelErrorShape): ErrorWithSqlSta
         error = new HiveDriverError(message);
         break;
     }
+  }
 
   if (sqlstate !== undefined) {
     defineErrorMetadata(error, 'sqlState', sqlstate);
