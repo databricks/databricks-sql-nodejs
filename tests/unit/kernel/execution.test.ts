@@ -1184,6 +1184,22 @@ describe('KernelSessionBackend', () => {
     expect(thrown).to.be.instanceOf(HiveDriverError);
   });
 
+  it('getInfo answers the transaction isolation info types with SQL_TXN_SERIALIZABLE', async () => {
+    const connection = new FakeNativeConnection();
+    const session = makeSession(connection);
+    // CLI_DEFAULT_TXN_ISOLATION (26) and CLI_TXN_ISOLATION_OPTION (72) → SQL_TXN_SERIALIZABLE (8).
+    expect((await session.getInfo(26)).getValue()).to.equal(8);
+    expect((await session.getInfo(72)).getValue()).to.equal(8);
+    // Other non-server info types (e.g. CLI_TXN_CAPABLE) are still rejected.
+    let thrown: unknown;
+    try {
+      await session.getInfo(46);
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).to.be.instanceOf(HiveDriverError);
+  });
+
   it('close() forwards to the native connection', async () => {
     const connection = new FakeNativeConnection();
     const session = makeSession(connection);

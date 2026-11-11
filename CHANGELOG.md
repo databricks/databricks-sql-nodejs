@@ -7,6 +7,7 @@
 - Reject non-scalar query parameter values at bind time with a `ParameterError` on both the Thrift and kernel backends, instead of stringifying them (which could leave a Thrift operation stuck before FINISHED). Newly rejected on the Thrift backend: arrays, plain objects, boxed primitives (e.g. `new String('x')`, `new Number(1)`), functions, symbols, and a `DBSQLParameter` that wraps another `DBSQLParameter`. Primitives, `Date`, `Int64`, and `DBSQLParameter` are still accepted.
 - `DBSQLLogger`: a `filepath` naming an existing directory now writes to `databricks-sql-nodejs.log` inside it, instead of silently producing no logs. (#565)
 - `DBSQLLogger`: if the log file can't be opened (including when its directory can't be created, which used to throw from the constructor), the logger now logs to the console only, leaves `transports.file` undefined, and emits a process warning with code `DBSQL_LOG_FILE_UNAVAILABLE`. Previously an unwritable file could silently stall all logging, including the console. (#565)
+- `session.getInfo()` now answers `CLI_DEFAULT_TXN_ISOLATION` (26) and `CLI_TXN_ISOLATION_OPTION` (72) on both backends with `SQL_TXN_SERIALIZABLE` (8), matching the Databricks ODBC driver, instead of failing; these codes no longer make a server call. (#488)
 
 ## 3.0.0
 

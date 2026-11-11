@@ -9,9 +9,12 @@ import { PrimaryKeysRequest } from '../../lib/contracts/IDBSQLSession';
 import ISessionBackend from '../../lib/contracts/ISessionBackend';
 import ParameterError from '../../lib/errors/ParameterError';
 import { DBSQLParameter } from '../../lib/DBSQLParameter';
-import { TSessionHandle, TProtocolVersion } from '../../thrift/TCLIService_types';
+import { TSessionHandle, TProtocolVersion, TGetInfoType } from '../../thrift/TCLIService_types';
 import ClientContextStub from './.stubs/ClientContextStub';
 import { createSessionForTest } from './.stubs/createSessionForTest';
+
+// ODBC SQL_TXN_SERIALIZABLE
+const SQL_TXN_SERIALIZABLE = 8;
 
 const sessionHandleStub: TSessionHandle = {
   sessionId: { guid: Buffer.alloc(16), secret: Buffer.alloc(16) },
@@ -58,6 +61,29 @@ describe('DBSQLSession', () => {
       const session = createSessionForTest({ handle: sessionHandleStub, context: new ClientContextStub() });
       const result = await session.getInfo(1);
       expect(result).instanceOf(InfoValue);
+    });
+
+    it('should answer transaction isolation info types without a server call', async () => {
+      const context = new ClientContextStub();
+      const session = createSessionForTest({ handle: sessionHandleStub, context });
+      const getInfoSpy = sinon.spy(context.driver, 'getInfo');
+
+      const defaultLevel = await session.getInfo(TGetInfoType.CLI_DEFAULT_TXN_ISOLATION);
+      const supportedLevels = await session.getInfo(TGetInfoType.CLI_TXN_ISOLATION_OPTION);
+
+      expect(defaultLevel.getValue()).to.equal(SQL_TXN_SERIALIZABLE);
+      expect(supportedLevels.getValue()).to.equal(SQL_TXN_SERIALIZABLE);
+      expect(getInfoSpy.called).to.be.false;
+    });
+
+    it('should forward other info types to the server', async () => {
+      const context = new ClientContextStub();
+      const session = createSessionForTest({ handle: sessionHandleStub, context });
+
+      const result = await session.getInfo(TGetInfoType.CLI_DBMS_VER);
+
+      expect(result.getValue()).to.equal('test');
+      expect(context.driver.getInfoReq?.infoType).to.equal(TGetInfoType.CLI_DBMS_VER);
     });
   });
 
@@ -730,6 +756,7 @@ describe('DBSQLSession', () => {
       expect(session['isOpen']).to.be.false;
 
       await expectFailure(() => session.getInfo(1));
+      await expectFailure(() => session.getInfo(TGetInfoType.CLI_DEFAULT_TXN_ISOLATION));
       await expectFailure(() => session.executeStatement('SELECT * FROM table'));
       await expectFailure(() => session.getTypeInfo());
       await expectFailure(() => session.getCatalogs());

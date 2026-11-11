@@ -39,6 +39,7 @@ import EmptyOperationBackend from './EmptyOperationBackend';
 import isObjectNotFound from './metadataErrors';
 import createPrimaryKeysSchema from './primaryKeysSchema';
 import assertBindableValue from '../utils/assertBindableValue';
+import { driverInfoValue } from '../utils/driverInfo';
 
 interface OperationResponseShape {
   status: TStatus;
@@ -170,6 +171,11 @@ export default class ThriftSessionBackend implements ISessionBackend {
   }
 
   public async getInfo(infoType: number): Promise<InfoValue> {
+    const localValue = driverInfoValue(infoType);
+    if (localValue !== undefined) {
+      return new InfoValue(localValue);
+    }
+
     const driver = await this.context.getDriver();
     const response = await driver.getInfo({
       sessionHandle: this.sessionHandle,

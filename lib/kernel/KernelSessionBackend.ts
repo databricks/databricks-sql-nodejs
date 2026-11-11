@@ -44,6 +44,7 @@ import { decodeNapiKernelError } from './KernelErrorMapping';
 import KernelOperationBackend from './KernelOperationBackend';
 import { buildKernelPositionalParams, buildKernelNamedParams } from './KernelPositionalParams';
 import { kernelServerInfoValue } from './KernelServerInfo';
+import { driverInfoValue } from '../utils/driverInfo';
 import { serializeQueryTags } from '../utils';
 
 export interface KernelSessionBackendOptions {
@@ -117,17 +118,19 @@ export default class KernelSessionBackend implements ISessionBackend {
    * synthesize (`"Spark SQL"` / `"Spark SQL"` / `"3.1.1"`, re-verified live).
    * So rejecting an unsupported type matches Thrift's effective behaviour — we
    * just surface a clearer, typed error than the server's opaque one. See
-   * {@link kernelServerInfoValue}.
+   * {@link kernelServerInfoValue}. The driver-side info types
+   * ({@link driverInfoValue}) are answered on both backends.
    */
   public async getInfo(infoType: number): Promise<InfoValue> {
     this.failIfClosed();
-    const value = kernelServerInfoValue(infoType);
+    const value = driverInfoValue(infoType) ?? kernelServerInfoValue(infoType);
     if (value === undefined) {
       throw new HiveDriverError(
         `kernel getInfo: unsupported TGetInfoType ${infoType}. Only the info types the Databricks ` +
           `server itself answers are supported: CLI_SERVER_NAME (13), CLI_DBMS_NAME (17), ` +
-          `CLI_DBMS_VER (18). The server rejects every other type on the Thrift path too, so this ` +
-          `is not a kernel-specific restriction.`,
+          `CLI_DBMS_VER (18), plus the driver-answered CLI_DEFAULT_TXN_ISOLATION (26) and ` +
+          `CLI_TXN_ISOLATION_OPTION (72). The server rejects every other type on the Thrift path too, ` +
+          `so this is not a kernel-specific restriction.`,
       );
     }
     return new InfoValue(value);
