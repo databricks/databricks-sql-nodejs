@@ -1,6 +1,9 @@
 # Release History
 
 ## Unreleased
+- Honor `stagingAllowedLocalPath` for SQL PUT, GET, and REMOVE through the native backend and report transfer errors as `StagingError`. Requires matching native packages.
+
+## Unreleased
 
 - Thrift HTTP errors (`THTTPException`) now append server detail from the error headers (at most 500 characters). Kernel-backend errors now carry a non-enumerable `cause` summarizing the kernel error code and message (also at most 500 characters). Reyden fallback preserves KP001 after any existing kernel cause. (#467)
 - Add `Symbol.asyncDispose` to clients, sessions, and operations, delegating to `close()`. Use `asyncDisposable()` with interface-typed results in TypeScript; existing interfaces and factory return types remain unchanged. (#331)
