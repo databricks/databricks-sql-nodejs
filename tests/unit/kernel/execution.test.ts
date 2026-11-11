@@ -746,14 +746,15 @@ describe('KernelBackend', () => {
       const configuration = { TIMEZONE: 'UTC' };
       await backend.openSession({ configuration });
       const conf = (binding.openSessionStub.firstCall.args[0] as { sessionConf?: Record<string, string> }).sessionConf;
-      expect(conf?.can_cloud_download).to.equal(useCloudFetch === false ? 'false' : undefined);
+      expect(conf?.cloudfetch_enabled).to.equal(useCloudFetch === false ? 'false' : undefined);
+      expect(conf?.can_cloud_download).to.equal(undefined);
       expect(conf?.TIMEZONE).to.equal('UTC');
       expect(configuration).to.deep.equal({ TIMEZONE: 'UTC' });
     });
   });
 
-  ['can_cloud_download', 'CAN_CLOUD_DOWNLOAD'].forEach((key) => {
-    it(`openSession() gives useCloudFetch=false precedence over ${key}`, async () => {
+  ['can_cloud_download', 'CLOUDFETCH_ENABLED', 'cloudfetch_enabled'].forEach((key) => {
+    it(`openSession() forwards the client disable with ${key}`, async () => {
       const binding = makeBinding(new FakeNativeConnection());
       const backend = new KernelBackend({
         context: makeContext(undefined, { useCloudFetch: false }),
@@ -763,7 +764,7 @@ describe('KernelBackend', () => {
       const configuration = { [key]: 'true', TIMEZONE: 'UTC' };
       await backend.openSession({ configuration });
       const conf = (binding.openSessionStub.firstCall.args[0] as { sessionConf?: Record<string, string> }).sessionConf;
-      expect(conf).to.deep.equal({ can_cloud_download: 'false', TIMEZONE: 'UTC' });
+      expect(conf).to.deep.equal({ [key]: 'true', TIMEZONE: 'UTC', cloudfetch_enabled: 'false' });
       expect(configuration).to.deep.equal({ [key]: 'true', TIMEZONE: 'UTC' });
     });
   });
