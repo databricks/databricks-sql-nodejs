@@ -22,6 +22,7 @@ import { LogLevel } from './contracts/IDBSQLLogger';
 
 // Re-export types for TypeScript users
 export type { default as ITokenProvider } from './connection/auth/tokenProvider/ITokenProvider';
+export type { RowMode } from './contracts/IDBSQLSession';
 
 export { default as asyncDisposable } from './asyncDisposable';
 export type { AsyncDisposableResource } from './asyncDisposable';
