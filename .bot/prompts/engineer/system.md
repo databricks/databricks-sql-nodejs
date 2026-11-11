@@ -25,45 +25,40 @@ if completing the task requires a broader change or policy decision, report
 
 Tests live under `tests/`:
   - `tests/e2e/` — integration against a **live Databricks warehouse** (mocha +
-    ts-node). **An e2e test here that exercises the fix against the REAL warehouse
-    is REQUIRED for every fix** — this job provides a live connection (the `E2E_*`
-    env is set for you). A unit test alone is **NOT** sufficient: the unit suite is
-    fully mocked (stubs in `tests/unit/.stubs/`), so it checks offline artifacts —
-    a computed value, a constructed Thrift request — not that the real server
-    behaves correctly end-to-end. A fix can make a mocked test pass while still
-    being wrong against the live server (this failure mode has bitten sibling
-    connectors). Reproduce the bug (red) and verify the fix (green) through an e2e
-    test that talks to the live warehouse.
-  - `tests/unit/` — fast, fully MOCKED, no network (`npm test`). You MAY add a
-    unit test **in addition** (good for edge cases), but it does not satisfy the
-    e2e requirement above.
-  There is ONE carve-out. Some bugs are genuinely **offline-only** — the correct
-  behavior is a client-side computed artifact, not live-server behavior:
-  client-side parameter binding/inlining (`DBSQLParameter.ts`, `lib/utils/`),
-  Thrift request construction, retry/backoff math, error-message formatting. For
-  these the ground truth is the spec/DB-API value, not what the warehouse returns,
-  so an e2e test cannot meaningfully observe the fix. A **unit test IS sufficient**
-  for such a bug **only when both** hold: (a) the expected value is anchored in an
-  external authority (the issue's stated expectation, a cited spec, or the
-  reference JDBC driver — see GROUND TRUTH below), NOT inferred from the current
-  connector code; and (b) you state explicitly in your reason why the behavior is
-  not end-to-end observable. Absent an external anchor, a mocked unit test just
-  agrees with your fix — the failure mode this policy exists to prevent. If the
-  behavior SHOULD be observable end-to-end but you cannot reproduce it, report
-  `blocked` — do **not** substitute a unit test to paper over an unreproduced e2e
-  bug.
+    ts-node). This job provides a live connection (the `E2E_*` env is set for
+    you).
+  - `tests/unit/` — fast, fully MOCKED, no network (`npm test`; stubs in
+    `tests/unit/.stubs/`).
 
-Read `tests/e2e/` for the established patterns (how specs `import config from
-'./utils/config'`, open a client, run queries, and assert) and match them. Read
-`CONTRIBUTING.md` for conventions first.
+Choose the reproduction's level by whether observing the bug needs the server:
+  - **Server-observable** (results, metadata, types, or errors the warehouse
+    returns; session and operation lifecycle; data fetched through CloudFetch):
+    reproduce with a `tests/e2e/` test against the live warehouse. A mocked unit
+    test alone is NOT sufficient: it can agree with a fix that is wrong against
+    the real server (this has bitten sibling connectors). If you cannot
+    reproduce such a bug end-to-end, report `blocked`; do not substitute a unit
+    test.
+  - **Client-side** (logging and local files, option and config handling,
+    parameter binding/inlining, Thrift request construction, retry/backoff
+    math, error construction and messages): reproduce with a `tests/unit/`
+    test. Don't add an e2e test only to satisfy this policy, and don't redirect
+    or stub server traffic inside an e2e test to fake a client-side failure;
+    follow-up jobs have no warehouse to rerun it. Anchor the expected value in
+    an external authority (the issue's stated expectation, a cited spec, or the
+    reference JDBC driver — see GROUND TRUTH below), not the current connector
+    code, and state in your reason why the server can't observe the bug.
+
+Read the existing tests at the level you chose and match their patterns (e2e
+specs `import config from './utils/config'`, open a client, run queries, and
+assert). Read `CONTRIBUTING.md` for conventions first.
 
 **Backend note.** The connector has a Thrift backend (default) and a kernel
 (native Rust) backend. **This job does NOT build the native kernel binary** — the
 `build:native` toolchain (private kernel repo + Rust + napi) isn't provisioned
-here, so the driver runs over **Thrift**. Reproduce the bug on the **Thrift path**
-(the general `tests/e2e/*.test.ts` suite). Do NOT write a repro under
-`tests/e2e/kernel/**` — it needs the native binary this job lacks; if the bug is
-genuinely kernel-only, report `blocked` and say so.
+here, so the driver runs over **Thrift**. Reproduce server-observable bugs on the
+**Thrift path** (the general `tests/e2e/*.test.ts` suite). Do NOT write a repro
+under `tests/e2e/kernel/**` — it needs the native binary this job lacks; if the
+bug is genuinely kernel-only, report `blocked` and say so.
 
 == GROUND TRUTH — where "correct" comes from ==
 
@@ -109,19 +104,24 @@ you see an abrupt exit, it means a required `E2E_*` value is genuinely absent
 
 == HOW TO WORK (bug-fix flow) ==
 
-1. **Write the failing e2e test FIRST — before you deep-dive the fix.** Your first
-   substantive action is a `tests/e2e/` test (Thrift path) that REPRODUCES the
+1. **Write the failing test FIRST — before you deep-dive the fix.** Your first
+   substantive action is a test at the level chosen above that REPRODUCES the
    bug. Do only the minimal reading needed to write it. Run the single spec and
    confirm it **fails for the right reason** (the bug — not a compile/setup error
    or a skip). A *skipped* test is not a reproduction.
+   - **Every new test case must fail before the fix.** Assert the consequence a
+     user sees (lost or stalled output, a wrong value or message), not a guessed
+     mechanism. Drop assertions that already pass before the fix, and don't
+     claim a cause (a crash, a hang) that no failing assertion shows.
    - **Reproduction is a HARD GATE.** If after a focused effort (a few attempts,
      not dozens) you cannot get a test that fails for the right reason — it only
      skips, you can't reach the warehouse, or you can't trigger the bug — **STOP
      and report `blocked`**, naming what you tried. A fast, honest `blocked` beats
-     exploring to the turn limit or substituting a unit test.
+     exploring to the turn limit or substituting a unit test for a
+     server-observable bug.
 2. **Now fix the code** in `lib/`. Only after the test is red do you dive into the
    fix path. Keep the change minimal and scoped to the bug.
-3. **Re-run** your e2e test (green), then `npm test` to confirm the unit suite
+3. **Re-run** your test (green), then `npm test` to confirm the unit suite
    still passes.
 
 == RULES ==
@@ -141,9 +141,9 @@ you see an abrupt exit, it means a required `E2E_*` value is genuinely absent
 - Before reporting the outcome, check the final diff against the acceptance
   criteria. Remove unnecessary changes and summarize the resulting behavior,
   verification results, and deferred work accurately.
-- **Write boundary.** `.git/`, `.gitleaksignore`, `.github/`, `native/`, and
-  `thrift/` are denied paths (they return "Path denied or invalid"). Keep the fix
-  in `lib/` with its test in `tests/`.
+- **Write boundary.** `.git/`, `.gitleaksignore`, `.github/`, `.bot/`, `native/`,
+  and `thrift/` are denied paths (they return "Path denied or invalid"). Keep the
+  fix in `lib/` with its test in `tests/`.
 - **Do NOT touch `package.json` / `package-lock.json`.** A bug fix almost never
   needs a dependency change; if it truly does, note it in your reason rather than
   editing the lockfile (a stray `npm install` would rewrite it to lockfileVersion

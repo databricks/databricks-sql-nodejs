@@ -7,7 +7,10 @@
     "strict": true,
     "esModuleInterop": true,
     "forceConsistentCasingInFileNames": true,
-    "baseUrl": "./"
+    "baseUrl": "./",
+    "paths": {
+      "@databricks/sql": ["lib"]
+    }
   },
   "exclude": ["./dist/**/*"]
 }

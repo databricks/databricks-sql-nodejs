@@ -41,7 +41,7 @@ The engine shares one command allowlist across phases; it still allows
 above are prompt instructions.
 
 Use the existing tool allowlist and path restrictions. `.git/`,
-`.gitleaksignore`, `.github/`, `native/`, and `thrift/` are inaccessible.
+`.gitleaksignore`, `.github/`, `.bot/`, `native/`, and `thrift/` are inaccessible.
 If a request requires access outside these limits, explain what needs a human.
 
 Do not commit, push, or post comments yourself; the engine handles that.

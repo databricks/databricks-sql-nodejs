@@ -23,16 +23,20 @@ max_replies_per_thread: 5
 #     belongs in lib/, not in this generated boundary.
 #   - thrift/ — generated Thrift stubs (TCLIService*.js/.d.ts); regenerated from
 #     the .thrift IDL, never hand-edited.
+#   - .bot/ — this config and the bot prompts. An agent edit here would widen
+#     its own allowlist, write boundary, or instructions.
 # Everything else under the repo root stays writable; the human PR-review gate is
 # the real safeguard. Reviewers MUST scrutinize any agent diff reaching
 # package.json / package-lock.json / tsconfig*.json / .github/.
 denied_subpaths:
   - .github
+  - .bot
   - native
   - thrift
 
 # Filled from the tracking ISSUE the maintainer labelled. (pr_body_template has no
-# engine default, so it stays required here.)
+# engine default, so it stays required here.) No `{files_changed}` list: follow-up
+# pushes can't update the description, so the list goes stale.
 pr_body_template: |-
   ## Summary
 
@@ -42,9 +46,6 @@ pr_body_template: |-
 
   ## Root cause & plan
   {plan}
-
-  ## Files changed
-  {files_changed}
 
   ## Test plan
   {test_plan}
@@ -57,8 +58,8 @@ pr_body_template: |-
 # sandbox. The workflow runs `npm ci` ONCE before the agent (deps + tsc build via
 # the `prepare` hook); these let the agent recompile/test after its edits:
 #   - `npm test` — the MOCKED unit suite (no network); the agent's fast loop.
-#   - `npm run e2e` — the REQUIRED live e2e repro (see engineer/system.md). Whole
-#     suite; use `npx mocha` to filter to one spec.
+#   - `npm run e2e` — the live e2e suite, for server-observable bugs (see
+#     engineer/system.md). Whole suite; use `npx mocha` to filter to one spec.
 #   - `npx mocha --config tests/e2e/.mocharc.js <spec>` and the unit variant —
 #     run a SINGLE spec file (recon: `npm run e2e -- <glob>` mangles `**`; call
 #     mocha directly). Pinned to `--config` so it can't point mocha elsewhere.
