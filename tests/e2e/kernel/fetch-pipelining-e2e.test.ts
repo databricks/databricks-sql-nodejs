@@ -154,7 +154,7 @@ describe('kernel fetch pipelining — live CloudFetch lifecycle', function suite
         expect(await operation.fetchChunk({ maxRows: 1 })).to.have.length(1);
         proxy.pause();
 
-        // Drain buffered chunks until the native fetch really waits on storage.
+        // Buffered parsing can take >100 ms on CI; require a sustained wait.
         let blocked = false;
         while (!blocked) {
           consuming = operation.fetchChunk({ maxRows: 65536 });
@@ -162,7 +162,7 @@ describe('kernel fetch pipelining — live CloudFetch lifecycle', function suite
           const rows = await Promise.race([
             consuming,
             new Promise<undefined>((resolve) => {
-              setTimeout(resolve, 100);
+              setTimeout(resolve, 2_000);
             }),
           ]);
           if (rows === undefined) blocked = pending.size > 0;
