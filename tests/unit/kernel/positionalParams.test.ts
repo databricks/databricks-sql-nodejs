@@ -57,10 +57,14 @@ describe('KernelPositionalParams.buildKernelPositionalParams', () => {
     );
   });
 
-  it('rejects a non-numeric / exponential DECIMAL value', () => {
-    expect(decimal('1e+21')).to.throw(ParameterError, /not a plain decimal numeral/);
-    expect(decimal('abc')).to.throw(ParameterError, /not a plain decimal numeral/);
-    expect(decimal('')).to.throw(ParameterError, /not a plain decimal numeral/);
+  it('rewrites an exponent-form DECIMAL value as a plain numeral', () => {
+    expect(decimal('1e+21')()).to.deep.equal([{ sqlType: 'DECIMAL(22,0)', value: '1000000000000000000000' }]);
+    expect(decimal('1e-7')()).to.deep.equal([{ sqlType: 'DECIMAL(7,7)', value: '0.0000001' }]);
+  });
+
+  it('rejects a non-numeric DECIMAL value', () => {
+    expect(decimal('abc')).to.throw(ParameterError, /is not a decimal number/);
+    expect(decimal('')).to.throw(ParameterError, /is not a decimal number/);
   });
 
   it('preserves qualified INTERVAL types for the kernel raw binder', () => {
