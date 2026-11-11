@@ -6,6 +6,25 @@ import ResultsProviderStub from '../.stubs/ResultsProviderStub';
 import ClientContextStub from '../.stubs/ClientContextStub';
 
 describe('ResultSlicer', () => {
+  it('should retain at most twice the unread rows while draining a batch', async () => {
+    const rows = Array.from({ length: 256 }, (_, value) => ({ value }));
+    Object.freeze(rows);
+    const provider = new ResultsProviderStub([rows], []);
+    const slicer = new ResultSlicer(new ClientContextStub(), provider);
+    let consumed = 0;
+
+    for (const limit of [150, 25, 25, 25, 25, 25]) {
+      // eslint-disable-next-line no-await-in-loop
+      const chunk = await slicer.fetchNext({ limit });
+      expect(chunk).to.deep.eq(rows.slice(consumed, consumed + limit));
+      consumed += chunk.length;
+      expect(slicer['remainingResults'].length).to.be.at.most(2 * (rows.length - consumed));
+    }
+
+    expect(consumed).to.eq(rows.length);
+    expect(await slicer.hasMore()).to.be.false;
+  });
+
   it('should carry leftovers across several calls without mutating the source batch', async () => {
     const rows = Array.from({ length: 250 }, (_, index) => index);
     Object.freeze(rows);
@@ -133,6 +152,57 @@ describe('ResultSlicer', () => {
     expect(fetchNext.called).to.be.false;
     expect(await slicer.hasMore()).to.be.true;
     expect(await slicer.fetchNext({ limit: 3 })).to.deep.eq([1, 2, 3]);
+  });
+
+  it('should preserve leftovers for a non-numeric limit from a JavaScript caller', async () => {
+    const provider = new ResultsProviderStub(
+      [
+        [1, 2, 3, 4, 5, 6],
+        [7, 8, 9],
+      ],
+      [],
+    );
+    const fetchNext = sinon.spy(provider, 'fetchNext');
+    const slicer = new ResultSlicer(new ClientContextStub(), provider);
+    const options = { limit: 'abc' as unknown as number };
+
+    expect(await slicer.fetchNext(options)).to.deep.eq([]);
+    expect(fetchNext.called).to.be.false;
+    expect(await slicer.fetchNext({ limit: 3 })).to.deep.eq([1, 2, 3]);
+    expect(await slicer.fetchNext(options)).to.deep.eq([4, 5, 6]);
+    expect(fetchNext.callCount).to.eq(1);
+    expect(await slicer.hasMore()).to.be.true;
+    expect(await slicer.fetchNext({ limit: 3 })).to.deep.eq([7, 8, 9]);
+    expect(await slicer.hasMore()).to.be.false;
+  });
+
+  it('should normalize numeric string limits before passing them to the source', async () => {
+    const provider = new ResultsProviderStub(
+      [
+        [1, 2],
+        [3, 4, 5],
+      ],
+      [],
+    );
+    const fetchNext = sinon.spy(provider, 'fetchNext');
+    const slicer = new ResultSlicer(new ClientContextStub(), provider);
+
+    expect(await slicer.fetchNext({ limit: '3.5' as unknown as number })).to.deep.eq([1, 2, 3]);
+    expect(fetchNext.firstCall.args).to.deep.eq([{ limit: 3.5 }]);
+    expect(await slicer.fetchNext({ limit: '1.5' as unknown as number })).to.deep.eq([4]);
+    expect(await slicer.fetchNext({ limit: 3 })).to.deep.eq([5]);
+    expect(await slicer.hasMore()).to.be.false;
+  });
+
+  it('should proxy unbuffered fetches without coercing the limit', async () => {
+    const rows = [1, 2, 3];
+    const provider = new ResultsProviderStub([rows], []);
+    const fetchNext = sinon.spy(provider, 'fetchNext');
+    const slicer = new ResultSlicer(new ClientContextStub(), provider);
+    const options = { limit: Symbol('ignored') as unknown as number, disableBuffering: true };
+
+    expect(await slicer.fetchNext(options)).to.eq(rows);
+    expect(fetchNext.lastCall.args).to.deep.eq([options]);
   });
 
   for (const limit of [3, 3.5]) {

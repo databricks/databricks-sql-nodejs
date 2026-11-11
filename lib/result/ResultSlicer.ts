@@ -48,15 +48,23 @@ export default class ResultSlicer<T> implements IResultsProvider<Array<T>> {
     return this.remainingResults.length - this.remainingOffset;
   }
 
+  private compactRemaining(): void {
+    if (this.remainingCount === 0) {
+      this.remainingResults = [];
+      this.remainingOffset = 0;
+    } else if (this.remainingOffset > this.remainingResults.length / 2) {
+      // Release consumed rows without repeatedly copying a large tail.
+      this.remainingResults = this.remainingResults.slice(this.remainingOffset);
+      this.remainingOffset = 0;
+    }
+  }
+
   private takeRemaining(maxCount: number): Array<T> {
     const count = Number.isNaN(maxCount) ? this.remainingCount : Math.max(0, Math.trunc(maxCount));
     const end = Math.min(this.remainingResults.length, this.remainingOffset + count);
     const result = this.remainingResults.slice(this.remainingOffset, end);
     this.remainingOffset = end;
-    if (this.remainingCount === 0) {
-      this.remainingResults = [];
-      this.remainingOffset = 0;
-    }
+    this.compactRemaining();
     return result;
   }
 
@@ -78,12 +86,14 @@ export default class ResultSlicer<T> implements IResultsProvider<Array<T>> {
       return this.source.fetchNext(options);
     }
 
+    const limit = Number(options.limit);
+    const sourceOptions = { ...options, limit };
     const result: Array<Array<T>> = [];
     let resultsCount = 0;
 
     // First, use remaining items from the previous fetch
     if (this.remainingCount > 0) {
-      const remaining = this.takeRemaining(options.limit);
+      const remaining = this.takeRemaining(limit);
       if (this.remainingCount > 0) {
         return remaining;
       }
@@ -92,7 +102,7 @@ export default class ResultSlicer<T> implements IResultsProvider<Array<T>> {
     }
 
     // Fetch items from source results provider until we reach a requested count
-    while (resultsCount < options.limit) {
+    while (resultsCount < limit) {
       // eslint-disable-next-line no-await-in-loop
       const hasMore = await this.source.hasMore();
       if (!hasMore) {
@@ -100,13 +110,14 @@ export default class ResultSlicer<T> implements IResultsProvider<Array<T>> {
       }
 
       // eslint-disable-next-line no-await-in-loop
-      const chunk = await this.source.fetchNext(options);
-      const neededCount = options.limit - resultsCount;
+      const chunk = await this.source.fetchNext(sourceOptions);
+      const neededCount = limit - resultsCount;
       if (chunk.length > neededCount) {
         const taken = chunk.slice(0, neededCount);
         result.push(taken);
         this.remainingResults = chunk;
         this.remainingOffset = taken.length;
+        this.compactRemaining();
         resultsCount += neededCount;
       } else {
         result.push(chunk);
