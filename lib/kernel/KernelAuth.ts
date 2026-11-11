@@ -821,6 +821,13 @@ export function buildKernelProxyOptions(options: ConnectionOptions): KernelProxy
 export function buildKernelConnectionOptions(options: ConnectionOptions): KernelNativeConnectionOptions {
   const { authType } = options as { authType?: string };
 
+  if (options.httpAgent !== undefined) {
+    throw new HiveDriverError(
+      'kernel backend: `httpAgent` is not supported; the kernel uses its own HTTP client, not a Node http.Agent. ' +
+        'Use `proxy` and the TLS options instead.',
+    );
+  }
+
   const base: {
     hostName: string;
     httpPath: string;

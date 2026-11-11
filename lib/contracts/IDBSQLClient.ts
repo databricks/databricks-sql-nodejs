@@ -1,3 +1,4 @@
+import http from 'http';
 import IDBSQLLogger from './IDBSQLLogger';
 import IDBSQLSession from './IDBSQLSession';
 import IAuthentication from '../connection/contracts/IAuthentication';
@@ -66,6 +67,20 @@ export type ConnectionOptions = {
   userAgentEntry?: string;
   socketTimeout?: number;
   proxy?: ProxyOptions;
+
+  /**
+   * Custom `http.Agent` (typically an `https.Agent` or a proxy agent) to use instead
+   * of the one the driver builds. It is used for the Thrift transport, CloudFetch
+   * downloads, staging (volume) transfers, OAuth, feature-flag and telemetry requests,
+   * so pooling, keep-alive, TLS and proxy settings all come from it.
+   *
+   * Cannot be combined with `proxy`, `customCaCert`, `clientCert`, `clientKey` or
+   * `checkServerCertificate`; set the equivalent options on the agent instead.
+   * `socketTimeout` still applies to Thrift requests. The caller owns the agent and
+   * is responsible for destroying it. Not supported by the kernel backend.
+   */
+  httpAgent?: http.Agent;
+
   enableMetricViewMetadata?: boolean;
 
   /**

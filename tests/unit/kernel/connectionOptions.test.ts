@@ -12,6 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+import https from 'https';
 import { expect } from 'chai';
 import {
   buildKernelConnectionOptions,
@@ -87,6 +88,15 @@ describe('KernelAuth connection options — maxConnections', () => {
     expect(() => buildKernelConnectionOptions(opts({ maxConnections: 0x1_0000_0000 }))).to.throw(
       HiveDriverError,
       /u32 limit/,
+    );
+  });
+});
+
+describe('KernelAuth connection options — httpAgent', () => {
+  it('rejects a caller-provided Node http.Agent (the kernel has its own HTTP stack)', () => {
+    expect(() => buildKernelConnectionOptions(opts({ httpAgent: new https.Agent() }))).to.throw(
+      HiveDriverError,
+      /`httpAgent` is not supported/,
     );
   });
 });

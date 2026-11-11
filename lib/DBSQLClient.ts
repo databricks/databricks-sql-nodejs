@@ -215,7 +215,26 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
     }
   }
 
+  private static validateHttpAgent(options: ConnectionOptions): void {
+    // Same check Node's http.request applies to `options.agent`.
+    if (typeof (options.httpAgent as { addRequest?: unknown } | null)?.addRequest !== 'function') {
+      throw new HiveDriverError('DBSQLClient: `httpAgent` must be an http.Agent (or https.Agent) instance.');
+    }
+    // These options only configure the agent the driver builds, so they would be ignored.
+    const agentOptions = ['proxy', 'customCaCert', 'clientCert', 'clientKey', 'checkServerCertificate'] as const;
+    const conflicting = agentOptions.find((name) => options[name] !== undefined);
+    if (conflicting !== undefined) {
+      throw new HiveDriverError(
+        `DBSQLClient: \`httpAgent\` cannot be combined with \`${conflicting}\`. Configure it on the supplied agent instead.`,
+      );
+    }
+  }
+
   private getConnectionOptions(options: ConnectionOptions): IConnectionOptions {
+    if (options.httpAgent !== undefined) {
+      DBSQLClient.validateHttpAgent(options);
+    }
+
     // mTLS requires both a client certificate and its private key. If exactly one is
     // supplied, Node fails deep in the TLS handshake with an opaque error, so surface
     // a clear client-side message instead.
@@ -249,6 +268,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
       https: true,
       socketTimeout: options.socketTimeout,
       proxy: options.proxy,
+      agent: options.httpAgent,
       // `customCaCert` is ADDITIVE: Node's `ca` option replaces the system trust
       // store, so we append the custom cert to the built-in roots AND any roots
       // supplied via NODE_EXTRA_CA_CERTS to keep public Databricks warehouses

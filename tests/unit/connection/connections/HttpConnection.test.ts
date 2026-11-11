@@ -1,7 +1,10 @@
 import http from 'http';
+import https from 'https';
+import { AddressInfo } from 'net';
 import { expect } from 'chai';
+import sinon from 'sinon';
 import HttpConnection from '../../../../lib/connection/connections/HttpConnection';
-import ThriftHttpConnection from '../../../../lib/connection/connections/ThriftHttpConnection';
+import ThriftHttpConnection, { THTTPException } from '../../../../lib/connection/connections/ThriftHttpConnection';
 import IConnectionOptions from '../../../../lib/connection/contracts/IConnectionOptions';
 import ClientContextStub from '../../.stubs/ClientContextStub';
 
@@ -96,6 +99,61 @@ describe('HttpConnection.connect', () => {
     const thriftConnection = await connection.getThriftConnection();
 
     expect(thriftConnection.config.agent).to.be.instanceOf(http.Agent);
+  });
+
+  it('should use a caller-provided agent instead of building one', async () => {
+    const agent = new https.Agent();
+    const connection = new HttpConnection(
+      {
+        host: 'localhost',
+        port: 10001,
+        path: '/hive',
+        https: true,
+        agent,
+      },
+      new ClientContextStub(),
+    );
+
+    expect(await connection.getAgent()).to.equal(agent);
+    const thriftConnection = await connection.getThriftConnection();
+    expect(thriftConnection.config.agent).to.equal(agent);
+  });
+
+  it('should send Thrift requests through a caller-provided agent', async () => {
+    const server = http.createServer((req, res) => {
+      req.resume();
+      req.on('end', () => {
+        res.statusCode = 503;
+        res.end();
+      });
+    });
+    await new Promise<void>((resolve) => {
+      server.listen(0, '127.0.0.1', resolve);
+    });
+    const { port } = server.address() as AddressInfo;
+    const agent = new http.Agent();
+    const createConnection = sinon.spy(agent as any, 'createConnection');
+
+    try {
+      const connection = new HttpConnection(
+        { host: '127.0.0.1', port, path: '/hive', https: false, agent },
+        new ClientContextStub(),
+      );
+      const thriftConnection = await connection.getThriftConnection();
+
+      const error = await new Promise((resolve) => {
+        thriftConnection.once('error', resolve);
+        thriftConnection.write(Buffer.from('not-a-thrift-message'), 0);
+      });
+
+      expect(error).to.be.instanceOf(THTTPException);
+      expect(createConnection.calledOnce).to.be.true;
+    } finally {
+      agent.destroy();
+      await new Promise((resolve) => {
+        server.close(resolve);
+      });
+    }
   });
 
   it('should update headers (case 1: Thrift connection not initialized)', async () => {

@@ -1,6 +1,7 @@
 import { expect, AssertionError } from 'chai';
 import sinon from 'sinon';
 import fs from 'fs';
+import https from 'https';
 import { Response } from 'node-fetch';
 import DBSQLClient, { ThriftLibrary } from '../../lib/DBSQLClient';
 import DBSQLSession from '../../lib/DBSQLSession';
@@ -198,6 +199,51 @@ describe('DBSQLClient.connect', () => {
       /only `clientKey` was supplied/,
     );
   });
+
+  it('should not pass an agent to the connection provider by default', async () => {
+    const client = new DBSQLClient();
+
+    expect(client['getConnectionOptions'](connectOptions).agent).to.be.undefined;
+  });
+
+  it('should make the connection provider hand out httpAgent', async () => {
+    const client = new DBSQLClient();
+    const httpAgent = new https.Agent({ keepAlive: true, maxSockets: 4 });
+
+    await client.connect({ ...connectOptions, httpAgent });
+
+    const connectionProvider = await client.getConnectionProvider();
+    expect(await connectionProvider.getAgent()).to.equal(httpAgent);
+  });
+
+  it('should reject a non-agent httpAgent', async () => {
+    const client = new DBSQLClient();
+
+    expect(() => client['getConnectionOptions']({ ...connectOptions, httpAgent: {} as any })).to.throw(
+      /`httpAgent` must be an http.Agent/,
+    );
+  });
+
+  const agentConflicts: Array<[string, Partial<ConnectionOptions>]> = [
+    ['proxy', { proxy: { protocol: 'http', host: 'proxy.local', port: 8080 } }],
+    ['customCaCert', { customCaCert: '-----BEGIN CERTIFICATE-----\nca\n-----END CERTIFICATE-----\n' }],
+    ['clientCert', { clientCert: 'cert', clientKey: 'key' }],
+    ['checkServerCertificate', { checkServerCertificate: false }],
+    ['checkServerCertificate', { checkServerCertificate: true }],
+  ];
+  for (const [name, extra] of agentConflicts) {
+    it(`should reject httpAgent combined with ${name} (${JSON.stringify(extra)})`, async () => {
+      const client = new DBSQLClient();
+
+      expect(() =>
+        client['getConnectionOptions']({
+          ...connectOptions,
+          ...extra,
+          httpAgent: new https.Agent(),
+        } as ConnectionOptions),
+      ).to.throw(new RegExp(`\`httpAgent\` cannot be combined with \`${name}\``));
+    });
+  }
 
   it('should initialize connection state', async () => {
     const client = new DBSQLClient();

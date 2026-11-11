@@ -1,3 +1,4 @@
+import http from 'http';
 import { HeadersInit } from 'node-fetch';
 
 export interface ProxyOptions {
@@ -18,6 +19,9 @@ export default interface IConnectionOptions {
   headers?: HeadersInit;
   socketTimeout?: number;
   proxy?: ProxyOptions;
+  // Caller-provided agent; when set, it is used as-is instead of building one
+  // from `proxy` and the TLS options below.
+  agent?: http.Agent;
 
   ca?: Buffer | string | Array<Buffer | string>;
   cert?: Buffer | string;
