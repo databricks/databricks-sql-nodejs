@@ -207,17 +207,7 @@ export default class MetricsAggregator {
         this.pushBoundedError(details, event);
         this.completeStatement(event.statementId);
       } else {
-        const metric: TelemetryMetric = {
-          metricType: 'error',
-          timestamp: event.timestamp,
-          sessionId: event.sessionId,
-          statementId: event.statementId,
-          workspaceId: event.workspaceId,
-          errorName: event.errorName,
-          errorMessage: event.errorMessage,
-          errorStack: event.errorStack,
-        };
-        this.addPendingMetric(metric);
+        this.addPendingMetric(MetricsAggregator.errorMetric(event, event));
       }
 
       // Fire-and-forget on the terminal-error path so customer code doesn't
@@ -231,6 +221,25 @@ export default class MetricsAggregator {
       const details = this.getOrCreateStatementDetails(event);
       this.pushBoundedError(details, event);
     }
+  }
+
+  /**
+   * The only place error metrics are built: copies the sanitized descriptor
+   * (name + SQLSTATE) and never a message or stack, whatever the event carries.
+   */
+  private static errorMetric(
+    errorEvent: TelemetryEvent,
+    ids: { sessionId?: string; statementId?: string; workspaceId?: string },
+  ): TelemetryMetric {
+    return {
+      metricType: 'error',
+      timestamp: errorEvent.timestamp,
+      sessionId: ids.sessionId,
+      statementId: ids.statementId,
+      workspaceId: ids.workspaceId,
+      errorName: errorEvent.errorName,
+      sqlState: errorEvent.sqlState,
+    };
   }
 
   private pushBoundedError(details: StatementTelemetryDetails, event: TelemetryEvent): void {
@@ -252,6 +261,7 @@ export default class MetricsAggregator {
       case TelemetryEventType.STATEMENT_COMPLETE:
         details.executionLatencyMs = event.latencyMs;
         details.resultFormat = event.resultFormat;
+        MetricsAggregator.mergeCompressed(details, event.compressed);
         // STATEMENT_COMPLETE may not carry chunk counts (the operation
         // doesn't always know them at close time); only override when the
         // emit explicitly supplied a value, otherwise the values accumulated
@@ -270,17 +280,7 @@ export default class MetricsAggregator {
       case TelemetryEventType.CLOUDFETCH_CHUNK:
         details.chunkCount += 1;
         details.bytesDownloaded += event.bytes ?? 0;
-        // `compressionEnabled` is a sticky OR across all chunks in the
-        // statement — any compressed chunk flips it true and it stays true.
-        // Previously we copied the last chunk's value, which silently lied
-        // for mixed-compression batches (compressed chunk 1, uncompressed
-        // chunk 2 → compressionEnabled=false). True-on-any matches the
-        // dashboard contract "did this statement benefit from compression".
-        if (event.compressed === true) {
-          details.compressionEnabled = true;
-        } else if (event.compressed === false && details.compressionEnabled === undefined) {
-          details.compressionEnabled = false;
-        }
+        MetricsAggregator.mergeCompressed(details, event.compressed);
         // Per-chunk timing aggregation. Only record positive latencies — keeps
         // prefetched/cached pages out of the timing stats.
         if (event.latencyMs !== undefined && event.latencyMs > 0) {
@@ -296,6 +296,20 @@ export default class MetricsAggregator {
 
       default:
         break;
+    }
+  }
+
+  /**
+   * `compressionEnabled` is a sticky OR across the statement's chunks and its
+   * completion event — any compressed report flips it true and it stays true.
+   * True-on-any matches the dashboard contract "did this statement benefit
+   * from compression".
+   */
+  private static mergeCompressed(details: StatementTelemetryDetails, compressed: boolean | undefined): void {
+    if (compressed === true) {
+      details.compressionEnabled = true;
+    } else if (compressed === false && details.compressionEnabled === undefined) {
+      details.compressionEnabled = false;
     }
   }
 
@@ -336,16 +350,7 @@ export default class MetricsAggregator {
     const id = oldest.value;
     const details = this.statementMetrics.get(id)!;
     for (const errorEvent of details.errors) {
-      this.addPendingMetric({
-        metricType: 'error',
-        timestamp: errorEvent.timestamp,
-        sessionId: details.sessionId,
-        statementId: details.statementId,
-        workspaceId: details.workspaceId,
-        errorName: errorEvent.errorName,
-        errorMessage: errorEvent.errorMessage,
-        errorStack: errorEvent.errorStack,
-      });
+      this.addPendingMetric(MetricsAggregator.errorMetric(errorEvent, details));
     }
     this.statementMetrics.delete(id);
     this.evictedStatements += 1;
@@ -366,16 +371,7 @@ export default class MetricsAggregator {
     for (const [id, details] of this.statementMetrics) {
       if (details.startTime < cutoff) {
         for (const errorEvent of details.errors) {
-          this.addPendingMetric({
-            metricType: 'error',
-            timestamp: errorEvent.timestamp,
-            sessionId: details.sessionId,
-            statementId: details.statementId,
-            workspaceId: details.workspaceId,
-            errorName: errorEvent.errorName,
-            errorMessage: errorEvent.errorMessage,
-            errorStack: errorEvent.errorStack,
-          });
+          this.addPendingMetric(MetricsAggregator.errorMetric(errorEvent, details));
         }
         this.statementMetrics.delete(id);
         evicted += 1;
@@ -476,17 +472,7 @@ export default class MetricsAggregator {
       this.addPendingMetric(metric);
 
       for (const errorEvent of details.errors) {
-        const errorMetric: TelemetryMetric = {
-          metricType: 'error',
-          timestamp: errorEvent.timestamp,
-          sessionId: details.sessionId,
-          statementId: details.statementId,
-          workspaceId: details.workspaceId,
-          errorName: errorEvent.errorName,
-          errorMessage: errorEvent.errorMessage,
-          errorStack: errorEvent.errorStack,
-        };
-        this.addPendingMetric(errorMetric);
+        this.addPendingMetric(MetricsAggregator.errorMetric(errorEvent, details));
       }
 
       this.statementMetrics.delete(statementId);

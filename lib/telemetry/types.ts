@@ -145,7 +145,7 @@ export interface TelemetryEvent {
   /** Execution latency in milliseconds */
   latencyMs?: number;
 
-  /** Result format (inline, cloudfetch, arrow) */
+  /** Result delivery shape (INLINE_ARROW, COLUMNAR_INLINE, EXTERNAL_LINKS) */
   resultFormat?: string;
 
   /** Number of result chunks */
@@ -164,17 +164,20 @@ export interface TelemetryEvent {
   /** Number of bytes in this chunk */
   bytes?: number;
 
-  /** Whether compression was used */
+  /** Whether the server declared the result LZ4-compressed */
   compressed?: boolean;
 
   // Error-specific fields
-  /** Error name/type */
+  /** Error class name */
   errorName?: string;
 
-  /** Error message */
+  /** Server-reported SQLSTATE, when the error carries one */
+  sqlState?: string;
+
+  /** @deprecated Never populated: error messages can quote SQL text. */
   errorMessage?: string;
 
-  /** Stack trace, captured at emission site; redacted before export */
+  /** @deprecated Never populated: stacks embed the error message. */
   errorStack?: string;
 
   /** Whether the error is terminal (non-retryable) */
@@ -233,13 +236,16 @@ export interface TelemetryMetric {
   /** Whether compression was used */
   compressed?: boolean;
 
-  /** Error name/type */
+  /** Error class name */
   errorName?: string;
 
-  /** Error message */
+  /** Server-reported SQLSTATE, when the error carries one */
+  sqlState?: string;
+
+  /** @deprecated Never populated or exported: error messages can quote SQL text. */
   errorMessage?: string;
 
-  /** Stack trace, captured at emission site; redacted before export */
+  /** @deprecated Never populated or exported: stacks embed the error message. */
   errorStack?: string;
 }
 

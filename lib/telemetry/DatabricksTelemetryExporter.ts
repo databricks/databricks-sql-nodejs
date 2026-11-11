@@ -29,7 +29,9 @@ import {
   hasAuthorization,
   normalizeHeaders,
   redactSensitive,
+  sanitizeErrorName,
   sanitizeProcessName,
+  sanitizeSqlState,
 } from './telemetryUtils';
 import buildUserAgentString from '../utils/buildUserAgentString';
 
@@ -456,14 +458,12 @@ export default class DatabricksTelemetryExporter {
         }
       }
     } else if (metric.metricType === 'error') {
-      const stackOrMessage = metric.errorStack ?? metric.errorMessage ?? '';
-      // Primary redaction site is TelemetryEventEmitter.emitError — this
-      // second pass is defence-in-depth in case a metric reached the
-      // exporter via a path that bypassed the emitter (programmatic injection
-      // in tests, future call sites). On the unauth path we ship nothing.
+      // Only the class name and SQLSTATE leave the process (the SQLSTATE in
+      // `stack_trace`, matching the kernel); message/stack are never read here
+      // even if a metric bypassed the emitter. Unauth ships no SQLSTATE.
       log.entry.sql_driver_log.error_info = {
-        error_name: metric.errorName || 'UnknownError',
-        stack_trace: includeCorrelation ? redactSensitive(stackOrMessage) : '',
+        error_name: sanitizeErrorName(metric.errorName) ?? 'UnknownError',
+        stack_trace: includeCorrelation ? sanitizeSqlState(metric.sqlState) ?? '' : '',
       };
     }
 

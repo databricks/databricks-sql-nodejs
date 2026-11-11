@@ -371,6 +371,20 @@ describe('TelemetryEventEmitter', () => {
       });
     });
 
+    it('should carry the declared compression flag', (done) => {
+      emitter.on(TelemetryEventType.STATEMENT_COMPLETE, (event: TelemetryEvent) => {
+        expect(event.resultFormat).to.equal('EXTERNAL_LINKS');
+        expect(event.compressed).to.equal(true);
+        done();
+      });
+
+      emitter.emitStatementComplete({
+        statementId: 'stmt-789',
+        resultFormat: 'EXTERNAL_LINKS',
+        compressed: true,
+      });
+    });
+
     it('should emit with minimal data', (done) => {
       emitter.on(TelemetryEventType.STATEMENT_COMPLETE, (event: TelemetryEvent) => {
         expect(event.eventType).to.equal(TelemetryEventType.STATEMENT_COMPLETE);
@@ -378,6 +392,7 @@ describe('TelemetryEventEmitter', () => {
         expect(event.sessionId).to.equal('session-123');
         expect(event.latencyMs).to.be.undefined;
         expect(event.resultFormat).to.be.undefined;
+        expect(event.compressed).to.be.undefined;
         done();
       });
 
@@ -507,8 +522,8 @@ describe('TelemetryEventEmitter', () => {
         expect(event.eventType).to.equal(TelemetryEventType.ERROR);
         expect(event.statementId).to.equal('stmt-789');
         expect(event.sessionId).to.equal('session-123');
-        expect(event.errorName).to.equal('AuthenticationError');
-        expect(event.errorMessage).to.equal('Invalid credentials');
+        expect(event.errorName).to.equal('OperationStateError');
+        expect(event.sqlState).to.equal('42P01');
         expect(event.isTerminal).to.be.true;
         expect(event.timestamp).to.be.a('number');
         done();
@@ -517,8 +532,8 @@ describe('TelemetryEventEmitter', () => {
       emitter.emitError({
         statementId: 'stmt-789',
         sessionId: 'session-123',
-        errorName: 'AuthenticationError',
-        errorMessage: 'Invalid credentials',
+        errorName: 'OperationStateError',
+        sqlState: '42P01',
         isTerminal: true,
       });
     });
@@ -527,7 +542,7 @@ describe('TelemetryEventEmitter', () => {
       emitter.on(TelemetryEventType.ERROR, (event: TelemetryEvent) => {
         expect(event.eventType).to.equal(TelemetryEventType.ERROR);
         expect(event.errorName).to.equal('TimeoutError');
-        expect(event.errorMessage).to.equal('Request timed out');
+        expect(event.sqlState).to.be.undefined;
         expect(event.isTerminal).to.be.false;
         expect(event.statementId).to.be.undefined;
         expect(event.sessionId).to.be.undefined;
@@ -536,7 +551,36 @@ describe('TelemetryEventEmitter', () => {
 
       emitter.emitError({
         errorName: 'TimeoutError',
-        errorMessage: 'Request timed out',
+        isTerminal: false,
+      });
+    });
+
+    it('never emits a raw error message or stack, even when a caller passes them', (done) => {
+      emitter.on(TelemetryEventType.ERROR, (event: TelemetryEvent) => {
+        expect(event.errorName).to.equal('Status Error');
+        expect(event).to.not.have.any.keys('errorMessage', 'errorStack');
+        expect(JSON.stringify(event)).to.not.include('sensitive_table');
+        done();
+      });
+
+      emitter.emitError({
+        errorName: 'Status Error',
+        errorMessage: 'Table or view not found: sensitive_table',
+        errorStack: 'Error: Table or view not found: sensitive_table\n    at fn (file.js:1:1)',
+        isTerminal: false,
+      });
+    });
+
+    it('drops values that are not a well-formed SQLSTATE or class-like error name', (done) => {
+      emitter.on(TelemetryEventType.ERROR, (event: TelemetryEvent) => {
+        expect(event.errorName).to.equal('Error');
+        expect(event.sqlState).to.be.undefined;
+        done();
+      });
+
+      emitter.emitError({
+        errorName: "Error: SELECT * FROM sensitive_table WHERE name = 'x'",
+        sqlState: '42P01 sensitive_table',
         isTerminal: false,
       });
     });

@@ -289,6 +289,18 @@ export default class ThriftOperationBackend implements IOperationBackend {
     return this.adaptResultMetadata(await this.thriftResultMetadataResponse());
   }
 
+  public getCachedResultMetadata(): ResultMetadata | undefined {
+    if (!this.metadata) {
+      return undefined;
+    }
+    try {
+      return this.adaptResultMetadata(this.metadata);
+    } catch {
+      // Missing or unsupported resultFormat; the fetch path reports that error.
+      return undefined;
+    }
+  }
+
   /**
    * Thrift-specific accessor for the raw `TGetResultSetMetadataResp`.
    *

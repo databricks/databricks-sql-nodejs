@@ -21,7 +21,7 @@ import ThriftOperationBackend from './thrift-backend/ThriftOperationBackend';
 import { synthesizeThriftStatus, synthesizeThriftResultSetMetadata } from './thrift-backend/wireSynthesis';
 import { mapOperationTypeToTelemetryType } from './telemetry/telemetryTypeMappers';
 import ExceptionClassifier from './telemetry/ExceptionClassifier';
-import { safeEmit } from './telemetry/telemetryUtils';
+import { describeErrorForTelemetry, safeEmit } from './telemetry/telemetryUtils';
 // Declares `Symbol.asyncDispose` for the emitted typings of `[Symbol.asyncDispose]()` below
 import './contracts/asyncDispose';
 
@@ -451,14 +451,15 @@ export default class DBSQLOperation implements IOperation {
       // throws if the operation is already in an error/closed state, which
       // would then fire spurious error telemetry from `getMetadata`'s error
       // wrapper.
-      const resultFormat = mapNeutralResultFormatToTelemetryType(this.metadata?.resultFormat);
+      const metadata = this.backend.getCachedResultMetadata?.() ?? this.metadata;
       const latencyMs = Date.now() - this.startTime;
 
       emitter.emitStatementComplete({
         statementId: this.id,
         sessionId: this.sessionId,
         latencyMs,
-        resultFormat,
+        resultFormat: mapNeutralResultFormatToTelemetryType(metadata?.resultFormat),
+        compressed: metadata ? Boolean(metadata.lz4Compressed) : undefined,
         pollCount: this.pollCount,
       });
 
@@ -467,24 +468,18 @@ export default class DBSQLOperation implements IOperation {
   }
 
   /**
-   * Emit a telemetry error event for an exception thrown by an operation.
-   * Terminal errors (per `ExceptionClassifier`) trigger an immediate flush
-   * in the aggregator; retryable errors are buffered until the statement
-   * completes. All exceptions from this method itself are swallowed at
-   * debug level — telemetry must never break the driver.
-   *
-   * Pass `deferToCompletion` when the caller completes the statement right
-   * afterwards: the error is then buffered (not terminal) so the statement's
-   * aggregation is finalized once, by that completion.
+   * Report only the error class name and SQLSTATE. Terminal errors flush
+   * immediately; retryable errors are buffered until statement completion.
+   * `deferToCompletion` buffers a terminal error when the caller completes
+   * the statement next, so aggregation is finalized once.
+   * Telemetry failures are swallowed at debug level.
    */
   private emitErrorEvent(error: Error, options?: { deferToCompletion?: boolean }): void {
     safeEmit(this.context, (emitter) => {
       emitter.emitError({
         statementId: this.id,
         sessionId: this.sessionId,
-        errorName: error.name || 'Error',
-        errorMessage: error.message || 'Unknown error',
-        errorStack: error.stack,
+        ...describeErrorForTelemetry(error),
         isTerminal: options?.deferToCompletion ? false : ExceptionClassifier.isTerminal(error),
       });
     });

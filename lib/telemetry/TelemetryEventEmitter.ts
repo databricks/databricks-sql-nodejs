@@ -18,7 +18,7 @@ import { EventEmitter } from 'events';
 import IClientContext from '../contracts/IClientContext';
 import { LogLevel } from '../contracts/IDBSQLLogger';
 import { TelemetryEvent, TelemetryEventType, DriverConfiguration } from './types';
-import { redactSensitive } from './telemetryUtils';
+import { sanitizeErrorName, sanitizeSqlState } from './telemetryUtils';
 
 /**
  * Typed map of event-type → listener payload shape. Keeps `on`/`off` calls
@@ -135,6 +135,7 @@ export default class TelemetryEventEmitter extends EventEmitter {
     sessionId?: string;
     latencyMs?: number;
     resultFormat?: string;
+    compressed?: boolean;
     chunkCount?: number;
     bytesDownloaded?: number;
     pollCount?: number;
@@ -146,6 +147,7 @@ export default class TelemetryEventEmitter extends EventEmitter {
       sessionId: data.sessionId,
       latencyMs: data.latencyMs,
       resultFormat: data.resultFormat,
+      compressed: data.compressed,
       chunkCount: data.chunkCount,
       bytesDownloaded: data.bytesDownloaded,
       pollCount: data.pollCount,
@@ -171,24 +173,20 @@ export default class TelemetryEventEmitter extends EventEmitter {
   }
 
   /**
-   * Emit an error event.
-   *
-   * Redaction happens HERE — not at the exporter — so any in-process listener
-   * (this class extends `EventEmitter` and `getTelemetryEmitter()` is reachable
-   * from any consumer of `@databricks/sql`) sees the same redacted strings
-   * the export pipeline does. `redactSensitive` strips Bearer/Basic, Databricks
-   * token prefixes, JWTs, JSON-encoded secrets, URL userinfo, and common
-   * username-bearing filesystem paths, then caps length.
-   *
-   * `errorMessage` is also redacted, not only `errorStack` — operation error
-   * messages can carry query fragments, table names, parameter values that the
-   * SECRET_PATTERNS regex must scrub before they're emitted anywhere.
+   * Emit an error event carrying only a sanitized descriptor: the error class
+   * name and the server SQLSTATE. Error messages and stacks quote SQL
+   * identifiers and literals, so they are never emitted — sanitizing here (not
+   * at the exporter) keeps in-process listeners on `getTelemetryEmitter()`
+   * equally clean.
    */
   emitError(data: {
     statementId?: string;
     sessionId?: string;
     errorName: string;
-    errorMessage: string;
+    sqlState?: string;
+    /** @deprecated Ignored; error messages are never emitted. */
+    errorMessage?: string;
+    /** @deprecated Ignored; error stacks are never emitted. */
     errorStack?: string;
     isTerminal: boolean;
   }): void {
@@ -197,9 +195,8 @@ export default class TelemetryEventEmitter extends EventEmitter {
       timestamp: Date.now(),
       statementId: data.statementId,
       sessionId: data.sessionId,
-      errorName: data.errorName,
-      errorMessage: redactSensitive(data.errorMessage),
-      errorStack: data.errorStack === undefined ? undefined : redactSensitive(data.errorStack),
+      errorName: sanitizeErrorName(data.errorName) ?? 'Error',
+      sqlState: sanitizeSqlState(data.sqlState),
       isTerminal: data.isTerminal,
     }));
   }

@@ -114,6 +114,39 @@ describe('MetricsAggregator', () => {
       expect(stmtMetric.bytesDownloaded).to.equal(300);
     });
 
+    it('carries resultFormat and compressed from STATEMENT_COMPLETE', () => {
+      const context = new ClientContextStub();
+      const exporter = makeExporterStub();
+      const aggregator = new MetricsAggregator(context, exporter as any);
+
+      aggregator.processEvent(statementEvent(TelemetryEventType.STATEMENT_START));
+      aggregator.processEvent(
+        statementEvent(TelemetryEventType.STATEMENT_COMPLETE, { resultFormat: 'INLINE_ARROW', compressed: false }),
+      );
+      aggregator.completeStatement('stmt-1');
+      aggregator.flush();
+
+      const stmtMetric = exporter.export.firstCall.args[0][0];
+      expect(stmtMetric.resultFormat).to.equal('INLINE_ARROW');
+      expect(stmtMetric.compressed).to.equal(false);
+    });
+
+    it('keeps compressed=true once any CloudFetch chunk was compressed', () => {
+      const context = new ClientContextStub();
+      const exporter = makeExporterStub();
+      const aggregator = new MetricsAggregator(context, exporter as any);
+
+      aggregator.processEvent(statementEvent(TelemetryEventType.STATEMENT_START));
+      aggregator.processEvent(statementEvent(TelemetryEventType.CLOUDFETCH_CHUNK, { bytes: 100, compressed: true }));
+      aggregator.processEvent(
+        statementEvent(TelemetryEventType.STATEMENT_COMPLETE, { resultFormat: 'EXTERNAL_LINKS', compressed: false }),
+      );
+      aggregator.completeStatement('stmt-1');
+      aggregator.flush();
+
+      expect(exporter.export.firstCall.args[0][0].compressed).to.equal(true);
+    });
+
     it('should do nothing for completeStatement with unknown statementId', () => {
       const context = new ClientContextStub();
       const exporter = makeExporterStub();
@@ -217,6 +250,32 @@ describe('MetricsAggregator', () => {
       expect(exporter.export.called).to.be.true;
       const metrics = exporter.export.firstCall.args[0];
       expect(metrics[0].metricType).to.equal('error');
+    });
+
+    it('carries only the sanitized descriptor into error metrics', () => {
+      const context = new ClientContextStub();
+      const exporter = makeExporterStub();
+      const aggregator = new MetricsAggregator(context, exporter as any);
+
+      aggregator.processEvent(statementEvent(TelemetryEventType.STATEMENT_START));
+      aggregator.processEvent({
+        eventType: TelemetryEventType.ERROR,
+        timestamp: Date.now(),
+        sessionId: 'session-1',
+        statementId: 'stmt-1',
+        errorName: 'OperationStateError',
+        sqlState: '42P01',
+        errorMessage: 'Table or view not found: sensitive_table',
+        errorStack: 'Error: Table or view not found: sensitive_table',
+        isTerminal: false,
+      });
+      aggregator.completeStatement('stmt-1');
+      aggregator.flush();
+
+      const errorMetric = exporter.export.firstCall.args[0].find((m) => m.metricType === 'error')!;
+      expect(errorMetric.errorName).to.equal('OperationStateError');
+      expect(errorMetric.sqlState).to.equal('42P01');
+      expect(errorMetric).to.not.have.any.keys('errorMessage', 'errorStack');
     });
 
     it('should buffer retryable errors until statement completes', () => {
