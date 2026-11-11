@@ -141,7 +141,10 @@ export type ConnectionOptions = {
    *     attempt with no retry. Both backends honour the same total-attempt
    *     semantics (the kernel converts it to its after-initial retry count).
    *   • `retriesTimeout`   — maximum total wallclock spent retrying, in
-   *     milliseconds. Default 900000 (15 minutes).
+   *     milliseconds. Default 900000 (15 minutes). On the Thrift backend it is
+   *     also the end-to-end deadline of each CloudFetch result download (all
+   *     attempts plus backoff): a download still running when it expires is
+   *     aborted and fails with a `RetryError` (`TIMEOUT_EXCEEDED`).
    *   • `retryDelayMin`    — minimum backoff between attempts, in milliseconds.
    *     Default 1000.
    *   • `retryDelayMax`    — maximum backoff between attempts, in milliseconds.

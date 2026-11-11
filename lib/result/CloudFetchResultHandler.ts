@@ -1,7 +1,7 @@
 import fetch, { RequestInfo, RequestInit, Request, Response } from 'node-fetch';
 import { TGetResultSetMetadataResp, TRowSet, TSparkArrowResultLink } from '../../thrift/TCLIService_types';
 import HiveDriverError from '../errors/HiveDriverError';
-import RetryError from '../errors/RetryError';
+import RetryError, { RetryErrorCode } from '../errors/RetryError';
 import IClientContext from '../contracts/IClientContext';
 import IResultsProvider, { ResultsProviderFetchNextOptions } from './IResultsProvider';
 import { ArrowBatch } from './utils';
@@ -16,6 +16,9 @@ import { safeEmit } from '../telemetry/telemetryUtils';
 // The error is re-thrown only when the task is actually consumed, so observable behavior is
 // unchanged while the unhandled-rejection leak is eliminated.
 type SettledDownload = { ok: true; batch: ArrowBatch } | { ok: false; error: unknown };
+
+// Largest delay `setTimeout` accepts; anything longer would fire immediately.
+const MAX_TIMER_DELAY_MS = 2 ** 31 - 1;
 
 export default class CloudFetchResultHandler implements IResultsProvider<ArrowBatch> {
   private readonly context: IClientContext;
@@ -150,8 +153,19 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
     const connectionProvider = await this.context.getConnectionProvider();
     const agent = await connectionProvider.getAgent();
     const retryPolicy = await connectionProvider.getRetryPolicy();
+    const { retriesTimeout } = this.context.getConfig();
 
     const requestConfig: RequestInit = { agent, ...init };
+    // The retry policy checks `retriesTimeout` only between attempts, so a stalled attempt
+    // (headers or body never arrive) would block forever. Enforce it as a deadline over the
+    // whole download - every attempt plus the backoff between them - and abort the in-flight
+    // request when it expires (#520). Non-positive values keep the deadline off.
+    const deadlineMs = retriesTimeout > 0 && retriesTimeout <= MAX_TIMER_DELAY_MS ? retriesTimeout : undefined;
+    let controller: AbortController | undefined;
+    let timeoutError: RetryError | undefined;
+    let lastFailure: unknown;
+    let timer: NodeJS.Timeout | undefined;
+
     // Read the body inside the retried block. CloudFetch downloads are large
     // GETs against pre-signed cloud-storage URLs that frequently surface
     // `socket hang up` / "Premature close" once the stream is mid-transfer.
@@ -160,17 +174,51 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
     let downloaded: ArrayBuffer | undefined;
     let result: { request: Request; response: Response };
     try {
-      result = await retryPolicy.invokeWithRetry(async () => {
-        downloaded = undefined;
-        const request = new Request(url, requestConfig);
-        const response = await fetch(request);
-        if (response.ok) {
-          downloaded = await response.arrayBuffer();
+      const download = retryPolicy.invokeWithRetry(async () => {
+        // The timeout error is not retryable, so this also ends the retry loop when the
+        // deadline expired during a backoff sleep or aborted the attempt.
+        if (timeoutError) {
+          throw timeoutError;
         }
-        return { request, response };
+        downloaded = undefined;
+        controller = deadlineMs === undefined ? undefined : new AbortController();
+        const request = new Request(url, {
+          ...requestConfig,
+          signal: controller?.signal as unknown as RequestInit['signal'],
+        });
+        try {
+          const response = await fetch(request);
+          if (response.ok) {
+            downloaded = await response.arrayBuffer();
+          } else {
+            lastFailure = { request, response };
+          }
+          return { request, response };
+        } catch (error) {
+          if (timeoutError) {
+            throw timeoutError;
+          }
+          lastFailure = error;
+          throw error;
+        }
       });
+
+      if (deadlineMs === undefined) {
+        result = await download;
+      } else {
+        const deadline = new Promise<never>((_, reject) => {
+          timer = setTimeout(() => {
+            timeoutError = new RetryError(RetryErrorCode.TimeoutExceeded, lastFailure);
+            controller?.abort();
+            reject(timeoutError);
+          }, deadlineMs);
+        });
+        result = await Promise.race([download, deadline]);
+      }
     } catch (error) {
       throw CloudFetchResultHandler.describeDownloadError(error);
+    } finally {
+      clearTimeout(timer);
     }
     // Fall back to reading the body here if the retry policy returned a
     // response without consuming it via our operation (e.g. unit-test stubs

@@ -234,4 +234,82 @@ describe('CloudFetch', () => {
       await session.close();
     }
   });
+
+  it('should fail a stalled CloudFetch download with a timeout error within retriesTimeout', async () => {
+    const retriesTimeout = 3000;
+    const session = await openSession({
+      cloudFetchConcurrentDownloads: 1,
+      useLZ4Compression: false,
+      retriesTimeout,
+    });
+
+    // Accepts every download and never responds
+    let serverHits = 0;
+    const server = http.createServer(() => {
+      serverHits += 1;
+    });
+    await new Promise<void>((resolve) => {
+      server.listen(0, '127.0.0.1', () => resolve());
+    });
+    const { port } = server.address() as AddressInfo;
+
+    try {
+      const queriedRowsCount = 10000000; // result has to be quite big to enable CloudFetch
+      const operation = await session.executeStatement(
+        `
+          SELECT *
+          FROM range(0, ${queriedRowsCount}) AS t1
+          LEFT JOIN (SELECT 1) AS t2
+        `,
+        {
+          maxRows: null, // disable DirectResults
+          useCloudFetch: true,
+        },
+      );
+
+      await operation.finished();
+
+      // @ts-expect-error TS2339: Property getResultHandler does not exist on type IOperation
+      const resultHandler = await operation.getResultHandler();
+      expect(resultHandler.source.source).to.be.instanceOf(CloudFetchResultHandler);
+      const cfResultHandler = resultHandler.source.source;
+
+      const connectionProvider = await cfResultHandler.context.getConnectionProvider();
+      const getAgentStub = sinon.stub(connectionProvider, 'getAgent').resolves(undefined);
+
+      const rowSetProvider = cfResultHandler.source;
+      const originalFetchNext = rowSetProvider.fetchNext.bind(rowSetProvider);
+      sinon.stub(rowSetProvider, 'fetchNext').callsFake(async (...args: Array<any>) => {
+        const rowSet = await originalFetchNext(...args);
+        rowSet?.resultLinks?.forEach((link: any) => {
+          link.fileLink = `http://127.0.0.1:${port}/result`;
+          link.httpHeaders = {};
+        });
+        return rowSet;
+      });
+
+      const startedAt = Date.now();
+      let thrown: unknown;
+      try {
+        await operation.fetchChunk({ maxRows: 100000, disableBuffering: true });
+      } catch (error) {
+        thrown = error;
+      } finally {
+        getAgentStub.restore();
+      }
+      const elapsedMs = Date.now() - startedAt;
+
+      expect(thrown).to.be.instanceOf(RetryError);
+      expect((thrown as RetryError).errorCode).to.be.equal(RetryErrorCode.TimeoutExceeded);
+      expect((thrown as RetryError).message).to.contain('CloudFetch result download failed: Retry timeout exceeded');
+      expect(serverHits).to.be.equal(1);
+      expect(elapsedMs).to.be.lt(retriesTimeout + 5000);
+    } finally {
+      server.closeAllConnections();
+      await new Promise<void>((resolve) => {
+        server.close(() => resolve());
+      });
+      await session.close();
+    }
+  });
 });

@@ -1,5 +1,7 @@
 import { expect, AssertionError } from 'chai';
 import sinon, { SinonStub } from 'sinon';
+import http from 'http';
+import { AddressInfo } from 'net';
 import Int64 from 'node-int64';
 import { compressFrameSync } from 'lz4-napi';
 import { Request, Response } from 'node-fetch';
@@ -15,6 +17,7 @@ import RetryError, { RetryErrorCode } from '../../../lib/errors/RetryError';
 import BaseClientContextStub from '../.stubs/ClientContextStub';
 import { ClientConfig } from '../../../lib/contracts/IClientContext';
 import ConnectionProviderStub from '../.stubs/ConnectionProviderStub';
+import HttpRetryPolicy from '../../../lib/connection/connections/HttpRetryPolicy';
 
 const sampleArrowSchema = Buffer.from([
   255, 255, 255, 255, 208, 0, 0, 0, 16, 0, 0, 0, 0, 0, 10, 0, 14, 0, 6, 0, 13, 0, 8, 0, 10, 0, 0, 0, 0, 0, 4, 0, 16, 0,
@@ -720,5 +723,162 @@ describe('CloudFetchResultHandler', () => {
 
     // Ensure the batches array matches the expected structure
     expect(batches).to.deep.eq([sampleArrowBatch]);
+  });
+
+  describe('download deadline', () => {
+    let server: http.Server | undefined;
+
+    afterEach(async () => {
+      if (server) {
+        server.closeAllConnections();
+        await new Promise<void>((resolve) => {
+          server!.close(() => resolve());
+        });
+        server = undefined;
+      }
+    });
+
+    async function startServer(handler: http.RequestListener): Promise<string> {
+      server = http.createServer(handler);
+      await new Promise<void>((resolve) => {
+        server!.listen(0, '127.0.0.1', () => resolve());
+      });
+      return `http://127.0.0.1:${(server.address() as AddressInfo).port}/chunk`;
+    }
+
+    // Real `HttpRetryPolicy` and node-fetch against a local server, so the deadline is exercised
+    // across actual attempts, backoff sleeps and sockets.
+    function createHandler(fileLink: string, configOverrides: Partial<ClientConfig>) {
+      const context = new BaseClientContextStub({ cloudFetchConcurrentDownloads: 1, ...configOverrides });
+      sinon.stub(context.connectionProvider, 'getRetryPolicy').callsFake(async () => new HttpRetryPolicy(context));
+      const rowSet: TRowSet = {
+        startRowOffset: new Int64(0),
+        rows: [],
+        resultLinks: [
+          {
+            fileLink,
+            expiryTime: new Int64(defaultLinkExpiryTime),
+            rowCount: new Int64(1),
+            startRowOffset: new Int64(0),
+            bytesNum: new Int64(0),
+          },
+        ],
+      };
+      return new CloudFetchResultHandler(context, new ResultsProviderStub([rowSet], undefined), {
+        lz4Compressed: false,
+        status: { statusCode: TStatusCode.SUCCESS_STATUS },
+      });
+    }
+
+    async function fetchWithin(handler: CloudFetchResultHandler, limitMs: number) {
+      const startedAt = Date.now();
+      let guard: NodeJS.Timeout | undefined;
+      const outcome = await Promise.race([
+        handler.fetchNext({ limit: 10000 }).then(
+          (value) => ({ value, error: undefined as any }),
+          (error) => ({ value: undefined, error }),
+        ),
+        new Promise<'pending'>((resolve) => {
+          guard = setTimeout(() => resolve('pending'), limitMs);
+        }),
+      ]);
+      clearTimeout(guard);
+      if (outcome === 'pending') {
+        throw new AssertionError(`fetchNext did not settle within ${limitMs}ms`);
+      }
+      return { ...outcome, elapsedMs: Date.now() - startedAt };
+    }
+
+    it('should fail a download whose response headers never arrive with a timeout error', async () => {
+      const closedRequests: Array<Promise<void>> = [];
+      const url = await startServer((req) => {
+        // Accept the GET and never respond
+        closedRequests.push(new Promise((resolve) => req.socket.once('close', () => resolve())));
+      });
+      const handler = createHandler(url, { retriesTimeout: 300 });
+
+      const { error, elapsedMs } = await fetchWithin(handler, 1500);
+
+      expect(error).to.be.instanceOf(RetryError);
+      expect(error.errorCode).to.be.equal(RetryErrorCode.TimeoutExceeded);
+      expect(error.message).to.be.equal('CloudFetch result download failed: Retry timeout exceeded');
+      expect(elapsedMs).to.be.gte(250);
+      expect(elapsedMs).to.be.lt(1000);
+      // The stalled request is aborted, not left hanging
+      expect(closedRequests.length).to.be.equal(1);
+      await closedRequests[0];
+    });
+
+    it('should fail a download whose response body stalls with a timeout error', async () => {
+      const url = await startServer((req, res) => {
+        res.writeHead(200, { 'Content-Length': '1000' });
+        res.write(Buffer.alloc(10));
+        // ...and never send the rest
+      });
+      const handler = createHandler(url, { retriesTimeout: 300 });
+
+      const { error, elapsedMs } = await fetchWithin(handler, 1500);
+
+      expect(error).to.be.instanceOf(RetryError);
+      expect(error.errorCode).to.be.equal(RetryErrorCode.TimeoutExceeded);
+      expect(elapsedMs).to.be.lt(1000);
+    });
+
+    it('should include retry backoff in the deadline and report the last error', async function () {
+      this.timeout(5000);
+      let hits = 0;
+      const url = await startServer((req, res) => {
+        hits += 1;
+        res.writeHead(503, 'Service Unavailable');
+        res.end();
+      });
+      // The first backoff (2 * retryDelayMin = 2s) alone outlasts the 300ms budget
+      const handler = createHandler(url, { retriesTimeout: 300, retryDelayMin: 1000, retryMaxAttempts: 100 });
+
+      const { error, elapsedMs } = await fetchWithin(handler, 1500);
+
+      expect(error).to.be.instanceOf(RetryError);
+      expect(error.errorCode).to.be.equal(RetryErrorCode.TimeoutExceeded);
+      expect(error.message).to.be.equal(
+        'CloudFetch result download failed: Retry timeout exceeded (last error: HTTP 503: Service Unavailable)',
+      );
+      expect(elapsedMs).to.be.lt(1000);
+      expect(hits).to.be.equal(1);
+
+      // Once the backoff sleep ends, the retry loop must stop instead of sending another request
+      await new Promise((resolve) => {
+        setTimeout(resolve, 2200);
+      });
+      expect(hits).to.be.equal(1);
+    });
+
+    it('should not fail a download that completes within the deadline', async () => {
+      const body = Buffer.concat([sampleArrowSchema, sampleArrowBatch]);
+      const url = await startServer((req, res) => {
+        // Slow but progressing: send the body in two parts
+        res.writeHead(200, { 'Content-Length': `${body.length}` });
+        res.write(body.subarray(0, 10));
+        setTimeout(() => res.end(body.subarray(10)), 100);
+      });
+      const handler = createHandler(url, { retriesTimeout: 1000 });
+
+      const { value, error } = await fetchWithin(handler, 1500);
+
+      expect(error).to.be.undefined;
+      expect(value?.batches).to.deep.eq([body]);
+    });
+
+    it('should not enforce a deadline when retriesTimeout is not positive', async () => {
+      const body = Buffer.concat([sampleArrowSchema, sampleArrowBatch]);
+      const url = await startServer((req, res) => {
+        setTimeout(() => res.end(body), 100);
+      });
+      const handler = createHandler(url, { retriesTimeout: 0 });
+
+      const { value, error } = await fetchWithin(handler, 1500);
+
+      expect(error).to.be.undefined;
+      expect(value?.batches).to.deep.eq([body]);
+    });
   });
 });
