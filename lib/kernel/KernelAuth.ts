@@ -836,7 +836,9 @@ function buildKernelHostName(options: ConnectionOptions): string {
   if (options.https !== false) {
     return options.host;
   }
-  const port = options.port && !/:\d+$/.test(options.host) ? `:${options.port}` : '';
+  // `name:port` or `[ipv6]:port`; a bare IPv6 literal like `::1` has no port.
+  const hasPort = /^(\[[^\]]+\]|[^:]+):\d+$/.test(options.host);
+  const port = options.port && !hasPort ? `:${options.port}` : '';
   return `http://${options.host}${port}`;
 }
 

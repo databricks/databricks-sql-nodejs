@@ -91,6 +91,16 @@ describe('KernelAuth connection options — https transport', () => {
       'http://[::1]:3015',
     );
   });
+
+  it('does not mistake an IPv6 literal for an embedded port', () => {
+    expect(buildKernelConnectionOptions(opts({ host: '[::1]', port: 3015, https: false })).hostName).to.equal(
+      'http://[::1]:3015',
+    );
+    // Same URL shape as the Thrift transport, which also requires brackets.
+    expect(buildKernelConnectionOptions(opts({ host: '::1', port: 3015, https: false })).hostName).to.equal(
+      'http://::1:3015',
+    );
+  });
 });
 
 describe('KernelAuth connection options — maxConnections', () => {
