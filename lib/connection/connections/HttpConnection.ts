@@ -64,9 +64,8 @@ export default class HttpConnection implements IConnectionProvider {
     return new http.Agent(httpAgentOptions);
   }
 
-  private createHttpsAgent(): https.Agent {
-    const httpsAgentOptions: https.AgentOptions = {
-      ...this.getAgentDefaultOptions(),
+  private getTlsOptions(): https.AgentOptions {
+    return {
       minVersion: 'TLSv1.2',
       // Validate the server certificate by default; only skip verification when
       // the caller explicitly opts out via `rejectUnauthorized: false`.
@@ -74,6 +73,13 @@ export default class HttpConnection implements IConnectionProvider {
       ca: this.options.ca,
       cert: this.options.cert,
       key: this.options.key,
+    };
+  }
+
+  private createHttpsAgent(): https.Agent {
+    const httpsAgentOptions: https.AgentOptions = {
+      ...this.getAgentDefaultOptions(),
+      ...this.getTlsOptions(),
     };
     return new https.Agent(httpsAgentOptions);
   }
@@ -86,6 +92,10 @@ export default class HttpConnection implements IConnectionProvider {
 
     return new ProxyAgent({
       ...this.getAgentDefaultOptions(),
+      // `httpsAgent` below only serves URLs that bypass the proxy. Tunnelled TLS
+      // connections take their settings from these top-level options, which
+      // proxy-agent also applies to the connection to an `https:` proxy.
+      ...this.getTlsOptions(),
       getProxyForUrl: () => proxyUrl,
       httpsAgent: this.createHttpsAgent(),
       httpAgent: this.createHttpAgent(),
