@@ -82,6 +82,15 @@ describe('KernelAuth connection options — https transport', () => {
       'http://localhost:3015',
     );
   });
+
+  it('does not double the port when it is set in both host and port', () => {
+    expect(buildKernelConnectionOptions(opts({ host: 'localhost:3015', port: 3015, https: false })).hostName).to.equal(
+      'http://localhost:3015',
+    );
+    expect(buildKernelConnectionOptions(opts({ host: '[::1]:3015', port: 3015, https: false })).hostName).to.equal(
+      'http://[::1]:3015',
+    );
+  });
 });
 
 describe('KernelAuth connection options — maxConnections', () => {

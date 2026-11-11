@@ -830,6 +830,16 @@ export function buildKernelProxyOptions(options: ConnectionOptions): KernelProxy
   return { proxy: out };
 }
 
+// The kernel prepends `https://` to a bare host but keeps an explicit `http://`.
+// It otherwise ignores `port`, so carry it into the URL unless `host` already has one.
+function buildKernelHostName(options: ConnectionOptions): string {
+  if (options.https !== false) {
+    return options.host;
+  }
+  const port = options.port && !/:\d+$/.test(options.host) ? `:${options.port}` : '';
+  return `http://${options.host}${port}`;
+}
+
 export function buildKernelConnectionOptions(options: ConnectionOptions): KernelNativeConnectionOptions {
   const { authType } = options as { authType?: string };
 
@@ -843,10 +853,7 @@ export function buildKernelConnectionOptions(options: ConnectionOptions): Kernel
     KernelHttpOptions &
     KernelProxyOptions &
     KernelFederationOptions = {
-    // The kernel prepends `https://` to a bare host but keeps an explicit `http://`.
-    // It otherwise ignores `port`, so carry it into the URL as the Thrift path does.
-    hostName:
-      options.https === false ? `http://${options.host}${options.port ? `:${options.port}` : ''}` : options.host,
+    hostName: buildKernelHostName(options),
     httpPath: prependSlash(options.path),
     // Match the NodeJS Thrift driver, which surfaces INTERVAL columns as
     // strings. The kernel defaults to native Arrow interval/duration types;
