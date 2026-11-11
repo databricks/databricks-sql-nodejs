@@ -48,7 +48,7 @@ describe('KernelResultsProvider', () => {
     const fetchNextBatch = sinon.stub<[], Promise<FetchResult>>();
     fetchNextBatch.onFirstCall().returns(first.promise);
     fetchNextBatch.onSecondCall().returns(second.promise);
-    const provider = new KernelResultsProvider({ fetchNextBatch });
+    const provider = new KernelResultsProvider({ fetchNextBatch }, true);
 
     const received = provider.fetchNext(options);
     expect(fetchNextBatch.callCount).to.equal(1);
@@ -76,7 +76,7 @@ describe('KernelResultsProvider', () => {
         active -= 1;
       });
     });
-    const provider = new KernelResultsProvider({ fetchNextBatch });
+    const provider = new KernelResultsProvider({ fetchNextBatch }, true);
 
     const hasMore = provider.hasMore();
     expect(active).to.equal(1);
@@ -114,7 +114,7 @@ describe('KernelResultsProvider', () => {
       if (prefetch) {
         fetchNextBatch.onFirstCall().resolves(makeBatch([1]));
       }
-      const provider = new KernelResultsProvider({ fetchNextBatch });
+      const provider = new KernelResultsProvider({ fetchNextBatch }, true);
       if (prefetch) {
         await provider.fetchNext(options);
       }
@@ -135,7 +135,7 @@ describe('KernelResultsProvider', () => {
       if (prefetch) {
         fetchNextBatch.onFirstCall().resolves(makeBatch([1]));
       }
-      const provider = new KernelResultsProvider({ fetchNextBatch });
+      const provider = new KernelResultsProvider({ fetchNextBatch }, true);
       if (prefetch) {
         expect((await provider.fetchNext(options)).rowCount).to.equal(1);
       }
@@ -153,7 +153,7 @@ describe('KernelResultsProvider', () => {
     const fetchNextBatch = sinon.stub<[], Promise<FetchResult>>();
     fetchNextBatch.onFirstCall().resolves(makeBatch([1]));
     fetchNextBatch.onSecondCall().returns(abandoned.promise);
-    const provider = new KernelResultsProvider({ fetchNextBatch });
+    const provider = new KernelResultsProvider({ fetchNextBatch }, true);
     const unhandled: unknown[] = [];
     const onUnhandled = (reason: unknown) => {
       unhandled.push(reason);
@@ -176,12 +176,31 @@ describe('KernelResultsProvider', () => {
     const batches = [makeBatch([]), makeBatch([]), batch, makeBatch([]), null];
     const fetchNextBatch = sinon.stub<[], Promise<FetchResult>>();
     batches.forEach((value, index) => fetchNextBatch.onCall(index).resolves(value));
-    const provider = new KernelResultsProvider({ fetchNextBatch });
+    const provider = new KernelResultsProvider({ fetchNextBatch }, true);
 
     expect(await provider.hasMore()).to.be.true;
     expect(await provider.fetchNext(options)).to.deep.equal({ batches: [batch.ipcBytes], rowCount: 3 });
     expect(await provider.hasMore()).to.be.false;
     expect(await provider.fetchNext(options)).to.deep.equal({ batches: [], rowCount: 0 });
     expect(fetchNextBatch.callCount).to.equal(batches.length);
+  });
+
+  it('fetches on demand by default', async () => {
+    const fetchNextBatch = sinon.stub<[], Promise<FetchResult>>();
+    fetchNextBatch.onFirstCall().resolves(makeBatch([1]));
+    fetchNextBatch.onSecondCall().resolves(makeBatch([2]));
+    fetchNextBatch.onThirdCall().resolves(null);
+    const provider = new KernelResultsProvider({ fetchNextBatch });
+
+    expect(await provider.hasMore()).to.be.true;
+    expect(fetchNextBatch.callCount).to.equal(1);
+    expect((await provider.fetchNext(options)).rowCount).to.equal(1);
+    await nextTurn();
+    expect(fetchNextBatch.callCount).to.equal(1);
+
+    expect((await provider.fetchNext(options)).rowCount).to.equal(1);
+    expect(fetchNextBatch.callCount).to.equal(2);
+    expect(await provider.hasMore()).to.be.false;
+    expect(fetchNextBatch.callCount).to.equal(3);
   });
 });

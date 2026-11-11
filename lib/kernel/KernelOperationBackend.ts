@@ -779,9 +779,8 @@ export default class KernelOperationBackend implements IOperationBackend {
     }
     const metadata = await this.getResultMetadata();
     const handle = await this.getFetchHandle();
-    // KernelResultsProvider consumes only `fetchNextBatch`; both the async result
-    // handle and the blocking statement satisfy that surface.
-    this.resultsProvider = new KernelResultsProvider(handle as unknown as KernelStatement);
+    // Only AsyncResultHandle has a fetch lock separate from close/cancel.
+    this.resultsProvider = new KernelResultsProvider(handle, this.asyncStatement !== undefined);
     // DECIMAL/BIGINT precision preservation is opt-in via the
     // `preserveBigNumericPrecision` connection option (default off). The kernel
     // always delivers native Arrow Decimal128 / Int64, so when enabled the

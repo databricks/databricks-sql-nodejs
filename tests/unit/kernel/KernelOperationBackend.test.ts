@@ -13,10 +13,12 @@
 // limitations under the License.
 
 import { expect } from 'chai';
+import sinon from 'sinon';
 import {
   Schema,
   Field,
   RecordBatch,
+  RecordBatchReader,
   Table,
   tableToIPC,
   Bool,
@@ -40,6 +42,20 @@ import {
 import KernelOperationBackend from '../../../lib/kernel/KernelOperationBackend';
 import { TTypeId } from '../../../thrift/TCLIService_types';
 import ClientContextStub from '../.stubs/ClientContextStub';
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>((resolvePromise) => {
+    resolve = resolvePromise;
+  });
+  return { promise, resolve };
+}
+
+function nextTurn(): Promise<void> {
+  return new Promise((resolve) => {
+    setImmediate(resolve);
+  });
+}
 
 // Minimal stub of the napi `Statement` surface that emits a precomputed
 // Arrow IPC payload per `fetchNextBatch()` call. Used to feed
@@ -388,4 +404,107 @@ describe('KernelOperationBackend — M0 datatype round-trip via napi → ArrowRe
     await backend.close();
     expect(stub.closed).to.equal(true);
   });
+
+  for (const asyncHandle of [false, true]) {
+    const handleKind = asyncHandle ? 'AsyncStatement' : 'Statement';
+    for (const method of ['close', 'cancel'] as const) {
+      it(`${handleKind} ${method} completes after an early stop without waiting for an added fetch`, async () => {
+        const schema = new Schema([withTypeName(new Field('x', new Int32(), true), 'INT')]);
+        const schemaIpc = ipcSchemaOnly(schema);
+        const pending = deferred<{ ipcBytes: Buffer } | null>();
+        let fetching = false;
+        const resultHandle = new StatementStub(schemaIpc, []);
+        const fetchNextBatch = sinon.stub(resultHandle, 'fetchNextBatch').resolves(null);
+        fetchNextBatch.onFirstCall().resolves({ ipcBytes: ipcFromColumns(schema, { x: [1] }) });
+        fetchNextBatch.onSecondCall().resolves({ ipcBytes: ipcFromColumns(schema, { x: [2] }) });
+        fetchNextBatch.onThirdCall().callsFake(() => {
+          fetching = true;
+          return pending.promise.finally(() => {
+            fetching = false;
+          });
+        });
+        const asyncStatement = Object.assign(new StatementStub(schemaIpc, []), {
+          status: async () => 'Succeeded',
+          awaitResult: async () => resultHandle,
+        });
+        const lifecycleHandle = asyncHandle ? asyncStatement : resultHandle;
+        const lifecycleCall = sinon.stub(lifecycleHandle, method).callsFake(async () => {
+          // Model Statement's shared mutex; AsyncStatement owns a separate lock.
+          if (!asyncHandle && fetching) {
+            await pending.promise;
+          }
+        });
+        const context = new ClientContextStub();
+        const backend = new KernelOperationBackend(
+          asyncHandle ? { asyncStatement, context } : { statement: resultHandle, context },
+        );
+        let completion: Promise<void> | undefined;
+        try {
+          expect(await backend.fetchChunk({ limit: 1 })).to.deep.equal([{ x: 1 }]);
+          expect(fetchNextBatch.callCount).to.equal(asyncHandle ? 3 : 2);
+          expect(fetching).to.equal(asyncHandle);
+
+          let completed = false;
+          completion = backend[method]().then(() => {
+            completed = true;
+          });
+          await nextTurn();
+          expect(completed).to.be.true;
+          expect(lifecycleCall.calledOnce).to.be.true;
+          expect(fetching).to.equal(asyncHandle);
+        } finally {
+          pending.resolve(null);
+          await completion;
+        }
+      });
+    }
+
+    it(`${handleKind} decoding errors close the operation without waiting for an added fetch`, async () => {
+      const schema = new Schema([withTypeName(new Field('x', new Int32(), true), 'INT')]);
+      const schemaIpc = ipcSchemaOnly(schema);
+      const pending = deferred<{ ipcBytes: Buffer } | null>();
+      let fetching = false;
+      const resultHandle = new StatementStub(schemaIpc, []);
+      const fetchNextBatch = sinon.stub(resultHandle, 'fetchNextBatch');
+      fetchNextBatch.onFirstCall().resolves({ ipcBytes: ipcFromColumns(schema, { x: [1] }) });
+      fetchNextBatch.onSecondCall().callsFake(() => {
+        fetching = true;
+        return pending.promise.finally(() => {
+          fetching = false;
+        });
+      });
+      const asyncStatement = Object.assign(new StatementStub(schemaIpc, []), {
+        status: async () => 'Succeeded',
+        awaitResult: async () => resultHandle,
+      });
+      const lifecycleHandle = asyncHandle ? asyncStatement : resultHandle;
+      const close = sinon.stub(lifecycleHandle, 'close').callsFake(async () => {
+        if (!asyncHandle && fetching) {
+          await pending.promise;
+        }
+      });
+      const context = new ClientContextStub();
+      const backend = new KernelOperationBackend(
+        asyncHandle ? { asyncStatement, context } : { statement: resultHandle, context },
+      );
+      await backend.getResultMetadata();
+      const decode = sinon.stub(RecordBatchReader, 'from').throws(new Error('decode failed'));
+      let observed: unknown;
+      const received = backend.fetchChunk({ limit: 1 }).catch((error: unknown) => {
+        observed = error;
+      });
+      try {
+        await nextTurn();
+        expect(observed).to.be.instanceOf(Error);
+        expect((observed as Error).message).to.equal('decode failed');
+        expect(close.calledOnce).to.be.true;
+        expect(fetchNextBatch.callCount).to.equal(asyncHandle ? 2 : 1);
+        expect(fetching).to.equal(asyncHandle);
+      } finally {
+        decode.restore();
+        pending.resolve(null);
+        await received;
+      }
+    });
+  }
 });

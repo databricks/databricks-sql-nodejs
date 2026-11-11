@@ -52,6 +52,8 @@ type Settled = { ok: true; value: { ipcBytes: Buffer } | null } | { ok: false; e
 export default class KernelResultsProvider implements IResultsProvider<ArrowBatch> {
   private readonly statement: KernelFetchHandle;
 
+  private readonly prefetchEnabled: boolean;
+
   // Prefetched next batch so `hasMore()` can be answered without an
   // extra round-trip. Set by `prime()` (lazy) and by `fetchNext`.
   private prefetched?: ArrowBatch;
@@ -61,8 +63,9 @@ export default class KernelResultsProvider implements IResultsProvider<ArrowBatc
 
   private inflight?: Promise<Settled>;
 
-  constructor(statement: KernelFetchHandle) {
+  constructor(statement: KernelFetchHandle, prefetchEnabled = false) {
     this.statement = statement;
+    this.prefetchEnabled = prefetchEnabled;
   }
 
   public async hasMore(): Promise<boolean> {
@@ -119,8 +122,9 @@ export default class KernelResultsProvider implements IResultsProvider<ArrowBatc
         this.exhausted = true;
         return;
       }
-      // A sync statement's close may wait for this one bounded fetch.
-      this.startFetch();
+      if (this.prefetchEnabled) {
+        this.startFetch();
+      }
       // Patch the raw bytes once: rewrite any Arrow `Duration` field to
       // `Int64` with a `databricks.arrow.duration_unit` marker, so that
       // apache-arrow@13 (which predates Duration support) can decode the
