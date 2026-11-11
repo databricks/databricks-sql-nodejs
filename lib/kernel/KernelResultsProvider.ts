@@ -26,6 +26,8 @@ export interface KernelFetchHandle {
   fetchNextBatch(): Promise<{ ipcBytes: Buffer } | null>;
 }
 
+type Settled = { ok: true; value: { ipcBytes: Buffer } | null } | { ok: false; error: unknown };
+
 /**
  * `IResultsProvider<ArrowBatch>` that pulls Arrow IPC batches from the
  * kernel via the napi `Statement` handle and adapts them onto the
@@ -57,6 +59,8 @@ export default class KernelResultsProvider implements IResultsProvider<ArrowBatc
   // Set once the kernel returns `null` from `fetchNextBatch()`.
   private exhausted = false;
 
+  private inflight?: Promise<Settled>;
+
   constructor(statement: KernelFetchHandle) {
     this.statement = statement;
   }
@@ -84,6 +88,16 @@ export default class KernelResultsProvider implements IResultsProvider<ArrowBatc
     return out;
   }
 
+  private startFetch(): void {
+    if (this.inflight === undefined && !this.exhausted) {
+      // Reflect errors so an abandoned prefetch cannot reject unhandled.
+      this.inflight = this.statement.fetchNextBatch().then(
+        (value): Settled => ({ ok: true, value }),
+        (error): Settled => ({ ok: false, error }),
+      );
+    }
+  }
+
   // Pull the next batch from the kernel and stash it in `prefetched`,
   // or mark the stream exhausted. Used by both `hasMore` and `fetchNext`
   // to keep one batch buffered ahead so `hasMore` is accurate without
@@ -93,12 +107,20 @@ export default class KernelResultsProvider implements IResultsProvider<ArrowBatc
     // iteratively toward the null sentinel without building a deep promise
     // chain.
     while (!this.exhausted && this.prefetched === undefined) {
+      this.startFetch();
       // eslint-disable-next-line no-await-in-loop
-      const next = await this.statement.fetchNextBatch();
+      const settled = await this.inflight!;
+      this.inflight = undefined;
+      if (!settled.ok) {
+        throw settled.error;
+      }
+      const next = settled.value;
       if (next === null) {
         this.exhausted = true;
         return;
       }
+      // A sync statement's close may wait for this one bounded fetch.
+      this.startFetch();
       // Patch the raw bytes once: rewrite any Arrow `Duration` field to
       // `Int64` with a `databricks.arrow.duration_unit` marker, so that
       // apache-arrow@13 (which predates Duration support) can decode the
