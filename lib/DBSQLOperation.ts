@@ -361,7 +361,7 @@ export default class DBSQLOperation implements IOperation {
       .getLogger()
       .log(
         LogLevel.debug,
-        `Result set of operation with id: ${this.id} ${outcome} after ${this.fetchedRowCount} rows in ${this.fetchCount} fetches`,
+        `Result set of operation with id: ${this.id} ${outcome} (rows: ${this.fetchedRowCount}, fetches: ${this.fetchCount})`,
       );
   }
 

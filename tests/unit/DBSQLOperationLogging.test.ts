@@ -1,3 +1,17 @@
+// Copyright (c) 2026 Databricks, Inc.
+//
+// Licensed under the Apache License, Version 2.0 (the "License");
+// you may not use this file except in compliance with the License.
+// You may obtain a copy of the License at
+//
+//     http://www.apache.org/licenses/LICENSE-2.0
+//
+// Unless required by applicable law or agreed to in writing, software
+// distributed under the License is distributed on an "AS IS" BASIS,
+// WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+// See the License for the specific language governing permissions and
+// limitations under the License.
+
 import { expect } from 'chai';
 import { TOperationType } from '../../thrift/TCLIService_types';
 import DBSQLOperation from '../../lib/DBSQLOperation';
@@ -11,7 +25,7 @@ import ClientContextStub from './.stubs/ClientContextStub';
 import { createOperationForTest } from './.stubs/createOperationForTest';
 
 const PER_FETCH = /^Fetched chunk of size: \d+ from operation with id/;
-const SUMMARY = /^Result set of operation with id: \S+ (closed|cancelled) after \d+ rows in \d+ fetches$/;
+const SUMMARY = /^Result set of operation with id: \S+ (closed|cancelled) \(rows: \d+, fetches: \d+\)$/;
 
 interface Record {
   level: LogLevel;
@@ -118,7 +132,7 @@ describe('DBSQLOperation result set logging', () => {
 
     expect(logger.matching(PER_FETCH)).to.have.length(0);
     expect(logger.matching(SUMMARY)).to.deep.equal([
-      { level: LogLevel.debug, message: 'Result set of operation with id: op-1 closed after 5 rows in 5 fetches' },
+      { level: LogLevel.debug, message: 'Result set of operation with id: op-1 closed (rows: 5, fetches: 5)' },
     ]);
   });
 
@@ -154,7 +168,7 @@ describe('DBSQLOperation result set logging', () => {
     await operation.close();
 
     expect(logger.matching(SUMMARY).map((r) => r.message)).to.deep.equal([
-      'Result set of operation with id: op-1 closed after 2 rows in 2 fetches',
+      'Result set of operation with id: op-1 closed (rows: 2, fetches: 2)',
     ]);
   });
 
@@ -166,7 +180,7 @@ describe('DBSQLOperation result set logging', () => {
     await operation.close();
 
     expect(logger.matching(SUMMARY).map((r) => r.message)).to.deep.equal([
-      'Result set of operation with id: op-1 closed after 25 rows in 3 fetches',
+      'Result set of operation with id: op-1 closed (rows: 25, fetches: 3)',
     ]);
   });
 
@@ -180,7 +194,7 @@ describe('DBSQLOperation result set logging', () => {
     await operation.cancel();
 
     expect(logger.matching(SUMMARY).map((r) => r.message)).to.deep.equal([
-      'Result set of operation with id: op-1 cancelled after 3 rows in 1 fetches',
+      'Result set of operation with id: op-1 cancelled (rows: 3, fetches: 1)',
     ]);
   });
 
@@ -192,7 +206,7 @@ describe('DBSQLOperation result set logging', () => {
     await operation.close();
 
     expect(logger.matching(SUMMARY).map((r) => r.message)).to.deep.equal([
-      'Result set of operation with id: op-1 closed after 0 rows in 0 fetches',
+      'Result set of operation with id: op-1 closed (rows: 0, fetches: 0)',
     ]);
   });
 
@@ -218,7 +232,7 @@ describe('DBSQLOperation result set logging', () => {
       await operation.cancel();
 
       expect(logger.matching(SUMMARY).map((r) => r.message)).to.deep.equal([
-        `Result set of operation with id: op-1 ${outcome} after 2 rows in 1 fetches`,
+        `Result set of operation with id: op-1 ${outcome} (rows: 2, fetches: 1)`,
       ]);
     });
   }
@@ -265,7 +279,7 @@ describe('DBSQLOperation result set logging', () => {
     const summary = messages.findIndex((m) => SUMMARY.test(m));
     expect(closing).to.be.gte(0);
     expect(summary).to.be.greaterThan(closing);
-    expect(messages[summary]).to.match(/ closed after 3 rows in 1 fetches$/);
+    expect(messages[summary]).to.match(/ closed \(rows: 3, fetches: 1\)$/);
     expect(logger.matching(PER_FETCH)).to.have.length(0);
   });
 });
