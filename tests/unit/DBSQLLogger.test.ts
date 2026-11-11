@@ -79,6 +79,86 @@ describe('DBSQLLogger level subscription', () => {
   });
 });
 
+describe('DBSQLLogger trace level', () => {
+  let tmpDir: string;
+  let logger: DBSQLLogger | undefined;
+  let consoleError: sinon.SinonSpy;
+
+  function createLogger(level: LogLevel): DBSQLLogger {
+    const instance = new DBSQLLogger({ level, filepath: path.join(tmpDir, 'driver.log') });
+    instance.transports.console.silent = true;
+    return instance;
+  }
+
+  async function readRecords(): Promise<Array<{ level: string; message: string }>> {
+    const content = await waitForFileContent(path.join(tmpDir, 'driver.log'), 'end marker', 1000);
+    return content
+      .split('\n')
+      .filter((line) => line.trim().length > 0)
+      .map((line) => JSON.parse(line));
+  }
+
+  beforeEach(() => {
+    tmpDir = fs.mkdtempSync(path.join(os.tmpdir(), 'dbsql-logger-'));
+    consoleError = sinon.spy(console, 'error');
+  });
+
+  afterEach(() => {
+    consoleError.restore();
+    logger?.logger.close();
+    logger = undefined;
+    fs.rmSync(tmpDir, { recursive: true, force: true });
+  });
+
+  it('writes trace records at LogLevel.trace', async () => {
+    logger = createLogger(LogLevel.trace);
+    expect(logger.getLevel()).to.equal(LogLevel.trace);
+
+    await logger.log(LogLevel.trace, 'trace line');
+    await logger.log(LogLevel.debug, 'debug line');
+    await logger.log(LogLevel.error, 'end marker');
+
+    expect(await readRecords()).to.deep.equal([
+      { level: 'trace', message: 'trace line' },
+      { level: 'debug', message: 'debug line' },
+      { level: 'error', message: 'end marker' },
+    ]);
+  });
+
+  it('drops trace records at LogLevel.debug without a winston unknown-level error', async () => {
+    logger = createLogger(LogLevel.debug);
+
+    await logger.log(LogLevel.trace, 'trace line');
+    await logger.log(LogLevel.debug, 'end marker');
+
+    expect(await readRecords()).to.deep.equal([{ level: 'debug', message: 'end marker' }]);
+    expect(consoleError.called).to.be.false;
+  });
+
+  it('enables trace on every transport through setLevel', async () => {
+    logger = createLogger(LogLevel.info);
+    logger.setLevel(LogLevel.trace);
+
+    expect(logger.transports.console.level).to.equal(LogLevel.trace);
+    expect(logger.transports.file?.level).to.equal(LogLevel.trace);
+    await logger.log(LogLevel.trace, 'end marker');
+
+    expect(await readRecords()).to.deep.equal([{ level: 'trace', message: 'end marker' }]);
+  });
+
+  it('keeps the winston npm level methods', async () => {
+    logger = createLogger(LogLevel.trace);
+
+    logger.logger.verbose('verbose line');
+    logger.logger.http('http line');
+    // `silly` stays more verbose than `trace`, so it is filtered out here.
+    logger.logger.silly('silly line');
+    logger.logger.info('end marker');
+
+    expect((await readRecords()).map((r) => r.level)).to.deep.equal(['verbose', 'http', 'info']);
+  });
+});
+
 describe('DBSQLLogger file transport path resolution', () => {
   let tmpDir: string;
   let logger: DBSQLLogger | undefined;

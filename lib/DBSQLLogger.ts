@@ -7,6 +7,10 @@ const DEFAULT_LOG_FILE_NAME = 'databricks-sql-nodejs.log';
 
 export const LOG_FILE_UNAVAILABLE_WARNING_CODE = 'DBSQL_LOG_FILE_UNAVAILABLE';
 
+// winston's npm levels plus `trace`, which they lack: a transport at an unknown
+// level drops every record.
+const LEVELS = { error: 0, warn: 1, info: 2, http: 3, verbose: 4, debug: 5, trace: 6, silly: 7 };
+
 // An existing directory resolves to a default file inside it. Anything else is
 // returned as the path winston will open (which drops a trailing separator).
 function resolveLogFilePath(filepath: string): string {
@@ -63,6 +67,7 @@ export default class DBSQLLogger implements IDBSQLLogger {
       console: new winston.transports.Console({ handleExceptions: true, level }),
     };
     this.logger = winston.createLogger({
+      levels: LEVELS,
       transports: [this.transports.console],
     });
     if (filepath) {

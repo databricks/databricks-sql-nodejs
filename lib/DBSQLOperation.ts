@@ -63,6 +63,10 @@ export default class DBSQLOperation implements IOperation {
 
   private pollCount: number = 0;
 
+  private fetchCount: number = 0;
+
+  private fetchedRowCount: number = 0;
+
   private sessionId?: string;
 
   constructor(options: DBSQLOperationConstructorOptions) {
@@ -164,7 +168,12 @@ export default class DBSQLOperation implements IOperation {
     });
     await this.failIfClosed();
 
-    this.context.getLogger().log(LogLevel.debug, `Fetched chunk of size: ${limit} from operation with id: ${this.id}`);
+    this.fetchCount += 1;
+    this.fetchedRowCount += result.length;
+    const logger = this.context.getLogger();
+    if (logger.getLevel?.() === LogLevel.trace) {
+      logger.log(LogLevel.trace, `Fetched chunk of size: ${limit} from operation with id: ${this.id}`);
+    }
     return result;
   }
 
@@ -207,6 +216,7 @@ export default class DBSQLOperation implements IOperation {
     }
     const result = await this.backend.cancel();
     this.cancelled = true;
+    this.logResultSetSummary('cancelled');
     this.onClose?.();
     return result;
   }
@@ -225,6 +235,7 @@ export default class DBSQLOperation implements IOperation {
     }
     const result = await this.backend.close();
     this.closed = true;
+    this.logResultSetSummary('closed');
 
     // Emit statement.complete telemetry event
     await this.emitStatementComplete();
@@ -336,6 +347,19 @@ export default class DBSQLOperation implements IOperation {
       this.emitErrorEvent(err);
       throw err;
     }
+  }
+
+  // One debug record per result set, in place of per-fetch debug records.
+  private logResultSetSummary(outcome: 'closed' | 'cancelled'): void {
+    if (!this.backend.hasResultSet()) {
+      return;
+    }
+    this.context
+      .getLogger()
+      .log(
+        LogLevel.debug,
+        `Result set of operation with id: ${this.id} ${outcome} after ${this.fetchedRowCount} rows in ${this.fetchCount} fetches`,
+      );
   }
 
   private async failIfClosed(): Promise<void> {

@@ -34,8 +34,7 @@ import { KernelNativeBinding, KernelNativeLogRecord } from './KernelNativeLoader
 
 /**
  * Map a kernel level string (`error`/`warn`/`info`/`debug`/`trace`) onto the
- * driver's `LogLevel`. The kernel's `trace` has no `LogLevel` analogue, so it
- * folds into `debug` (the most verbose driver level).
+ * driver's `LogLevel`.
  */
 export function kernelLevelToLogLevel(level: string): LogLevel {
   switch (level) {
@@ -46,8 +45,9 @@ export function kernelLevelToLogLevel(level: string): LogLevel {
     case 'info':
       return LogLevel.info;
     case 'debug':
-    case 'trace':
       return LogLevel.debug;
+    case 'trace':
+      return LogLevel.trace;
     default:
       // Unknown kernel level — surface it rather than drop it; debug is the
       // least surprising bucket for an unrecognised severity.
@@ -114,8 +114,14 @@ export function installKernelLogBridge(
     if (err || !records) {
       return;
     }
+    // The kernel level can be `trace` while this logger isn't (another client's
+    // logger set it, or a level change is in flight); see IDBSQLLogger.getLevel.
+    const traceEnabled = logger.getLevel?.() === LogLevel.trace;
     for (const record of records) {
-      logger.log(kernelLevelToLogLevel(record.level), formatKernelLine(record));
+      const recordLevel = kernelLevelToLogLevel(record.level);
+      if (recordLevel !== LogLevel.trace || traceEnabled) {
+        logger.log(recordLevel, formatKernelLine(record));
+      }
     }
   };
 

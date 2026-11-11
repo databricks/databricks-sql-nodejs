@@ -25,7 +25,7 @@ import { KernelNativeBinding, KernelNativeLogRecord } from '../../../lib/kernel/
 // Minimal recording logger. With `withLevelChange` (default) it exposes
 // `onLevelChange` + an `emitLevelChange` test helper to simulate a runtime
 // `setLevel(...)`; pass `false` to model a logger that can't notify.
-function recordingLogger(opts: { withLevelChange?: boolean } = {}) {
+function recordingLogger(opts: { withLevelChange?: boolean; level?: LogLevel } = {}) {
   const lines: Array<{ level: LogLevel; message: string }> = [];
   const listeners: Array<(level: LogLevel) => void> = [];
   const logger = {
@@ -41,8 +41,13 @@ function recordingLogger(opts: { withLevelChange?: boolean } = {}) {
     lines: Array<{ level: LogLevel; message: string }>;
     log(level: LogLevel, message: string): void;
     emitLevelChange(level: LogLevel): void;
+    getLevel?(): LogLevel;
     onLevelChange?(listener: (level: LogLevel) => void): () => void;
   };
+  if (opts.level !== undefined) {
+    const { level } = opts;
+    logger.getLevel = () => level;
+  }
   if (opts.withLevelChange !== false) {
     logger.onLevelChange = (listener: (level: LogLevel) => void) => {
       listeners.push(listener);
@@ -85,8 +90,8 @@ describe('KernelLogging', () => {
       expect(kernelLevelToLogLevel('debug')).to.equal(LogLevel.debug);
     });
 
-    it('folds kernel `trace` (no driver analogue) into debug', () => {
-      expect(kernelLevelToLogLevel('trace')).to.equal(LogLevel.debug);
+    it('maps kernel `trace` to LogLevel.trace', () => {
+      expect(kernelLevelToLogLevel('trace')).to.equal(LogLevel.trace);
     });
 
     it('buckets an unknown level into debug rather than dropping it', () => {
@@ -98,6 +103,7 @@ describe('KernelLogging', () => {
     it('passes the lower-case level string through to the kernel', () => {
       expect(logLevelToKernelLevel(LogLevel.error)).to.equal('error');
       expect(logLevelToKernelLevel(LogLevel.debug)).to.equal('debug');
+      expect(logLevelToKernelLevel(LogLevel.trace)).to.equal('trace');
     });
   });
 
@@ -118,8 +124,8 @@ describe('KernelLogging', () => {
 
     it('forwards a batch of kernel records into the logger, level-mapped + tagged', () => {
       const { binding, captured } = captureBinding();
-      const logger = recordingLogger();
-      installKernelLogBridge(binding, logger, LogLevel.debug);
+      const logger = recordingLogger({ level: LogLevel.trace });
+      installKernelLogBridge(binding, logger, LogLevel.trace);
 
       captured.cb!(null, [
         { level: 'warn', target: 'databricks::sql::kernel', message: 'retrying' },
@@ -131,10 +137,27 @@ describe('KernelLogging', () => {
         level: LogLevel.warn,
         message: '[kernel databricks::sql::kernel] retrying',
       });
-      // trace → debug
-      expect(logger.lines[1].level).to.equal(LogLevel.debug);
+      expect(logger.lines[1].level).to.equal(LogLevel.trace);
       expect(logger.lines[1].message).to.contain('span enter');
     });
+
+    for (const [name, level] of [
+      ['a logger without getLevel', undefined],
+      ['a logger below trace', LogLevel.debug],
+    ] as const) {
+      it(`drops kernel trace records for ${name}`, () => {
+        const { binding, captured } = captureBinding();
+        const logger = recordingLogger({ level });
+        installKernelLogBridge(binding, logger, LogLevel.debug);
+
+        captured.cb!(null, [
+          { level: 'trace', target: 'databricks_sql_kernel::session', message: 'span enter' },
+          { level: 'debug', target: 'databricks::sql::kernel', message: 'fetched' },
+        ]);
+
+        expect(logger.lines.map((l) => l.level)).to.deep.equal([LogLevel.debug]);
+      });
+    }
 
     it('drops a batch that arrives with an error and never calls the logger', () => {
       const { binding, captured } = captureBinding();

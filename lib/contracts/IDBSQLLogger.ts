@@ -19,6 +19,9 @@ export default interface IDBSQLLogger {
    * so kernel logs are filtered at the same level as the driver's own logs and
    * land in the same sink. Loggers that don't implement it leave the kernel
    * bridge at its `info` default.
+   *
+   * The driver sends `LogLevel.trace` records only while this returns
+   * `LogLevel.trace`, so loggers that don't implement it never receive them.
    */
   getLevel?(): LogLevel;
 
@@ -38,4 +41,6 @@ export enum LogLevel {
   warn = 'warn',
   info = 'info',
   debug = 'debug',
+  /** More verbose than `debug`: per-fetch detail. See {@link IDBSQLLogger.getLevel}. */
+  trace = 'trace',
 }
