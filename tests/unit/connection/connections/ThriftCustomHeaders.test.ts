@@ -147,6 +147,7 @@ describe('ConnectionOptions.customHeaders on the Thrift transport', () => {
         'USER-AGENT': 'Caller/1.0',
         'Content-Type': 'text/plain',
         'content-length': '1',
+        'Transfer-Encoding': 'chunked',
         'X-Keep': 'kept',
       },
     });
@@ -156,6 +157,7 @@ describe('ConnectionOptions.customHeaders on the Thrift transport', () => {
       expect(request?.headers['user-agent']).to.match(/^NodejsDatabricksSqlConnector\/.*MyApp\/1\.0/);
       expect(request?.headers['content-type']).to.equal('application/x-thrift');
       expect(request?.headers['content-length']).to.not.equal('1');
+      expect(request?.headers).to.not.have.property('transfer-encoding');
       expect(request?.headers['x-keep']).to.equal('kept');
     }
   });

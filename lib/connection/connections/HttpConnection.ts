@@ -17,7 +17,14 @@ import HttpRetryPolicy from './HttpRetryPolicy';
 // Set by the driver, auth provider or Thrift transport. node-fetch merges
 // same-named headers case-insensitively into one value, so a caller copy
 // would corrupt the driver's value rather than replace it.
-const DRIVER_MANAGED_HEADERS = new Set(['authorization', 'user-agent', 'content-type', 'content-length', 'connection']);
+const DRIVER_MANAGED_HEADERS = new Set([
+  'authorization',
+  'user-agent',
+  'content-type',
+  'content-length',
+  'transfer-encoding',
+  'connection',
+]);
 
 // node-fetch's header name/value rules; checked up front so the error names
 // the header without echoing its (possibly secret) value.

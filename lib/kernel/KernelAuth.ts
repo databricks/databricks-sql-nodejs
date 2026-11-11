@@ -476,8 +476,8 @@ export function buildKernelTlsOptions(options: ConnectionOptions): KernelTlsOpti
 const KERNEL_MANAGED_HEADERS = new Set(['authorization', 'x-databricks-org-id']);
 
 // The kernel's HTTP client lets custom headers replace these, so a caller
-// Content-Length corrupts request framing and Content-Type overrides JSON.
-const TRANSPORT_MANAGED_HEADERS = new Set(['content-type', 'content-length', 'connection']);
+// framing header corrupts the request and Content-Type overrides JSON.
+const TRANSPORT_MANAGED_HEADERS = new Set(['content-type', 'content-length', 'transfer-encoding', 'connection']);
 
 // CR / LF / NUL in a header name or value enable request-splitting / header
 // injection. The kernel's HTTP client (reqwest) does reject these, but only at

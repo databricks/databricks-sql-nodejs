@@ -299,12 +299,18 @@ describe('KernelAuth HTTP options (buildKernelHttpOptions)', () => {
     expect(names(http)).to.include('User-Agent');
   });
 
-  it('drops transport-owned headers (Content-Type / Content-Length / Connection, any casing)', () => {
+  it('drops transport-owned headers (Content-Type / Content-Length / Transfer-Encoding / Connection, any casing)', () => {
     // Forwarded, these replace the kernel's own values: a caller Content-Length
     // corrupts request framing and Content-Type overrides application/json.
     const http = buildKernelHttpOptions(
       opts({
-        customHeaders: { 'content-type': 'text/plain', 'Content-Length': '1', CONNECTION: 'close', 'X-Keep': 'yes' },
+        customHeaders: {
+          'content-type': 'text/plain',
+          'Content-Length': '1',
+          'Transfer-Encoding': 'chunked',
+          CONNECTION: 'close',
+          'X-Keep': 'yes',
+        },
       }),
     );
     expect(names(http)).to.deep.equal(['X-Keep', 'User-Agent']);
