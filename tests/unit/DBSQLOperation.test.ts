@@ -18,6 +18,7 @@ import ArrowResultConverter from '../../lib/result/ArrowResultConverter';
 import ArrowResultHandler from '../../lib/result/ArrowResultHandler';
 import CloudFetchResultHandler from '../../lib/result/CloudFetchResultHandler';
 import ResultSlicer from '../../lib/result/ResultSlicer';
+import { LogLevel } from '../../lib/contracts/IDBSQLLogger';
 
 import ClientContextStub from './.stubs/ClientContextStub';
 import { createOperationForTest } from './.stubs/createOperationForTest';
@@ -889,6 +890,7 @@ describe('DBSQLOperation', () => {
 
     it('is undefined when the Arrow schema cannot be decoded', async () => {
       const context = new ClientContextStub();
+      const log = sinon.spy(context.logger, 'log');
       const operation = createOperationForTest({
         handle: operationHandleStub({ hasResultSet: true }),
         context,
@@ -896,6 +898,7 @@ describe('DBSQLOperation', () => {
       });
 
       expect((await operation.getResultMetadata()).hasResultSet).to.be.undefined;
+      expect(log.calledWithMatch(LogLevel.debug, 'Cannot decode the Arrow schema')).to.be.true;
     });
 
     it('is true for catalog operations, which never carry an Arrow schema', async () => {

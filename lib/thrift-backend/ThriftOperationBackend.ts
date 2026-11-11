@@ -491,8 +491,11 @@ export default class ThriftOperationBackend implements IOperationBackend {
       try {
         const schema = new MessageReader(arrowSchema).readSchema();
         value = schema ? schema.fields.length > 0 : undefined;
-      } catch {
-        value = undefined;
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        this.context
+          .getLogger()
+          .log(LogLevel.debug, `Cannot decode the Arrow schema of operation ${this.id}: ${message}`);
       }
       this.arrowSchemaHasFields = { arrowSchema, value };
     }
