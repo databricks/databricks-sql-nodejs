@@ -43,6 +43,7 @@ import { OperationStatus, OperationState } from '../contracts/OperationStatus';
 import { ResultMetadata, ResultFormat } from '../contracts/ResultMetadata';
 import IClientContext from '../contracts/IClientContext';
 import { LogLevel } from '../contracts/IDBSQLLogger';
+import { RowMode } from '../contracts/IDBSQLSession';
 import Status from '../dto/Status';
 import HiveDriverError from '../errors/HiveDriverError';
 import OperationStateError, { OperationStateErrorCode } from '../errors/OperationStateError';
@@ -167,6 +168,8 @@ export interface KernelOperationBackendOptions {
    * handle exposes one, else a fresh UUIDv4.
    */
   id?: string;
+  /** Row shape returned by `fetchChunk`; defaults to `'object'`. */
+  rowMode?: RowMode;
 }
 
 export default class KernelOperationBackend implements IOperationBackend {
@@ -202,6 +205,8 @@ export default class KernelOperationBackend implements IOperationBackend {
 
   private readonly lifecycle: KernelOperationLifecycleState = createLifecycleState();
 
+  private readonly rowMode?: RowMode;
+
   private resultSlicer?: ResultSlicer<any>;
 
   private resultsProvider?: KernelResultsProvider;
@@ -220,7 +225,14 @@ export default class KernelOperationBackend implements IOperationBackend {
   // synchronous terminal-state accessor, so the observed success is retained.
   private asyncSucceeded = false;
 
-  constructor({ asyncStatement, statement, cancellableExecution, context, id }: KernelOperationBackendOptions) {
+  constructor({
+    asyncStatement,
+    statement,
+    cancellableExecution,
+    context,
+    id,
+    rowMode,
+  }: KernelOperationBackendOptions) {
     // Exactly one of the three handle kinds must be supplied.
     const providedCount =
       (asyncStatement !== undefined ? 1 : 0) +
@@ -249,6 +261,7 @@ export default class KernelOperationBackend implements IOperationBackend {
         }
       : ((asyncStatement ?? statement) as KernelStatementHandle);
     this.context = context;
+    this.rowMode = rowMode;
     this._id =
       id ?? asyncStatement?.statementId ?? statement?.statementId ?? cancellableExecution?.statementId ?? uuidv4();
   }
@@ -819,6 +832,7 @@ export default class KernelOperationBackend implements IOperationBackend {
     const converter = new ArrowResultConverter(this.context, this.resultsProvider, metadata, {
       preserveBigNumericPrecision: this.context.getConfig().preserveBigNumericPrecision ?? false,
       disableRowMaterialization: this.context.getConfig().disableRowMaterialization ?? false,
+      rowMode: this.rowMode,
     });
     this.resultSlicer = new ResultSlicer(this.context, converter);
     return this.resultSlicer;

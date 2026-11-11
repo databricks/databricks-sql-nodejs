@@ -31,6 +31,8 @@ import { numberToInt64 as numberToInt64Impl } from './thrift-backend/ThriftSessi
 import { safeEmit } from './telemetry/telemetryUtils';
 // Declares `Symbol.asyncDispose` for the emitted typings of `[Symbol.asyncDispose]()` below
 import './contracts/asyncDispose';
+import { ResultMetadata } from './contracts/ResultMetadata';
+import { getSchemaColumns } from './result/utils';
 
 // Explicitly promisify a callback-style `pipeline` because `node:stream/promises` is not available in Node 14
 const pipeline = util.promisify(stream.pipeline);
@@ -93,6 +95,9 @@ export default class DBSQLSession implements IDBSQLSession {
    * const operation = await session.executeStatement(query);
    */
   public async executeStatement(statement: string, options: ExecuteStatementOptions = {}): Promise<IOperation> {
+    if (options.rowMode !== undefined && options.rowMode !== 'object' && options.rowMode !== 'array') {
+      throw new HiveDriverError(`Unsupported rowMode: ${options.rowMode}. Expected 'object' or 'array'.`);
+    }
     const opBackend = await this.runBackend(() => this.backend.executeStatement(statement, options));
     const operation = this.wrapOperation(opBackend);
 
@@ -109,13 +114,17 @@ export default class DBSQLSession implements IDBSQLSession {
         const allowedLocalPath = Array.isArray(options.stagingAllowedLocalPath)
           ? options.stagingAllowedLocalPath
           : [options.stagingAllowedLocalPath];
-        return this.handleStagingOperation(operation, allowedLocalPath);
+        return this.handleStagingOperation(operation, allowedLocalPath, metadata);
       }
     }
     return operation;
   }
 
-  private async handleStagingOperation(operation: IOperation, allowedLocalPath: Array<string>): Promise<IOperation> {
+  private async handleStagingOperation(
+    operation: IOperation,
+    allowedLocalPath: Array<string>,
+    metadata: ResultMetadata,
+  ): Promise<IOperation> {
     type StagingResponse = {
       presignedUrl: string;
       localFile?: string;
@@ -126,7 +135,15 @@ export default class DBSQLSession implements IDBSQLSession {
     if (rows.length !== 1) {
       throw new StagingError('Staging operation: expected only one row in result');
     }
-    const row = rows[0] as StagingResponse;
+    let row = rows[0] as StagingResponse;
+    // `rowMode: 'array'` returns positional rows; key them by column name.
+    if (Array.isArray(row)) {
+      const values: Array<unknown> = row;
+      row = getSchemaColumns(metadata.schema).reduce(
+        (result, column, i) => ({ ...result, [column.columnName]: values[i] }),
+        {} as StagingResponse,
+      );
+    }
 
     if (row.localFile !== undefined) {
       let allowOperation = false;

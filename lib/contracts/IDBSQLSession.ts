@@ -4,6 +4,15 @@ import Status from '../dto/Status';
 import InfoValue from '../dto/InfoValue';
 import { DBSQLParameter, DBSQLParameterValue } from '../DBSQLParameter';
 
+/**
+ * Shape of the rows returned by a statement's fetch methods:
+ * - `'object'` (default): each row is an object keyed by column name. Columns
+ *   that share a name (e.g. `SELECT a.id, b.id`) overwrite each other.
+ * - `'array'`: each row is an array of values in result-schema order, so every
+ *   column is kept. Use `getResultMetadata()` / `getSchema()` for column names.
+ */
+export type RowMode = 'object' | 'array';
+
 export type ExecuteStatementOptions = {
   /**
    * The number of seconds after which the query will time out on the server.
@@ -50,6 +59,11 @@ export type ExecuteStatementOptions = {
    * `query_tags` key). Ignored by the Thrift backend.
    */
   statementConf?: Record<string, string>;
+  /**
+   * Row shape returned by this statement's `fetchChunk` / `fetchAll` / iterators.
+   * Defaults to `'object'`; see {@link RowMode}.
+   */
+  rowMode?: RowMode;
 };
 
 export type TypeInfoRequest = {
