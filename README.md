@@ -51,6 +51,11 @@ client
   });
 ```
 
+## Documentation
+
+- [Getting started](docs/readme.md): connecting, authentication, parameters, and reading results.
+- [Troubleshooting](docs/troubleshooting.md): logging, common errors, proxies, TLS, and timeouts.
+
 ## Configuration
 
 See [CONNECTION_PARAMETERS.md](CONNECTION_PARAMETERS.md) for every connection,
