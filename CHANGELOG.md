@@ -1,6 +1,7 @@
 # Release History
 
 ## Unreleased
+
 - Honor `stagingAllowedLocalPath` for SQL PUT, GET, and REMOVE through the native backend and report transfer errors as `StagingError`. Requires matching native packages.
 
 ## Unreleased
