@@ -40,7 +40,7 @@ import {
   KernelStatement,
   KernelNativeAsyncStatement,
 } from './KernelNativeLoader';
-import { decodeNapiKernelError } from './KernelErrorMapping';
+import { decodeNapiKernelError, mapKernelErrorToJsError } from './KernelErrorMapping';
 import KernelOperationBackend from './KernelOperationBackend';
 import { buildKernelPositionalParams, buildKernelNamedParams } from './KernelPositionalParams';
 import { kernelServerInfoValue } from './KernelServerInfo';
@@ -398,6 +398,16 @@ export default class KernelSessionBackend implements ISessionBackend {
 
   public async getPrimaryKeys(request: PrimaryKeysRequest): Promise<IOperationBackend> {
     this.failIfClosed();
+    // napi types `table` as a required Rust `String`, so a missing value would
+    // otherwise fail with an opaque FFI conversion error. Use the Thrift
+    // server's message and SQLSTATE in the kernel's InvalidArgument shape.
+    if (request.tableName === undefined || request.tableName === null) {
+      throw mapKernelErrorToJsError({
+        code: 'InvalidArgument',
+        message: 'Invalid argument: tableName may not be null',
+        sqlstate: '42000',
+      });
+    }
     return this.runMetadata(() =>
       this.connection.getPrimaryKeys(request.catalogName, request.schemaName, request.tableName),
     );
