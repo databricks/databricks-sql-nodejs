@@ -868,6 +868,22 @@ describe('CloudFetchResultHandler', () => {
       expect(value?.batches).to.deep.eq([body]);
     });
 
+    it('should clamp a retriesTimeout that is too large for a timer instead of disabling the deadline', async () => {
+      const body = Buffer.concat([sampleArrowSchema, sampleArrowBatch]);
+      const url = await startServer((req, res) => {
+        res.end(body);
+      });
+      const handler = createHandler(url, { retriesTimeout: 30 * 24 * 60 * 60 * 1000 });
+      const setTimeoutSpy = sinon.spy(global, 'setTimeout');
+      try {
+        const { error } = await fetchWithin(handler, 1500);
+        expect(error).to.be.undefined;
+        expect(setTimeoutSpy.calledWith(sinon.match.func, 2 ** 31 - 1)).to.be.true;
+      } finally {
+        setTimeoutSpy.restore();
+      }
+    });
+
     it('should not enforce a deadline when retriesTimeout is not positive', async () => {
       const body = Buffer.concat([sampleArrowSchema, sampleArrowBatch]);
       const url = await startServer((req, res) => {

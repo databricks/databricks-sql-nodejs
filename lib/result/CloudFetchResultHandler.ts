@@ -17,7 +17,7 @@ import { safeEmit } from '../telemetry/telemetryUtils';
 // unchanged while the unhandled-rejection leak is eliminated.
 type SettledDownload = { ok: true; batch: ArrowBatch } | { ok: false; error: unknown };
 
-// Largest delay `setTimeout` accepts; anything longer would fire immediately.
+// Largest delay `setTimeout` accepts; longer values fire immediately, so they are clamped.
 const MAX_TIMER_DELAY_MS = 2 ** 31 - 1;
 
 export default class CloudFetchResultHandler implements IResultsProvider<ArrowBatch> {
@@ -160,7 +160,7 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
     // (headers or body never arrive) would block forever. Enforce it as a deadline over the
     // whole download - every attempt plus the backoff between them - and abort the in-flight
     // request when it expires (#520). Non-positive values keep the deadline off.
-    const deadlineMs = retriesTimeout > 0 && retriesTimeout <= MAX_TIMER_DELAY_MS ? retriesTimeout : undefined;
+    const deadlineMs = retriesTimeout > 0 ? Math.min(retriesTimeout, MAX_TIMER_DELAY_MS) : undefined;
     let controller: AbortController | undefined;
     let timeoutError: RetryError | undefined;
     let lastFailure: unknown;
