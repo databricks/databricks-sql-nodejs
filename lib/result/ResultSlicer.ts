@@ -18,7 +18,8 @@ export function concatChunks<T>(chunks: Array<Array<T>>): Array<T> {
     total += chunk.length;
   }
 
-  const result = new Array<T>(total);
+  // Larger initial allocations use V8's slow dictionary elements; grow sequentially instead.
+  const result = new Array<T>(Math.min(total, 2 ** 25));
   let offset = 0;
   for (const chunk of chunks) {
     for (let i = 0; i < chunk.length; i += 1) {
@@ -48,7 +49,8 @@ export default class ResultSlicer<T> implements IResultsProvider<Array<T>> {
   }
 
   private takeRemaining(maxCount: number): Array<T> {
-    const end = Math.min(this.remainingResults.length, this.remainingOffset + maxCount);
+    const count = Number.isNaN(maxCount) ? this.remainingCount : Math.max(0, Math.trunc(maxCount));
+    const end = Math.min(this.remainingResults.length, this.remainingOffset + count);
     const result = this.remainingResults.slice(this.remainingOffset, end);
     this.remainingOffset = end;
     if (this.remainingCount === 0) {
@@ -82,6 +84,9 @@ export default class ResultSlicer<T> implements IResultsProvider<Array<T>> {
     // First, use remaining items from the previous fetch
     if (this.remainingCount > 0) {
       const remaining = this.takeRemaining(options.limit);
+      if (this.remainingCount > 0) {
+        return remaining;
+      }
       result.push(remaining);
       resultsCount += remaining.length;
     }
@@ -98,9 +103,10 @@ export default class ResultSlicer<T> implements IResultsProvider<Array<T>> {
       const chunk = await this.source.fetchNext(options);
       const neededCount = options.limit - resultsCount;
       if (chunk.length > neededCount) {
-        result.push(chunk.slice(0, neededCount));
+        const taken = chunk.slice(0, neededCount);
+        result.push(taken);
         this.remainingResults = chunk;
-        this.remainingOffset = neededCount;
+        this.remainingOffset = taken.length;
         resultsCount += neededCount;
       } else {
         result.push(chunk);

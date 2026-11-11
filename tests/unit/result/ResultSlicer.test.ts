@@ -97,6 +97,75 @@ describe('ResultSlicer', () => {
     expect(await slicer.hasMore()).to.be.false;
   });
 
+  for (const limit of [-1, -1.5, -Infinity]) {
+    it(`should keep leftovers when the requested limit is ${limit}`, async () => {
+      const provider = new ResultsProviderStub([[1, 2, 3, 4, 5, 6]], []);
+      const slicer = new ResultSlicer(new ClientContextStub(), provider);
+
+      expect(await slicer.fetchNext({ limit: 3 })).to.deep.eq([1, 2, 3]);
+      expect(await slicer.fetchNext({ limit })).to.deep.eq([]);
+      expect(await slicer.hasMore()).to.be.true;
+      expect(await slicer.fetchNext({ limit: 3 })).to.deep.eq([4, 5, 6]);
+      expect(await slicer.hasMore()).to.be.false;
+    });
+  }
+
+  it('should return all leftovers for a NaN limit without fetching from the source', async () => {
+    const nextRows = [7, 8, 9];
+    const provider = new ResultsProviderStub([[1, 2, 3, 4, 5, 6], nextRows], []);
+    const fetchNext = sinon.spy(provider, 'fetchNext');
+    const slicer = new ResultSlicer(new ClientContextStub(), provider);
+
+    expect(await slicer.fetchNext({ limit: 3 })).to.deep.eq([1, 2, 3]);
+    expect(await slicer.fetchNext({ limit: NaN })).to.deep.eq([4, 5, 6]);
+    expect(fetchNext.callCount).to.eq(1);
+    expect(await slicer.hasMore()).to.be.true;
+    expect(await slicer.fetchNext({ limit: 3 })).to.eq(nextRows);
+    expect(await slicer.hasMore()).to.be.false;
+  });
+
+  it('should not fetch from the source for a NaN limit without leftovers', async () => {
+    const provider = new ResultsProviderStub([[1, 2, 3]], []);
+    const fetchNext = sinon.spy(provider, 'fetchNext');
+    const slicer = new ResultSlicer(new ClientContextStub(), provider);
+
+    expect(await slicer.fetchNext({ limit: NaN })).to.deep.eq([]);
+    expect(fetchNext.called).to.be.false;
+    expect(await slicer.hasMore()).to.be.true;
+    expect(await slicer.fetchNext({ limit: 3 })).to.deep.eq([1, 2, 3]);
+  });
+
+  for (const limit of [3, 3.5]) {
+    it(`should truncate fractional counts after fetching with limit ${limit}`, async () => {
+      const provider = new ResultsProviderStub([[1, 2, 3, 4, 5, 6]], []);
+      const slicer = new ResultSlicer(new ClientContextStub(), provider);
+
+      expect(await slicer.fetchNext({ limit })).to.deep.eq([1, 2, 3]);
+      expect(await slicer.fetchNext({ limit: 1.5 })).to.deep.eq([4]);
+      expect(await slicer.fetchNext({ limit: 1.5 })).to.deep.eq([5]);
+      expect(await slicer.fetchNext({ limit: 3 })).to.deep.eq([6]);
+      expect(await slicer.hasMore()).to.be.false;
+    });
+  }
+
+  it('should exhaust leftovers before fetching more rows with a fractional limit', async () => {
+    const provider = new ResultsProviderStub(
+      [
+        [1, 2, 3, 4, 5, 6],
+        [7, 8, 9],
+      ],
+      [],
+    );
+    const fetchNext = sinon.spy(provider, 'fetchNext');
+    const slicer = new ResultSlicer(new ClientContextStub(), provider);
+
+    expect(await slicer.fetchNext({ limit: 3 })).to.deep.eq([1, 2, 3]);
+    expect(await slicer.fetchNext({ limit: 1.5 })).to.deep.eq([4]);
+    expect(fetchNext.callCount).to.eq(1);
+    expect(await slicer.fetchNext({ limit: 10 })).to.deep.eq([5, 6, 7, 8, 9]);
+    expect(await slicer.hasMore()).to.be.false;
+  });
+
   it('should return chunks of requested size', async () => {
     const provider = new ResultsProviderStub(
       [
