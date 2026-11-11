@@ -51,6 +51,27 @@ client
   });
 ```
 
+### TypeScript
+
+Import the driver's types from the package root. This works with every `moduleResolution` setting, including
+`node16`/`nodenext` in ES modules, where deep `@databricks/sql/dist/...` imports don't resolve.
+
+```typescript
+import { DBSQLClient } from '@databricks/sql';
+import type { IDBSQLSession, IOperation } from '@databricks/sql';
+
+const client = new DBSQLClient();
+await client.connect({
+  host: '********.databricks.com',
+  path: '/sql/2.0/warehouses/****************',
+  token: 'dapi********************************',
+});
+
+const session: IDBSQLSession = await client.openSession();
+const operation: IOperation = await session.executeStatement('SELECT "Hello, World!"');
+console.table(await operation.fetchAll());
+```
+
 ## Configuration
 
 See [CONNECTION_PARAMETERS.md](CONNECTION_PARAMETERS.md) for every connection,

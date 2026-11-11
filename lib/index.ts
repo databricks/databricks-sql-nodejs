@@ -20,8 +20,44 @@ import HttpConnection from './connection/connections/HttpConnection';
 import { formatProgress } from './utils';
 import { LogLevel } from './contracts/IDBSQLLogger';
 
-// Re-export types for TypeScript users
+// Re-export types for TypeScript users. Deep `dist/...` imports don't resolve under
+// `moduleResolution: node16/nodenext` in ES modules, so public contracts must be importable from the root.
 export type { default as ITokenProvider } from './connection/auth/tokenProvider/ITokenProvider';
+export type {
+  default as IDBSQLClient,
+  ClientOptions,
+  ConnectionOptions,
+  OpenSessionRequest,
+} from './contracts/IDBSQLClient';
+export type {
+  default as IDBSQLSession,
+  ExecuteStatementOptions,
+  TypeInfoRequest,
+  CatalogsRequest,
+  SchemasRequest,
+  TablesRequest,
+  TableTypesRequest,
+  ColumnsRequest,
+  FunctionsRequest,
+  PrimaryKeysRequest,
+  CrossReferenceRequest,
+} from './contracts/IDBSQLSession';
+export type {
+  default as IOperation,
+  OperationStatusCallback,
+  WaitUntilReadyOptions,
+  FinishedOptions,
+  FetchOptions,
+  GetSchemaOptions,
+  IteratorOptions,
+  IOperationChunksIterator,
+  IOperationRowsIterator,
+  NodeStreamOptions,
+} from './contracts/IOperation';
+export type { default as IDBSQLLogger, LoggerOptions } from './contracts/IDBSQLLogger';
+export type { ResultMetadata } from './contracts/ResultMetadata';
+export type { DBSQLParameterValue } from './DBSQLParameter';
+export { ResultFormat } from './contracts/ResultMetadata';
 
 export { LOG_FILE_UNAVAILABLE_WARNING_CODE } from './DBSQLLogger';
 export { CircuitBreakerOpenError, CIRCUIT_BREAKER_OPEN_CODE } from './telemetry/CircuitBreaker';
