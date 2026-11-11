@@ -14,8 +14,9 @@
 
 import { expect } from 'chai';
 import sinon from 'sinon';
-import { tableFromArrays, tableToIPC } from 'apache-arrow';
+import { tableFromArrays, tableFromIPC, tableToIPC } from 'apache-arrow';
 import KernelResultsProvider, { KernelFetchHandle } from '../../../lib/kernel/KernelResultsProvider';
+import { LogLevel } from '../../../lib/contracts/IDBSQLLogger';
 
 type FetchResult = Awaited<ReturnType<KernelFetchHandle['fetchNextBatch']>>;
 
@@ -41,6 +42,97 @@ function nextTurn(): Promise<void> {
 
 describe('KernelResultsProvider', () => {
   const options = { limit: 1000 };
+
+  for (const prefetch of [false, true]) {
+    for (const fetchFirst of [false, true]) {
+      it(`preserves every batch with concurrent hasMore/fetchNext (prefetch=${prefetch}, fetchFirst=${fetchFirst})`, async () => {
+        const first = deferred<FetchResult>();
+        const fetchNextBatch = sinon.stub<[], Promise<FetchResult>>().resolves(null);
+        fetchNextBatch.onFirstCall().returns(first.promise);
+        [2, 3, 4].forEach((row, index) => fetchNextBatch.onCall(index + 1).resolves(makeBatch([row])));
+        const provider = new KernelResultsProvider({ fetchNextBatch }, prefetch);
+        const calls = fetchFirst
+          ? [provider.fetchNext(options), provider.hasMore()]
+          : [provider.hasMore(), provider.fetchNext(options)];
+        first.resolve(makeBatch([1]));
+        const results = await Promise.all(calls);
+        const batches = [results[fetchFirst ? 0 : 1] as Awaited<ReturnType<typeof provider.fetchNext>>];
+        while (await provider.hasMore()) {
+          batches.push(await provider.fetchNext(options));
+        }
+        const rows = batches.flatMap((batch) => Array.from(tableFromIPC(batch.batches[0]).getChild('value')!));
+        expect(rows).to.deep.equal([1, 2, 3, 4]);
+        expect(fetchNextBatch.callCount).to.equal(5);
+      });
+    }
+  }
+
+  it('delivers the current batch before surfacing a synchronous lookahead failure', async () => {
+    const expected = new Error('synchronous fetch failure');
+    const fetchNextBatch = sinon.stub<[], Promise<FetchResult>>().throws(expected);
+    fetchNextBatch.onFirstCall().resolves(makeBatch([1]));
+    const provider = new KernelResultsProvider({ fetchNextBatch }, true);
+
+    expect((await provider.fetchNext(options)).rowCount).to.equal(1);
+    const error = await provider.fetchNext(options).then(
+      () => expect.fail('Expected the lookahead error'),
+      (reason: unknown) => reason,
+    );
+    expect(error).to.equal(expected);
+    expect(fetchNextBatch.callCount).to.equal(2);
+  });
+
+  it('shares a synchronous initial failure between concurrent callers', async () => {
+    const expected = new Error('synchronous initial failure');
+    const fetchNextBatch = sinon.stub<[], Promise<FetchResult>>().throws(expected);
+    const provider = new KernelResultsProvider({ fetchNextBatch }, true);
+    const results = await Promise.allSettled([provider.hasMore(), provider.fetchNext(options)]);
+    expect(results).to.deep.equal([
+      { status: 'rejected', reason: expected },
+      { status: 'rejected', reason: expected },
+    ]);
+    expect(fetchNextBatch.calledOnce).to.be.true;
+  });
+
+  for (const rejectBeforeDispose of [false, true]) {
+    it(`discards a failed prefetch and logs it once (already settled=${rejectBeforeDispose})`, async () => {
+      const pending = deferred<FetchResult>();
+      const fetchNextBatch = sinon.stub<[], Promise<FetchResult>>().returns(pending.promise);
+      fetchNextBatch.onFirstCall().resolves(makeBatch([1]));
+      const logger = { log: sinon.spy() };
+      const provider = new KernelResultsProvider({ fetchNextBatch }, true, logger);
+      await provider.hasMore();
+      if (rejectBeforeDispose) {
+        pending.reject(new Error('abandoned fetch failed'));
+        await nextTurn();
+      }
+
+      provider.dispose();
+      provider.dispose();
+      expect(await provider.hasMore()).to.be.false;
+      expect(await provider.fetchNext(options)).to.deep.equal({ batches: [], rowCount: 0 });
+      if (!rejectBeforeDispose) {
+        pending.reject(new Error('abandoned fetch failed'));
+      }
+      await nextTurn();
+      expect(logger.log.calledOnceWithExactly(LogLevel.debug, 'Discarded a failed kernel result fetch after disposal'))
+        .to.be.true;
+      expect(fetchNextBatch.callCount).to.equal(2);
+    });
+  }
+
+  it('discards an initial fetch that finishes after disposal without starting a lookahead', async () => {
+    const pending = deferred<FetchResult>();
+    const fetchNextBatch = sinon.stub<[], Promise<FetchResult>>().returns(pending.promise);
+    const provider = new KernelResultsProvider({ fetchNextBatch }, true);
+    const result = provider.fetchNext(options);
+    provider.dispose();
+    pending.resolve(makeBatch([1]));
+
+    expect(await result).to.deep.equal({ batches: [], rowCount: 0 });
+    expect(await provider.hasMore()).to.be.false;
+    expect(fetchNextBatch.calledOnce).to.be.true;
+  });
 
   it('starts the next fetch before the consumer receives the current batch', async () => {
     const first = deferred<FetchResult>();

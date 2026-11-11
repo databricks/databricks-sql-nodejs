@@ -42,13 +42,16 @@ import {
 import KernelOperationBackend from '../../../lib/kernel/KernelOperationBackend';
 import { TTypeId } from '../../../thrift/TCLIService_types';
 import ClientContextStub from '../.stubs/ClientContextStub';
+import { LogLevel } from '../../../lib/contracts/IDBSQLLogger';
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>((resolvePromise) => {
+  let reject!: (error: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
     resolve = resolvePromise;
+    reject = rejectPromise;
   });
-  return { promise, resolve };
+  return { promise, resolve, reject };
 }
 
 function nextTurn(): Promise<void> {
@@ -435,6 +438,7 @@ describe('KernelOperationBackend — M0 datatype round-trip via napi → ArrowRe
           }
         });
         const context = new ClientContextStub();
+        const log = sinon.spy(context.logger, 'log');
         const backend = new KernelOperationBackend(
           asyncHandle ? { asyncStatement, context } : { statement: resultHandle, context },
         );
@@ -443,7 +447,6 @@ describe('KernelOperationBackend — M0 datatype round-trip via napi → ArrowRe
           expect(await backend.fetchChunk({ limit: 1 })).to.deep.equal([{ x: 1 }]);
           expect(fetchNextBatch.callCount).to.equal(asyncHandle ? 3 : 2);
           expect(fetching).to.equal(asyncHandle);
-
           let completed = false;
           completion = backend[method]().then(() => {
             completed = true;
@@ -452,6 +455,14 @@ describe('KernelOperationBackend — M0 datatype round-trip via napi → ArrowRe
           expect(completed).to.be.true;
           expect(lifecycleCall.calledOnce).to.be.true;
           expect(fetching).to.equal(asyncHandle);
+          if (asyncHandle) {
+            pending.reject(new Error('abandoned prefetch failed'));
+          }
+          await nextTurn();
+          expect(log.calledWith(LogLevel.debug, 'Discarded a failed kernel result fetch after disposal')).to.equal(
+            asyncHandle,
+          );
+          expect(fetchNextBatch.callCount).to.equal(asyncHandle ? 3 : 2);
         } finally {
           pending.resolve(null);
           await completion;
@@ -484,6 +495,7 @@ describe('KernelOperationBackend — M0 datatype round-trip via napi → ArrowRe
         }
       });
       const context = new ClientContextStub();
+      const log = sinon.spy(context.logger, 'log');
       const backend = new KernelOperationBackend(
         asyncHandle ? { asyncStatement, context } : { statement: resultHandle, context },
       );
@@ -500,6 +512,13 @@ describe('KernelOperationBackend — M0 datatype round-trip via napi → ArrowRe
         expect(close.calledOnce).to.be.true;
         expect(fetchNextBatch.callCount).to.equal(asyncHandle ? 2 : 1);
         expect(fetching).to.equal(asyncHandle);
+        if (asyncHandle) {
+          pending.reject(new Error('abandoned prefetch failed'));
+        }
+        await nextTurn();
+        expect(log.calledWith(LogLevel.debug, 'Discarded a failed kernel result fetch after disposal')).to.equal(
+          asyncHandle,
+        );
       } finally {
         decode.restore();
         pending.resolve(null);

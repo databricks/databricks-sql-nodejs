@@ -309,7 +309,7 @@ export default class KernelOperationBackend implements IOperationBackend {
       // wedged, so nothing downstream forces another close). We still don't
       // mask the original fetch error, but log the close failure at warn so
       // the leak is diagnosable rather than completely invisible.
-      await kernelClose(this.lifecycle, this.lifecycleHandle, this.context, this._id).catch((closeErr) => {
+      await this.close().catch((closeErr) => {
         const cause = closeErr instanceof Error ? closeErr.message : String(closeErr);
         this.context
           .getLogger()
@@ -443,10 +443,12 @@ export default class KernelOperationBackend implements IOperationBackend {
   }
 
   public async cancel(): Promise<Status> {
+    this.resultsProvider?.dispose();
     return kernelCancel(this.lifecycle, this.lifecycleHandle, this.context, this._id);
   }
 
   public async close(): Promise<Status> {
+    this.resultsProvider?.dispose();
     return kernelClose(this.lifecycle, this.lifecycleHandle, this.context, this._id);
   }
 
@@ -706,7 +708,7 @@ export default class KernelOperationBackend implements IOperationBackend {
    * original error; warn-logs a close failure so the leak is diagnosable.
    */
   private async bestEffortClose(): Promise<void> {
-    await kernelClose(this.lifecycle, this.lifecycleHandle, this.context, this._id).catch((closeErr) => {
+    await this.close().catch((closeErr) => {
       const cause = closeErr instanceof Error ? closeErr.message : String(closeErr);
       this.context
         .getLogger()
@@ -779,8 +781,16 @@ export default class KernelOperationBackend implements IOperationBackend {
     }
     const metadata = await this.getResultMetadata();
     const handle = await this.getFetchHandle();
+    failIfNotActive(this.lifecycle);
+    if (this.resultSlicer) {
+      return this.resultSlicer;
+    }
     // Only AsyncResultHandle has a fetch lock separate from close/cancel.
-    this.resultsProvider = new KernelResultsProvider(handle, this.asyncStatement !== undefined);
+    this.resultsProvider = new KernelResultsProvider(
+      handle,
+      this.asyncStatement !== undefined,
+      this.context.getLogger(),
+    );
     // DECIMAL/BIGINT precision preservation is opt-in via the
     // `preserveBigNumericPrecision` connection option (default off). The kernel
     // always delivers native Arrow Decimal128 / Int64, so when enabled the

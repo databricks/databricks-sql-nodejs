@@ -14,6 +14,7 @@
 
 import IResultsProvider, { ResultsProviderFetchNextOptions } from '../result/IResultsProvider';
 import { ArrowBatch } from '../result/utils';
+import IDBSQLLogger, { LogLevel } from '../contracts/IDBSQLLogger';
 import { countRowsInIpc, patchIpcBytes } from './KernelArrowIpc';
 
 /**
@@ -63,9 +64,33 @@ export default class KernelResultsProvider implements IResultsProvider<ArrowBatc
 
   private inflight?: Promise<Settled>;
 
-  constructor(statement: KernelFetchHandle, prefetchEnabled = false) {
+  private primePromise?: Promise<void>;
+
+  private disposed = false;
+
+  private readonly logger?: IDBSQLLogger;
+
+  constructor(statement: KernelFetchHandle, prefetchEnabled = false, logger?: IDBSQLLogger) {
     this.statement = statement;
     this.prefetchEnabled = prefetchEnabled;
+    this.logger = logger;
+  }
+
+  public dispose(): void {
+    if (this.disposed) {
+      return;
+    }
+    this.disposed = true;
+    this.exhausted = true;
+    this.prefetched = undefined;
+    // The binding cannot abort an AsyncResultHandle fetch already in progress.
+    const abandoned = this.inflight;
+    this.inflight = undefined;
+    abandoned?.then((settled) => {
+      if (!settled.ok) {
+        this.logger?.log(LogLevel.debug, 'Discarded a failed kernel result fetch after disposal');
+      }
+    });
   }
 
   public async hasMore(): Promise<boolean> {
@@ -94,10 +119,14 @@ export default class KernelResultsProvider implements IResultsProvider<ArrowBatc
   private startFetch(): void {
     if (this.inflight === undefined && !this.exhausted) {
       // Reflect errors so an abandoned prefetch cannot reject unhandled.
-      this.inflight = this.statement.fetchNextBatch().then(
-        (value): Settled => ({ ok: true, value }),
-        (error): Settled => ({ ok: false, error }),
-      );
+      try {
+        this.inflight = this.statement.fetchNextBatch().then(
+          (value): Settled => ({ ok: true, value }),
+          (error): Settled => ({ ok: false, error }),
+        );
+      } catch (error) {
+        this.inflight = Promise.resolve({ ok: false, error });
+      }
     }
   }
 
@@ -105,7 +134,16 @@ export default class KernelResultsProvider implements IResultsProvider<ArrowBatc
   // or mark the stream exhausted. Used by both `hasMore` and `fetchNext`
   // to keep one batch buffered ahead so `hasMore` is accurate without
   // re-asking the kernel.
-  private async prime(): Promise<void> {
+  private prime(): Promise<void> {
+    if (!this.primePromise) {
+      this.primePromise = this.primeNext().finally(() => {
+        this.primePromise = undefined;
+      });
+    }
+    return this.primePromise;
+  }
+
+  private async primeNext(): Promise<void> {
     // Loop rather than self-recurse: a long run of empty batches drains
     // iteratively toward the null sentinel without building a deep promise
     // chain.
@@ -114,6 +152,9 @@ export default class KernelResultsProvider implements IResultsProvider<ArrowBatc
       // eslint-disable-next-line no-await-in-loop
       const settled = await this.inflight!;
       this.inflight = undefined;
+      if (this.disposed) {
+        return;
+      }
       if (!settled.ok) {
         throw settled.error;
       }
