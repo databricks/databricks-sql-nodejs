@@ -836,10 +836,12 @@ function buildKernelHostName(options: ConnectionOptions): string {
   if (options.https !== false) {
     return options.host;
   }
+  // Strip a trailing `/` like the Thrift URL builder does.
+  const host = options.host.replace(/\/$/, '');
   // `name:port` or `[ipv6]:port`; a bare IPv6 literal like `::1` has no port.
-  const hasPort = /^(\[[^\]]+\]|[^:]+):\d+$/.test(options.host);
+  const hasPort = /^(\[[^\]]+\]|[^:]+):\d+$/.test(host);
   const port = options.port && !hasPort ? `:${options.port}` : '';
-  return `http://${options.host}${port}`;
+  return `http://${host}${port}`;
 }
 
 export function buildKernelConnectionOptions(options: ConnectionOptions): KernelNativeConnectionOptions {

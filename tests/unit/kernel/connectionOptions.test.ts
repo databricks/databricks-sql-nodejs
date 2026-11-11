@@ -92,6 +92,15 @@ describe('KernelAuth connection options — https transport', () => {
     );
   });
 
+  it('strips a trailing slash from host before adding the port (matching Thrift)', () => {
+    expect(buildKernelConnectionOptions(opts({ host: 'localhost/', port: 3015, https: false })).hostName).to.equal(
+      'http://localhost:3015',
+    );
+    expect(buildKernelConnectionOptions(opts({ host: 'localhost:3015/', port: 3015, https: false })).hostName).to.equal(
+      'http://localhost:3015',
+    );
+  });
+
   it('does not mistake an IPv6 literal for an embedded port', () => {
     expect(buildKernelConnectionOptions(opts({ host: '[::1]', port: 3015, https: false })).hostName).to.equal(
       'http://[::1]:3015',
