@@ -876,6 +876,17 @@ describe('DBSQLOperation', () => {
       expect((await operation.getResultMetadata()).hasResultSet).to.be.undefined;
     });
 
+    it('is false when the server reports no result set, even without an Arrow schema', async () => {
+      const context = new ClientContextStub();
+      const operation = createOperationForTest({
+        handle: operationHandleStub({ hasResultSet: false }),
+        context,
+        directResults: directResults(),
+      });
+
+      expect((await operation.getResultMetadata()).hasResultSet).to.be.false;
+    });
+
     it('is undefined when the Arrow schema cannot be decoded', async () => {
       const context = new ClientContextStub();
       const operation = createOperationForTest({

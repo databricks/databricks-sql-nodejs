@@ -468,7 +468,7 @@ export default class ThriftOperationBackend implements IOperationBackend {
     };
   }
 
-  // The server sets the handle's `hasResultSet` even for DDL, and gives it a
+  // Warehouses set the handle's `hasResultSet` even for DDL and give it a
   // placeholder `Result` column in `schema`; only the Arrow schema has no fields.
   // Catalog operations always return a result set.
   private resultSetPresence(arrowSchema?: Buffer): boolean | undefined {
@@ -479,6 +479,9 @@ export default class ThriftOperationBackend implements IOperationBackend {
       operationType !== TOperationType.UNKNOWN
     ) {
       return true;
+    }
+    if (this.operationHandle.hasResultSet === false) {
+      return false;
     }
     if (!arrowSchema) {
       return undefined;
