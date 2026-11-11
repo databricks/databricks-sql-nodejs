@@ -279,8 +279,7 @@ export default class ArrowResultConverter implements IResultsProvider<Array<any>
       const batch = this.prefetchedRecordBatch;
       this.prefetchedRecordBatch = undefined;
       // Get table rows, but not more than remaining count. When materialization
-      // is disabled, skip `toArray()`/`getRows()` and return `null` placeholders
-      // (filled, not sparse, so `fetchAll`'s `.flat()` keeps the count).
+      // is disabled, skip `toArray()`/`getRows()` and return dense `null` placeholders.
       const batchRows = Math.min(batch.numRows, this.remainingRows);
       let result: Array<any>;
       if (this.disableRowMaterialization) {

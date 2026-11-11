@@ -1,11 +1,102 @@
 import { expect } from 'chai';
 import sinon, { SinonSpy } from 'sinon';
-import ResultSlicer from '../../../lib/result/ResultSlicer';
+import ResultSlicer, { concatChunks } from '../../../lib/result/ResultSlicer';
 import ResultsProviderStub from '../.stubs/ResultsProviderStub';
 
 import ClientContextStub from '../.stubs/ClientContextStub';
 
 describe('ResultSlicer', () => {
+  it('should carry leftovers across several calls without mutating the source batch', async () => {
+    const rows = Array.from({ length: 250 }, (_, index) => index);
+    Object.freeze(rows);
+    const provider = new ResultsProviderStub([rows], []);
+    const fetchNext = sinon.spy(provider, 'fetchNext');
+    const slicer = new ResultSlicer(new ClientContextStub(), provider);
+
+    expect(await slicer.fetchNext({ limit: 100 })).to.deep.eq(rows.slice(0, 100));
+    expect(await provider.hasMore()).to.be.false;
+    expect(await slicer.hasMore()).to.be.true;
+
+    expect(await slicer.fetchNext({ limit: 100 })).to.deep.eq(rows.slice(100, 200));
+    expect(await slicer.hasMore()).to.be.true;
+
+    expect(await slicer.fetchNext({ limit: 100 })).to.deep.eq(rows.slice(200));
+    expect(await slicer.hasMore()).to.be.false;
+    expect(fetchNext.callCount).to.eq(1);
+  });
+
+  it('should join many small batches into one chunk', async () => {
+    const batches = Array.from({ length: 100 }, (_, index) => [index * 2, index * 2 + 1]);
+    const provider = new ResultsProviderStub(batches, []);
+    const slicer = new ResultSlicer(new ClientContextStub(), provider);
+
+    expect(await slicer.fetchNext({ limit: 200 })).to.deep.eq(Array.from({ length: 200 }, (_, index) => index));
+    expect(await slicer.hasMore()).to.be.false;
+  });
+
+  it('should return an exact-fit single batch as-is', async () => {
+    const rows = [1, 2, 3];
+    const provider = new ResultsProviderStub([rows], []);
+    const slicer = new ResultSlicer(new ClientContextStub(), provider);
+
+    expect(await slicer.fetchNext({ limit: 3 })).to.eq(rows);
+    expect(await slicer.hasMore()).to.be.false;
+    expect(await slicer.fetchNext({ limit: 3 })).to.deep.eq([]);
+  });
+
+  it('should return the partial leftover before proxying unbuffered fetches', async () => {
+    const rows = Array.from({ length: 250 }, (_, index) => index);
+    const nextRows = [250, 251, 252];
+    const provider = new ResultsProviderStub([rows, nextRows], []);
+    const fetchNext = sinon.spy(provider, 'fetchNext');
+    const slicer = new ResultSlicer(new ClientContextStub(), provider);
+
+    await slicer.fetchNext({ limit: 100 });
+    await slicer.fetchNext({ limit: 100 });
+
+    expect(await slicer.fetchNext({ limit: 10, disableBuffering: true })).to.deep.eq(rows.slice(200));
+    expect(fetchNext.callCount).to.eq(1);
+    expect(await slicer.hasMore()).to.be.true;
+
+    const options = { limit: 10, disableBuffering: true };
+    expect(await slicer.fetchNext(options)).to.eq(nextRows);
+    expect(fetchNext.callCount).to.eq(2);
+    expect(fetchNext.lastCall.args).to.deep.eq([options]);
+    expect(await slicer.hasMore()).to.be.false;
+
+    expect(await slicer.fetchNext({ limit: 100 })).to.deep.eq([]);
+  });
+
+  it('should skip empty batches while buffering', async () => {
+    const provider = new ResultsProviderStub([[], [1], [], [2, 3], []], []);
+    const slicer = new ResultSlicer(new ClientContextStub(), provider);
+
+    expect(await slicer.fetchNext({ limit: 2 })).to.deep.eq([1, 2]);
+    expect(await slicer.hasMore()).to.be.true;
+    expect(await slicer.fetchNext({ limit: 2 })).to.deep.eq([3]);
+    expect(await slicer.hasMore()).to.be.false;
+  });
+
+  it('should return an empty chunk when all batches are empty', async () => {
+    const provider = new ResultsProviderStub([[], []], []);
+    const slicer = new ResultSlicer(new ClientContextStub(), provider);
+
+    expect(await slicer.fetchNext({ limit: 100 })).to.deep.eq([]);
+    expect(await slicer.hasMore()).to.be.false;
+  });
+
+  it('should keep leftovers when the requested limit is zero', async () => {
+    const provider = new ResultsProviderStub([[1, 2, 3]], []);
+    const slicer = new ResultSlicer(new ClientContextStub(), provider);
+
+    expect(await slicer.fetchNext({ limit: 0 })).to.deep.eq([]);
+    expect(await slicer.fetchNext({ limit: 1 })).to.deep.eq([1]);
+    expect(await slicer.fetchNext({ limit: 0 })).to.deep.eq([]);
+    expect(await slicer.hasMore()).to.be.true;
+    expect(await slicer.fetchNext({ limit: 2 })).to.deep.eq([2, 3]);
+    expect(await slicer.hasMore()).to.be.false;
+  });
+
   it('should return chunks of requested size', async () => {
     const provider = new ResultsProviderStub(
       [
@@ -86,5 +177,21 @@ describe('ResultSlicer', () => {
     const chunk5 = await slicer.fetchNext({ limit: 4 });
     expect(chunk5).to.deep.eq([34, 35]);
     expect(await slicer.hasMore()).to.be.false;
+  });
+});
+
+describe('concatChunks', () => {
+  it('should return an empty array when there are no chunks', () => {
+    expect(concatChunks([])).to.deep.eq([]);
+  });
+
+  it('should preserve row values and references across chunks', () => {
+    const row = { value: 1 };
+    const arrayRow = [2, 3];
+    const result = concatChunks<unknown>([[], [row, null], [], [arrayRow, undefined], []]);
+
+    expect(result).to.deep.eq([row, null, arrayRow, undefined]);
+    expect(result[0]).to.eq(row);
+    expect(result[2]).to.eq(arrayRow);
   });
 });
