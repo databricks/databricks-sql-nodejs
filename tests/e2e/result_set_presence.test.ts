@@ -65,6 +65,8 @@ backends.forEach(({ name, useKernel, skip }) => {
       }
     });
 
+    afterEach(() => sinon.restore());
+
     it('is false for DDL and true for an empty SELECT', async () => {
       expect(await hasResultSet(session, `CREATE TABLE IF NOT EXISTS ${table} (col1 INT)`)).to.be.false;
       expect(await hasResultSet(session, `SELECT 'sample' AS Result WHERE 1 = 0`)).to.be.true;
@@ -90,7 +92,6 @@ backends.forEach(({ name, useKernel, skip }) => {
         } finally {
           await columnar.session.close();
           await columnar.client.close();
-          sinon.restore();
         }
       });
     }
