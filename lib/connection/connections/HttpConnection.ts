@@ -13,6 +13,7 @@ import HiveDriverError from '../../errors/HiveDriverError';
 import ThriftHttpConnection from './ThriftHttpConnection';
 import IRetryPolicy from '../contracts/IRetryPolicy';
 import HttpRetryPolicy from './HttpRetryPolicy';
+import UnsentRequestRetryPolicy from './UnsentRequestRetryPolicy';
 
 // Set by the driver, auth provider or Thrift transport. node-fetch merges
 // same-named headers case-insensitively into one value, so a caller copy
@@ -184,6 +185,7 @@ export default class HttpConnection implements IConnectionProvider {
           transport: thrift.TBufferedTransport,
           protocol: thrift.TBinaryProtocol,
           getRetryPolicy: () => this.getRetryPolicy(),
+          getUnsentRequestRetryPolicy: async () => new UnsentRequestRetryPolicy(this.context),
         },
         {
           agent,
