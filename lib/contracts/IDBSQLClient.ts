@@ -82,6 +82,20 @@ export type ConnectionOptions = {
   escapeMetadataCatalogName?: boolean;
 
   /**
+   * Connect to `host` over HTTPS (`true`, the default) or plain HTTP (`false`).
+   *
+   * Plain HTTP is unencrypted: SQL, results, and any credentials the driver
+   * sends can be read and modified on the network. Use `false` only for a
+   * trusted local or private link, such as a reverse proxy that forwards to
+   * Databricks over HTTPS. With `false`, `port` defaults to 80, the TLS options
+   * have no effect, and `clientCert`/`clientKey` are rejected.
+   *
+   * On the Thrift backend this applies to the SQL connection only; OAuth, token
+   * federation, telemetry, and feature-flag requests still use HTTPS.
+   */
+  https?: boolean;
+
+  /**
    * Verify the server's TLS certificate on the primary Thrift transport.
    * Secure-by-default: omitting this leaves full chain + hostname verification
    * enabled (`true`), matching Node's `https` default, the JDBC/ODBC drivers,

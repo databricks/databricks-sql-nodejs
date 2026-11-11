@@ -65,26 +65,16 @@ describe('Proxy', () => {
     try {
       const client = new DBSQLClient();
 
-      // Our proxy mock is HTTP -> HTTPS, but DBSQLClient is hard-coded to use HTTPS.
-      // Here we override default behavior to make DBSQLClient work with HTTP proxy
-      // @ts-expect-error TS2341: Property getConnectionOptions is private
-      const originalGetConnectionOptions = client.getConnectionOptions;
-      // @ts-expect-error TS2341: Property getConnectionOptions is private
-      client.getConnectionOptions = (...args) => {
-        const result = originalGetConnectionOptions.apply(client, args);
-        result.https = false;
-        result.port = 80;
-        return result;
-      };
-
       const clientConfig = client.getConfig();
       sinon.stub(client, 'getConfig').returns(clientConfig);
 
+      // Our proxy mock is HTTP -> HTTPS, so the client speaks plain HTTP to it.
       const connection = await client.connect({
         host: config.host,
         path: config.path,
         token: config.token,
         proxy: proxy.config,
+        https: false,
       });
 
       await connection.openSession({

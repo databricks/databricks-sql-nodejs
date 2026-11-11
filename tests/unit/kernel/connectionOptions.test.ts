@@ -63,6 +63,27 @@ describe('KernelAuth connection options — geospatial result representation', (
   });
 });
 
+describe('KernelAuth connection options — https transport', () => {
+  it('forwards host unchanged by default (kernel prepends https://)', () => {
+    expect(buildKernelConnectionOptions(opts({})).hostName).to.equal('h.databricks.com');
+    expect(buildKernelConnectionOptions(opts({ https: true })).hostName).to.equal('h.databricks.com');
+  });
+
+  it('selects plain HTTP via an explicit http:// host when https is false', () => {
+    expect(buildKernelConnectionOptions(opts({ https: false })).hostName).to.equal('http://h.databricks.com');
+  });
+
+  it('carries the port into the http:// host (matching the Thrift URL)', () => {
+    expect(buildKernelConnectionOptions(opts({ host: 'localhost', port: 3015, https: false })).hostName).to.equal(
+      'http://localhost:3015',
+    );
+    // A port already embedded in `host` (the kernel convention) is preserved.
+    expect(buildKernelConnectionOptions(opts({ host: 'localhost:3015', https: false })).hostName).to.equal(
+      'http://localhost:3015',
+    );
+  });
+});
+
 describe('KernelAuth connection options — maxConnections', () => {
   it('forwards a valid positive integer', () => {
     const native = buildKernelConnectionOptions(opts({ maxConnections: 10 })) as { maxConnections?: number };

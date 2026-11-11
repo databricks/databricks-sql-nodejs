@@ -843,7 +843,10 @@ export function buildKernelConnectionOptions(options: ConnectionOptions): Kernel
     KernelHttpOptions &
     KernelProxyOptions &
     KernelFederationOptions = {
-    hostName: options.host,
+    // The kernel prepends `https://` to a bare host but keeps an explicit `http://`.
+    // It otherwise ignores `port`, so carry it into the URL as the Thrift path does.
+    hostName:
+      options.https === false ? `http://${options.host}${options.port ? `:${options.port}` : ''}` : options.host,
     httpPath: prependSlash(options.path),
     // Match the NodeJS Thrift driver, which surfaces INTERVAL columns as
     // strings. The kernel defaults to native Arrow interval/duration types;
