@@ -233,6 +233,14 @@ export default class DBSQLOperation implements IOperation {
     return result;
   }
 
+  /**
+   * Closes operation (see {@link close}); called by `await using operation = ...`
+   * @throws {StatusError}
+   */
+  public async [Symbol.asyncDispose](): Promise<void> {
+    await this.close();
+  }
+
   public async finished(options?: FinishedOptions): Promise<void> {
     return this.withErrorTelemetry(async () => {
       await this.failIfClosed();

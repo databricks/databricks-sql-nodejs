@@ -365,6 +365,14 @@ export default class DBSQLSession implements IDBSQLSession {
     }
   }
 
+  /**
+   * Closes the session (see {@link close}); called by `await using session = ...`
+   * @public
+   */
+  public async [Symbol.asyncDispose](): Promise<void> {
+    await this.close();
+  }
+
   private wrapOperation(backend: IOperationBackend): DBSQLOperation {
     const operation = new DBSQLOperation({
       backend,

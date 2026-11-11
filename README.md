@@ -51,6 +51,23 @@ client
   });
 ```
 
+### Automatic cleanup with `await using`
+
+The client, sessions, and operations implement `Symbol.asyncDispose`, so an `await using` declaration closes them when
+it goes out of scope, even if an error is thrown (disposing an already-closed object is a no-op). Node.js 24+ supports
+`await using` natively; on Node.js 22, compile it with TypeScript 5.2+.
+
+```javascript
+async function main() {
+  await using client = new DBSQLClient();
+  await client.connect({ host, path, token });
+
+  await using session = await client.openSession();
+  await using operation = await session.executeStatement('SELECT "Hello, World!"');
+  console.table(await operation.fetchAll());
+} // closes `operation`, `session`, then `client`
+```
+
 ## Configuration
 
 See [CONNECTION_PARAMETERS.md](CONNECTION_PARAMETERS.md) for every connection,

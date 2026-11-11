@@ -5,6 +5,7 @@ import { ProxyOptions } from '../connection/contracts/IConnectionOptions';
 import OAuthPersistence from '../connection/auth/DatabricksOAuth/OAuthPersistence';
 import ITokenProvider from '../connection/auth/tokenProvider/ITokenProvider';
 import { TokenCallback } from '../connection/auth/tokenProvider/ExternalTokenProvider';
+import './asyncDispose';
 
 export interface ClientOptions {
   logger?: IDBSQLLogger;
@@ -289,4 +290,9 @@ export default interface IDBSQLClient {
   openSession(request?: OpenSessionRequest): Promise<IDBSQLSession>;
 
   close(): Promise<void>;
+
+  /**
+   * Closes the client, enabling `await using client = ...`. No-op if already closed
+   */
+  [Symbol.asyncDispose](): Promise<void>;
 }

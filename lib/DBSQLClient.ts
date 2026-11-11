@@ -950,6 +950,13 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
     this.authProvider = undefined;
   }
 
+  /**
+   * Closes the client (see {@link close}); called by `await using client = ...`
+   */
+  public async [Symbol.asyncDispose](): Promise<void> {
+    await this.close();
+  }
+
   public getConfig(): ClientConfig {
     return this.config;
   }
