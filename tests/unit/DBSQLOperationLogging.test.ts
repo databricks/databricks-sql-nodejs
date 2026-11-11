@@ -6,6 +6,7 @@ import IDBSQLLogger, { LogLevel } from '../../lib/contracts/IDBSQLLogger';
 import IOperationBackend from '../../lib/contracts/IOperationBackend';
 import { OperationState, OperationStatus } from '../../lib/contracts/OperationStatus';
 import { ResultMetadata } from '../../lib/contracts/ResultMetadata';
+import OperationStateError, { OperationStateErrorCode } from '../../lib/errors/OperationStateError';
 import ClientContextStub from './.stubs/ClientContextStub';
 import { createOperationForTest } from './.stubs/createOperationForTest';
 
@@ -47,6 +48,8 @@ class RowsBackend implements IOperationBackend {
 
   private served = 0;
 
+  public waitError?: OperationStateError;
+
   constructor(private readonly totalRows: number, private readonly resultSet = true) {}
 
   public hasResultSet() {
@@ -64,7 +67,11 @@ class RowsBackend implements IOperationBackend {
     return this.served < this.totalRows;
   }
 
-  public async waitUntilReady() {}
+  public async waitUntilReady() {
+    if (this.waitError) {
+      throw this.waitError;
+    }
+  }
 
   public async status(): Promise<OperationStatus> {
     return { state: OperationState.Succeeded, hasResultSet: this.resultSet };
@@ -188,6 +195,33 @@ describe('DBSQLOperation result set logging', () => {
       'Result set of operation with id: op-1 closed after 0 rows in 0 fetches',
     ]);
   });
+
+  for (const [code, outcome] of [
+    [OperationStateErrorCode.Canceled, 'cancelled'],
+    [OperationStateErrorCode.Closed, 'closed'],
+  ] as const) {
+    it(`logs the summary once when the backend reports the operation ${outcome}`, async () => {
+      const logger = new LeveledRecordingLogger(LogLevel.debug);
+      const backend = new RowsBackend(10);
+      const operation = createOperation(logger, backend);
+
+      await operation.fetchChunk({ maxRows: 2, disableBuffering: true });
+      backend.waitError = new OperationStateError(code);
+      let error: unknown;
+      try {
+        await operation.hasMoreRows();
+      } catch (e) {
+        error = e;
+      }
+      expect(error).to.be.instanceOf(OperationStateError);
+      await operation.close();
+      await operation.cancel();
+
+      expect(logger.matching(SUMMARY).map((r) => r.message)).to.deep.equal([
+        `Result set of operation with id: op-1 ${outcome} after 2 rows in 1 fetches`,
+      ]);
+    });
+  }
 
   it('logs no summary for an operation without a result set', async () => {
     const logger = new LeveledRecordingLogger(LogLevel.debug);

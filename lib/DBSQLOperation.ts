@@ -67,6 +67,8 @@ export default class DBSQLOperation implements IOperation {
 
   private fetchedRowCount: number = 0;
 
+  private resultSetSummaryLogged: boolean = false;
+
   private sessionId?: string;
 
   constructor(options: DBSQLOperationConstructorOptions) {
@@ -351,9 +353,10 @@ export default class DBSQLOperation implements IOperation {
 
   // One debug record per result set, in place of per-fetch debug records.
   private logResultSetSummary(outcome: 'closed' | 'cancelled'): void {
-    if (!this.backend.hasResultSet()) {
+    if (this.resultSetSummaryLogged || !this.backend.hasResultSet()) {
       return;
     }
+    this.resultSetSummaryLogged = true;
     this.context
       .getLogger()
       .log(
@@ -397,8 +400,10 @@ export default class DBSQLOperation implements IOperation {
       if (err instanceof OperationStateError) {
         if (err.errorCode === OperationStateErrorCode.Canceled) {
           this.cancelled = true;
+          this.logResultSetSummary('cancelled');
         } else if (err.errorCode === OperationStateErrorCode.Closed) {
           this.closed = true;
+          this.logResultSetSummary('closed');
         }
       }
       throw err;
