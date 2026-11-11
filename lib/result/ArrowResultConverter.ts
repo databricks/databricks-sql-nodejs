@@ -169,9 +169,26 @@ function formatDayTimeFromTotal(totalNanos: bigint): string {
   return `${sign}${days.toString()} ${pad2(hours)}:${pad2(minutes)}:${pad2(seconds)}${fraction}`;
 }
 
+const BITS_PER_WORD = BigInt(32);
+
+/**
+ * Unscaled integer of an Arrow `Decimal` value, read from its little-endian
+ * two's-complement 32-bit words. apache-arrow's `bigNumToBigInt` can't be used:
+ * for values wider than 64 bits (every Decimal128) it returns a decimal string,
+ * not a `bigint`.
+ */
+export function decimalBigNumToBigInt(words: Uint32Array): bigint {
+  // `| 0` reads the most significant word as signed, which carries the sign.
+  let result = BigInt(words[words.length - 1] | 0);
+  for (let i = words.length - 2; i >= 0; i -= 1) {
+    result = (result << BITS_PER_WORD) | BigInt(words[i]);
+  }
+  return result;
+}
+
 /**
  * Render an Arrow `Decimal` value — supplied as its unscaled integer (from
- * `bigNumToBigInt`) plus the column `scale` — as an exact decimal string,
+ * `decimalBigNumToBigInt`) plus the column `scale` — as an exact decimal string,
  * e.g. unscaled `1234567890` / scale `5` → `"12345.67890"`. Used by the
  * precision-preserving path so high-precision DECIMALs survive the round-trip
  * instead of being flattened to an IEEE-754 double.
@@ -418,18 +435,18 @@ export default class ArrowResultConverter implements IResultsProvider<Array<any>
     // Convert big number values to BigInt
     // Decimals are also represented as big numbers in Arrow, so additionally process them (convert to float)
     if (value instanceof Object && value[isArrowBigNumSymbol]) {
-      const result = bigNumToBigInt(value);
       if (DataType.isDecimal(valueType)) {
+        const unscaled = decimalBigNumToBigInt(value);
         // Preserve full precision as an exact string when requested (kernel);
         // otherwise keep the historical lossy `number` form.
         if (this.preserveBigNumericPrecision) {
-          return bigNumDecimalToString(result, valueType.scale);
+          return bigNumDecimalToString(unscaled, valueType.scale);
         }
-        return Number(result) / 10 ** valueType.scale;
+        return Number(unscaled) / 10 ** valueType.scale;
       }
       // A rewritten Duration Int64 surfaces as a raw `bigint`, not a BigNum
       // wrapper, so it is handled in the bigint branch below — not here.
-      return result;
+      return bigNumToBigInt(value);
     }
 
     // Convert binary data to Buffer.

@@ -1,8 +1,11 @@
 import { expect } from 'chai';
 import fs from 'fs';
 import path from 'path';
-import { Table, tableFromArrays, tableToIPC, RecordBatch, TypeMap } from 'apache-arrow';
-import ArrowResultConverter, { bigNumDecimalToString } from '../../../lib/result/ArrowResultConverter';
+import { Table, tableFromArrays, tableToIPC, RecordBatch, TypeMap, makeData, makeVector, Decimal } from 'apache-arrow';
+import ArrowResultConverter, {
+  bigNumDecimalToString,
+  decimalBigNumToBigInt,
+} from '../../../lib/result/ArrowResultConverter';
 import { ArrowBatch } from '../../../lib/result/utils';
 import ResultsProviderStub from '../.stubs/ResultsProviderStub';
 import { TTableSchema, TTypeId } from '../../../thrift/TCLIService_types';
@@ -298,5 +301,113 @@ describe('ArrowResultConverter', () => {
     expect(bigNumDecimalToString(BigInt('5'), 2)).to.equal('0.05'); // leading zero synthesized
     expect(bigNumDecimalToString(BigInt('-5'), 2)).to.equal('-0.05');
     expect(bigNumDecimalToString(BigInt('12345'), 0)).to.equal('12345'); // scale 0 → integer string
+  });
+
+  it('reads two’s-complement decimal words as bigint (decimalBigNumToBigInt)', () => {
+    const toWords = (value: bigint) => {
+      const words = new BigUint64Array([BigInt.asUintN(64, value), BigInt.asUintN(64, value >> BigInt(64))]);
+      return new Uint32Array(words.buffer);
+    };
+    for (const value of ['0', '-1', '4294967296', '-4294967296', '-170141183460469231731687303715884105728']) {
+      expect(decimalBigNumToBigInt(toWords(BigInt(value)))).to.equal(BigInt(value));
+    }
+  });
+
+  describe('Decimal128 columns', () => {
+    const pow2 = (e: number) => BigInt(2) ** BigInt(e);
+    const maxDecimal38 = BigInt(10) ** BigInt(38) - BigInt(1);
+    const boundaryValues: Array<bigint | null> = [
+      BigInt(0),
+      BigInt(1),
+      BigInt(-1),
+      pow2(53) - BigInt(1),
+      -(pow2(53) - BigInt(1)),
+      pow2(53) + BigInt(1),
+      -(pow2(53) + BigInt(1)),
+      pow2(63) - BigInt(1),
+      -pow2(63),
+      -(pow2(63) + BigInt(1)),
+      pow2(64) - BigInt(1),
+      pow2(64),
+      -pow2(64),
+      -(pow2(64) + BigInt(1)),
+      pow2(96) - BigInt(1),
+      -(pow2(96) - BigInt(1)),
+      -pow2(96),
+      pow2(126),
+      -pow2(126),
+      BigInt('12345678901234567890123456789012345678'),
+      BigInt('-12345678901234567890123456789012345678'),
+      maxDecimal38,
+      -maxDecimal38,
+      null,
+    ];
+
+    function decimalArrowBatch(values: Array<bigint | null>, precision: number, scale: number): Buffer {
+      const words = new BigUint64Array(values.length * 2);
+      const validity = new Uint8Array(Math.ceil(values.length / 8));
+      let nullCount = 0;
+      values.forEach((value, i) => {
+        if (value === null) {
+          nullCount += 1;
+          return;
+        }
+        validity[i >> 3] |= 1 << (i & 7);
+        const unsigned = BigInt.asUintN(128, value);
+        words[2 * i] = BigInt.asUintN(64, unsigned);
+        words[2 * i + 1] = unsigned >> BigInt(64);
+      });
+      const data = makeData({
+        type: new Decimal(scale, precision, 128),
+        length: values.length,
+        nullCount,
+        nullBitmap: validity,
+        data: new Uint32Array(words.buffer),
+      });
+      return Buffer.from(tableToIPC(new Table({ value: makeVector(data) })));
+    }
+
+    async function convertDecimals(values: Array<bigint | null>, scale: number, preserveBigNumericPrecision: boolean) {
+      const rowSetProvider = new ResultsProviderStub(
+        [{ batches: [decimalArrowBatch(values, 38, scale)], rowCount: values.length }],
+        emptyItem,
+      );
+      const schema: TTableSchema = {
+        columns: [
+          {
+            columnName: 'value',
+            typeDesc: { types: [{ primitiveEntry: { type: TTypeId.DECIMAL_TYPE } }] },
+            position: 1,
+          },
+        ],
+      };
+      const result = new ArrowResultConverter(
+        new ClientContextStub(),
+        rowSetProvider,
+        { schema },
+        { preserveBigNumericPrecision },
+      );
+      const rows = await result.fetchNext({ limit: 10000 });
+      return rows.map((row: { value: unknown }) => row.value);
+    }
+
+    for (const scale of [0, 18, 38]) {
+      it(`keeps exact digits for positive and negative values at scale ${scale} with preserveBigNumericPrecision`, async () => {
+        const expected = boundaryValues.map((value) => (value === null ? null : bigNumDecimalToString(value, scale)));
+        expect(await convertDecimals(boundaryValues, scale, true)).to.deep.equal(expected);
+      });
+
+      it(`keeps the legacy lossy number form at scale ${scale} by default`, async () => {
+        const expected = boundaryValues.map((value) => (value === null ? null : Number(value) / 10 ** scale));
+        expect(await convertDecimals(boundaryValues, scale, false)).to.deep.equal(expected);
+      });
+    }
+
+    it('renders a negative DECIMAL(38,18) wider than 64 bits exactly', async () => {
+      expect(await convertDecimals([BigInt('-12345678901234567890123456789012345678')], 18, true)).to.deep.equal([
+        '-12345678901234567890.123456789012345678',
+      ]);
+      expect(await convertDecimals([BigInt('-9007199254740993')], 2, true)).to.deep.equal(['-90071992547409.93']);
+    });
   });
 });
