@@ -10,6 +10,7 @@ import HiveDriverError from '../../../lib/errors/HiveDriverError';
 import AuthenticationError from '../../../lib/errors/AuthenticationError';
 import OperationStateError, { OperationStateErrorCode } from '../../../lib/errors/OperationStateError';
 import ParameterError from '../../../lib/errors/ParameterError';
+import StagingError from '../../../lib/errors/StagingError';
 
 describe('KernelErrorMapping.mapKernelErrorToJsError', () => {
   // The 13 kernel ErrorCode variants — kept in sync with src/kernel_error.rs:66-134.
@@ -310,5 +311,26 @@ describe('KernelErrorMapping.decodeNapiKernelError — diagnostics enrichment (T
     expect(err.sqlState).to.equal('22012'); // Thrift: response.sqlState
     expect(err.kernelMetadata?.displayMessage).to.equal('Division by zero'); // Thrift: response.displayMessage
     expect(err.kernelMetadata?.diagnosticInfo).to.equal('ArithmeticException'); // Thrift: response.errorMessage
+  });
+});
+
+describe('file transfer errors', () => {
+  it('preserves StagingError and structured diagnostics', () => {
+    const error = decodeNapiKernelError(
+      new Error(
+        '__databricks_error__:' +
+          JSON.stringify({
+            code: 'NotFound',
+            message: 'File transfer failed with HTTP 404',
+            errorCode: 'FILE_TRANSFER_ERROR',
+            sqlState: 'HY000',
+            queryId: 'statement',
+          }),
+      ),
+    );
+    const mapped = error as ErrorWithSqlState;
+    expect(error).to.be.instanceOf(StagingError);
+    expect(mapped.kernelMetadata?.queryId).to.equal('statement');
+    expect(mapped.sqlState).to.equal('HY000');
   });
 });

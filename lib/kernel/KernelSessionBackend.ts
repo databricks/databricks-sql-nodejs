@@ -148,10 +148,8 @@ export default class KernelSessionBackend implements ISessionBackend {
    *     `query_tags` key (the same wire shape Thrift's `serializeQueryTags`
    *     produces), merged with any explicit `statementConf`.
    *
-   * Still rejected (genuinely unsupported on kernel, rather than silently
-   * dropped): `useCloudFetch` (governed by the kernel `ResultConfig`, not a
-   * per-statement knob), `useLZ4Compression` (kernel owns result compression),
-   * and `stagingAllowedLocalPath` (volume operations). `maxRows` is applied by
+   * `stagingAllowedLocalPath` configures kernel file transfers. `useCloudFetch`
+   * and `useLZ4Compression` remain kernel-owned settings. `maxRows` is applied by
    * the facade at fetch time, so it is intentionally not handled here.
    */
   public async executeStatement(statement: string, options: ExecuteStatementOptions): Promise<IOperationBackend> {
@@ -160,8 +158,7 @@ export default class KernelSessionBackend implements ISessionBackend {
     // Per-statement options the kernel backend doesn't honour are treated as
     // NO-OPs (logged at warn), not errors — so call sites written for the Thrift
     // backend are drop-in on the kernel path. These are perf/format hints the
-    // kernel governs internally (useCloudFetch / useLZ4Compression) or a feature
-    // it doesn't expose yet (staging); ignoring them cannot change query results.
+    // kernel governs internally (useCloudFetch / useLZ4Compression) and do not change query results.
     // NB: parameter binding (compound/BINARY) is deliberately NOT no-op'd — a
     // dropped param would silently change results, so it still throws.
     if (options.useCloudFetch !== undefined) {
@@ -180,15 +177,6 @@ export default class KernelSessionBackend implements ISessionBackend {
           'kernel executeStatement: ignoring per-statement `useLZ4Compression` — result compression is governed by the kernel (no-op on kernel).',
         );
     }
-    if (options.stagingAllowedLocalPath !== undefined) {
-      this.context
-        .getLogger()
-        .log(
-          LogLevel.warn,
-          'kernel executeStatement: ignoring `stagingAllowedLocalPath` — volume/staging operations are not yet supported on the kernel backend (no-op).',
-        );
-    }
-
     // `runAsync` selects the kernel execution path. NOTE: this is a kernel-
     // specific use of the option — the Thrift backend hardcodes `runAsync: true`
     // on the wire and never reads `options.runAsync`, so the field is a no-op
@@ -299,6 +287,11 @@ export default class KernelSessionBackend implements ISessionBackend {
     }
 
     const execOptions: KernelNativeExecuteOptions = {};
+    if (options.stagingAllowedLocalPath !== undefined) {
+      execOptions.stagingAllowedLocalPaths = Array.isArray(options.stagingAllowedLocalPath)
+        ? options.stagingAllowedLocalPath
+        : [options.stagingAllowedLocalPath];
+    }
     // Raw binding preserves qualified SQL types such as INTERVAL MONTH.
     const rawParams = positionalParams ?? namedParams;
     if (rawParams !== undefined) {
