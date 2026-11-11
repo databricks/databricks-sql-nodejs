@@ -64,6 +64,7 @@ async function expectEmptyPrimaryKeys(operation: IOperation): Promise<void> {
   const metadata = await (operation as DBSQLOperation).getMetadata();
   expect(metadata.status.statusCode).to.equal(TStatusCode.SUCCESS_STATUS);
   expect(metadata.resultFormat).to.equal(TSparkRowSetType.COLUMN_BASED_SET);
+  expect((await operation.getResultMetadata()).hasResultSet).to.be.true;
   const status = await operation.status();
   expect(status.operationState).to.equal(TOperationState.FINISHED_STATE);
   expect(status.status.statusCode).to.equal(TStatusCode.SUCCESS_STATUS);

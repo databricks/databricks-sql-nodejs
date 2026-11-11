@@ -31,7 +31,12 @@ export default class EmptyOperationBackend implements IOperationBackend {
   }
 
   public async getResultMetadata(): Promise<ResultMetadata> {
-    return { schema: this.schema, resultFormat: ResultFormat.ColumnBased, isStagingOperation: false };
+    return {
+      schema: this.schema,
+      resultFormat: ResultFormat.ColumnBased,
+      isStagingOperation: false,
+      hasResultSet: true,
+    };
   }
 
   public async cancel(): Promise<Status> {

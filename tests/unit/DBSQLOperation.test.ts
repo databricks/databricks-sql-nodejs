@@ -790,6 +790,115 @@ describe('DBSQLOperation', () => {
     });
   });
 
+  describe('getResultMetadata hasResultSet', () => {
+    // Arrow schemas captured from a live SQL warehouse. Both statements get the
+    // same placeholder Thrift schema (one `Result STRING` column); only the Arrow
+    // schema shows that the DDL produced no columns.
+    const createTableArrowSchema = Buffer.from(
+      'ffffffff400000001000000000000a000e0006000d0008000a000000000004001000000000010a000c000000080004000a00000008' +
+        '00000008000000000000000000000000000000',
+      'hex',
+    );
+    const emptySelectArrowSchema = Buffer.from(
+      'ffffffff080100001000000000000a000e0006000d0008000a000000000004001000000000010a000c000000080004000a00000008' +
+        '000000080000000000000001000000180000000000120018001400000013000c00000008000400120000001400000090000000940000' +
+        '000000000590000000020000004800000004000000c8ffffff08000000140000000800000022737472696e67220000000017000000' +
+        '537061726b3a44617461547970653a4a736f6e547970650008000c000800040008000000080000001000000006000000535452494e47' +
+        '000016000000537061726b3a44617461547970653a53716c4e616d65000000000000040004000400000006000000526573756c7400' +
+        '0000000000',
+      'hex',
+    );
+    const placeholderSchema = {
+      columns: [
+        {
+          columnName: 'Result',
+          position: 1,
+          comment: '',
+          typeDesc: { types: [{ primitiveEntry: { type: TTypeId.STRING_TYPE } }] },
+        },
+      ],
+    };
+
+    function directResults(arrowSchema?: Buffer): TSparkDirectResults {
+      return {
+        operationStatus: {
+          status: { statusCode: TStatusCode.SUCCESS_STATUS },
+          operationState: TOperationState.FINISHED_STATE,
+        },
+        resultSetMetadata: {
+          status: { statusCode: TStatusCode.SUCCESS_STATUS },
+          schema: placeholderSchema,
+          resultFormat: arrowSchema ? TSparkRowSetType.ARROW_BASED_SET : TSparkRowSetType.COLUMN_BASED_SET,
+          arrowSchema,
+        },
+      };
+    }
+
+    it('is false for DDL whose Arrow schema has no fields, without extra requests', async () => {
+      const context = new ClientContextStub();
+      const driver = sinon.spy(context.driver);
+      const operation = createOperationForTest({
+        handle: operationHandleStub({ hasResultSet: true }),
+        context,
+        directResults: directResults(createTableArrowSchema),
+      });
+
+      const metadata = await operation.getResultMetadata();
+
+      expect(metadata.hasResultSet).to.be.false;
+      expect(await operation.getSchema()).to.deep.equal(placeholderSchema);
+      expect(driver.getOperationStatus.called).to.be.false;
+      expect(driver.getResultSetMetadata.called).to.be.false;
+    });
+
+    it('is true for an empty SELECT that has the same Thrift schema as DDL', async () => {
+      const context = new ClientContextStub();
+      const operation = createOperationForTest({
+        handle: operationHandleStub({ hasResultSet: true }),
+        context,
+        directResults: directResults(emptySelectArrowSchema),
+      });
+
+      const metadata = await operation.getResultMetadata();
+
+      expect(metadata.hasResultSet).to.be.true;
+      expect(await operation.getSchema()).to.deep.equal(placeholderSchema);
+    });
+
+    it('is undefined for a statement without an Arrow schema', async () => {
+      const context = new ClientContextStub();
+      const operation = createOperationForTest({
+        handle: operationHandleStub({ hasResultSet: true }),
+        context,
+        directResults: directResults(),
+      });
+
+      expect((await operation.getResultMetadata()).hasResultSet).to.be.undefined;
+    });
+
+    it('is undefined when the Arrow schema cannot be decoded', async () => {
+      const context = new ClientContextStub();
+      const operation = createOperationForTest({
+        handle: operationHandleStub({ hasResultSet: true }),
+        context,
+        directResults: directResults(Buffer.from('not an arrow schema')),
+      });
+
+      expect((await operation.getResultMetadata()).hasResultSet).to.be.undefined;
+    });
+
+    it('is true for catalog operations, which never carry an Arrow schema', async () => {
+      const context = new ClientContextStub();
+      const operation = createOperationForTest({
+        handle: operationHandleStub({ hasResultSet: true, operationType: TOperationType.GET_TABLES }),
+        context,
+        directResults: directResults(),
+      });
+
+      expect((await operation.getResultMetadata()).hasResultSet).to.be.true;
+    });
+  });
+
   describe('fetchChunk', () => {
     it('should return immediately if operation has no results', async () => {
       const context = new ClientContextStub();

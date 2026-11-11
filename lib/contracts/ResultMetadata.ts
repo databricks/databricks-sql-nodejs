@@ -36,4 +36,17 @@ export interface ResultMetadata {
 
   /** True iff the operation is a staging (PUT/GET/REMOVE) operation. */
   isStagingOperation: boolean;
+
+  /**
+   * Whether the statement produced a result set. `false` for statements that
+   * return no columns, such as DDL (`CREATE TABLE`, `DROP TABLE`) or `USE`;
+   * `true` for queries, even when they return zero rows. DML returns a result
+   * set with affected-row counts. Use this rather than `schema`, which on the
+   * Thrift backend reports a placeholder `Result` column for statements without
+   * a result set.
+   *
+   * `undefined` when the backend cannot tell: on the Thrift backend this
+   * requires Arrow results (`arrowEnabled`, the default).
+   */
+  hasResultSet?: boolean;
 }

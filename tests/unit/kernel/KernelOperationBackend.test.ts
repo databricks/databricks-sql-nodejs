@@ -259,6 +259,25 @@ describe('KernelOperationBackend — M0 datatype round-trip via napi → ArrowRe
     });
   }
 
+  it('reports hasResultSet=false for a zero-column (DDL) schema and true for an empty SELECT', async () => {
+    const ddl = new KernelOperationBackend({
+      statement: new StatementStub(ipcSchemaOnly(new Schema([])), []),
+      context: new ClientContextStub(),
+    });
+    expect((await ddl.getResultMetadata()).hasResultSet).to.equal(false);
+    expect(await ddl.fetchChunk({ limit: 100 })).to.deep.equal([]);
+
+    const emptySelect = new KernelOperationBackend({
+      statement: new StatementStub(
+        ipcSchemaOnly(new Schema([withTypeName(new Field('Result', new Utf8()), 'STRING')])),
+        [],
+      ),
+      context: new ClientContextStub(),
+    });
+    expect((await emptySelect.getResultMetadata()).hasResultSet).to.equal(true);
+    expect(await emptySelect.fetchChunk({ limit: 100 })).to.deep.equal([]);
+  });
+
   it('preserves decimal qualifiers for a schema-only result with zero scale', async () => {
     const schema = new Schema([new Field('amount', new Decimal(0, 38, 128), true)]);
     const backend = new KernelOperationBackend({

@@ -1,7 +1,9 @@
 import { stringify, NIL } from 'uuid';
+import { MessageReader } from 'apache-arrow';
 import {
   TGetOperationStatusResp,
   TOperationHandle,
+  TOperationType,
   TSparkDirectResults,
   TGetResultSetMetadataResp,
   TSparkRowSetType,
@@ -100,6 +102,8 @@ export default class ThriftOperationBackend implements IOperationBackend {
   private operationStatus?: TGetOperationStatusResp;
 
   private resultHandler?: ResultSlicer<any>;
+
+  private arrowSchemaHasFields?: { arrowSchema: Buffer; value?: boolean };
 
   constructor({
     handle,
@@ -453,7 +457,6 @@ export default class ThriftOperationBackend implements IOperationBackend {
     };
   }
 
-  // eslint-disable-next-line class-methods-use-this
   private adaptResultMetadata(response: TGetResultSetMetadataResp): ResultMetadata {
     return {
       schema: response.schema,
@@ -461,6 +464,35 @@ export default class ThriftOperationBackend implements IOperationBackend {
       lz4Compressed: response.lz4Compressed,
       arrowSchema: response.arrowSchema,
       isStagingOperation: Boolean(response.isStagingOperation),
+      hasResultSet: this.resultSetPresence(response.arrowSchema),
     };
+  }
+
+  // The server sets the handle's `hasResultSet` even for DDL, and gives it a
+  // placeholder `Result` column in `schema`; only the Arrow schema has no fields.
+  // Catalog operations always return a result set.
+  private resultSetPresence(arrowSchema?: Buffer): boolean | undefined {
+    const { operationType } = this;
+    if (
+      operationType !== undefined &&
+      operationType !== TOperationType.EXECUTE_STATEMENT &&
+      operationType !== TOperationType.UNKNOWN
+    ) {
+      return true;
+    }
+    if (!arrowSchema) {
+      return undefined;
+    }
+    if (this.arrowSchemaHasFields?.arrowSchema !== arrowSchema) {
+      let value: boolean | undefined;
+      try {
+        const schema = new MessageReader(arrowSchema).readSchema();
+        value = schema ? schema.fields.length > 0 : undefined;
+      } catch {
+        value = undefined;
+      }
+      this.arrowSchemaHasFields = { arrowSchema, value };
+    }
+    return this.arrowSchemaHasFields.value;
   }
 }

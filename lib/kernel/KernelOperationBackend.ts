@@ -364,6 +364,8 @@ export default class KernelOperationBackend implements IOperationBackend {
         // "Duration" (18)`. Matches what the per-batch fetch path already does.
         arrowSchema: patchIpcBytes(arrowSchemaIpc.ipcBytes),
         isStagingOperation: false,
+        // SEA reports a zero-column schema for statements without a result set (e.g. DDL).
+        hasResultSet: arrowSchema.fields.length > 0,
       };
       this.metadata = meta;
       return meta;
