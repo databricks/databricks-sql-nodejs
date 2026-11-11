@@ -7,10 +7,22 @@ import { ProxyAgent } from 'proxy-agent';
 import IConnectionProvider, { HttpTransactionDetails } from '../contracts/IConnectionProvider';
 import IConnectionOptions, { ProxyOptions } from '../contracts/IConnectionOptions';
 import IClientContext from '../../contracts/IClientContext';
+import { LogLevel } from '../../contracts/IDBSQLLogger';
+import HiveDriverError from '../../errors/HiveDriverError';
 
 import ThriftHttpConnection from './ThriftHttpConnection';
 import IRetryPolicy from '../contracts/IRetryPolicy';
 import HttpRetryPolicy from './HttpRetryPolicy';
+
+// Set by the driver, auth provider or Thrift transport. node-fetch merges
+// same-named headers case-insensitively into one value, so a caller copy
+// would corrupt the driver's value rather than replace it.
+const DRIVER_MANAGED_HEADERS = new Set(['authorization', 'user-agent', 'content-type', 'content-length', 'connection']);
+
+// node-fetch's header name/value rules; checked up front so the error names
+// the header without echoing its (possibly secret) value.
+const VALID_HEADER_NAME = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
+const INVALID_HEADER_VALUE_CHAR = /[^\t\x20-\x7e\x80-\xff]/;
 
 export default class HttpConnection implements IConnectionProvider {
   private readonly options: IConnectionOptions;
@@ -18,6 +30,9 @@ export default class HttpConnection implements IConnectionProvider {
   private readonly context: IClientContext;
 
   private headers: HeadersInit = {};
+
+  // Caller `customHeaders` merged under `options.headers`; built once.
+  private baseHeaders?: HeadersInit;
 
   private connection?: ThriftHttpConnection;
 
@@ -30,10 +45,40 @@ export default class HttpConnection implements IConnectionProvider {
 
   public setHeaders(headers: HeadersInit) {
     this.headers = headers;
-    this.connection?.setHeaders({
-      ...this.options.headers,
-      ...this.headers,
-    });
+    this.connection?.setHeaders(this.getRequestHeaders());
+  }
+
+  private getRequestHeaders(): HeadersInit {
+    if (!this.baseHeaders) {
+      this.baseHeaders = { ...this.getCustomHeaders(), ...this.options.headers };
+    }
+    return { ...this.baseHeaders, ...this.headers };
+  }
+
+  private getCustomHeaders(): Record<string, string> {
+    const result: Record<string, string> = {};
+    for (const [name, value] of Object.entries(this.options.customHeaders ?? {})) {
+      if (!VALID_HEADER_NAME.test(name)) {
+        throw new HiveDriverError(`customHeaders name ${JSON.stringify(name)} is not a valid HTTP header name.`);
+      }
+      if (INVALID_HEADER_VALUE_CHAR.test(value)) {
+        throw new HiveDriverError(
+          `customHeaders value for \`${name}\` contains a character that is not allowed in an HTTP header ` +
+            `(such as CR, LF or NUL).`,
+        );
+      }
+      if (DRIVER_MANAGED_HEADERS.has(name.toLowerCase())) {
+        this.context
+          .getLogger()
+          .log(
+            LogLevel.warn,
+            `customHeaders: \`${name}\` is managed by the driver and is not sent on Thrift requests.`,
+          );
+      } else {
+        result[name] = value;
+      }
+    }
+    return result;
   }
 
   public async getAgent(): Promise<http.Agent | undefined> {
@@ -96,6 +141,7 @@ export default class HttpConnection implements IConnectionProvider {
     if (!this.connection) {
       const { options } = this;
       const clientConfig = this.context.getConfig();
+      const headers = this.getRequestHeaders();
       const agent = await this.getAgent();
 
       this.connection = new ThriftHttpConnection(
@@ -110,10 +156,7 @@ export default class HttpConnection implements IConnectionProvider {
         {
           agent,
           timeout: options.socketTimeout ?? clientConfig.socketTimeout,
-          headers: {
-            ...options.headers,
-            ...this.headers,
-          },
+          headers,
         },
       );
     }

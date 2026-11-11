@@ -299,6 +299,17 @@ describe('KernelAuth HTTP options (buildKernelHttpOptions)', () => {
     expect(names(http)).to.include('User-Agent');
   });
 
+  it('drops transport-owned headers (Content-Type / Content-Length / Connection, any casing)', () => {
+    // Forwarded, these replace the kernel's own values: a caller Content-Length
+    // corrupts request framing and Content-Type overrides application/json.
+    const http = buildKernelHttpOptions(
+      opts({
+        customHeaders: { 'content-type': 'text/plain', 'Content-Length': '1', CONNECTION: 'close', 'X-Keep': 'yes' },
+      }),
+    );
+    expect(names(http)).to.deep.equal(['X-Keep', 'User-Agent']);
+  });
+
   it('appends the connector UA last even when the caller also set a User-Agent (kernel folds last-wins, matches Python)', () => {
     const http = buildKernelHttpOptions(
       opts({ customHeaders: { 'User-Agent': 'Caller/1.0' }, userAgentEntry: 'Wins/3.0' }),
