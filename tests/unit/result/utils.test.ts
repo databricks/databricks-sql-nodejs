@@ -33,6 +33,22 @@ describe('convertThriftValue', () => {
     expect(result).to.equal(value);
   });
 
+  it('should parse complex values containing unquoted dates/timestamps (issue #103)', () => {
+    const value =
+      '{"id":414247,"created_at":2021-12-21 21:33:59.339,"d":2021-12-21,"deleted_at":null,' +
+      '"s":"text 2021-12-21 with \\"quotes\\"","n":-5,"arr":[2022-01-01 00:00:00,1.5e3]}';
+    const result = convertThriftValue({ type: TTypeId.STRUCT_TYPE }, value);
+    expect(result).to.deep.equal({
+      id: 414247,
+      created_at: '2021-12-21 21:33:59.339',
+      d: '2021-12-21',
+      deleted_at: null,
+      s: 'text 2021-12-21 with "quotes"',
+      n: -5,
+      arr: ['2022-01-01 00:00:00', 1500],
+    });
+  });
+
   [TTypeId.DATE_TYPE, TTypeId.TIMESTAMP_TYPE].forEach((typeId) => {
     it(`should handle ${TTypeId[typeId]}`, () => {
       const value = new Date();

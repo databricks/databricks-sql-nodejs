@@ -36,6 +36,48 @@ function isString(value: unknown): value is string {
   return typeof value === 'string' || value instanceof String;
 }
 
+// Matches a bare (unquoted) date or timestamp literal, e.g. `2021-12-21` or `2021-12-21 21:33:59.339`
+const bareDateTimeRegex = /-?\d{4,}-\d{2}-\d{2}(?:[ T]\d{2}:\d{2}(?::\d{2}(?:\.\d+)?)?)?(?:Z|[+-]\d{2}:?\d{2})?/y;
+
+// The server serializes complex values (structs, maps, arrays) to JSON-like strings, but leaves
+// nested DATE and TIMESTAMP values unquoted, which makes them invalid JSON. This function wraps
+// such bare date/time literals (outside of string literals) in quotes so the value can be parsed.
+function quoteBareDateTimes(value: string): string {
+  let result = '';
+  let i = 0;
+  let prevSignificant = '';
+  while (i < value.length) {
+    const ch = value[i];
+    if (ch === '"') {
+      // Copy the whole string literal as-is
+      let j = i + 1;
+      while (j < value.length && value[j] !== '"') {
+        j += value[j] === '\\' ? 2 : 1;
+      }
+      result += value.slice(i, j + 1);
+      i = j + 1;
+      prevSignificant = '"';
+    } else {
+      if ((ch === '-' || (ch >= '0' && ch <= '9')) && ['', ':', ',', '[', '{'].includes(prevSignificant)) {
+        bareDateTimeRegex.lastIndex = i;
+        const match = bareDateTimeRegex.exec(value);
+        if (match) {
+          result += `"${match[0]}"`;
+          i += match[0].length;
+          prevSignificant = '"';
+          continue; // eslint-disable-line no-continue
+        }
+      }
+      result += ch;
+      if (!/\s/.test(ch)) {
+        prevSignificant = ch;
+      }
+      i += 1;
+    }
+  }
+  return result;
+}
+
 function convertJSON(value: any, defaultValue: any): any {
   if (!isString(value)) {
     return value;
@@ -44,7 +86,11 @@ function convertJSON(value: any, defaultValue: any): any {
   try {
     return JSON.parse(value);
   } catch (e) {
-    return defaultValue;
+    try {
+      return JSON.parse(quoteBareDateTimes(String(value)));
+    } catch {
+      return defaultValue;
+    }
   }
 }
 
