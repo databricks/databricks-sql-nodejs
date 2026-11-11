@@ -5,10 +5,21 @@ import { expect } from 'chai';
 import { DBSQLClient } from '../../../lib';
 import { ConnectionOptions } from '../../../lib/contracts/IDBSQLClient';
 import { InternalConnectionOptions } from '../../../lib/contracts/InternalConnectionOptions';
-import config from '../utils/config';
+import { tryGetKernelNative } from '../../../lib/kernel/KernelNativeLoader';
 
 describe('kernel CloudFetch configuration', function suite() {
   this.timeout(120_000);
+
+  const host = process.env.DATABRICKS_PECOTESTING_SERVER_HOSTNAME;
+  const path = process.env.DATABRICKS_PECOTESTING_HTTP_PATH;
+  const token = process.env.DATABRICKS_PECOTESTING_TOKEN_PERSONAL;
+
+  before(function gate() {
+    if (!host || !path || !token || !tryGetKernelNative()) {
+      // eslint-disable-next-line no-invalid-this
+      this.skip();
+    }
+  });
 
   for (const useCloudFetch of [false, true]) {
     it(
@@ -23,12 +34,12 @@ describe('kernel CloudFetch configuration', function suite() {
           socket.on('close', () => sockets.delete(socket));
         });
         proxy.on('connect', (request, socket, head) => {
-          if (request.url !== `${config.host}:443`) {
+          if (request.url !== `${host}:443`) {
             blockedConnections += 1;
             socket.end('HTTP/1.1 403 Forbidden\r\nConnection: close\r\n\r\n');
             return;
           }
-          const upstream = connect(443, config.host, () => {
+          const upstream = connect(443, host as string, () => {
             workspaceConnections += 1;
             socket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
             upstream.write(head);
@@ -47,9 +58,9 @@ describe('kernel CloudFetch configuration', function suite() {
         client.getConfig().useCloudFetch = useCloudFetch;
         try {
           await client.connect({
-            host: config.host,
-            path: config.path,
-            token: config.token,
+            host: host as string,
+            path: path as string,
+            token: token as string,
             useKernel: true,
             proxy: { protocol: 'http', host: '127.0.0.1', port },
           } as ConnectionOptions & InternalConnectionOptions);

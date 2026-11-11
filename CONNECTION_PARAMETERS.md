@@ -47,12 +47,16 @@ backend (the default), the **SEA / Kernel** backend, or both.
 | `useKernel` (internal)  | `boolean` |   —    |   —    | `false`       | Selects the backend: `false`/omitted → Thrift, `true` → Kernel.                        |
 | `clientId` (deprecated) | `string`  |   ✅   |   ✅   | —             | Runtime-only alias for `userAgentEntry`. `userAgentEntry` wins when both are supplied. |
 
-The `DBSQLClient` constructor configuration accepts `useCloudFetch` (default
-`true`) on both backends. Set it to `false` before opening a session to fetch
+Set `client.getConfig().useCloudFetch = false` (default `true`) before opening a session to fetch
 complete results without cloud-storage downloads. On the kernel backend this
 connection setting takes precedence over case-insensitive copies of
 `can_cloud_download` in session configuration. Per-statement `useCloudFetch`
 overrides remain unsupported on the kernel backend.
+
+Kernel support requires a native release containing
+[databricks-sql-kernel#436](https://github.com/databricks/databricks-sql-kernel/pull/436).
+`KERNEL_REV` selects that source for validation; update the published native dependency
+alongside the connector release.
 
 ## Authentication
 
