@@ -94,6 +94,7 @@ describe('package root exports', () => {
     const options: ClientOptions = { logger };
     const client: IDBSQLClient = new DBSQLClient(options);
     expect(client).to.be.instanceOf(DBSQLClient);
+    // Always true at runtime; the real check is the `Array<true>` typing of `sameTypes`.
     expect(sameTypes.every((value) => value)).to.be.true;
   });
 
