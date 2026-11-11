@@ -724,6 +724,23 @@ describe('DBSQLSession', () => {
       expect(session['operations']['items'].size).to.eq(0);
     });
 
+    it('should close the session when a finished operation fails to close', async () => {
+      const context = new ClientContextStub();
+      const closeSession = sinon.spy(context.driver, 'closeSession');
+      sinon
+        .stub(context.driver, 'closeOperation')
+        .rejects(new Error('Received a response with a bad HTTP status: 404'));
+      const session = createSessionForTest({ handle: sessionHandleStub, context });
+      const operation = await session.executeStatement('SELECT * FROM table');
+      await operation.finished();
+
+      await session.close();
+
+      expect(closeSession.calledOnce).to.be.true;
+      expect(session['isOpen']).to.be.false;
+      expect(session['operations']['items'].size).to.eq(0);
+    });
+
     it('should reject all methods once closed', async () => {
       const session = createSessionForTest({ handle: sessionHandleStub, context: new ClientContextStub() });
       await session.close();

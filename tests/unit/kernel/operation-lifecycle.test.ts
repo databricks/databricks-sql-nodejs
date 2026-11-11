@@ -25,6 +25,9 @@
 
 import { expect } from 'chai';
 import sinon from 'sinon';
+import { tableFromArrays, tableToIPC } from 'apache-arrow';
+import DBSQLOperation from '../../../lib/DBSQLOperation';
+import ClientContextStub from '../.stubs/ClientContextStub';
 import { OperationStatus, OperationState } from '../../../lib/contracts/OperationStatus';
 import IClientContext from '../../../lib/contracts/IClientContext';
 import IDBSQLLogger, { LogLevel } from '../../../lib/contracts/IDBSQLLogger';
@@ -434,5 +437,61 @@ describe('KernelOperationBackend (lifecycle integration)', () => {
     const op = new KernelOperationBackend({ statement: handle, context: ctx });
 
     expect(op.hasResultSet()).to.equal(true);
+  });
+});
+
+describe('DBSQLOperation over KernelOperationBackend — close after the result was drained', () => {
+  function drainedOperation(close: () => Promise<void>) {
+    const ipcBytes = Buffer.from(tableToIPC(tableFromArrays({ x: Int32Array.from([1, 2]) }), 'stream'));
+    const batches = [ipcBytes];
+    const statement = {
+      cancel: sinon.stub().resolves(),
+      close: sinon.stub().callsFake(close),
+      schema: () => ({ ipcBytes }),
+      fetchNextBatch: async () => (batches.length > 0 ? { ipcBytes: batches.shift()! } : null),
+    };
+    const context = new ClientContextStub();
+    const log = sinon.spy(context.logger, 'log');
+    const backend = new KernelOperationBackend({ statement, context, id: 'kernel-op' });
+    const operation = new DBSQLOperation({ backend, context });
+    const onClose = sinon.stub();
+    operation.onClose = onClose;
+    return { statement, log, operation, onClose };
+  }
+
+  it('completes teardown when the CloseStatement RPC fails', async () => {
+    const { statement, log, operation, onClose } = drainedOperation(async () => {
+      throw new Error(`__databricks_error__:${JSON.stringify({ code: 'NotFound', message: 'HTTP 404 Not Found' })}`);
+    });
+
+    expect(await operation.fetchAll()).to.deep.equal([{ x: 1 }, { x: 2 }]);
+    const status = await operation.close();
+
+    expect(statement.close.calledOnce).to.equal(true);
+    expect(status.isSuccess).to.equal(true);
+    expect(onClose.calledOnce).to.equal(true);
+    expect(log.calledWith(LogLevel.warn, sinon.match('kernel-op').and(sinon.match('404')))).to.equal(true);
+
+    let thrown: unknown;
+    try {
+      await operation.fetchAll();
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).to.be.instanceOf(OperationStateError);
+    expect((thrown as OperationStateError).errorCode).to.equal(OperationStateErrorCode.Closed);
+  });
+
+  it('closes normally when the RPC succeeds', async () => {
+    const { statement, log, operation, onClose } = drainedOperation(async () => undefined);
+
+    await operation.fetchAll();
+    const status = await operation.close();
+
+    expect(statement.close.calledOnce).to.equal(true);
+    expect(status.isSuccess).to.equal(true);
+    expect(status.info).to.deep.equal([]);
+    expect(onClose.calledOnce).to.equal(true);
+    expect(log.calledWith(LogLevel.warn)).to.equal(false);
   });
 });

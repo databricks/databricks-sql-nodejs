@@ -55,6 +55,10 @@ export default class DBSQLOperation implements IOperation {
 
   private cancelled: boolean = false;
 
+  // Set once the backend reports the statement finished successfully, after
+  // which a failed close cannot leave it running server-side.
+  private executionFinished: boolean = false;
+
   public readonly _data?: unknown;
 
   private metadata?: ResultMetadata;
@@ -212,7 +216,8 @@ export default class DBSQLOperation implements IOperation {
   }
 
   /**
-   * Closes operation
+   * Closes operation. Once the operation has finished, a failed close request
+   * is logged and reported in the returned status's `info` instead of thrown.
    * @throws {StatusError}
    */
   public async close(): Promise<Status> {
@@ -223,7 +228,25 @@ export default class DBSQLOperation implements IOperation {
     if (this.closed || this.cancelled) {
       return Status.success();
     }
-    const result = await this.backend.close();
+    let result: Status;
+    try {
+      result = await this.backend.close();
+    } catch (error: any) {
+      // Until the statement finished, closing it is what stops it server-side,
+      // so the failure is the caller's to handle (and the close can be retried).
+      if (!this.executionFinished) {
+        throw error;
+      }
+      // Afterwards the close only releases server-side results, which closing
+      // the session also does: report the failure and finish the teardown.
+      // `StatusError` doesn't extend `Error`, so read `message` structurally.
+      const message = typeof error?.message === 'string' ? error.message : String(error);
+      this.context
+        .getLogger()
+        .log(LogLevel.warn, `Failed to close finished operation ${this.id}; it is closed locally. Cause: ${message}`);
+      this.emitErrorEvent(error);
+      result = Status.success([`Failed to close operation: ${message}`]);
+    }
     this.closed = true;
 
     // Emit statement.complete telemetry event
@@ -367,6 +390,7 @@ export default class DBSQLOperation implements IOperation {
     };
     try {
       await this.backend.waitUntilReady(backendOptions);
+      this.executionFinished = true;
     } catch (err) {
       // Reflect terminal states back into facade flags so subsequent calls
       // short-circuit via failIfClosed().
