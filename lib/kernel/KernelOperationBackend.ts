@@ -206,6 +206,8 @@ export default class KernelOperationBackend implements IOperationBackend {
 
   private resultsProvider?: KernelResultsProvider;
 
+  private closePromise?: Promise<Status>;
+
   private metadata?: ResultMetadata;
 
   private metadataPromise?: Promise<ResultMetadata>;
@@ -443,13 +445,26 @@ export default class KernelOperationBackend implements IOperationBackend {
   }
 
   public async cancel(): Promise<Status> {
-    this.resultsProvider?.dispose();
-    return kernelCancel(this.lifecycle, this.lifecycleHandle, this.context, this._id);
+    const result = kernelCancel(this.lifecycle, this.lifecycleHandle, this.context, this._id);
+    // A pending close makes cancel a no-op without setting the cancelled flag.
+    if (this.lifecycle.isCancelled) {
+      this.resultsProvider?.dispose();
+    }
+    return result;
   }
 
-  public async close(): Promise<Status> {
-    this.resultsProvider?.dispose();
-    return kernelClose(this.lifecycle, this.lifecycleHandle, this.context, this._id);
+  public close(): Promise<Status> {
+    if (!this.closePromise) {
+      this.closePromise = kernelClose(this.lifecycle, this.lifecycleHandle, this.context, this._id)
+        .then((status) => {
+          this.resultsProvider?.dispose();
+          return status;
+        })
+        .finally(() => {
+          this.closePromise = undefined;
+        });
+    }
+    return this.closePromise;
   }
 
   // ---------------------------------------------------------------------------

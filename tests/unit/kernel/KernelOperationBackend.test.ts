@@ -40,6 +40,7 @@ import {
 } from 'apache-arrow';
 
 import KernelOperationBackend from '../../../lib/kernel/KernelOperationBackend';
+import DBSQLOperation from '../../../lib/DBSQLOperation';
 import { TTypeId } from '../../../thrift/TCLIService_types';
 import ClientContextStub from '../.stubs/ClientContextStub';
 import { LogLevel } from '../../../lib/contracts/IDBSQLLogger';
@@ -406,6 +407,109 @@ describe('KernelOperationBackend — M0 datatype round-trip via napi → ArrowRe
     expect(stub.cancelled).to.equal(true);
     await backend.close();
     expect(stub.closed).to.equal(true);
+  });
+
+  for (const concurrent of [false, true]) {
+    it(`preserves unread rows after ${concurrent ? 'concurrent close calls fail' : 'a close call fails'}`, async () => {
+      const schema = new Schema([withTypeName(new Field('x', new Int32(), true), 'INT')]);
+      const schemaIpc = ipcSchemaOnly(schema);
+      const resultHandle = new StatementStub(
+        schemaIpc,
+        [1, 2, 3].map((x) => ipcFromColumns(schema, { x: [x] })),
+      );
+      const asyncStatement = Object.assign(new StatementStub(schemaIpc, []), {
+        status: async () => 'Succeeded',
+        awaitResult: async () => resultHandle,
+      });
+      const pendingClose = deferred<void>();
+      const close = sinon.stub(asyncStatement, 'close').resolves();
+      close.onFirstCall().returns(pendingClose.promise);
+      const context = new ClientContextStub();
+      const backend = new KernelOperationBackend({ asyncStatement, context });
+      const operation = new DBSQLOperation({ backend, context });
+
+      expect(await operation.fetchChunk({ maxRows: 1 })).to.deep.equal([{ x: 1 }]);
+      const attempts = Promise.allSettled(concurrent ? [operation.close(), operation.close()] : [operation.close()]);
+      await nextTurn();
+      pendingClose.reject(new Error('close failed'));
+      const outcomes = await attempts;
+      expect(outcomes.every((outcome) => outcome.status === 'rejected' && outcome.reason.message === 'close failed')).to
+        .be.true;
+      expect(close.calledOnce).to.be.true;
+
+      expect(await operation.hasMoreRows()).to.be.true;
+      expect(await operation.fetchAll()).to.deep.equal([{ x: 2 }, { x: 3 }]);
+      expect(await operation.hasMoreRows()).to.be.false;
+      expect((await operation.close()).isSuccess).to.be.true;
+      expect(close.callCount).to.equal(2);
+    });
+  }
+
+  it('preserves unread rows when cancel is a no-op during a failed close', async () => {
+    const schema = new Schema([withTypeName(new Field('x', new Int32(), true), 'INT')]);
+    const schemaIpc = ipcSchemaOnly(schema);
+    const resultHandle = new StatementStub(
+      schemaIpc,
+      [1, 2, 3].map((x) => ipcFromColumns(schema, { x: [x] })),
+    );
+    const asyncStatement = Object.assign(new StatementStub(schemaIpc, []), {
+      status: async () => 'Succeeded',
+      awaitResult: async () => resultHandle,
+    });
+    const pendingClose = deferred<void>();
+    sinon.stub(asyncStatement, 'close').onFirstCall().returns(pendingClose.promise);
+    const backend = new KernelOperationBackend({ asyncStatement, context: new ClientContextStub() });
+
+    expect(await backend.fetchChunk({ limit: 1 })).to.deep.equal([{ x: 1 }]);
+    const closing = backend.close().then(
+      () => expect.fail('Expected close to fail'),
+      (reason: unknown) => reason,
+    );
+    expect((await backend.cancel()).isSuccess).to.be.true;
+    pendingClose.reject(new Error('close failed'));
+    expect(((await closing) as Error).message).to.equal('close failed');
+    expect(await backend.fetchChunk({ limit: 10 })).to.deep.equal([{ x: 2 }, { x: 3 }]);
+    expect(await backend.hasMore()).to.be.false;
+  });
+
+  it('surfaces a pending fetch failure after error-cleanup close fails', async () => {
+    const schema = new Schema([withTypeName(new Field('x', new Int32(), true), 'INT')]);
+    const schemaIpc = ipcSchemaOnly(schema);
+    const pending = deferred<{ ipcBytes: Buffer } | null>();
+    const resultHandle = new StatementStub(schemaIpc, []);
+    const fetchNextBatch = sinon.stub(resultHandle, 'fetchNextBatch').returns(pending.promise);
+    fetchNextBatch.onFirstCall().resolves({ ipcBytes: ipcFromColumns(schema, { x: [1] }) });
+    const asyncStatement = Object.assign(new StatementStub(schemaIpc, []), {
+      status: async () => 'Succeeded',
+      awaitResult: async () => resultHandle,
+    });
+    const close = sinon.stub(asyncStatement, 'close').resolves();
+    close.onFirstCall().rejects(new Error('cleanup close failed'));
+    const context = new ClientContextStub();
+    const log = sinon.spy(context.logger, 'log');
+    const backend = new KernelOperationBackend({ asyncStatement, context });
+    await backend.getResultMetadata();
+    const decode = sinon.stub(RecordBatchReader, 'from').throws(new Error('decode failed'));
+    try {
+      const error = await backend.fetchChunk({ limit: 1 }).then(
+        () => expect.fail('Expected a decode error'),
+        (reason: unknown) => reason,
+      );
+      expect((error as Error).message).to.equal('decode failed');
+      expect(close.calledOnce).to.be.true;
+      expect(log.calledWith(LogLevel.warn, sinon.match('cleanup close failed'))).to.be.true;
+
+      pending.reject(new Error('prefetch failed'));
+      const nextError = await backend.hasMore().then(
+        () => expect.fail('Expected the pending fetch error instead of end of results'),
+        (reason: unknown) => reason,
+      );
+      expect((nextError as Error).message).to.equal('prefetch failed');
+    } finally {
+      decode.restore();
+      pending.resolve(null);
+      await backend.close();
+    }
   });
 
   for (const asyncHandle of [false, true]) {
