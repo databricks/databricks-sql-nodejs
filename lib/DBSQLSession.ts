@@ -19,7 +19,7 @@ import IOperation from './contracts/IOperation';
 import DBSQLOperation from './DBSQLOperation';
 import Status from './dto/Status';
 import InfoValue from './dto/InfoValue';
-import CloseableCollection from './utils/CloseableCollection';
+import CloseableCollection, { throwCollectedErrors } from './utils/CloseableCollection';
 import { LogLevel } from './contracts/IDBSQLLogger';
 import HiveDriverError from './errors/HiveDriverError';
 import ParameterError from './errors/ParameterError';
@@ -328,7 +328,14 @@ export default class DBSQLSession implements IDBSQLSession {
       return Status.success();
     }
 
-    await this.operations.closeAll();
+    // A failing operation must not prevent closing the session itself: attempt every
+    // cleanup step and report the collected failures at the end.
+    const errors: Array<unknown> = [];
+    try {
+      await this.operations.closeAll();
+    } catch (err) {
+      errors.push(err);
+    }
 
     // `latencyMs` on CONNECTION_CLOSE is the closeSession RPC duration, not the
     // session lifetime. It's the symmetric counterpart of CREATE_SESSION's
@@ -347,22 +354,21 @@ export default class DBSQLSession implements IDBSQLSession {
       });
     };
 
+    let status: Status | undefined;
     try {
       closeStart = Date.now();
-      const status = await this.backend.close();
-
-      this.onClose?.();
-      this.isOpen = false;
-      emitClose();
-
+      status = await this.backend.close();
       this.context.getLogger().log(LogLevel.debug, `Session closed with id: ${this.id}`);
-      return status;
     } catch (err) {
+      errors.push(err);
+    } finally {
       this.onClose?.();
       this.isOpen = false;
       emitClose();
-      throw err;
     }
+
+    throwCollectedErrors(errors, `Failed to close session with id: ${this.id}`);
+    return status ?? Status.success();
   }
 
   /**

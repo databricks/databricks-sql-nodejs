@@ -1710,4 +1710,21 @@ describe('DBSQLSession / DBSQLOperation over kernel backends — Symbol.asyncDis
     await operation[Symbol.asyncDispose]();
     expect(closeSpy.callCount).to.equal(1);
   });
+
+  it('disposing a cancelled operation closes the native statement exactly once', async () => {
+    const connection = new FakeNativeConnection();
+    const session = makeFacadeSession(connection);
+    const operation = await session.executeStatement('SELECT 1');
+    const closeSpy = sinon.spy(connection.statementToReturn, 'close');
+
+    await operation.cancel();
+    expect(connection.statementToReturn.cancelled).to.equal(true);
+    expect(closeSpy.callCount).to.equal(0);
+
+    await operation[Symbol.asyncDispose]();
+    expect(connection.statementToReturn.closed).to.equal(true);
+    await operation[Symbol.asyncDispose]();
+    await session[Symbol.asyncDispose]();
+    expect(closeSpy.callCount).to.equal(1);
+  });
 });

@@ -33,7 +33,7 @@ import {
 } from './connection/auth/tokenProvider';
 import IDBSQLLogger, { LogLevel } from './contracts/IDBSQLLogger';
 import DBSQLLogger from './DBSQLLogger';
-import CloseableCollection from './utils/CloseableCollection';
+import CloseableCollection, { throwCollectedErrors } from './utils/CloseableCollection';
 import IConnectionProvider from './connection/contracts/IConnectionProvider';
 import TelemetryClient from './telemetry/TelemetryClient';
 import TelemetryClientProvider from './telemetry/TelemetryClientProvider';
@@ -921,9 +921,18 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
    * method on shutdown so the aggregator drains its remaining metrics.
    */
   public async close(): Promise<void> {
+    // A failing session must not prevent releasing the backend and telemetry: attempt every
+    // cleanup step and report the collected failures at the end.
+    const errors: Array<unknown> = [];
     try {
       await this.sessions.closeAll();
+    } catch (error) {
+      errors.push(error);
+    }
+    try {
       await this.backend?.close();
+    } catch (error) {
+      errors.push(error);
     } finally {
       this.releaseFeatureFlagCache();
     }
@@ -949,6 +958,8 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
     this.client = undefined;
     this.connectionProvider = undefined;
     this.authProvider = undefined;
+
+    throwCollectedErrors(errors, 'Failed to close client');
   }
 
   /**

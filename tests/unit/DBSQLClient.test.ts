@@ -620,6 +620,94 @@ describe('DBSQLClient[Symbol.asyncDispose]', () => {
 
     await new DBSQLClient()[Symbol.asyncDispose]();
   });
+
+  it('should release every resource when an operation always fails to close', async () => {
+    const client = new DBSQLClient();
+    const thriftClient = sinon.spy(new ThriftClientStub());
+    client['client'] = thriftClient;
+    client['connectionProvider'] = new ConnectionProviderStub();
+    client['authProvider'] = new AuthProviderStub();
+    const backend = new ThriftBackend({ context: client, onConnectionEvent: () => {} });
+    client['backend'] = backend;
+    const backendClose = sinon.spy(backend, 'close');
+    const releaseFeatureFlagCache = sinon.spy(client as any, 'releaseFeatureFlagCache');
+    // Simulate an initialized telemetry client so `close()` has to release it
+    client['host'] = 'test.cloud.databricks.com';
+    client['telemetryClient'] = {} as any;
+    const releaseClient = sinon.stub(TelemetryClientProvider.getInstance(), 'releaseClient').resolves();
+
+    try {
+      const session = await client.openSession();
+      const operation = await session.executeStatement('SELECT 1');
+      const error = new Error('operation close failed');
+      const operationClose = sinon.stub((operation as any).backend, 'close').rejects(error);
+
+      // Mirrors the README's nested `await using`: operation, then session, then client are disposed
+      const disposalErrors: Array<unknown> = [];
+      for (const resource of [operation, session, client]) {
+        try {
+          await resource[Symbol.asyncDispose](); // eslint-disable-line no-await-in-loop
+        } catch (e) {
+          disposalErrors.push(e);
+        }
+      }
+
+      // The operation failure is reported by its own disposal and by the session's cleanup...
+      expect(disposalErrors).to.deep.equal([error, error]);
+      // ...but it's attempted only by those two, and never again by the client
+      expect(operationClose.callCount).to.eq(2);
+      // The session, backend, feature flags and telemetry are all still released
+      expect(thriftClient.CloseSession.calledOnce).to.be.true;
+      expect(client['sessions']['items'].size).to.eq(0);
+      expect(backendClose.calledOnce).to.be.true;
+      expect(releaseFeatureFlagCache.calledOnce).to.be.true;
+      expect(releaseClient.calledOnceWith(client, 'test.cloud.databricks.com')).to.be.true;
+      expect(client['backend']).to.be.undefined;
+      expect(client['client']).to.be.undefined;
+      expect(client['telemetryClient']).to.be.undefined;
+    } finally {
+      releaseClient.restore();
+    }
+  });
+
+  it('should release the backend and telemetry and report failures when a session fails to close', async () => {
+    const client = new DBSQLClient();
+    const thriftClient = sinon.spy(new ThriftClientStub());
+    client['client'] = thriftClient;
+    client['connectionProvider'] = new ConnectionProviderStub();
+    client['authProvider'] = new AuthProviderStub();
+    const backend = new ThriftBackend({ context: client, onConnectionEvent: () => {} });
+    client['backend'] = backend;
+    const sessionError = new Error('session close failed');
+    const backendError = new Error('backend close failed');
+    const backendClose = sinon.stub(backend, 'close').rejects(backendError);
+    client['host'] = 'test.cloud.databricks.com';
+    client['telemetryClient'] = {} as any;
+    const releaseClient = sinon.stub(TelemetryClientProvider.getInstance(), 'releaseClient').resolves();
+
+    try {
+      const session = await client.openSession();
+      sinon.stub(session, 'close').rejects(sessionError);
+
+      try {
+        await client[Symbol.asyncDispose]();
+        expect.fail('It should throw an error');
+      } catch (e) {
+        if (e instanceof AssertionError) {
+          throw e;
+        }
+        // `AggregateError` isn't in the project's ES2018 lib typings
+        expect(e).to.be.instanceOf((globalThis as any).AggregateError);
+        expect((e as any).errors).to.deep.equal([sessionError, backendError]);
+      }
+      expect(backendClose.calledOnce).to.be.true;
+      expect(releaseClient.calledOnce).to.be.true;
+      expect(client['backend']).to.be.undefined;
+      expect(client['telemetryClient']).to.be.undefined;
+    } finally {
+      releaseClient.restore();
+    }
+  });
 });
 
 describe('DBSQLClient.createAuthProvider', () => {

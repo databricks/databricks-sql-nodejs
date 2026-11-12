@@ -54,7 +54,11 @@ client
 ### Automatic cleanup with `await using`
 
 The client, sessions, and operations implement `Symbol.asyncDispose`, so an `await using` declaration closes them when
-it goes out of scope, even if an error is thrown (disposing an already-closed object is a no-op). Node.js 24+ supports
+it goes out of scope, even if an error is thrown (disposing an already-closed object is a no-op). Closing is
+best-effort: if an operation fails to close, its session and the client are still closed, and the failure is rethrown
+once the remaining cleanup has been attempted (several failures from one `close()` are reported as an
+`AggregateError`). If both the block and a disposal throw, `await using` throws a `SuppressedError` whose `error` is the
+disposal failure and whose `suppressed` is the block's error. Node.js 24+ supports
 `await using` natively; on Node.js 22, compile it with TypeScript 5.2+. TypeScript also needs the disposable
 declarations (such as the global `AsyncDisposable` type) to compile `await using`: if your typings don't already
 provide them, add `"esnext.disposable"` (or `"esnext"`) to `compilerOptions.lib` in your `tsconfig.json`, otherwise the
