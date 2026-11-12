@@ -55,7 +55,10 @@ client
 
 The client, sessions, and operations implement `Symbol.asyncDispose`, so an `await using` declaration closes them when
 it goes out of scope, even if an error is thrown (disposing an already-closed object is a no-op). Node.js 24+ supports
-`await using` natively; on Node.js 22, compile it with TypeScript 5.2+.
+`await using` natively; on Node.js 22, compile it with TypeScript 5.2+. TypeScript also needs the disposable
+declarations (such as the global `AsyncDisposable` type) to compile `await using`: if your typings don't already
+provide them, add `"esnext.disposable"` (or `"esnext"`) to `compilerOptions.lib` in your `tsconfig.json`, otherwise the
+example below can fail to compile even with TypeScript 5.2+.
 
 ```javascript
 async function main() {
