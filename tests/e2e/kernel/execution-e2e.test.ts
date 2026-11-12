@@ -147,6 +147,34 @@ describe('kernel execution end-to-end', function e2eSuite() {
     }
   });
 
+  it('binds DECIMAL parameters with value-derived precision and scale', async () => {
+    const client = new DBSQLClient();
+
+    await client.connect({
+      host: hostName as string,
+      path: httpPath as string,
+      token: token as string,
+      useKernel: true,
+    } as ConnectionOptions & InternalConnectionOptions);
+
+    const session = await client.openSession({ initialCatalog: 'main' });
+    let operation;
+    try {
+      const decimal = (value: string | number) => new DBSQLParameter({ type: DBSQLParameterType.DECIMAL, value });
+      operation = await session.executeStatement('SELECT ? AS a, typeof(?) AS a_type, ? AS b, typeof(?) AS b_type', {
+        // `1e-7` exercises the exponent form `Number#toString` produces.
+        ordinalParameters: [decimal('123.45'), decimal('123.45'), decimal(1e-7), decimal(1e-7)],
+      });
+      expect(await operation.fetchAll()).to.deep.equal([
+        { a: 123.45, a_type: 'decimal(5,2)', b: 1e-7, b_type: 'decimal(7,7)' },
+      ]);
+    } finally {
+      await operation?.close();
+      await session.close();
+      await client.close();
+    }
+  });
+
   it('binds named NULL and empty string through rawParams on the async path', async () => {
     const client = new DBSQLClient();
 

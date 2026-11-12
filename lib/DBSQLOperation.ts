@@ -22,6 +22,8 @@ import { synthesizeThriftStatus, synthesizeThriftResultSetMetadata } from './thr
 import { mapOperationTypeToTelemetryType } from './telemetry/telemetryTypeMappers';
 import ExceptionClassifier from './telemetry/ExceptionClassifier';
 import { safeEmit } from './telemetry/telemetryUtils';
+// Declares `Symbol.asyncDispose` for the emitted typings of `[Symbol.asyncDispose]()` below
+import './contracts/asyncDispose';
 
 function mapNeutralResultFormatToTelemetryType(resultFormat?: ResultFormat): string | undefined {
   switch (resultFormat) {
@@ -231,6 +233,14 @@ export default class DBSQLOperation implements IOperation {
 
     this.onClose?.();
     return result;
+  }
+
+  /**
+   * Closes operation (see {@link close}); called by `await using operation = ...`
+   * @throws {StatusError}
+   */
+  public async [Symbol.asyncDispose](): Promise<void> {
+    await this.close();
   }
 
   public async finished(options?: FinishedOptions): Promise<void> {

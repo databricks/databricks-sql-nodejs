@@ -19,6 +19,9 @@ import expectNativeConnectionOptions from './_helpers/nativeOptions';
 import KernelBackend from '../../../lib/kernel/KernelBackend';
 import KernelSessionBackend from '../../../lib/kernel/KernelSessionBackend';
 import KernelOperationBackend from '../../../lib/kernel/KernelOperationBackend';
+import DBSQLSession from '../../../lib/DBSQLSession';
+import DBSQLOperation from '../../../lib/DBSQLOperation';
+import asyncDisposable from '../../../lib/asyncDisposable';
 import { KernelNativeBinding, KernelConnection, KernelStatement } from '../../../lib/kernel/KernelNativeLoader';
 import IClientContext, { ClientConfig } from '../../../lib/contracts/IClientContext';
 import { CrossReferenceRequest, PrimaryKeysRequest } from '../../../lib/contracts/IDBSQLSession';
@@ -1671,5 +1674,41 @@ describe('KernelOperationBackend — sync (executeStatementCancellable) path', (
     expect(status.displayMessage).to.equal(null);
     expect(status.diagnosticInfo).to.equal(null);
     expect(status.errorDetailsJson).to.equal(null);
+  });
+});
+
+describe('DBSQLSession / DBSQLOperation over kernel backends — Symbol.asyncDispose', () => {
+  function makeFacadeSession(connection: FakeNativeConnection) {
+    const context = makeContext();
+    return new DBSQLSession({ backend: new KernelSessionBackend({ connection, context }), context });
+  }
+
+  it('disposing an operation closes the native statement; re-disposing is a no-op', async () => {
+    const connection = new FakeNativeConnection();
+    const session = makeFacadeSession(connection);
+    const operation = await session.executeStatement('SELECT 1');
+    if (!(operation instanceof DBSQLOperation)) {
+      expect.fail('Assertion error: operation is not a DBSQLOperation');
+    }
+    const closeSpy = sinon.spy(connection.statementToReturn, 'close');
+
+    expect(await operation[Symbol.asyncDispose]()).to.equal(undefined);
+    expect(connection.statementToReturn.closed).to.equal(true);
+    await operation[Symbol.asyncDispose]();
+    expect(closeSpy.callCount).to.equal(1);
+  });
+
+  it('disposing a session closes its operations and the native connection; re-disposing is a no-op', async () => {
+    const connection = new FakeNativeConnection();
+    const session = makeFacadeSession(connection);
+    const operation = asyncDisposable(await session.executeStatement('SELECT 1'));
+    const closeSpy = sinon.spy(connection, 'close');
+
+    expect(await session[Symbol.asyncDispose]()).to.equal(undefined);
+    expect(connection.closed).to.equal(true);
+    expect(connection.statementToReturn.closed).to.equal(true);
+    await session[Symbol.asyncDispose]();
+    await operation[Symbol.asyncDispose]();
+    expect(closeSpy.callCount).to.equal(1);
   });
 });

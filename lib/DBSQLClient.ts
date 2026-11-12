@@ -43,6 +43,8 @@ import MetricsAggregator from './telemetry/MetricsAggregator';
 import { DriverConfiguration, DRIVER_NAME, TelemetryEventType, DEFAULT_TELEMETRY_CONFIG } from './telemetry/types';
 import { safeEmit, isTelemetryDisabledByEnv } from './telemetry/telemetryUtils';
 import driverVersion from './version';
+// Declares `Symbol.asyncDispose` for the emitted typings of `[Symbol.asyncDispose]()` below
+import './contracts/asyncDispose';
 
 function prependSlash(str: string): string {
   if (str.length > 0 && str.charAt(0) !== '/') {
@@ -949,6 +951,13 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
     this.client = undefined;
     this.connectionProvider = undefined;
     this.authProvider = undefined;
+  }
+
+  /**
+   * Closes the client (see {@link close}); called by `await using client = ...`
+   */
+  public async [Symbol.asyncDispose](): Promise<void> {
+    await this.close();
   }
 
   public getConfig(): ClientConfig {

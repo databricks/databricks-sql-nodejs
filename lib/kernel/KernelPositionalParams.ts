@@ -13,57 +13,15 @@
 // limitations under the License.
 
 import { DBSQLParameter, DBSQLParameterValue } from '../DBSQLParameter';
-import ParameterError from '../errors/ParameterError';
 import { KernelNativeRawParameterInput } from './KernelNativeLoader';
 import assertBindableValue from '../utils/assertBindableValue';
-
-/**
- * Derive `(precision,scale)` from a decimal value string for the kernel
- * `DECIMAL(p,s)` type name — the kernel param codec requires the parenthesised
- * form (plain `"DECIMAL"` is rejected) so it preserves the caller's fractional
- * digits. `"99.99"` ⇒ `"4,2"`; `"-123"` ⇒ `"3,0"`; `"0.00001"` ⇒ `"5,5"`.
- *
- * Precision is significant integer digits (insignificant leading zeros
- * stripped, matching Spark's decimal-literal rule) plus the fractional scale.
- * The value is NOT clamped: a non-numeric value, or one that needs precision >
- * the Databricks maximum of 38, throws `ParameterError` at bind time rather
- * than emitting an inconsistent `DECIMAL(38,…)` type alongside an
- * unrepresentable value (which the kernel would reject or silently truncate).
- */
-function decimalPrecisionScale(v: string): string {
-  // Accept an optional sign + plain decimal numeral only. Exponential form
-  // ("1e+21"), empty, and non-numeric ("abc") are rejected with a clear error
-  // instead of mis-deriving (p,s) and surfacing an opaque kernel failure.
-  const m = /^[+-]?(\d*)(?:\.(\d+))?$/.exec(v.trim());
-  const intPart = m?.[1] ?? '';
-  const fracPart = m?.[2] ?? '';
-  if (!m || (intPart === '' && fracPart === '')) {
-    throw new ParameterError(
-      `DECIMAL parameter value "${v}" is not a plain decimal numeral (expected [+-]?digits[.digits]).`,
-    );
-  }
-  const scale = fracPart.length;
-  // Significant integer digits: drop insignificant leading zeros ("007" → 1,
-  // "0" / "" → 0) so e.g. 0.00001 is DECIMAL(5,5), not DECIMAL(6,5).
-  const significantIntDigits = intPart.replace(/^0+/, '').length;
-  const precision = Math.max(significantIntDigits + scale, 1);
-  if (precision > 38) {
-    throw new ParameterError(
-      `DECIMAL parameter value "${v}" needs precision ${precision}, exceeding the Databricks maximum of 38. ` +
-        'Round/scale the value or bind it as a STRING.',
-    );
-  }
-  return `${precision},${scale}`;
-}
 
 /**
  * Reduce a `DBSQLParameter | DBSQLParameterValue` to the napi
  * `RawParameterInput` (`{ name?, sqlType, value? }`) accepted by the kernel's
  * raw-parameter path. Reuses `DBSQLParameter.toSparkParameter` — the same
- * type-inference + value-stringification the Thrift backend uses — then adapts
- * the type name where required:
- * - DECIMAL → `DECIMAL(p,s)` (parenthesised form required)
- * - a missing value ⇒ SQL NULL.
+ * type-inference + value-stringification (including DECIMAL → `DECIMAL(p,s)`)
+ * the Thrift backend uses; a missing value ⇒ SQL NULL.
  */
 function toRawParameterInput(value: DBSQLParameter | DBSQLParameterValue): KernelNativeRawParameterInput {
   const param = value instanceof DBSQLParameter ? value : new DBSQLParameter({ value });
@@ -76,12 +34,7 @@ function toRawParameterInput(value: DBSQLParameter | DBSQLParameterValue): Kerne
     return { sqlType: 'VOID' };
   }
 
-  let sqlType = spark.type ?? 'STRING';
-  const upper = sqlType.toUpperCase();
-  if (upper === 'DECIMAL') {
-    sqlType = `DECIMAL(${decimalPrecisionScale(stringValue)})`;
-  }
-  return { sqlType, value: stringValue };
+  return { sqlType: spark.type ?? 'STRING', value: stringValue };
 }
 
 /**

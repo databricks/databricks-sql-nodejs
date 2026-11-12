@@ -418,6 +418,46 @@ describe('DBSQLOperation', () => {
     });
   });
 
+  describe('Symbol.asyncDispose', () => {
+    it('should close the operation', async () => {
+      const context = new ClientContextStub();
+      const driver = sinon.spy(context.driver);
+      const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: true }), context });
+
+      const result = await operation[Symbol.asyncDispose]();
+      expect(result).to.be.undefined;
+      expect(operation['closed']).to.be.true;
+      expect(driver.closeOperation.callCount).to.be.equal(1);
+    });
+
+    it('should be a no-op for an already closed operation', async () => {
+      const context = new ClientContextStub();
+      const driver = sinon.spy(context.driver);
+      const closed = createOperationForTest({ handle: operationHandleStub({ hasResultSet: true }), context });
+
+      await closed.close();
+      await closed[Symbol.asyncDispose]();
+      await closed[Symbol.asyncDispose]();
+      expect(driver.closeOperation.callCount).to.be.equal(1);
+    });
+
+    it('should propagate close errors', async () => {
+      const context = new ClientContextStub();
+      context.driver.closeOperationResp.status.statusCode = TStatusCode.ERROR_STATUS;
+      const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: true }), context });
+
+      try {
+        await operation[Symbol.asyncDispose]();
+        expect.fail('It should throw a StatusError');
+      } catch (e) {
+        if (e instanceof AssertionError) {
+          throw e;
+        }
+        expect(e).to.be.instanceOf(StatusError);
+      }
+    });
+  });
+
   describe('finished', () => {
     [TOperationState.INITIALIZED_STATE, TOperationState.RUNNING_STATE, TOperationState.PENDING_STATE].forEach(
       (operationState) => {
