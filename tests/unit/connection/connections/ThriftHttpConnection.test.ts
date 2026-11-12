@@ -26,9 +26,11 @@ describe('ThriftHttpConnection', () => {
   let server: http.Server;
   let url: string;
   let replyLengths: number[];
+  let requestLengths: number[];
 
   beforeEach(async () => {
     replyLengths = [];
+    requestLengths = [];
     const processor = new TCLIService.Processor({
       GetInfo: async (req: TGetInfoReq) =>
         new TGetInfoResp({
@@ -41,6 +43,7 @@ describe('ThriftHttpConnection', () => {
       const chunks: Buffer[] = [];
       req.on('data', (chunk: Buffer) => chunks.push(chunk));
       req.on('end', () => {
+        requestLengths.push(Buffer.concat(chunks).length);
         const output = new TBufferedTransport(undefined, (reply?: Buffer) => {
           replyLengths.push((reply as Buffer).length);
           res.writeHead(200, { 'Content-Type': 'application/x-thrift' });
@@ -64,7 +67,7 @@ describe('ThriftHttpConnection', () => {
     });
   });
 
-  it('decodes a response with the receive buffer capped at the body size', async () => {
+  it('caps the receive buffer at the message size for both the request and the response', async () => {
     const maxLengths: Array<number | undefined> = [];
     class RecordingTransport extends TBufferedTransport {
       static receiver(callback: (trans: TBufferedTransport, seqid: number) => void, seqid: number, maxLength?: number) {
@@ -96,8 +99,9 @@ describe('ThriftHttpConnection', () => {
     });
 
     expect(response.infoValue.stringValue).to.equal(`info-${TGetInfoType.CLI_SERVER_NAME}-${'x'.repeat(4096)}`);
+    expect(requestLengths).to.have.length(1);
     expect(replyLengths).to.have.length(1);
-    // The last receiver call decodes the response; earlier ones only peek at the request's method name.
-    expect(maxLengths[maxLengths.length - 1]).to.equal(replyLengths[0]);
+    // The first receiver call peeks at the request's method name; the second decodes the response.
+    expect(maxLengths).to.deep.equal([requestLengths[0], replyLengths[0]]);
   });
 });

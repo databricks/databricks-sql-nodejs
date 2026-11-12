@@ -195,12 +195,18 @@ export default class ThriftHttpConnection extends EventEmitter {
   private getThriftMethodName(thriftMessage: Buffer): Promise<string | undefined> {
     return new Promise((resolve) => {
       try {
-        const receiver = this.transport.receiver((transportWithData) => {
-          const Protocol = this.protocol;
-          const proto = new Protocol(transportWithData);
-          const header = proto.readMessageBegin();
-          resolve(header.fname);
-        }, 0 /* `seqId` could be any because it's ignored */);
+        // Cap at the message size, as for responses, so thrift >= 0.25 doesn't copy every outgoing request
+        // into a buffer rounded up to a power of two.
+        const receiver = this.transport.receiver(
+          (transportWithData) => {
+            const Protocol = this.protocol;
+            const proto = new Protocol(transportWithData);
+            const header = proto.readMessageBegin();
+            resolve(header.fname);
+          },
+          0 /* `seqId` could be any because it's ignored */,
+          thriftMessage.length,
+        );
 
         receiver(thriftMessage);
       } catch {
