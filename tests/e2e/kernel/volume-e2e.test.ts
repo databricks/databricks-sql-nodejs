@@ -7,17 +7,10 @@ import { DBSQLClient } from '../../../lib';
 import StagingError from '../../../lib/errors/StagingError';
 import { ConnectionOptions } from '../../../lib/contracts/IDBSQLClient';
 import { InternalConnectionOptions } from '../../../lib/contracts/InternalConnectionOptions';
+import config from '../utils/config';
 
 describe('kernel volume file lifecycle', function volumeSuite() {
   this.timeout(120_000);
-  const host = process.env.DATABRICKS_PECOTESTING_SERVER_HOSTNAME;
-  const httpPath = process.env.DATABRICKS_PECOTESTING_HTTP_PATH;
-  const token = process.env.DATABRICKS_PECOTESTING_TOKEN_PERSONAL;
-
-  before(function gate() {
-    if (!host || !httpPath || !token) this.skip();
-  });
-
   [false, true].forEach((runAsync) => {
     it(`transfers bytes and reports failures with runAsync=${runAsync}`, async () => {
       const local = fs.mkdtempSync(path.join(os.tmpdir(), 'volume-'));
@@ -32,14 +25,13 @@ describe('kernel volume file lifecycle', function volumeSuite() {
       });
       fs.writeFileSync(source, payload);
       fs.writeFileSync(denied, payload);
-      const namespace = `volume_${uuid().replace(/-/g, '')}`;
-      const remote = `/Volumes/main/${namespace}/files/input.bin`;
+      const remote = `/Volumes/${config.catalog}/${config.schema}/${config.volume}/${uuid()}.bin`;
       const client = new DBSQLClient();
       try {
         await client.connect({
-          host: host!,
-          path: httpPath!,
-          token: token!,
+          host: config.host,
+          path: config.path,
+          token: config.token,
           useKernel: true,
         } as ConnectionOptions & InternalConnectionOptions);
         const session = await client.openSession();
@@ -53,9 +45,7 @@ describe('kernel volume file lifecycle', function volumeSuite() {
               await operation.close();
             }
           };
-          await execute(`CREATE SCHEMA main.${namespace}`);
           try {
-            await execute(`CREATE VOLUME main.${namespace}.files`);
             expect(await execute(`PUT '${source}' INTO '${remote}' OVERWRITE`)).to.deep.equal([]);
             expect(await execute(`GET '${remote}' TO '${destination}'`)).to.deep.equal([]);
             expect(fs.readFileSync(destination).equals(payload)).to.equal(true);
@@ -72,15 +62,9 @@ describe('kernel volume file lifecycle', function volumeSuite() {
             await expectTransferFailure(`PUT '${path.join(allowed, 'missing.bin')}' INTO '${remote}' OVERWRITE`);
             await execute(`REMOVE '${remote}'`);
             await execute(`REMOVE '${remote}'`);
-            let deleted: unknown;
-            try {
-              await execute(`GET '${remote}' TO '${path.join(allowed, 'deleted.bin')}'`);
-            } catch (error) {
-              deleted = error;
-            }
-            expect(deleted).to.be.instanceOf(StagingError);
+            await expectTransferFailure(`GET '${remote}' TO '${path.join(allowed, 'deleted.bin')}'`);
           } finally {
-            await execute(`DROP SCHEMA main.${namespace} CASCADE`);
+            await execute(`REMOVE '${remote}'`);
           }
         } finally {
           await session.close();
