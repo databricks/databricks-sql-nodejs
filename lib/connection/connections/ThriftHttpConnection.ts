@@ -116,6 +116,20 @@ function readErrorBody(body: NodeJS.ReadableStream): Promise<ErrorBodyReadResult
   });
 }
 
+// Builds a response equivalent to `response` whose body is the `body` stream. The body is
+// always a stream (as on a fetched response), so `.body.pipe()` / `.body.on()` keep working,
+// and the original read limits (`timeout`, `size`) still apply to `text()` / `json()` etc.
+function replayResponse(response: Response, body: PassThrough): Response {
+  return new Response(body, {
+    url: response.url,
+    status: response.status,
+    statusText: response.statusText,
+    headers: response.headers,
+    size: response.size,
+    timeout: response.timeout,
+  });
+}
+
 async function createHTTPException(response: Response): Promise<THTTPException> {
   for (const header of errorDetailHeaders) {
     const detail = normalizeErrorDetail(response.headers.get(header) ?? '');
@@ -137,27 +151,22 @@ async function createHTTPException(response: Response): Promise<THTTPException> 
     return new THTTPException(response);
   }
 
-  const init = {
-    url: response.url,
-    status: response.status,
-    statusText: response.statusText,
-    headers: response.headers,
-  };
   const prefix = Buffer.concat(result.chunks);
+  const replay = new PassThrough();
 
   if (!result.complete) {
     // Budget exhausted: report the status only, and expose a response that still
     // yields the whole body (the bytes read so far followed by the rest of the stream)
-    const rest = new PassThrough();
-    rest.write(prefix);
-    pipeline(response.body, rest, () => {
-      // Errors reach whoever reads `rest`
+    replay.write(prefix);
+    pipeline(response.body, replay, () => {
+      // Errors reach whoever reads `replay`
     });
-    return new THTTPException(new Response(rest, init));
+    return new THTTPException(replayResponse(response, replay));
   }
 
   // The body is consumed now, so expose an equivalent response that can still be read
-  return new THTTPException(new Response(prefix, init), getErrorDetailFromBody(prefix));
+  replay.end(prefix);
+  return new THTTPException(replayResponse(response, replay), getErrorDetailFromBody(prefix));
 }
 
 // thrift >= 0.25 accepts an optional `maxLength` that @types/thrift doesn't declare.

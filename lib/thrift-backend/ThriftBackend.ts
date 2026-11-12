@@ -116,7 +116,7 @@ export default class ThriftBackend implements IBackend {
       // propagates unchanged — note StatusError is NOT an Error subclass
       // (it only `implements Error`), so it must be re-thrown as-is rather
       // than normalized, or its sqlState/message would be lost.
-      if (error instanceof StatusError && error.sqlState === 'KP001') {
+      if (ThriftBackend.isKp001(error)) {
         logger.log(LogLevel.debug, `Reyden: detected KP001 on warehouse ${warehouseId}; falling back to SEA backend`);
 
         // Mark this warehouse as Reyden for future connections.
@@ -131,13 +131,21 @@ export default class ThriftBackend implements IBackend {
           return await this.openSessionWithKernelBackend(request);
         } catch (kernelError) {
           // Preserve the Thrift KP001 at the end of the kernel error's cause chain, so a
-          // cause the kernel error already carries is not clobbered.
+          // cause the kernel error already carries is not clobbered. Concurrent opens can
+          // share one rejected fallback connect (and so one kernel error object): once a
+          // KP001 is in the chain, later callers leave it alone rather than each appending
+          // their own KP001 to an error every caller sees.
           if (kernelError && typeof kernelError === 'object') {
             let tail = kernelError as { cause?: unknown };
+            let hasKp001 = false;
             for (let depth = 0; depth < 10 && tail.cause && typeof tail.cause === 'object'; depth += 1) {
+              if (ThriftBackend.isKp001(tail.cause)) {
+                hasKp001 = true;
+                break;
+              }
               tail = tail.cause as { cause?: unknown };
             }
-            if (tail.cause === undefined) {
+            if (!hasKp001 && tail.cause === undefined) {
               tail.cause = error;
             }
           }
@@ -149,6 +157,10 @@ export default class ThriftBackend implements IBackend {
       // Not a Reyden rejection — surface the original error unchanged.
       throw error;
     }
+  }
+
+  private static isKp001(error: unknown): error is StatusError {
+    return error instanceof StatusError && error.sqlState === 'KP001';
   }
 
   /**

@@ -1,7 +1,9 @@
 import http from 'http';
 import { AddressInfo } from 'net';
+import { PassThrough, Readable } from 'stream';
 import { expect } from 'chai';
 import thrift, { TBinaryProtocol, TBufferedTransport } from 'thrift';
+import { RequestInit, FetchError } from 'node-fetch';
 import ThriftHttpConnection, { THTTPException } from '../../../../lib/connection/connections/ThriftHttpConnection';
 import NullRetryPolicy from '../../../../lib/connection/connections/NullRetryPolicy';
 import TCLIService from '../../../../thrift/TCLIService';
@@ -30,11 +32,20 @@ interface Reply {
 
 const PREFIX = 'Received a response with a bad HTTP status code';
 
+function readStream(stream: NodeJS.ReadableStream): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    stream.on('data', (chunk: Buffer | string) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
+    stream.once('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
+    stream.once('error', reject);
+  });
+}
+
 // Sends one Thrift write to a local server that answers with `reply`, and
 // returns the error handed to the pending Thrift callback.
 async function failWith(
   reply: Reply | ((res: http.ServerResponse) => void),
-  requestHeaders: Record<string, string> = {},
+  requestConfig: RequestInit = {},
   // Runs before the server is shut down, e.g. to read a body that is still streaming
   whileConnected?: (error: THTTPException) => Promise<void>,
 ): Promise<THTTPException> {
@@ -54,7 +65,7 @@ async function failWith(
     const { port } = server.address() as AddressInfo;
     const connection = new ThriftHttpConnection(
       { url: `http://127.0.0.1:${port}/`, getRetryPolicy: async () => new NullRetryPolicy() },
-      { headers: requestHeaders },
+      requestConfig,
     );
     const error = await new Promise<THTTPException>((resolve) => {
       connection.client = { _reqs: { 1: (err: unknown) => resolve(err as THTTPException) } } as any;
@@ -276,8 +287,73 @@ describe('ThriftHttpConnection', () => {
       expect(Date.now() - started).to.be.below(5_000);
     });
 
+    it('exposes the read body as a stream that can be consumed with .on() and .pipe()', async () => {
+      const body = '{"error_code":401,"message":"Invalid access token."}';
+      const viaEvents = await failWith({ status: 401, headers: { 'content-type': 'application/json' }, body });
+      expect(viaEvents.message).to.equal(`${PREFIX}: 401: Invalid access token.`);
+      expect(viaEvents.response.body).to.be.instanceOf(Readable);
+      expect(await readStream(viaEvents.response.body)).to.equal(body);
+
+      const viaPipe = await failWith({ status: 401, headers: { 'content-type': 'application/json' }, body });
+      expect(await readStream(viaPipe.response.body.pipe(new PassThrough()))).to.equal(body);
+    });
+
+    it('exposes a partially read body as a stream that can be piped', async () => {
+      const chunk = `${'y'.repeat(1023)}\n`;
+      const chunkCount = 100; // beyond the 64 KiB budget
+      let body: string | undefined;
+      const error = await failWith(
+        (res) => {
+          res.writeHead(401, { 'content-type': 'text/plain' });
+          for (let i = 0; i < chunkCount; i += 1) {
+            res.write(chunk);
+          }
+          res.end();
+        },
+        {},
+        async (err) => {
+          body = await readStream(err.response.body.pipe(new PassThrough()));
+        },
+      );
+      expect(error.message).to.equal(`${PREFIX}: 401`);
+      expect(body).to.equal(chunk.repeat(chunkCount));
+    });
+
+    it('keeps the request timeout on a replayed body that stalls after the byte budget', async function test() {
+      this.timeout(10_000);
+      let readError: unknown;
+      const error = await failWith(
+        (res) => {
+          res.writeHead(401, { 'content-type': 'text/plain' });
+          res.write('s'.repeat(70 * 1024)); // beyond the 64 KiB budget, never ended
+        },
+        { timeout: 300 },
+        async (err) => {
+          readError = await err.response.text().then(
+            () => undefined,
+            (e) => e,
+          );
+        },
+      );
+      expect(error.message).to.equal(`${PREFIX}: 401`);
+      expect(error.response.timeout).to.equal(300);
+      expect(readError).to.be.instanceOf(FetchError);
+      expect((readError as FetchError).type).to.equal('body-timeout');
+    });
+
+    it('keeps the response size limit on a replayed body', async () => {
+      const error = await failWith({ status: 401, body: 'x'.repeat(100) }, { size: 10 });
+      expect(error.response.size).to.equal(10);
+      const readError = await error.response.text().then(
+        () => undefined,
+        (e) => e,
+      );
+      expect(readError).to.be.instanceOf(FetchError);
+      expect((readError as FetchError).type).to.equal('max-size');
+    });
+
     it('never echoes request headers', async () => {
-      const error = await failWith({ status: 401 }, { Authorization: 'Bearer dapi-secret-token' });
+      const error = await failWith({ status: 401 }, { headers: { Authorization: 'Bearer dapi-secret-token' } });
       expect(error.message).to.not.include('dapi-secret-token');
     });
   });
