@@ -7,6 +7,16 @@ import IClientContext from '../../../contracts/IClientContext';
 
 export { OAuthFlow };
 
+// Order-insensitive comparison; unknown (unrecorded) scopes on either side count as a match.
+function scopesMatch(tokenScopes?: OAuthScopes, expectedScopes?: OAuthScopes): boolean {
+  if (!tokenScopes || !expectedScopes) {
+    return true;
+  }
+  const expected = new Set(expectedScopes);
+  const actual = new Set(tokenScopes);
+  return actual.size === expected.size && [...actual].every((scope) => expected.has(scope));
+}
+
 export interface DatabricksOAuthOptions extends OAuthManagerOptions {
   scopes?: OAuthScopes;
   persistence?: OAuthPersistence;
@@ -37,6 +47,12 @@ export default class DatabricksOAuth implements IAuthentication {
     const requestedScopes = normalizedScopes.length > 0 ? normalizedScopes : undefined;
 
     let token = await persistence.read(host);
+    // A persistence store may be shared by clients configured with different scopes. Don't reuse
+    // (or, for U2M, keep refreshing) a token issued for other scopes; acquire a new one instead.
+    // Tokens that don't record their scopes are kept, as before.
+    if (token && !scopesMatch(token.scopes, this.getManager().getRequestedScopes(requestedScopes))) {
+      token = undefined;
+    }
     // M2M tokens can't be refreshed, so an expired persisted one is replaced by a new grant. Request
     // the configured scopes for it, not the scopes the cached token was issued with.
     if (token && this.options.flow === OAuthFlow.M2M && token.hasExpired) {

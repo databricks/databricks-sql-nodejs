@@ -191,6 +191,14 @@ export default abstract class OAuthManager {
     return new OAuthToken(accessToken, undefined, mappedScopes);
   }
 
+  /**
+   * The scopes a new grant would request for `scopes` (after the flow's defaults and mapping), i.e.
+   * the scopes `getToken(scopes)` records on the token it returns.
+   */
+  public getRequestedScopes(scopes?: OAuthScopes): OAuthScopes {
+    return this.getScopes(scopes);
+  }
+
   public async getToken(scopes?: OAuthScopes): Promise<OAuthToken> {
     switch (this.options.flow) {
       case OAuthFlow.U2M:

@@ -17,6 +17,8 @@ type AuthOptions =
     }
   | {
       authType: 'databricks-oauth';
+      // Custom OAuth token store, keyed by host. A stored token that records scopes other than the
+      // ones this client would request is ignored and replaced by a new grant (for U2M, a new login).
       persistence?: OAuthPersistence;
       azureTenantId?: string;
       oauthClientId?: string;
