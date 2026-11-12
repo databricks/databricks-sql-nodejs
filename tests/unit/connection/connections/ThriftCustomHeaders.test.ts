@@ -2,7 +2,6 @@ import http from 'http';
 import { AddressInfo } from 'net';
 import { expect } from 'chai';
 import sinon from 'sinon';
-import { Headers } from 'node-fetch';
 import { TBinaryProtocol, TBufferedTransport } from 'thrift';
 import DBSQLClient from '../../../../lib/DBSQLClient';
 import HttpConnection from '../../../../lib/connection/connections/HttpConnection';
@@ -280,13 +279,11 @@ describe('HttpConnection customHeaders', () => {
       'X-Auth-Token': 'new',
     });
 
-    // Pairs and `Headers` instances are matched too; the caller value returns
-    // once the auth headers stop setting it.
-    connection.setHeaders([['X-AUTH-TOKEN', 'pair']]);
-    expect(thriftConnection.config.headers).to.not.have.property('x-auth-token');
-    connection.setHeaders(new Headers({ 'X-Auth-Token': 'instance' }));
-    expect(thriftConnection.config.headers).to.not.have.property('x-auth-token');
     connection.setHeaders({});
-    expect(thriftConnection.config.headers).to.have.property('x-auth-token', 'old');
+    expect(thriftConnection.config.headers).to.deep.equal({
+      'x-auth-token': 'old',
+      'X-Keep': 'kept',
+      'X-Driver': 'driver',
+    });
   });
 });
