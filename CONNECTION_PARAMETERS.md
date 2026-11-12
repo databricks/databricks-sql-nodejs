@@ -49,14 +49,8 @@ backend (the default), the **SEA / Kernel** backend, or both.
 
 Set `client.getConfig().useCloudFetch = false` (default `true`) before opening a session to fetch
 complete results without cloud-storage downloads. On the kernel backend this
-connection setting takes precedence over case-insensitive copies of
-`can_cloud_download` in session configuration. Per-statement `useCloudFetch`
-overrides remain unsupported on the kernel backend.
-
-Kernel support requires a native release containing
-[databricks-sql-kernel#436](https://github.com/databricks/databricks-sql-kernel/pull/436).
-`KERNEL_REV` selects that source for validation; update the published native dependency
-alongside the connector release.
+connection setting takes precedence over conflicting session configuration.
+Per-statement `useCloudFetch` overrides remain unsupported on the kernel backend.
 
 ## Authentication
 
