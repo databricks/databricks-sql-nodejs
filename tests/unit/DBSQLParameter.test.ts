@@ -200,6 +200,29 @@ describe('DBSQLParameter', () => {
       expect(decimal(new Int64(1234))).to.deep.equal(expected('DECIMAL(4,0)', '1234'));
     });
 
+    it('stringifies Int64 values beyond 2^53 exactly', () => {
+      // `Int64#toString` returns "Infinity" from 2^53 upwards.
+      expect(decimal(new Int64(0x200000, 0))).to.deep.equal(expected('DECIMAL(16,0)', '9007199254740992'));
+      expect(decimal(new Int64(0x200000, 1))).to.deep.equal(expected('DECIMAL(16,0)', '9007199254740993'));
+      expect(decimal(new Int64(0x7fffffff, 0xffffffff))).to.deep.equal(
+        expected('DECIMAL(19,0)', '9223372036854775807'),
+      );
+      expect(decimal(new Int64(0x80000000, 0))).to.deep.equal(expected('DECIMAL(19,0)', '-9223372036854775808'));
+      expect(decimal(new Int64(-5))).to.deep.equal(expected('DECIMAL(1,0)', '-5'));
+      expect(new DBSQLParameter({ value: new Int64(0x200000, 1) }).toSparkParameter()).to.deep.equal(
+        expected('BIGINT', '9007199254740993'),
+      );
+    });
+
+    it('qualifies the DEC and NUMERIC synonyms like DECIMAL', () => {
+      expect(decimal('123.45', 'NUMERIC')).to.deep.equal(expected('DECIMAL(5,2)', '123.45'));
+      expect(decimal('123.45', 'numeric')).to.deep.equal(expected('DECIMAL(5,2)', '123.45'));
+      expect(decimal('123.45', 'DEC')).to.deep.equal(expected('DECIMAL(5,2)', '123.45'));
+      expect(decimal('123.45', ' Decimal ')).to.deep.equal(expected('DECIMAL(5,2)', '123.45'));
+      expect(decimal('123.45', 'NUMERIC(10,2)')).to.deep.equal(expected('NUMERIC(10,2)', '123.45'));
+      expect(decimal('123.45', 'DECIMALS')).to.deep.equal(expected('DECIMALS', '123.45'));
+    });
+
     it('rewrites exponent forms as plain numerals', () => {
       // `Number#toString` uses exponent notation below 1e-6 and from 1e21.
       expect(decimal(1e-7)).to.deep.equal(expected('DECIMAL(7,7)', '0.0000001'));

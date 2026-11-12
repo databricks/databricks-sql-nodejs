@@ -64,9 +64,11 @@ function inferNumberType(value: number): DBSQLParameterType {
 const DECIMAL_MAX_PRECISION = 38;
 
 /**
- * Qualify a bare `DECIMAL` with the precision and scale of its value. A bare
- * `DECIMAL` makes the Thrift server bind a scale-0 decimal, silently truncating
- * `"123.45"` to `123`, and the kernel codec rejects it outright.
+ * Qualify a bare `DECIMAL` (or its `DEC` / `NUMERIC` synonyms) with the
+ * precision and scale of its value. Both backends otherwise lose the fraction:
+ * the Thrift server binds a scale-0 decimal, truncating `"123.45"` to `123`,
+ * and the kernel's raw-param path forwards the type verbatim, so SEA binds it
+ * as `DECIMAL(10,0)` and rounds.
  *
  * Precision is significant integer digits plus scale (Spark's decimal-literal
  * rule), so `"99.99"` ⇒ `DECIMAL(4,2)` and `"0.00001"` ⇒ `DECIMAL(5,5)`. Plain
@@ -118,6 +120,18 @@ function qualifyDecimal(stringValue: string): { type: string; value: string } {
   return { type, value: sign === '-' ? `-${plain}` : plain };
 }
 
+// Unqualified decimal type names; a qualified `DECIMAL(p,s)` is left as given.
+const BARE_DECIMAL_TYPE = /^(DECIMAL|DEC|NUMERIC)$/i;
+
+/**
+ * Exact decimal string for an `Int64`. `Int64#toString` goes through a JS
+ * number and returns `"Infinity"` for magnitudes ≥ 2^53, so read the
+ * big-endian two's-complement bytes as a `bigint` instead.
+ */
+function int64ToString(value: Int64): string {
+  return value.toBuffer().readBigInt64BE(0).toString();
+}
+
 interface DBSQLParameterOptions {
   type?: DBSQLParameterType;
   value: DBSQLParameterValue;
@@ -141,7 +155,7 @@ export class DBSQLParameter {
     const param = this.toUnqualifiedSparkParameter(options);
     const stringValue = param.value?.stringValue;
     // Only an explicit type can be DECIMAL; inferred types never are.
-    if (this.type?.toUpperCase() === DBSQLParameterType.DECIMAL && typeof stringValue === 'string') {
+    if (this.type !== undefined && BARE_DECIMAL_TYPE.test(this.type.trim()) && typeof stringValue === 'string') {
       const decimal = qualifyDecimal(stringValue);
       param.type = decimal.type;
       param.value = new TSparkParameterValue({ stringValue: decimal.value });
@@ -191,7 +205,7 @@ export class DBSQLParameter {
         name,
         type: wireType ?? DBSQLParameterType.BIGINT,
         value: new TSparkParameterValue({
-          stringValue: this.value.toString(),
+          stringValue: this.value instanceof Int64 ? int64ToString(this.value) : this.value.toString(),
         }),
       });
     }
