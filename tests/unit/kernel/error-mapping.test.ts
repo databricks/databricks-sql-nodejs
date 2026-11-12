@@ -358,7 +358,7 @@ describe('KernelErrorMapping.decodeNapiKernelError — cause chain', () => {
     expect(err.kernelMetadata?.diagnosticInfo).to.equal('secret-diagnostic-info');
     const causeMessage = String(err.cause?.message);
     expect(causeMessage.startsWith('SqlError: boom mmm')).to.equal(true);
-    expect(causeMessage.length).to.equal(501);
+    expect(causeMessage.length).to.equal(500);
     expect(causeMessage.endsWith('…')).to.equal(true);
     expect(causeMessage).to.not.contain('secret-diagnostic-info');
     expect(causeMessage).to.not.contain('details');

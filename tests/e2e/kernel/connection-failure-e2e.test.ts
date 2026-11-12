@@ -9,7 +9,7 @@ import config from '../utils/config';
 const INVALID_TOKEN = 'dapi-invalid-e2e-token';
 
 // Regression for https://github.com/databricks/databricks-sql-nodejs/issues/467 —
-// a rejected kernel session open should keep the underlying error as `cause`.
+// a rejected kernel session open should expose a bounded kernel error summary as `cause`.
 describe('kernel connection failure errors', function suite() {
   this.timeout(60_000);
 
@@ -18,7 +18,7 @@ describe('kernel connection failure errors', function suite() {
     return;
   }
 
-  it('keeps the server detail in the message and the binding error as cause', async () => {
+  it('keeps the server detail in the message and a kernel error summary as cause', async () => {
     const client = new DBSQLClient();
     try {
       await client.connect({

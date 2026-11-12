@@ -124,17 +124,10 @@ export default class ThriftBackend implements IBackend {
           reydenCache.markReyden(host, warehouseId);
         }
 
-        // Fall back to the kernel (SEA) backend exactly once. If it also fails,
-        // surface the kernel error but keep the original Thrift rejection as its
-        // cause for diagnosis.
         try {
           return await this.openSessionWithKernelBackend(request);
         } catch (kernelError) {
-          // Preserve the Thrift KP001 at the end of the kernel error's cause chain, so a
-          // cause the kernel error already carries is not clobbered. Concurrent opens can
-          // share one rejected fallback connect (and so one kernel error object): once a
-          // KP001 is in the chain, later callers leave it alone rather than each appending
-          // their own KP001 to an error every caller sees.
+          // Append KP001 once at the end of the kernel cause chain, even when concurrent opens share a rejection.
           if (kernelError && typeof kernelError === 'object') {
             let tail = kernelError as { cause?: unknown };
             let hasKp001 = false;

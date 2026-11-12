@@ -3,6 +3,7 @@ import sinon from 'sinon';
 import ThriftBackend from '../../../lib/thrift-backend/ThriftBackend';
 import StatusError from '../../../lib/errors/StatusError';
 import reydenCache from '../../../lib/ReydenWarehouseCache';
+import { decodeNapiKernelError } from '../../../lib/kernel/KernelErrorMapping';
 import { TStatusCode } from '../../../thrift/TCLIService_types';
 
 /**
@@ -126,12 +127,12 @@ describe('Reyden Thrift Auto-Recovery — Orchestration', () => {
     expect(thrown.cause).to.equal(thriftError);
   });
 
-  it('appends the Thrift rejection after a cause the kernel error already carries', async () => {
+  it('preserves the decoded kernel cause before the Thrift rejection', async () => {
     const backend = makeBackend();
     const thriftError = kp001Error();
-    const napiError = new Error('{"code":"Unauthenticated","message":"denied"}');
-    const kernelError = new Error('denied');
-    Object.defineProperty(kernelError, 'cause', { value: napiError, writable: true, configurable: true });
+    const kernelError = decodeNapiKernelError(
+      new Error(`__databricks_error__:${JSON.stringify({ code: 'Unauthenticated', message: 'denied' })}`),
+    );
     sandbox.stub(backend as any, 'openSessionWithThrift').rejects(thriftError);
     sandbox.stub(backend as any, 'openSessionWithKernelBackend').rejects(kernelError);
 
@@ -143,7 +144,7 @@ describe('Reyden Thrift Auto-Recovery — Orchestration', () => {
     }
 
     expect(thrown).to.equal(kernelError);
-    expect(thrown.cause).to.equal(napiError);
+    expect(thrown.cause.message).to.equal('Unauthenticated: denied');
     expect(thrown.cause.cause).to.equal(thriftError);
   });
 

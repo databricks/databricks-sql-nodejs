@@ -237,7 +237,7 @@ function buildKernelMetadata(parsed: Record<string, unknown>): KernelMetadata {
 const MAX_CAUSE_MESSAGE_LENGTH = 500;
 
 function boundCauseMessage(text: string): string {
-  return text.length > MAX_CAUSE_MESSAGE_LENGTH ? `${text.slice(0, MAX_CAUSE_MESSAGE_LENGTH)}…` : text;
+  return text.length > MAX_CAUSE_MESSAGE_LENGTH ? `${text.slice(0, MAX_CAUSE_MESSAGE_LENGTH - 1)}…` : text;
 }
 
 /**
