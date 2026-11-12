@@ -31,6 +31,26 @@ const DRIVER_MANAGED_HEADERS = new Set([
 const VALID_HEADER_NAME = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
 const INVALID_HEADER_VALUE_CHAR = /[^\t\x20-\x7e\x80-\xff]/;
 
+// Lower-cased names of any `HeadersInit` shape (`Headers`, pairs or record).
+function headerNames(headers: HeadersInit | undefined): Array<string> {
+  if (!headers) {
+    return [];
+  }
+  if (Array.isArray(headers)) {
+    return headers.filter((entry) => typeof entry?.[0] === 'string').map((entry) => entry[0].toLowerCase());
+  }
+  if (typeof (headers as any).forEach === 'function') {
+    const names: Array<string> = [];
+    (headers as any).forEach((_value: unknown, name: unknown) => {
+      if (typeof name === 'string') {
+        names.push(name.toLowerCase());
+      }
+    });
+    return names;
+  }
+  return Object.keys(headers).map((name) => name.toLowerCase());
+}
+
 export default class HttpConnection implements IConnectionProvider {
   private readonly options: IConnectionOptions;
 
@@ -38,8 +58,8 @@ export default class HttpConnection implements IConnectionProvider {
 
   private headers: HeadersInit = {};
 
-  // Caller `customHeaders` merged under `options.headers`; built once.
-  private baseHeaders?: HeadersInit;
+  // Validated caller `customHeaders` without driver-managed names; built once.
+  private customHeaders?: Record<string, string>;
 
   private connection?: ThriftHttpConnection;
 
@@ -56,10 +76,20 @@ export default class HttpConnection implements IConnectionProvider {
   }
 
   private getRequestHeaders(): HeadersInit {
-    if (!this.baseHeaders) {
-      this.baseHeaders = { ...this.getCustomHeaders(), ...this.options.headers };
+    if (!this.customHeaders) {
+      this.customHeaders = this.getCustomHeaders();
     }
-    return { ...this.baseHeaders, ...this.headers };
+    // Drop caller keys that `options.headers` or the auth headers also set, in
+    // any casing: node-fetch would join both into one value instead of letting
+    // the later one win. Re-checked on every call as auth headers change.
+    const reserved = new Set([...headerNames(this.options.headers), ...headerNames(this.headers)]);
+    const custom: Record<string, string> = {};
+    for (const [name, value] of Object.entries(this.customHeaders)) {
+      if (!reserved.has(name.toLowerCase())) {
+        custom[name] = value;
+      }
+    }
+    return { ...custom, ...this.options.headers, ...this.headers };
   }
 
   private getCustomHeaders(): Record<string, string> {

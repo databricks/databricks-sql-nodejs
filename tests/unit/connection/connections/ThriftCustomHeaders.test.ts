@@ -2,6 +2,7 @@ import http from 'http';
 import { AddressInfo } from 'net';
 import { expect } from 'chai';
 import sinon from 'sinon';
+import { Headers } from 'node-fetch';
 import { TBinaryProtocol, TBufferedTransport } from 'thrift';
 import DBSQLClient from '../../../../lib/DBSQLClient';
 import HttpConnection from '../../../../lib/connection/connections/HttpConnection';
@@ -180,6 +181,19 @@ describe('ConnectionOptions.customHeaders on the Thrift transport', () => {
     expect(openSession?.headers['x-databricks-org-id']).to.equal('42');
   });
 
+  it('lets custom-provider headers win over caller headers with different casing', async () => {
+    const { openSession, executeStatement } = await runSessionAndStatement({
+      authType: 'custom',
+      provider: { authenticate: async () => ({ 'X-Auth-Token': 'new' }) },
+      customHeaders: { 'x-auth-token': 'old', 'X-Keep': 'kept' },
+    } as Partial<ConnectionOptions>);
+
+    for (const request of [openSession, executeStatement]) {
+      expect(request?.headers['x-auth-token']).to.equal('new');
+      expect(request?.headers['x-keep']).to.equal('kept');
+    }
+  });
+
   it('rejects headers that cannot be sent, without echoing the value', async () => {
     const cases: Array<[Record<string, string>, RegExp]> = [
       [{ 'X-Bad': 'secret\r\nInjected: 1' }, /customHeaders value for `X-Bad`/],
@@ -238,5 +252,41 @@ describe('HttpConnection customHeaders', () => {
     const warnings = log.getCalls().filter((call) => call.args[0] === LogLevel.warn);
     expect(warnings.map((call) => call.args[1])).to.have.length(3);
     expect(warnings[0].args[1]).to.contain('`user-agent`');
+  });
+
+  it('drops caller headers that driver or auth headers set in a different casing', async () => {
+    const connection = new HttpConnection(
+      {
+        host: 'localhost',
+        port: 10001,
+        path: '/hive',
+        headers: { 'X-Driver': 'driver' },
+        customHeaders: { 'x-driver': 'caller', 'x-auth-token': 'old', 'X-Keep': 'kept' },
+      },
+      new ClientContextStub(),
+    );
+
+    const thriftConnection = await connection.getThriftConnection();
+    expect(thriftConnection.config.headers).to.deep.equal({
+      'x-auth-token': 'old',
+      'X-Keep': 'kept',
+      'X-Driver': 'driver',
+    });
+
+    connection.setHeaders({ 'X-Auth-Token': 'new' });
+    expect(thriftConnection.config.headers).to.deep.equal({
+      'X-Keep': 'kept',
+      'X-Driver': 'driver',
+      'X-Auth-Token': 'new',
+    });
+
+    // Pairs and `Headers` instances are matched too; the caller value returns
+    // once the auth headers stop setting it.
+    connection.setHeaders([['X-AUTH-TOKEN', 'pair']]);
+    expect(thriftConnection.config.headers).to.not.have.property('x-auth-token');
+    connection.setHeaders(new Headers({ 'X-Auth-Token': 'instance' }));
+    expect(thriftConnection.config.headers).to.not.have.property('x-auth-token');
+    connection.setHeaders({});
+    expect(thriftConnection.config.headers).to.have.property('x-auth-token', 'old');
   });
 });
