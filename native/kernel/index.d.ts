@@ -767,7 +767,7 @@ export interface ConnectionOptions {
    * representation. `true` (the default) requests Arrow
    * `struct<srid: int32, wkb: binary>` values; `false` requests WKT / EWKT
    * in Arrow UTF-8 values. The kernel normalizes both standard-warehouse
-   * text and Reyden native Arrow results locally and never sends this choice
+   * text and native Arrow results locally and never sends this choice
    * to SEA.
    */
   enableGeoSpatialSupport?: boolean
@@ -1126,6 +1126,11 @@ export interface ExecuteOptions {
    * `StatementSpec.row_limit`. Omitted ⇒ no driver-imposed cap.
    */
   rowLimit?: number
+  /**
+   * Configured transfers consume instruction rows.
+   * Omit to handle instructions in the caller; an empty list denies local file access.
+   */
+  stagingAllowedLocalPaths?: Array<string>
   /**
    * Positional parameters, in 1-based wire order. Index `i` in this
    * Vec corresponds to the `i+1`-th `?` placeholder in the SQL.

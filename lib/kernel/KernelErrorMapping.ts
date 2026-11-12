@@ -2,6 +2,7 @@ import HiveDriverError from '../errors/HiveDriverError';
 import AuthenticationError from '../errors/AuthenticationError';
 import OperationStateError, { OperationStateErrorCode } from '../errors/OperationStateError';
 import ParameterError from '../errors/ParameterError';
+import StagingError from '../errors/StagingError';
 
 /**
  * Sentinel prefix the napi binding's `napi_err_from_kernel` puts on
@@ -27,6 +28,8 @@ export interface KernelErrorShape {
   message: string;
   /** Optional SQLSTATE — five-char alphanumeric, when the kernel was able to surface it. */
   sqlstate?: string;
+  /** Distinguishes transfer failures from broader kernel error categories. */
+  errorCode?: string;
 }
 
 /**
@@ -125,6 +128,9 @@ function defineErrorMetadata<K extends string, V>(error: Error, key: K, value: V
  *   DataLoss, Internal,
  *   InvalidStatementHandle, SqlError   → HiveDriverError
  *
+ * File-transfer diagnostics map to StagingError except Cancelled and Timeout,
+ * which retain their operation-state errors for lifecycle handling.
+ *
  * Unknown `code` values (e.g. if the kernel adds a new variant) fall through
  * to HiveDriverError so the driver never silently drops an error. The kernel's
  * `ErrorCode` is `#[non_exhaustive]` so this can legitimately happen.
@@ -137,58 +143,65 @@ export function mapKernelErrorToJsError(kErr: KernelErrorShape): ErrorWithSqlSta
 
   let error: ErrorWithSqlState;
 
-  switch (code as KernelErrorCode) {
-    case 'Unauthenticated':
-    case 'PermissionDenied':
-      error = new AuthenticationError(message);
-      break;
+  if (
+    code !== 'Cancelled' &&
+    code !== 'Timeout' &&
+    (kErr.errorCode === 'FILE_TRANSFER_ERROR' || kErr.errorCode === 'FILE_TRANSFER_PERMISSION_ERROR')
+  ) {
+    error = new StagingError(message);
+  } else {
+    switch (code as KernelErrorCode) {
+      case 'Unauthenticated':
+      case 'PermissionDenied':
+        error = new AuthenticationError(message);
+        break;
 
-    case 'Cancelled':
-      // OperationStateError with the Canceled code carries the kernel message
-      // through the response.displayMessage fallback path.
-      error = new OperationStateError(OperationStateErrorCode.Canceled);
-      error.message = message;
-      break;
+      case 'Cancelled':
+        // OperationStateError with the Canceled code carries the kernel message
+        // through the response.displayMessage fallback path.
+        error = new OperationStateError(OperationStateErrorCode.Canceled);
+        error.message = message;
+        break;
 
-    case 'Timeout':
-      error = new OperationStateError(OperationStateErrorCode.Timeout);
-      error.message = message;
-      break;
+      case 'Timeout':
+        error = new OperationStateError(OperationStateErrorCode.Timeout);
+        error.message = message;
+        break;
 
-    case 'InvalidArgument':
-      error = new ParameterError(message);
-      break;
+      case 'InvalidArgument':
+        error = new ParameterError(message);
+        break;
 
-    case 'SqlError': {
-      // A server-reported SQL execution failure (kernel `SqlError`, e.g. a
-      // bad query, missing table, divide-by-zero, invalid cast). The Thrift
-      // backend surfaces the same situation as `OperationStateError(Error)`
-      // when the operation reaches ERROR_STATE (see DBSQLOperation), so map
-      // SqlError to the same class for backend parity. OperationStateError
-      // extends HiveDriverError, so existing `instanceof HiveDriverError`
-      // catches are unaffected.
-      const stateError = new OperationStateError(OperationStateErrorCode.Error);
-      stateError.message = message;
-      error = stateError;
-      break;
+      case 'SqlError': {
+        // A server-reported SQL execution failure (kernel `SqlError`, e.g. a
+        // bad query, missing table, divide-by-zero, invalid cast). The Thrift
+        // backend surfaces the same situation as `OperationStateError(Error)`
+        // when the operation reaches ERROR_STATE (see DBSQLOperation), so map
+        // SqlError to the same class for backend parity. OperationStateError
+        // extends HiveDriverError, so existing `instanceof HiveDriverError`
+        // catches are unaffected.
+        const stateError = new OperationStateError(OperationStateErrorCode.Error);
+        stateError.message = message;
+        error = stateError;
+        break;
+      }
+
+      // All remaining kernel ErrorCode variants map to the base driver error class.
+      case 'NotFound':
+      case 'ResourceExhausted':
+      case 'Unavailable':
+      case 'DataLoss':
+      case 'Internal':
+      case 'InvalidStatementHandle':
+      case 'NetworkError':
+        error = new HiveDriverError(message);
+        break;
+
+      default:
+        // Unknown/future kernel variant — never drop the error, surface as base class.
+        error = new HiveDriverError(message);
+        break;
     }
-
-    // All remaining kernel ErrorCode variants map to the base driver error class.
-    // M0 intentionally does not introduce new error classes; M1 may add nuance.
-    case 'NotFound':
-    case 'ResourceExhausted':
-    case 'Unavailable':
-    case 'DataLoss':
-    case 'Internal':
-    case 'InvalidStatementHandle':
-    case 'NetworkError':
-      error = new HiveDriverError(message);
-      break;
-
-    default:
-      // Unknown/future kernel variant — never drop the error, surface as base class.
-      error = new HiveDriverError(message);
-      break;
   }
 
   if (sqlstate !== undefined) {
@@ -305,7 +318,12 @@ export function decodeNapiKernelError(err: unknown): Error {
   const msg = envelope.message as string;
   const sqlState = typeof envelope.sqlState === 'string' ? envelope.sqlState : undefined;
 
-  const jsErr = mapKernelErrorToJsError({ code, message: msg, sqlstate: sqlState });
+  const jsErr = mapKernelErrorToJsError({
+    code,
+    message: msg,
+    sqlstate: sqlState,
+    errorCode: typeof envelope.errorCode === 'string' ? envelope.errorCode : undefined,
+  });
 
   const meta = buildKernelMetadata(envelope);
   // Skip the namespace attachment entirely when no fields validated

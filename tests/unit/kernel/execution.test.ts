@@ -1041,13 +1041,11 @@ describe('KernelSessionBackend', () => {
 
   // Unsupported-on-kernel per-statement HINTS are NO-OPs (not errors) so Thrift-
   // targeted call sites are drop-in on the kernel path. They are kernel-governed
-  // perf/format hints (useCloudFetch / useLZ4Compression) or an unexposed feature
-  // (staging); ignoring them can't change results. (Parameter binding is NOT here
+  // perf/format hints (useCloudFetch / useLZ4Compression). (Parameter binding is NOT here
   // — a dropped param would change results, so it still throws; asserted above.)
   for (const { name, options } of [
     { name: 'useCloudFetch', options: { useCloudFetch: true } },
     { name: 'useLZ4Compression', options: { useLZ4Compression: true } },
-    { name: 'stagingAllowedLocalPath', options: { stagingAllowedLocalPath: '/tmp' } },
   ] as const) {
     it(`executeStatement ignores unsupported ${name} (no-op, does not throw)`, async () => {
       const connection = new FakeNativeConnection();
@@ -1056,6 +1054,20 @@ describe('KernelSessionBackend', () => {
       const op = await session.executeStatement('SELECT 1', options);
       expect(op, `${name} should be a no-op`).to.exist;
     });
+  }
+
+  for (const runAsync of [false, true]) {
+    for (const allowed of [undefined, '/tmp/files', ['/tmp/a', '/tmp/b'], []]) {
+      it(`forwards allowed local paths with runAsync=${runAsync} and paths=${JSON.stringify(allowed)}`, async () => {
+        const connection = new FakeNativeConnection();
+        const session = makeSession(connection);
+        await session.executeStatement('SELECT 1', { runAsync, stagingAllowedLocalPath: allowed });
+        const expected = typeof allowed === 'string' ? [allowed] : allowed;
+        expect(
+          (connection.lastOptions as { stagingAllowedLocalPaths?: string[] })?.stagingAllowedLocalPaths,
+        ).to.deep.equal(expected);
+      });
+    }
   }
 
   // Metadata calls forward to the kernel's metadata surface and wrap the
