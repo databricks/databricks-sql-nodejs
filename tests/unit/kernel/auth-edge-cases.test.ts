@@ -292,7 +292,7 @@ describe('KernelBackend — kernel error envelope decoding (DA-F1)', () => {
     expect((caught as Error).message).to.match(/invalid_client/);
   });
 
-  it('preserves the napi error as the AuthenticationError cause on session-open rejection', async () => {
+  it('attaches the kernel code and message as the AuthenticationError cause on session-open rejection', async () => {
     const envelopeJson = '{"code":"Unauthenticated","message":"HTTP 401: Invalid access token","httpStatus":401}';
     const binding = bindingRejectingWith(envelopeJson);
     const backend = new KernelBackend({ nativeBinding: binding, context: makeFakeContext() });
@@ -311,7 +311,7 @@ describe('KernelBackend — kernel error envelope decoding (DA-F1)', () => {
     expect(err.message).to.equal('HTTP 401: Invalid access token');
     expect(err.kernelMetadata?.httpStatus).to.equal(401);
     expect(err.cause).to.be.instanceOf(Error);
-    expect(err.cause.message).to.equal(envelopeJson);
+    expect(err.cause.message).to.equal('Unauthenticated: HTTP 401: Invalid access token');
     expect(String(err.cause.stack)).to.not.contain('__databricks_error__');
     expect(Object.keys(err)).to.not.include('cause');
   });

@@ -327,7 +327,7 @@ describe('KernelErrorMapping.decodeNapiKernelError — cause chain', () => {
   ];
 
   cases.forEach(([code, expectedClass]) => {
-    it(`keeps the binding error as a non-enumerable cause for ${code}`, () => {
+    it(`attaches a non-enumerable code and message cause for ${code}`, () => {
       const json = JSON.stringify({ code, message: 'HTTP 403: Invalid access token', httpStatus: 403 });
       const napiError = new Error(SENTINEL + json);
 
@@ -335,13 +335,34 @@ describe('KernelErrorMapping.decodeNapiKernelError — cause chain', () => {
 
       expect(err).to.be.instanceOf(expectedClass);
       expect(err.message).to.equal('HTTP 403: Invalid access token');
-      expect(err.cause).to.equal(napiError);
-      expect(napiError.message).to.equal(json);
-      expect(String(napiError.stack)).to.not.contain(SENTINEL);
+      expect(err.cause).to.be.instanceOf(Error);
+      expect(err.cause).to.not.equal(napiError);
+      expect((err.cause as Error).message).to.equal(`${code}: HTTP 403: Invalid access token`);
+      expect(napiError.message).to.equal(SENTINEL + json);
       const descriptor = Object.getOwnPropertyDescriptor(err, 'cause');
       expect(descriptor?.enumerable).to.equal(false);
       expect(descriptor?.writable).to.equal(true);
     });
+  });
+
+  it('keeps the envelope diagnostics out of the cause and bounds its length', () => {
+    const json = JSON.stringify({
+      code: 'SqlError',
+      message: `boom ${'m'.repeat(2000)}`,
+      diagnosticInfo: 'secret-diagnostic-info',
+      errorDetailsJson: `{"details":"${'d'.repeat(10000)}"}`,
+    });
+
+    const err = decodeNapiKernelError(new Error(SENTINEL + json)) as ErrorWithSqlState & { cause?: Error };
+
+    expect(err.kernelMetadata?.diagnosticInfo).to.equal('secret-diagnostic-info');
+    const causeMessage = String(err.cause?.message);
+    expect(causeMessage.startsWith('SqlError: boom mmm')).to.equal(true);
+    expect(causeMessage.length).to.equal(501);
+    expect(causeMessage.endsWith('…')).to.equal(true);
+    expect(causeMessage).to.not.contain('secret-diagnostic-info');
+    expect(causeMessage).to.not.contain('details');
+    expect(causeMessage).to.not.contain(SENTINEL);
   });
 
   it('adds no cause to binding-side errors that are returned as-is', () => {
