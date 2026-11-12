@@ -331,13 +331,18 @@ describe('file transfer errors', () => {
       expect(error.kernelMetadata?.errorCode).to.equal('FILE_TRANSFER_ERROR');
     });
   });
-  ['FILE_TRANSFER_ERROR', 'FILE_TRANSFER_PERMISSION_ERROR'].forEach((errorCode) => {
-    it(`preserves StagingError and structured diagnostics for ${errorCode}`, () => {
+  [
+    ['NotFound', 'FILE_TRANSFER_ERROR'],
+    ['NotFound', 'FILE_TRANSFER_PERMISSION_ERROR'],
+    ['PermissionDenied', 'FILE_TRANSFER_PERMISSION_ERROR'],
+    ['InvalidArgument', 'FILE_TRANSFER_ERROR'],
+  ].forEach(([code, errorCode]) => {
+    it(`preserves StagingError and structured diagnostics for ${code}/${errorCode}`, () => {
       const error = decodeNapiKernelError(
         new Error(
           '__databricks_error__:' +
             JSON.stringify({
-              code: 'NotFound',
+              code,
               message: 'File transfer failed with HTTP 404',
               errorCode,
               sqlState: 'HY000',
