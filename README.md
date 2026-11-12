@@ -64,13 +64,20 @@ declarations (such as the global `AsyncDisposable` type) to compile `await using
 provide them, add `"esnext.disposable"` (or `"esnext"`) to `compilerOptions.lib` in your `tsconfig.json`, otherwise the
 example below can fail to compile even with TypeScript 5.2+.
 
-```javascript
+`openSession()` and the session's operation methods are typed as returning the `IDBSQLSession` and `IOperation`
+interfaces, which don't require `Symbol.asyncDispose` (so existing custom implementations keep compiling). In
+TypeScript, wrap their results with `asyncDisposable()`: it returns the driver's own sessions and operations unchanged,
+typed as disposable.
+
+```typescript
+import { DBSQLClient, asyncDisposable } from '@databricks/sql';
+
 async function main() {
   await using client = new DBSQLClient();
   await client.connect({ host, path, token });
 
-  await using session = await client.openSession();
-  await using operation = await session.executeStatement('SELECT "Hello, World!"');
+  await using session = asyncDisposable(await client.openSession());
+  await using operation = asyncDisposable(await session.executeStatement('SELECT "Hello, World!"'));
   console.table(await operation.fetchAll());
 } // closes `operation`, `session`, then `client`
 ```

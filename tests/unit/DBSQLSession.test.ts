@@ -5,6 +5,7 @@ import DBSQLSession, { numberToInt64 } from '../../lib/DBSQLSession';
 import InfoValue from '../../lib/dto/InfoValue';
 import Status from '../../lib/dto/Status';
 import DBSQLOperation from '../../lib/DBSQLOperation';
+import asyncDisposable from '../../lib/asyncDisposable';
 import { PrimaryKeysRequest } from '../../lib/contracts/IDBSQLSession';
 import ISessionBackend from '../../lib/contracts/ISessionBackend';
 import ParameterError from '../../lib/errors/ParameterError';
@@ -821,7 +822,7 @@ describe('DBSQLSession', () => {
         return originalCloseOperation(request);
       });
       const session = createSessionForTest({ handle: sessionHandleStub, context });
-      const failing = await session.executeStatement('SELECT 1');
+      const failing = asyncDisposable(await session.executeStatement('SELECT 1'));
       const other = await session.executeStatement('SELECT 2');
       if (!(other instanceof DBSQLOperation)) {
         expect.fail('Assertion error: operation is not a DBSQLOperation');

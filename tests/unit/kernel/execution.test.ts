@@ -21,6 +21,7 @@ import KernelSessionBackend from '../../../lib/kernel/KernelSessionBackend';
 import KernelOperationBackend from '../../../lib/kernel/KernelOperationBackend';
 import DBSQLSession from '../../../lib/DBSQLSession';
 import DBSQLOperation from '../../../lib/DBSQLOperation';
+import asyncDisposable from '../../../lib/asyncDisposable';
 import { KernelNativeBinding, KernelConnection, KernelStatement } from '../../../lib/kernel/KernelNativeLoader';
 import IClientContext, { ClientConfig } from '../../../lib/contracts/IClientContext';
 import { CrossReferenceRequest, PrimaryKeysRequest } from '../../../lib/contracts/IDBSQLSession';
@@ -1700,7 +1701,7 @@ describe('DBSQLSession / DBSQLOperation over kernel backends — Symbol.asyncDis
   it('disposing a session closes its operations and the native connection; re-disposing is a no-op', async () => {
     const connection = new FakeNativeConnection();
     const session = makeFacadeSession(connection);
-    const operation = await session.executeStatement('SELECT 1');
+    const operation = asyncDisposable(await session.executeStatement('SELECT 1'));
     const closeSpy = sinon.spy(connection, 'close');
 
     expect(await session[Symbol.asyncDispose]()).to.equal(undefined);
@@ -1714,7 +1715,7 @@ describe('DBSQLSession / DBSQLOperation over kernel backends — Symbol.asyncDis
   it('disposing a cancelled operation closes the native statement exactly once', async () => {
     const connection = new FakeNativeConnection();
     const session = makeFacadeSession(connection);
-    const operation = await session.executeStatement('SELECT 1');
+    const operation = asyncDisposable(await session.executeStatement('SELECT 1'));
     const closeSpy = sinon.spy(connection.statementToReturn, 'close');
 
     await operation.cancel();

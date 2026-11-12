@@ -4,6 +4,7 @@ import fs from 'fs';
 import { Response } from 'node-fetch';
 import DBSQLClient, { ThriftLibrary } from '../../lib/DBSQLClient';
 import DBSQLSession from '../../lib/DBSQLSession';
+import asyncDisposable from '../../lib/asyncDisposable';
 import ThriftBackend from '../../lib/thrift-backend/ThriftBackend';
 import KernelBackend from '../../lib/kernel/KernelBackend';
 import * as KernelNativeLoader from '../../lib/kernel/KernelNativeLoader';
@@ -637,8 +638,8 @@ describe('DBSQLClient[Symbol.asyncDispose]', () => {
     const releaseClient = sinon.stub(TelemetryClientProvider.getInstance(), 'releaseClient').resolves();
 
     try {
-      const session = await client.openSession();
-      const operation = await session.executeStatement('SELECT 1');
+      const session = asyncDisposable(await client.openSession());
+      const operation = asyncDisposable(await session.executeStatement('SELECT 1'));
       const error = new Error('operation close failed');
       const operationClose = sinon.stub((operation as any).backend, 'close').rejects(error);
 

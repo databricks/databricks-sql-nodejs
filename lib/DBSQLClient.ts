@@ -43,6 +43,8 @@ import MetricsAggregator from './telemetry/MetricsAggregator';
 import { DriverConfiguration, DRIVER_NAME, TelemetryEventType, DEFAULT_TELEMETRY_CONFIG } from './telemetry/types';
 import { safeEmit, isTelemetryDisabledByEnv } from './telemetry/telemetryUtils';
 import driverVersion from './version';
+// Declares `Symbol.asyncDispose` for the emitted typings of `[Symbol.asyncDispose]()` below
+import './contracts/asyncDispose';
 
 function prependSlash(str: string): string {
   if (str.length > 0 && str.charAt(0) !== '/') {

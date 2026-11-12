@@ -22,6 +22,8 @@ import { synthesizeThriftStatus, synthesizeThriftResultSetMetadata } from './thr
 import { mapOperationTypeToTelemetryType } from './telemetry/telemetryTypeMappers';
 import ExceptionClassifier from './telemetry/ExceptionClassifier';
 import { safeEmit } from './telemetry/telemetryUtils';
+// Declares `Symbol.asyncDispose` for the emitted typings of `[Symbol.asyncDispose]()` below
+import './contracts/asyncDispose';
 
 function mapNeutralResultFormatToTelemetryType(resultFormat?: ResultFormat): string | undefined {
   switch (resultFormat) {

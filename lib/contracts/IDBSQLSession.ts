@@ -3,7 +3,6 @@ import IOperation from './IOperation';
 import Status from '../dto/Status';
 import InfoValue from '../dto/InfoValue';
 import { DBSQLParameter, DBSQLParameterValue } from '../DBSQLParameter';
-import './asyncDispose';
 
 export type ExecuteStatementOptions = {
   /**
@@ -234,9 +233,4 @@ export default interface IDBSQLSession {
    * closes the session
    */
   close(): Promise<Status>;
-
-  /**
-   * Closes the session, enabling `await using session = ...`. No-op if already closed
-   */
-  [Symbol.asyncDispose](): Promise<void>;
 }

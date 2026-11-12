@@ -29,6 +29,8 @@ import ISessionBackend from './contracts/ISessionBackend';
 import IOperationBackend from './contracts/IOperationBackend';
 import { numberToInt64 as numberToInt64Impl } from './thrift-backend/ThriftSessionBackend';
 import { safeEmit } from './telemetry/telemetryUtils';
+// Declares `Symbol.asyncDispose` for the emitted typings of `[Symbol.asyncDispose]()` below
+import './contracts/asyncDispose';
 
 // Explicitly promisify a callback-style `pipeline` because `node:stream/promises` is not available in Node 14
 const pipeline = util.promisify(stream.pipeline);

@@ -2,7 +2,6 @@ import { Readable, ReadableOptions } from 'node:stream';
 import { TGetOperationStatusResp, TTableSchema } from '../../thrift/TCLIService_types';
 import Status from '../dto/Status';
 import { ResultMetadata } from './ResultMetadata';
-import './asyncDispose';
 
 export type OperationStatusCallback = (progress: TGetOperationStatusResp) => unknown;
 
@@ -106,9 +105,4 @@ export default interface IOperation {
   iterateRows(options?: IteratorOptions): IOperationRowsIterator;
 
   toNodeStream(options?: NodeStreamOptions): Readable;
-
-  /**
-   * Closes the operation, enabling `await using operation = ...`. No-op if already closed
-   */
-  [Symbol.asyncDispose](): Promise<void>;
 }

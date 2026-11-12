@@ -69,8 +69,4 @@ export default class OperationStub implements IOperation {
   public toNodeStream(options?: NodeStreamOptions): Readable {
     throw new Error('Not implemented');
   }
-
-  public async [Symbol.asyncDispose]() {
-    await this.close();
-  }
 }
