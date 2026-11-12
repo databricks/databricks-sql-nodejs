@@ -475,6 +475,10 @@ export function buildKernelTlsOptions(options: ConnectionOptions): KernelTlsOpti
  */
 const KERNEL_MANAGED_HEADERS = new Set(['authorization', 'x-databricks-org-id']);
 
+// The kernel's HTTP client lets custom headers replace these, so a caller
+// framing header corrupts the request and Content-Type overrides JSON.
+const TRANSPORT_MANAGED_HEADERS = new Set(['content-type', 'content-length', 'transfer-encoding', 'connection']);
+
 // CR / LF / NUL in a header name or value enable request-splitting / header
 // injection. The kernel's HTTP client (reqwest) does reject these, but only at
 // connect time and with an opaque "Failed to construct HTTP client:
@@ -506,7 +510,8 @@ export function buildKernelHttpOptions(options: ConnectionOptions): KernelHttpOp
       validateHeaderToken('value', name, value);
       // Drop kernel-managed reserved names before the FFI hop — same
       // double-wall as the Python connector's `_KERNEL_MANAGED_HEADERS`.
-      if (KERNEL_MANAGED_HEADERS.has(name.toLowerCase())) {
+      const lowerName = name.toLowerCase();
+      if (KERNEL_MANAGED_HEADERS.has(lowerName) || TRANSPORT_MANAGED_HEADERS.has(lowerName)) {
         continue;
       }
       headers.push({ name, value });

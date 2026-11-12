@@ -182,13 +182,21 @@ export type ConnectionOptions = {
   enableGeoSpatialSupport?: boolean;
 
   /**
-   * Extra HTTP headers attached to driver-owned out-of-band requests
-   * (telemetry POSTs and feature-flag GETs). Not applied to the primary
-   * Thrift transport or to OAuth/OIDC token requests.
+   * Extra HTTP headers sent on every request to the workspace (session,
+   * statement and metadata calls, on both backends) and on driver-owned
+   * telemetry and feature-flag requests. Not applied to OAuth/OIDC token
+   * requests.
+   *
+   * On workspace requests, caller values for driver-managed headers
+   * (`Authorization`, `User-Agent`, `Content-Type`, `Content-Length`,
+   * `Transfer-Encoding`, `Connection`) are ignored; use `userAgentEntry` to
+   * extend the User-Agent. The kernel backend also ignores
+   * `x-databricks-org-id` and derives it from `path`. A header that cannot be
+   * sent (for example one containing CR, LF or NUL) is rejected at connect time.
    *
    * When `path` contains `?o=<workspaceId>` (SPOG account-level routing),
-   * the driver automatically injects an `x-databricks-org-id` header unless
-   * one is already present in this map.
+   * the driver automatically injects an `x-databricks-org-id` header on
+   * telemetry and feature-flag requests unless one is already present in this map.
    */
   customHeaders?: Record<string, string>;
 

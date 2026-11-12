@@ -274,6 +274,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
       headers: {
         'User-Agent': buildUserAgentString(options.userAgentEntry),
       },
+      customHeaders: options.customHeaders,
     };
   }
 
