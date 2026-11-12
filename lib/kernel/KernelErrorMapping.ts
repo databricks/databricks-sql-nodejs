@@ -127,6 +127,9 @@ function defineErrorMetadata<K extends string, V>(error: Error, key: K, value: V
  *   DataLoss, Internal,
  *   InvalidStatementHandle, SqlError   → HiveDriverError
  *
+ * File-transfer diagnostics map to StagingError except Cancelled and Timeout,
+ * which retain their operation-state errors for lifecycle handling.
+ *
  * Unknown `code` values (e.g. if the kernel adds a new variant) fall through
  * to HiveDriverError so the driver never silently drops an error. The kernel's
  * `ErrorCode` is `#[non_exhaustive]` so this can legitimately happen.
@@ -139,7 +142,11 @@ export function mapKernelErrorToJsError(kErr: KernelErrorShape): ErrorWithSqlSta
 
   let error: ErrorWithSqlState;
 
-  if (kErr.errorCode === 'FILE_TRANSFER_ERROR' || kErr.errorCode === 'FILE_TRANSFER_PERMISSION_ERROR') {
+  if (
+    code !== 'Cancelled' &&
+    code !== 'Timeout' &&
+    (kErr.errorCode === 'FILE_TRANSFER_ERROR' || kErr.errorCode === 'FILE_TRANSFER_PERMISSION_ERROR')
+  ) {
     error = new StagingError(message);
   } else {
     switch (code as KernelErrorCode) {

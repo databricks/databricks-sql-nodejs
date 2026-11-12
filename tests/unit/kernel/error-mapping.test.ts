@@ -375,6 +375,22 @@ describe('KernelErrorMapping.decodeNapiKernelError — cause chain', () => {
 });
 
 describe('file transfer errors', () => {
+  [
+    ['Cancelled', OperationStateErrorCode.Canceled],
+    ['Timeout', OperationStateErrorCode.Timeout],
+  ].forEach(([code, expected]) => {
+    it(`preserves operation state for a ${code} file transfer`, () => {
+      const error = decodeNapiKernelError(
+        new Error(
+          '__databricks_error__:' +
+            JSON.stringify({ code, message: 'Transfer stopped', errorCode: 'FILE_TRANSFER_ERROR' }),
+        ),
+      ) as ErrorWithSqlState;
+      expect(error).to.be.instanceOf(OperationStateError);
+      expect((error as OperationStateError).errorCode).to.equal(expected);
+      expect(error.kernelMetadata?.errorCode).to.equal('FILE_TRANSFER_ERROR');
+    });
+  });
   ['FILE_TRANSFER_ERROR', 'FILE_TRANSFER_PERMISSION_ERROR'].forEach((errorCode) => {
     it(`preserves StagingError and structured diagnostics for ${errorCode}`, () => {
       const error = decodeNapiKernelError(
