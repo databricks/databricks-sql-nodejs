@@ -28,7 +28,14 @@ export class THTTPException extends Thrift.TApplicationException {
   }
 }
 
-type TTransportType = typeof TBufferedTransport;
+// thrift >= 0.25 accepts an optional `maxLength` that @types/thrift doesn't declare.
+type TTransportType = typeof TBufferedTransport & {
+  receiver(
+    callback: (trans: TBufferedTransport, seqid: number) => void,
+    seqid: number,
+    maxLength?: number,
+  ): (data: Buffer) => void;
+};
 
 interface ThriftHttpConnectionOptions {
   url: string;
@@ -153,7 +160,13 @@ export default class ThriftHttpConnection extends EventEmitter {
         return responseBuffer as Buffer;
       })
       .then((buffer) => {
-        this.transport.receiver((transportWithData) => this.handleThriftResponse(transportWithData), seqId)(buffer);
+        // The whole body is already in memory. Capping at its size stops thrift >= 0.25 from rounding the
+        // receive buffer up to a power of two, which is much slower for multi-MB responses.
+        this.transport.receiver(
+          (transportWithData) => this.handleThriftResponse(transportWithData),
+          seqId,
+          buffer.length,
+        )(buffer);
       })
       .catch((error) => {
         if (error instanceof FetchError) {
@@ -182,12 +195,18 @@ export default class ThriftHttpConnection extends EventEmitter {
   private getThriftMethodName(thriftMessage: Buffer): Promise<string | undefined> {
     return new Promise((resolve) => {
       try {
-        const receiver = this.transport.receiver((transportWithData) => {
-          const Protocol = this.protocol;
-          const proto = new Protocol(transportWithData);
-          const header = proto.readMessageBegin();
-          resolve(header.fname);
-        }, 0 /* `seqId` could be any because it's ignored */);
+        // Cap at the message size, as for responses, so thrift >= 0.25 doesn't copy every outgoing request
+        // into a buffer rounded up to a power of two.
+        const receiver = this.transport.receiver(
+          (transportWithData) => {
+            const Protocol = this.protocol;
+            const proto = new Protocol(transportWithData);
+            const header = proto.readMessageBegin();
+            resolve(header.fname);
+          },
+          0 /* `seqId` could be any because it's ignored */,
+          thriftMessage.length,
+        );
 
         receiver(thriftMessage);
       } catch {

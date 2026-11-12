@@ -7,7 +7,23 @@
 
 var thrift = require('thrift');
 var Thrift = thrift.Thrift;
-var Q = thrift.Q;
+// thrift >= 0.25 no longer exports Q; native-promise versions of the two Q helpers used below.
+var Q = {
+  defer: function() {
+    var deferred = {};
+    deferred.promise = new Promise(function(resolve, reject) {
+      deferred.resolve = resolve;
+      deferred.reject = reject;
+    });
+    return deferred;
+  },
+  fcall: function(fn) {
+    var args = Array.prototype.slice.call(arguments, 1);
+    return new Promise(function(resolve) {
+      resolve(fn.apply(undefined, args));
+    });
+  }
+};
 var Int64 = require('node-int64');
 
 

@@ -28,13 +28,6 @@ This file documents the provenance and exit condition for each override. **When 
 - **CVEs cleared**: GHSA-28mc-g557-92m7
 - **Exit**: `table-layout` bumps its dep. Note `apache-arrow@13` ships unused CLI tooling — bumping arrow to `15.x+` drops this dep entirely.
 
-### `ws: ^8.18.0`
-
-- **Class**: runtime (thrift's WebSocket transport)
-- **Path**: `thrift → ws` AND `thrift → isomorphic-ws → ws`
-- **CVEs cleared**: GHSA-3h5v-q93c-6h6q (ws@5.x DoS)
-- **Exit**: `thrift` bumps its declared `ws` range to `^8.x`. Without the override, `thrift` would pull the vulnerable `ws@5.x`.
-
 ### `ip-address: ^10.1.1`
 
 - **Class**: runtime
@@ -60,11 +53,11 @@ This file documents the provenance and exit condition for each override. **When 
 
 ### `uuid: ^11.1.1`
 
-- **Class**: **runtime** — this one matters most
-- **Path**: declared as a top-level runtime dep AND `thrift → uuid`
-- **CVEs cleared**: GHSA-w5hq-g745-h8pq (buffer-bounds in v3/v5/v6; the driver only uses v4, but consumer scanners flag against our lockfile)
-- **Why an override is needed**: `thrift` declares `uuid: ^13.0.0`, but `uuid@13` is **ESM-only**. The driver compiles to CJS (`dist/*.js`), so a top-level `uuid: ^11.1.1` plus this matching override forces `thrift`'s transitive uuid down to v11 (which dual-publishes ESM + CJS via conditional exports).
-- **Exit**: any of (a) we migrate `dist/` to ESM, (b) `thrift` drops the uuid dep, or (c) `thrift` widens its range to `^11 || ^13` in a CJS-compatible export shape. Today, removing this override would cause `require('uuid')` from `dist/` to crash on Node runtimes that don't support `require(esm)`.
+- **Class**: dev (nyc)
+- **Path**: `nyc → istanbul-lib-processinfo → uuid`
+- **CVEs cleared**: GHSA-w5hq-g745-h8pq (buffer-bounds in v3/v5/v6, fixed in 11.1.1)
+- **Why an override is needed**: `istanbul-lib-processinfo` declares `uuid: ^8.3.2`, below the fix. The runtime paths (our top-level `uuid` and `thrift@0.25 → uuid`) already declare `^11.1.1` and do not depend on this override, which matters because npm never applies it for consumers. Keep `thrift`'s uuid range CommonJS-compatible (≤ 11); `uuid@12+` is ESM-only and breaks `require()` in Jest (#461). `tests/unit/thrift-cjs-compat.test.ts` checks this.
+- **Exit**: `istanbul-lib-processinfo` (or nyc) moves to `uuid ^11.1.1` or drops the dep.
 
 ---
 
