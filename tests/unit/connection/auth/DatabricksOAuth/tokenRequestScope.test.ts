@@ -6,7 +6,8 @@ import net, { AddressInfo } from 'net';
 import DBSQLClient from '../../../../../lib/DBSQLClient';
 import { ConnectionOptions } from '../../../../../lib/contracts/IDBSQLClient';
 import ConnectionProviderStub from '../../../.stubs/ConnectionProviderStub';
-import { createExpiredAccessToken, createValidAccessToken } from '../../../.stubs/OAuth';
+import OAuthToken from '../../../../../lib/connection/auth/DatabricksOAuth/OAuthToken';
+import { createExpiredAccessToken, createValidAccessToken, OAuthPersistenceStub } from '../../../.stubs/OAuth';
 
 const HOST = 'example.cloud.databricks.com';
 
@@ -78,7 +79,9 @@ describe('Databricks OAuth token request scope (AUTH-017)', () => {
     sinon.restore();
   });
 
-  async function authenticateM2M(extra: Partial<{ oauthScopes: Array<string> }> = {}) {
+  async function authenticateM2M(
+    extra: Partial<{ oauthScopes: Array<string>; persistence: OAuthPersistenceStub }> = {},
+  ) {
     const client = new DBSQLClient();
     const connectionProvider = new ConnectionProviderStub();
     sinon.stub(connectionProvider, 'getAgent').resolves(agent);
@@ -136,5 +139,14 @@ describe('Databricks OAuth token request scope (AUTH-017)', () => {
     expect(tokenRequests).to.have.length(2);
     expect(scopeOf(tokenRequests[0])).to.deep.equal(['sql']);
     expect(scopeOf(tokenRequests[1])).to.deep.equal(['sql']);
+  });
+
+  it('sends the configured scopes when replacing an expired persisted token cached with other scopes', async () => {
+    const persistence = new OAuthPersistenceStub();
+    persistence.token = new OAuthToken(createExpiredAccessToken(), undefined, ['all-apis']);
+    await authenticateM2M({ oauthScopes: ['sql'], persistence });
+    expect(tokenRequests).to.have.length(1);
+    expect(scopeOf(tokenRequests[0])).to.deep.equal(['sql']);
+    expect(persistence.token?.scopes).to.deep.equal(['sql']);
   });
 });

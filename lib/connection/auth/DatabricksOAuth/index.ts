@@ -32,11 +32,18 @@ export default class DatabricksOAuth implements IAuthentication {
 
     const persistence = this.options.persistence ?? this.defaultPersistence;
 
+    const normalizedScopes = normalizeOAuthScopes(scopes);
+    // Unset or blank scopes let the manager apply its flow's default
+    const requestedScopes = normalizedScopes.length > 0 ? normalizedScopes : undefined;
+
     let token = await persistence.read(host);
+    // M2M tokens can't be refreshed, so an expired persisted one is replaced by a new grant. Request
+    // the configured scopes for it, not the scopes the cached token was issued with.
+    if (token && this.options.flow === OAuthFlow.M2M && token.hasExpired) {
+      token = undefined;
+    }
     if (!token) {
-      const requestedScopes = normalizeOAuthScopes(scopes);
-      // Unset or blank scopes let the manager apply its flow's default
-      token = await this.getManager().getToken(requestedScopes.length > 0 ? requestedScopes : undefined);
+      token = await this.getManager().getToken(requestedScopes);
     }
 
     token = await this.getManager().refreshAccessToken(token);
