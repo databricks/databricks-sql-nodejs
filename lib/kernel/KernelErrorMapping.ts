@@ -28,6 +28,7 @@ export interface KernelErrorShape {
   message: string;
   /** Optional SQLSTATE — five-char alphanumeric, when the kernel was able to surface it. */
   sqlstate?: string;
+  /** Distinguishes transfer failures from broader kernel error categories. */
   errorCode?: string;
 }
 
