@@ -1126,7 +1126,10 @@ export interface ExecuteOptions {
    * `StatementSpec.row_limit`. Omitted ⇒ no driver-imposed cap.
    */
   rowLimit?: number
-  /** Omit to handle instructions in the caller; an empty list denies local file access. */
+  /**
+   * Configured transfers consume instruction rows.
+   * Omit to handle instructions in the caller; an empty list denies local file access.
+   */
   stagingAllowedLocalPaths?: Array<string>
   /**
    * Positional parameters, in 1-based wire order. Index `i` in this
