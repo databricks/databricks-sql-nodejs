@@ -338,7 +338,7 @@ describe('DBSQLOperation', () => {
       expect(operation['closed']).to.be.true;
     });
 
-    it('should release the backend handle of a cancelled operation', async () => {
+    it('should return immediately if already cancelled', async () => {
       const context = new ClientContextStub();
       const driver = sinon.spy(context.driver);
       const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: true }), context });
@@ -352,12 +352,9 @@ describe('DBSQLOperation', () => {
       expect(operation['closed']).to.be.false;
 
       await operation.close();
-      expect(driver.closeOperation.callCount).to.be.equal(1);
+      expect(driver.closeOperation.callCount).to.be.equal(0);
       expect(operation['cancelled']).to.be.true;
-      expect(operation['closed']).to.be.true;
-
-      await operation.close();
-      expect(driver.closeOperation.callCount).to.be.equal(1);
+      expect(operation['closed']).to.be.false;
     });
 
     it('should initialize from directResults', async () => {
@@ -441,20 +438,6 @@ describe('DBSQLOperation', () => {
       await closed.close();
       await closed[Symbol.asyncDispose]();
       await closed[Symbol.asyncDispose]();
-      expect(driver.closeOperation.callCount).to.be.equal(1);
-    });
-
-    it('should release the backend handle of a cancelled operation exactly once', async () => {
-      const context = new ClientContextStub();
-      const driver = sinon.spy(context.driver);
-      const cancelled = createOperationForTest({ handle: operationHandleStub({ hasResultSet: true }), context });
-
-      await cancelled.cancel();
-      expect(driver.closeOperation.callCount).to.be.equal(0);
-      await cancelled[Symbol.asyncDispose]();
-      expect(driver.closeOperation.callCount).to.be.equal(1);
-      expect(cancelled['closed']).to.be.true;
-      await cancelled[Symbol.asyncDispose]();
       expect(driver.closeOperation.callCount).to.be.equal(1);
     });
 

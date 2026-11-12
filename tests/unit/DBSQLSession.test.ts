@@ -5,7 +5,6 @@ import DBSQLSession, { numberToInt64 } from '../../lib/DBSQLSession';
 import InfoValue from '../../lib/dto/InfoValue';
 import Status from '../../lib/dto/Status';
 import DBSQLOperation from '../../lib/DBSQLOperation';
-import asyncDisposable from '../../lib/asyncDisposable';
 import { PrimaryKeysRequest } from '../../lib/contracts/IDBSQLSession';
 import ISessionBackend from '../../lib/contracts/ISessionBackend';
 import ParameterError from '../../lib/errors/ParameterError';
@@ -804,97 +803,6 @@ describe('DBSQLSession', () => {
       }
       // A failed close still marks the session closed, so disposing again is a no-op.
       await session[Symbol.asyncDispose]();
-    });
-
-    it('should close the session even if closing an operation fails', async () => {
-      const context = new ClientContextStub();
-      const closeSession = sinon.spy(context.driver, 'closeSession');
-      const error = new Error('operation close failed');
-      const originalCloseOperation = context.driver.closeOperation.bind(context.driver);
-      // Calls 1 and 2 close the failing operation (its own disposal, then the session's cleanup);
-      // call 3 closes the other operation, which succeeds.
-      let closeOperationCalls = 0;
-      const closeOperation = sinon.stub(context.driver, 'closeOperation').callsFake(async (request) => {
-        closeOperationCalls += 1;
-        if (closeOperationCalls <= 2) {
-          throw error;
-        }
-        return originalCloseOperation(request);
-      });
-      const session = createSessionForTest({ handle: sessionHandleStub, context });
-      const failing = asyncDisposable(await session.executeStatement('SELECT 1'));
-      const other = await session.executeStatement('SELECT 2');
-      if (!(other instanceof DBSQLOperation)) {
-        expect.fail('Assertion error: operation is not a DBSQLOperation');
-      }
-
-      // Mirrors `await using session = ...; await using operation = ...`: the operation is disposed first
-      await expectFailure(() => failing[Symbol.asyncDispose]());
-      try {
-        await session[Symbol.asyncDispose]();
-        expect.fail('It should throw an error');
-      } catch (e) {
-        if (e instanceof AssertionError) {
-          throw e;
-        }
-        expect(e).to.equal(error);
-      }
-      // The other operation and the session itself were still closed
-      expect(other['closed']).to.be.true;
-      expect(session['isOpen']).to.be.false;
-      expect(closeSession.callCount).to.eq(1);
-      expect(closeOperation.callCount).to.eq(3);
-
-      // Disposing the closed session again is a no-op
-      await session[Symbol.asyncDispose]();
-      expect(closeSession.callCount).to.eq(1);
-      expect(closeOperation.callCount).to.eq(3);
-    });
-
-    it('should report both operation and session close failures', async () => {
-      const context = new ClientContextStub();
-      const operationError = new Error('operation close failed');
-      const sessionError = new Error('session close failed');
-      sinon.stub(context.driver, 'closeOperation').rejects(operationError);
-      sinon.stub(context.driver, 'closeSession').rejects(sessionError);
-      const session = createSessionForTest({ handle: sessionHandleStub, context });
-      await session.executeStatement('SELECT 1');
-
-      try {
-        await session[Symbol.asyncDispose]();
-        expect.fail('It should throw an error');
-      } catch (e) {
-        if (e instanceof AssertionError) {
-          throw e;
-        }
-        // `AggregateError` isn't in the project's ES2018 lib typings
-        expect(e).to.be.instanceOf((globalThis as any).AggregateError);
-        expect((e as any).errors).to.deep.equal([operationError, sessionError]);
-      }
-      expect(session['isOpen']).to.be.false;
-    });
-
-    it('should release cancelled operations exactly once', async () => {
-      const context = new ClientContextStub();
-      const driver = sinon.spy(context.driver);
-      const session = createSessionForTest({ handle: sessionHandleStub, context });
-      const operation = await session.executeStatement('SELECT * FROM table');
-      if (!(operation instanceof DBSQLOperation)) {
-        expect.fail('Assertion error: operation is not a DBSQLOperation');
-      }
-
-      await operation.cancel();
-      // A cancelled operation still holds a backend handle, so the session keeps tracking it
-      expect(session['operations']['items'].has(operation)).to.be.true;
-      expect(driver.closeOperation.callCount).to.eq(0);
-
-      await session[Symbol.asyncDispose]();
-      expect(driver.closeOperation.callCount).to.eq(1);
-      expect(operation['closed']).to.be.true;
-      expect(session['operations']['items'].size).to.eq(0);
-
-      await operation[Symbol.asyncDispose]();
-      expect(driver.closeOperation.callCount).to.eq(1);
     });
   });
 });

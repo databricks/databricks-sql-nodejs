@@ -209,8 +209,7 @@ export default class DBSQLOperation implements IOperation {
     }
     const result = await this.backend.cancel();
     this.cancelled = true;
-    // Cancelling doesn't release the backend handle, so the operation stays registered with its
-    // session until it's closed (explicitly, by `await using`, or when the session is closed).
+    this.onClose?.();
     return result;
   }
 
@@ -223,8 +222,7 @@ export default class DBSQLOperation implements IOperation {
   }
 
   private async closeInternal(): Promise<Status> {
-    // A cancelled operation still holds a backend handle, so only an already closed one is a no-op.
-    if (this.closed) {
+    if (this.closed || this.cancelled) {
       return Status.success();
     }
     const result = await this.backend.close();
