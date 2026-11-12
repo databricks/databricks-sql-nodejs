@@ -749,6 +749,25 @@ describe('DBSQLClient.createAuthProvider', () => {
     }
   });
 
+  it('should forward oauthScopes to Databricks OAuth for both flows', () => {
+    const client = new DBSQLClient();
+
+    for (const oauthClientSecret of [undefined, 'test-secret']) {
+      const provider = client['createAuthProvider']({
+        ...connectOptions,
+        authType: 'databricks-oauth',
+        host: 'example.cloud.databricks.com',
+        oauthClientSecret,
+        oauthScopes: ['sql', 'offline_access'],
+      });
+
+      if (!(provider instanceof DatabricksOAuth)) {
+        throw new Error('Expected `provider` to be `DatabricksOAuth`');
+      }
+      expect(provider['options'].scopes).to.deep.equal(['sql', 'offline_access']);
+    }
+  });
+
   it('should throw error when OAuth not supported for host', () => {
     const client = new DBSQLClient();
 

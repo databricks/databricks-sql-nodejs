@@ -367,7 +367,7 @@ class OpenIDClientStub implements BaseClient {
       function getExpectedScope(scopes: Array<string>) {
         switch (OAuthManagerClass) {
           case DatabricksOAuthManager:
-            return [OAuthScope.allAPIs].join(scopeDelimiter);
+            return (scopes.length > 0 ? scopes : [OAuthScope.allAPIs]).join(scopeDelimiter);
           case AzureOAuthManager:
             const tenantId = AzureOAuthManager.datatricksAzureApp;
             return [`${tenantId}/.default`, ...scopes].join(scopeDelimiter);
@@ -579,5 +579,44 @@ describe('AzureOAuthManager (tenant awareness)', () => {
       const scopes = call<string[]>(mgr, 'getScopes', [OAuthScope.offlineAccess]);
       expect(scopes).to.include(OAuthScope.offlineAccess);
     });
+
+    it('keeps the pre-existing defaults when no scopes are configured', () => {
+      const app = AzureOAuthManager.datatricksAzureApp;
+      expect(call<string[]>(makeAzure({ flow: OAuthFlow.M2M }), 'getScopes', undefined)).to.deep.equal([
+        `${app}/.default`,
+        OAuthScope.offlineAccess,
+      ]);
+      expect(call<string[]>(makeAzure({ flow: OAuthFlow.U2M }), 'getScopes', undefined)).to.deep.equal([
+        `${app}/user_impersonation`,
+        OAuthScope.offlineAccess,
+      ]);
+    });
+  });
+});
+
+describe('DatabricksOAuthManager.getScopes (AUTH-017)', () => {
+  function makeManager(flow: OAuthFlow) {
+    return new DatabricksOAuthManager({ host: 'example.cloud.databricks.com', flow, context: new ClientContextStub() });
+  }
+
+  const getScopes = (mgr: DatabricksOAuthManager, requested?: string[]): string[] =>
+    (mgr as unknown as { getScopes: (s?: string[]) => string[] }).getScopes(requested);
+
+  it('honors configured scopes on M2M', () => {
+    expect(getScopes(makeManager(OAuthFlow.M2M), ['sql', 'offline_access'])).to.deep.equal(['sql', 'offline_access']);
+  });
+
+  it('defaults M2M to all-apis when no scopes are configured', () => {
+    expect(getScopes(makeManager(OAuthFlow.M2M))).to.deep.equal([OAuthScope.allAPIs]);
+    expect(getScopes(makeManager(OAuthFlow.M2M), [])).to.deep.equal([OAuthScope.allAPIs]);
+  });
+
+  it('honors configured scopes on U2M', () => {
+    expect(getScopes(makeManager(OAuthFlow.U2M), ['sql'])).to.deep.equal(['sql']);
+  });
+
+  it('defaults U2M to sql offline_access when no scopes are configured', () => {
+    expect(getScopes(makeManager(OAuthFlow.U2M))).to.deep.equal([OAuthScope.SQL, OAuthScope.offlineAccess]);
+    expect(getScopes(makeManager(OAuthFlow.U2M), [])).to.deep.equal([OAuthScope.SQL, OAuthScope.offlineAccess]);
   });
 });

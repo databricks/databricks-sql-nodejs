@@ -23,7 +23,7 @@ import DBSQLSession from '../../../lib/DBSQLSession';
 import DBSQLOperation from '../../../lib/DBSQLOperation';
 import { KernelNativeBinding, KernelConnection, KernelStatement } from '../../../lib/kernel/KernelNativeLoader';
 import IClientContext, { ClientConfig } from '../../../lib/contracts/IClientContext';
-import { PrimaryKeysRequest } from '../../../lib/contracts/IDBSQLSession';
+import { CrossReferenceRequest, PrimaryKeysRequest } from '../../../lib/contracts/IDBSQLSession';
 import IDBSQLLogger, { LogLevel } from '../../../lib/contracts/IDBSQLLogger';
 import HiveDriverError from '../../../lib/errors/HiveDriverError';
 import ParameterError from '../../../lib/errors/ParameterError';
@@ -1167,6 +1167,36 @@ describe('KernelSessionBackend', () => {
       }
     }
     expect(connection.metadataCalls).to.deep.equal(expected);
+  });
+
+  for (const tableName of [undefined, null]) {
+    it(`getPrimaryKeys rejects a ${tableName} tableName before calling the kernel`, async () => {
+      const connection = new FakeNativeConnection();
+      const session = makeSession(connection);
+      let thrown: unknown;
+      try {
+        await session.getPrimaryKeys({
+          catalogName: 'main',
+          schemaName: 'def',
+          tableName,
+        } as unknown as PrimaryKeysRequest);
+      } catch (err) {
+        thrown = err;
+      }
+      expect(thrown).to.be.instanceOf(ParameterError);
+      expect((thrown as Error).message).to.equal('Invalid argument: tableName may not be null');
+      expect((thrown as { sqlState?: string }).sqlState).to.equal('42000');
+      expect(connection.metadataCalls).to.deep.equal([]);
+    });
+  }
+
+  it('getCrossReference forwards an omitted table to the kernel unchanged', async () => {
+    const connection = new FakeNativeConnection();
+    const session = makeSession(connection);
+    await session.getCrossReference({ foreignCatalogName: 'fc', foreignSchemaName: 'fs' } as CrossReferenceRequest);
+    expect(connection.metadataCalls).to.deep.equal([
+      ['getCrossReference', undefined, undefined, undefined, 'fc', 'fs', undefined],
+    ]);
   });
 
   it('getInfo synthesizes the three server-answered info types and rejects the rest', async () => {

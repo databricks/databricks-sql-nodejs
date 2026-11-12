@@ -2,10 +2,20 @@ import { HeadersInit } from 'node-fetch';
 import IAuthentication from '../../contracts/IAuthentication';
 import OAuthPersistence, { OAuthPersistenceCache } from './OAuthPersistence';
 import OAuthManager, { OAuthManagerOptions, OAuthFlow } from './OAuthManager';
-import { OAuthScopes, defaultOAuthScopes } from './OAuthScope';
+import { OAuthScopes, normalizeOAuthScopes } from './OAuthScope';
 import IClientContext from '../../../contracts/IClientContext';
 
 export { OAuthFlow };
+
+// Order-insensitive comparison; unknown (unrecorded) scopes on either side count as a match.
+function scopesMatch(tokenScopes?: OAuthScopes, expectedScopes?: OAuthScopes): boolean {
+  if (!tokenScopes || !expectedScopes) {
+    return true;
+  }
+  const expected = new Set(expectedScopes);
+  const actual = new Set(tokenScopes);
+  return actual.size === expected.size && [...actual].every((scope) => expected.has(scope));
+}
 
 export interface DatabricksOAuthOptions extends OAuthManagerOptions {
   scopes?: OAuthScopes;
@@ -32,9 +42,24 @@ export default class DatabricksOAuth implements IAuthentication {
 
     const persistence = this.options.persistence ?? this.defaultPersistence;
 
+    const normalizedScopes = normalizeOAuthScopes(scopes);
+    // Unset or blank scopes let the manager apply its flow's default
+    const requestedScopes = normalizedScopes.length > 0 ? normalizedScopes : undefined;
+
     let token = await persistence.read(host);
+    // A persistence store may be shared by clients configured with different scopes. Don't reuse
+    // (or, for U2M, keep refreshing) a token issued for other scopes; acquire a new one instead.
+    // Tokens that don't record their scopes are kept, as before.
+    if (token && !scopesMatch(token.scopes, this.getManager().getRequestedScopes(requestedScopes))) {
+      token = undefined;
+    }
+    // M2M tokens can't be refreshed, so an expired persisted one is replaced by a new grant. Request
+    // the configured scopes for it, not the scopes the cached token was issued with.
+    if (token && this.options.flow === OAuthFlow.M2M && token.hasExpired) {
+      token = undefined;
+    }
     if (!token) {
-      token = await this.getManager().getToken(scopes ?? defaultOAuthScopes);
+      token = await this.getManager().getToken(requestedScopes);
     }
 
     token = await this.getManager().refreshAccessToken(token);
