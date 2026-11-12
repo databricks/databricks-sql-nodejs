@@ -1,9 +1,10 @@
 import http from 'http';
 import { AddressInfo } from 'net';
-import { PassThrough, Readable } from 'stream';
+import { PassThrough } from 'stream';
 import { expect } from 'chai';
 import thrift, { TBinaryProtocol, TBufferedTransport } from 'thrift';
-import { RequestInit, FetchError } from 'node-fetch';
+import * as nodeFetch from 'node-fetch';
+import sinon from 'sinon';
 import ThriftHttpConnection, { THTTPException } from '../../../../lib/connection/connections/ThriftHttpConnection';
 import NullRetryPolicy from '../../../../lib/connection/connections/NullRetryPolicy';
 import TCLIService from '../../../../thrift/TCLIService';
@@ -23,61 +24,6 @@ type Receiver = (
   seqid: number,
   maxLength?: number,
 ) => (data: Buffer) => void;
-
-interface Reply {
-  status: number;
-  headers?: Record<string, string>;
-  body?: string | Buffer;
-}
-
-const PREFIX = 'Received a response with a bad HTTP status code';
-
-function readStream(stream: NodeJS.ReadableStream): Promise<string> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    stream.on('data', (chunk: Buffer | string) => chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk)));
-    stream.once('end', () => resolve(Buffer.concat(chunks).toString('utf8')));
-    stream.once('error', reject);
-  });
-}
-
-// Sends one Thrift write to a local server that answers with `reply`, and
-// returns the error handed to the pending Thrift callback.
-async function failWith(
-  reply: Reply | ((res: http.ServerResponse) => void),
-  requestConfig: RequestInit = {},
-  // Runs before the server is shut down, e.g. to read a body that is still streaming
-  whileConnected?: (error: THTTPException) => Promise<void>,
-): Promise<THTTPException> {
-  const server = http.createServer((req, res) => {
-    req.resume();
-    if (typeof reply === 'function') {
-      reply(res);
-      return;
-    }
-    res.writeHead(reply.status, reply.headers);
-    res.end(reply.body);
-  });
-  await new Promise<void>((resolve) => {
-    server.listen(0, '127.0.0.1', resolve);
-  });
-  try {
-    const { port } = server.address() as AddressInfo;
-    const connection = new ThriftHttpConnection(
-      { url: `http://127.0.0.1:${port}/`, getRetryPolicy: async () => new NullRetryPolicy() },
-      requestConfig,
-    );
-    const error = await new Promise<THTTPException>((resolve) => {
-      connection.client = { _reqs: { 1: (err: unknown) => resolve(err as THTTPException) } } as any;
-      connection.write(Buffer.from('x'), 1);
-    });
-    await whileConnected?.(error);
-    return error;
-  } finally {
-    server.closeAllConnections();
-    server.close();
-  }
-}
 
 describe('ThriftHttpConnection', () => {
   let server: http.Server;
@@ -163,198 +109,128 @@ describe('ThriftHttpConnection', () => {
   });
 });
 
-describe('ThriftHttpConnection', () => {
-  describe('non-200 responses', () => {
-    it('keeps the bare message when the server sends no detail', async () => {
-      const error = await failWith({ status: 401 });
-      expect(error).to.be.instanceOf(THTTPException);
-      expect(error.message).to.equal(`${PREFIX}: 401`);
-      expect(error.statusCode).to.equal(401);
+describe('ThriftHttpConnection non-200 responses', () => {
+  const sandbox = sinon.createSandbox();
+  const prefix = 'Received a response with a bad HTTP status code';
+
+  afterEach(() => sandbox.restore());
+
+  async function failWith(response: nodeFetch.Response): Promise<THTTPException> {
+    sandbox.stub(nodeFetch, 'default').resolves(response);
+    const connection = new ThriftHttpConnection({
+      url: 'https://example.com/sql',
+      getRetryPolicy: async () => new NullRetryPolicy(),
+    });
+    return new Promise((resolve) => {
+      connection.client = { _reqs: { 1: resolve } } as any;
+      connection.write(Buffer.from('x'), 1);
+    });
+  }
+
+  it('appends server detail and preserves the original unread response', async () => {
+    const body = new PassThrough();
+    const json = '{"message":"Invalid access token. [ReqId: abc]"}';
+    body.end(json);
+    const response = new nodeFetch.Response(body, {
+      status: 403,
+      headers: { 'x-databricks-reason-phrase': 'Invalid access token.' },
+      timeout: 300,
+      size: 1024,
     });
 
-    it('appends the Databricks reason-phrase header without consuming the body', async () => {
-      const body = '{"error_code":403,"message":"Invalid access token. [ReqId: abc]"}';
-      const error = await failWith({
-        status: 403,
-        headers: { 'x-databricks-reason-phrase': 'Invalid access token.', 'content-type': 'application/json' },
-        body,
-      });
-      expect(error.message).to.equal(`${PREFIX}: 403: Invalid access token.`);
-      expect(error.statusCode).to.equal(403);
-      expect(await error.response.text()).to.equal(body);
-    });
+    const error = await failWith(response);
 
-    it('prefers the Thrift server error header over other detail', async () => {
-      const error = await failWith({
+    expect(error).to.be.instanceOf(THTTPException);
+    expect(error.message).to.equal(`${prefix}: 403: Invalid access token.`);
+    expect(error.statusCode).to.equal(403);
+    expect(error.response).to.equal(response);
+    expect(error.response.body).to.equal(body);
+    expect(error.response.bodyUsed).to.equal(false);
+    expect(await error.response.text()).to.equal(json);
+  });
+
+  it('prefers the Thrift server detail over the other headers', async () => {
+    const error = await failWith(
+      new nodeFetch.Response(undefined, {
         status: 404,
         headers: {
           'x-thriftserver-error-message': 'ENDPOINT_NOT_FOUND: SQL warehouse does not exist',
+          'x-databricks-error-or-redirect-message': 'Redirect detail',
           'x-databricks-reason-phrase': 'Not Found',
-          'content-type': 'application/x-thrift',
         },
-        body: Buffer.from([0x80, 0x01, 0x00, 0x03, 0x00, 0x00, 0x00, 0x05]),
-      });
-      expect(error.message).to.equal(`${PREFIX}: 404: ENDPOINT_NOT_FOUND: SQL warehouse does not exist`);
-    });
+      }),
+    );
 
-    it('falls back to the JSON body message and keeps the body readable', async () => {
-      const body = '{"error_code":401,"message":"Invalid access token. [ReqId: abc]"}';
-      const error = await failWith({ status: 401, headers: { 'content-type': 'application/json' }, body });
-      expect(error.message).to.equal(`${PREFIX}: 401: Invalid access token. [ReqId: abc]`);
-      expect(error.response.status).to.equal(401);
-      expect(error.response.headers.get('content-type')).to.equal('application/json');
-      expect(await error.response.text()).to.equal(body);
-    });
+    expect(error.message).to.equal(`${prefix}: 404: ENDPOINT_NOT_FOUND: SQL warehouse does not exist`);
+  });
 
-    it('falls back to a plain-text body', async () => {
-      const error = await failWith({
-        status: 401,
-        headers: { 'content-type': 'application/x-thrift' },
-        body: 'Authentication Error [INVALID_AUTHORIZATION_SPECIFICATION]: Invalid access token\r\n',
-      });
-      expect(error.message).to.equal(
-        `${PREFIX}: 401: Authentication Error [INVALID_AUTHORIZATION_SPECIFICATION]: Invalid access token`,
-      );
-    });
-
-    it('ignores HTML and binary bodies', async () => {
-      const html = await failWith({
-        status: 502,
-        headers: { 'content-type': 'text/html' },
-        body: '<html><body>Bad Gateway</body></html>',
-      });
-      expect(html.message).to.equal(`${PREFIX}: 502`);
-
-      const binary = await failWith({ status: 500, body: Buffer.from([0x80, 0x01, 0x00, 0x03, 0x41, 0x00]) });
-      expect(binary.message).to.equal(`${PREFIX}: 500`);
-    });
-
-    it('collapses whitespace and bounds the detail length', async () => {
-      const error = await failWith({ status: 401, body: `first\n\tline ${'x'.repeat(5000)}` });
-      const detail = error.message.slice(`${PREFIX}: 401: `.length);
-      expect(detail.startsWith('first line xxx')).to.equal(true);
-      expect(detail.length).to.equal(501);
-      expect(detail.endsWith('…')).to.equal(true);
-    });
-
-    it('reports the status only when a chunked body exceeds the byte budget, keeping the body readable', async () => {
-      const chunk = `${'y'.repeat(1023)}\n`;
-      const chunkCount = 200; // 200 KiB, beyond the 64 KiB budget
-      let body: string | undefined;
-      const error = await failWith(
-        (res) => {
-          res.writeHead(401, { 'content-type': 'text/plain' });
-          for (let i = 0; i < chunkCount; i += 1) {
-            res.write(chunk);
-          }
-          res.end();
+  it('uses the redirect detail before the reason phrase', async () => {
+    const error = await failWith(
+      new nodeFetch.Response(undefined, {
+        status: 403,
+        headers: {
+          'x-databricks-error-or-redirect-message': 'Access denied',
+          'x-databricks-reason-phrase': 'Forbidden',
         },
-        {},
-        async (err) => {
-          body = await err.response.text();
+      }),
+    );
+
+    expect(error.message).to.equal(`${prefix}: 403: Access denied`);
+  });
+
+  it('skips blank headers and normalizes whitespace', async () => {
+    const error = await failWith(
+      new nodeFetch.Response(undefined, {
+        status: 403,
+        headers: {
+          'x-thriftserver-error-message': ' \t ',
+          'x-databricks-reason-phrase': '  Invalid\t access   token.  ',
         },
-      );
-      expect(error.message).to.equal(`${PREFIX}: 401`);
-      expect(error.statusCode).to.equal(401);
-      expect(error.response.status).to.equal(401);
-      expect(error.response.headers.get('content-type')).to.equal('text/plain');
-      expect(body).to.equal(chunk.repeat(chunkCount));
-    });
+      }),
+    );
 
-    it('does not read a body whose Content-Length exceeds the byte budget', async () => {
-      const body = 'z'.repeat(100 * 1024);
-      let received: string | undefined;
-      const error = await failWith(
-        { status: 401, headers: { 'content-length': `${body.length}` }, body },
-        {},
-        async (err) => {
-          received = await err.response.text();
-        },
-      );
-      expect(error.message).to.equal(`${PREFIX}: 401`);
-      expect(received).to.equal(body);
-    });
+    expect(error.message).to.equal(`${prefix}: 403: Invalid access token.`);
+  });
 
-    it('reports the status only when the body does not end within the time budget', async function test() {
-      this.timeout(10_000);
-      const started = Date.now();
-      const error = await failWith((res) => {
-        res.writeHead(503, { 'content-type': 'text/plain' });
-        res.write('Service temporarily unavailable'); // never ended
-      });
-      expect(error.message).to.equal(`${PREFIX}: 503`);
-      expect(error.statusCode).to.equal(503);
-      expect(Date.now() - started).to.be.below(5_000);
-    });
+  it('bounds the header detail to 500 characters including the ellipsis', async () => {
+    const error = await failWith(
+      new nodeFetch.Response(undefined, {
+        status: 403,
+        headers: { 'x-databricks-reason-phrase': 'x'.repeat(1000) },
+      }),
+    );
 
-    it('exposes the read body as a stream that can be consumed with .on() and .pipe()', async () => {
-      const body = '{"error_code":401,"message":"Invalid access token."}';
-      const viaEvents = await failWith({ status: 401, headers: { 'content-type': 'application/json' }, body });
-      expect(viaEvents.message).to.equal(`${PREFIX}: 401: Invalid access token.`);
-      expect(viaEvents.response.body).to.be.instanceOf(Readable);
-      expect(await readStream(viaEvents.response.body)).to.equal(body);
+    expect(error.message).to.equal(`${prefix}: 403: ${'x'.repeat(499)}…`);
+  });
 
-      const viaPipe = await failWith({ status: 401, headers: { 'content-type': 'application/json' }, body });
-      expect(await readStream(viaPipe.response.body.pipe(new PassThrough()))).to.equal(body);
-    });
+  it('keeps the status-only message and leaves a headerless body unread', async () => {
+    const body = new PassThrough();
+    const json = '{"message":"Invalid access token."}';
+    body.end(json);
+    const response = new nodeFetch.Response(body, { status: 401 });
 
-    it('exposes a partially read body as a stream that can be piped', async () => {
-      const chunk = `${'y'.repeat(1023)}\n`;
-      const chunkCount = 100; // beyond the 64 KiB budget
-      let body: string | undefined;
-      const error = await failWith(
-        (res) => {
-          res.writeHead(401, { 'content-type': 'text/plain' });
-          for (let i = 0; i < chunkCount; i += 1) {
-            res.write(chunk);
-          }
-          res.end();
-        },
-        {},
-        async (err) => {
-          body = await readStream(err.response.body.pipe(new PassThrough()));
-        },
-      );
-      expect(error.message).to.equal(`${PREFIX}: 401`);
-      expect(body).to.equal(chunk.repeat(chunkCount));
-    });
+    const error = await failWith(response);
 
-    it('keeps the request timeout on a replayed body that stalls after the byte budget', async function test() {
-      this.timeout(10_000);
-      let readError: unknown;
-      const error = await failWith(
-        (res) => {
-          res.writeHead(401, { 'content-type': 'text/plain' });
-          res.write('s'.repeat(70 * 1024)); // beyond the 64 KiB budget, never ended
-        },
-        { timeout: 300 },
-        async (err) => {
-          readError = await err.response.text().then(
-            () => undefined,
-            (e) => e,
-          );
-        },
-      );
-      expect(error.message).to.equal(`${PREFIX}: 401`);
-      expect(error.response.timeout).to.equal(300);
-      expect(readError).to.be.instanceOf(FetchError);
-      expect((readError as FetchError).type).to.equal('body-timeout');
-    });
+    expect(error.message).to.equal(`${prefix}: 401`);
+    expect(error.statusCode).to.equal(401);
+    expect(error.response).to.equal(response);
+    expect(error.response.body).to.equal(body);
+    expect(error.response.bodyUsed).to.equal(false);
+    expect(await error.response.text()).to.equal(json);
+  });
 
-    it('keeps the response size limit on a replayed body', async () => {
-      const error = await failWith({ status: 401, body: 'x'.repeat(100) }, { size: 10 });
-      expect(error.response.size).to.equal(10);
-      const readError = await error.response.text().then(
-        () => undefined,
-        (e) => e,
-      );
-      expect(readError).to.be.instanceOf(FetchError);
-      expect((readError as FetchError).type).to.equal('max-size');
-    });
+  it('reports the HTTP error without waiting for an unfinished body', async () => {
+    const body = new PassThrough();
+    body.write('Service temporarily unavailable');
+    const response = new nodeFetch.Response(body, { status: 503 });
+    try {
+      const error = await failWith(response);
 
-    it('never echoes request headers', async () => {
-      const error = await failWith({ status: 401 }, { headers: { Authorization: 'Bearer dapi-secret-token' } });
-      expect(error.message).to.not.include('dapi-secret-token');
-    });
+      expect(error.message).to.equal(`${prefix}: 503`);
+      expect(error.response).to.equal(response);
+      expect(body.readableFlowing).to.equal(null);
+    } finally {
+      body.destroy();
+    }
   });
 });

@@ -5,7 +5,6 @@
 */
 
 import { EventEmitter } from 'events';
-import { PassThrough, pipeline } from 'stream';
 import { TBinaryProtocol, TBufferedTransport, Thrift, TProtocol, TProtocolConstructor, TTransport } from 'thrift';
 import fetch, { RequestInit, HeadersInit, Request, Response, FetchError } from 'node-fetch';
 // @ts-expect-error TS7016: Could not find a declaration file for module
@@ -19,7 +18,8 @@ export class THTTPException extends Thrift.TApplicationException {
 
   public readonly response: Response;
 
-  constructor(response: Response, detail?: string) {
+  constructor(response: Response) {
+    const detail = getErrorDetailFromHeaders(response);
     const message = `Received a response with a bad HTTP status code: ${response.status}`;
     super(Thrift.TApplicationExceptionType.PROTOCOL_ERROR, detail ? `${message}: ${detail}` : message);
     this.statusCode = response.status;
@@ -35,138 +35,15 @@ const errorDetailHeaders = [
 ];
 
 const MAX_ERROR_DETAIL_LENGTH = 500;
-const MAX_ERROR_BODY_SCAN = 4096;
-// Budgets for reading an error body; when either runs out the error carries the status only
-const MAX_ERROR_BODY_BYTES = 64 * 1024;
-const MAX_ERROR_BODY_READ_MS = 1000;
 
-function normalizeErrorDetail(value: string): string | undefined {
-  const text = value.slice(0, MAX_ERROR_BODY_SCAN).replace(/\s+/g, ' ').trim();
-  if (text.length === 0) {
-    return undefined;
-  }
-  return text.length > MAX_ERROR_DETAIL_LENGTH ? `${text.slice(0, MAX_ERROR_DETAIL_LENGTH)}…` : text;
-}
-
-function getErrorDetailFromBody(body: Buffer): string | undefined {
-  const text = body.toString('utf8', 0, MAX_ERROR_BODY_SCAN).trim();
-  // Skip HTML pages and binary (e.g. Thrift-encoded) payloads
-  // eslint-disable-next-line no-control-regex
-  if (text.startsWith('<') || /[\u0000-\u0008\u000e-\u001f]/.test(text)) {
-    return undefined;
-  }
-  try {
-    const parsed = JSON.parse(text);
-    if (typeof parsed?.message === 'string') {
-      return normalizeErrorDetail(parsed.message);
-    }
-  } catch {
-    // Not JSON - use the text as is
-  }
-  return normalizeErrorDetail(text);
-}
-
-interface ErrorBodyReadResult {
-  chunks: Buffer[];
-  // `false` when the byte or time budget ran out before the body ended
-  complete: boolean;
-}
-
-// Reads the error body until it ends, it exceeds `MAX_ERROR_BODY_BYTES`, or
-// `MAX_ERROR_BODY_READ_MS` elapses, whichever comes first. The stream is left
-// paused (not destroyed) when a budget runs out, so the rest stays readable.
-function readErrorBody(body: NodeJS.ReadableStream): Promise<ErrorBodyReadResult> {
-  return new Promise((resolve, reject) => {
-    const chunks: Buffer[] = [];
-    let size = 0;
-    let timer: NodeJS.Timeout | undefined;
-
-    const cleanup = () => {
-      clearTimeout(timer);
-      body.removeListener('data', onData);
-      body.removeListener('end', onEnd);
-      body.removeListener('error', onError);
-    };
-    const stop = () => {
-      cleanup();
-      body.pause();
-      resolve({ chunks, complete: false });
-    };
-    function onData(chunk: Buffer | string) {
-      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
-      chunks.push(buffer);
-      size += buffer.length;
-      if (size > MAX_ERROR_BODY_BYTES) {
-        stop();
-      }
-    }
-    function onEnd() {
-      cleanup();
-      resolve({ chunks, complete: true });
-    }
-    function onError(error: unknown) {
-      cleanup();
-      reject(error);
-    }
-
-    timer = setTimeout(stop, MAX_ERROR_BODY_READ_MS);
-    body.on('data', onData);
-    body.once('end', onEnd);
-    body.once('error', onError);
-  });
-}
-
-// Builds a response equivalent to `response` whose body is the `body` stream. The body is
-// always a stream (as on a fetched response), so `.body.pipe()` / `.body.on()` keep working,
-// and the original read limits (`timeout`, `size`) still apply to `text()` / `json()` etc.
-function replayResponse(response: Response, body: PassThrough): Response {
-  return new Response(body, {
-    url: response.url,
-    status: response.status,
-    statusText: response.statusText,
-    headers: response.headers,
-    size: response.size,
-    timeout: response.timeout,
-  });
-}
-
-async function createHTTPException(response: Response): Promise<THTTPException> {
+function getErrorDetailFromHeaders(response: Response): string | undefined {
   for (const header of errorDetailHeaders) {
-    const detail = normalizeErrorDetail(response.headers.get(header) ?? '');
+    const detail = (response.headers.get(header) ?? '').replace(/\s+/g, ' ').trim();
     if (detail) {
-      return new THTTPException(response, detail);
+      return detail.length > MAX_ERROR_DETAIL_LENGTH ? `${detail.slice(0, MAX_ERROR_DETAIL_LENGTH - 1)}…` : detail;
     }
   }
-
-  // Don't start reading a body that is already known to exceed the byte budget
-  const contentLength = Number(response.headers.get('content-length'));
-  if (Number.isFinite(contentLength) && contentLength > MAX_ERROR_BODY_BYTES) {
-    return new THTTPException(response);
-  }
-
-  let result: ErrorBodyReadResult;
-  try {
-    result = await readErrorBody(response.body);
-  } catch {
-    return new THTTPException(response);
-  }
-
-  const prefix = Buffer.concat(result.chunks);
-  const replay = new PassThrough();
-
-  if (!result.complete) {
-    // Budget exhausted: report the status only, and expose a response that still
-    // yields the whole body (the bytes read so far followed by the rest of the stream)
-    replay.write(prefix);
-    pipeline(response.body, replay, () => {
-      // Errors reach whoever reads `replay`
-    });
-    return new THTTPException(replayResponse(response, replay));
-  }
-
-  // The body is consumed now, so expose an equivalent response that can still be read
-  replay.end(prefix);
-  return new THTTPException(replayResponse(response, replay), getErrorDetailFromBody(prefix));
+  return undefined;
 }
 
 // thrift >= 0.25 accepts an optional `maxLength` that @types/thrift doesn't declare.
@@ -293,9 +170,7 @@ export default class ThriftHttpConnection extends EventEmitter {
       })
       .then(({ response }) => {
         if (response.status !== 200) {
-          return createHTTPException(response).then((error) => {
-            throw error;
-          });
+          throw new THTTPException(response);
         }
         // `responseBuffer` is always set when status is 200, since `makeRequest`
         // assigns it before resolving in that branch and the retry loop only
