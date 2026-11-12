@@ -760,4 +760,49 @@ describe('DBSQLSession', () => {
       );
     });
   });
+
+  describe('Symbol.asyncDispose', () => {
+    it('should close the session and its operations', async () => {
+      const context = new ClientContextStub();
+      const driver = sinon.spy(context.driver);
+      const session = createSessionForTest({ handle: sessionHandleStub, context });
+      const operation = await session.executeStatement('SELECT * FROM table');
+      if (!(operation instanceof DBSQLOperation)) {
+        expect.fail('Assertion error: operation is not a DBSQLOperation');
+      }
+
+      const result = await session[Symbol.asyncDispose]();
+      expect(result).to.be.undefined;
+      expect(session['isOpen']).to.be.false;
+      expect(operation['closed']).to.be.true;
+      expect(driver.closeSession.callCount).to.eq(1);
+    });
+
+    it('should be a no-op for an already closed session', async () => {
+      const context = new ClientContextStub();
+      const driver = sinon.spy(context.driver);
+      const session = createSessionForTest({ handle: sessionHandleStub, context });
+
+      await session.close();
+      await session[Symbol.asyncDispose]();
+      await session[Symbol.asyncDispose]();
+      expect(driver.closeSession.callCount).to.eq(1);
+    });
+
+    it('should propagate close errors', async () => {
+      const context = new ClientContextStub();
+      const session = createSessionForTest({ handle: sessionHandleStub, context });
+      const error = new Error('close failed');
+      sinon.stub(context.driver, 'closeSession').rejects(error);
+
+      try {
+        await session[Symbol.asyncDispose]();
+        expect.fail('It should throw an error');
+      } catch (e) {
+        expect(e).to.equal(error);
+      }
+      // A failed close still marks the session closed, so disposing again is a no-op.
+      await session[Symbol.asyncDispose]();
+    });
+  });
 });
