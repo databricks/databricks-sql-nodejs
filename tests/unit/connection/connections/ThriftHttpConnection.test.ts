@@ -32,9 +32,18 @@ const PREFIX = 'Received a response with a bad HTTP status code';
 
 // Sends one Thrift write to a local server that answers with `reply`, and
 // returns the error handed to the pending Thrift callback.
-async function failWith(reply: Reply, requestHeaders: Record<string, string> = {}): Promise<THTTPException> {
+async function failWith(
+  reply: Reply | ((res: http.ServerResponse) => void),
+  requestHeaders: Record<string, string> = {},
+  // Runs before the server is shut down, e.g. to read a body that is still streaming
+  whileConnected?: (error: THTTPException) => Promise<void>,
+): Promise<THTTPException> {
   const server = http.createServer((req, res) => {
     req.resume();
+    if (typeof reply === 'function') {
+      reply(res);
+      return;
+    }
     res.writeHead(reply.status, reply.headers);
     res.end(reply.body);
   });
@@ -47,10 +56,12 @@ async function failWith(reply: Reply, requestHeaders: Record<string, string> = {
       { url: `http://127.0.0.1:${port}/`, getRetryPolicy: async () => new NullRetryPolicy() },
       { headers: requestHeaders },
     );
-    return await new Promise<THTTPException>((resolve) => {
-      connection.client = { _reqs: { 1: (error: unknown) => resolve(error as THTTPException) } } as any;
+    const error = await new Promise<THTTPException>((resolve) => {
+      connection.client = { _reqs: { 1: (err: unknown) => resolve(err as THTTPException) } } as any;
       connection.write(Buffer.from('x'), 1);
     });
+    await whileConnected?.(error);
+    return error;
   } finally {
     server.closeAllConnections();
     server.close();
@@ -213,6 +224,56 @@ describe('ThriftHttpConnection', () => {
       expect(detail.startsWith('first line xxx')).to.equal(true);
       expect(detail.length).to.equal(501);
       expect(detail.endsWith('…')).to.equal(true);
+    });
+
+    it('reports the status only when a chunked body exceeds the byte budget, keeping the body readable', async () => {
+      const chunk = `${'y'.repeat(1023)}\n`;
+      const chunkCount = 200; // 200 KiB, beyond the 64 KiB budget
+      let body: string | undefined;
+      const error = await failWith(
+        (res) => {
+          res.writeHead(401, { 'content-type': 'text/plain' });
+          for (let i = 0; i < chunkCount; i += 1) {
+            res.write(chunk);
+          }
+          res.end();
+        },
+        {},
+        async (err) => {
+          body = await err.response.text();
+        },
+      );
+      expect(error.message).to.equal(`${PREFIX}: 401`);
+      expect(error.statusCode).to.equal(401);
+      expect(error.response.status).to.equal(401);
+      expect(error.response.headers.get('content-type')).to.equal('text/plain');
+      expect(body).to.equal(chunk.repeat(chunkCount));
+    });
+
+    it('does not read a body whose Content-Length exceeds the byte budget', async () => {
+      const body = 'z'.repeat(100 * 1024);
+      let received: string | undefined;
+      const error = await failWith(
+        { status: 401, headers: { 'content-length': `${body.length}` }, body },
+        {},
+        async (err) => {
+          received = await err.response.text();
+        },
+      );
+      expect(error.message).to.equal(`${PREFIX}: 401`);
+      expect(received).to.equal(body);
+    });
+
+    it('reports the status only when the body does not end within the time budget', async function test() {
+      this.timeout(10_000);
+      const started = Date.now();
+      const error = await failWith((res) => {
+        res.writeHead(503, { 'content-type': 'text/plain' });
+        res.write('Service temporarily unavailable'); // never ended
+      });
+      expect(error.message).to.equal(`${PREFIX}: 503`);
+      expect(error.statusCode).to.equal(503);
+      expect(Date.now() - started).to.be.below(5_000);
     });
 
     it('never echoes request headers', async () => {

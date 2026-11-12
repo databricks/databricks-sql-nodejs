@@ -5,6 +5,7 @@
 */
 
 import { EventEmitter } from 'events';
+import { PassThrough, pipeline } from 'stream';
 import { TBinaryProtocol, TBufferedTransport, Thrift, TProtocol, TProtocolConstructor, TTransport } from 'thrift';
 import fetch, { RequestInit, HeadersInit, Request, Response, FetchError } from 'node-fetch';
 // @ts-expect-error TS7016: Could not find a declaration file for module
@@ -35,6 +36,9 @@ const errorDetailHeaders = [
 
 const MAX_ERROR_DETAIL_LENGTH = 500;
 const MAX_ERROR_BODY_SCAN = 4096;
+// Budgets for reading an error body; when either runs out the error carries the status only
+const MAX_ERROR_BODY_BYTES = 64 * 1024;
+const MAX_ERROR_BODY_READ_MS = 1000;
 
 function normalizeErrorDetail(value: string): string | undefined {
   const text = value.slice(0, MAX_ERROR_BODY_SCAN).replace(/\s+/g, ' ').trim();
@@ -62,6 +66,56 @@ function getErrorDetailFromBody(body: Buffer): string | undefined {
   return normalizeErrorDetail(text);
 }
 
+interface ErrorBodyReadResult {
+  chunks: Buffer[];
+  // `false` when the byte or time budget ran out before the body ended
+  complete: boolean;
+}
+
+// Reads the error body until it ends, it exceeds `MAX_ERROR_BODY_BYTES`, or
+// `MAX_ERROR_BODY_READ_MS` elapses, whichever comes first. The stream is left
+// paused (not destroyed) when a budget runs out, so the rest stays readable.
+function readErrorBody(body: NodeJS.ReadableStream): Promise<ErrorBodyReadResult> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    let size = 0;
+    let timer: NodeJS.Timeout | undefined;
+
+    const cleanup = () => {
+      clearTimeout(timer);
+      body.removeListener('data', onData);
+      body.removeListener('end', onEnd);
+      body.removeListener('error', onError);
+    };
+    const stop = () => {
+      cleanup();
+      body.pause();
+      resolve({ chunks, complete: false });
+    };
+    function onData(chunk: Buffer | string) {
+      const buffer = Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk);
+      chunks.push(buffer);
+      size += buffer.length;
+      if (size > MAX_ERROR_BODY_BYTES) {
+        stop();
+      }
+    }
+    function onEnd() {
+      cleanup();
+      resolve({ chunks, complete: true });
+    }
+    function onError(error: unknown) {
+      cleanup();
+      reject(error);
+    }
+
+    timer = setTimeout(stop, MAX_ERROR_BODY_READ_MS);
+    body.on('data', onData);
+    body.once('end', onEnd);
+    body.once('error', onError);
+  });
+}
+
 async function createHTTPException(response: Response): Promise<THTTPException> {
   for (const header of errorDetailHeaders) {
     const detail = normalizeErrorDetail(response.headers.get(header) ?? '');
@@ -70,20 +124,40 @@ async function createHTTPException(response: Response): Promise<THTTPException> 
     }
   }
 
-  let body: Buffer;
+  // Don't start reading a body that is already known to exceed the byte budget
+  const contentLength = Number(response.headers.get('content-length'));
+  if (Number.isFinite(contentLength) && contentLength > MAX_ERROR_BODY_BYTES) {
+    return new THTTPException(response);
+  }
+
+  let result: ErrorBodyReadResult;
   try {
-    body = await response.buffer();
+    result = await readErrorBody(response.body);
   } catch {
     return new THTTPException(response);
   }
-  // The body is consumed now, so expose an equivalent response that can still be read
-  const bufferedResponse = new Response(body, {
+
+  const init = {
     url: response.url,
     status: response.status,
     statusText: response.statusText,
     headers: response.headers,
-  });
-  return new THTTPException(bufferedResponse, getErrorDetailFromBody(body));
+  };
+  const prefix = Buffer.concat(result.chunks);
+
+  if (!result.complete) {
+    // Budget exhausted: report the status only, and expose a response that still
+    // yields the whole body (the bytes read so far followed by the rest of the stream)
+    const rest = new PassThrough();
+    rest.write(prefix);
+    pipeline(response.body, rest, () => {
+      // Errors reach whoever reads `rest`
+    });
+    return new THTTPException(new Response(rest, init));
+  }
+
+  // The body is consumed now, so expose an equivalent response that can still be read
+  return new THTTPException(new Response(prefix, init), getErrorDetailFromBody(prefix));
 }
 
 // thrift >= 0.25 accepts an optional `maxLength` that @types/thrift doesn't declare.
