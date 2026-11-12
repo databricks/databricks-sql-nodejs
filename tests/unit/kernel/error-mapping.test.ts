@@ -312,3 +312,63 @@ describe('KernelErrorMapping.decodeNapiKernelError — diagnostics enrichment (T
     expect(err.kernelMetadata?.diagnosticInfo).to.equal('ArithmeticException'); // Thrift: response.errorMessage
   });
 });
+
+describe('KernelErrorMapping.decodeNapiKernelError — cause chain', () => {
+  const SENTINEL = '__databricks_error__:';
+
+  const cases: Array<[string, Function]> = [
+    ['Unauthenticated', AuthenticationError],
+    ['PermissionDenied', AuthenticationError],
+    ['SqlError', OperationStateError],
+    ['Cancelled', OperationStateError],
+    ['InvalidArgument', ParameterError],
+    ['NetworkError', HiveDriverError],
+    ['SomeFutureVariant', HiveDriverError],
+  ];
+
+  cases.forEach(([code, expectedClass]) => {
+    it(`attaches a non-enumerable code and message cause for ${code}`, () => {
+      const json = JSON.stringify({ code, message: 'HTTP 403: Invalid access token', httpStatus: 403 });
+      const napiError = new Error(SENTINEL + json);
+
+      const err = decodeNapiKernelError(napiError) as Error & { cause?: unknown };
+
+      expect(err).to.be.instanceOf(expectedClass);
+      expect(err.message).to.equal('HTTP 403: Invalid access token');
+      expect(err.cause).to.be.instanceOf(Error);
+      expect(err.cause).to.not.equal(napiError);
+      expect((err.cause as Error).message).to.equal(`${code}: HTTP 403: Invalid access token`);
+      expect(napiError.message).to.equal(SENTINEL + json);
+      const descriptor = Object.getOwnPropertyDescriptor(err, 'cause');
+      expect(descriptor?.enumerable).to.equal(false);
+      expect(descriptor?.writable).to.equal(true);
+    });
+  });
+
+  it('keeps the envelope diagnostics out of the cause and bounds its length', () => {
+    const json = JSON.stringify({
+      code: 'SqlError',
+      message: `boom ${'m'.repeat(2000)}`,
+      diagnosticInfo: 'secret-diagnostic-info',
+      errorDetailsJson: `{"details":"${'d'.repeat(10000)}"}`,
+    });
+
+    const err = decodeNapiKernelError(new Error(SENTINEL + json)) as ErrorWithSqlState & { cause?: Error };
+
+    expect(err.kernelMetadata?.diagnosticInfo).to.equal('secret-diagnostic-info');
+    const causeMessage = String(err.cause?.message);
+    expect(causeMessage.startsWith('SqlError: boom mmm')).to.equal(true);
+    expect(causeMessage.length).to.equal(500);
+    expect(causeMessage.endsWith('…')).to.equal(true);
+    expect(causeMessage).to.not.contain('secret-diagnostic-info');
+    expect(causeMessage).to.not.contain('details');
+    expect(causeMessage).to.not.contain(SENTINEL);
+  });
+
+  it('adds no cause to binding-side errors that are returned as-is', () => {
+    const plain = new Error('openSession: `token` is required');
+    const err = decodeNapiKernelError(plain) as Error & { cause?: unknown };
+    expect(err).to.equal(plain);
+    expect(err.cause).to.equal(undefined);
+  });
+});

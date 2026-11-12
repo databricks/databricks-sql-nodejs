@@ -116,7 +116,7 @@ export default class ThriftBackend implements IBackend {
       // propagates unchanged — note StatusError is NOT an Error subclass
       // (it only `implements Error`), so it must be re-thrown as-is rather
       // than normalized, or its sqlState/message would be lost.
-      if (error instanceof StatusError && error.sqlState === 'KP001') {
+      if (ThriftBackend.isKp001(error)) {
         logger.log(LogLevel.debug, `Reyden: detected KP001 on warehouse ${warehouseId}; falling back to SEA backend`);
 
         // Mark this warehouse as Reyden for future connections.
@@ -124,20 +124,23 @@ export default class ThriftBackend implements IBackend {
           reydenCache.markReyden(host, warehouseId);
         }
 
-        // Fall back to the kernel (SEA) backend exactly once. If it also fails,
-        // surface the kernel error but keep the original Thrift rejection as its
-        // cause for diagnosis.
         try {
           return await this.openSessionWithKernelBackend(request);
         } catch (kernelError) {
-          // Preserve the Thrift KP001 as the kernel error's cause, but don't clobber a cause
-          // the kernel error may already carry.
-          if (
-            kernelError &&
-            typeof kernelError === 'object' &&
-            (kernelError as { cause?: unknown }).cause === undefined
-          ) {
-            (kernelError as { cause?: unknown }).cause = error;
+          // Append KP001 once at the end of the kernel cause chain, even when concurrent opens share a rejection.
+          if (kernelError && typeof kernelError === 'object') {
+            let tail = kernelError as { cause?: unknown };
+            let hasKp001 = false;
+            for (let depth = 0; depth < 10 && tail.cause && typeof tail.cause === 'object'; depth += 1) {
+              if (ThriftBackend.isKp001(tail.cause)) {
+                hasKp001 = true;
+                break;
+              }
+              tail = tail.cause as { cause?: unknown };
+            }
+            if (!hasKp001 && tail.cause === undefined) {
+              tail.cause = error;
+            }
           }
           logger.log(LogLevel.error, 'Reyden: both Thrift (KP001) and SEA fallback failed');
           throw kernelError;
@@ -147,6 +150,10 @@ export default class ThriftBackend implements IBackend {
       // Not a Reyden rejection — surface the original error unchanged.
       throw error;
     }
+  }
+
+  private static isKp001(error: unknown): error is StatusError {
+    return error instanceof StatusError && error.sqlState === 'KP001';
   }
 
   /**

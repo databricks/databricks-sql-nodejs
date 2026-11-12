@@ -19,13 +19,31 @@ export class THTTPException extends Thrift.TApplicationException {
   public readonly response: Response;
 
   constructor(response: Response) {
-    super(
-      Thrift.TApplicationExceptionType.PROTOCOL_ERROR,
-      `Received a response with a bad HTTP status code: ${response.status}`,
-    );
+    const detail = getErrorDetailFromHeaders(response);
+    const message = `Received a response with a bad HTTP status code: ${response.status}`;
+    super(Thrift.TApplicationExceptionType.PROTOCOL_ERROR, detail ? `${message}: ${detail}` : message);
     this.statusCode = response.status;
     this.response = response;
   }
+}
+
+// Server error headers, most specific first.
+const errorDetailHeaders = [
+  'x-thriftserver-error-message',
+  'x-databricks-error-or-redirect-message',
+  'x-databricks-reason-phrase',
+];
+
+const MAX_ERROR_DETAIL_LENGTH = 500;
+
+function getErrorDetailFromHeaders(response: Response): string | undefined {
+  for (const header of errorDetailHeaders) {
+    const detail = (response.headers.get(header) ?? '').replace(/\s+/g, ' ').trim();
+    if (detail) {
+      return detail.length > MAX_ERROR_DETAIL_LENGTH ? `${detail.slice(0, MAX_ERROR_DETAIL_LENGTH - 1)}…` : detail;
+    }
+  }
+  return undefined;
 }
 
 // thrift >= 0.25 accepts an optional `maxLength` that @types/thrift doesn't declare.
