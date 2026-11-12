@@ -64,7 +64,7 @@ describe('kernel volume file lifecycle', function volumeSuite() {
             await execute(`REMOVE '${remote}'`);
             await expectTransferFailure(`GET '${remote}' TO '${path.join(allowed, 'deleted.bin')}'`);
           } finally {
-            await execute(`REMOVE '${remote}'`);
+            await execute(`REMOVE '${remote}'`).catch(() => {});
           }
         } finally {
           await session.close();
