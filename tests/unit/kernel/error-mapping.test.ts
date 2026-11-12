@@ -315,22 +315,24 @@ describe('KernelErrorMapping.decodeNapiKernelError — diagnostics enrichment (T
 });
 
 describe('file transfer errors', () => {
-  it('preserves StagingError and structured diagnostics', () => {
-    const error = decodeNapiKernelError(
-      new Error(
-        '__databricks_error__:' +
-          JSON.stringify({
-            code: 'NotFound',
-            message: 'File transfer failed with HTTP 404',
-            errorCode: 'FILE_TRANSFER_ERROR',
-            sqlState: 'HY000',
-            queryId: 'statement',
-          }),
-      ),
-    );
-    const mapped = error as ErrorWithSqlState;
-    expect(error).to.be.instanceOf(StagingError);
-    expect(mapped.kernelMetadata?.queryId).to.equal('statement');
-    expect(mapped.sqlState).to.equal('HY000');
+  ['FILE_TRANSFER_ERROR', 'FILE_TRANSFER_PERMISSION_ERROR'].forEach((errorCode) => {
+    it(`preserves StagingError and structured diagnostics for ${errorCode}`, () => {
+      const error = decodeNapiKernelError(
+        new Error(
+          '__databricks_error__:' +
+            JSON.stringify({
+              code: 'NotFound',
+              message: 'File transfer failed with HTTP 404',
+              errorCode,
+              sqlState: 'HY000',
+              queryId: 'statement',
+            }),
+        ),
+      );
+      const mapped = error as ErrorWithSqlState;
+      expect(error).to.be.instanceOf(StagingError);
+      expect(mapped.kernelMetadata?.queryId).to.equal('statement');
+      expect(mapped.sqlState).to.equal('HY000');
+    });
   });
 });

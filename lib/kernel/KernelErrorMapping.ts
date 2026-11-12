@@ -139,7 +139,7 @@ export function mapKernelErrorToJsError(kErr: KernelErrorShape): ErrorWithSqlSta
 
   let error: ErrorWithSqlState;
 
-  if (kErr.errorCode === 'FILE_TRANSFER_ERROR') {
+  if (kErr.errorCode === 'FILE_TRANSFER_ERROR' || kErr.errorCode === 'FILE_TRANSFER_PERMISSION_ERROR') {
     error = new StagingError(message);
   } else {
     switch (code as KernelErrorCode) {
