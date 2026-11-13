@@ -47,6 +47,11 @@ backend (the default), the **SEA / Kernel** backend, or both.
 | `useKernel` (internal)  | `boolean` |   —    |   —    | `false`       | Selects the backend: `false`/omitted → Thrift, `true` → Kernel.                        |
 | `clientId` (deprecated) | `string`  |   ✅   |   ✅   | —             | Runtime-only alias for `userAgentEntry`. `userAgentEntry` wins when both are supplied. |
 
+Set `client.getConfig().useCloudFetch = false` (default `true`) before opening a session to fetch
+complete results without cloud-storage downloads. On the kernel backend this
+connection setting takes precedence over conflicting session configuration.
+Per-statement `useCloudFetch` overrides remain unsupported on the kernel backend.
+
 ## Authentication
 
 | Option                                        | Type                                                         | Thrift | Kernel | Default Value                 | Note                                                                                                                                                                                                                       |
