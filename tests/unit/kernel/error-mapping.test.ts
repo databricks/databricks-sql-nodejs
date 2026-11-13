@@ -1,4 +1,6 @@
 import { expect } from 'chai';
+import os from 'os';
+import { getSystemErrorMap } from 'util';
 import {
   mapKernelErrorToJsError,
   decodeNapiKernelError,
@@ -290,6 +292,10 @@ describe('KernelErrorMapping.decodeNapiKernelError — diagnostics enrichment (T
   it('omits kernelMetadata entirely for a bare envelope (no optional fields)', () => {
     const err = decodeNapiKernelError(envelope({ code: 'Internal', message: 'plain' })) as ErrorWithSqlState;
     expect(err.kernelMetadata).to.equal(undefined);
+    expect(err.path).to.equal(undefined);
+    expect(err.errno).to.equal(undefined);
+    expect(err.code).to.equal(undefined);
+    expect(err.syscall).to.equal(undefined);
   });
 
   it('Thrift parity: kernel exposes the same diagnostics Thrift carries via OperationStateError.response', () => {
@@ -375,6 +381,8 @@ describe('KernelErrorMapping.decodeNapiKernelError — cause chain', () => {
 });
 
 describe('file transfer errors', () => {
+  const nodeEnoent = [...getSystemErrorMap()].find(([, [name]]) => name === 'ENOENT')![0];
+
   [
     ['Cancelled', OperationStateErrorCode.Canceled],
     ['Timeout', OperationStateErrorCode.Timeout],
@@ -383,12 +391,25 @@ describe('file transfer errors', () => {
       const error = decodeNapiKernelError(
         new Error(
           '__databricks_error__:' +
-            JSON.stringify({ code, message: 'Transfer stopped', errorCode: 'FILE_TRANSFER_ERROR' }),
+            JSON.stringify({
+              code,
+              message: 'Transfer stopped',
+              errorCode: 'FILE_TRANSFER_ERROR',
+              osErrorCode: 2,
+              osErrorFilename: 'missing.bin',
+              osErrorNodeErrno: nodeEnoent,
+              osErrorOperation: 'stat',
+            }),
         ),
       ) as ErrorWithSqlState;
       expect(error).to.be.instanceOf(OperationStateError);
       expect((error as OperationStateError).errorCode).to.equal(expected);
       expect(error.kernelMetadata?.errorCode).to.equal('FILE_TRANSFER_ERROR');
+      expect(error.kernelMetadata?.osErrorCode).to.equal(2);
+      expect(error.path).to.equal('missing.bin');
+      expect(error.syscall).to.equal('stat');
+      expect(error.code).to.equal(undefined);
+      expect(error.errno).to.equal(undefined);
     });
   });
   [
@@ -414,6 +435,105 @@ describe('file transfer errors', () => {
       expect(error).to.be.instanceOf(StagingError);
       expect(mapped.kernelMetadata?.queryId).to.equal('statement');
       expect(mapped.sqlState).to.equal('HY000');
+      expect(mapped).to.not.have.property('path');
+      expect(mapped).to.not.have.property('syscall');
+      expect(mapped).to.not.have.property('code');
+      expect(mapped).to.not.have.property('errno');
     });
+  });
+
+  it('preserves enumerable filesystem fields and the bounded kernel cause', () => {
+    const message = `File transfer failed: ${'x'.repeat(1000)}`;
+    const error = decodeNapiKernelError(
+      new Error(
+        '__databricks_error__:' +
+          JSON.stringify({
+            code: 'NotFound',
+            message,
+            errorCode: 'FILE_TRANSFER_ERROR',
+            osErrorCode: 3,
+            osErrorFilename: 'missing.bin',
+            osErrorNodeErrno: nodeEnoent,
+            osErrorOperation: 'stat',
+          }),
+      ),
+    ) as ErrorWithSqlState & { cause?: Error };
+
+    expect(error).to.be.instanceOf(StagingError);
+    expect(error).to.be.instanceOf(Error);
+    expect(error.name).to.equal('Error');
+    expect(error.message).to.equal(message);
+    expect(error.kernelMetadata?.osErrorCode).to.equal(3);
+    expect(error.kernelMetadata?.osErrorFilename).to.equal('missing.bin');
+    const expectedFields = { path: 'missing.bin', syscall: 'stat', errno: nodeEnoent, code: 'ENOENT' };
+    expect({ ...error }).to.deep.equal(expectedFields);
+    expect(error.kernelMetadata?.osErrorNodeErrno).to.equal(nodeEnoent);
+    expect(error.kernelMetadata?.osErrorOperation).to.equal('stat');
+    Object.keys(expectedFields).forEach((key) => {
+      const descriptor = Object.getOwnPropertyDescriptor(error, key);
+      expect(descriptor?.enumerable).to.equal(true);
+      expect(descriptor?.writable).to.equal(true);
+      expect(descriptor?.configurable).to.equal(true);
+    });
+    expect(Object.getOwnPropertyDescriptor(error, 'kernelMetadata')?.enumerable).to.equal(false);
+    expect(Object.getOwnPropertyDescriptor(error, 'cause')?.enumerable).to.equal(false);
+    expect(error.cause?.message).to.equal(`NotFound: ${message}`.slice(0, 499) + '…');
+    expect(error.cause?.message).to.not.contain('missing.bin');
+  });
+
+  it('keeps the filename when an OS code is absent, malformed or unknown', () => {
+    [undefined, null, '2', 2.5, 0, -2, 2 ** 31, Number.MAX_VALUE].forEach((raw) => {
+      const error = decodeNapiKernelError(
+        new Error(
+          '__databricks_error__:' +
+            JSON.stringify({
+              code: 'NotFound',
+              message: 'File transfer failed',
+              errorCode: 'FILE_TRANSFER_ERROR',
+              osErrorCode: raw,
+              osErrorFilename: 'missing.bin',
+              osErrorOperation: 'stat',
+            }),
+        ),
+      ) as ErrorWithSqlState;
+      expect(error).to.be.instanceOf(StagingError);
+      expect(error.path).to.equal('missing.bin');
+      expect(error.syscall).to.equal('stat');
+      expect(error.code).to.equal(undefined);
+      expect(error.errno).to.equal(undefined);
+      expect(error.kernelMetadata?.osErrorCode).to.equal(
+        typeof raw === 'number' && Number.isInteger(raw) ? raw : undefined,
+      );
+    });
+  });
+
+  it('retains an OS code independently of an invalid filename', () => {
+    const error = decodeNapiKernelError(
+      new Error(
+        '__databricks_error__:' +
+          JSON.stringify({
+            code: 'NotFound',
+            message: 'File transfer failed',
+            errorCode: 'FILE_TRANSFER_ERROR',
+            osErrorCode: 2,
+            osErrorFilename: 42,
+            osErrorNodeErrno: -2.5,
+            osErrorOperation: 42,
+          }),
+      ),
+    ) as ErrorWithSqlState;
+    expect(error.kernelMetadata?.osErrorCode).to.equal(2);
+    expect(error.kernelMetadata?.osErrorFilename).to.equal(undefined);
+    expect(error.kernelMetadata?.osErrorNodeErrno).to.equal(undefined);
+    expect(error.kernelMetadata?.osErrorOperation).to.equal(undefined);
+    expect(error).to.not.have.property('path');
+    expect(error).to.not.have.property('syscall');
+    if (process.platform === 'win32') {
+      expect(error.code).to.equal(undefined);
+      expect(error.errno).to.equal(undefined);
+    } else {
+      expect(error.code).to.equal('ENOENT');
+      expect(error.errno).to.equal(-os.constants.errno.ENOENT);
+    }
   });
 });

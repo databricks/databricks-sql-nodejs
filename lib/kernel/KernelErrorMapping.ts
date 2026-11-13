@@ -1,3 +1,4 @@
+import { getSystemErrorMap } from 'util';
 import HiveDriverError from '../errors/HiveDriverError';
 import AuthenticationError from '../errors/AuthenticationError';
 import OperationStateError, { OperationStateErrorCode } from '../errors/OperationStateError';
@@ -71,6 +72,12 @@ export interface KernelMetadata {
   httpStatus?: number;
   retryable?: boolean;
   queryId?: string;
+  /** Raw errno on POSIX; raw Win32 error code on Windows. */
+  osErrorCode?: number;
+  osErrorFilename?: string;
+  osErrorOperation?: string;
+  /** Negative Node errno translated by the native host; the raw code is retained separately. */
+  osErrorNodeErrno?: number;
   /**
    * Rich server-error diagnostics from the kernel terminal-error payload. These
    * mirror the fields the **Thrift** backend already surfaces via
@@ -87,20 +94,23 @@ export interface KernelMetadata {
 
 /**
  * An `Error` carrying optional kernel-side kernel context. `sqlState` is
- * exposed at the top level (no collision in the existing driver error
- * tree); the remaining envelope fields live under a `kernelMetadata`
+ * exposed at the top level alongside public filesystem fields; the remaining
+ * envelope fields live under a `kernelMetadata`
  * namespace to avoid clobbering pre-existing `errorCode` semantics on
  * `OperationStateError`.
  */
 export interface ErrorWithSqlState extends Error {
   sqlState?: string;
   kernelMetadata?: KernelMetadata;
+  code?: string;
+  errno?: number;
+  path?: string;
+  syscall?: string;
 }
 
 /**
- * Attach a non-enumerable own-property to the error. The shape matches
- * Node's convention for attaching `.code` to system errors:
- * non-enumerable (clean `JSON.stringify`) but readable via direct
+ * Attach diagnostic context without including it in `JSON.stringify`, while
+ * keeping it readable via direct
  * property access and `Object.getOwnPropertyDescriptor`. One helper for
  * both the top-level `sqlState` and the namespaced `kernelMetadata`
  * object so the `defineProperty` flags live in exactly one place.
@@ -234,6 +244,22 @@ function buildKernelMetadata(parsed: Record<string, unknown>): KernelMetadata {
   if (typeof parsed.queryId === 'string') {
     meta.queryId = parsed.queryId;
   }
+  if (typeof parsed.osErrorCode === 'number' && Number.isInteger(parsed.osErrorCode)) {
+    meta.osErrorCode = parsed.osErrorCode;
+  }
+  if (typeof parsed.osErrorFilename === 'string') {
+    meta.osErrorFilename = parsed.osErrorFilename;
+  }
+  if (typeof parsed.osErrorOperation === 'string') {
+    meta.osErrorOperation = parsed.osErrorOperation;
+  }
+  if (
+    typeof parsed.osErrorNodeErrno === 'number' &&
+    Number.isInteger(parsed.osErrorNodeErrno) &&
+    parsed.osErrorNodeErrno < 0
+  ) {
+    meta.osErrorNodeErrno = parsed.osErrorNodeErrno;
+  }
   // Rich diagnostics — Thrift/Python parity (were previously dropped).
   if (typeof parsed.displayMessage === 'string') {
     meta.displayMessage = parsed.displayMessage;
@@ -338,6 +364,28 @@ export function decodeNapiKernelError(err: unknown): Error {
   // `KernelMetadata` fields are covered automatically.
   if (Object.keys(meta).length > 0) {
     defineErrorMetadata(jsErr, 'kernelMetadata', meta);
+  }
+
+  if (meta.osErrorFilename !== undefined) {
+    jsErr.path = meta.osErrorFilename;
+  }
+  if (meta.osErrorOperation !== undefined) {
+    jsErr.syscall = meta.osErrorOperation;
+  }
+  if (jsErr instanceof StagingError) {
+    const errno =
+      meta.osErrorNodeErrno ??
+      (process.platform !== 'win32' && meta.osErrorCode !== undefined && meta.osErrorCode > 0
+        ? -meta.osErrorCode
+        : undefined);
+    if (errno !== undefined) {
+      const entry = getSystemErrorMap().get(errno);
+      if (entry) {
+        const [systemCode] = entry;
+        jsErr.errno = errno;
+        jsErr.code = systemCode;
+      }
+    }
   }
 
   // Attach a bounded summary of the kernel error as `cause` (same descriptor as a

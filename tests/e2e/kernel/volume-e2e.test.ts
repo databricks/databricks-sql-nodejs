@@ -7,6 +7,7 @@ import { DBSQLClient } from '../../../lib';
 import StagingError from '../../../lib/errors/StagingError';
 import { ConnectionOptions } from '../../../lib/contracts/IDBSQLClient';
 import { InternalConnectionOptions } from '../../../lib/contracts/InternalConnectionOptions';
+import { ErrorWithSqlState } from '../../../lib/kernel/KernelErrorMapping';
 import config from '../utils/config';
 
 describe('kernel volume file lifecycle', function volumeSuite() {
@@ -14,11 +15,12 @@ describe('kernel volume file lifecycle', function volumeSuite() {
   [false, true].forEach((runAsync) => {
     it(`transfers bytes and reports failures with runAsync=${runAsync}`, async () => {
       const local = fs.mkdtempSync(path.join(os.tmpdir(), 'volume-'));
-      const allowed = path.join(local, 'allowed');
+      const localPath = (value: string) => value.split(path.sep).join('/');
+      const allowed = localPath(path.join(local, 'allowed'));
       fs.mkdirSync(allowed);
-      const source = path.join(allowed, 'input.bin');
-      const destination = path.join(allowed, 'output.bin');
-      const denied = path.join(local, 'denied.bin');
+      const source = localPath(path.join(allowed, 'input.bin'));
+      const destination = localPath(path.join(allowed, 'output.bin'));
+      const denied = localPath(path.join(local, 'denied.bin'));
       const payload = Buffer.alloc(1024 * 1024);
       payload.forEach((_, i) => {
         payload[i] = i % 256;
@@ -57,12 +59,31 @@ describe('kernel volume file lifecycle', function volumeSuite() {
                 failure = error;
               }
               expect(failure).to.be.instanceOf(StagingError);
+              return failure as ErrorWithSqlState;
             };
             await expectTransferFailure(`PUT '${denied}' INTO '${remote}' OVERWRITE`);
-            await expectTransferFailure(`PUT '${path.join(allowed, 'missing.bin')}' INTO '${remote}' OVERWRITE`);
+            const missing = localPath(path.join(allowed, 'missing.bin'));
+            let control: NodeJS.ErrnoException | undefined;
+            try {
+              fs.statSync(missing);
+            } catch (error) {
+              control = error as NodeJS.ErrnoException;
+            }
+            expect(control?.code).to.equal('ENOENT');
+            expect(control?.errno).to.be.a('number');
+            expect(control?.syscall).to.equal('stat');
+            expect(control?.path).to.equal(missing);
+            const failure = await expectTransferFailure(`PUT '${missing}' INTO '${remote}' OVERWRITE`);
+            expect(failure.path).to.equal(missing);
+            expect(failure.kernelMetadata?.osErrorFilename).to.equal(missing);
+            expect(failure.kernelMetadata?.osErrorCode).to.be.a('number');
+            expect(failure.kernelMetadata?.osErrorOperation).to.equal('stat');
+            expect(failure.syscall).to.equal(control?.syscall);
+            expect(failure.code).to.equal(control?.code);
+            expect(failure.errno).to.equal(control?.errno);
             await execute(`REMOVE '${remote}'`);
             await execute(`REMOVE '${remote}'`);
-            await expectTransferFailure(`GET '${remote}' TO '${path.join(allowed, 'deleted.bin')}'`);
+            await expectTransferFailure(`GET '${remote}' TO '${localPath(path.join(allowed, 'deleted.bin'))}'`);
           } finally {
             await execute(`REMOVE '${remote}'`).catch(() => {});
           }
