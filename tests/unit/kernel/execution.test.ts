@@ -893,6 +893,20 @@ describe('KernelSessionBackend', () => {
     expect(op.id).to.be.a('string').and.have.length.greaterThan(0);
   });
 
+  for (const stagingAllowedLocalPath of [[], '/tmp']) {
+    it(`retains inline results for configured async staging paths ${JSON.stringify(
+      stagingAllowedLocalPath,
+    )}`, async () => {
+      const connection = new FakeNativeConnection();
+      const direct = sinon.spy(connection, 'executeStatementDirect');
+      const submit = sinon.spy(connection, 'submitStatement');
+      const session = makeSession(connection);
+      await session.executeStatement('REMOVE remote', { runAsync: true, stagingAllowedLocalPath });
+      expect(direct.calledOnce).to.equal(true);
+      expect(submit.called).to.equal(false);
+    });
+  }
+
   it('executeStatement (sync default) routes a still-running query through the AsyncStatement arm', async () => {
     // The directResults Running arm — a query that did NOT finish within the
     // server inline wait comes back as an AsyncStatement (poll/cancel handle).
