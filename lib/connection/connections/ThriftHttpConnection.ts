@@ -19,16 +19,41 @@ export class THTTPException extends Thrift.TApplicationException {
   public readonly response: Response;
 
   constructor(response: Response) {
-    super(
-      Thrift.TApplicationExceptionType.PROTOCOL_ERROR,
-      `Received a response with a bad HTTP status code: ${response.status}`,
-    );
+    const detail = getErrorDetailFromHeaders(response);
+    const message = `Received a response with a bad HTTP status code: ${response.status}`;
+    super(Thrift.TApplicationExceptionType.PROTOCOL_ERROR, detail ? `${message}: ${detail}` : message);
     this.statusCode = response.status;
     this.response = response;
   }
 }
 
-type TTransportType = typeof TBufferedTransport;
+// Server error headers, most specific first.
+const errorDetailHeaders = [
+  'x-thriftserver-error-message',
+  'x-databricks-error-or-redirect-message',
+  'x-databricks-reason-phrase',
+];
+
+const MAX_ERROR_DETAIL_LENGTH = 500;
+
+function getErrorDetailFromHeaders(response: Response): string | undefined {
+  for (const header of errorDetailHeaders) {
+    const detail = (response.headers.get(header) ?? '').replace(/\s+/g, ' ').trim();
+    if (detail) {
+      return detail.length > MAX_ERROR_DETAIL_LENGTH ? `${detail.slice(0, MAX_ERROR_DETAIL_LENGTH - 1)}…` : detail;
+    }
+  }
+  return undefined;
+}
+
+// thrift >= 0.25 accepts an optional `maxLength` that @types/thrift doesn't declare.
+type TTransportType = typeof TBufferedTransport & {
+  receiver(
+    callback: (trans: TBufferedTransport, seqid: number) => void,
+    seqid: number,
+    maxLength?: number,
+  ): (data: Buffer) => void;
+};
 
 interface ThriftHttpConnectionOptions {
   url: string;
@@ -153,7 +178,13 @@ export default class ThriftHttpConnection extends EventEmitter {
         return responseBuffer as Buffer;
       })
       .then((buffer) => {
-        this.transport.receiver((transportWithData) => this.handleThriftResponse(transportWithData), seqId)(buffer);
+        // The whole body is already in memory. Capping at its size stops thrift >= 0.25 from rounding the
+        // receive buffer up to a power of two, which is much slower for multi-MB responses.
+        this.transport.receiver(
+          (transportWithData) => this.handleThriftResponse(transportWithData),
+          seqId,
+          buffer.length,
+        )(buffer);
       })
       .catch((error) => {
         if (error instanceof FetchError) {
@@ -182,12 +213,18 @@ export default class ThriftHttpConnection extends EventEmitter {
   private getThriftMethodName(thriftMessage: Buffer): Promise<string | undefined> {
     return new Promise((resolve) => {
       try {
-        const receiver = this.transport.receiver((transportWithData) => {
-          const Protocol = this.protocol;
-          const proto = new Protocol(transportWithData);
-          const header = proto.readMessageBegin();
-          resolve(header.fname);
-        }, 0 /* `seqId` could be any because it's ignored */);
+        // Cap at the message size, as for responses, so thrift >= 0.25 doesn't copy every outgoing request
+        // into a buffer rounded up to a power of two.
+        const receiver = this.transport.receiver(
+          (transportWithData) => {
+            const Protocol = this.protocol;
+            const proto = new Protocol(transportWithData);
+            const header = proto.readMessageBegin();
+            resolve(header.fname);
+          },
+          0 /* `seqId` could be any because it's ignored */,
+          thriftMessage.length,
+        );
 
         receiver(thriftMessage);
       } catch {

@@ -2,6 +2,7 @@ import { expect } from 'chai';
 import Int64 from 'node-int64';
 import { TSparkParameterValue, TSparkParameter } from '../../thrift/TCLIService_types';
 import { DBSQLParameter, DBSQLParameterType, DBSQLParameterValue } from '../../lib/DBSQLParameter';
+import ParameterError from '../../lib/errors/ParameterError';
 
 describe('DBSQLParameter', () => {
   it('should infer types correctly', () => {
@@ -167,6 +168,104 @@ describe('DBSQLParameter', () => {
         value: new TSparkParameterValue({ stringValue: '2023-09-06T03:14:27.843Z' }),
       }),
     );
+  });
+
+  describe('DECIMAL', () => {
+    const decimal = (value: DBSQLParameterValue, type: string = DBSQLParameterType.DECIMAL) =>
+      new DBSQLParameter({ type: type as DBSQLParameterType, value }).toSparkParameter();
+    const expected = (type: string, stringValue: string) =>
+      new TSparkParameter({ type, value: new TSparkParameterValue({ stringValue }) });
+
+    it('derives precision and scale from the value instead of sending a scale-0 DECIMAL', () => {
+      // A bare `DECIMAL` makes the Thrift server bind decimal(p,0): "123.45" → 123.
+      expect(decimal('123.45')).to.deep.equal(expected('DECIMAL(5,2)', '123.45'));
+      expect(decimal('-123.45')).to.deep.equal(expected('DECIMAL(5,2)', '-123.45'));
+      expect(decimal('-123')).to.deep.equal(expected('DECIMAL(3,0)', '-123'));
+      expect(decimal('1.500')).to.deep.equal(expected('DECIMAL(4,3)', '1.500'));
+      expect(decimal('99.99', 'decimal')).to.deep.equal(expected('DECIMAL(4,2)', '99.99'));
+    });
+
+    it('excludes insignificant leading zeros from precision', () => {
+      expect(decimal('0.00001')).to.deep.equal(expected('DECIMAL(5,5)', '0.00001'));
+      expect(decimal('007.50')).to.deep.equal(expected('DECIMAL(3,2)', '007.50'));
+      expect(decimal('.5')).to.deep.equal(expected('DECIMAL(1,1)', '.5'));
+      expect(decimal('0')).to.deep.equal(expected('DECIMAL(1,0)', '0'));
+      expect(decimal('000.000')).to.deep.equal(expected('DECIMAL(3,3)', '000.000'));
+    });
+
+    it('derives precision and scale for number, bigint and Int64 values', () => {
+      expect(decimal(123.45)).to.deep.equal(expected('DECIMAL(5,2)', '123.45'));
+      expect(decimal(-7)).to.deep.equal(expected('DECIMAL(1,0)', '-7'));
+      expect(decimal(BigInt('12345678901234567890'))).to.deep.equal(expected('DECIMAL(20,0)', '12345678901234567890'));
+      expect(decimal(new Int64(1234))).to.deep.equal(expected('DECIMAL(4,0)', '1234'));
+    });
+
+    it('stringifies Int64 values beyond 2^53 exactly', () => {
+      // `Int64#toString` returns "Infinity" from 2^53 upwards.
+      expect(decimal(new Int64(0x200000, 0))).to.deep.equal(expected('DECIMAL(16,0)', '9007199254740992'));
+      expect(decimal(new Int64(0x200000, 1))).to.deep.equal(expected('DECIMAL(16,0)', '9007199254740993'));
+      expect(decimal(new Int64(0x7fffffff, 0xffffffff))).to.deep.equal(
+        expected('DECIMAL(19,0)', '9223372036854775807'),
+      );
+      expect(decimal(new Int64(0x80000000, 0))).to.deep.equal(expected('DECIMAL(19,0)', '-9223372036854775808'));
+      expect(decimal(new Int64(-5))).to.deep.equal(expected('DECIMAL(1,0)', '-5'));
+      expect(new DBSQLParameter({ value: new Int64(0x200000, 1) }).toSparkParameter()).to.deep.equal(
+        expected('BIGINT', '9007199254740993'),
+      );
+    });
+
+    it('qualifies the DEC and NUMERIC synonyms like DECIMAL', () => {
+      expect(decimal('123.45', 'NUMERIC')).to.deep.equal(expected('DECIMAL(5,2)', '123.45'));
+      expect(decimal('123.45', 'numeric')).to.deep.equal(expected('DECIMAL(5,2)', '123.45'));
+      expect(decimal('123.45', 'DEC')).to.deep.equal(expected('DECIMAL(5,2)', '123.45'));
+      expect(decimal('123.45', ' Decimal ')).to.deep.equal(expected('DECIMAL(5,2)', '123.45'));
+      expect(decimal('123.45', 'NUMERIC(10,2)')).to.deep.equal(expected('NUMERIC(10,2)', '123.45'));
+      expect(decimal('123.45', 'DECIMALS')).to.deep.equal(expected('DECIMALS', '123.45'));
+    });
+
+    it('rewrites exponent forms as plain numerals', () => {
+      // `Number#toString` uses exponent notation below 1e-6 and from 1e21.
+      expect(decimal(1e-7)).to.deep.equal(expected('DECIMAL(7,7)', '0.0000001'));
+      expect(decimal(-1.5e-7)).to.deep.equal(expected('DECIMAL(8,8)', '-0.00000015'));
+      expect(decimal(1e21)).to.deep.equal(expected('DECIMAL(22,0)', '1000000000000000000000'));
+      expect(decimal('1.5e3')).to.deep.equal(expected('DECIMAL(4,0)', '1500'));
+      expect(decimal('1.50E1')).to.deep.equal(expected('DECIMAL(3,1)', '15.0'));
+      expect(decimal('+12.5e-1')).to.deep.equal(expected('DECIMAL(3,2)', '1.25'));
+      expect(decimal('0.0e5')).to.deep.equal(expected('DECIMAL(1,0)', '0'));
+      expect(decimal('0e999999999999')).to.deep.equal(expected('DECIMAL(1,0)', '0'));
+      expect(decimal('123.')).to.deep.equal(expected('DECIMAL(3,0)', '123'));
+    });
+
+    it('accepts the full 38-digit precision', () => {
+      const value = '12345678901234567890.123456789012345678';
+      expect(decimal(value)).to.deep.equal(expected('DECIMAL(38,18)', value));
+      expect(decimal('-0.12345678901234567890123456789012345678')).to.deep.equal(
+        expected('DECIMAL(38,38)', '-0.12345678901234567890123456789012345678'),
+      );
+    });
+
+    it('rejects a value that needs precision > 38 instead of truncating it', () => {
+      const tooBig = () => decimal('123456789012345678901234567890123456789');
+      expect(tooBig).to.throw(ParameterError, /needs precision 39, exceeding the Databricks maximum of 38/);
+      expect(() => decimal('0.000000000000000000000000000000000000001')).to.throw(ParameterError, /precision 39/);
+      expect(() => decimal('1e38')).to.throw(ParameterError, /precision 39/);
+      expect(() => decimal('1e-39')).to.throw(ParameterError, /precision 39/);
+      expect(() => decimal(`1e${'9'.repeat(400)}`)).to.throw(ParameterError, /exceeding the Databricks maximum/);
+    });
+
+    it('rejects non-numeric values', () => {
+      for (const value of ['abc', '', ' ', '.', 'e5', '1,000', '1e', '0x10', 'NaN', NaN, Infinity, true]) {
+        expect(() => decimal(value), String(value)).to.throw(ParameterError, /is not a decimal number/);
+      }
+    });
+
+    it('leaves an explicitly qualified DECIMAL(p,s) type unchanged', () => {
+      expect(decimal('123.45', 'DECIMAL(10,2)')).to.deep.equal(expected('DECIMAL(10,2)', '123.45'));
+    });
+
+    it('still binds a NULL DECIMAL without a type', () => {
+      expect(decimal(null)).to.deep.equal(new TSparkParameter({}));
+    });
   });
 
   it('binds a typed DATE from local calendar accessors, never via toISOString (no UTC off-by-one)', () => {

@@ -232,6 +232,48 @@ describe('Query parameters', () => {
     }
   });
 
+  // https://github.com/databricks/databricks-sql-nodejs/issues/474
+  it('should keep the precision and scale of DECIMAL parameters', async () => {
+    const session = await openSession();
+    try {
+      const operation = await session.executeStatement(
+        'SELECT :a AS a, typeof(:a) AS a_type, :b AS b, typeof(:b) AS b_type, :c AS c, typeof(:c) AS c_type',
+        {
+          namedParameters: {
+            a: new DBSQLParameter({ type: DBSQLParameterType.DECIMAL, value: '123.45' }),
+            // `Number#toString` renders this as "-1.5e-7".
+            b: new DBSQLParameter({ type: DBSQLParameterType.DECIMAL, value: -1.5e-7 }),
+            // More digits than the scale-0 DECIMAL the server used to apply could hold.
+            c: new DBSQLParameter({ type: DBSQLParameterType.DECIMAL, value: BigInt('12345678901234') }),
+          },
+        },
+      );
+      const result = await operation.fetchAll();
+      await operation.close();
+      expect(result).to.deep.equal([
+        {
+          a: 123.45,
+          a_type: 'decimal(5,2)',
+          b: -1.5e-7,
+          b_type: 'decimal(8,8)',
+          c: 12345678901234,
+          c_type: 'decimal(14,0)',
+        },
+      ]);
+
+      const ordinal = await session.executeStatement('SELECT ? AS v, typeof(?) AS t', {
+        ordinalParameters: [
+          new DBSQLParameter({ type: DBSQLParameterType.DECIMAL, value: '123.45' }),
+          new DBSQLParameter({ type: DBSQLParameterType.DECIMAL, value: '123.45' }),
+        ],
+      });
+      expect(await ordinal.fetchAll()).to.deep.equal([{ v: 123.45, t: 'decimal(5,2)' }]);
+      await ordinal.close();
+    } finally {
+      await session.close();
+    }
+  });
+
   // https://github.com/databricks/databricks-sql-nodejs/issues/261
   describe('non-scalar parameter values (issue #261)', () => {
     // Non-scalar values are rejected client-side (before any RPC is sent), so executeStatement

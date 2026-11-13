@@ -67,6 +67,34 @@ describe('KernelAuth + KernelBackend — OAuth M2M auth flow', () => {
       expect((native as { oauthScopes?: string[] }).oauthScopes).to.deep.equal(['sql', 'offline_access']);
     });
 
+    it('normalizes a space-separated M2M oauthScopes value (AUTH-017)', () => {
+      const native = buildKernelConnectionOptions({
+        host: 'example.cloud.databricks.com',
+        path: '/sql/1.0/warehouses/abc',
+        authType: 'databricks-oauth',
+        oauthClientId: 'client-uuid',
+        oauthClientSecret: 'dose-fake-secret',
+        oauthScopes: [' sql   offline_access '],
+      });
+      expect((native as { oauthScopes?: string[] }).oauthScopes).to.deep.equal(['sql', 'offline_access']);
+    });
+
+    it('falls back to all-apis when M2M oauthScopes is blank (AUTH-017)', () => {
+      for (const oauthScopes of [[], ['   '], ['', ' ']]) {
+        const native = buildKernelConnectionOptions({
+          host: 'example.cloud.databricks.com',
+          path: '/sql/1.0/warehouses/abc',
+          authType: 'databricks-oauth',
+          oauthClientId: 'client-uuid',
+          oauthClientSecret: 'dose-fake-secret',
+          oauthScopes,
+        });
+        expect((native as { oauthScopes?: string[] }).oauthScopes, JSON.stringify(oauthScopes)).to.deep.equal([
+          'all-apis',
+        ]);
+      }
+    });
+
     it('prepends `/` to the path on the M2M branch too', () => {
       const opts: ConnectionOptions = {
         host: 'example.cloud.databricks.com',

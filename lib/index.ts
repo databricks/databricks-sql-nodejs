@@ -23,6 +23,9 @@ import { LogLevel } from './contracts/IDBSQLLogger';
 // Re-export types for TypeScript users
 export type { default as ITokenProvider } from './connection/auth/tokenProvider/ITokenProvider';
 
+export { default as asyncDisposable } from './asyncDisposable';
+export type { AsyncDisposableResource } from './asyncDisposable';
+
 export { LOG_FILE_UNAVAILABLE_WARNING_CODE } from './DBSQLLogger';
 export { CircuitBreakerOpenError, CIRCUIT_BREAKER_OPEN_CODE } from './telemetry/CircuitBreaker';
 export { TelemetryTerminalError } from './telemetry/DatabricksTelemetryExporter';

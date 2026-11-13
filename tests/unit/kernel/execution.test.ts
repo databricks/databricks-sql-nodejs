@@ -19,9 +19,12 @@ import expectNativeConnectionOptions from './_helpers/nativeOptions';
 import KernelBackend from '../../../lib/kernel/KernelBackend';
 import KernelSessionBackend from '../../../lib/kernel/KernelSessionBackend';
 import KernelOperationBackend from '../../../lib/kernel/KernelOperationBackend';
+import DBSQLSession from '../../../lib/DBSQLSession';
+import DBSQLOperation from '../../../lib/DBSQLOperation';
+import asyncDisposable from '../../../lib/asyncDisposable';
 import { KernelNativeBinding, KernelConnection, KernelStatement } from '../../../lib/kernel/KernelNativeLoader';
 import IClientContext, { ClientConfig } from '../../../lib/contracts/IClientContext';
-import { PrimaryKeysRequest } from '../../../lib/contracts/IDBSQLSession';
+import { CrossReferenceRequest, PrimaryKeysRequest } from '../../../lib/contracts/IDBSQLSession';
 import IDBSQLLogger, { LogLevel } from '../../../lib/contracts/IDBSQLLogger';
 import HiveDriverError from '../../../lib/errors/HiveDriverError';
 import ParameterError from '../../../lib/errors/ParameterError';
@@ -735,6 +738,37 @@ describe('KernelBackend', () => {
     }
   });
 
+  [undefined, true, false].forEach((useCloudFetch) => {
+    it(`openSession() honors useCloudFetch=${useCloudFetch}`, async () => {
+      const binding = makeBinding(new FakeNativeConnection());
+      const backend = new KernelBackend({ context: makeContext(undefined, { useCloudFetch }), nativeBinding: binding });
+      await backend.connect({ host: 'h', path: '/p', token: 't' } as ConnectionOptions);
+      const configuration = { TIMEZONE: 'UTC' };
+      await backend.openSession({ configuration });
+      const conf = (binding.openSessionStub.firstCall.args[0] as { sessionConf?: Record<string, string> }).sessionConf;
+      expect(conf?.cloudfetch_enabled).to.equal(useCloudFetch === false ? 'false' : undefined);
+      expect(conf?.can_cloud_download).to.equal(undefined);
+      expect(conf?.TIMEZONE).to.equal('UTC');
+      expect(configuration).to.deep.equal({ TIMEZONE: 'UTC' });
+    });
+  });
+
+  ['can_cloud_download', 'CLOUDFETCH_ENABLED', 'cloudfetch_enabled'].forEach((key) => {
+    it(`openSession() forwards the client disable with ${key}`, async () => {
+      const binding = makeBinding(new FakeNativeConnection());
+      const backend = new KernelBackend({
+        context: makeContext(undefined, { useCloudFetch: false }),
+        nativeBinding: binding,
+      });
+      await backend.connect({ host: 'h', path: '/p', token: 't' } as ConnectionOptions);
+      const configuration = { [key]: 'true', TIMEZONE: 'UTC' };
+      await backend.openSession({ configuration });
+      const conf = (binding.openSessionStub.firstCall.args[0] as { sessionConf?: Record<string, string> }).sessionConf;
+      expect(conf).to.deep.equal({ [key]: 'true', TIMEZONE: 'UTC', cloudfetch_enabled: 'false' });
+      expect(configuration).to.deep.equal({ [key]: 'true', TIMEZONE: 'UTC' });
+    });
+  });
+
   it('openSession() serializes session-level queryTags into sessionConf.QUERY_TAGS', async () => {
     const connection = new FakeNativeConnection();
     const binding = makeBinding(connection);
@@ -1165,6 +1199,36 @@ describe('KernelSessionBackend', () => {
       }
     }
     expect(connection.metadataCalls).to.deep.equal(expected);
+  });
+
+  for (const tableName of [undefined, null]) {
+    it(`getPrimaryKeys rejects a ${tableName} tableName before calling the kernel`, async () => {
+      const connection = new FakeNativeConnection();
+      const session = makeSession(connection);
+      let thrown: unknown;
+      try {
+        await session.getPrimaryKeys({
+          catalogName: 'main',
+          schemaName: 'def',
+          tableName,
+        } as unknown as PrimaryKeysRequest);
+      } catch (err) {
+        thrown = err;
+      }
+      expect(thrown).to.be.instanceOf(ParameterError);
+      expect((thrown as Error).message).to.equal('Invalid argument: tableName may not be null');
+      expect((thrown as { sqlState?: string }).sqlState).to.equal('42000');
+      expect(connection.metadataCalls).to.deep.equal([]);
+    });
+  }
+
+  it('getCrossReference forwards an omitted table to the kernel unchanged', async () => {
+    const connection = new FakeNativeConnection();
+    const session = makeSession(connection);
+    await session.getCrossReference({ foreignCatalogName: 'fc', foreignSchemaName: 'fs' } as CrossReferenceRequest);
+    expect(connection.metadataCalls).to.deep.equal([
+      ['getCrossReference', undefined, undefined, undefined, 'fc', 'fs', undefined],
+    ]);
   });
 
   it('getInfo synthesizes the three server-answered info types and rejects the rest', async () => {
@@ -1641,5 +1705,41 @@ describe('KernelOperationBackend — sync (executeStatementCancellable) path', (
     expect(status.displayMessage).to.equal(null);
     expect(status.diagnosticInfo).to.equal(null);
     expect(status.errorDetailsJson).to.equal(null);
+  });
+});
+
+describe('DBSQLSession / DBSQLOperation over kernel backends — Symbol.asyncDispose', () => {
+  function makeFacadeSession(connection: FakeNativeConnection) {
+    const context = makeContext();
+    return new DBSQLSession({ backend: new KernelSessionBackend({ connection, context }), context });
+  }
+
+  it('disposing an operation closes the native statement; re-disposing is a no-op', async () => {
+    const connection = new FakeNativeConnection();
+    const session = makeFacadeSession(connection);
+    const operation = await session.executeStatement('SELECT 1');
+    if (!(operation instanceof DBSQLOperation)) {
+      expect.fail('Assertion error: operation is not a DBSQLOperation');
+    }
+    const closeSpy = sinon.spy(connection.statementToReturn, 'close');
+
+    expect(await operation[Symbol.asyncDispose]()).to.equal(undefined);
+    expect(connection.statementToReturn.closed).to.equal(true);
+    await operation[Symbol.asyncDispose]();
+    expect(closeSpy.callCount).to.equal(1);
+  });
+
+  it('disposing a session closes its operations and the native connection; re-disposing is a no-op', async () => {
+    const connection = new FakeNativeConnection();
+    const session = makeFacadeSession(connection);
+    const operation = asyncDisposable(await session.executeStatement('SELECT 1'));
+    const closeSpy = sinon.spy(connection, 'close');
+
+    expect(await session[Symbol.asyncDispose]()).to.equal(undefined);
+    expect(connection.closed).to.equal(true);
+    expect(connection.statementToReturn.closed).to.equal(true);
+    await session[Symbol.asyncDispose]();
+    await operation[Symbol.asyncDispose]();
+    expect(closeSpy.callCount).to.equal(1);
   });
 });

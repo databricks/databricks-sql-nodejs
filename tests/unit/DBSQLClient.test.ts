@@ -579,6 +579,49 @@ describe('DBSQLClient.close', () => {
   });
 });
 
+describe('DBSQLClient[Symbol.asyncDispose]', () => {
+  it('should close the client and its sessions', async () => {
+    const client = new DBSQLClient();
+    const thriftClient = sinon.spy(new ThriftClientStub());
+
+    client['client'] = thriftClient;
+    client['connectionProvider'] = new ConnectionProviderStub();
+    client['authProvider'] = new AuthProviderStub();
+    client['backend'] = new ThriftBackend({ context: client, onConnectionEvent: () => {} });
+
+    const session = await client.openSession();
+    if (!(session instanceof DBSQLSession)) {
+      throw new Error('Assertion error: expected session to be DBSQLSession');
+    }
+    const closeSpy = sinon.spy(client, 'close');
+
+    const result = await client[Symbol.asyncDispose]();
+    expect(result).to.be.undefined;
+    expect(closeSpy.calledOnce).to.be.true;
+    expect(session['isOpen']).to.be.false;
+    expect(thriftClient.CloseSession.calledOnce).to.be.true;
+    expect(client['backend']).to.be.undefined;
+    expect(client['client']).to.be.undefined;
+  });
+
+  it('should be a no-op for a closed or never-connected client', async () => {
+    const closedClient = new DBSQLClient();
+    const thriftClient = sinon.spy(new ThriftClientStub());
+    closedClient['client'] = thriftClient;
+    closedClient['connectionProvider'] = new ConnectionProviderStub();
+    closedClient['authProvider'] = new AuthProviderStub();
+    closedClient['backend'] = new ThriftBackend({ context: closedClient, onConnectionEvent: () => {} });
+    await closedClient.openSession();
+
+    await closedClient.close();
+    await closedClient[Symbol.asyncDispose]();
+    await closedClient[Symbol.asyncDispose]();
+    expect(thriftClient.CloseSession.calledOnce).to.be.true;
+
+    await new DBSQLClient()[Symbol.asyncDispose]();
+  });
+});
+
 describe('DBSQLClient.createAuthProvider', () => {
   it('should use access token auth method', () => {
     const client = new DBSQLClient();
@@ -703,6 +746,25 @@ describe('DBSQLClient.createAuthProvider', () => {
         }
         provider['getManager'](); // just call the method
       }).to.throw();
+    }
+  });
+
+  it('should forward oauthScopes to Databricks OAuth for both flows', () => {
+    const client = new DBSQLClient();
+
+    for (const oauthClientSecret of [undefined, 'test-secret']) {
+      const provider = client['createAuthProvider']({
+        ...connectOptions,
+        authType: 'databricks-oauth',
+        host: 'example.cloud.databricks.com',
+        oauthClientSecret,
+        oauthScopes: ['sql', 'offline_access'],
+      });
+
+      if (!(provider instanceof DatabricksOAuth)) {
+        throw new Error('Expected `provider` to be `DatabricksOAuth`');
+      }
+      expect(provider['options'].scopes).to.deep.equal(['sql', 'offline_access']);
     }
   });
 

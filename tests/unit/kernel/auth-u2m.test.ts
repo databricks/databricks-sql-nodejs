@@ -73,6 +73,20 @@ describe('KernelAuth + KernelBackend — OAuth U2M auth flow', () => {
       expect((native as { oauthScopes?: string[] }).oauthScopes).to.deep.equal(['sql', 'offline_access']);
     });
 
+    it('normalizes U2M oauthScopes and falls back to the default when blank (AUTH-017)', () => {
+      const build = (oauthScopes: string[]) =>
+        (
+          buildKernelConnectionOptions({
+            host: 'example.cloud.databricks.com',
+            path: '/sql/1.0/warehouses/abc',
+            authType: 'databricks-oauth',
+            oauthScopes,
+          }) as { oauthScopes?: string[] }
+        ).oauthScopes;
+      expect(build([' sql   all-apis '])).to.deep.equal(['sql', 'all-apis']);
+      expect(build(['   '])).to.deep.equal(['sql', 'offline_access']);
+    });
+
     it('routes oauthClientId + no secret to U2M with that id as a custom client (secret-based routing, Thrift parity)', () => {
       // Routing keys off the SECRET (matching Thrift): no usable secret ⇒ U2M,
       // regardless of the id. A non-blank `oauthClientId` is then honoured as a

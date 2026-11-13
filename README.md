@@ -51,6 +51,35 @@ client
   });
 ```
 
+### Automatic cleanup with `await using`
+
+The client, sessions, and operations implement `Symbol.asyncDispose`. On scope exit, `await using` calls `close()`,
+including when the block throws. Disposal follows the existing `close()` behavior, and cleanup errors propagate.
+If both the block and a disposal fail, `await using` throws a `SuppressedError` containing both errors.
+Node.js 24+ supports
+`await using` natively; on Node.js 22, compile it with TypeScript 5.2+. TypeScript also needs the disposable
+declarations (such as the global `AsyncDisposable` type) to compile `await using`: if your typings don't already
+provide them, add `"esnext.disposable"` (or `"esnext"`) to `compilerOptions.lib` in your `tsconfig.json`, otherwise the
+example below can fail to compile even with TypeScript 5.2+.
+
+`openSession()` and the session's operation methods are typed as returning the `IDBSQLSession` and `IOperation`
+interfaces, which don't require `Symbol.asyncDispose` (so existing custom implementations keep compiling). In
+TypeScript, wrap their results with `asyncDisposable()`: it returns the driver's own sessions and operations unchanged,
+typed as disposable.
+
+```typescript
+import { DBSQLClient, asyncDisposable } from '@databricks/sql';
+
+async function main() {
+  await using client = new DBSQLClient();
+  await client.connect({ host, path, token });
+
+  await using session = asyncDisposable(await client.openSession());
+  await using operation = asyncDisposable(await session.executeStatement('SELECT "Hello, World!"'));
+  console.table(await operation.fetchAll());
+} // disposes `operation`, `session`, then `client`
+```
+
 ## Configuration
 
 See [CONNECTION_PARAMETERS.md](CONNECTION_PARAMETERS.md) for every connection,

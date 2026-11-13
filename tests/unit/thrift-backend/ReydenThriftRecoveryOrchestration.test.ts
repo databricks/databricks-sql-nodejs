@@ -3,6 +3,7 @@ import sinon from 'sinon';
 import ThriftBackend from '../../../lib/thrift-backend/ThriftBackend';
 import StatusError from '../../../lib/errors/StatusError';
 import reydenCache from '../../../lib/ReydenWarehouseCache';
+import { decodeNapiKernelError } from '../../../lib/kernel/KernelErrorMapping';
 import { TStatusCode } from '../../../thrift/TCLIService_types';
 
 /**
@@ -124,6 +125,68 @@ describe('Reyden Thrift Auto-Recovery — Orchestration', () => {
     // Kernel failure surfaced as primary; Thrift rejection preserved in the chain.
     expect(thrown).to.equal(kernelError);
     expect(thrown.cause).to.equal(thriftError);
+  });
+
+  it('preserves the decoded kernel cause before the Thrift rejection', async () => {
+    const backend = makeBackend();
+    const thriftError = kp001Error();
+    const kernelError = decodeNapiKernelError(
+      new Error(`__databricks_error__:${JSON.stringify({ code: 'Unauthenticated', message: 'denied' })}`),
+    );
+    sandbox.stub(backend as any, 'openSessionWithThrift').rejects(thriftError);
+    sandbox.stub(backend as any, 'openSessionWithKernelBackend').rejects(kernelError);
+
+    let thrown: any;
+    try {
+      await backend.openSession({} as any);
+    } catch (e) {
+      thrown = e;
+    }
+
+    expect(thrown).to.equal(kernelError);
+    expect(thrown.cause.message).to.equal('Unauthenticated: denied');
+    expect(thrown.cause.cause).to.equal(thriftError);
+  });
+
+  it('does not extend a shared kernel rejection per caller when concurrent fallbacks fail', async () => {
+    const backend = makeBackend();
+    const thriftErrorA = kp001Error();
+    const thriftErrorB = kp001Error();
+    const connectError = new Error('kernel connect failed');
+    let rejectConnect: (error: Error) => void = () => {};
+    const connectPromise = new Promise<void>((_resolve, reject) => {
+      rejectConnect = reject;
+    });
+    const fakeKernel = {
+      connect: sandbox.stub().returns(connectPromise),
+      openSession: sandbox.stub().resolves({ marker: 'kernel-session' } as any),
+      close: sandbox.stub().resolves(),
+    };
+    const thriftStub = sandbox.stub(backend as any, 'openSessionWithThrift');
+    thriftStub.onFirstCall().rejects(thriftErrorA);
+    thriftStub.onSecondCall().rejects(thriftErrorB);
+    // Both opens park on the single in-flight fallback connect and share its rejection.
+    const createStub = sandbox.stub(backend as any, 'createKernelBackend').returns(fakeKernel as any);
+
+    const settle = (promise: Promise<unknown>) =>
+      promise.then(
+        () => undefined,
+        (e) => e,
+      );
+    const openA = settle(backend.openSession({} as any));
+    const openB = settle(backend.openSession({} as any));
+    await new Promise((resolve) => {
+      setImmediate(resolve);
+    });
+    rejectConnect(connectError);
+    const [thrownA, thrownB] = await Promise.all([openA, openB]);
+
+    expect(createStub.calledOnce).to.be.true;
+    expect(thrownA).to.equal(connectError);
+    expect(thrownB).to.equal(connectError);
+    // Exactly one KP001 in the chain, not one per caller.
+    expect([thriftErrorA, thriftErrorB]).to.include((connectError as any).cause);
+    expect((connectError as any).cause.cause).to.equal(undefined);
   });
 
   it('reuses one fallback KernelBackend across sessions and closes it on close()', async () => {

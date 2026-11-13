@@ -292,6 +292,30 @@ describe('KernelBackend — kernel error envelope decoding (DA-F1)', () => {
     expect((caught as Error).message).to.match(/invalid_client/);
   });
 
+  it('attaches the kernel code and message as the AuthenticationError cause on session-open rejection', async () => {
+    const envelopeJson = '{"code":"Unauthenticated","message":"HTTP 401: Invalid access token","httpStatus":401}';
+    const binding = bindingRejectingWith(envelopeJson);
+    const backend = new KernelBackend({ nativeBinding: binding, context: makeFakeContext() });
+    await backend.connect(validConnectArgs);
+
+    let caught: unknown;
+    try {
+      await backend.openSession({});
+    } catch (e) {
+      caught = e;
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const err = caught as any;
+    expect(err).to.be.instanceOf(AuthenticationError);
+    expect(err.name).to.equal('AuthenticationError');
+    expect(err.message).to.equal('HTTP 401: Invalid access token');
+    expect(err.kernelMetadata?.httpStatus).to.equal(401);
+    expect(err.cause).to.be.instanceOf(Error);
+    expect(err.cause.message).to.equal('Unauthenticated: HTTP 401: Invalid access token');
+    expect(String(err.cause.stack)).to.not.contain('__databricks_error__');
+    expect(Object.keys(err)).to.not.include('cause');
+  });
+
   it('maps NetworkError kernel envelope → HiveDriverError with kernel message preserved', async () => {
     const binding = bindingRejectingWith(
       '{"code":"NetworkError","message":"OIDC discovery failed: connection refused"}',

@@ -234,6 +234,12 @@ function buildKernelMetadata(parsed: Record<string, unknown>): KernelMetadata {
   return meta;
 }
 
+const MAX_CAUSE_MESSAGE_LENGTH = 500;
+
+function boundCauseMessage(text: string): string {
+  return text.length > MAX_CAUSE_MESSAGE_LENGTH ? `${text.slice(0, MAX_CAUSE_MESSAGE_LENGTH - 1)}…` : text;
+}
+
 /**
  * Decode a napi-binding error into the typed JS error class.
  *
@@ -315,5 +321,11 @@ export function decodeNapiKernelError(err: unknown): Error {
   if (Object.keys(meta).length > 0) {
     defineErrorMetadata(jsErr, 'kernelMetadata', meta);
   }
+
+  // Attach a bounded summary of the kernel error as `cause` (same descriptor as a
+  // native `new Error(msg, { cause })`). The binding error itself is not used: its
+  // message is the whole envelope, including the unbounded diagnostics, which
+  // `util.inspect` would print for every kernel error.
+  defineErrorMetadata(jsErr, 'cause', new Error(boundCauseMessage(`${code}: ${msg}`)));
   return jsErr;
 }

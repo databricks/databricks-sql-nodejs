@@ -1,5 +1,6 @@
 import Int64 from 'node-int64';
 import { TSparkParameter, TSparkParameterValue } from '../thrift/TCLIService_types';
+import ParameterError from './errors/ParameterError';
 
 export type DBSQLParameterValue = undefined | null | boolean | number | bigint | Int64 | Date | string;
 
@@ -60,6 +61,77 @@ function inferNumberType(value: number): DBSQLParameterType {
   return DBSQLParameterType.DOUBLE;
 }
 
+const DECIMAL_MAX_PRECISION = 38;
+
+/**
+ * Qualify a bare `DECIMAL` (or its `DEC` / `NUMERIC` synonyms) with the
+ * precision and scale of its value. Both backends otherwise lose the fraction:
+ * the Thrift server binds a scale-0 decimal, truncating `"123.45"` to `123`,
+ * and the kernel's raw-param path forwards the type verbatim, so SEA binds it
+ * as `DECIMAL(10,0)` and rounds.
+ *
+ * Precision is significant integer digits plus scale (Spark's decimal-literal
+ * rule), so `"99.99"` ⇒ `DECIMAL(4,2)` and `"0.00001"` ⇒ `DECIMAL(5,5)`. Plain
+ * numerals are sent unchanged; exponent forms (`1e-7`, which `Number#toString`
+ * produces) are rewritten as the equivalent plain numeral. A non-numeric value
+ * or one needing precision > 38 throws instead of being truncated server-side.
+ */
+function qualifyDecimal(stringValue: string): { type: string; value: string } {
+  const m = /^([+-]?)(\d*)(?:\.(\d*))?(?:[eE]([+-]?\d+))?$/.exec(stringValue.trim());
+  const [, sign = '', intPart = '', fracPart, exponent] = m ?? [];
+  if (!m || (intPart === '' && !fracPart)) {
+    throw new ParameterError(
+      `DECIMAL parameter value "${stringValue}" is not a decimal number (expected e.g. "123.45" or "1.5e-7").`,
+    );
+  }
+
+  const digits = intPart + (fracPart ?? '');
+  const exp = exponent === undefined ? 0 : Number(exponent);
+  // Position of the decimal point within `digits` once the exponent is applied.
+  const pointPos = intPart.length + exp;
+  const leadingZeros = digits.length - digits.replace(/^0+/, '').length;
+  const isZero = leadingZeros === digits.length;
+  const scale = Math.max(digits.length - pointPos, 0);
+  const significantIntDigits = isZero ? 0 : Math.max(pointPos - leadingZeros, 0);
+  const precision = Math.max(significantIntDigits + scale, 1);
+  if (precision > DECIMAL_MAX_PRECISION) {
+    throw new ParameterError(
+      `DECIMAL parameter value "${stringValue}" needs precision ${precision}, exceeding the Databricks maximum of ` +
+        `${DECIMAL_MAX_PRECISION}. Round/scale the value or bind it as a STRING.`,
+    );
+  }
+
+  const type = `DECIMAL(${precision},${scale})`;
+  if (exponent === undefined && fracPart !== '') {
+    return { type, value: stringValue };
+  }
+  // Rebuild as a plain numeral; both padding lengths are bounded by `precision`.
+  let plain: string;
+  if (isZero) {
+    plain = scale > 0 ? `0.${'0'.repeat(scale)}` : '0';
+  } else if (pointPos >= digits.length) {
+    plain = digits + '0'.repeat(pointPos - digits.length);
+  } else if (pointPos <= 0) {
+    plain = `0.${'0'.repeat(-pointPos)}${digits}`;
+  } else {
+    plain = `${digits.slice(0, pointPos)}.${digits.slice(pointPos)}`;
+  }
+  plain = plain.replace(/^0+(?=\d)/, '');
+  return { type, value: sign === '-' ? `-${plain}` : plain };
+}
+
+// Unqualified decimal type names; a qualified `DECIMAL(p,s)` is left as given.
+const BARE_DECIMAL_TYPE = /^(DECIMAL|DEC|NUMERIC)$/i;
+
+/**
+ * Exact decimal string for an `Int64`. `Int64#toString` goes through a JS
+ * number and returns `"Infinity"` for magnitudes ≥ 2^53, so read the
+ * big-endian two's-complement bytes as a `bigint` instead.
+ */
+function int64ToString(value: Int64): string {
+  return value.toBuffer().readBigInt64BE(0).toString();
+}
+
 interface DBSQLParameterOptions {
   type?: DBSQLParameterType;
   value: DBSQLParameterValue;
@@ -79,7 +151,19 @@ export class DBSQLParameter {
     this.value = value;
   }
 
-  public toSparkParameter({ name }: ToSparkParameterOptions = {}): TSparkParameter {
+  public toSparkParameter(options: ToSparkParameterOptions = {}): TSparkParameter {
+    const param = this.toUnqualifiedSparkParameter(options);
+    const stringValue = param.value?.stringValue;
+    // Only an explicit type can be DECIMAL; inferred types never are.
+    if (this.type !== undefined && BARE_DECIMAL_TYPE.test(this.type.trim()) && typeof stringValue === 'string') {
+      const decimal = qualifyDecimal(stringValue);
+      param.type = decimal.type;
+      param.value = new TSparkParameterValue({ stringValue: decimal.value });
+    }
+    return param;
+  }
+
+  private toUnqualifiedSparkParameter({ name }: ToSparkParameterOptions): TSparkParameter {
     // If VOID type was set explicitly - ignore value
     if (this.type === DBSQLParameterType.VOID) {
       return new TSparkParameter({ name }); // for NULL neither `type` nor `value` should be set
@@ -121,7 +205,7 @@ export class DBSQLParameter {
         name,
         type: wireType ?? DBSQLParameterType.BIGINT,
         value: new TSparkParameterValue({
-          stringValue: this.value.toString(),
+          stringValue: this.value instanceof Int64 ? int64ToString(this.value) : this.value.toString(),
         }),
       });
     }
