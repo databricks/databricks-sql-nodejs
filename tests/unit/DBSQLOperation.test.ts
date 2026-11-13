@@ -18,7 +18,7 @@ import AuthenticationError from '../../lib/errors/AuthenticationError';
 import MetricsAggregator from '../../lib/telemetry/MetricsAggregator';
 import DatabricksTelemetryExporter from '../../lib/telemetry/DatabricksTelemetryExporter';
 import TelemetryEventEmitter from '../../lib/telemetry/TelemetryEventEmitter';
-import { TelemetryEventType } from '../../lib/telemetry/types';
+import { TelemetryEvent, TelemetryEventType } from '../../lib/telemetry/types';
 import { mapOperationTypeToTelemetryType } from '../../lib/telemetry/telemetryTypeMappers';
 import JsonResultHandler from '../../lib/result/JsonResultHandler';
 import ArrowResultConverter from '../../lib/result/ArrowResultConverter';
@@ -1505,7 +1505,8 @@ describe('DBSQLOperation', () => {
       await expectFailure(() => operation.getMetadata());
 
       expect(emitError.calledOnce).to.be.true;
-      expect(emitError.firstCall.args[0].errorMessage).to.equal('metadata-failed');
+      expect(emitError.firstCall.args[0].errorName).to.equal('Error');
+      expect(emitError.firstCall.args[0]).to.not.have.any.keys('errorMessage', 'errorStack');
     });
 
     it('emits ERROR telemetry from finished/getSchema/hasMoreRows when called on a closed op (F10 — newly wrapped)', async () => {
@@ -1537,6 +1538,152 @@ describe('DBSQLOperation', () => {
 
       // The cancel still rejects, but no extra error from the missing emitter
       await expectFailure(() => operation.cancel());
+    });
+  });
+
+  describe('statement telemetry payload', () => {
+    function makeTelemetryContext() {
+      const context = new ClientContextStub({ telemetryEnabled: true });
+      const emitter = new TelemetryEventEmitter(context);
+      const events: TelemetryEvent[] = [];
+      for (const eventType of Object.values(TelemetryEventType)) {
+        emitter.on(eventType, (event) => events.push(event));
+      }
+      context.telemetryEmitter = emitter;
+      context.telemetryAggregator = { completeStatement: sinon.stub() } as any;
+      return { context, events };
+    }
+
+    function completeEventOf(events: TelemetryEvent[]): TelemetryEvent {
+      const complete = events.filter((e) => e.eventType === TelemetryEventType.STATEMENT_COMPLETE);
+      expect(complete).to.have.lengthOf(1);
+      return complete[0];
+    }
+
+    it('reports inline Arrow delivery and the declared codec from direct-results metadata', async () => {
+      const { context, events } = makeTelemetryContext();
+      const driver = sinon.spy(context.driver);
+      const operation = createOperationForTest({
+        handle: operationHandleStub({ hasResultSet: true }),
+        context,
+        directResults: {
+          resultSetMetadata: {
+            status: { statusCode: TStatusCode.SUCCESS_STATUS },
+            resultFormat: TSparkRowSetType.ARROW_BASED_SET,
+            lz4Compressed: false,
+          },
+        },
+      });
+
+      await operation.close();
+
+      const event = completeEventOf(events);
+      expect(event.resultFormat).to.equal('INLINE_ARROW');
+      expect(event.compressed).to.equal(false);
+      expect(driver.getResultSetMetadata.called, 'no extra metadata RPC').to.be.false;
+    });
+
+    it('reports EXTERNAL_LINKS and LZ4 compression for a CloudFetch result', async () => {
+      const { context, events } = makeTelemetryContext();
+      const operation = createOperationForTest({
+        handle: operationHandleStub({ hasResultSet: true }),
+        context,
+        directResults: {
+          resultSetMetadata: {
+            status: { statusCode: TStatusCode.SUCCESS_STATUS },
+            resultFormat: TSparkRowSetType.URL_BASED_SET,
+            lz4Compressed: true,
+          },
+        },
+      });
+
+      await operation.close();
+
+      const event = completeEventOf(events);
+      expect(event.resultFormat).to.equal('EXTERNAL_LINKS');
+      expect(event.compressed).to.equal(true);
+    });
+
+    it('reuses the metadata fetched by the result path', async () => {
+      const { context, events } = makeTelemetryContext();
+      const driver = sinon.spy(context.driver);
+      driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
+      driver.getOperationStatusResp.hasResultSet = true;
+      driver.fetchResultsResp.hasMoreRows = false;
+      const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: true }), context });
+
+      await operation.fetchChunk({ disableBuffering: true });
+      await operation.close();
+
+      const event = completeEventOf(events);
+      expect(event.resultFormat).to.equal('COLUMNAR_INLINE');
+      expect(event.compressed).to.equal(false);
+      expect(driver.getResultSetMetadata.callCount).to.equal(1);
+    });
+
+    it('leaves the delivery fields unset, without a metadata RPC, when no metadata was fetched', async () => {
+      const { context, events } = makeTelemetryContext();
+      const driver = sinon.spy(context.driver);
+      const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: true }), context });
+
+      await operation.close();
+
+      const event = completeEventOf(events);
+      expect(event.resultFormat).to.be.undefined;
+      expect(event.compressed).to.be.undefined;
+      expect(driver.getResultSetMetadata.called).to.be.false;
+    });
+
+    it('emits a sanitized error descriptor without the server message or stack', async () => {
+      const { context, events } = makeTelemetryContext();
+      const serverMessage =
+        '[UNRESOLVED_COLUMN.WITHOUT_SUGGESTION] A column with name `secret_token` cannot be resolved. ' +
+        'SQLSTATE: 42703; line 1 pos 7;\nSELECT secret_token FROM sensitive_table';
+      context.driver.getOperationStatusResp = {
+        status: { statusCode: TStatusCode.SUCCESS_STATUS },
+        operationState: TOperationState.ERROR_STATE,
+        sqlState: '42703',
+        errorMessage: serverMessage,
+        displayMessage: serverMessage,
+      };
+      const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: true }), context });
+
+      let thrown: unknown;
+      try {
+        await operation.fetchAll();
+      } catch (error) {
+        thrown = error;
+      }
+
+      // The application still gets the full server message.
+      expect(thrown).to.be.instanceOf(OperationStateError);
+      expect((thrown as Error).message).to.include('sensitive_table');
+
+      const errors = events.filter((e) => e.eventType === TelemetryEventType.ERROR);
+      expect(errors).to.have.lengthOf(1);
+      expect(errors[0].statementId).to.equal(operation.id);
+      expect(errors[0].errorName).to.equal('OperationStateError');
+      expect(errors[0].sqlState).to.equal('42703');
+      expect(errors[0].errorMessage).to.be.undefined;
+      expect(errors[0].errorStack).to.be.undefined;
+
+      const serialized = JSON.stringify(events);
+      expect(serialized).to.not.include('secret_token');
+      expect(serialized).to.not.include('sensitive_table');
+    });
+
+    it('names driver errors by class and omits an absent SQLSTATE', async () => {
+      const { context, events } = makeTelemetryContext();
+      sinon.stub(context.driver, 'getResultSetMetadata').rejects(new HiveDriverError('metadata for sensitive_table'));
+      const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: true }), context });
+
+      await expectFailure(() => operation.getMetadata());
+
+      const errors = events.filter((e) => e.eventType === TelemetryEventType.ERROR);
+      expect(errors).to.have.lengthOf(1);
+      expect(errors[0].errorName).to.equal('HiveDriverError');
+      expect(errors[0].sqlState).to.be.undefined;
+      expect(JSON.stringify(errors)).to.not.include('sensitive_table');
     });
   });
 });

@@ -498,6 +498,7 @@ describe('DatabricksTelemetryExporter', () => {
         makeMetric({
           metricType: 'error',
           errorName: 'SomeError',
+          sqlState: '42P01',
           errorMessage: 'Bearer leaked-token in the message',
           errorStack: 'Error: leak\n    at fn (dapi0123456789abcdef)',
         } as any),
@@ -510,8 +511,48 @@ describe('DatabricksTelemetryExporter', () => {
     });
   });
 
-  describe('errorStack flow (authenticated)', () => {
-    it('redacts Bearer tokens in stack_trace before export', async () => {
+  describe('error_info sanitization (authenticated)', () => {
+    async function exportOneError(metric: Partial<TelemetryMetric>) {
+      const context = new ClientContextStub({ telemetryAuthenticatedExport: true } as any);
+      const registry = new CircuitBreakerRegistry(context);
+      const exporter = new DatabricksTelemetryExporter(context, 'host.example.com', registry, fakeAuthProvider);
+      const sendRequestStub = sinon.stub(exporter as any, 'sendRequest').returns(makeOkResponse());
+      await exporter.export([makeMetric({ metricType: 'error', ...metric } as any)]);
+      const body = JSON.parse((sendRequestStub.firstCall.args[1] as any).body);
+      return { rawLog: body.protoLogs[0] as string, log: JSON.parse(body.protoLogs[0]) };
+    }
+
+    it('ships the error class name and SQLSTATE only', async () => {
+      const { log } = await exportOneError({ errorName: 'OperationStateError', sqlState: '42703' });
+      expect(log.entry.sql_driver_log.error_info).to.deep.equal({
+        error_name: 'OperationStateError',
+        stack_trace: '42703',
+      });
+    });
+
+    it('never ships an error message or stack, even when a metric carries them', async () => {
+      const { rawLog, log } = await exportOneError({
+        errorName: 'AuthError',
+        errorMessage: 'cannot resolve `secret_token` in sensitive_table',
+        errorStack: 'Error: boom sensitive_table\n    at Bearer leaked-bearer-token',
+      });
+      expect(log.entry.sql_driver_log.error_info).to.deep.equal({ error_name: 'AuthError', stack_trace: '' });
+      expect(rawLog).to.not.include('sensitive_table');
+      expect(rawLog).to.not.include('leaked-bearer-token');
+    });
+
+    it('drops a malformed SQLSTATE or error name', async () => {
+      const { rawLog, log } = await exportOneError({
+        errorName: 'Error: SELECT secret_token FROM sensitive_table',
+        sqlState: 'sensitive_table',
+      });
+      expect(log.entry.sql_driver_log.error_info).to.deep.equal({ error_name: 'UnknownError', stack_trace: '' });
+      expect(rawLog).to.not.include('sensitive_table');
+    });
+  });
+
+  describe('export() - statement delivery metadata', () => {
+    it('ships execution_result and is_compressed from the statement metric', async () => {
       const context = new ClientContextStub({ telemetryAuthenticatedExport: true } as any);
       const registry = new CircuitBreakerRegistry(context);
       const exporter = new DatabricksTelemetryExporter(context, 'host.example.com', registry, fakeAuthProvider);
@@ -519,18 +560,18 @@ describe('DatabricksTelemetryExporter', () => {
 
       await exporter.export([
         makeMetric({
-          metricType: 'error',
-          errorName: 'AuthError',
-          errorMessage: 'ignored because errorStack is preferred',
-          errorStack: 'Error: boom\n    at Bearer leaked-bearer-token',
-        } as any),
+          metricType: 'statement',
+          statementId: 'stmt-1',
+          latencyMs: 12,
+          resultFormat: 'INLINE_ARROW',
+          compressed: false,
+        }),
       ]);
 
       const body = JSON.parse((sendRequestStub.firstCall.args[1] as any).body);
       const log = JSON.parse(body.protoLogs[0]);
-      const stack = log.entry.sql_driver_log.stack_trace ?? log.entry.sql_driver_log.error_info?.stack_trace;
-      expect(stack).to.include('<REDACTED>');
-      expect(stack).to.not.include('leaked-bearer-token');
+      expect(log.entry.sql_driver_log.sql_operation.execution_result).to.equal('INLINE_ARROW');
+      expect(log.entry.sql_driver_log.sql_operation.is_compressed).to.equal(false);
     });
   });
 

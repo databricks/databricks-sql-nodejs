@@ -6,7 +6,12 @@
  */
 
 import { expect } from 'chai';
-import { buildTelemetryUrl, redactSensitive, sanitizeProcessName } from '../../../lib/telemetry/telemetryUtils';
+import {
+  buildTelemetryUrl,
+  describeErrorForTelemetry,
+  redactSensitive,
+  sanitizeProcessName,
+} from '../../../lib/telemetry/telemetryUtils';
 
 describe('buildTelemetryUrl', () => {
   describe('valid hosts', () => {
@@ -272,5 +277,24 @@ describe('sanitizeProcessName', () => {
 
   it('preserves basename-only input without spaces', () => {
     expect(sanitizeProcessName('my-worker')).to.equal('my-worker');
+  });
+});
+
+describe('describeErrorForTelemetry', () => {
+  it('uses the class name when the error inherits the generic name', () => {
+    class ExampleDriverError extends Error {}
+    const error = Object.assign(new ExampleDriverError('cannot find sensitive_table'), { sqlState: '42P01' });
+    expect(describeErrorForTelemetry(error)).to.deep.equal({ errorName: 'ExampleDriverError', sqlState: '42P01' });
+  });
+
+  it('keeps an explicit error name', () => {
+    const error = Object.assign(new Error('x'), { name: 'Status Error' });
+    expect(describeErrorForTelemetry(error)).to.deep.equal({ errorName: 'Status Error', sqlState: undefined });
+  });
+
+  it('falls back to Error for non-Error thrown values and malformed names', () => {
+    expect(describeErrorForTelemetry('SELECT secret_token FROM sensitive_table').errorName).to.equal('Error');
+    expect(describeErrorForTelemetry(undefined).errorName).to.equal('Error');
+    expect(describeErrorForTelemetry({ name: 'Error: sensitive_table not found' }).errorName).to.equal('Error');
   });
 });

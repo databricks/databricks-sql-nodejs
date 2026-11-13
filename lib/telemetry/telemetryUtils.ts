@@ -179,6 +179,42 @@ export function redactSensitive(value: string | undefined, maxLen = 2048): strin
   return redacted;
 }
 
+// A class-like identifier, optionally two words (e.g. `StatusError`'s 'Status Error').
+const ERROR_NAME_PATTERN = /^[A-Za-z_$][\w$]*(?: [A-Za-z_$][\w$]*)?$/;
+
+const SQL_STATE_PATTERN = /^[0-9A-Z]{5}$/;
+
+/**
+ * Returns `name` when it looks like an error class name, otherwise `undefined`.
+ * Error telemetry carries only this and the SQLSTATE — never a message or stack,
+ * which routinely quote SQL identifiers and literals.
+ */
+export function sanitizeErrorName(name: unknown): string | undefined {
+  return typeof name === 'string' && name.length <= 64 && ERROR_NAME_PATTERN.test(name) ? name : undefined;
+}
+
+/** Returns `sqlState` when it is a well-formed 5-character SQLSTATE, otherwise `undefined`. */
+export function sanitizeSqlState(sqlState: unknown): string | undefined {
+  return typeof sqlState === 'string' && SQL_STATE_PATTERN.test(sqlState) ? sqlState : undefined;
+}
+
+/**
+ * Sanitized telemetry descriptor for a thrown value: its class name and
+ * SQLSTATE. `HiveDriverError` subclasses inherit `name === 'Error'`, so the
+ * constructor name is used for them.
+ */
+export function describeErrorForTelemetry(error: unknown): { errorName: string; sqlState?: string } {
+  const candidate = error as { name?: unknown; sqlState?: unknown } | null | undefined;
+  let name = candidate?.name;
+  if ((name === undefined || name === '' || name === 'Error') && typeof error === 'object' && error !== null) {
+    name = error.constructor?.name;
+  }
+  return {
+    errorName: sanitizeErrorName(name) ?? 'Error',
+    sqlState: sanitizeSqlState(candidate?.sqlState),
+  };
+}
+
 /**
  * Normalises any `HeadersInit` shape (`Headers`, `[string,string][]`, or
  * `Record<string, string>`) into a plain string dictionary. Non-string

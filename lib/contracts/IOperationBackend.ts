@@ -106,6 +106,13 @@ export default interface IOperationBackend {
   /** Fetch result-set metadata (schema, format, lz4 flag, arrow schema, staging flag). */
   getResultMetadata(): Promise<ResultMetadata>;
 
+  /**
+   * Result-set metadata if it is already on hand (direct results or an earlier
+   * fetch), else `undefined`. MUST NOT issue an RPC or throw — statement
+   * telemetry reads it at close time.
+   */
+  getCachedResultMetadata?(): ResultMetadata | undefined;
+
   /** Cancel the operation. */
   cancel(): Promise<Status>;
 

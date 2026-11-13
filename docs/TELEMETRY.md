@@ -15,12 +15,13 @@ same auth as your queries.
   version, and boolean feature toggles (CloudFetch, LZ4, Arrow, direct results) plus numeric
   configs (socket timeout, retry max, CloudFetch concurrency).
 - **Statement** (`statement.start` / `statement.complete`): randomly generated statement and
-  session UUIDs, operation type (e.g. `SELECT`), latency, result format, poll count, chunk
-  count, bytes downloaded.
+  session UUIDs, operation type (e.g. `SELECT`), latency, result delivery format
+  (`INLINE_ARROW`, `COLUMNAR_INLINE`, or `EXTERNAL_LINKS`), whether the server compressed the
+  result, poll count, chunk count, bytes downloaded.
 - **CloudFetch chunk** (`cloudfetch.chunk`): chunk index, download latency, byte size,
   compressed flag.
-- **Error**: error class name, sanitized message (no PII), HTTP status, terminal-vs-retryable
-  flag. Stack traces are not transmitted.
+- **Error**: error class name, server SQLSTATE (e.g. `42P01`) when present, terminal-vs-retryable
+  flag. Error messages and stack traces are not collected because they can quote SQL text.
 
 Correlation IDs (session ID, statement ID) are random UUIDs and are not tied to user identity.
 Workspace ID is included for aggregation.
