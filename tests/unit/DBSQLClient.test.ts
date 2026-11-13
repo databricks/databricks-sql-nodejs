@@ -628,6 +628,30 @@ describe('DBSQLClient.close', () => {
     expect(client['sessions']['items'].size).to.eq(0);
     expect(thriftClient.CloseSession.called).to.be.true;
   });
+
+  it('should close sessions and release telemetry once when closed concurrently', async () => {
+    const client = new DBSQLClient();
+    const thriftClient = sinon.spy(new ThriftClientStub());
+
+    client['client'] = thriftClient;
+    client['connectionProvider'] = new ConnectionProviderStub();
+    client['authProvider'] = new AuthProviderStub();
+    client['backend'] = new ThriftBackend({ context: client, onConnectionEvent: () => {} });
+    client['host'] = 'test.cloud.databricks.com';
+    client['telemetryClient'] = {} as any;
+    await client.openSession();
+    const backendClose = sinon.spy(client['backend'], 'close');
+    const releaseClient = sinon.stub(TelemetryClientProvider.getInstance(), 'releaseClient').resolves();
+
+    try {
+      await Promise.all([client.close(), client.close(), client.close()]);
+      expect(thriftClient.CloseSession.calledOnce).to.be.true;
+      expect(backendClose.calledOnce).to.be.true;
+      expect(releaseClient.calledOnce).to.be.true;
+    } finally {
+      releaseClient.restore();
+    }
+  });
 });
 
 describe('DBSQLClient[Symbol.asyncDispose]', () => {

@@ -702,6 +702,55 @@ describe('DBSQLSession', () => {
       expect(driver.closeSession.callCount).to.eq(1); // second time it should not be called
     });
 
+    it('should send one close request for concurrent close calls', async () => {
+      const context = new ClientContextStub();
+      const driver = sinon.spy(context.driver);
+      const session = createSessionForTest({ handle: sessionHandleStub, context });
+
+      const results = await Promise.all([session.close(), session.close(), session.close()]);
+      results.forEach((result) => expect(result).instanceOf(Status));
+      expect(session['isOpen']).to.be.false;
+      expect(driver.closeSession.callCount).to.eq(1);
+    });
+
+    it('should reject every concurrent close call when the close request fails', async () => {
+      const context = new ClientContextStub();
+      const error = new Error('close failed');
+      const closeSession = sinon.stub(context.driver, 'closeSession').rejects(error);
+      const session = createSessionForTest({ handle: sessionHandleStub, context });
+
+      const results = await Promise.allSettled([session.close(), session.close()]);
+      expect(results).to.deep.equal([
+        { status: 'rejected', reason: error },
+        { status: 'rejected', reason: error },
+      ]);
+      expect(closeSession.callCount).to.eq(1);
+      expect((await session.close()).isSuccess).to.be.true;
+    });
+
+    it('should retry close after closing its operations failed', async () => {
+      const context = new ClientContextStub();
+      const driver = sinon.spy(context.driver);
+      const session = createSessionForTest({ handle: sessionHandleStub, context });
+      const error = new Error('operation close failed');
+      const closeAll = sinon.stub(session['operations'], 'closeAll');
+      closeAll.onFirstCall().rejects(error);
+      closeAll.callThrough();
+
+      try {
+        await session.close();
+        expect.fail('It should throw an error');
+      } catch (e) {
+        expect(e).to.equal(error);
+      }
+      expect(session['isOpen']).to.be.true;
+      expect(driver.closeSession.callCount).to.eq(0);
+
+      expect(await session.close()).instanceOf(Status);
+      expect(session['isOpen']).to.be.false;
+      expect(driver.closeSession.callCount).to.eq(1);
+    });
+
     it('should close operations that belong to it', async () => {
       const session = createSessionForTest({ handle: sessionHandleStub, context: new ClientContextStub() });
       const operation = await session.executeStatement('SELECT * FROM table');

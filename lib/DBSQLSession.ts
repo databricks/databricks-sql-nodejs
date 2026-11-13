@@ -59,6 +59,9 @@ export default class DBSQLSession implements IDBSQLSession {
 
   private isOpen = true;
 
+  // Shared by concurrent close() calls so the session is closed with one request
+  private closing?: Promise<Status>;
+
   public onClose?: () => void;
 
   private operations = new CloseableCollection<DBSQLOperation>();
@@ -346,7 +349,17 @@ export default class DBSQLSession implements IDBSQLSession {
     if (!this.isOpen) {
       return Status.success();
     }
+    if (!this.closing) {
+      // Cleared once settled so a close that failed before CloseSession (e.g. an
+      // operation failed to close) can be retried
+      this.closing = this.closeOnce().finally(() => {
+        this.closing = undefined;
+      });
+    }
+    return this.closing;
+  }
 
+  private async closeOnce(): Promise<Status> {
     await this.operations.closeAll();
 
     // `latencyMs` on CONNECTION_CLOSE is the closeSession RPC duration, not the
