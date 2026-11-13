@@ -98,7 +98,7 @@ class RefusingAgent extends http.Agent {
 async function createThriftConnection(port: number, agent: http.Agent): Promise<ThriftHttpConnection> {
   const context = new ClientContextStub({ retryDelayMin: 1, retryDelayMax: 2, retryMaxAttempts: 3 });
   const httpConnection = new HttpConnection({ host: '127.0.0.1', port, path: '/' }, context);
-  httpConnection['agent'] = agent;
+  httpConnection['httpAgent'] = agent;
   return httpConnection.getThriftConnection();
 }
 
