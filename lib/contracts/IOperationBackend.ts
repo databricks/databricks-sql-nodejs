@@ -55,6 +55,14 @@ export default interface IOperationBackend {
   hasResultSet(): boolean;
 
   /**
+   * Whether the backend already knows the statement finished successfully,
+   * from state it has observed: the execute response / direct results, a
+   * status poll, or a completed wait. Synchronous and MUST NOT issue an RPC.
+   * `false` means execution may still be running server-side.
+   */
+  isFinished(): boolean;
+
+  /**
    * Fetch the next chunk of result rows.
    *
    * `isClosed`, when supplied, lets the facade probe its `closed`/`cancelled`

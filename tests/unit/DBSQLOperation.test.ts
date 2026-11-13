@@ -11,8 +11,15 @@ import {
   TTypeId,
 } from '../../thrift/TCLIService_types';
 import StatusError from '../../lib/errors/StatusError';
-import OperationStateError from '../../lib/errors/OperationStateError';
+import OperationStateError, { OperationStateErrorCode } from '../../lib/errors/OperationStateError';
+import { LogLevel } from '../../lib/contracts/IDBSQLLogger';
 import HiveDriverError from '../../lib/errors/HiveDriverError';
+import AuthenticationError from '../../lib/errors/AuthenticationError';
+import MetricsAggregator from '../../lib/telemetry/MetricsAggregator';
+import DatabricksTelemetryExporter from '../../lib/telemetry/DatabricksTelemetryExporter';
+import TelemetryEventEmitter from '../../lib/telemetry/TelemetryEventEmitter';
+import { TelemetryEventType } from '../../lib/telemetry/types';
+import { mapOperationTypeToTelemetryType } from '../../lib/telemetry/telemetryTypeMappers';
 import JsonResultHandler from '../../lib/result/JsonResultHandler';
 import ArrowResultConverter from '../../lib/result/ArrowResultConverter';
 import ArrowResultHandler from '../../lib/result/ArrowResultHandler';
@@ -415,6 +422,189 @@ describe('DBSQLOperation', () => {
       await expectFailure(() => operation.status());
       await expectFailure(() => operation.finished());
       await expectFailure(() => operation.getSchema());
+    });
+
+    describe('after the operation finished', () => {
+      // How the HTTP layer reports the 404 a teardown CloseOperation can get.
+      const closeFailure = () => new Error('Received a response with a bad HTTP status: 404');
+
+      function finishedOperationWithFailingClose(failure: () => Promise<unknown>) {
+        const context = new ClientContextStub();
+        const log = sinon.spy(context.logger, 'log');
+        const closeOperation = sinon.stub(context.driver, 'closeOperation').callsFake(failure as any);
+        // One page of rows, then an empty last page.
+        sinon
+          .stub(context.driver, 'fetchResults')
+          .onFirstCall()
+          .resolves(context.driver.fetchResultsResp)
+          .resolves({
+            status: { statusCode: TStatusCode.SUCCESS_STATUS },
+            hasMoreRows: false,
+            results: { startRowOffset: new Int64(3), rows: [], columns: [] },
+          });
+        const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: true }), context });
+        const onClose = sinon.stub();
+        operation.onClose = onClose;
+        return { context, log, closeOperation, operation, onClose };
+      }
+
+      it('should complete teardown when CloseOperation fails after results were consumed', async () => {
+        const { log, closeOperation, operation, onClose } = finishedOperationWithFailingClose(() =>
+          Promise.reject(closeFailure()),
+        );
+
+        expect(await operation.fetchAll()).to.have.lengthOf(3);
+
+        const status = await operation.close();
+
+        expect(closeOperation.calledOnce).to.be.true;
+        expect(status.isSuccess).to.be.true;
+        expect(status.info.join()).to.contain('404');
+        expect(operation['closed']).to.be.true;
+        expect(onClose.calledOnce).to.be.true;
+        expect(log.calledWith(LogLevel.warn, sinon.match(operation.id).and(sinon.match('404')))).to.be.true;
+
+        try {
+          await operation.fetchAll();
+          expect.fail('It should throw an OperationStateError');
+        } catch (e) {
+          if (e instanceof AssertionError) {
+            throw e;
+          }
+          expect(e).to.be.instanceOf(OperationStateError);
+          expect((e as OperationStateError).errorCode).to.equal(OperationStateErrorCode.Closed);
+        }
+
+        await operation.close();
+        expect(closeOperation.calledOnce).to.be.true;
+      });
+
+      it('should complete teardown when CloseOperation returns an error status after finished()', async () => {
+        const { operation, onClose } = finishedOperationWithFailingClose(async () => ({
+          status: { statusCode: TStatusCode.ERROR_STATUS, errorMessage: 'Invalid OperationHandle' },
+        }));
+
+        await operation.finished();
+        const status = await operation.close();
+
+        expect(status.isSuccess).to.be.true;
+        expect(status.info.join()).to.contain('Invalid OperationHandle');
+        expect(operation['closed']).to.be.true;
+        expect(onClose.calledOnce).to.be.true;
+      });
+
+      it('should not throw from an autoClose iterator when CloseOperation fails', async () => {
+        const { closeOperation, operation, onClose } = finishedOperationWithFailingClose(() =>
+          Promise.reject(closeFailure()),
+        );
+
+        const rows: Array<object> = [];
+        for await (const row of operation.iterateRows({ autoClose: true })) {
+          rows.push(row);
+        }
+
+        expect(rows).to.have.lengthOf(3);
+        expect(closeOperation.calledOnce).to.be.true;
+        expect(operation['closed']).to.be.true;
+        expect(onClose.calledOnce).to.be.true;
+      });
+
+      it('should still rethrow when the operation was not observed to finish', async () => {
+        const { closeOperation, operation, onClose } = finishedOperationWithFailingClose(() =>
+          Promise.reject(closeFailure()),
+        );
+
+        await expectFailure(() => operation.close());
+        expect(operation['closed']).to.be.false;
+        expect(onClose.called).to.be.false;
+
+        // Still open, so the close can be retried.
+        closeOperation.resolves({ status: { statusCode: TStatusCode.SUCCESS_STATUS } });
+        await operation.close();
+        expect(operation['closed']).to.be.true;
+        expect(onClose.calledOnce).to.be.true;
+      });
+
+      it('should complete teardown when status() reported FINISHED_STATE', async () => {
+        const { context, closeOperation, operation, onClose } = finishedOperationWithFailingClose(() =>
+          Promise.reject(closeFailure()),
+        );
+        context.driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
+
+        const response = await operation.status();
+        expect(response.operationState).to.equal(TOperationState.FINISHED_STATE);
+
+        const status = await operation.close();
+
+        expect(closeOperation.calledOnce).to.be.true;
+        expect(status.isSuccess).to.be.true;
+        expect(status.info.join()).to.contain('404');
+        expect(operation['closed']).to.be.true;
+        expect(onClose.calledOnce).to.be.true;
+      });
+
+      it('should complete teardown when closed right after direct results reported FINISHED_STATE', async () => {
+        const context = new ClientContextStub();
+        const getOperationStatus = sinon.spy(context.driver, 'getOperationStatus');
+        const closeOperation = sinon.stub(context.driver, 'closeOperation').rejects(closeFailure());
+        const operation = createOperationForTest({
+          handle: operationHandleStub({ hasResultSet: true }),
+          context,
+          directResults: {
+            operationStatus: {
+              status: { statusCode: TStatusCode.SUCCESS_STATUS },
+              operationState: TOperationState.FINISHED_STATE,
+              hasResultSet: true,
+            },
+          },
+        });
+        const onClose = sinon.stub();
+        operation.onClose = onClose;
+
+        const status = await operation.close();
+
+        expect(closeOperation.calledOnce).to.be.true;
+        expect(getOperationStatus.called).to.be.false;
+        expect(status.isSuccess).to.be.true;
+        expect(status.info.join()).to.contain('404');
+        expect(operation['closed']).to.be.true;
+        expect(onClose.calledOnce).to.be.true;
+      });
+
+      it('should still rethrow when closed right after direct results reported RUNNING_STATE', async () => {
+        const context = new ClientContextStub();
+        const getOperationStatus = sinon.spy(context.driver, 'getOperationStatus');
+        sinon.stub(context.driver, 'closeOperation').rejects(closeFailure());
+        const operation = createOperationForTest({
+          handle: operationHandleStub({ hasResultSet: true }),
+          context,
+          directResults: {
+            operationStatus: {
+              status: { statusCode: TStatusCode.SUCCESS_STATUS },
+              operationState: TOperationState.RUNNING_STATE,
+              hasResultSet: true,
+            },
+          },
+        });
+        const onClose = sinon.stub();
+        operation.onClose = onClose;
+
+        await expectFailure(() => operation.close());
+        expect(getOperationStatus.called).to.be.false;
+        expect(operation['closed']).to.be.false;
+        expect(onClose.called).to.be.false;
+      });
+
+      it('should still rethrow when status() reported a non-finished state', async () => {
+        const { context, operation, onClose } = finishedOperationWithFailingClose(() => Promise.reject(closeFailure()));
+        context.driver.getOperationStatusResp.operationState = TOperationState.RUNNING_STATE;
+
+        await operation.status();
+
+        await expectFailure(() => operation.close());
+        expect(operation['closed']).to.be.false;
+        expect(onClose.called).to.be.false;
+      });
     });
   });
 
@@ -1249,6 +1439,61 @@ describe('DBSQLOperation', () => {
       await expectFailure(() => operation.close());
 
       expect(emitError.calledOnce).to.be.true;
+    });
+
+    it('emits ERROR and statement-complete telemetry when a finished operation fails to close', async () => {
+      const { context, emitError } = makeContextWithEmitter();
+      const completeStatement = sinon.stub();
+      context.telemetryAggregator = { completeStatement } as any;
+      context.driver.closeOperationResp.status.statusCode = TStatusCode.ERROR_STATUS;
+      const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: true }), context });
+
+      await operation.finished();
+      await operation.close();
+
+      expect(emitError.calledOnce).to.be.true;
+      expect(emitError.firstCall.args[0].errorName).to.match(/Status\s?Error/);
+      expect((context.telemetryEmitter!.emitStatementComplete as sinon.SinonStub).calledOnce).to.be.true;
+      expect(completeStatement.calledOnceWith(operation.id)).to.be.true;
+    });
+
+    it('finalizes a single statement metric when a finished operation fails to close with a terminal error', async () => {
+      const context = new ClientContextStub({ telemetryEnabled: true });
+      const exporter = sinon.createStubInstance(DatabricksTelemetryExporter);
+      const aggregator = new MetricsAggregator(context, exporter as any);
+      const emitter = new TelemetryEventEmitter(context);
+      for (const eventType of Object.values(TelemetryEventType)) {
+        emitter.on(eventType, (event) => aggregator.processEvent(event));
+      }
+      context.telemetryEmitter = emitter;
+      context.telemetryAggregator = aggregator;
+      sinon.stub(context.driver, 'closeOperation').rejects(new AuthenticationError('token expired'));
+      const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: true }), context });
+
+      try {
+        await operation.finished();
+        emitter.emitCloudFetchChunk({ statementId: operation.id, chunkIndex: 0, bytes: 100, latencyMs: 5 });
+        const status = await operation.close();
+        expect(status.isSuccess).to.be.true;
+      } finally {
+        await aggregator.close();
+      }
+
+      const metrics = exporter.export.getCalls().flatMap((call) => call.args[0]);
+      const statementMetrics = metrics.filter((m) => m.metricType === 'statement');
+      expect(statementMetrics).to.have.lengthOf(1);
+      expect(statementMetrics[0].statementId).to.equal(operation.id);
+      expect(statementMetrics[0].operationType).to.equal(
+        mapOperationTypeToTelemetryType(TOperationType.EXECUTE_STATEMENT),
+      );
+      expect(statementMetrics[0].latencyMs).to.be.a('number');
+      expect(statementMetrics[0].chunkCount).to.equal(1);
+      expect(statementMetrics[0].bytesDownloaded).to.equal(100);
+
+      const errorMetrics = metrics.filter((m) => m.metricType === 'error');
+      expect(errorMetrics).to.have.lengthOf(1);
+      expect(errorMetrics[0].statementId).to.equal(operation.id);
+      expect(errorMetrics[0].errorName).to.equal('AuthenticationError');
     });
 
     it('emits ERROR telemetry when getMetadata rejects', async () => {

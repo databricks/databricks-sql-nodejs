@@ -214,7 +214,8 @@ export default class DBSQLOperation implements IOperation {
   }
 
   /**
-   * Closes operation
+   * Closes operation. Once the operation has finished, a failed close request
+   * is logged and reported in the returned status's `info` instead of thrown.
    * @throws {StatusError}
    */
   public async close(): Promise<Status> {
@@ -225,7 +226,32 @@ export default class DBSQLOperation implements IOperation {
     if (this.closed || this.cancelled) {
       return Status.success();
     }
-    const result = await this.backend.close();
+    let result: Status;
+    try {
+      result = await this.backend.close();
+    } catch (error: any) {
+      // Until the statement finished, closing it is what stops it server-side,
+      // so the failure is the caller's to handle (and the close can be retried).
+      // The backend answers from completion state it already holds (including
+      // direct results), without another status RPC.
+      if (!this.backend.isFinished()) {
+        throw error;
+      }
+      // Afterwards the close only releases server-side results, which closing
+      // the session also does: report the failure and finish the teardown.
+      // `StatusError` doesn't extend `Error`, so read `message` structurally.
+      const message = typeof error?.message === 'string' ? error.message : String(error);
+      this.context
+        .getLogger()
+        .log(LogLevel.warn, `Failed to close finished operation ${this.id}; it is closed locally. Cause: ${message}`);
+      // Buffer the error on the statement instead of reporting it as terminal:
+      // a terminal error finalizes the statement's aggregation immediately,
+      // and `emitStatementComplete()` below would then start and finalize a
+      // second, partial one. Buffered, it's flushed with the single
+      // statement metric.
+      this.emitErrorEvent(error, { deferToCompletion: true });
+      result = Status.success([`Failed to close operation: ${message}`]);
+    }
     this.closed = true;
 
     // Emit statement.complete telemetry event
@@ -446,8 +472,12 @@ export default class DBSQLOperation implements IOperation {
    * in the aggregator; retryable errors are buffered until the statement
    * completes. All exceptions from this method itself are swallowed at
    * debug level — telemetry must never break the driver.
+   *
+   * Pass `deferToCompletion` when the caller completes the statement right
+   * afterwards: the error is then buffered (not terminal) so the statement's
+   * aggregation is finalized once, by that completion.
    */
-  private emitErrorEvent(error: Error): void {
+  private emitErrorEvent(error: Error, options?: { deferToCompletion?: boolean }): void {
     safeEmit(this.context, (emitter) => {
       emitter.emitError({
         statementId: this.id,
@@ -455,7 +485,7 @@ export default class DBSQLOperation implements IOperation {
         errorName: error.name || 'Error',
         errorMessage: error.message || 'Unknown error',
         errorStack: error.stack,
-        isTerminal: ExceptionClassifier.isTerminal(error),
+        isTerminal: options?.deferToCompletion ? false : ExceptionClassifier.isTerminal(error),
       });
     });
   }

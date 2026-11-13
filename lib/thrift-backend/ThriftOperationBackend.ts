@@ -147,6 +147,12 @@ export default class ThriftOperationBackend implements IOperationBackend {
     return Boolean(this.emptyResultOnNotFound || this.operationHandle.hasResultSet);
   }
 
+  public isFinished(): boolean {
+    // `state` is updated from every status response this backend processes,
+    // including the direct-results status delivered with the execute response.
+    return this.state === TOperationState.FINISHED_STATE;
+  }
+
   public async fetchChunk({
     limit,
     disableBuffering,

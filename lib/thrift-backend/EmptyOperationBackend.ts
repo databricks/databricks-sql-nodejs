@@ -14,6 +14,10 @@ export default class EmptyOperationBackend implements IOperationBackend {
     return true;
   }
 
+  public isFinished(): boolean {
+    return true;
+  }
+
   public async fetchChunk(): Promise<Array<object>> {
     return [];
   }
