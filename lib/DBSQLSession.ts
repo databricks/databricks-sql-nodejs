@@ -109,11 +109,20 @@ export default class DBSQLSession implements IDBSQLSession {
     // operation, everything will work as usual. In a case of staging operation, it will be processed like any
     // other query - it will be possible to get data from it as usual, or use other operation methods.
     if (options.stagingAllowedLocalPath !== undefined) {
+      const allowedLocalPath = Array.isArray(options.stagingAllowedLocalPath)
+        ? options.stagingAllowedLocalPath
+        : [options.stagingAllowedLocalPath];
+      if (opBackend.completeStagingOperation) {
+        try {
+          await this.runBackend(() => opBackend.completeStagingOperation!(allowedLocalPath));
+          return operation;
+        } catch (error) {
+          await operation.close().catch(() => {});
+          throw error;
+        }
+      }
       const metadata = await operation.getResultMetadata();
       if (metadata.isStagingOperation) {
-        const allowedLocalPath = Array.isArray(options.stagingAllowedLocalPath)
-          ? options.stagingAllowedLocalPath
-          : [options.stagingAllowedLocalPath];
         return this.handleStagingOperation(operation, allowedLocalPath, metadata);
       }
     }
