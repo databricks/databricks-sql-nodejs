@@ -36,6 +36,8 @@ export default abstract class OAuthManager {
 
   protected agent?: http.Agent;
 
+  protected httpAgent?: http.Agent;
+
   protected issuer?: Issuer;
 
   protected client?: BaseClient;
@@ -60,10 +62,13 @@ export default abstract class OAuthManager {
     // Obtain http agent each time when we need an OAuth client
     // to ensure that we always use a valid agent instance
     const connectionProvider = await this.context.getConnectionProvider();
-    this.agent = await connectionProvider.getAgent();
+    // openid-client picks `http`/`https` by each request's URL, so the agent must
+    // match that URL's protocol rather than the SQL transport's.
+    this.agent = await connectionProvider.getAgent('https:');
+    this.httpAgent = await connectionProvider.getAgent('http:');
 
-    const getHttpOptions = () => ({
-      agent: this.agent,
+    const getHttpOptions = (url?: { protocol: string }) => ({
+      agent: url?.protocol === 'http:' ? this.httpAgent : this.agent,
     });
 
     if (!this.issuer) {
