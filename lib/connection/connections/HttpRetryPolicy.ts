@@ -1,5 +1,5 @@
 import IRetryPolicy, { ShouldRetryResult, RetryableOperation } from '../contracts/IRetryPolicy';
-import { HttpTransactionDetails } from '../contracts/IConnectionProvider';
+import { HttpRetryPolicyOptions, HttpTransactionDetails } from '../contracts/IConnectionProvider';
 import IClientContext from '../../contracts/IClientContext';
 import RetryError, { RetryErrorCode } from '../../errors/RetryError';
 
@@ -53,10 +53,13 @@ export default class HttpRetryPolicy implements IRetryPolicy<HttpTransactionDeta
 
   private attempt: number;
 
-  constructor(context: IClientContext) {
+  private readonly options: HttpRetryPolicyOptions;
+
+  constructor(context: IClientContext, options: HttpRetryPolicyOptions = {}) {
     this.context = context;
     this.startTime = Date.now();
     this.attempt = 0;
+    this.options = options;
   }
 
   public async shouldRetry(details: HttpTransactionDetails): Promise<ShouldRetryResult> {
@@ -193,6 +196,7 @@ export default class HttpRetryPolicy implements IRetryPolicy<HttpTransactionDeta
 
   protected isRetryable({ response }: HttpTransactionDetails): boolean {
     const statusCode = response.status;
+    const { retryClientErrorsExcept } = this.options;
 
     const result =
       // Retry on all codes below 100
@@ -200,7 +204,12 @@ export default class HttpRetryPolicy implements IRetryPolicy<HttpTransactionDeta
       // ...and on `429 Too Many Requests`
       statusCode === 429 ||
       // ...and on all `5xx` codes except for `501 Not Implemented`
-      (statusCode >= 500 && statusCode !== 501);
+      (statusCode >= 500 && statusCode !== 501) ||
+      // ...and, when enabled, on the other `4xx` codes
+      (retryClientErrorsExcept !== undefined &&
+        statusCode >= 400 &&
+        statusCode < 500 &&
+        !retryClientErrorsExcept.has(statusCode));
 
     return result;
   }

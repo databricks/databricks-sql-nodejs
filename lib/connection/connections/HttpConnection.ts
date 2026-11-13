@@ -4,7 +4,7 @@ import http from 'http';
 import { HeadersInit } from 'node-fetch';
 import { ProxyAgent } from 'proxy-agent';
 
-import IConnectionProvider, { HttpTransactionDetails } from '../contracts/IConnectionProvider';
+import IConnectionProvider, { HttpRetryPolicyOptions, HttpTransactionDetails } from '../contracts/IConnectionProvider';
 import IConnectionOptions, { ProxyOptions } from '../contracts/IConnectionOptions';
 import IClientContext from '../../contracts/IClientContext';
 import { LogLevel } from '../../contracts/IDBSQLLogger';
@@ -227,7 +227,7 @@ export default class HttpConnection implements IConnectionProvider {
     return this.connection;
   }
 
-  public async getRetryPolicy(): Promise<IRetryPolicy<HttpTransactionDetails>> {
-    return new HttpRetryPolicy(this.context);
+  public async getRetryPolicy(options?: HttpRetryPolicyOptions): Promise<IRetryPolicy<HttpTransactionDetails>> {
+    return new HttpRetryPolicy(this.context, options);
   }
 }

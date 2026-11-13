@@ -11,7 +11,13 @@
 import { expect } from 'chai';
 import sinon from 'sinon';
 import Int64 from 'node-int64';
-import { TOperationHandle, TOperationType, THandleIdentifier } from '../../../thrift/TCLIService_types';
+import {
+  TFetchResultsResp,
+  TOperationHandle,
+  TOperationType,
+  THandleIdentifier,
+  TStatusCode,
+} from '../../../thrift/TCLIService_types';
 import RowSetProvider from '../../../lib/result/RowSetProvider';
 import ClientContextStub from '../.stubs/ClientContextStub';
 
@@ -157,6 +163,79 @@ describe('RowSetProvider', () => {
       await provider.fetchNext({ limit: 100 });
 
       expect(emitCloudFetchChunk.firstCall.args[0].bytes).to.equal(64);
+    });
+  });
+
+  describe('link refresh', () => {
+    function linksResponse(fileLink: string, startRowOffset: number, rowCount: number): TFetchResultsResp {
+      return {
+        status: { statusCode: TStatusCode.SUCCESS_STATUS },
+        hasMoreRows: true,
+        results: {
+          startRowOffset: new Int64(startRowOffset),
+          rows: [],
+          resultLinks: [
+            {
+              fileLink,
+              expiryTime: new Int64(Date.now() + 60_000),
+              startRowOffset: new Int64(startRowOffset),
+              rowCount: new Int64(rowCount),
+              bytesNum: new Int64(0),
+            },
+          ],
+        },
+      };
+    }
+
+    it('fetches fresh links from the offset, then pages by offset', async () => {
+      const context = new ClientContextStub();
+      const fetchResults = sinon.spy(context.driver, 'fetchResults');
+      const provider = new RowSetProvider(context, makeOperationHandle(), [], false);
+
+      context.driver.fetchResultsResp = linksResponse('https://storage/0?sig=old', 0, 100);
+      await provider.fetchNext({ limit: 1000 });
+      expect(fetchResults.firstCall.args[0].startRowOffset).to.be.undefined;
+
+      context.driver.fetchResultsResp = linksResponse('https://storage/0?sig=new', 0, 100);
+      const links = await provider.refreshLinks(new Int64(0), new Int64(100));
+      expect(links.map((link) => link.fileLink)).to.deep.equal(['https://storage/0?sig=new']);
+      expect(fetchResults.secondCall.args[0].startRowOffset?.toNumber()).to.equal(0);
+      expect(fetchResults.secondCall.args[0].maxRows.toNumber()).to.equal(100);
+
+      // The refresh may have moved the server cursor, so the next page is requested by offset
+      context.driver.fetchResultsResp = linksResponse('https://storage/100?sig=a', 100, 50);
+      await provider.fetchNext({ limit: 1000 });
+      expect(fetchResults.thirdCall.args[0].startRowOffset?.toNumber()).to.equal(100);
+    });
+
+    it('serializes a refresh with a page fetch', async () => {
+      const context = new ClientContextStub();
+      const provider = new RowSetProvider(context, makeOperationHandle(), [], false);
+      context.driver.fetchResultsResp = linksResponse('https://storage/0?sig=old', 0, 100);
+      await provider.fetchNext({ limit: 1000 });
+
+      let inFlight = 0;
+      let maxInFlight = 0;
+      sinon.stub(context.driver, 'fetchResults').callsFake(async () => {
+        inFlight += 1;
+        maxInFlight = Math.max(maxInFlight, inFlight);
+        await new Promise((resolve) => {
+          setTimeout(resolve, 10);
+        });
+        inFlight -= 1;
+        return linksResponse('https://storage/0?sig=new', 0, 100);
+      });
+      await Promise.all([provider.refreshLinks(new Int64(0), new Int64(100)), provider.fetchNext({ limit: 1000 })]);
+      expect(maxInFlight).to.equal(1);
+    });
+
+    it('returns no links for an operation closed by direct results', async () => {
+      const context = new ClientContextStub();
+      const fetchResults = sinon.spy(context.driver, 'fetchResults');
+      const provider = new RowSetProvider(context, makeOperationHandle(), [], true);
+
+      expect(await provider.refreshLinks(new Int64(0), new Int64(100))).to.deep.equal([]);
+      expect(fetchResults.called).to.be.false;
     });
   });
 });

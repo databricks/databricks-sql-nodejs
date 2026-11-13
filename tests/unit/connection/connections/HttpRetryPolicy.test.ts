@@ -103,6 +103,29 @@ describe('HttpRetryPolicy', () => {
       expect(result.shouldRetry).to.be.false;
     });
 
+    it('should retry 4xx responses only when enabled, except the listed statuses', async () => {
+      function createStub(status: number) {
+        return {
+          request: new Request('http://localhost'),
+          response: new Response(undefined, { status }),
+        };
+      }
+
+      const context = new ClientContextStub({ retryMaxAttempts: 100 });
+      const defaultPolicy = new HttpRetryPolicy(context);
+      const cloudFetchPolicy = new HttpRetryPolicy(context, { retryClientErrorsExcept: new Set([401, 403, 404]) });
+
+      for (const status of [400, 405, 408, 412]) {
+        expect((await defaultPolicy.shouldRetry(createStub(status))).shouldRetry, `${status}`).to.be.false;
+        expect((await cloudFetchPolicy.shouldRetry(createStub(status))).shouldRetry, `${status}`).to.be.true;
+      }
+      for (const status of [401, 403, 404]) {
+        expect((await cloudFetchPolicy.shouldRetry(createStub(status))).shouldRetry, `${status}`).to.be.false;
+      }
+      expect((await cloudFetchPolicy.shouldRetry(createStub(501))).shouldRetry).to.be.false;
+      expect((await cloudFetchPolicy.shouldRetry(createStub(503))).shouldRetry).to.be.true;
+    });
+
     it('should use `Retry-After` header as a base for backoff', async () => {
       const context = new ClientContextStub({ retryDelayMin: 3, retryDelayMax: 100, retryMaxAttempts: 10 });
       const policy = new HttpRetryPolicy(context);

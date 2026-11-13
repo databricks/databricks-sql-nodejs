@@ -742,6 +742,10 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
     if (options.retryDelayMax !== undefined) {
       this.config.retryDelayMax = options.retryDelayMax;
     }
+    // Also bounds each CloudFetch download attempt on the Thrift backend
+    if (options.socketTimeout !== undefined) {
+      this.config.socketTimeout = options.socketTimeout;
+    }
 
     // Override telemetry config if provided in options. Per-key narrowed copy
     // preserves the structural type system: `ConnectionOptions` and
