@@ -44,12 +44,23 @@ export function tenantFromLoginUrl(location: string): string {
  */
 export async function discoverAzureTenantId(host: string, agent?: http.Agent): Promise<string> {
   const base = (host.includes('://') ? host : `https://${host}`).replace(/\/+$/, '');
-  const response = await fetch(`${base}/aad/auth`, {
-    method: 'GET',
-    redirect: 'manual',
-    agent,
-    timeout: DISCOVERY_TIMEOUT_MS,
-  });
+  let response;
+  try {
+    response = await fetch(`${base}/aad/auth`, {
+      method: 'GET',
+      redirect: 'manual',
+      agent,
+      timeout: DISCOVERY_TIMEOUT_MS,
+    });
+  } catch (error) {
+    // Report only the code/type: a network error's message can carry request details.
+    const { code, type } = error as { code?: string; type?: string };
+    throw new AuthenticationError(
+      `Azure tenant discovery: ${base}/aad/auth failed (${
+        code ?? type ?? 'network error'
+      }); pass azureTenantId explicitly`,
+    );
+  }
 
   const location = response.headers.get('location');
   if (response.status < 300 || response.status >= 400 || !location) {

@@ -90,6 +90,21 @@ describe('discoverAzureTenantId', () => {
     await expectAuthError(discoverAzureTenantId(base), 'HTTP 200 without a redirect');
   });
 
+  it('wraps a network failure with the azureTenantId hint', async () => {
+    const closed = http.createServer();
+    await new Promise<void>((resolve) => {
+      closed.listen(0, '127.0.0.1', resolve);
+    });
+    const { port } = closed.address() as AddressInfo;
+    await new Promise<void>((resolve) => {
+      closed.close(() => resolve());
+    });
+    await expectAuthError(
+      discoverAzureTenantId(`http://127.0.0.1:${port}`),
+      'failed (ECONNREFUSED); pass azureTenantId',
+    );
+  });
+
   it('fails when the redirect is not to a Microsoft login host', async () => {
     respond = (req, res) => {
       res.writeHead(302, { Location: 'https://idp.example.com/tenant-xyz/authorize' });
