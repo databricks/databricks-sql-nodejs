@@ -62,6 +62,8 @@ export async function discoverAzureTenantId(host: string, agent?: http.Agent): P
     );
   }
 
+  // Drain the (small) body so the keep-alive agent can reuse the socket.
+  await response.text().catch(() => undefined);
   const location = response.headers.get('location');
   if (response.status < 300 || response.status >= 400 || !location) {
     throw new AuthenticationError(

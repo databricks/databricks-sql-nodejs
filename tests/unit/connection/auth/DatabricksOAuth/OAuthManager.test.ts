@@ -1,4 +1,5 @@
 import { AssertionError, expect } from 'chai';
+import https from 'https';
 import sinon, { SinonStub } from 'sinon';
 import { Issuer, BaseClient, TokenSet, GrantBody, IssuerMetadata, ClientMetadata, custom } from 'openid-client';
 // Import the whole module once more - to stub some of its exports
@@ -540,7 +541,7 @@ describe('AzureOAuthManager (tenant awareness)', () => {
     (mgr as unknown as Record<string, (...a: unknown[]) => T>)[name](...args);
 
   describe('getOIDCConfigUrl', () => {
-    it('falls back to /organizations/ when azureTenantId is not set (baseline-compatible)', () => {
+    it('uses /organizations/ when azureTenantId is not set and no tenant was discovered yet', () => {
       const mgr = makeAzure();
       const url = call<string>(mgr, 'getOIDCConfigUrl');
       expect(url).to.equal('https://login.microsoftonline.com/organizations/v2.0/.well-known/openid-configuration');
@@ -553,7 +554,7 @@ describe('AzureOAuthManager (tenant awareness)', () => {
       expect(url).to.equal(`https://login.microsoftonline.com/${tenant}/v2.0/.well-known/openid-configuration`);
     });
 
-    it('falls back to /organizations/ when azureTenantId is empty or whitespace', () => {
+    it('uses /organizations/ before discovery when azureTenantId is empty or whitespace', () => {
       for (const tenant of ['', '   ']) {
         const mgr = makeAzure({ azureTenantId: tenant });
         const url = call<string>(mgr, 'getOIDCConfigUrl');
@@ -632,13 +633,19 @@ describe('AzureOAuthManager tenant discovery', () => {
     discoverStub.restore();
   });
 
+  const httpsAgent = new https.Agent();
+
   function makeManager(overrides: Partial<OAuthManagerOptions> = {}) {
+    const context = new ClientContextStub();
+    sinon
+      .stub(context.connectionProvider, 'getAgent')
+      .callsFake(async (url?: string | URL) => (url === 'https:' ? httpsAgent : undefined));
     return new AzureOAuthManager({
       host: 'adb-1234567890123456.1.azuredatabricks.net',
       flow: OAuthFlow.M2M,
       clientId: 'test_client_id',
       clientSecret: 'test_client_secret',
-      context: new ClientContextStub(),
+      context,
       ...overrides,
     });
   }
@@ -649,6 +656,8 @@ describe('AzureOAuthManager tenant discovery', () => {
     await mgr.getToken();
     expect(discoverStub.calledOnce).to.be.true;
     expect(discoverStub.firstCall.args[0]).to.equal('adb-1234567890123456.1.azuredatabricks.net');
+    // The connection's https agent carries the proxy and TLS options.
+    expect(discoverStub.firstCall.args[1]).to.equal(httpsAgent);
     expect(oidcConfigUrls).to.deep.equal([
       'https://login.microsoftonline.com/discovered-tenant/v2.0/.well-known/openid-configuration',
     ]);
