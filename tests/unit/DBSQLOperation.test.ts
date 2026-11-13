@@ -14,6 +14,12 @@ import StatusError from '../../lib/errors/StatusError';
 import OperationStateError, { OperationStateErrorCode } from '../../lib/errors/OperationStateError';
 import { LogLevel } from '../../lib/contracts/IDBSQLLogger';
 import HiveDriverError from '../../lib/errors/HiveDriverError';
+import AuthenticationError from '../../lib/errors/AuthenticationError';
+import MetricsAggregator from '../../lib/telemetry/MetricsAggregator';
+import DatabricksTelemetryExporter from '../../lib/telemetry/DatabricksTelemetryExporter';
+import TelemetryEventEmitter from '../../lib/telemetry/TelemetryEventEmitter';
+import { TelemetryEventType } from '../../lib/telemetry/types';
+import { mapOperationTypeToTelemetryType } from '../../lib/telemetry/telemetryTypeMappers';
 import JsonResultHandler from '../../lib/result/JsonResultHandler';
 import ArrowResultConverter from '../../lib/result/ArrowResultConverter';
 import ArrowResultHandler from '../../lib/result/ArrowResultHandler';
@@ -517,6 +523,35 @@ describe('DBSQLOperation', () => {
         await operation.close();
         expect(operation['closed']).to.be.true;
         expect(onClose.calledOnce).to.be.true;
+      });
+
+      it('should complete teardown when status() reported FINISHED_STATE', async () => {
+        const { context, closeOperation, operation, onClose } = finishedOperationWithFailingClose(() =>
+          Promise.reject(closeFailure()),
+        );
+        context.driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
+
+        const response = await operation.status();
+        expect(response.operationState).to.equal(TOperationState.FINISHED_STATE);
+
+        const status = await operation.close();
+
+        expect(closeOperation.calledOnce).to.be.true;
+        expect(status.isSuccess).to.be.true;
+        expect(status.info.join()).to.contain('404');
+        expect(operation['closed']).to.be.true;
+        expect(onClose.calledOnce).to.be.true;
+      });
+
+      it('should still rethrow when status() reported a non-finished state', async () => {
+        const { context, operation, onClose } = finishedOperationWithFailingClose(() => Promise.reject(closeFailure()));
+        context.driver.getOperationStatusResp.operationState = TOperationState.RUNNING_STATE;
+
+        await operation.status();
+
+        await expectFailure(() => operation.close());
+        expect(operation['closed']).to.be.false;
+        expect(onClose.called).to.be.false;
       });
     });
   });
@@ -1328,6 +1363,45 @@ describe('DBSQLOperation', () => {
       expect(emitError.firstCall.args[0].errorName).to.match(/Status\s?Error/);
       expect((context.telemetryEmitter!.emitStatementComplete as sinon.SinonStub).calledOnce).to.be.true;
       expect(completeStatement.calledOnceWith(operation.id)).to.be.true;
+    });
+
+    it('finalizes a single statement metric when a finished operation fails to close with a terminal error', async () => {
+      const context = new ClientContextStub({ telemetryEnabled: true });
+      const exporter = sinon.createStubInstance(DatabricksTelemetryExporter);
+      const aggregator = new MetricsAggregator(context, exporter as any);
+      const emitter = new TelemetryEventEmitter(context);
+      for (const eventType of Object.values(TelemetryEventType)) {
+        emitter.on(eventType, (event) => aggregator.processEvent(event));
+      }
+      context.telemetryEmitter = emitter;
+      context.telemetryAggregator = aggregator;
+      sinon.stub(context.driver, 'closeOperation').rejects(new AuthenticationError('token expired'));
+      const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: true }), context });
+
+      try {
+        await operation.finished();
+        emitter.emitCloudFetchChunk({ statementId: operation.id, chunkIndex: 0, bytes: 100, latencyMs: 5 });
+        const status = await operation.close();
+        expect(status.isSuccess).to.be.true;
+      } finally {
+        await aggregator.close();
+      }
+
+      const metrics = exporter.export.getCalls().flatMap((call) => call.args[0]);
+      const statementMetrics = metrics.filter((m) => m.metricType === 'statement');
+      expect(statementMetrics).to.have.lengthOf(1);
+      expect(statementMetrics[0].statementId).to.equal(operation.id);
+      expect(statementMetrics[0].operationType).to.equal(
+        mapOperationTypeToTelemetryType(TOperationType.EXECUTE_STATEMENT),
+      );
+      expect(statementMetrics[0].latencyMs).to.be.a('number');
+      expect(statementMetrics[0].chunkCount).to.equal(1);
+      expect(statementMetrics[0].bytesDownloaded).to.equal(100);
+
+      const errorMetrics = metrics.filter((m) => m.metricType === 'error');
+      expect(errorMetrics).to.have.lengthOf(1);
+      expect(errorMetrics[0].statementId).to.equal(operation.id);
+      expect(errorMetrics[0].errorName).to.equal('AuthenticationError');
     });
 
     it('emits ERROR telemetry when getMetadata rejects', async () => {

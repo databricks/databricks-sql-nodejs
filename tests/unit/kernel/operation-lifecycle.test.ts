@@ -42,6 +42,7 @@ import {
 import KernelOperationBackend from '../../../lib/kernel/KernelOperationBackend';
 import OperationStateError, { OperationStateErrorCode } from '../../../lib/errors/OperationStateError';
 import HiveDriverError from '../../../lib/errors/HiveDriverError';
+import { TOperationState } from '../../../thrift/TCLIService_types';
 
 class TestLogger implements IDBSQLLogger {
   public readonly entries: Array<{ level: LogLevel; message: string }> = [];
@@ -480,6 +481,22 @@ describe('DBSQLOperation over KernelOperationBackend — close after the result 
     }
     expect(thrown).to.be.instanceOf(OperationStateError);
     expect((thrown as OperationStateError).errorCode).to.equal(OperationStateErrorCode.Closed);
+  });
+
+  it('completes teardown when the CloseStatement RPC fails after status() reported success', async () => {
+    const { statement, operation, onClose } = drainedOperation(async () => {
+      throw new Error(`__databricks_error__:${JSON.stringify({ code: 'NotFound', message: 'HTTP 404 Not Found' })}`);
+    });
+
+    const response = await operation.status();
+    expect(response.operationState).to.equal(TOperationState.FINISHED_STATE);
+
+    const status = await operation.close();
+
+    expect(statement.close.calledOnce).to.equal(true);
+    expect(status.isSuccess).to.equal(true);
+    expect(status.info.join()).to.contain('404');
+    expect(onClose.calledOnce).to.equal(true);
   });
 
   it('closes normally when the RPC succeeds', async () => {

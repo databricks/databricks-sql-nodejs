@@ -9,7 +9,13 @@ import IOperation, {
   IOperationRowsIterator,
   NodeStreamOptions,
 } from './contracts/IOperation';
-import { TGetOperationStatusResp, TGetResultSetMetadataResp, TTableSchema } from '../thrift/TCLIService_types';
+import {
+  TGetOperationStatusResp,
+  TGetResultSetMetadataResp,
+  TOperationState,
+  TTableSchema,
+} from '../thrift/TCLIService_types';
+import { OperationState } from './contracts/OperationStatus';
 import Status from './dto/Status';
 import { LogLevel } from './contracts/IDBSQLLogger';
 import OperationStateError, { OperationStateErrorCode } from './errors/OperationStateError';
@@ -189,11 +195,18 @@ export default class DBSQLOperation implements IOperation {
     this.pollCount += 1;
     if (this.backend instanceof ThriftOperationBackend) {
       // Zero-loss path: the Thrift backend has the wire response on hand.
-      return this.backend.thriftStatusResponse(progress);
+      const response = await this.backend.thriftStatusResponse(progress);
+      if (response.operationState === TOperationState.FINISHED_STATE) {
+        this.executionFinished = true;
+      }
+      return response;
     }
     // Non-Thrift backend: synthesize the Thrift-shaped response from the
     // neutral OperationStatus DTO.
     const status = await this.backend.status(progress);
+    if (status.state === OperationState.Succeeded) {
+      this.executionFinished = true;
+    }
     return synthesizeThriftStatus(status);
   }
 
@@ -244,7 +257,12 @@ export default class DBSQLOperation implements IOperation {
       this.context
         .getLogger()
         .log(LogLevel.warn, `Failed to close finished operation ${this.id}; it is closed locally. Cause: ${message}`);
-      this.emitErrorEvent(error);
+      // Buffer the error on the statement instead of reporting it as terminal:
+      // a terminal error finalizes the statement's aggregation immediately,
+      // and `emitStatementComplete()` below would then start and finalize a
+      // second, partial one. Buffered, it's flushed with the single
+      // statement metric.
+      this.emitErrorEvent(error, { deferToCompletion: true });
       result = Status.success([`Failed to close operation: ${message}`]);
     }
     this.closed = true;
@@ -460,8 +478,12 @@ export default class DBSQLOperation implements IOperation {
    * in the aggregator; retryable errors are buffered until the statement
    * completes. All exceptions from this method itself are swallowed at
    * debug level — telemetry must never break the driver.
+   *
+   * Pass `deferToCompletion` when the caller completes the statement right
+   * afterwards: the error is then buffered (not terminal) so the statement's
+   * aggregation is finalized once, by that completion.
    */
-  private emitErrorEvent(error: Error): void {
+  private emitErrorEvent(error: Error, options?: { deferToCompletion?: boolean }): void {
     safeEmit(this.context, (emitter) => {
       emitter.emitError({
         statementId: this.id,
@@ -469,7 +491,7 @@ export default class DBSQLOperation implements IOperation {
         errorName: error.name || 'Error',
         errorMessage: error.message || 'Unknown error',
         errorStack: error.stack,
-        isTerminal: ExceptionClassifier.isTerminal(error),
+        isTerminal: options?.deferToCompletion ? false : ExceptionClassifier.isTerminal(error),
       });
     });
   }
