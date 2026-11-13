@@ -1,4 +1,5 @@
 import { expect } from 'chai';
+import http from 'http';
 import sinon from 'sinon';
 import type nodeFetch from 'node-fetch';
 import FederationProvider, {
@@ -130,6 +131,27 @@ describe('FederationProvider', () => {
       expect(passedSignal, 'fetch init.signal must be set').to.exist;
       expect(typeof passedSignal.aborted, 'signal.aborted must be a boolean').to.equal('boolean');
       expect(passedSignal.aborted).to.be.false;
+    });
+
+    it('should send the exchange through the agent from getAgent', async () => {
+      const foreignJwt = createJWT({ iss: 'https://idp.example.com' });
+      const agent = new http.Agent();
+      const getAgent = sinon.stub().resolves(agent);
+      const federationProvider = new FederationProvider(
+        new MockTokenProvider(foreignJwt),
+        'my-workspace.cloud.databricks.com',
+        { getAgent },
+      );
+
+      const fetchStub = sinon
+        .stub<Parameters<typeof nodeFetch>, ReturnType<typeof nodeFetch>>()
+        .resolves(buildFakeResponse({ ok: true, body: { access_token: 'exchanged-databricks-token' } }));
+      setFederationFetchForTest(fetchStub as unknown as typeof nodeFetch);
+
+      await federationProvider.getToken();
+
+      expect(getAgent.calledOnceWithExactly('https://my-workspace.cloud.databricks.com/oidc/v1/token')).to.be.true;
+      expect(fetchStub.firstCall.args[1]!.agent).to.equal(agent);
     });
 
     it('should propagate abort from the controller to the signal observed by fetch', async () => {

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- The Thrift token federation exchange (`enableTokenFederation`) now goes through the connection's agent, so `proxy`, `checkServerCertificate`, `customCaCert` and `clientCert`/`clientKey` apply to it. Previously it connected directly with Node's default agent, so behind a required proxy the exchange failed and the driver fell back to the original token.
 - Kernel backend: a failed status poll while waiting for a statement (a `runAsync: true` statement, or a default execution that outlives the server's inline wait) and a failed result fetch in `hasMoreRows()` now throw the mapped driver error, such as `HiveDriverError: HTTP 500: Internal Server Error` once retries on HTTP 5xx run out, instead of a raw `Error` whose message is the internal `__databricks_error__:{...}` envelope. As in `fetchChunk()`, a failed fetch in `hasMoreRows()` also closes the statement. (#608)
 - Reduce result chunking and `fetchAll()` overhead for large query results.
 - Thrift CloudFetch downloads are now bounded end to end by `retriesTimeout` (default 15 minutes), including every attempt and retry backoff. Previously a stalled download, where the response headers or body never arrived, blocked the fetch forever. A download still running when the deadline expires is aborted and fails with `RetryError` (`TIMEOUT_EXCEEDED`, message `CloudFetch result download failed: Retry timeout exceeded`). (#520)

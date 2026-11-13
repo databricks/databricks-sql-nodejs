@@ -1,6 +1,7 @@
 import { expect, AssertionError } from 'chai';
 import sinon from 'sinon';
 import fs from 'fs';
+import http from 'http';
 import { Response } from 'node-fetch';
 import DBSQLClient, { ThriftLibrary } from '../../lib/DBSQLClient';
 import DBSQLSession from '../../lib/DBSQLSession';
@@ -9,6 +10,7 @@ import KernelBackend from '../../lib/kernel/KernelBackend';
 import * as KernelNativeLoader from '../../lib/kernel/KernelNativeLoader';
 
 import PlainHttpAuthentication from '../../lib/connection/auth/PlainHttpAuthentication';
+import FederationProvider from '../../lib/connection/auth/tokenProvider/FederationProvider';
 import DatabricksOAuth from '../../lib/connection/auth/DatabricksOAuth';
 import { DatabricksOAuthManager, AzureOAuthManager } from '../../lib/connection/auth/DatabricksOAuth/OAuthManager';
 
@@ -674,6 +676,28 @@ describe('DBSQLClient[Symbol.asyncDispose]', () => {
 });
 
 describe('DBSQLClient.createAuthProvider', () => {
+  it('should send the token federation exchange through the connection agent', async () => {
+    const client = new DBSQLClient();
+    const connectionProvider = new ConnectionProviderStub();
+    const agent = new http.Agent();
+    const getAgent = sinon.stub(connectionProvider, 'getAgent').resolves(agent);
+    client['connectionProvider'] = connectionProvider;
+
+    const provider = client['createAuthProvider']({
+      ...connectOptions,
+      authType: 'static-token',
+      staticToken: 'token',
+      enableTokenFederation: true,
+    });
+
+    const federation = (provider as unknown as { tokenProvider: FederationProvider }).tokenProvider;
+    expect(federation).to.be.instanceOf(FederationProvider);
+    const url = 'https://dbc-XXXXXXXX-XXXX.cloud.databricks.com/oidc/v1/token';
+    expect(await federation['getAgent']!(url)).to.equal(agent);
+    expect(getAgent.calledOnce).to.be.true;
+    expect((getAgent.firstCall.args as unknown[])[0]).to.equal(url);
+  });
+
   it('should use access token auth method', () => {
     const client = new DBSQLClient();
 
