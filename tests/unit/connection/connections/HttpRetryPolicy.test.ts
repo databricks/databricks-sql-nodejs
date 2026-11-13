@@ -400,5 +400,78 @@ describe('HttpRetryPolicy', () => {
         expect(operation.callCount).to.equal(clientConfig.retryMaxAttempts);
       }
     });
+
+    it('should cancel a pending backoff sleep when the signal is aborted', async () => {
+      const context = new ClientContextStub({
+        retryDelayMin: 10000,
+        retryDelayMax: 60000,
+        retryMaxAttempts: 20,
+      });
+      const policy = new HttpRetryPolicy(context);
+      const operation = sinon.stub().resolves({
+        request: new Request('http://localhost'),
+        response: new Response(undefined, { status: 503 }),
+      });
+      const controller = new AbortController();
+      const reason = new Error('deadline');
+      const clearTimeoutSpy = sinon.spy(global, 'clearTimeout');
+      const setTimeoutSpy = sinon.spy(global, 'setTimeout');
+
+      try {
+        const invocation = policy.invokeWithRetry(operation, controller.signal);
+        // Let the first attempt complete and the 20s backoff sleep start
+        await new Promise((resolve) => {
+          setImmediate(resolve);
+        });
+        const backoffCall = setTimeoutSpy.getCalls().find((call) => call.args[1] === 20000);
+        expect(backoffCall).to.not.be.undefined;
+
+        controller.abort(reason);
+
+        try {
+          await invocation;
+          expect.fail('It should reject with the abort reason');
+        } catch (error) {
+          if (error instanceof AssertionError) {
+            throw error;
+          }
+          expect(error).to.equal(reason);
+        }
+        expect(clearTimeoutSpy.calledWith(backoffCall!.returnValue)).to.be.true;
+        expect(operation.callCount).to.equal(1);
+      } finally {
+        setTimeoutSpy.restore();
+        clearTimeoutSpy.restore();
+      }
+    });
+
+    it('should not start another attempt when the signal is already aborted before the backoff', async () => {
+      const context = new ClientContextStub({
+        retryDelayMin: 10000,
+        retryDelayMax: 60000,
+        retryMaxAttempts: 20,
+      });
+      const policy = new HttpRetryPolicy(context);
+      const controller = new AbortController();
+      const reason = new Error('deadline');
+      const operation = sinon.stub().callsFake(async () => {
+        controller.abort(reason);
+        return {
+          request: new Request('http://localhost'),
+          response: new Response(undefined, { status: 503 }),
+        };
+      });
+
+      try {
+        await policy.invokeWithRetry(operation, controller.signal);
+        expect.fail('It should reject with the abort reason');
+      } catch (error) {
+        if (error instanceof AssertionError) {
+          throw error;
+        }
+        expect(error).to.equal(reason);
+      }
+      expect(operation.callCount).to.equal(1);
+    });
   });
 });

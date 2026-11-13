@@ -834,8 +834,26 @@ describe('CloudFetchResultHandler', () => {
       });
       // The first backoff (2 * retryDelayMin = 2s) alone outlasts the 300ms budget
       const handler = createHandler(url, { retriesTimeout: 300, retryDelayMin: 1000, retryMaxAttempts: 100 });
+      const setTimeoutSpy = sinon.spy(global, 'setTimeout');
+      const clearTimeoutSpy = sinon.spy(global, 'clearTimeout');
 
-      const { error, elapsedMs } = await fetchWithin(handler, 1500);
+      let outcome: Awaited<ReturnType<typeof fetchWithin>>;
+      let backoffTimers: Array<NodeJS.Timeout>;
+      try {
+        outcome = await fetchWithin(handler, 1500);
+        backoffTimers = setTimeoutSpy
+          .getCalls()
+          .filter((call) => call.args[1] === 2000)
+          .map((call) => call.returnValue);
+      } finally {
+        setTimeoutSpy.restore();
+        clearTimeoutSpy.restore();
+      }
+      const { error, elapsedMs } = outcome;
+
+      // The deadline cancels the pending backoff sleep instead of leaving its timer to keep Node alive
+      expect(backoffTimers).to.have.length(1);
+      expect(clearTimeoutSpy.calledWith(backoffTimers[0])).to.be.true;
 
       expect(error).to.be.instanceOf(RetryError);
       expect(error.errorCode).to.be.equal(RetryErrorCode.TimeoutExceeded);
@@ -845,9 +863,9 @@ describe('CloudFetchResultHandler', () => {
       expect(elapsedMs).to.be.lt(1000);
       expect(hits).to.be.equal(1);
 
-      // Once the backoff sleep ends, the retry loop must stop instead of sending another request
+      // The cancelled backoff ends the retry loop instead of sending another request
       await new Promise((resolve) => {
-        setTimeout(resolve, 2200);
+        setTimeout(resolve, 100);
       });
       expect(hits).to.be.equal(1);
     });

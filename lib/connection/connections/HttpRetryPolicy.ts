@@ -3,9 +3,24 @@ import { HttpTransactionDetails } from '../contracts/IConnectionProvider';
 import IClientContext from '../../contracts/IClientContext';
 import RetryError, { RetryErrorCode } from '../../errors/RetryError';
 
-function delay(milliseconds: number): Promise<void> {
-  return new Promise<void>((resolve) => {
-    setTimeout(() => resolve(), milliseconds);
+// Sleeps for `milliseconds`; aborting `signal` clears the timer and rejects with
+// `signal.reason`, so a cancelled backoff does not keep the process alive.
+function delay(milliseconds: number, signal?: AbortSignal): Promise<void> {
+  return new Promise<void>((resolve, reject) => {
+    if (signal?.aborted) {
+      reject(signal.reason);
+      return;
+    }
+    let timer: NodeJS.Timeout | undefined;
+    const onAbort = () => {
+      clearTimeout(timer);
+      reject(signal?.reason);
+    };
+    timer = setTimeout(() => {
+      signal?.removeEventListener('abort', onAbort);
+      resolve();
+    }, milliseconds);
+    signal?.addEventListener('abort', onAbort, { once: true });
   });
 }
 
@@ -52,7 +67,10 @@ export default class HttpRetryPolicy implements IRetryPolicy<HttpTransactionDeta
     return { shouldRetry: false };
   }
 
-  public async invokeWithRetry(operation: RetryableOperation<HttpTransactionDetails>): Promise<HttpTransactionDetails> {
+  public async invokeWithRetry(
+    operation: RetryableOperation<HttpTransactionDetails>,
+    signal?: AbortSignal,
+  ): Promise<HttpTransactionDetails> {
     for (;;) {
       // Capture either the resolved response or the thrown error so the
       // retry-decision logic below can flow without an early `continue` and
@@ -73,7 +91,7 @@ export default class HttpRetryPolicy implements IRetryPolicy<HttpTransactionDeta
           return outcome.details;
         }
         // eslint-disable-next-line no-await-in-loop
-        await delay(status.retryAfter);
+        await delay(status.retryAfter, signal);
       } else {
         // The operation threw before producing a response. This is typically a
         // transient network failure (stale keep-alive socket reset by a load
@@ -91,7 +109,7 @@ export default class HttpRetryPolicy implements IRetryPolicy<HttpTransactionDeta
           throw outcome.error;
         }
         // eslint-disable-next-line no-await-in-loop
-        await delay(status.retryAfter);
+        await delay(status.retryAfter, signal);
       }
     }
   }

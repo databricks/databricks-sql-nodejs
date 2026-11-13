@@ -159,9 +159,11 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
     // The retry policy checks `retriesTimeout` only between attempts, so a stalled attempt
     // (headers or body never arrive) would block forever. Enforce it as a deadline over the
     // whole download - every attempt plus the backoff between them - and abort the in-flight
-    // request when it expires (#520). Non-positive values keep the deadline off.
+    // request and any pending backoff sleep when it expires (#520). Non-positive values keep
+    // the deadline off.
     const deadlineMs = retriesTimeout > 0 ? Math.min(retriesTimeout, MAX_TIMER_DELAY_MS) : undefined;
-    let controller: AbortController | undefined;
+    // Aborted only once, by the deadline, so a single controller serves every attempt and backoff.
+    const controller = deadlineMs === undefined ? undefined : new AbortController();
     let timeoutError: RetryError | undefined;
     let lastFailure: unknown;
     let timer: NodeJS.Timeout | undefined;
@@ -181,7 +183,6 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
           throw timeoutError;
         }
         downloaded = undefined;
-        controller = deadlineMs === undefined ? undefined : new AbortController();
         const request = new Request(url, {
           ...requestConfig,
           signal: controller?.signal as unknown as RequestInit['signal'],
@@ -201,7 +202,7 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
           lastFailure = error;
           throw error;
         }
-      });
+      }, controller?.signal);
 
       if (deadlineMs === undefined) {
         result = await download;
@@ -209,7 +210,8 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
         const deadline = new Promise<never>((_, reject) => {
           timer = setTimeout(() => {
             timeoutError = new RetryError(RetryErrorCode.TimeoutExceeded, lastFailure);
-            controller?.abort();
+            // Aborts the in-flight request, and rejects a pending backoff sleep with `timeoutError`
+            controller?.abort(timeoutError);
             reject(timeoutError);
           }, deadlineMs);
         });
