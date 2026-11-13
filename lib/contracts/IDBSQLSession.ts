@@ -32,7 +32,8 @@ export type ExecuteStatementOptions = {
    *   `false`/unset (default) runs the blocking direct-results path (faster,
    *   cancellable mid-compute); `true` submits and polls (returns a pending
    *   handle before completion). Default is sync, matching the python
-   *   connector's `cursor.execute()`.
+   *   connector's `cursor.execute()`. With `stagingAllowedLocalPath` configured,
+   *   execution waits for staging completion regardless of this option.
    */
   runAsync?: boolean;
   maxRows?: number | bigint | Int64 | null;
