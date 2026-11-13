@@ -40,6 +40,12 @@ import { DBSQLParameter, DBSQLParameterType } from '../../../lib/DBSQLParameter'
 // -----------------------------------------------------------------------------
 
 class FakeNativeStatement implements KernelStatement {
+  public readonly isVolumeOperation = false;
+
+  public async completeVolumeOperation(): Promise<string> {
+    return 'not_volume';
+  }
+
   public closed = false;
 
   public cancelled = false;
@@ -1075,13 +1081,11 @@ describe('KernelSessionBackend', () => {
 
   // Unsupported-on-kernel per-statement HINTS are NO-OPs (not errors) so Thrift-
   // targeted call sites are drop-in on the kernel path. They are kernel-governed
-  // perf/format hints (useCloudFetch / useLZ4Compression) or an unexposed feature
-  // (staging); ignoring them can't change results. (Parameter binding is NOT here
+  // perf/format hints (useCloudFetch / useLZ4Compression). (Parameter binding is NOT here
   // — a dropped param would change results, so it still throws; asserted above.)
   for (const { name, options } of [
     { name: 'useCloudFetch', options: { useCloudFetch: true } },
     { name: 'useLZ4Compression', options: { useLZ4Compression: true } },
-    { name: 'stagingAllowedLocalPath', options: { stagingAllowedLocalPath: '/tmp' } },
   ] as const) {
     it(`executeStatement ignores unsupported ${name} (no-op, does not throw)`, async () => {
       const connection = new FakeNativeConnection();

@@ -372,3 +372,20 @@ describe('KernelErrorMapping.decodeNapiKernelError — cause chain', () => {
     expect(err.cause).to.equal(undefined);
   });
 });
+
+it('preserves local file error code and path from native completion', () => {
+  const error = decodeNapiKernelError(
+    new Error(
+      `__databricks_error__:${JSON.stringify({
+        code: 'NotFound',
+        message: 'Local file does not exist',
+        localOsError: 2,
+        localErrorKind: 'NotFound',
+        localPath: '/allowed/missing',
+      })}`,
+    ),
+  ) as NodeJS.ErrnoException;
+  expect(error.code).to.equal('ENOENT');
+  expect(error.path).to.equal('/allowed/missing');
+  expect(error.errno).to.be.lessThan(0);
+});

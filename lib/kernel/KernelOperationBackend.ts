@@ -46,6 +46,8 @@ import { LogLevel } from '../contracts/IDBSQLLogger';
 import { RowMode } from '../contracts/IDBSQLSession';
 import Status from '../dto/Status';
 import HiveDriverError from '../errors/HiveDriverError';
+import StagingError from '../errors/StagingError';
+import ParameterError from '../errors/ParameterError';
 import OperationStateError, { OperationStateErrorCode } from '../errors/OperationStateError';
 import ArrowResultConverter from '../result/ArrowResultConverter';
 import ResultSlicer from '../result/ResultSlicer';
@@ -84,7 +86,10 @@ export type KernelOperationStatement = KernelStatementHandle & Partial<KernelSta
  * (`KernelResultsProvider` → `ArrowResultConverter` → `ResultSlicer`) consumes
  * either interchangeably.
  */
-type KernelFetchHandle = Pick<KernelStatement, 'fetchNextBatch' | 'schema'>;
+type KernelFetchHandle = Pick<
+  KernelStatement,
+  'fetchNextBatch' | 'schema' | 'isVolumeOperation' | 'completeVolumeOperation'
+>;
 
 /**
  * The rich operation-status surface the kernel exposes on a terminal sync
@@ -220,6 +225,8 @@ export default class KernelOperationBackend implements IOperationBackend {
   // already-terminal statement. Drives both fetch and result-metadata.
   private fetchHandlePromise?: Promise<KernelFetchHandle>;
 
+  private volumeCompleted = false;
+
   // Async path only: set once the kernel reported the statement Succeeded (a
   // status poll, or `awaitResult()` resolving). The kernel exposes no
   // synchronous terminal-state accessor, so the observed success is retained.
@@ -256,7 +263,7 @@ export default class KernelOperationBackend implements IOperationBackend {
     // drop-guard fires whenever this handle is eventually GC'd.
     this.lifecycleHandle = cancellableExecution
       ? {
-          cancel: () => cancellableExecution.cancel(),
+          cancel: () => (this.blockingStatement ? this.blockingStatement.cancel() : cancellableExecution.cancel()),
           close: () => (this.blockingStatement ? this.blockingStatement.close() : cancellableExecution.cancel()),
         }
       : ((asyncStatement ?? statement) as KernelStatementHandle);
@@ -304,6 +311,27 @@ export default class KernelOperationBackend implements IOperationBackend {
   // Fetch / metadata (owned by the kernel-results pipeline).
   // ---------------------------------------------------------------------------
 
+  public async completeStagingOperation(allowedPaths: string[]): Promise<void> {
+    failIfNotActive(this.lifecycle);
+    try {
+      const handle = await this.getFetchHandle();
+      const outcome = await handle.completeVolumeOperation(allowedPaths, true);
+      if (outcome === 'needs_input_stream') {
+        throw new StagingError('Volume PUT requires a local file path');
+      }
+      this.volumeCompleted = outcome === 'completed';
+    } catch (err) {
+      const mapped = decodeNapiKernelError(err);
+      if (
+        mapped instanceof ParameterError ||
+        (mapped as { kernelMetadata?: { httpStatus?: number } }).kernelMetadata?.httpStatus
+      ) {
+        throw new StagingError(mapped.message);
+      }
+      throw mapped;
+    }
+  }
+
   public async fetchChunk({
     limit,
     disableBuffering,
@@ -316,6 +344,7 @@ export default class KernelOperationBackend implements IOperationBackend {
     // Cancel-mid-fetch propagation: if cancel() has flipped the
     // lifecycle flag, fail locally without a wire round-trip.
     failIfNotActive(this.lifecycle);
+    if (this.volumeCompleted) return [];
     // Cooperative cancel (parity with ThriftOperationBackend): the facade
     // supplies `isClosed` and re-checks `failIfClosed()` after we return, so
     // bailing with `[]` at a yield point is the contract-correct way for a
@@ -356,6 +385,7 @@ export default class KernelOperationBackend implements IOperationBackend {
 
   public async hasMore(): Promise<boolean> {
     failIfNotActive(this.lifecycle);
+    if (this.volumeCompleted) return false;
     const slicer = await this.getResultSlicer();
     return slicer.hasMore();
   }
@@ -394,7 +424,7 @@ export default class KernelOperationBackend implements IOperationBackend {
         // `arrowSchema` doesn't hit apache-arrow@13's `Unrecognized type
         // "Duration" (18)`. Matches what the per-batch fetch path already does.
         arrowSchema: patchIpcBytes(arrowSchemaIpc.ipcBytes),
-        isStagingOperation: false,
+        isStagingOperation: Boolean(handle.isVolumeOperation),
       };
       this.metadata = meta;
       return meta;

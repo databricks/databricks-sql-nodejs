@@ -18,6 +18,8 @@
  * post-close contract.
  */
 export declare class AsyncResultHandle {
+  get isVolumeOperation(): boolean;
+  completeVolumeOperation(allowedPaths: Array<string>, removeNotFoundIsSuccess?: boolean | undefined | null): Promise<string>;
   /**
    * Server-issued statement id. Cached at construction; readable
    * for log correlation. Matches the parent `AsyncStatement`'s
@@ -432,6 +434,8 @@ export declare class Connection {
  * disposed statement can still read them.
  */
 export declare class Statement {
+  get isVolumeOperation(): boolean;
+  completeVolumeOperation(allowedPaths: Array<string>, removeNotFoundIsSuccess?: boolean | undefined | null): Promise<string>;
   /**
    * Server-issued statement id. Cached at construction; readable
    * even after `close()` so JS-side log lines can correlate against

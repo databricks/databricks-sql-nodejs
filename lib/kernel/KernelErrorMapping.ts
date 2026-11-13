@@ -1,3 +1,5 @@
+import { constants } from 'node:os';
+import { getSystemErrorName } from 'node:util';
 import HiveDriverError from '../errors/HiveDriverError';
 import AuthenticationError from '../errors/AuthenticationError';
 import OperationStateError, { OperationStateErrorCode } from '../errors/OperationStateError';
@@ -311,7 +313,27 @@ export function decodeNapiKernelError(err: unknown): Error {
   const msg = envelope.message as string;
   const sqlState = typeof envelope.sqlState === 'string' ? envelope.sqlState : undefined;
 
-  const jsErr = mapKernelErrorToJsError({ code, message: msg, sqlstate: sqlState });
+  let jsErr = mapKernelErrorToJsError({ code, message: msg, sqlstate: sqlState });
+  if (typeof envelope.localPath === 'string' && typeof envelope.localErrorKind === 'string') {
+    const kindCodes: Record<string, string> = {
+      NotFound: 'ENOENT',
+      PermissionDenied: 'EACCES',
+      AlreadyExists: 'EEXIST',
+      NotADirectory: 'ENOTDIR',
+      IsADirectory: 'EISDIR',
+      DirectoryNotEmpty: 'ENOTEMPTY',
+    };
+    const raw = typeof envelope.localOsError === 'number' ? envelope.localOsError : undefined;
+    const localCode =
+      process.platform !== 'win32' && raw
+        ? getSystemErrorName(-Math.abs(raw))
+        : kindCodes[envelope.localErrorKind] ?? 'EIO';
+    jsErr = Object.assign(new Error(msg), {
+      code: localCode,
+      errno: -((constants.errno as Record<string, number>)[localCode] ?? Math.abs(raw ?? constants.errno.EIO)),
+      path: envelope.localPath,
+    });
+  }
 
   const meta = buildKernelMetadata(envelope);
   // Skip the namespace attachment entirely when no fields validated
