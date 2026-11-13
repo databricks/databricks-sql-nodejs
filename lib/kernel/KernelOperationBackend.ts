@@ -612,6 +612,11 @@ export default class KernelOperationBackend implements IOperationBackend {
 
       // eslint-disable-next-line no-await-in-loop
       const state = statusStringToOperationState(await this.asyncStatement!.status());
+      // Record success before the progress callback runs, so a callback that
+      // throws on the Succeeded tick still leaves `isFinished()` true.
+      if (state === OperationState.Succeeded) {
+        this.asyncSucceeded = true;
+      }
 
       if (options?.callback) {
         // On the terminal Succeeded tick, carry the rich status fields
@@ -631,7 +636,6 @@ export default class KernelOperationBackend implements IOperationBackend {
         case OperationState.Running:
           break;
         case OperationState.Succeeded:
-          this.asyncSucceeded = true;
           // Materialise the result stream now so the first fetch/metadata call
           // doesn't pay an extra await_result round-trip.
           // eslint-disable-next-line no-await-in-loop

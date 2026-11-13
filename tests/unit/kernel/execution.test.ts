@@ -1344,6 +1344,25 @@ describe('KernelOperationBackend — async (submitStatement) path', () => {
     expect(states).to.deep.equal([OperationState.Pending, OperationState.Running, OperationState.Succeeded]);
   });
 
+  it('isFinished() is true after a progress callback throws on the Succeeded tick', async () => {
+    const stmt = new FakeAsyncStatement(['Running', 'Succeeded']);
+    const op = makeAsyncOp(stmt);
+    let thrown: unknown;
+    try {
+      await op.waitUntilReady({
+        callback: (s) => {
+          if (s.state === OperationState.Succeeded) {
+            throw new Error('callback failure');
+          }
+        },
+      });
+    } catch (err) {
+      thrown = err;
+    }
+    expect((thrown as Error)?.message).to.equal('callback failure');
+    expect(op.isFinished()).to.equal(true);
+  });
+
   it('progress callback carries rich-status fields on the terminal Succeeded tick (parity with the sync path)', async () => {
     // Regression guard: the async poll loop must merge the rich-status fields
     // into the callback on the Succeeded tick, matching waitUntilReadyCancellable.
