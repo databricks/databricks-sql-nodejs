@@ -20,7 +20,13 @@ function thriftMessage(name: string, type: number, seqId: number): Buffer {
 const CALL = 1;
 const REPLY = 2;
 
-type ServerAction = 'reply' | 'close-after-request' | 'status-503';
+type ServerAction =
+  | 'reply'
+  | 'close-after-request'
+  | 'status-408'
+  | 'status-429'
+  | 'status-503'
+  | 'status-503-retry-after';
 
 interface TestServer {
   port: number;
@@ -39,8 +45,11 @@ async function startServer(actions: ServerAction[]): Promise<TestServer> {
       if (action === 'close-after-request') {
         // The full request has been received; drop the connection without a response
         req.socket.destroy();
-      } else if (action === 'status-503') {
-        res.writeHead(503);
+      } else if (action === 'status-503-retry-after') {
+        res.writeHead(503, { 'Retry-After': '1' });
+        res.end();
+      } else if (action.startsWith('status-')) {
+        res.writeHead(Number(action.slice('status-'.length)));
         res.end();
       } else {
         const body = Buffer.concat(chunks);
@@ -179,20 +188,44 @@ describe('ThriftHttpConnection retries', () => {
     expect(server.requests).to.equal(2);
   });
 
-  it('does not retry ExecuteStatement on an HTTP error status', async () => {
-    const { server, connection } = await setup(['status-503'], 0);
+  for (const status of ['status-503', 'status-408'] as const) {
+    it(`does not retry ExecuteStatement on an ambiguous HTTP error (${status})`, async () => {
+      const { server, connection } = await setup([status], 0);
 
-    const error = await expectRejection(send(connection, 'ExecuteStatement', 1));
+      const error = await expectRejection(send(connection, 'ExecuteStatement', 1));
 
-    expect(error).to.be.instanceOf(THTTPException);
-    expect(error.statusCode).to.equal(503);
-    expect(server.requests).to.equal(1);
-  });
+      expect(error).to.be.instanceOf(THTTPException);
+      expect(error.statusCode).to.equal(Number(status.slice('status-'.length)));
+      expect(server.requests).to.equal(1);
+    });
+  }
+
+  for (const status of ['status-429', 'status-503-retry-after'] as const) {
+    it(`retries ExecuteStatement when the server rejects it without running it (${status})`, async () => {
+      const { server, connection } = await setup([status, 'reply'], 0);
+
+      const result = await send(connection, 'ExecuteStatement', 1);
+
+      expect(result).to.equal('ExecuteStatement result');
+      expect(server.requests).to.equal(2);
+    });
+  }
+
+  for (const status of ['status-503', 'status-429', 'status-408'] as const) {
+    it(`retries OpenSession on a transient HTTP error (${status})`, async () => {
+      const { server, connection } = await setup([status, 'reply'], 0);
+
+      const result = await send(connection, 'OpenSession', 1);
+
+      expect(result).to.equal('OpenSession result');
+      expect(server.requests).to.equal(2);
+    });
+  }
 
   it('does not retry other non-idempotent operations when the connection is refused', async () => {
     const { server, agent, connection } = await setup(['reply'], 1);
 
-    const error = await expectRejection(send(connection, 'OpenSession', 1));
+    const error = await expectRejection(send(connection, 'FetchResults', 1));
 
     expect(error).to.be.instanceOf(FetchError);
     expect(error.code).to.equal('ECONNREFUSED');

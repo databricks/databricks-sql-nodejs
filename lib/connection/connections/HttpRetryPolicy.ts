@@ -197,7 +197,8 @@ export default class HttpRetryPolicy implements IRetryPolicy<HttpTransactionDeta
     const result =
       // Retry on all codes below 100
       statusCode < 100 ||
-      // ...and on `429 Too Many Requests`
+      // ...and on `408 Request Timeout` and `429 Too Many Requests`
+      statusCode === 408 ||
       statusCode === 429 ||
       // ...and on all `5xx` codes except for `501 Not Implemented`
       (statusCode >= 500 && statusCode !== 501);
