@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Thrift connections made through `proxy` now apply `checkServerCertificate`, `customCaCert` and `clientCert`/`clientKey`. Previously the proxied path ignored them and verified against Node's process-wide trust store, so a certificate outside the configured trust set could be accepted. **Compatibility:** proxied connections now verify unless `checkServerCertificate: false` is set; as on direct connections, `NODE_TLS_REJECT_UNAUTHORIZED=0` no longer turns verification off. For an `https` proxy these options also apply to the proxy's own certificate. (#485)
 - Honor the client `useCloudFetch: false` default on the kernel backend so complete results can be fetched without cloud-storage downloads. (#574)
 - Thrift HTTP errors (`THTTPException`) now append server detail from the error headers (at most 500 characters). Kernel-backend errors now carry a non-enumerable `cause` summarizing the kernel error code and message (also at most 500 characters). Reyden fallback preserves KP001 after any existing kernel cause. (#467)
 - Add `Symbol.asyncDispose` to clients, sessions, and operations, delegating to `close()`. Use `asyncDisposable()` with interface-typed results in TypeScript; existing interfaces and factory return types remain unchanged. (#331)
