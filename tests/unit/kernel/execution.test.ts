@@ -122,6 +122,8 @@ class FakeAsyncStatement {
 
   public awaitResultError: Error | null = null;
 
+  public statusError: Error | null = null;
+
   // Successive status() returns drain this queue; the last value sticks.
   private readonly states: string[];
 
@@ -136,6 +138,9 @@ class FakeAsyncStatement {
 
   public async status(): Promise<string> {
     this.statusCalls += 1;
+    if (this.statusError) {
+      throw this.statusError;
+    }
     return this.states.length > 1 ? (this.states.shift() as string) : this.states[0];
   }
 
@@ -1463,6 +1468,28 @@ describe('KernelOperationBackend — async (submitStatement) path', () => {
     }
     expect(thrown).to.be.instanceOf(HiveDriverError);
     expect((thrown as Error).message).to.match(/TABLE_OR_VIEW_NOT_FOUND/);
+  });
+
+  it('waitUntilReady() and status() decode a failed status poll instead of leaking the envelope', async () => {
+    const envelope = `__databricks_error__:${JSON.stringify({
+      code: 'Internal',
+      httpStatus: 500,
+      message: 'HTTP 500: Internal Server Error',
+    })}`;
+    for (const call of ['waitUntilReady', 'status'] as const) {
+      const stmt = new FakeAsyncStatement('Running');
+      stmt.statusError = new Error(envelope);
+      const op = makeAsyncOp(stmt);
+      let thrown: unknown;
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        await (call === 'waitUntilReady' ? op.waitUntilReady() : op.status(false));
+      } catch (err) {
+        thrown = err;
+      }
+      expect(thrown, call).to.be.instanceOf(HiveDriverError);
+      expect((thrown as Error).message, call).to.equal('HTTP 500: Internal Server Error');
+    }
   });
 
   // A server-driven terminal state MUST throw OperationStateError (not a plain

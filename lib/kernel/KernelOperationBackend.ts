@@ -426,7 +426,7 @@ export default class KernelOperationBackend implements IOperationBackend {
       // `numModifiedRows` from the inline count on the terminal response), so
       // surface them — mirroring the sync path. Reading them does not fetch the
       // result.
-      const state = statusStringToOperationState(await this.asyncStatement.status());
+      const state = await this.pollAsyncStatus();
       if (state === OperationState.Succeeded) {
         this.asyncSucceeded = true;
         return { state, hasResultSet: true, ...(await this.readRichStatusFields()) };
@@ -624,7 +624,7 @@ export default class KernelOperationBackend implements IOperationBackend {
       failIfNotActive(this.lifecycle);
 
       // eslint-disable-next-line no-await-in-loop
-      const state = statusStringToOperationState(await this.asyncStatement!.status());
+      const state = await this.pollAsyncStatus();
       // Record success before the progress callback runs, so a callback that
       // throws on the Succeeded tick still leaves `isFinished()` true.
       if (state === OperationState.Succeeded) {
@@ -718,6 +718,19 @@ export default class KernelOperationBackend implements IOperationBackend {
     if (options?.callback) {
       const richFields = await this.readRichStatusFields();
       await Promise.resolve(options.callback({ state: OperationState.Succeeded, hasResultSet: true, ...richFields }));
+    }
+  }
+
+  /**
+   * One `AsyncStatement.status()` poll. A failed poll (e.g. retries exhausted on
+   * a 5xx) rejects with the binding's error envelope, which is decoded here like
+   * every other napi call.
+   */
+  private async pollAsyncStatus(): Promise<OperationState> {
+    try {
+      return statusStringToOperationState(await this.asyncStatement!.status());
+    } catch (err) {
+      throw decodeNapiKernelError(err);
     }
   }
 
