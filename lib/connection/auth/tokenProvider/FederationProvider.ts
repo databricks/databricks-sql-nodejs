@@ -1,3 +1,4 @@
+import http from 'http';
 import nodeFetch from 'node-fetch';
 import ITokenProvider from './ITokenProvider';
 import Token from './Token';
@@ -79,6 +80,8 @@ export default class FederationProvider implements ITokenProvider {
 
   private readonly returnOriginalTokenOnFailure: boolean;
 
+  private readonly getAgent?: (url: string) => Promise<http.Agent | undefined>;
+
   /**
    * Creates a new FederationProvider.
    * @param baseProvider - The underlying token provider
@@ -86,6 +89,7 @@ export default class FederationProvider implements ITokenProvider {
    * @param options - Optional configuration
    * @param options.clientId - Client ID for M2M/service principal federation
    * @param options.returnOriginalTokenOnFailure - Return original token if exchange fails (default: true)
+   * @param options.getAgent - Agent for the exchange request, so the connection's proxy and TLS options apply
    */
   constructor(
     baseProvider: ITokenProvider,
@@ -93,12 +97,14 @@ export default class FederationProvider implements ITokenProvider {
     options?: {
       clientId?: string;
       returnOriginalTokenOnFailure?: boolean;
+      getAgent?: (url: string) => Promise<http.Agent | undefined>;
     },
   ) {
     this.baseProvider = baseProvider;
     this.databricksHost = databricksHost;
     this.clientId = options?.clientId;
     this.returnOriginalTokenOnFailure = options?.returnOriginalTokenOnFailure ?? true;
+    this.getAgent = options?.getAgent;
   }
 
   async getToken(): Promise<Token> {
@@ -162,12 +168,14 @@ export default class FederationProvider implements ITokenProvider {
    */
   private async attemptTokenExchange(body: string): Promise<Token> {
     const url = this.buildExchangeUrl();
+    const agent = await this.getAgent?.(url);
     const controller = new AbortController();
     const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
 
     try {
       const response = await fetchImpl(url, {
         method: 'POST',
+        agent,
         headers: {
           'Content-Type': 'application/x-www-form-urlencoded',
         },
