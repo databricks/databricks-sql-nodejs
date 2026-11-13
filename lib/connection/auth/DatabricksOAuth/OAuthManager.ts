@@ -6,6 +6,7 @@ import OAuthToken from './OAuthToken';
 import AuthorizationCode from './AuthorizationCode';
 import { OAuthScope, OAuthScopes, defaultOAuthScopes, scopeDelimiter } from './OAuthScope';
 import IClientContext from '../../../contracts/IClientContext';
+import { discoverAzureTenantId } from './AzureTenantDiscovery';
 
 export enum OAuthFlow {
   U2M = 'U2M',
@@ -289,10 +290,23 @@ export class AzureOAuthManager extends OAuthManager {
 
   public static datatricksAzureApp = '2ff814a6-3304-4ab8-85cb-cd0e6f879c1d';
 
+  private discoveredTenantId?: string;
+
+  protected async getClient(): Promise<BaseClient> {
+    // Entra rejects the client-credentials grant on the multi-tenant `/organizations` authority,
+    // so M2M without an explicit tenant discovers the workspace's tenant first.
+    if (this.options.flow === OAuthFlow.M2M && !this.options.azureTenantId?.trim() && !this.discoveredTenantId) {
+      const connectionProvider = await this.context.getConnectionProvider();
+      const agent = await connectionProvider.getAgent('https:');
+      this.discoveredTenantId = await discoverAzureTenantId(this.options.host, agent);
+    }
+    return super.getClient();
+  }
+
   protected getOIDCConfigUrl(): string {
     // Use logical OR so empty / whitespace-only azureTenantId also falls back to /organizations/
     // (`??` only substitutes for null/undefined, leaving `''` to produce a malformed `//v2.0/...` URL).
-    const tenantPath = this.options.azureTenantId?.trim() || 'organizations';
+    const tenantPath = this.options.azureTenantId?.trim() || this.discoveredTenantId || 'organizations';
     return `https://login.microsoftonline.com/${tenantPath}/v2.0/.well-known/openid-configuration`;
   }
 

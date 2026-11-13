@@ -1,10 +1,13 @@
 import { AssertionError, expect } from 'chai';
+import https from 'https';
 import sinon, { SinonStub } from 'sinon';
 import { Issuer, BaseClient, TokenSet, GrantBody, IssuerMetadata, ClientMetadata, custom } from 'openid-client';
 // Import the whole module once more - to stub some of its exports
 import openidClientLib from 'openid-client';
 // Import the whole module to stub its default export
 import * as AuthorizationCodeModule from '../../../../../lib/connection/auth/DatabricksOAuth/AuthorizationCode';
+import * as AzureTenantDiscoveryModule from '../../../../../lib/connection/auth/DatabricksOAuth/AzureTenantDiscovery';
+import AuthenticationError from '../../../../../lib/errors/AuthenticationError';
 
 import {
   AzureOAuthManager,
@@ -155,9 +158,12 @@ class OpenIDClientStub implements BaseClient {
   afterEach(() => {
     (openidClientLib.Issuer as unknown as SinonStub).restore?.();
     (AuthorizationCodeModule.default as unknown as SinonStub).restore?.();
+    (AzureTenantDiscoveryModule.discoverAzureTenantId as unknown as SinonStub).restore?.();
   });
 
   function prepareTestInstances(options: Partial<OAuthManagerOptions>) {
+    // Azure M2M without a tenant discovers it over HTTP; keep these tests offline.
+    sinon.stub(AzureTenantDiscoveryModule, 'discoverAzureTenantId').resolves('test-tenant');
     const oauthClient = sinon.spy(new OpenIDClientStub());
 
     oauthClient.expectedClientId = options?.clientId;
@@ -535,7 +541,7 @@ describe('AzureOAuthManager (tenant awareness)', () => {
     (mgr as unknown as Record<string, (...a: unknown[]) => T>)[name](...args);
 
   describe('getOIDCConfigUrl', () => {
-    it('falls back to /organizations/ when azureTenantId is not set (baseline-compatible)', () => {
+    it('uses /organizations/ when azureTenantId is not set and no tenant was discovered yet', () => {
       const mgr = makeAzure();
       const url = call<string>(mgr, 'getOIDCConfigUrl');
       expect(url).to.equal('https://login.microsoftonline.com/organizations/v2.0/.well-known/openid-configuration');
@@ -548,7 +554,7 @@ describe('AzureOAuthManager (tenant awareness)', () => {
       expect(url).to.equal(`https://login.microsoftonline.com/${tenant}/v2.0/.well-known/openid-configuration`);
     });
 
-    it('falls back to /organizations/ when azureTenantId is empty or whitespace', () => {
+    it('uses /organizations/ before discovery when azureTenantId is empty or whitespace', () => {
       for (const tenant of ['', '   ']) {
         const mgr = makeAzure({ azureTenantId: tenant });
         const url = call<string>(mgr, 'getOIDCConfigUrl');
@@ -591,6 +597,99 @@ describe('AzureOAuthManager (tenant awareness)', () => {
         OAuthScope.offlineAccess,
       ]);
     });
+  });
+});
+
+describe('AzureOAuthManager tenant discovery', () => {
+  let discoverStub: SinonStub;
+  let oidcConfigUrls: string[];
+
+  beforeEach(() => {
+    oidcConfigUrls = [];
+    const oauthClient = new OpenIDClientStub();
+    const issuer: Issuer<OpenIDClientStub> = {
+      Client: class extends OpenIDClientStub {
+        constructor(clientOptions: ClientMetadata) {
+          super();
+          oauthClient.clientOptions = clientOptions;
+          return oauthClient;
+        }
+      },
+      FAPI1Client: OpenIDClientStub,
+      metadata: { issuer: 'test' },
+      [custom.http_options]: () => ({}),
+      discover: async () => issuer,
+    };
+    sinon.stub(openidClientLib, 'Issuer').returns(issuer);
+    openidClientLib.Issuer.discover = async (url: string) => {
+      oidcConfigUrls.push(url);
+      return issuer;
+    };
+    discoverStub = sinon.stub(AzureTenantDiscoveryModule, 'discoverAzureTenantId').resolves('discovered-tenant');
+  });
+
+  afterEach(() => {
+    (openidClientLib.Issuer as unknown as SinonStub).restore?.();
+    discoverStub.restore();
+  });
+
+  const httpsAgent = new https.Agent();
+
+  function makeManager(overrides: Partial<OAuthManagerOptions> = {}) {
+    const context = new ClientContextStub();
+    sinon
+      .stub(context.connectionProvider, 'getAgent')
+      .callsFake(async (url?: string | URL) => (url === 'https:' ? httpsAgent : undefined));
+    return new AzureOAuthManager({
+      host: 'adb-1234567890123456.1.azuredatabricks.net',
+      flow: OAuthFlow.M2M,
+      clientId: 'test_client_id',
+      clientSecret: 'test_client_secret',
+      context,
+      ...overrides,
+    });
+  }
+
+  it('discovers the tenant once for M2M without azureTenantId and uses it for the token request', async () => {
+    const mgr = makeManager();
+    await mgr.getToken();
+    await mgr.getToken();
+    expect(discoverStub.calledOnce).to.be.true;
+    expect(discoverStub.firstCall.args[0]).to.equal('adb-1234567890123456.1.azuredatabricks.net');
+    // The connection's https agent carries the proxy and TLS options.
+    expect(discoverStub.firstCall.args[1]).to.equal(httpsAgent);
+    expect(oidcConfigUrls).to.deep.equal([
+      'https://login.microsoftonline.com/discovered-tenant/v2.0/.well-known/openid-configuration',
+    ]);
+  });
+
+  it('uses an explicit azureTenantId without discovery', async () => {
+    await makeManager({ azureTenantId: 'explicit-tenant' }).getToken();
+    expect(discoverStub.called).to.be.false;
+    expect(oidcConfigUrls).to.deep.equal([
+      'https://login.microsoftonline.com/explicit-tenant/v2.0/.well-known/openid-configuration',
+    ]);
+  });
+
+  it('keeps /organizations for U2M', async () => {
+    const mgr = makeManager({ flow: OAuthFlow.U2M, clientSecret: undefined });
+    await (mgr as unknown as { getClient(): Promise<unknown> }).getClient();
+    expect(discoverStub.called).to.be.false;
+    expect(oidcConfigUrls).to.deep.equal([
+      'https://login.microsoftonline.com/organizations/v2.0/.well-known/openid-configuration',
+    ]);
+  });
+
+  it('surfaces a discovery failure instead of falling back to /organizations', async () => {
+    discoverStub.rejects(new AuthenticationError('Azure tenant discovery: no redirect'));
+    try {
+      await makeManager().getToken();
+      expect.fail('It should throw an error');
+    } catch (error) {
+      if (error instanceof AssertionError) throw error;
+      expect((error as Error).message).to.contain('Azure tenant discovery');
+    }
+    expect(oidcConfigUrls).to.deep.equal([]);
   });
 });
 
