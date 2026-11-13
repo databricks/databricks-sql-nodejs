@@ -257,9 +257,9 @@ export default class KernelSessionBackend implements ISessionBackend {
       // Feature-detect the arm via a type guard: only the Running `AsyncStatement`
       // exposes `awaitResult`; the terminal `Statement` (Completed arm) does not.
       if (isKernelAsyncStatement(direct)) {
-        return new KernelOperationBackend({ asyncStatement: direct, context: this.context });
+        return new KernelOperationBackend({ asyncStatement: direct, context: this.context, rowMode: options.rowMode });
       }
-      return new KernelOperationBackend({ statement: direct, context: this.context });
+      return new KernelOperationBackend({ statement: direct, context: this.context, rowMode: options.rowMode });
     }
 
     // Async path: submit (`wait_timeout=0s`) returns a pending handle the
@@ -279,6 +279,7 @@ export default class KernelSessionBackend implements ISessionBackend {
     return new KernelOperationBackend({
       asyncStatement: asyncStatement!,
       context: this.context,
+      rowMode: options.rowMode,
     });
   }
 

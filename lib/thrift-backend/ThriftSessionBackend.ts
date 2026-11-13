@@ -26,6 +26,7 @@ import {
   FunctionsRequest,
   PrimaryKeysRequest,
   CrossReferenceRequest,
+  RowMode,
 } from '../contracts/IDBSQLSession';
 import Status from '../dto/Status';
 import InfoValue from '../dto/InfoValue';
@@ -224,7 +225,7 @@ export default class ThriftSessionBackend implements ISessionBackend {
     }
 
     const response = await driver.executeStatement(request);
-    return this.createOperationBackend(response);
+    return this.createOperationBackend(response, { rowMode: options.rowMode });
   }
 
   public async getTypeInfo(request: TypeInfoRequest): Promise<IOperationBackend> {
@@ -308,7 +309,7 @@ export default class ThriftSessionBackend implements ISessionBackend {
       runAsync: this.getRunAsyncForMetadataOperations(),
       ...getDirectResultsOptions(request.maxRows, this.context.getConfig()),
     });
-    return this.createOperationBackend(response, functionCatalog);
+    return this.createOperationBackend(response, { functionCatalog });
   }
 
   public async getPrimaryKeys(request: PrimaryKeysRequest): Promise<IOperationBackend> {
@@ -373,7 +374,10 @@ export default class ThriftSessionBackend implements ISessionBackend {
     return new Status(response.status);
   }
 
-  private createOperationBackend(response: OperationResponseShape, functionCatalog?: string | null): IOperationBackend {
+  private createOperationBackend(
+    response: OperationResponseShape,
+    { functionCatalog, rowMode }: { functionCatalog?: string | null; rowMode?: RowMode } = {},
+  ): IOperationBackend {
     Status.assert(response.status);
     const handle = definedOrError(response.operationHandle);
     return new ThriftOperationBackend({
@@ -381,6 +385,7 @@ export default class ThriftSessionBackend implements ISessionBackend {
       directResults: response.directResults,
       context: this.context,
       functionCatalog,
+      rowMode,
     });
   }
 }

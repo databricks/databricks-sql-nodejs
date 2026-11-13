@@ -1,7 +1,8 @@
 import { TGetResultSetMetadataResp, TRowSet, TColumn, TColumnDesc } from '../../thrift/TCLIService_types';
 import IClientContext from '../contracts/IClientContext';
+import { RowMode } from '../contracts/IDBSQLSession';
 import IResultsProvider, { ResultsProviderFetchNextOptions } from './IResultsProvider';
-import { getSchemaColumns, convertThriftValue, getColumnValue } from './utils';
+import { getSchemaColumns, convertThriftValue, getColumnValue, warnOnDuplicateColumnNames } from './utils';
 
 export default class JsonResultHandler implements IResultsProvider<Array<any>> {
   private readonly context: IClientContext;
@@ -10,14 +11,21 @@ export default class JsonResultHandler implements IResultsProvider<Array<any>> {
 
   private readonly schema: Array<TColumnDesc>;
 
+  private readonly rowMode: RowMode;
+
   constructor(
     context: IClientContext,
     source: IResultsProvider<TRowSet | undefined>,
     { schema }: TGetResultSetMetadataResp,
+    { rowMode = 'object' }: { rowMode?: RowMode } = {},
   ) {
     this.context = context;
     this.source = source;
     this.schema = getSchemaColumns(schema);
+    this.rowMode = rowMode;
+    if (rowMode === 'object') {
+      warnOnDuplicateColumnNames(context, this.schema);
+    }
   }
 
   public async hasMore() {
@@ -35,7 +43,20 @@ export default class JsonResultHandler implements IResultsProvider<Array<any>> {
     }
 
     const columns = data.columns || [];
-    return this.getRows(columns, this.schema);
+    return this.rowMode === 'array' ? this.getRowArrays(columns, this.schema) : this.getRows(columns, this.schema);
+  }
+
+  private getRowArrays(columns: Array<TColumn>, descriptors: Array<TColumnDesc>): Array<Array<any>> {
+    const rows: Array<Array<any>> = [];
+    descriptors.forEach((descriptor, columnIndex) => {
+      this.getSchemaValues(descriptor, columns[descriptor.position - 1]).forEach((value, i) => {
+        if (!rows[i]) {
+          rows[i] = [];
+        }
+        rows[i][columnIndex] = value;
+      });
+    });
+    return rows;
   }
 
   private getRows(columns: Array<TColumn>, descriptors: Array<TColumnDesc>): Array<any> {

@@ -17,9 +17,10 @@ import {
 } from 'apache-arrow';
 import { TTableSchema, TColumnDesc, TTypeId } from '../../thrift/TCLIService_types';
 import IClientContext from '../contracts/IClientContext';
+import { RowMode } from '../contracts/IDBSQLSession';
 import HiveDriverError from '../errors/HiveDriverError';
 import IResultsProvider, { ResultsProviderFetchNextOptions } from './IResultsProvider';
-import { ArrowBatch, getSchemaColumns, convertThriftValue } from './utils';
+import { ArrowBatch, getSchemaColumns, convertThriftValue, warnOnDuplicateColumnNames } from './utils';
 
 const { isArrowBigNumSymbol, bigNumToBigInt } = arrowUtils;
 
@@ -208,6 +209,8 @@ export default class ArrowResultConverter implements IResultsProvider<Array<any>
   // (only the row count is meaningful). See `ConnectionOptions.disableRowMaterialization`.
   private readonly disableRowMaterialization: boolean;
 
+  private readonly rowMode: RowMode;
+
   private recordBatchReader?: IterableIterator<RecordBatch<TypeMap>>;
 
   // Remaining rows in current Arrow batch (not the record batch!)
@@ -232,13 +235,18 @@ export default class ArrowResultConverter implements IResultsProvider<Array<any>
     {
       preserveBigNumericPrecision = false,
       disableRowMaterialization = false,
-    }: { preserveBigNumericPrecision?: boolean; disableRowMaterialization?: boolean } = {},
+      rowMode = 'object',
+    }: { preserveBigNumericPrecision?: boolean; disableRowMaterialization?: boolean; rowMode?: RowMode } = {},
   ) {
     this.context = context;
     this.source = source;
     this.schema = getSchemaColumns(schema);
     this.preserveBigNumericPrecision = preserveBigNumericPrecision;
     this.disableRowMaterialization = disableRowMaterialization;
+    this.rowMode = rowMode;
+    if (rowMode === 'object' && !disableRowMaterialization) {
+      warnOnDuplicateColumnNames(context, this.schema);
+    }
   }
 
   public async hasMore() {
@@ -268,15 +276,21 @@ export default class ArrowResultConverter implements IResultsProvider<Array<any>
 
     if (this.prefetchedRecordBatch) {
       // Consume a record batch fetched during previous call to `fetchNext`
-      const table = new Table(this.prefetchedRecordBatch);
+      const batch = this.prefetchedRecordBatch;
       this.prefetchedRecordBatch = undefined;
       // Get table rows, but not more than remaining count. When materialization
       // is disabled, skip `toArray()`/`getRows()` and return `null` placeholders
       // (filled, not sparse, so `fetchAll`'s `.flat()` keeps the count).
-      const batchRows = Math.min(table.numRows, this.remainingRows);
-      const result = this.disableRowMaterialization
-        ? new Array(batchRows).fill(null)
-        : this.getRows(table.schema, table.toArray().slice(0, this.remainingRows));
+      const batchRows = Math.min(batch.numRows, this.remainingRows);
+      let result: Array<any>;
+      if (this.disableRowMaterialization) {
+        result = new Array(batchRows).fill(null);
+      } else if (this.rowMode === 'array') {
+        result = this.getRowArrays(batch, batchRows);
+      } else {
+        const table = new Table(batch);
+        result = this.getRows(table.schema, table.toArray().slice(0, this.remainingRows));
+      }
 
       // Reduce remaining rows count by a count of rows we just processed.
       // If the remaining count reached zero - we're done with current arrow
@@ -343,6 +357,29 @@ export default class ArrowResultConverter implements IResultsProvider<Array<any>
       // Second, cast all the values to original Thrift types
       return this.convertThriftTypes(record);
     });
+  }
+
+  // Reads cells by column index, so same-named columns are all kept. Fields come from the
+  // batch data type: `RecordBatch.schema` merges same-named fields into one type.
+  private getRowArrays(batch: RecordBatch<TypeMap>, rowCount: number): Array<Array<any>> {
+    const fields: Array<ArrowSchemaField> = batch.data.type.children;
+    const vectors = this.schema.map((column, index) => batch.getChildAt(index));
+    const rows: Array<Array<any>> = [];
+    for (let i = 0; i < rowCount; i += 1) {
+      const row: Array<any> = [];
+      for (let j = 0; j < this.schema.length; j += 1) {
+        const field = fields[j];
+        const value = this.convertArrowTypes(
+          vectors[j]?.get(i) ?? null,
+          field?.type,
+          field?.type.children || [],
+          field,
+        );
+        row.push(this.convertThriftColumnValue(this.schema[j], value));
+      }
+      rows.push(row);
+    }
+    return rows;
   }
 
   private convertArrowTypes(
@@ -488,5 +525,21 @@ export default class ArrowResultConverter implements IResultsProvider<Array<any>
     });
 
     return result;
+  }
+
+  // Per-cell equivalent of `convertThriftTypes`, used by array rows. Kept separate so
+  // the default object path stays as is.
+  private convertThriftColumnValue(column: TColumnDesc, value: any): any {
+    if (value === null) {
+      return null;
+    }
+    const typeDescriptor = column.typeDesc.types[0]?.primitiveEntry;
+    if (
+      this.preserveBigNumericPrecision &&
+      (typeDescriptor?.type === TTypeId.DECIMAL_TYPE || typeDescriptor?.type === TTypeId.BIGINT_TYPE)
+    ) {
+      return value;
+    }
+    return convertThriftValue(typeDescriptor, value);
   }
 }

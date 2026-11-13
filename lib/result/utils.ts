@@ -18,6 +18,8 @@ import {
 } from 'apache-arrow';
 import { TTableSchema, TColumnDesc, TPrimitiveTypeEntry, TTypeId, TColumn } from '../../thrift/TCLIService_types';
 import HiveDriverError from '../errors/HiveDriverError';
+import IClientContext from '../contracts/IClientContext';
+import { LogLevel } from '../contracts/IDBSQLLogger';
 
 export interface ArrowBatch {
   batches: Array<Buffer>;
@@ -30,6 +32,28 @@ export function getSchemaColumns(schema?: TTableSchema): Array<TColumnDesc> {
   }
 
   return [...schema.columns].sort((c1, c2) => c1.position - c2.position);
+}
+
+// Object rows are keyed by column name, so same-named columns overwrite each other.
+export function warnOnDuplicateColumnNames(context: IClientContext, columns: Array<TColumnDesc>): void {
+  const seen = new Set<string>();
+  const duplicates = new Set<string>();
+  for (const { columnName } of columns) {
+    if (seen.has(columnName)) {
+      duplicates.add(columnName);
+    }
+    seen.add(columnName);
+  }
+  if (duplicates.size > 0) {
+    const names = [...duplicates].map((name) => JSON.stringify(name)).join(', ');
+    context
+      .getLogger()
+      .log(
+        LogLevel.warn,
+        `Result has duplicate column names (${names}); object rows keep only the last column with each name. ` +
+          "Alias the columns or pass `rowMode: 'array'` to executeStatement to keep every column.",
+      );
+  }
 }
 
 function isString(value: unknown): value is string {

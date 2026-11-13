@@ -18,6 +18,7 @@ import { expect } from 'chai';
 import { DBSQLClient } from '../../../lib';
 import { ConnectionOptions } from '../../../lib/contracts/IDBSQLClient';
 import { InternalConnectionOptions } from '../../../lib/contracts/InternalConnectionOptions';
+import { ExecuteStatementOptions } from '../../../lib/contracts/IDBSQLSession';
 
 // Integration suite: connect through both backends, run a probe query,
 // and assert byte-identical row output (the M0 parity gate). Requires
@@ -44,7 +45,12 @@ function readSecrets(): PecoSecrets | null {
   return { host, path, token };
 }
 
-async function fetchProbeRows(useKernel: boolean, secrets: PecoSecrets): Promise<Array<Record<string, unknown>>> {
+async function fetchProbeRows(
+  useKernel: boolean,
+  secrets: PecoSecrets,
+  query: string = PROBE_QUERY,
+  options: ExecuteStatementOptions = {},
+): Promise<Array<Record<string, unknown>>> {
   const client = new DBSQLClient();
   await client.connect({
     host: secrets.host,
@@ -55,7 +61,7 @@ async function fetchProbeRows(useKernel: boolean, secrets: PecoSecrets): Promise
   try {
     const session = await client.openSession();
     try {
-      const operation = await session.executeStatement(PROBE_QUERY);
+      const operation = await session.executeStatement(query, options);
       try {
         const rows = (await operation.fetchAll()) as Array<Record<string, unknown>>;
         return rows;
@@ -124,5 +130,18 @@ describe('kernel results end-to-end (pecotesting parity gate)', function suite()
     const kernelRows = await fetchProbeRows(true, secrets as PecoSecrets);
     const thriftRows = await fetchProbeRows(false, secrets as PecoSecrets);
     expect(kernelRows.map(canonical)).to.deep.equal(thriftRows.map(canonical));
+  });
+
+  it('keeps same-named columns with rowMode array on both backends (#118)', async () => {
+    const query =
+      "SELECT carat AS a, color AS a FROM VALUES (0.23, 'E'), (0.21, 'I') AS t(carat, color) ORDER BY carat DESC";
+    for (const useKernel of [true, false]) {
+      // eslint-disable-next-line no-await-in-loop
+      const rows = await fetchProbeRows(useKernel, secrets as PecoSecrets, query, { rowMode: 'array' });
+      expect(rows, useKernel ? 'kernel' : 'thrift').to.deep.equal([
+        [0.23, 'E'],
+        [0.21, 'I'],
+      ]);
+    }
   });
 });

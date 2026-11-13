@@ -12,6 +12,7 @@ import {
 } from '../../thrift/TCLIService_types';
 import IOperationBackend, { IOperationBackendWaitOptions } from '../contracts/IOperationBackend';
 import IClientContext from '../contracts/IClientContext';
+import { RowMode } from '../contracts/IDBSQLSession';
 import { OperationStatus, OperationState } from '../contracts/OperationStatus';
 import { ResultMetadata, ResultFormat } from '../contracts/ResultMetadata';
 import Status from '../dto/Status';
@@ -35,6 +36,7 @@ interface ThriftOperationBackendOptions {
   context: IClientContext;
   functionCatalog?: string | null;
   emptyResultOnNotFound?: TTableSchema;
+  rowMode?: RowMode;
 }
 
 async function delay(ms?: number): Promise<void> {
@@ -85,6 +87,8 @@ export default class ThriftOperationBackend implements IOperationBackend {
 
   private readonly emptyResultOnNotFound?: TTableSchema;
 
+  private readonly rowMode?: RowMode;
+
   private readonly operationHandle: TOperationHandle;
 
   private readonly _data: RowSetProvider;
@@ -107,11 +111,13 @@ export default class ThriftOperationBackend implements IOperationBackend {
     context,
     functionCatalog,
     emptyResultOnNotFound,
+    rowMode,
   }: ThriftOperationBackendOptions) {
     this.operationHandle = handle;
     this.context = context;
     this.functionCatalog = functionCatalog;
     this.emptyResultOnNotFound = emptyResultOnNotFound;
+    this.rowMode = rowMode;
     this.metadata = directResults?.resultSetMetadata;
 
     const useOnlyPrefetchedResults = Boolean(directResults?.closeOperation);
@@ -369,7 +375,7 @@ export default class ThriftOperationBackend implements IOperationBackend {
 
       switch (resultFormat) {
         case TSparkRowSetType.COLUMN_BASED_SET:
-          resultSource = new JsonResultHandler(this.context, this._data, metadata);
+          resultSource = new JsonResultHandler(this.context, this._data, metadata, { rowMode: this.rowMode });
           break;
         case TSparkRowSetType.ARROW_BASED_SET:
           resultSource = new ArrowResultConverter(
@@ -379,6 +385,7 @@ export default class ThriftOperationBackend implements IOperationBackend {
             {
               preserveBigNumericPrecision: this.context.getConfig().preserveBigNumericPrecision ?? false,
               disableRowMaterialization: this.context.getConfig().disableRowMaterialization ?? false,
+              rowMode: this.rowMode,
             },
           );
           break;
@@ -390,6 +397,7 @@ export default class ThriftOperationBackend implements IOperationBackend {
             {
               preserveBigNumericPrecision: this.context.getConfig().preserveBigNumericPrecision ?? false,
               disableRowMaterialization: this.context.getConfig().disableRowMaterialization ?? false,
+              rowMode: this.rowMode,
             },
           );
           break;
