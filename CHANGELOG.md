@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Thrift CloudFetch downloads are now bounded end to end by `retriesTimeout` (default 15 minutes), including every attempt and retry backoff. Previously a stalled download, where the response headers or body never arrived, blocked the fetch forever. A download still running when the deadline expires is aborted and fails with `RetryError` (`TIMEOUT_EXCEEDED`, message `CloudFetch result download failed: Retry timeout exceeded`). (#520)
 - Thrift connections made through `proxy` now apply `checkServerCertificate`, `customCaCert` and `clientCert`/`clientKey`. Previously the proxied path ignored them and verified against Node's process-wide trust store, so a certificate outside the configured trust set could be accepted. **Compatibility:** proxied connections now verify unless `checkServerCertificate: false` is set; as on direct connections, `NODE_TLS_REJECT_UNAUTHORIZED=0` no longer turns verification off. For an `https` proxy these options also apply to the proxy's own certificate. (#485)
 - Honor the client `useCloudFetch: false` default on the kernel backend so complete results can be fetched without cloud-storage downloads. (#574)
 - Thrift HTTP errors (`THTTPException`) now append server detail from the error headers (at most 500 characters). Kernel-backend errors now carry a non-enumerable `cause` summarizing the kernel error code and message (also at most 500 characters). Reyden fallback preserves KP001 after any existing kernel cause. (#467)
