@@ -125,6 +125,9 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
 
   private telemetryEmitter?: TelemetryEventEmitter;
 
+  // Shared by concurrent close() calls so sessions and telemetry are released once
+  private closing?: Promise<void>;
+
   // True once we've shipped the full DriverConfiguration on a CONNECTION_OPEN
   // event for this client. Subsequent openSession events for the same client
   // strip the (~1KB, static-for-the-process) blob — a long-running client
@@ -933,6 +936,15 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
    * method on shutdown so the aggregator drains its remaining metrics.
    */
   public async close(): Promise<void> {
+    if (!this.closing) {
+      this.closing = this.closeOnce().finally(() => {
+        this.closing = undefined;
+      });
+    }
+    return this.closing;
+  }
+
+  private async closeOnce(): Promise<void> {
     try {
       await this.sessions.closeAll();
       await this.backend?.close();
