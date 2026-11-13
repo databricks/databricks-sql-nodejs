@@ -16,6 +16,8 @@ export default interface IConnectionOptions {
   path?: string;
   https?: boolean;
   headers?: HeadersInit;
+  // Caller-supplied headers for every Thrift request; `headers` and auth headers take precedence.
+  customHeaders?: Record<string, string>;
   socketTimeout?: number;
   proxy?: ProxyOptions;
 
