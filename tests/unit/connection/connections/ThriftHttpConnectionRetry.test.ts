@@ -20,7 +20,7 @@ function thriftMessage(name: string, type: number, seqId: number): Buffer {
 const CALL = 1;
 const REPLY = 2;
 
-type ServerAction = 'reply' | 'close-after-request' | 'status-503' | 'redirect-to-closed-port';
+type ServerAction = 'reply' | 'close-after-request' | 'status-503';
 
 interface TestServer {
   port: number;
@@ -28,7 +28,7 @@ interface TestServer {
   close(): void;
 }
 
-async function startServer(actions: ServerAction[], closedPort?: number): Promise<TestServer> {
+async function startServer(actions: ServerAction[]): Promise<TestServer> {
   const state = { requests: 0 };
   const server = http.createServer((req, res) => {
     const chunks: Buffer[] = [];
@@ -36,10 +36,7 @@ async function startServer(actions: ServerAction[], closedPort?: number): Promis
     req.on('end', () => {
       const action = actions[state.requests] ?? 'reply';
       state.requests += 1;
-      if (action === 'redirect-to-closed-port') {
-        res.writeHead(303, { Location: `http://127.0.0.1:${closedPort}/` });
-        res.end();
-      } else if (action === 'close-after-request') {
+      if (action === 'close-after-request') {
         // The full request has been received; drop the connection without a response
         req.socket.destroy();
       } else if (action === 'status-503') {
@@ -140,7 +137,7 @@ describe('ThriftHttpConnection retries', () => {
 
   async function setup(actions: ServerAction[], refusals: number) {
     const closedPort = await getClosedPort();
-    const server = await startServer(actions, closedPort);
+    const server = await startServer(actions);
     const agent = new RefusingAgent(refusals, closedPort);
     cleanup.push(
       () => server.close(),
@@ -189,17 +186,6 @@ describe('ThriftHttpConnection retries', () => {
 
     expect(error).to.be.instanceOf(THTTPException);
     expect(error.statusCode).to.equal(503);
-    expect(server.requests).to.equal(1);
-  });
-
-  it('does not follow or retry a redirect for ExecuteStatement after the request was delivered', async () => {
-    const { server, agent, connection } = await setup(['redirect-to-closed-port'], 0);
-
-    const error = await expectRejection(send(connection, 'ExecuteStatement', 1));
-
-    expect(error).to.be.instanceOf(THTTPException);
-    expect(error.statusCode).to.equal(303);
-    expect(agent.connectAttempts).to.equal(1);
     expect(server.requests).to.equal(1);
   });
 

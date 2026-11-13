@@ -166,20 +166,11 @@ export default class ThriftHttpConnection extends EventEmitter {
     let responseBuffer: Buffer | undefined;
 
     this.getThriftMethodName(data)
-      .then(async (thriftMethod) => {
-        // A redirect is followed after the original request was delivered, so a connection error
-        // to the redirect target would look like an unsent request and be retried. Don't follow
-        // redirects for these methods; a 3xx response fails with THTTPException instead.
-        const config: RequestInit =
-          thriftMethod && unsentRequestRetryableThriftMethods.has(thriftMethod)
-            ? { ...requestConfig, redirect: 'manual' }
-            : requestConfig;
-        return { config, retryPolicy: await this.getRetryPolicy(thriftMethod) };
-      })
-      .then(({ config, retryPolicy }) => {
+      .then((thriftMethod) => this.getRetryPolicy(thriftMethod))
+      .then((retryPolicy) => {
         const makeRequest = async () => {
           responseBuffer = undefined;
-          const request = new Request(this.url, config);
+          const request = new Request(this.url, requestConfig);
           const response = await fetch(request);
           if (response.status === 200) {
             responseBuffer = await response.buffer();
