@@ -35,7 +35,7 @@ export default class ResultSlicer<T> implements IResultsProvider<Array<T>> {
 
   private readonly source: IResultsProvider<Array<T>>;
 
-  private remainingResults: Array<T> = [];
+  private remainingResults: Array<T | undefined> = [];
 
   private remainingOffset: number = 0;
 
@@ -53,7 +53,7 @@ export default class ResultSlicer<T> implements IResultsProvider<Array<T>> {
       this.remainingResults = [];
       this.remainingOffset = 0;
     } else if (this.remainingOffset > this.remainingResults.length / 2) {
-      // Release consumed rows without repeatedly copying a large tail.
+      // Shrink the backing array without shifting the tail on every fetch.
       this.remainingResults = this.remainingResults.slice(this.remainingOffset);
       this.remainingOffset = 0;
     }
@@ -62,7 +62,9 @@ export default class ResultSlicer<T> implements IResultsProvider<Array<T>> {
   private takeRemaining(maxCount: number): Array<T> {
     const count = Number.isNaN(maxCount) ? this.remainingCount : Math.max(0, Math.trunc(maxCount));
     const end = Math.min(this.remainingResults.length, this.remainingOffset + count);
-    const result = this.remainingResults.slice(this.remainingOffset, end);
+    // Unread slots contain T; only consumed slots are cleared.
+    const result = this.remainingResults.slice(this.remainingOffset, end) as Array<T>;
+    this.remainingResults.fill(undefined, this.remainingOffset, end);
     this.remainingOffset = end;
     this.compactRemaining();
     return result;
@@ -115,9 +117,9 @@ export default class ResultSlicer<T> implements IResultsProvider<Array<T>> {
       if (chunk.length > neededCount) {
         const taken = chunk.slice(0, neededCount);
         result.push(taken);
-        this.remainingResults = chunk;
-        this.remainingOffset = taken.length;
-        this.compactRemaining();
+        // Own the tail so consumed references can be cleared without mutating the source.
+        this.remainingResults = chunk.slice(taken.length);
+        this.remainingOffset = 0;
         resultsCount += neededCount;
       } else {
         result.push(chunk);

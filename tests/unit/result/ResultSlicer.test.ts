@@ -6,22 +6,30 @@ import ResultsProviderStub from '../.stubs/ResultsProviderStub';
 import ClientContextStub from '../.stubs/ClientContextStub';
 
 describe('ResultSlicer', () => {
-  it('should retain at most twice the unread rows while draining a batch', async () => {
-    const rows = Array.from({ length: 256 }, (_, value) => ({ value }));
+  it('should release consumed row references on every fetch without mutating the source', async () => {
+    const rows = Array.from({ length: 10000 }, (_, value) => ({
+      value,
+      payload: new Array(value < 5000 ? 256 : 1).fill(value),
+    }));
     Object.freeze(rows);
     const provider = new ResultsProviderStub([rows], []);
     const slicer = new ResultSlicer(new ClientContextStub(), provider);
+    const returned = [];
     let consumed = 0;
 
-    for (const limit of [150, 25, 25, 25, 25, 25]) {
+    while (consumed < rows.length) {
       // eslint-disable-next-line no-await-in-loop
-      const chunk = await slicer.fetchNext({ limit });
-      expect(chunk).to.deep.eq(rows.slice(consumed, consumed + limit));
+      const chunk = await slicer.fetchNext({ limit: 1000 });
+      expect(chunk).to.deep.eq(rows.slice(consumed, consumed + 1000));
+      returned.push(chunk);
       consumed += chunk.length;
+      const consumedRows = new Set(rows.slice(0, consumed));
+      expect(slicer['remainingResults'].filter((row) => row !== undefined && consumedRows.has(row))).to.have.length(0);
+      expect(slicer['remainingResults'].slice(slicer['remainingOffset'])).to.deep.eq(rows.slice(consumed));
       expect(slicer['remainingResults'].length).to.be.at.most(2 * (rows.length - consumed));
     }
 
-    expect(consumed).to.eq(rows.length);
+    expect(returned.flat()).to.deep.eq(rows);
     expect(await slicer.hasMore()).to.be.false;
   });
 
