@@ -719,6 +719,31 @@ describe('DBSQLOperation', () => {
       }
     });
 
+    it('should keep the error of a status poll that failed while a close request that then failed was pending', async () => {
+      const { context, operation, failPoll } = runningOperation();
+      const failClose = pending(sinon.stub(context.driver, 'closeOperation'));
+
+      const fetching = operation.fetchAll();
+      await flush();
+      const closing = operation.close();
+      const error = abortedRequest();
+      failPoll(error);
+      await flush();
+      failClose(new Error('close failed'));
+
+      await expectFailure(() => closing);
+      expect(operation['closed']).to.be.false;
+      try {
+        await fetching;
+        expect.fail('It should throw the poll error');
+      } catch (e) {
+        if (e instanceof AssertionError) {
+          throw e;
+        }
+        expect(e).to.equal(error);
+      }
+    });
+
     it('should report a result fetch failed by close() as closed', async () => {
       const context = new ClientContextStub();
       context.driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
