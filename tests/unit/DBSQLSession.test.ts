@@ -9,7 +9,7 @@ import { PrimaryKeysRequest } from '../../lib/contracts/IDBSQLSession';
 import ISessionBackend from '../../lib/contracts/ISessionBackend';
 import ParameterError from '../../lib/errors/ParameterError';
 import { DBSQLParameter } from '../../lib/DBSQLParameter';
-import { TSessionHandle, TProtocolVersion } from '../../thrift/TCLIService_types';
+import { TSessionHandle, TProtocolVersion, TOperationState, TStatusCode } from '../../thrift/TCLIService_types';
 import ClientContextStub from './.stubs/ClientContextStub';
 import { createSessionForTest } from './.stubs/createSessionForTest';
 
@@ -739,6 +739,66 @@ describe('DBSQLSession', () => {
       expect(closeSession.calledOnce).to.be.true;
       expect(session['isOpen']).to.be.false;
       expect(session['operations']['items'].size).to.eq(0);
+    });
+
+    describe('right after execution', () => {
+      function sessionWithFailingOperationClose(operationState: TOperationState) {
+        const context = new ClientContextStub();
+        const closeSession = sinon.spy(context.driver, 'closeSession');
+        const getOperationStatus = sinon.spy(context.driver, 'getOperationStatus');
+        sinon
+          .stub(context.driver, 'closeOperation')
+          .rejects(new Error('Received a response with a bad HTTP status: 404'));
+        context.driver.executeStatementResp = {
+          ...context.driver.executeStatementResp,
+          directResults: {
+            operationStatus: { status: { statusCode: TStatusCode.SUCCESS_STATUS }, operationState },
+          },
+        };
+        const session = createSessionForTest({ handle: sessionHandleStub, context });
+        return { session, closeSession, getOperationStatus };
+      }
+
+      it('should close the operation and session when direct results reported completion', async () => {
+        const { session, closeSession, getOperationStatus } = sessionWithFailingOperationClose(
+          TOperationState.FINISHED_STATE,
+        );
+        const operation = await session.executeStatement('SELECT * FROM table');
+
+        const status = await operation.close();
+        expect(status.isSuccess).to.be.true;
+        expect(session['operations']['items'].size).to.eq(0);
+
+        await session.close();
+        expect(getOperationStatus.called).to.be.false;
+        expect(closeSession.calledOnce).to.be.true;
+        expect(session['isOpen']).to.be.false;
+      });
+
+      it('should close the session when direct results reported completion', async () => {
+        const { session, closeSession, getOperationStatus } = sessionWithFailingOperationClose(
+          TOperationState.FINISHED_STATE,
+        );
+        await session.executeStatement('SELECT * FROM table');
+
+        await session.close();
+
+        expect(getOperationStatus.called).to.be.false;
+        expect(closeSession.calledOnce).to.be.true;
+        expect(session['isOpen']).to.be.false;
+        expect(session['operations']['items'].size).to.eq(0);
+      });
+
+      it('should still throw from session close when the operation may still be running', async () => {
+        const { session, closeSession } = sessionWithFailingOperationClose(TOperationState.RUNNING_STATE);
+        await session.executeStatement('SELECT * FROM table');
+
+        await expectFailure(() => session.close());
+
+        expect(closeSession.called).to.be.false;
+        expect(session['isOpen']).to.be.true;
+        expect(session['operations']['items'].size).to.eq(1);
+      });
     });
 
     it('should reject all methods once closed', async () => {

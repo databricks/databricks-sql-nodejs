@@ -9,13 +9,7 @@ import IOperation, {
   IOperationRowsIterator,
   NodeStreamOptions,
 } from './contracts/IOperation';
-import {
-  TGetOperationStatusResp,
-  TGetResultSetMetadataResp,
-  TOperationState,
-  TTableSchema,
-} from '../thrift/TCLIService_types';
-import { OperationState } from './contracts/OperationStatus';
+import { TGetOperationStatusResp, TGetResultSetMetadataResp, TTableSchema } from '../thrift/TCLIService_types';
 import Status from './dto/Status';
 import { LogLevel } from './contracts/IDBSQLLogger';
 import OperationStateError, { OperationStateErrorCode } from './errors/OperationStateError';
@@ -60,10 +54,6 @@ export default class DBSQLOperation implements IOperation {
   private closed: boolean = false;
 
   private cancelled: boolean = false;
-
-  // Set once the backend reports the statement finished successfully, after
-  // which a failed close cannot leave it running server-side.
-  private executionFinished: boolean = false;
 
   public readonly _data?: unknown;
 
@@ -195,18 +185,11 @@ export default class DBSQLOperation implements IOperation {
     this.pollCount += 1;
     if (this.backend instanceof ThriftOperationBackend) {
       // Zero-loss path: the Thrift backend has the wire response on hand.
-      const response = await this.backend.thriftStatusResponse(progress);
-      if (response.operationState === TOperationState.FINISHED_STATE) {
-        this.executionFinished = true;
-      }
-      return response;
+      return this.backend.thriftStatusResponse(progress);
     }
     // Non-Thrift backend: synthesize the Thrift-shaped response from the
     // neutral OperationStatus DTO.
     const status = await this.backend.status(progress);
-    if (status.state === OperationState.Succeeded) {
-      this.executionFinished = true;
-    }
     return synthesizeThriftStatus(status);
   }
 
@@ -247,7 +230,9 @@ export default class DBSQLOperation implements IOperation {
     } catch (error: any) {
       // Until the statement finished, closing it is what stops it server-side,
       // so the failure is the caller's to handle (and the close can be retried).
-      if (!this.executionFinished) {
+      // The backend answers from completion state it already holds (including
+      // direct results), without another status RPC.
+      if (!this.backend.isFinished()) {
         throw error;
       }
       // Afterwards the close only releases server-side results, which closing
@@ -408,7 +393,6 @@ export default class DBSQLOperation implements IOperation {
     };
     try {
       await this.backend.waitUntilReady(backendOptions);
-      this.executionFinished = true;
     } catch (err) {
       // Reflect terminal states back into facade flags so subsequent calls
       // short-circuit via failIfClosed().

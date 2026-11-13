@@ -215,6 +215,11 @@ export default class KernelOperationBackend implements IOperationBackend {
   // already-terminal statement. Drives both fetch and result-metadata.
   private fetchHandlePromise?: Promise<KernelFetchHandle>;
 
+  // Async path only: set once the kernel reported the statement Succeeded (a
+  // status poll, or `awaitResult()` resolving). The kernel exposes no
+  // synchronous terminal-state accessor, so the observed success is retained.
+  private asyncSucceeded = false;
+
   constructor({ asyncStatement, statement, cancellableExecution, context, id }: KernelOperationBackendOptions) {
     // Exactly one of the three handle kinds must be supplied.
     const providedCount =
@@ -266,6 +271,19 @@ export default class KernelOperationBackend implements IOperationBackend {
     // for M0; the napi Statement still produces a schema (empty) in
     // that case, which the converter renders as zero rows. Reporting
     // `true` keeps the facade's fetch path enabled for M0 parity.
+    return true;
+  }
+
+  public isFinished(): boolean {
+    if (this.asyncStatement) {
+      return this.asyncSucceeded;
+    }
+    if (this.cancellableExecution) {
+      // `blockingStatement` is set only once `result()` resolved a terminal statement.
+      return this.blockingStatement !== undefined;
+    }
+    // Metadata path and the directResults Completed arm: the statement was
+    // terminal when the backend was constructed.
     return true;
   }
 
@@ -397,6 +415,7 @@ export default class KernelOperationBackend implements IOperationBackend {
       // result.
       const state = statusStringToOperationState(await this.asyncStatement.status());
       if (state === OperationState.Succeeded) {
+        this.asyncSucceeded = true;
         return { state, hasResultSet: true, ...(await this.readRichStatusFields()) };
       }
       return { state, hasResultSet: true };
@@ -612,6 +631,7 @@ export default class KernelOperationBackend implements IOperationBackend {
         case OperationState.Running:
           break;
         case OperationState.Succeeded:
+          this.asyncSucceeded = true;
           // Materialise the result stream now so the first fetch/metadata call
           // doesn't pay an extra await_result round-trip.
           // eslint-disable-next-line no-await-in-loop
@@ -725,9 +745,15 @@ export default class KernelOperationBackend implements IOperationBackend {
   private getFetchHandle(): Promise<KernelFetchHandle> {
     if (!this.fetchHandlePromise) {
       if (this.asyncStatement) {
-        this.fetchHandlePromise = this.asyncStatement.awaitResult().catch((err) => {
-          throw decodeNapiKernelError(err);
-        }) as Promise<KernelNativeAsyncResultHandle>;
+        this.fetchHandlePromise = this.asyncStatement.awaitResult().then(
+          (handle) => {
+            this.asyncSucceeded = true;
+            return handle;
+          },
+          (err) => {
+            throw decodeNapiKernelError(err);
+          },
+        ) as Promise<KernelNativeAsyncResultHandle>;
       } else if (this.cancellableExecution) {
         // Sync (`runAsync: false`) path: drive the blocking `result()` to the
         // terminal `Statement`. Store it on `blockingStatement` so `close()` can

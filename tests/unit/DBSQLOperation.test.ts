@@ -543,6 +543,58 @@ describe('DBSQLOperation', () => {
         expect(onClose.calledOnce).to.be.true;
       });
 
+      it('should complete teardown when closed right after direct results reported FINISHED_STATE', async () => {
+        const context = new ClientContextStub();
+        const getOperationStatus = sinon.spy(context.driver, 'getOperationStatus');
+        const closeOperation = sinon.stub(context.driver, 'closeOperation').rejects(closeFailure());
+        const operation = createOperationForTest({
+          handle: operationHandleStub({ hasResultSet: true }),
+          context,
+          directResults: {
+            operationStatus: {
+              status: { statusCode: TStatusCode.SUCCESS_STATUS },
+              operationState: TOperationState.FINISHED_STATE,
+              hasResultSet: true,
+            },
+          },
+        });
+        const onClose = sinon.stub();
+        operation.onClose = onClose;
+
+        const status = await operation.close();
+
+        expect(closeOperation.calledOnce).to.be.true;
+        expect(getOperationStatus.called).to.be.false;
+        expect(status.isSuccess).to.be.true;
+        expect(status.info.join()).to.contain('404');
+        expect(operation['closed']).to.be.true;
+        expect(onClose.calledOnce).to.be.true;
+      });
+
+      it('should still rethrow when closed right after direct results reported RUNNING_STATE', async () => {
+        const context = new ClientContextStub();
+        const getOperationStatus = sinon.spy(context.driver, 'getOperationStatus');
+        sinon.stub(context.driver, 'closeOperation').rejects(closeFailure());
+        const operation = createOperationForTest({
+          handle: operationHandleStub({ hasResultSet: true }),
+          context,
+          directResults: {
+            operationStatus: {
+              status: { statusCode: TStatusCode.SUCCESS_STATUS },
+              operationState: TOperationState.RUNNING_STATE,
+              hasResultSet: true,
+            },
+          },
+        });
+        const onClose = sinon.stub();
+        operation.onClose = onClose;
+
+        await expectFailure(() => operation.close());
+        expect(getOperationStatus.called).to.be.false;
+        expect(operation['closed']).to.be.false;
+        expect(onClose.called).to.be.false;
+      });
+
       it('should still rethrow when status() reported a non-finished state', async () => {
         const { context, operation, onClose } = finishedOperationWithFailingClose(() => Promise.reject(closeFailure()));
         context.driver.getOperationStatusResp.operationState = TOperationState.RUNNING_STATE;

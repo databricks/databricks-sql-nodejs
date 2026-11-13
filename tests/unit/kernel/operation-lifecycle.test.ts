@@ -27,6 +27,9 @@ import { expect } from 'chai';
 import sinon from 'sinon';
 import { tableFromArrays, tableToIPC } from 'apache-arrow';
 import DBSQLOperation from '../../../lib/DBSQLOperation';
+import DBSQLSession from '../../../lib/DBSQLSession';
+import KernelSessionBackend from '../../../lib/kernel/KernelSessionBackend';
+import { KernelConnection } from '../../../lib/kernel/KernelNativeLoader';
 import ClientContextStub from '../.stubs/ClientContextStub';
 import { OperationStatus, OperationState } from '../../../lib/contracts/OperationStatus';
 import IClientContext from '../../../lib/contracts/IClientContext';
@@ -510,5 +513,132 @@ describe('DBSQLOperation over KernelOperationBackend — close after the result 
     expect(status.info).to.deep.equal([]);
     expect(onClose.calledOnce).to.equal(true);
     expect(log.calledWith(LogLevel.warn)).to.equal(false);
+  });
+});
+
+describe('DBSQLSession over KernelSessionBackend — close right after execution', () => {
+  const closeFailure = () =>
+    new Error(`__databricks_error__:${JSON.stringify({ code: 'NotFound', message: 'HTTP 404 Not Found' })}`);
+
+  function emptyResultHandle() {
+    const ipcBytes = Buffer.from(tableToIPC(tableFromArrays({ x: Int32Array.from([]) }), 'stream'));
+    return { schema: () => ({ ipcBytes }), fetchNextBatch: async () => null };
+  }
+
+  // `executeStatementDirect` returns the terminal `Statement` (Completed arm)
+  // or, with `asyncState` set, a still-pending `AsyncStatement` (Running arm).
+  function kernelSession(asyncState?: string) {
+    const terminalStatement = {
+      ...emptyResultHandle(),
+      statementId: 'kernel-direct-op',
+      cancel: sinon.stub().resolves(),
+      close: sinon.stub().rejects(closeFailure()),
+    };
+    const asyncStatement = {
+      statementId: 'kernel-async-op',
+      status: sinon.stub().resolves(asyncState),
+      awaitResult: sinon.stub().resolves(emptyResultHandle()),
+      cancel: sinon.stub().resolves(),
+      close: sinon.stub().rejects(closeFailure()),
+    };
+    const connection = {
+      executeStatementDirect: sinon.stub().resolves(asyncState === undefined ? terminalStatement : asyncStatement),
+      close: sinon.stub().resolves(),
+    };
+    const context = new ClientContextStub();
+    const backend = new KernelSessionBackend({ connection: connection as unknown as KernelConnection, context });
+    const session = new DBSQLSession({ backend, context });
+    return { session, connection, terminalStatement, asyncStatement };
+  }
+
+  it('closes the operation and session when execution returned a completed statement', async () => {
+    const { session, connection, terminalStatement } = kernelSession();
+    const operation = await session.executeStatement('SELECT 1');
+
+    const status = await operation.close();
+    expect(terminalStatement.close.calledOnce).to.equal(true);
+    expect(status.isSuccess).to.equal(true);
+    expect(status.info.join()).to.contain('404');
+
+    await session.close();
+    expect(connection.close.calledOnce).to.equal(true);
+    expect(session['isOpen']).to.equal(false);
+  });
+
+  it('closes the session when execution returned a completed statement', async () => {
+    const { session, connection, terminalStatement } = kernelSession();
+    await session.executeStatement('SELECT 1');
+
+    await session.close();
+
+    expect(terminalStatement.close.calledOnce).to.equal(true);
+    expect(connection.close.calledOnce).to.equal(true);
+    expect(session['isOpen']).to.equal(false);
+    expect(session['operations']['items'].size).to.equal(0);
+  });
+
+  it('still throws when execution returned a statement that may still be running', async () => {
+    const { session, connection, asyncStatement } = kernelSession('Running');
+    const operation = await session.executeStatement('SELECT slow');
+
+    let thrown: unknown;
+    try {
+      await operation.close();
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).to.be.instanceOf(Error);
+    expect(asyncStatement.status.called).to.equal(false);
+
+    thrown = undefined;
+    try {
+      await session.close();
+    } catch (err) {
+      thrown = err;
+    }
+    expect(thrown).to.be.instanceOf(Error);
+    expect(connection.close.called).to.equal(false);
+    expect(session['operations']['items'].size).to.equal(1);
+  });
+
+  it('retains success observed by status() on a running statement', async () => {
+    const { session, connection, asyncStatement } = kernelSession('Succeeded');
+    const operation = await session.executeStatement('SELECT slow');
+
+    await operation.status();
+    const status = await operation.close();
+
+    expect(asyncStatement.status.calledOnce).to.equal(true);
+    expect(asyncStatement.close.calledOnce).to.equal(true);
+    expect(status.isSuccess).to.equal(true);
+    await session.close();
+    expect(connection.close.calledOnce).to.equal(true);
+  });
+
+  it('retains success observed by finished() on a running statement', async () => {
+    const { session, asyncStatement } = kernelSession('Succeeded');
+    const operation = await session.executeStatement('SELECT slow');
+
+    await operation.finished();
+    const status = await operation.close();
+
+    expect(asyncStatement.close.calledOnce).to.equal(true);
+    expect(status.isSuccess).to.equal(true);
+  });
+
+  it('still throws after status() reported the statement running', async () => {
+    const { session, asyncStatement } = kernelSession('Running');
+    const operation = await session.executeStatement('SELECT slow');
+
+    await operation.status();
+    let thrown: unknown;
+    try {
+      await operation.close();
+    } catch (err) {
+      thrown = err;
+    }
+
+    expect(thrown).to.be.instanceOf(Error);
+    expect(asyncStatement.close.calledOnce).to.equal(true);
   });
 });
