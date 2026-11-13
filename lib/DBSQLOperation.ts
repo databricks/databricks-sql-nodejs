@@ -57,6 +57,11 @@ export default class DBSQLOperation implements IOperation {
 
   private cancelled: boolean = false;
 
+  // Set from the moment a close/cancel request is sent (see `clientStopError`).
+  private closeRequested: boolean = false;
+
+  private cancelRequested: boolean = false;
+
   public readonly _data?: unknown;
 
   private metadata?: ResultMetadata;
@@ -159,11 +164,16 @@ export default class DBSQLOperation implements IOperation {
 
     const defaultMaxRows = this.context.getConfig().fetchChunkDefaultMaxRows;
     const limit = options?.maxRows ?? defaultMaxRows;
-    const result = await this.backend.fetchChunk({
-      limit,
-      disableBuffering: options?.disableBuffering,
-      isClosed: () => this.closed || this.cancelled,
-    });
+    let result: Array<object>;
+    try {
+      result = await this.backend.fetchChunk({
+        limit,
+        disableBuffering: options?.disableBuffering,
+        isClosed: () => this.closed || this.cancelled,
+      });
+    } catch (err) {
+      throw (err instanceof OperationStateError ? undefined : this.clientStopError()) ?? err;
+    }
     await this.failIfClosed();
 
     this.context.getLogger().log(LogLevel.debug, `Fetched chunk of size: ${limit} from operation with id: ${this.id}`);
@@ -207,7 +217,14 @@ export default class DBSQLOperation implements IOperation {
     if (this.closed || this.cancelled) {
       return Status.success();
     }
-    const result = await this.backend.cancel();
+    this.cancelRequested = true;
+    let result: Status;
+    try {
+      result = await this.backend.cancel();
+    } catch (error) {
+      this.cancelRequested = false;
+      throw error;
+    }
     this.cancelled = true;
     this.onClose?.();
     return result;
@@ -226,6 +243,7 @@ export default class DBSQLOperation implements IOperation {
     if (this.closed || this.cancelled) {
       return Status.success();
     }
+    this.closeRequested = true;
     let result: Status;
     try {
       result = await this.backend.close();
@@ -235,6 +253,7 @@ export default class DBSQLOperation implements IOperation {
       // The backend answers from completion state it already holds (including
       // direct results), without another status RPC.
       if (!this.backend.isFinished()) {
+        this.closeRequested = false;
         throw error;
       }
       // Afterwards the close only releases server-side results, which closing
@@ -383,6 +402,22 @@ export default class DBSQLOperation implements IOperation {
     }
   }
 
+  /**
+   * The error for a backend call that failed because this operation was closed
+   * or cancelled while the call was in flight. Such a call fails with whatever
+   * the server answers for the released statement (Thrift answers an in-flight
+   * GetOperationStatus with HTTP 409 ABORTED), so report the client's action.
+   */
+  private clientStopError(): OperationStateError | undefined {
+    if (this.closed || this.closeRequested) {
+      return new OperationStateError(OperationStateErrorCode.Closed);
+    }
+    if (this.cancelled || this.cancelRequested) {
+      return new OperationStateError(OperationStateErrorCode.Canceled);
+    }
+    return undefined;
+  }
+
   private async waitUntilReadyThroughBackend(options?: WaitUntilReadyOptions) {
     // The backend-facing `waitUntilReady` takes a neutral
     // `IOperationBackendWaitOptions` whose `callback` receives an
@@ -412,8 +447,9 @@ export default class DBSQLOperation implements IOperation {
         } else if (err.errorCode === OperationStateErrorCode.Closed) {
           this.closed = true;
         }
+        throw err;
       }
-      throw err;
+      throw this.clientStopError() ?? err;
     }
   }
 

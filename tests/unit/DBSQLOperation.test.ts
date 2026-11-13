@@ -608,6 +608,139 @@ describe('DBSQLOperation', () => {
     });
   });
 
+  describe('close or cancel while a request is in flight', () => {
+    // How the HTTP layer reports the 409 the server answers an in-flight
+    // GetOperationStatus with once the operation is closed.
+    const abortedRequest = () =>
+      new Error(
+        'Received a response with a bad HTTP status code: 409: ABORTED: A concurrent GetOperationStatus request updated the command. Please retry.',
+      );
+
+    const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
+
+    function pending<T>(stub: sinon.SinonStub) {
+      let failRequest: (error: Error) => void = () => {};
+      stub.callsFake(
+        () =>
+          new Promise<T>((_resolve, reject) => {
+            failRequest = reject;
+          }),
+      );
+      return (error: Error) => failRequest(error);
+    }
+
+    function runningOperation() {
+      const context = new ClientContextStub();
+      context.driver.getOperationStatusResp.operationState = TOperationState.RUNNING_STATE;
+      const getOperationStatus = sinon.stub(context.driver, 'getOperationStatus');
+      const failPoll = pending(getOperationStatus);
+      const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: true }), context });
+      return { context, operation, getOperationStatus, failPoll };
+    }
+
+    async function expectStateError(promise: Promise<unknown>, errorCode: OperationStateErrorCode) {
+      try {
+        await promise;
+        expect.fail('It should throw an OperationStateError');
+      } catch (e) {
+        if (e instanceof AssertionError) {
+          throw e;
+        }
+        expect(e).to.be.instanceOf(OperationStateError);
+        expect((e as OperationStateError).errorCode).to.equal(errorCode);
+      }
+    }
+
+    it('should report a status poll failed by close() as closed', async () => {
+      const { operation, getOperationStatus, failPoll } = runningOperation();
+
+      const fetching = operation.fetchAll();
+      await flush();
+      expect(getOperationStatus.calledOnce).to.be.true;
+
+      const closing = operation.close();
+      failPoll(abortedRequest());
+
+      await closing;
+      await expectStateError(fetching, OperationStateErrorCode.Closed);
+    });
+
+    it('should report a status poll failed by cancel() as canceled', async () => {
+      const { operation, getOperationStatus, failPoll } = runningOperation();
+
+      const waiting = operation.finished();
+      await flush();
+      expect(getOperationStatus.calledOnce).to.be.true;
+
+      const cancelling = operation.cancel();
+      failPoll(abortedRequest());
+
+      await cancelling;
+      await expectStateError(waiting, OperationStateErrorCode.Canceled);
+    });
+
+    it('should keep the error of a status poll that failed on its own', async () => {
+      const { operation, failPoll } = runningOperation();
+
+      const fetching = operation.fetchAll();
+      await flush();
+      const error = abortedRequest();
+      failPoll(error);
+
+      try {
+        await fetching;
+        expect.fail('It should throw the poll error');
+      } catch (e) {
+        if (e instanceof AssertionError) {
+          throw e;
+        }
+        expect(e).to.equal(error);
+      }
+    });
+
+    it('should keep the error of a status poll when the close request failed', async () => {
+      const { context, operation, failPoll } = runningOperation();
+      context.driver.closeOperationResp.status.statusCode = TStatusCode.ERROR_STATUS;
+
+      const fetching = operation.fetchAll();
+      await flush();
+      await expectFailure(() => operation.close());
+      const error = abortedRequest();
+      failPoll(error);
+
+      try {
+        await fetching;
+        expect.fail('It should throw the poll error');
+      } catch (e) {
+        if (e instanceof AssertionError) {
+          throw e;
+        }
+        expect(e).to.equal(error);
+      }
+    });
+
+    it('should report a result fetch failed by close() as closed', async () => {
+      const context = new ClientContextStub();
+      context.driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
+      context.driver.getOperationStatusResp.hasResultSet = true;
+      const fetchResults = sinon.stub(context.driver, 'fetchResults');
+      const failFetch = pending(fetchResults);
+      const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: true }), context });
+
+      const fetching = operation.fetchChunk({ disableBuffering: true });
+      for (let i = 0; i < 20 && !fetchResults.called; i += 1) {
+        await flush(); // eslint-disable-line no-await-in-loop
+      }
+      expect(fetchResults.calledOnce).to.be.true;
+
+      const closing = operation.close();
+      failFetch(abortedRequest());
+
+      await closing;
+      await expectStateError(fetching, OperationStateErrorCode.Closed);
+    });
+  });
+
   describe('Symbol.asyncDispose', () => {
     it('should close the operation', async () => {
       const context = new ClientContextStub();
