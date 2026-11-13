@@ -728,6 +728,29 @@ describe('DBSQLSession', () => {
       expect((await session.close()).isSuccess).to.be.true;
     });
 
+    it('should retry close after closing its operations failed', async () => {
+      const context = new ClientContextStub();
+      const driver = sinon.spy(context.driver);
+      const session = createSessionForTest({ handle: sessionHandleStub, context });
+      const error = new Error('operation close failed');
+      const closeAll = sinon.stub(session['operations'], 'closeAll');
+      closeAll.onFirstCall().rejects(error);
+      closeAll.callThrough();
+
+      try {
+        await session.close();
+        expect.fail('It should throw an error');
+      } catch (e) {
+        expect(e).to.equal(error);
+      }
+      expect(session['isOpen']).to.be.true;
+      expect(driver.closeSession.callCount).to.eq(0);
+
+      expect(await session.close()).instanceOf(Status);
+      expect(session['isOpen']).to.be.false;
+      expect(driver.closeSession.callCount).to.eq(1);
+    });
+
     it('should close operations that belong to it', async () => {
       const session = createSessionForTest({ handle: sessionHandleStub, context: new ClientContextStub() });
       const operation = await session.executeStatement('SELECT * FROM table');

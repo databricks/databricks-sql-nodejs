@@ -350,7 +350,11 @@ export default class DBSQLSession implements IDBSQLSession {
       return Status.success();
     }
     if (!this.closing) {
-      this.closing = this.closeOnce();
+      // Cleared once settled so a close that failed before CloseSession (e.g. an
+      // operation failed to close) can be retried
+      this.closing = this.closeOnce().finally(() => {
+        this.closing = undefined;
+      });
     }
     return this.closing;
   }
