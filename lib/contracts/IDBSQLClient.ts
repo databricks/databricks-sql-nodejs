@@ -70,6 +70,11 @@ export type ConnectionOptions = {
   port?: number;
   path: string;
   userAgentEntry?: string;
+  /**
+   * Request timeout in milliseconds. On the Thrift backend it is also the inactivity timeout
+   * of each CloudFetch download attempt: an attempt that receives nothing for this long is
+   * aborted and retried. Default 900000 (15 minutes).
+   */
   socketTimeout?: number;
   proxy?: ProxyOptions;
   enableMetricViewMetadata?: boolean;

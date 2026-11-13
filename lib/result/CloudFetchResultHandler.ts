@@ -1,4 +1,5 @@
 import fetch, { RequestInfo, RequestInit, Request, Response } from 'node-fetch';
+import Int64 from 'node-int64';
 import { TGetResultSetMetadataResp, TRowSet, TSparkArrowResultLink } from '../../thrift/TCLIService_types';
 import HiveDriverError from '../errors/HiveDriverError';
 import RetryError, { RetryErrorCode } from '../errors/RetryError';
@@ -19,6 +20,19 @@ type SettledDownload = { ok: true; batch: ArrowBatch } | { ok: false; error: unk
 
 // Largest delay `setTimeout` accepts; longer values fire immediately, so they are clamped.
 const MAX_TIMER_DELAY_MS = 2 ** 31 - 1;
+
+// Statuses that mean the presigned URL itself was rejected (expired or invalid signature; GCS
+// answers 404 for an expired one). Retrying the same URL can't succeed, so the link is refreshed.
+// Other 4xx responses are retried with the same URL.
+const LINK_REFRESH_STATUSES: ReadonlySet<number> = new Set([401, 403, 404]);
+
+interface LinkRefresher {
+  refreshLinks(startRowOffset: Int64, maxRows: Int64): Promise<Array<TSparkArrowResultLink>>;
+}
+
+function canRefreshLinks(source: unknown): source is LinkRefresher {
+  return typeof (source as Partial<LinkRefresher> | undefined)?.refreshLinks === 'function';
+}
 
 export default class CloudFetchResultHandler implements IResultsProvider<ArrowBatch> {
   private readonly context: IClientContext;
@@ -128,7 +142,22 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
     }
 
     const startTime = Date.now();
-    const { response, body } = await this.fetch(link.fileLink, { headers: link.httpHeaders });
+    const { retryMaxAttempts } = this.context.getConfig();
+    // One `retriesTimeout` deadline covers the download and all of its link refreshes
+    const deadlineAt = this.downloadDeadline();
+    let currentLink = link;
+    let { response, body } = await this.fetch(currentLink.fileLink, { headers: currentLink.httpHeaders }, deadlineAt);
+    // Each link refresh counts as one more attempt against `retryMaxAttempts`
+    for (let attempt = 1; LINK_REFRESH_STATUSES.has(response.status) && attempt < retryMaxAttempts; attempt += 1) {
+      // eslint-disable-next-line no-await-in-loop
+      const freshLink = await this.refreshLink(currentLink, response.status);
+      if (!freshLink) {
+        break;
+      }
+      currentLink = freshLink;
+      // eslint-disable-next-line no-await-in-loop
+      ({ response, body } = await this.fetch(currentLink.fileLink, { headers: currentLink.httpHeaders }, deadlineAt));
+    }
     if (!response.ok) {
       throw new Error(`CloudFetch HTTP error ${response.status} ${response.statusText}`);
     }
@@ -149,15 +178,42 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
     };
   }
 
-  private async fetch(url: RequestInfo, init?: RequestInit): Promise<{ response: Response; body?: ArrayBuffer }> {
+  /** Asks the server for a fresh link to the rows of `link`; `undefined` if there is none. */
+  private async refreshLink(link: TSparkArrowResultLink, status: number): Promise<TSparkArrowResultLink | undefined> {
+    if (!canRefreshLinks(this.source)) {
+      return undefined;
+    }
+    const offset = link.startRowOffset.toNumber();
+    this.context
+      .getLogger()
+      .log(LogLevel.debug, `CloudFetch download got HTTP ${status}; refreshing the link at row offset ${offset}`);
+    const links = await this.source.refreshLinks(link.startRowOffset, link.rowCount);
+    return links.find((candidate) => candidate.startRowOffset.toNumber() === offset);
+  }
+
+  // End (epoch ms) of a download's `retriesTimeout` deadline; `undefined` when it is off
+  private downloadDeadline(): number | undefined {
+    const { retriesTimeout } = this.context.getConfig();
+    return retriesTimeout > 0 ? Date.now() + retriesTimeout : undefined;
+  }
+
+  // `deadlineAt` is shared by a download and its link refreshes
+  private async fetch(
+    url: RequestInfo,
+    init?: RequestInit,
+    deadlineAt: number | undefined = this.downloadDeadline(),
+  ): Promise<{ response: Response; body?: ArrayBuffer }> {
     const connectionProvider = await this.context.getConnectionProvider();
     let requestUrl = url;
     if (typeof requestUrl !== 'string') {
       requestUrl = 'href' in requestUrl ? requestUrl.href : requestUrl.url;
     }
     const agent = await connectionProvider.getAgent(requestUrl);
-    const retryPolicy = await connectionProvider.getRetryPolicy();
-    const { retriesTimeout } = this.context.getConfig();
+    const retryPolicy = await connectionProvider.getRetryPolicy({ retryClientErrorsExcept: LINK_REFRESH_STATUSES });
+    const { socketTimeout } = this.context.getConfig();
+    // `socketTimeout` is an inactivity timeout for each attempt: an attempt that receives
+    // nothing for that long is aborted and retried like a network timeout.
+    const idleTimeoutMs = socketTimeout > 0 ? Math.min(socketTimeout, MAX_TIMER_DELAY_MS) : undefined;
 
     const requestConfig: RequestInit = { agent, ...init };
     // The retry policy checks `retriesTimeout` only between attempts, so a stalled attempt
@@ -165,7 +221,8 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
     // whole download - every attempt plus the backoff between them - and abort the in-flight
     // request and any pending backoff sleep when it expires (#520). Non-positive values keep
     // the deadline off.
-    const deadlineMs = retriesTimeout > 0 ? Math.min(retriesTimeout, MAX_TIMER_DELAY_MS) : undefined;
+    const deadlineMs =
+      deadlineAt === undefined ? undefined : Math.min(Math.max(deadlineAt - Date.now(), 0), MAX_TIMER_DELAY_MS);
     // Aborted only once, by the deadline, so a single controller serves every attempt and backoff.
     const controller = deadlineMs === undefined ? undefined : new AbortController();
     let timeoutError: RetryError | undefined;
@@ -187,14 +244,33 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
           throw timeoutError;
         }
         downloaded = undefined;
+        // Aborted by the deadline or when the attempt goes idle
+        const attempt = new AbortController();
+        const abortAttempt = () => attempt.abort();
+        controller?.signal.addEventListener('abort', abortAttempt, { once: true });
+        let attemptTimedOut = false;
+        let idleTimer: NodeJS.Timeout | undefined;
+        const restartIdleTimer = () => {
+          if (idleTimeoutMs !== undefined) {
+            clearTimeout(idleTimer);
+            idleTimer = setTimeout(() => {
+              attemptTimedOut = true;
+              attempt.abort();
+            }, idleTimeoutMs);
+          }
+        };
+        restartIdleTimer();
         const request = new Request(url, {
           ...requestConfig,
-          signal: controller?.signal as unknown as RequestInit['signal'],
+          signal: attempt.signal as unknown as RequestInit['signal'],
         });
         try {
           const response = await fetch(request);
+          restartIdleTimer();
           if (response.ok) {
-            downloaded = await response.arrayBuffer();
+            const bodyRead = response.arrayBuffer();
+            response.body.on('data', restartIdleTimer);
+            downloaded = await bodyRead;
           } else {
             lastFailure = { request, response };
           }
@@ -203,8 +279,13 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
           if (timeoutError) {
             throw timeoutError;
           }
-          lastFailure = error;
-          throw error;
+          lastFailure = attemptTimedOut
+            ? Object.assign(new Error('CloudFetch download attempt timed out'), { code: 'ETIMEDOUT' })
+            : error;
+          throw lastFailure;
+        } finally {
+          clearTimeout(idleTimer);
+          controller?.signal.removeEventListener('abort', abortAttempt);
         }
       }, controller?.signal);
 

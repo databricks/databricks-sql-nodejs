@@ -5,6 +5,7 @@ import {
   TFetchResultsResp,
   TOperationHandle,
   TRowSet,
+  TSparkArrowResultLink,
 } from '../../thrift/TCLIService_types';
 import Status from '../dto/Status';
 import IClientContext from '../contracts/IClientContext';
@@ -98,6 +99,21 @@ export default class RowSetProvider implements IResultsProvider<TRowSet | undefi
 
   private hasMoreRowsFlag?: boolean = undefined;
 
+  // Row offset after the last result link returned so far
+  private nextLinkRowOffset: number = 0;
+
+  // A link refresh may move the server's cursor, so after one the next page is requested by offset
+  private fetchByOffset: boolean = false;
+
+  // Serializes FetchResults calls, so a link refresh never races a page fetch on the cursor
+  private lastFetch: Promise<unknown> = Promise.resolve();
+
+  private serializeFetch<T>(fetchResults: () => Promise<T>): Promise<T> {
+    const result = this.lastFetch.then(fetchResults, fetchResults);
+    this.lastFetch = result.catch(() => undefined);
+    return result;
+  }
+
   private get hasMoreRows(): boolean {
     // `hasMoreRowsFlag` is populated only after fetching the first row set.
     // Prior to that, we use a `operationHandle.hasResultSet` flag which
@@ -129,7 +145,36 @@ export default class RowSetProvider implements IResultsProvider<TRowSet | undefi
     Status.assert(response.status);
     this.fetchOrientation = TFetchOrientation.FETCH_NEXT;
     this.hasMoreRowsFlag = checkIfOperationHasMoreRows(response);
+    response.results?.resultLinks?.forEach((link) => {
+      this.nextLinkRowOffset = Math.max(
+        this.nextLinkRowOffset,
+        link.startRowOffset.toNumber() + link.rowCount.toNumber(),
+      );
+    });
     return response.results;
+  }
+
+  /**
+   * Fetches fresh result links starting at `startRowOffset`, e.g. to replace a presigned
+   * URL that cloud storage rejected. Returns no links when the operation is already closed.
+   */
+  public async refreshLinks(startRowOffset: Int64, maxRows: Int64): Promise<Array<TSparkArrowResultLink>> {
+    if (this.returnOnlyPrefetchedResults) {
+      return [];
+    }
+    const driver = await this.context.getDriver();
+    const response = await this.serializeFetch(async () => {
+      this.fetchByOffset = true;
+      return driver.fetchResults({
+        operationHandle: this.operationHandle,
+        orientation: TFetchOrientation.FETCH_NEXT,
+        maxRows,
+        fetchType: FetchType.Data,
+        startRowOffset,
+      });
+    });
+    Status.assert(response.status);
+    return response.results?.resultLinks ?? [];
   }
 
   public async fetchNext({ limit }: ResultsProviderFetchNextOptions) {
@@ -150,12 +195,15 @@ export default class RowSetProvider implements IResultsProvider<TRowSet | undefi
 
     const driver = await this.context.getDriver();
     const startTime = Date.now();
-    const response = await driver.fetchResults({
-      operationHandle: this.operationHandle,
-      orientation: this.fetchOrientation,
-      maxRows: new Int64(limit),
-      fetchType: FetchType.Data,
-    });
+    const response = await this.serializeFetch(() =>
+      driver.fetchResults({
+        operationHandle: this.operationHandle,
+        orientation: this.fetchOrientation,
+        maxRows: new Int64(limit),
+        fetchType: FetchType.Data,
+        ...(this.fetchByOffset ? { startRowOffset: new Int64(this.nextLinkRowOffset) } : {}),
+      }),
+    );
     const latencyMs = Date.now() - startTime;
 
     this.emitChunkEvent(latencyMs, response);
