@@ -64,9 +64,9 @@ describe('HttpRetryPolicy', () => {
     }
 
     // Status codes between 100 (including) and 500 (excluding) should not be retried
-    // The only exception is 429 (Too many requests)
+    // The only exceptions are 408 (Request Timeout) and 429 (Too many requests)
     for (let status = 100; status < 500; status += 1) {
-      const expectedResult = status === 429 ? true : false;
+      const expectedResult = status === 408 || status === 429;
       expect(policy['isRetryable'](createStub(status))).to.equal(expectedResult);
     }
 

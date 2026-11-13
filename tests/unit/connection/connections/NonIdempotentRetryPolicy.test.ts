@@ -1,7 +1,7 @@
 import { expect, AssertionError } from 'chai';
 import sinon from 'sinon';
 import { Request, Response, FetchError } from 'node-fetch';
-import UnsentRequestRetryPolicy from '../../../../lib/connection/connections/UnsentRequestRetryPolicy';
+import NonIdempotentRetryPolicy from '../../../../lib/connection/connections/NonIdempotentRetryPolicy';
 import RetryError, { RetryErrorCode } from '../../../../lib/errors/RetryError';
 
 import ClientContextStub from '../../.stubs/ClientContextStub';
@@ -17,7 +17,7 @@ function okResponse() {
 }
 
 function createPolicy(retryMaxAttempts = 5) {
-  return new UnsentRequestRetryPolicy(new ClientContextStub({ retryDelayMin: 1, retryDelayMax: 2, retryMaxAttempts }));
+  return new NonIdempotentRetryPolicy(new ClientContextStub({ retryDelayMin: 1, retryDelayMax: 2, retryMaxAttempts }));
 }
 
 async function expectRejection(promise: Promise<unknown>): Promise<unknown> {
@@ -32,7 +32,11 @@ async function expectRejection(promise: Promise<unknown>): Promise<unknown> {
   return expect.fail('It should throw an error');
 }
 
-describe('UnsentRequestRetryPolicy', () => {
+function statusResponse(status: number, headers: Record<string, string> = {}) {
+  return { request: new Request('http://localhost'), response: new Response(undefined, { status, headers }) };
+}
+
+describe('NonIdempotentRetryPolicy', () => {
   for (const code of ['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN']) {
     it(`retries ${code}, which is raised before the request is sent`, async () => {
       const operation = sinon.stub();
@@ -64,9 +68,46 @@ describe('UnsentRequestRetryPolicy', () => {
     });
   }
 
-  for (const status of [429, 500, 503]) {
-    it(`does not retry an HTTP ${status} response`, async () => {
-      const details = { request: new Request('http://localhost'), response: new Response(undefined, { status }) };
+  const serverRejections: Array<[string, ReturnType<typeof statusResponse>]> = [
+    ['HTTP 429', statusResponse(429)],
+    ['HTTP 429 with Retry-After', statusResponse(429, { 'Retry-After': '1' })],
+    ['HTTP 503 with Retry-After', statusResponse(503, { 'Retry-After': '1' })],
+  ];
+
+  for (const [label, rejection] of serverRejections) {
+    it(`retries an ${label} response, which the server did not run`, async () => {
+      const operation = sinon.stub();
+      operation.onCall(0).resolves(rejection);
+      operation.onCall(1).resolves(okResponse());
+
+      const result = await createPolicy().invokeWithRetry(operation);
+
+      expect(result.response.status).to.equal(200);
+      expect(operation.callCount).to.equal(2);
+    });
+  }
+
+  it('throws a RetryError once a persistent 429 runs out of attempts', async () => {
+    const operation = sinon.stub().resolves(statusResponse(429));
+
+    const error = await expectRejection(createPolicy(3).invokeWithRetry(operation));
+
+    expect(error).to.be.instanceOf(RetryError);
+    expect((error as RetryError).errorCode).to.equal(RetryErrorCode.AttemptsExceeded);
+    expect(operation.callCount).to.equal(3);
+  });
+
+  const ambiguousStatuses: Array<[string, ReturnType<typeof statusResponse>]> = [
+    ['HTTP 503 without Retry-After', statusResponse(503)],
+    ['HTTP 500', statusResponse(500)],
+    ['HTTP 500 with Retry-After', statusResponse(500, { 'Retry-After': '1' })],
+    ['HTTP 502', statusResponse(502)],
+    ['HTTP 504', statusResponse(504)],
+    ['HTTP 408', statusResponse(408)],
+  ];
+
+  for (const [label, details] of ambiguousStatuses) {
+    it(`does not retry an ${label} response`, async () => {
       const policy = createPolicy();
       const operation = sinon.stub().resolves(details);
 
@@ -86,7 +127,7 @@ describe('UnsentRequestRetryPolicy', () => {
 
   it('rethrows the original error once the retry timeout is exceeded', async () => {
     const error = systemError('ECONNREFUSED');
-    const policy = new UnsentRequestRetryPolicy(
+    const policy = new NonIdempotentRetryPolicy(
       new ClientContextStub({ retryDelayMin: 1, retryDelayMax: 2, retryMaxAttempts: 100, retriesTimeout: 0 }),
     );
     const operation = sinon.stub().rejects(error);

@@ -60,7 +60,7 @@ interface ThriftHttpConnectionOptions {
   transport?: TTransportType;
   protocol?: TProtocolConstructor;
   getRetryPolicy(): Promise<IRetryPolicy<HttpTransactionDetails>>;
-  getUnsentRequestRetryPolicy?(): Promise<IRetryPolicy<HttpTransactionDetails>>;
+  getNonIdempotentRetryPolicy?(): Promise<IRetryPolicy<HttpTransactionDetails>>;
 }
 
 // This type describes a shape of internals of Thrift client object.
@@ -76,6 +76,8 @@ type ThriftClient = {
 };
 
 const retryableThriftMethods = new Set([
+  // A repeated OpenSession leaves at most an unused session, which the server expires
+  'OpenSession',
   'GetOperationStatus',
   'CancelOperation',
   'CloseOperation',
@@ -93,8 +95,8 @@ const retryableThriftMethods = new Set([
   'GetCrossReference',
 ]);
 
-// Not safe to repeat once the server may have the request, so retried only if it was never sent
-const unsentRequestRetryableThriftMethods = new Set(['ExecuteStatement']);
+// Not safe to repeat once the server may have run the request, so retried only when it did not
+const nonIdempotentThriftMethods = new Set(['ExecuteStatement']);
 
 export default class ThriftHttpConnection extends EventEmitter {
   private readonly url: string;
@@ -128,10 +130,10 @@ export default class ThriftHttpConnection extends EventEmitter {
     }
     if (
       thriftMethodName &&
-      unsentRequestRetryableThriftMethods.has(thriftMethodName) &&
-      this.options.getUnsentRequestRetryPolicy
+      nonIdempotentThriftMethods.has(thriftMethodName) &&
+      this.options.getNonIdempotentRetryPolicy
     ) {
-      return this.options.getUnsentRequestRetryPolicy();
+      return this.options.getNonIdempotentRetryPolicy();
     }
     // Don't retry everything that is not explicitly allowed to retry
     return new NullRetryPolicy();
