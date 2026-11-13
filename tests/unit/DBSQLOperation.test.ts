@@ -255,6 +255,34 @@ describe('DBSQLOperation', () => {
       expect(operation['closed']).to.be.false;
     });
 
+    it('should send one cancel request for concurrent calls', async () => {
+      const context = new ClientContextStub();
+      const driver = sinon.spy(context.driver);
+      const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: true }), context });
+
+      await Promise.all([operation.cancel(), operation.cancel(), operation.cancel()]);
+
+      expect(driver.cancelOperation.callCount).to.be.equal(1);
+      expect(operation['cancelled']).to.be.true;
+    });
+
+    it('should allow a retry after concurrent calls share a failed cancel', async () => {
+      const context = new ClientContextStub();
+      const driver = sinon.spy(context.driver);
+      context.driver.cancelOperationResp.status.statusCode = TStatusCode.ERROR_STATUS;
+      const operation = createOperationForTest({ handle: operationHandleStub({ hasResultSet: true }), context });
+
+      const results = await Promise.allSettled([operation.cancel(), operation.cancel()]);
+      expect(results.map((r) => r.status)).to.deep.equal(['rejected', 'rejected']);
+      expect(driver.cancelOperation.callCount).to.be.equal(1);
+      expect(operation['cancelled']).to.be.false;
+
+      context.driver.cancelOperationResp.status.statusCode = TStatusCode.SUCCESS_STATUS;
+      await operation.cancel();
+      expect(driver.cancelOperation.callCount).to.be.equal(2);
+      expect(operation['cancelled']).to.be.true;
+    });
+
     it('should return immediately if already closed', async () => {
       const context = new ClientContextStub();
       const driver = sinon.spy(context.driver);
