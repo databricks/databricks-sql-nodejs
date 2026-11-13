@@ -82,6 +82,28 @@ describe('discoverAzureTenantId', () => {
     expect(paths).to.deep.equal(['/aad/auth']);
   });
 
+  it('drains the redirect body so a keep-alive agent reuses the socket', async () => {
+    respond = (req, res) => {
+      res.writeHead(302, { Location: 'https://login.microsoftonline.com/tenant-xyz/oauth2/authorize' });
+      // Larger than the stream buffers, so an undrained body would hold the only socket.
+      res.end('x'.repeat(1024 * 1024));
+    };
+    let connections = 0;
+    const onConnection = () => {
+      connections += 1;
+    };
+    server.on('connection', onConnection);
+    const agent = new http.Agent({ keepAlive: true, maxSockets: 1 });
+    try {
+      expect(await discoverAzureTenantId(base, agent)).to.equal('tenant-xyz');
+      expect(await discoverAzureTenantId(base, agent)).to.equal('tenant-xyz');
+      expect(connections).to.equal(1);
+    } finally {
+      server.off('connection', onConnection);
+      agent.destroy();
+    }
+  });
+
   it('fails when /aad/auth does not redirect', async () => {
     respond = (req, res) => {
       res.writeHead(200);
