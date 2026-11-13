@@ -231,6 +231,15 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
       );
     }
 
+    // Only an explicit `false` opts out of TLS.
+    const https = options.https !== false;
+    // http.Agent would silently drop the client identity; the kernel rejects it too.
+    if (!https && hasClientCert) {
+      throw new HiveDriverError(
+        'DBSQLClient: mutual TLS (`clientCert`/`clientKey`) requires HTTPS; remove them or do not set `https: false`.',
+      );
+    }
+
     // Validate the PEM inputs up front with the same ordered BEGIN…END check the
     // kernel path uses (normalizePemBytes), so a truncated/headerless/DER blob is
     // rejected here with a named, actionable error instead of surfacing as an
@@ -246,9 +255,9 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
 
     return {
       host: options.host,
-      port: options.port || 443,
+      port: options.port || (https ? 443 : 80),
       path: prependSlash(options.path),
-      https: true,
+      https,
       socketTimeout: options.socketTimeout,
       proxy: options.proxy,
       // `customCaCert` is ADDITIVE: Node's `ca` option replaces the system trust

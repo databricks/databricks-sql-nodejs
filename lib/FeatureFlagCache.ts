@@ -234,7 +234,7 @@ export default class FeatureFlagCache {
   /** Retries transient failures using the connection's retry policy. */
   private async fetchWithRetry(url: string, init: RequestInit): Promise<Response> {
     const connectionProvider = await this.context.getConnectionProvider();
-    const agent = await connectionProvider.getAgent();
+    const agent = await connectionProvider.getAgent(url);
     const retryPolicy = await connectionProvider.getRetryPolicy();
     const requestConfig: RequestInit = { agent, ...init };
     const result = await retryPolicy.invokeWithRetry(() => {

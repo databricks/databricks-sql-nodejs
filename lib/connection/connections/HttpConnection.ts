@@ -32,6 +32,14 @@ const DRIVER_MANAGED_HEADERS = new Set([
 const VALID_HEADER_NAME = /^[!#$%&'*+\-.^_`|~0-9A-Za-z]+$/;
 const INVALID_HEADER_VALUE_CHAR = /[^\t\x20-\x7e\x80-\xff]/;
 
+function getProtocol(url: string | URL): string {
+  if (typeof url !== 'string') {
+    return url.protocol;
+  }
+  const match = /^([a-z][a-z0-9+.-]*:)/i.exec(url);
+  return match ? match[1].toLowerCase() : '';
+}
+
 export default class HttpConnection implements IConnectionProvider {
   private readonly options: IConnectionOptions;
 
@@ -44,7 +52,11 @@ export default class HttpConnection implements IConnectionProvider {
 
   private connection?: ThriftHttpConnection;
 
-  private agent?: http.Agent;
+  private proxyAgent?: http.Agent;
+
+  private httpAgent?: http.Agent;
+
+  private httpsAgent?: https.Agent;
 
   constructor(options: IConnectionOptions, context: IClientContext) {
     this.options = options;
@@ -104,16 +116,33 @@ export default class HttpConnection implements IConnectionProvider {
     return result;
   }
 
-  public async getAgent(): Promise<http.Agent | undefined> {
-    if (!this.agent) {
-      if (this.options.proxy !== undefined) {
-        this.agent = this.createProxyAgent(this.options.proxy);
-      } else {
-        this.agent = this.options.https ? this.createHttpsAgent() : this.createHttpAgent();
+  /**
+   * Returns the agent for a request to `url` (an absolute URL or a bare
+   * protocol such as `'https:'`). Node rejects an agent whose protocol differs
+   * from the request's, so the agent follows the URL rather than `https`, which
+   * only selects the SQL transport. Without `url`, returns the SQL transport's agent.
+   */
+  public async getAgent(url?: string | URL): Promise<http.Agent | undefined> {
+    if (this.options.proxy !== undefined) {
+      // ProxyAgent handles both protocols itself.
+      if (!this.proxyAgent) {
+        this.proxyAgent = this.createProxyAgent(this.options.proxy);
       }
+      return this.proxyAgent;
     }
 
-    return this.agent;
+    const useHttps = url === undefined ? Boolean(this.options.https) : getProtocol(url) !== 'http:';
+    if (useHttps) {
+      if (!this.httpsAgent) {
+        this.httpsAgent = this.createHttpsAgent();
+      }
+      return this.httpsAgent;
+    }
+
+    if (!this.httpAgent) {
+      this.httpAgent = this.createHttpAgent();
+    }
+    return this.httpAgent;
   }
 
   private getAgentDefaultOptions(): http.AgentOptions {

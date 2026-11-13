@@ -42,7 +42,8 @@ backend (the default), the **SEA / Kernel** backend, or both.
 | ----------------------- | --------- | :----: | :----: | ------------- | -------------------------------------------------------------------------------------- |
 | `host`                  | `string`  |   ✅   |   ✅   | — (required)  | Required on both.                                                                      |
 | `path`                  | `string`  |   ✅   |   ✅   | — (required)  | Kernel also derives `x-databricks-org-id` from a `?o=<id>` query parameter.            |
-| `port`                  | `number`  |   ✅   |   ❌   | `443` / —     | Kernel ignores this field. Include a non-default port in `host` for Kernel.            |
+| `port`                  | `number`  |   ✅   |   ⚠️   | `443` / —     | Kernel uses it only with `https: false`; otherwise put a non-default port in `host`.   |
+| `https`                 | `boolean` |   ✅   |   ✅   | `true`        | `false` selects plain HTTP; see [Plain HTTP transport](#plain-http-transport).         |
 | `userAgentEntry`        | `string`  |   ✅   |   ✅   | —             | Folded into the connector `User-Agent` on both.                                        |
 | `useKernel` (internal)  | `boolean` |   —    |   —    | `false`       | Selects the backend: `false`/omitted → Thrift, `true` → Kernel.                        |
 | `clientId` (deprecated) | `string`  |   ✅   |   ✅   | —             | Runtime-only alias for `userAgentEntry`. `userAgentEntry` wins when both are supplied. |
@@ -100,6 +101,34 @@ disabling verification.
 | `clientCert`                                | `Buffer \| string` |   ✅   |   ✅   | —             | Public mTLS client certificate. Must be paired with `clientKey`.                                                                              |
 | `clientKey`                                 | `Buffer \| string` |   ✅   |   ✅   | —             | Public mTLS private key. Must be paired with `clientCert`; PKCS#8 is recommended for Kernel portability.                                      |
 | `clientCertPem` / `clientKeyPem` (internal) | `Buffer \| string` |   ❌   |   ✅   | —             | Runtime-only Kernel aliases for the public mTLS pair. They take precedence over `clientCert`/`clientKey` when both pairs are supplied.        |
+
+## Plain HTTP transport
+
+Set `https: false` to connect to `host` over plain HTTP, for example through a
+trusted local reverse proxy that forwards to Databricks over HTTPS (and may
+inject credentials, with `authType: 'custom'` returning no headers):
+
+```ts
+await client.connect({
+  host: 'localhost',
+  port: 3015,
+  path: '/sql/1.0/warehouses/<warehouse-id>',
+  https: false,
+  authType: 'custom',
+  provider: { authenticate: async () => ({}) },
+});
+```
+
+Plain HTTP is unencrypted: SQL text, results, and any credentials the driver
+sends can be read or altered on the network. Use it only on a trusted local or
+private link. With `https: false`, `port` defaults to `80`, the TLS options
+above have no effect, and `clientCert`/`clientKey` are rejected.
+
+On Thrift, `https: false` applies to the SQL connection only. OAuth
+(`databricks-oauth`), token federation, telemetry, and feature-flag requests
+still use HTTPS to `host`. Kernel uses `http://host[:port]` for all of its
+requests, including its own OAuth and telemetry calls. CloudFetch downloads use
+the presigned URLs returned by the server on both backends.
 
 ## Results and type rendering
 

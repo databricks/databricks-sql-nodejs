@@ -63,6 +63,75 @@ describe('KernelAuth connection options — geospatial result representation', (
   });
 });
 
+describe('KernelAuth connection options — https transport', () => {
+  it('forwards host unchanged by default (kernel prepends https://)', () => {
+    expect(buildKernelConnectionOptions(opts({})).hostName).to.equal('h.databricks.com');
+    expect(buildKernelConnectionOptions(opts({ https: true })).hostName).to.equal('h.databricks.com');
+  });
+
+  it('selects plain HTTP via an explicit http:// host when https is false', () => {
+    expect(buildKernelConnectionOptions(opts({ https: false })).hostName).to.equal('http://h.databricks.com');
+  });
+
+  it('carries the port into the http:// host (matching the Thrift URL)', () => {
+    expect(buildKernelConnectionOptions(opts({ host: 'localhost', port: 3015, https: false })).hostName).to.equal(
+      'http://localhost:3015',
+    );
+    // A port already embedded in `host` (the kernel convention) is preserved.
+    expect(buildKernelConnectionOptions(opts({ host: 'localhost:3015', https: false })).hostName).to.equal(
+      'http://localhost:3015',
+    );
+  });
+
+  it('does not double the port when it is set in both host and port', () => {
+    expect(buildKernelConnectionOptions(opts({ host: 'localhost:3015', port: 3015, https: false })).hostName).to.equal(
+      'http://localhost:3015',
+    );
+    expect(buildKernelConnectionOptions(opts({ host: '[::1]:3015', port: 3015, https: false })).hostName).to.equal(
+      'http://[::1]:3015',
+    );
+  });
+
+  it('strips a trailing slash from host before adding the port (matching Thrift)', () => {
+    expect(buildKernelConnectionOptions(opts({ host: 'localhost/', port: 3015, https: false })).hostName).to.equal(
+      'http://localhost:3015',
+    );
+    expect(buildKernelConnectionOptions(opts({ host: 'localhost:3015/', port: 3015, https: false })).hostName).to.equal(
+      'http://localhost:3015',
+    );
+  });
+
+  const hostName = (extra: Record<string, unknown>) => buildKernelConnectionOptions(opts(extra)).hostName;
+
+  it('normalizes an existing http:// scheme in host instead of prefixing it again', () => {
+    expect(hostName({ host: 'http://localhost:3015', https: false })).to.equal('http://localhost:3015');
+    expect(hostName({ host: 'http://localhost:3015', port: 3015, https: false })).to.equal('http://localhost:3015');
+    expect(hostName({ host: 'HTTP://localhost', port: 3015, https: false })).to.equal('http://localhost:3015');
+    expect(hostName({ host: 'http://localhost:3015/', https: false })).to.equal('http://localhost:3015');
+  });
+
+  it('replaces an existing https:// scheme in host with http:// when https is false', () => {
+    expect(hostName({ host: 'https://localhost:3015', https: false })).to.equal('http://localhost:3015');
+    expect(hostName({ host: 'https://localhost', port: 3015, https: false })).to.equal('http://localhost:3015');
+    expect(hostName({ host: 'https://[::1]:3015', port: 3015, https: false })).to.equal('http://[::1]:3015');
+  });
+
+  it('forwards a full-URL host unchanged when https is not false', () => {
+    expect(hostName({ host: 'https://h.databricks.com' })).to.equal('https://h.databricks.com');
+    expect(hostName({ host: 'http://localhost:3015', https: true })).to.equal('http://localhost:3015');
+  });
+
+  it('does not mistake an IPv6 literal for an embedded port', () => {
+    expect(buildKernelConnectionOptions(opts({ host: '[::1]', port: 3015, https: false })).hostName).to.equal(
+      'http://[::1]:3015',
+    );
+    // Same URL shape as the Thrift transport, which also requires brackets.
+    expect(buildKernelConnectionOptions(opts({ host: '::1', port: 3015, https: false })).hostName).to.equal(
+      'http://::1:3015',
+    );
+  });
+});
+
 describe('KernelAuth connection options — maxConnections', () => {
   it('forwards a valid positive integer', () => {
     const native = buildKernelConnectionOptions(opts({ maxConnections: 10 })) as { maxConnections?: number };

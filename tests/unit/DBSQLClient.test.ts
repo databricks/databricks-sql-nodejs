@@ -21,6 +21,7 @@ import IThriftClient from '../../lib/contracts/IThriftClient';
 import IAuthentication from '../../lib/connection/contracts/IAuthentication';
 import AuthProviderStub from './.stubs/AuthProviderStub';
 import ConnectionProviderStub from './.stubs/ConnectionProviderStub';
+import HiveDriverError from '../../lib/errors/HiveDriverError';
 import { TProtocolVersion } from '../../thrift/TCLIService_types';
 import TelemetryClientProvider from '../../lib/telemetry/TelemetryClientProvider';
 import FeatureFlagCache from '../../lib/FeatureFlagCache';
@@ -197,6 +198,56 @@ describe('DBSQLClient.connect', () => {
     expect(() => client['getConnectionOptions']({ ...connectOptions, clientKey: 'client-key' })).to.throw(
       /only `clientKey` was supplied/,
     );
+  });
+
+  it('should use HTTPS on port 443 by default', async () => {
+    const client = new DBSQLClient();
+
+    const connectionOptions = client['getConnectionOptions']({ host: 'h.databricks.com', path: '', token: 'x' });
+
+    expect(connectionOptions.https).to.be.true;
+    expect(connectionOptions.port).to.equal(443);
+  });
+
+  it('should use plain HTTP on port 80 when https is false', async () => {
+    const client = new DBSQLClient();
+
+    const connectionOptions = client['getConnectionOptions']({
+      host: 'localhost',
+      path: '',
+      token: 'x',
+      https: false,
+    });
+
+    expect(connectionOptions.https).to.be.false;
+    expect(connectionOptions.port).to.equal(80);
+  });
+
+  it('should keep an explicit port when https is false', async () => {
+    const client = new DBSQLClient();
+
+    const connectionOptions = client['getConnectionOptions']({ ...connectOptions, port: 3015, https: false });
+
+    expect(connectionOptions.https).to.be.false;
+    expect(connectionOptions.port).to.equal(3015);
+  });
+
+  it('should only switch to plain HTTP for an explicit https: false', async () => {
+    const client = new DBSQLClient();
+
+    expect(client['getConnectionOptions']({ ...connectOptions, https: true }).https).to.be.true;
+    expect(client['getConnectionOptions']({ ...connectOptions, https: undefined }).https).to.be.true;
+    // Untyped JS callers: anything but the boolean `false` keeps HTTPS.
+    expect(client['getConnectionOptions']({ ...connectOptions, https: 'false' } as any).https).to.be.true;
+  });
+
+  it('should reject a mutual TLS client identity when https is false', async () => {
+    const client = new DBSQLClient();
+
+    // Rejected before PEM parsing, so placeholder values are enough.
+    expect(() =>
+      client['getConnectionOptions']({ ...connectOptions, https: false, clientCert: 'cert', clientKey: 'key' }),
+    ).to.throw(HiveDriverError, /requires HTTPS/);
   });
 
   it('should initialize connection state', async () => {

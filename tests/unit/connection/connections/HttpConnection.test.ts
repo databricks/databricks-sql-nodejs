@@ -106,6 +106,74 @@ describe('HttpConnection.connect', () => {
     expect(thriftConnection.config.agent).to.be.instanceOf(http.Agent);
   });
 
+  it('should select the agent by the request protocol, not the SQL transport', async () => {
+    const connection = new HttpConnection(
+      {
+        host: 'localhost',
+        port: 10001,
+        https: false,
+        path: '/hive',
+        rejectUnauthorized: false,
+        ca: 'ca',
+      },
+      new ClientContextStub(),
+    );
+
+    const sqlAgent = await connection.getAgent();
+    const thriftConnection = await connection.getThriftConnection();
+    expect(thriftConnection.config.agent).to.equal(sqlAgent);
+    expect(sqlAgent).to.be.instanceOf(http.Agent);
+    expect(sqlAgent).to.not.be.instanceOf(https.Agent);
+
+    // CloudFetch and OAuth use HTTPS URLs even when the SQL transport is plain HTTP.
+    const httpsAgent = await connection.getAgent('https://bucket.s3.amazonaws.com/chunk?X-Amz-Signature=x');
+    expect(httpsAgent).to.be.instanceOf(https.Agent);
+    expect((httpsAgent as https.Agent).options.rejectUnauthorized).to.be.false;
+    expect((httpsAgent as https.Agent).options.ca).to.equal('ca');
+    expect(await connection.getAgent(new URL('HTTPS://example.com'))).to.equal(httpsAgent);
+    expect(await connection.getAgent('https:')).to.equal(httpsAgent);
+
+    expect(await connection.getAgent('http://localhost:10001/hive')).to.equal(sqlAgent);
+    expect(await connection.getAgent('http:')).to.equal(sqlAgent);
+  });
+
+  it('should use the HTTPS agent for the SQL transport and an HTTP agent for http:// URLs', async () => {
+    const connection = new HttpConnection(
+      {
+        host: 'localhost',
+        port: 10001,
+        https: true,
+        path: '/hive',
+      },
+      new ClientContextStub(),
+    );
+
+    const sqlAgent = await connection.getAgent();
+    expect(sqlAgent).to.be.instanceOf(https.Agent);
+    expect(await connection.getAgent('https://example.com')).to.equal(sqlAgent);
+
+    const httpAgent = await connection.getAgent('http://example.com');
+    expect(httpAgent).to.be.instanceOf(http.Agent);
+    expect(httpAgent).to.not.be.instanceOf(https.Agent);
+  });
+
+  it('should use the proxy agent for every protocol', async () => {
+    const connection = new HttpConnection(
+      {
+        host: 'localhost',
+        port: 10001,
+        https: false,
+        path: '/hive',
+        proxy: { protocol: 'http', host: 'proxy.local', port: 8080 },
+      },
+      new ClientContextStub(),
+    );
+
+    const sqlAgent = await connection.getAgent();
+    expect(await connection.getAgent('https://example.com')).to.equal(sqlAgent);
+    expect(await connection.getAgent('http://example.com')).to.equal(sqlAgent);
+  });
+
   it('should update headers (case 1: Thrift connection not initialized)', async () => {
     const initialHeaders = {
       a: 'test header A',

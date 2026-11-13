@@ -148,7 +148,11 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
 
   private async fetch(url: RequestInfo, init?: RequestInit): Promise<{ response: Response; body?: ArrayBuffer }> {
     const connectionProvider = await this.context.getConnectionProvider();
-    const agent = await connectionProvider.getAgent();
+    let requestUrl = url;
+    if (typeof requestUrl !== 'string') {
+      requestUrl = 'href' in requestUrl ? requestUrl.href : requestUrl.url;
+    }
+    const agent = await connectionProvider.getAgent(requestUrl);
     const retryPolicy = await connectionProvider.getRetryPolicy();
 
     const requestConfig: RequestInit = { agent, ...init };

@@ -10,7 +10,11 @@ export interface HttpTransactionDetails {
 export default interface IConnectionProvider {
   getThriftConnection(): Promise<any>;
 
-  getAgent(): Promise<http.Agent | undefined>;
+  /**
+   * Returns the agent for a request to `url`, whose protocol it must match.
+   * Without `url`, returns the agent for the SQL transport.
+   */
+  getAgent(url?: string | URL): Promise<http.Agent | undefined>;
 
   setHeaders(headers: HeadersInit): void;
 

@@ -171,7 +171,7 @@ export default class DBSQLSession implements IDBSQLSession {
     }
 
     const connectionProvider = await this.context.getConnectionProvider();
-    const agent = await connectionProvider.getAgent();
+    const agent = await connectionProvider.getAgent(presignedUrl);
 
     const response = await fetch(presignedUrl, { method: 'GET', headers, agent });
     if (!response.ok) {
@@ -184,7 +184,7 @@ export default class DBSQLSession implements IDBSQLSession {
 
   private async handleStagingRemove(presignedUrl: string, headers: HeadersInit): Promise<void> {
     const connectionProvider = await this.context.getConnectionProvider();
-    const agent = await connectionProvider.getAgent();
+    const agent = await connectionProvider.getAgent(presignedUrl);
 
     const response = await fetch(presignedUrl, { method: 'DELETE', headers, agent });
     // Looks that AWS and Azure have a different behavior of HTTP `DELETE` for non-existing files.
@@ -209,7 +209,7 @@ export default class DBSQLSession implements IDBSQLSession {
     }
 
     const connectionProvider = await this.context.getConnectionProvider();
-    const agent = await connectionProvider.getAgent();
+    const agent = await connectionProvider.getAgent(presignedUrl);
 
     const fileStream = fs.createReadStream(localFile);
     const fileInfo = fs.statSync(localFile, { bigint: true });

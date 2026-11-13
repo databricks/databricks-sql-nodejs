@@ -332,7 +332,7 @@ export default class DatabricksTelemetryExporter {
 
   private async sendRequest(url: string, init: RequestInit): Promise<Response> {
     const connectionProvider = await this.context.getConnectionProvider();
-    const agent = await connectionProvider.getAgent();
+    const agent = await connectionProvider.getAgent(url);
     // Do NOT route through `connectionProvider.getRetryPolicy()` here. That
     // policy is bounded by the customer's `retriesTimeout` (15 min default)
     // and `retryMaxAttempts` (5), so each call to `sendRequest` could spend
