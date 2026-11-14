@@ -313,8 +313,8 @@ export default class KernelOperationBackend implements IOperationBackend {
 
   public async completeStagingOperation(allowedPaths: string[]): Promise<void> {
     failIfNotActive(this.lifecycle);
+    const handle = await this.getFetchHandle();
     try {
-      const handle = await this.getFetchHandle();
       const outcome = await handle.completeVolumeOperation(allowedPaths, true);
       if (outcome === 'needs_input_stream') {
         throw new StagingError('Volume PUT requires a local file path');

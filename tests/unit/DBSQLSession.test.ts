@@ -886,6 +886,26 @@ describe('DBSQLSession', () => {
 });
 
 describe('DBSQLSession native staging dispatch', () => {
+  it('closes a failed native operation and preserves its error when close also fails', async () => {
+    const error = new Error('completion failed');
+    const close = sinon.stub().rejects(new Error('close failed'));
+    const op = {
+      id: 'volume-operation',
+      completeStagingOperation: sinon.stub().rejects(error),
+      close,
+    } as unknown as IOperationBackend;
+    const session = new DBSQLSession({
+      backend: { id: 'volume-session', executeStatement: async () => op } as unknown as ISessionBackend,
+      context: new ClientContextStub(),
+    });
+    const actual = await session.executeStatement('GET remote TO local', { stagingAllowedLocalPath: [] }).then(
+      () => expect.fail('completion should fail'),
+      (failure) => failure,
+    );
+    expect(actual).to.equal(error);
+    expect(close.callCount).to.equal(1);
+  });
+
   for (const configured of [false, true]) {
     it(`calls native completion only when local paths are ${configured ? 'configured' : 'omitted'}`, async () => {
       const completeStagingOperation = sinon.stub().resolves();
