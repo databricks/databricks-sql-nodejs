@@ -53,7 +53,7 @@ import ArrowResultConverter from '../result/ArrowResultConverter';
 import ResultSlicer from '../result/ResultSlicer';
 import KernelResultsProvider from './KernelResultsProvider';
 import { arrowSchemaToThriftSchema, decodeIpcSchema, patchIpcBytes } from './KernelArrowIpc';
-import { decodeNapiKernelError } from './KernelErrorMapping';
+import { decodeNapiKernelError, ErrorWithSqlState } from './KernelErrorMapping';
 import {
   KernelStatement,
   KernelNativeAsyncStatement,
@@ -322,9 +322,10 @@ export default class KernelOperationBackend implements IOperationBackend {
       this.volumeCompleted = outcome === 'completed';
     } catch (err) {
       const mapped = decodeNapiKernelError(err);
+      const metadata = (mapped as ErrorWithSqlState).kernelMetadata;
       if (
-        mapped instanceof ParameterError ||
-        (mapped as { kernelMetadata?: { httpStatus?: number } }).kernelMetadata?.httpStatus
+        (mapped instanceof ParameterError && !metadata?.httpStatus) ||
+        metadata?.errorCode === 'VOLUME_STORAGE_HTTP_ERROR'
       ) {
         throw new StagingError(mapped.message);
       }
