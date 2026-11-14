@@ -551,6 +551,7 @@ describe('KernelBackend', () => {
     expectNativeConnectionOptions(args, {
       hostName: 'workspace.example',
       httpPath: '/sql/1.0/warehouses/xyz',
+      sessionConf: { cloudfetch_max_chunks_in_memory: '10' },
       authMode: 'Pat',
       token: 'dapi-token',
       intervalsAsString: true,
@@ -747,10 +748,74 @@ describe('KernelBackend', () => {
       await backend.openSession({ configuration });
       const conf = (binding.openSessionStub.firstCall.args[0] as { sessionConf?: Record<string, string> }).sessionConf;
       expect(conf?.cloudfetch_enabled).to.equal(useCloudFetch === false ? 'false' : undefined);
+      expect(conf?.cloudfetch_max_chunks_in_memory).to.equal('10');
       expect(conf?.can_cloud_download).to.equal(undefined);
       expect(conf?.TIMEZONE).to.equal('UTC');
       expect(configuration).to.deep.equal({ TIMEZONE: 'UTC' });
     });
+  });
+
+  for (const [window, override] of [
+    [1, undefined],
+    [4, undefined],
+    [1000, undefined],
+    [4, 'cloudfetch_max_chunks_in_memory'],
+    [4, 'CLOUDFETCH_MAX_CHUNKS_IN_MEMORY'],
+  ] as const) {
+    it(`openSession() maps download window ${window}, override=${override}`, async () => {
+      const binding = makeBinding(new FakeNativeConnection());
+      const context = makeContext(undefined, { cloudFetchConcurrentDownloads: window });
+      const backend = new KernelBackend({ context, nativeBinding: binding });
+      await backend.connect({ host: 'h', path: '/p', token: 't' } as ConnectionOptions);
+      const configuration = override ? { [override]: '2' } : {};
+      await backend.openSession({ configuration });
+      const options = binding.openSessionStub.firstCall.args[0] as { sessionConf: Record<string, string> };
+      expect(options.sessionConf).to.deep.equal(
+        override
+          ? { [override]: '2' }
+          : {
+              cloudfetch_max_chunks_in_memory: String(window),
+            },
+      );
+      expect(configuration).to.deep.equal(override ? { [override]: '2' } : {});
+    });
+  }
+
+  for (const window of [0, -1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
+    it(`openSession() rejects invalid download window ${window}`, async () => {
+      const binding = makeBinding(new FakeNativeConnection());
+      const backend = new KernelBackend({
+        context: makeContext(undefined, { cloudFetchConcurrentDownloads: window }),
+        nativeBinding: binding,
+      });
+      await backend.connect({ host: 'h', path: '/p', token: 't' } as ConnectionOptions);
+      try {
+        await backend.openSession({});
+        expect.fail('invalid window accepted');
+      } catch (error) {
+        expect(error).to.be.instanceOf(HiveDriverError);
+        expect((error as Error).message).to.include('positive safe integer');
+      }
+      expect(binding.openSessionStub.called).to.equal(false);
+    });
+  }
+
+  it('snapshots the download window separately for each opened session', async () => {
+    const binding = makeBinding(new FakeNativeConnection());
+    const context = makeContext(undefined, { cloudFetchConcurrentDownloads: 1 });
+    const backend = new KernelBackend({ context, nativeBinding: binding });
+    await backend.connect({ host: 'h', path: '/p', token: 't' } as ConnectionOptions);
+    await backend.openSession({});
+    context.getConfig().cloudFetchConcurrentDownloads = 4;
+    await backend.openSession({});
+    expect(binding.openSessionStub.firstCall.args[0]).to.have.nested.property(
+      'sessionConf.cloudfetch_max_chunks_in_memory',
+      '1',
+    );
+    expect(binding.openSessionStub.secondCall.args[0]).to.have.nested.property(
+      'sessionConf.cloudfetch_max_chunks_in_memory',
+      '4',
+    );
   });
 
   ['can_cloud_download', 'CLOUDFETCH_ENABLED', 'cloudfetch_enabled'].forEach((key) => {
@@ -764,7 +829,12 @@ describe('KernelBackend', () => {
       const configuration = { [key]: 'true', TIMEZONE: 'UTC' };
       await backend.openSession({ configuration });
       const conf = (binding.openSessionStub.firstCall.args[0] as { sessionConf?: Record<string, string> }).sessionConf;
-      expect(conf).to.deep.equal({ [key]: 'true', TIMEZONE: 'UTC', cloudfetch_enabled: 'false' });
+      expect(conf).to.deep.equal({
+        [key]: 'true',
+        TIMEZONE: 'UTC',
+        cloudfetch_enabled: 'false',
+        cloudfetch_max_chunks_in_memory: '10',
+      });
       expect(configuration).to.deep.equal({ [key]: 'true', TIMEZONE: 'UTC' });
     });
   });
@@ -841,7 +911,7 @@ describe('KernelBackend', () => {
       token: 't',
       catalog: 'main',
       schema: 'default',
-      sessionConf: { 'spark.sql.execution.arrow.enabled': 'true' },
+      sessionConf: { 'spark.sql.execution.arrow.enabled': 'true', cloudfetch_max_chunks_in_memory: '10' },
     });
 
     // And the SQL still threads through executeStatement (now with no

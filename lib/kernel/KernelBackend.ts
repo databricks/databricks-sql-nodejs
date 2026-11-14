@@ -152,6 +152,14 @@ export default class KernelBackend implements IBackend {
     if (request.configuration !== undefined) {
       sessionOptions.sessionConf = { ...request.configuration };
     }
+    const downloadWindow = this.context.getConfig().cloudFetchConcurrentDownloads ?? 10;
+    if (!Number.isSafeInteger(downloadWindow) || downloadWindow <= 0) {
+      throw new HiveDriverError('cloudFetchConcurrentDownloads must be a positive safe integer');
+    }
+    const chunkKey = 'cloudfetch_max_chunks_in_memory';
+    if (!Object.keys(sessionOptions.sessionConf ?? {}).some((key) => key.toLowerCase() === chunkKey)) {
+      sessionOptions.sessionConf = { ...sessionOptions.sessionConf, [chunkKey]: String(downloadWindow) };
+    }
     if (this.context.getConfig().useCloudFetch === false) {
       sessionOptions.sessionConf = { ...sessionOptions.sessionConf, cloudfetch_enabled: 'false' };
     }

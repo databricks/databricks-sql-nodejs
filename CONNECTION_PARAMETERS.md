@@ -130,6 +130,19 @@ still use HTTPS to `host`. Kernel uses `http://host[:port]` for all of its
 requests, including its own OAuth and telemetry calls. CloudFetch downloads use
 the presigned URLs returned by the server on both backends.
 
+## CloudFetch download window
+
+Set `client.getConfig().cloudFetchConcurrentDownloads` before `openSession()`
+to tune downloads on either backend (default 10). Kernel sessions snapshot this
+value at open; changes apply to subsequent sessions. Thrift reads it on each
+fetch. Kernel mode requires a positive safe integer and rejects invalid values
+at session open. Values above 256 are clamped by the kernel.
+
+The kernel bounds downloading and queued chunks ahead of consumption, excluding
+consumer buffers. This is not a byte limit. An explicit
+`cloudfetch_max_chunks_in_memory` in `openSession({ configuration: ... })` wins
+case-insensitively. Invalid raw overrides warn and retain the kernel default 16.
+
 ## Results and type rendering
 
 | Option                        | Type      | Thrift | Kernel | Default Value | Note                                                                                                                                                                               |

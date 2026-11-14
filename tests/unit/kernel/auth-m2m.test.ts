@@ -381,6 +381,7 @@ describe('KernelAuth + KernelBackend — OAuth M2M auth flow', () => {
       expect(calls).to.have.lengthOf(1);
       expect(calls[0].method).to.equal('openSession');
       expectNativeConnectionOptions(calls[0].args[0], {
+        sessionConf: { cloudfetch_max_chunks_in_memory: '10' },
         hostName: 'example.cloud.databricks.com',
         httpPath: '/sql/1.0/warehouses/abc',
         intervalsAsString: true,
