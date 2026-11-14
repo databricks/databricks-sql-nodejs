@@ -40,6 +40,8 @@ import {
 import KernelOperationBackend from '../../../lib/kernel/KernelOperationBackend';
 import { TTypeId } from '../../../thrift/TCLIService_types';
 import ClientContextStub from '../.stubs/ClientContextStub';
+import ParameterError from '../../../lib/errors/ParameterError';
+import StagingError from '../../../lib/errors/StagingError';
 
 // Minimal stub of the napi `Statement` surface that emits a precomputed
 // Arrow IPC payload per `fetchNextBatch()` call. Used to feed
@@ -391,6 +393,50 @@ describe('KernelOperationBackend — M0 datatype round-trip via napi → ArrowRe
 });
 
 describe('KernelOperationBackend Volume completion', () => {
+  it('preserves SQL execution errors with HTTP metadata', async () => {
+    const error = Object.assign(new ParameterError('invalid SQL parameter'), {
+      sqlState: '22023',
+      kernelMetadata: { httpStatus: 400 },
+    });
+    const backend = new KernelOperationBackend({
+      cancellableExecution: {
+        result: async () => {
+          throw error;
+        },
+      } as any,
+      context: new ClientContextStub(),
+    });
+    const actual = await backend.completeStagingOperation(['/allowed']).then(
+      () => expect.fail('execution should fail'),
+      (failure) => failure,
+    );
+    expect(actual).to.equal(error);
+    expect(actual.sqlState).to.equal('22023');
+  });
+
+  for (const error of [
+    new ParameterError('path is not allowed'),
+    Object.assign(new Error('storage HTTP 403'), { kernelMetadata: { httpStatus: 403 } }),
+    Object.assign(new Error('source is missing'), { code: 'ENOENT', path: '/allowed/missing' }),
+  ]) {
+    it(`classifies transfer failure: ${error.message}`, async () => {
+      const schema = new Schema([withTypeName(new Field('x', new Int32(), true), 'INT')]);
+      const statement = new StatementStub(ipcSchemaOnly(schema), []);
+      Object.assign(statement, {
+        completeVolumeOperation: async () => {
+          throw error;
+        },
+      });
+      const backend = new KernelOperationBackend({ statement, context: new ClientContextStub() });
+      const actual = await backend.completeStagingOperation(['/allowed']).then(
+        () => expect.fail('transfer should fail'),
+        (failure) => failure,
+      );
+      if ('code' in error) expect(actual).to.equal(error);
+      else expect(actual).to.be.instanceOf(StagingError).with.property('message', error.message);
+    });
+  }
+
   it('routes cancellation to the statement after SQL completes', async () => {
     const schema = new Schema([withTypeName(new Field('x', new Int32(), true), 'INT')]);
     const statement = new StatementStub(ipcSchemaOnly(schema), []);
