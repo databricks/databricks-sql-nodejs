@@ -14,6 +14,7 @@ import Status from './dto/Status';
 import { LogLevel } from './contracts/IDBSQLLogger';
 import OperationStateError, { OperationStateErrorCode } from './errors/OperationStateError';
 import { OperationChunksIterator, OperationRowsIterator } from './utils/OperationIterator';
+import { concatChunks } from './result/ResultSlicer';
 import IClientContext from './contracts/IClientContext';
 import IOperationBackend, { IOperationBackendWaitOptions } from './contracts/IOperationBackend';
 import { ResultFormat, ResultMetadata } from './contracts/ResultMetadata';
@@ -131,7 +132,7 @@ export default class DBSQLOperation implements IOperation {
     } while (await this.hasMoreRows()); // eslint-disable-line no-await-in-loop
     this.context.getLogger().log(LogLevel.debug, `Fetched all data from operation with id: ${this.id}`);
 
-    return data.flat();
+    return concatChunks(data);
   }
 
   /**
