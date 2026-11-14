@@ -324,10 +324,9 @@ export function decodeNapiKernelError(err: unknown): Error {
       DirectoryNotEmpty: 'ENOTEMPTY',
     };
     const raw = typeof envelope.localOsError === 'number' ? envelope.localOsError : undefined;
+    const systemCode = process.platform !== 'win32' && raw ? getSystemErrorName(-Math.abs(raw)) : undefined;
     const localCode =
-      process.platform !== 'win32' && raw
-        ? getSystemErrorName(-Math.abs(raw))
-        : kindCodes[envelope.localErrorKind] ?? 'EIO';
+      systemCode && /^E[A-Z0-9]+$/.test(systemCode) ? systemCode : kindCodes[envelope.localErrorKind] ?? 'EIO';
     jsErr = Object.assign(new Error(msg), {
       code: localCode,
       errno: -((constants.errno as Record<string, number>)[localCode] ?? Math.abs(raw ?? constants.errno.EIO)),
