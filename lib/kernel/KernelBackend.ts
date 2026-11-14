@@ -152,7 +152,8 @@ export default class KernelBackend implements IBackend {
     if (request.configuration !== undefined) {
       sessionOptions.sessionConf = { ...request.configuration };
     }
-    const downloadWindow = this.context.getConfig().cloudFetchConcurrentDownloads ?? 10;
+    const configuredWindow = this.context.getConfig().cloudFetchConcurrentDownloads;
+    const downloadWindow = configuredWindow === undefined ? 10 : configuredWindow;
     if (!Number.isSafeInteger(downloadWindow) || downloadWindow <= 0) {
       throw new HiveDriverError('cloudFetchConcurrentDownloads must be a positive safe integer');
     }

@@ -781,7 +781,7 @@ describe('KernelBackend', () => {
     });
   }
 
-  for (const window of [0, -1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1]) {
+  for (const window of [0, -1, 1.5, NaN, Infinity, Number.MAX_SAFE_INTEGER + 1, null as unknown as number]) {
     it(`openSession() rejects invalid download window ${window}`, async () => {
       const binding = makeBinding(new FakeNativeConnection());
       const backend = new KernelBackend({
