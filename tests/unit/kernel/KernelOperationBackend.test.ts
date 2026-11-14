@@ -41,6 +41,7 @@ import KernelOperationBackend from '../../../lib/kernel/KernelOperationBackend';
 import { TTypeId } from '../../../thrift/TCLIService_types';
 import ClientContextStub from '../.stubs/ClientContextStub';
 import ParameterError from '../../../lib/errors/ParameterError';
+import AuthenticationError from '../../../lib/errors/AuthenticationError';
 import StagingError from '../../../lib/errors/StagingError';
 
 // Minimal stub of the napi `Statement` surface that emits a precomputed
@@ -416,7 +417,9 @@ describe('KernelOperationBackend Volume completion', () => {
 
   for (const error of [
     new ParameterError('path is not allowed'),
-    Object.assign(new Error('storage HTTP 403'), { kernelMetadata: { httpStatus: 403 } }),
+    Object.assign(new Error('storage HTTP 403'), {
+      kernelMetadata: { httpStatus: 403, errorCode: 'VOLUME_STORAGE_HTTP_ERROR' },
+    }),
     Object.assign(new Error('source is missing'), { code: 'ENOENT', path: '/allowed/missing' }),
   ]) {
     it(`classifies transfer failure: ${error.message}`, async () => {
@@ -434,6 +437,35 @@ describe('KernelOperationBackend Volume completion', () => {
       );
       if ('code' in error) expect(actual).to.equal(error);
       else expect(actual).to.be.instanceOf(StagingError).with.property('message', error.message);
+    });
+  }
+
+  for (const error of [
+    Object.assign(new AuthenticationError('instruction session expired'), {
+      sqlState: '08003',
+      kernelMetadata: { httpStatus: 401, errorCode: 'SESSION_EXPIRED' },
+    }),
+    Object.assign(new ParameterError('invalid instruction request'), {
+      sqlState: '22023',
+      kernelMetadata: { httpStatus: 400 },
+    }),
+  ]) {
+    it(`preserves deferred instruction errors: ${error.message}`, async () => {
+      const schema = new Schema([withTypeName(new Field('x', new Int32(), true), 'INT')]);
+      const statement = new StatementStub(ipcSchemaOnly(schema), []);
+      Object.assign(statement, {
+        completeVolumeOperation: async () => {
+          throw error;
+        },
+      });
+      const backend = new KernelOperationBackend({ statement, context: new ClientContextStub() });
+      const actual = await backend.completeStagingOperation(['/allowed']).then(
+        () => expect.fail('instruction fetch should fail'),
+        (failure) => failure,
+      );
+      expect(actual).to.equal(error);
+      expect(actual.sqlState).to.equal(error.sqlState);
+      expect(actual.kernelMetadata).to.equal(error.kernelMetadata);
     });
   }
 
