@@ -151,7 +151,7 @@ export default class KernelSessionBackend implements ISessionBackend {
    * Still rejected (genuinely unsupported on kernel, rather than silently
    * dropped): `useCloudFetch` (governed by the kernel `ResultConfig`, not a
    * per-statement knob), `useLZ4Compression` (kernel owns result compression),
-   * and `stagingAllowedLocalPath` (volume operations). `maxRows` is applied by
+   * while `stagingAllowedLocalPath` is applied by the facade. `maxRows` is applied by
    * the facade at fetch time, so it is intentionally not handled here.
    */
   public async executeStatement(statement: string, options: ExecuteStatementOptions): Promise<IOperationBackend> {
@@ -160,8 +160,7 @@ export default class KernelSessionBackend implements ISessionBackend {
     // Per-statement options the kernel backend doesn't honour are treated as
     // NO-OPs (logged at warn), not errors — so call sites written for the Thrift
     // backend are drop-in on the kernel path. These are perf/format hints the
-    // kernel governs internally (useCloudFetch / useLZ4Compression) or a feature
-    // it doesn't expose yet (staging); ignoring them cannot change query results.
+    // kernel governs internally (useCloudFetch / useLZ4Compression).
     // NB: parameter binding (compound/BINARY) is deliberately NOT no-op'd — a
     // dropped param would silently change results, so it still throws.
     if (options.useCloudFetch !== undefined) {
@@ -180,15 +179,6 @@ export default class KernelSessionBackend implements ISessionBackend {
           'kernel executeStatement: ignoring per-statement `useLZ4Compression` — result compression is governed by the kernel (no-op on kernel).',
         );
     }
-    if (options.stagingAllowedLocalPath !== undefined) {
-      this.context
-        .getLogger()
-        .log(
-          LogLevel.warn,
-          'kernel executeStatement: ignoring `stagingAllowedLocalPath` — volume/staging operations are not yet supported on the kernel backend (no-op).',
-        );
-    }
-
     // `runAsync` selects the kernel execution path. NOTE: this is a kernel-
     // specific use of the option — the Thrift backend hardcodes `runAsync: true`
     // on the wire and never reads `options.runAsync`, so the field is a no-op
@@ -212,7 +202,9 @@ export default class KernelSessionBackend implements ISessionBackend {
     //     the backend polls `status()` to terminal in `waitUntilReady()` and
     //     materialises results via `awaitResult()`. `queryTimeout` is a no-op
     //     here too.
-    const runAsync = options.runAsync ?? false;
+    // Configured staging completes before the facade returns, so retain inline
+    // results even when the caller requests asynchronous execution.
+    const runAsync = (options.runAsync ?? false) && options.stagingAllowedLocalPath === undefined;
     // `queryTimeout` is a NO-OP on the kernel (kernel) backend. It is the JDBC
     // `setQueryTimeout` knob which — per the option's JSDoc — is effective only
     // on Compute clusters; SQL Warehouses (what kernel targets) use the

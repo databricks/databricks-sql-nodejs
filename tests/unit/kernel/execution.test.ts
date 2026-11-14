@@ -40,6 +40,12 @@ import { DBSQLParameter, DBSQLParameterType } from '../../../lib/DBSQLParameter'
 // -----------------------------------------------------------------------------
 
 class FakeNativeStatement implements KernelStatement {
+  public readonly isVolumeOperation = false;
+
+  public async completeVolumeOperation(): Promise<string> {
+    return 'not_volume';
+  }
+
   public closed = false;
 
   public cancelled = false;
@@ -887,6 +893,20 @@ describe('KernelSessionBackend', () => {
     expect(op.id).to.be.a('string').and.have.length.greaterThan(0);
   });
 
+  for (const stagingAllowedLocalPath of [[], '/tmp']) {
+    it(`retains inline results for configured async staging paths ${JSON.stringify(
+      stagingAllowedLocalPath,
+    )}`, async () => {
+      const connection = new FakeNativeConnection();
+      const direct = sinon.spy(connection, 'executeStatementDirect');
+      const submit = sinon.spy(connection, 'submitStatement');
+      const session = makeSession(connection);
+      await session.executeStatement('REMOVE remote', { runAsync: true, stagingAllowedLocalPath });
+      expect(direct.calledOnce).to.equal(true);
+      expect(submit.called).to.equal(false);
+    });
+  }
+
   it('executeStatement (sync default) routes a still-running query through the AsyncStatement arm', async () => {
     // The directResults Running arm — a query that did NOT finish within the
     // server inline wait comes back as an AsyncStatement (poll/cancel handle).
@@ -1075,13 +1095,11 @@ describe('KernelSessionBackend', () => {
 
   // Unsupported-on-kernel per-statement HINTS are NO-OPs (not errors) so Thrift-
   // targeted call sites are drop-in on the kernel path. They are kernel-governed
-  // perf/format hints (useCloudFetch / useLZ4Compression) or an unexposed feature
-  // (staging); ignoring them can't change results. (Parameter binding is NOT here
+  // perf/format hints (useCloudFetch / useLZ4Compression). (Parameter binding is NOT here
   // — a dropped param would change results, so it still throws; asserted above.)
   for (const { name, options } of [
     { name: 'useCloudFetch', options: { useCloudFetch: true } },
     { name: 'useLZ4Compression', options: { useLZ4Compression: true } },
-    { name: 'stagingAllowedLocalPath', options: { stagingAllowedLocalPath: '/tmp' } },
   ] as const) {
     it(`executeStatement ignores unsupported ${name} (no-op, does not throw)`, async () => {
       const connection = new FakeNativeConnection();

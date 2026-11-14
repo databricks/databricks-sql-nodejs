@@ -197,7 +197,7 @@ telemetry implementation, so only the options explicitly forwarded by
 | `maxRows`                 | `number \| bigint \| Int64 \| null`                     |   ✅   |   ❌   | `100000` / —  | Thrift uses it for the initial Direct Results row count; `null` disables Direct Results. Kernel does not retain or forward the supplied value.                            |
 | `useCloudFetch`           | `boolean`                                               |   ✅   |   ❌   | `true` / —    | Kernel logs and ignores this per-statement hint; Kernel result fetching owns its CloudFetch behavior.                                                                     |
 | `useLZ4Compression`       | `boolean`                                               |   ✅   |   ❌   | `true` / —    | Thrift uses it when supported and when the result is not CloudFetch. Kernel owns and auto-detects result compression.                                                     |
-| `stagingAllowedLocalPath` | `string \| string[]`                                    |   ✅   |   ❌   | —             | Local allowlist for Thrift volume/staging operations. Kernel volume operations are unsupported.                                                                           |
+| `stagingAllowedLocalPath` | `string \| string[]`                                    |   ✅   |   ✅   | —             | Local allowlist for Volume operations. Kernel also requires resolved symlink targets within allowed roots; links within those roots are permitted.                        |
 | `namedParameters`         | `Record<string, DBSQLParameter \| DBSQLParameterValue>` |   ✅   |   ✅   | —             | Named SQL parameters. Cannot be combined with non-empty `ordinalParameters`. Thrift requires a protocol that supports parameterized queries.                              |
 | `ordinalParameters`       | `Array<DBSQLParameter \| DBSQLParameterValue>`          |   ✅   |   ✅   | —             | Positional SQL parameters. Cannot be combined with non-empty `namedParameters`.                                                                                           |
 | `queryTags`               | `Record<string, string \| null \| undefined>`           |   ✅   |   ✅   | —             | Serialized into the per-statement `query_tags` conf overlay on both.                                                                                                      |
@@ -228,11 +228,16 @@ session parameter surface.
 
 Thrift-only capabilities include custom/token-provider authentication, custom
 OAuth persistence, SOCKS proxies, authenticated/driver-buffer telemetry knobs,
-query timeout, Direct Results `maxRows`, per-statement CloudFetch/LZ4 hints, and
-volume operations.
+query timeout, Direct Results `maxRows`, and per-statement CloudFetch/LZ4 hints.
 
 Kernel-only capabilities include connection-pool sizing, proxy bypass hosts,
 independent TLS hostname verification, optional U2M disk caching, and
 per-statement `rowLimit`/`statementConf`.
 
 The Kernel path remains internal and unstable; its behavior may change.
+
+With the kernel backend, supplying `stagingAllowedLocalPath` completes Volume
+transfers before `executeStatement` resolves and consumes instruction rows.
+Omitting the option returns raw instructions without file effects. Unlike the
+Thrift backend’s lexical path check, the kernel also rejects symlink targets
+outside the configured roots while permitting symlinks within them.

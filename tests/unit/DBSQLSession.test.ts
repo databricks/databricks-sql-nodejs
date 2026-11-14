@@ -7,6 +7,7 @@ import Status from '../../lib/dto/Status';
 import DBSQLOperation from '../../lib/DBSQLOperation';
 import { PrimaryKeysRequest } from '../../lib/contracts/IDBSQLSession';
 import ISessionBackend from '../../lib/contracts/ISessionBackend';
+import IOperationBackend from '../../lib/contracts/IOperationBackend';
 import ParameterError from '../../lib/errors/ParameterError';
 import { DBSQLParameter } from '../../lib/DBSQLParameter';
 import { TSessionHandle, TProtocolVersion, TOperationState, TStatusCode } from '../../thrift/TCLIService_types';
@@ -882,4 +883,39 @@ describe('DBSQLSession', () => {
       await session[Symbol.asyncDispose]();
     });
   });
+});
+
+describe('DBSQLSession native staging dispatch', () => {
+  it('closes a failed native operation and preserves its error when close also fails', async () => {
+    const error = new Error('completion failed');
+    const close = sinon.stub().rejects(new Error('close failed'));
+    const op = {
+      id: 'volume-operation',
+      completeStagingOperation: sinon.stub().rejects(error),
+      close,
+    } as unknown as IOperationBackend;
+    const session = new DBSQLSession({
+      backend: { id: 'volume-session', executeStatement: async () => op } as unknown as ISessionBackend,
+      context: new ClientContextStub(),
+    });
+    const actual = await session.executeStatement('GET remote TO local', { stagingAllowedLocalPath: [] }).then(
+      () => expect.fail('completion should fail'),
+      (failure) => failure,
+    );
+    expect(actual).to.equal(error);
+    expect(close.callCount).to.equal(1);
+  });
+
+  for (const configured of [false, true]) {
+    it(`calls native completion only when local paths are ${configured ? 'configured' : 'omitted'}`, async () => {
+      const completeStagingOperation = sinon.stub().resolves();
+      const op = { id: 'volume-operation', completeStagingOperation } as unknown as IOperationBackend;
+      const session = new DBSQLSession({
+        backend: { id: 'volume-session', executeStatement: async () => op } as unknown as ISessionBackend,
+        context: new ClientContextStub(),
+      });
+      await session.executeStatement('REMOVE remote', configured ? { stagingAllowedLocalPath: [] } : {});
+      expect(completeStagingOperation.callCount).to.equal(configured ? 1 : 0);
+    });
+  }
 });

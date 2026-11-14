@@ -40,6 +40,9 @@ import {
 import KernelOperationBackend from '../../../lib/kernel/KernelOperationBackend';
 import { TTypeId } from '../../../thrift/TCLIService_types';
 import ClientContextStub from '../.stubs/ClientContextStub';
+import ParameterError from '../../../lib/errors/ParameterError';
+import AuthenticationError from '../../../lib/errors/AuthenticationError';
+import StagingError from '../../../lib/errors/StagingError';
 
 // Minimal stub of the napi `Statement` surface that emits a precomputed
 // Arrow IPC payload per `fetchNextBatch()` call. Used to feed
@@ -388,4 +391,121 @@ describe('KernelOperationBackend — M0 datatype round-trip via napi → ArrowRe
     await backend.close();
     expect(stub.closed).to.equal(true);
   });
+});
+
+describe('KernelOperationBackend Volume completion', () => {
+  it('preserves SQL execution errors with HTTP metadata', async () => {
+    const error = Object.assign(new ParameterError('invalid SQL parameter'), {
+      sqlState: '22023',
+      kernelMetadata: { httpStatus: 400 },
+    });
+    const backend = new KernelOperationBackend({
+      cancellableExecution: {
+        result: async () => {
+          throw error;
+        },
+      } as any,
+      context: new ClientContextStub(),
+    });
+    const actual = await backend.completeStagingOperation(['/allowed']).then(
+      () => expect.fail('execution should fail'),
+      (failure) => failure,
+    );
+    expect(actual).to.equal(error);
+    expect(actual.sqlState).to.equal('22023');
+  });
+
+  for (const error of [
+    new ParameterError('path is not allowed'),
+    Object.assign(new Error('storage HTTP 403'), {
+      kernelMetadata: { httpStatus: 403, errorCode: 'VOLUME_STORAGE_HTTP_ERROR' },
+    }),
+    Object.assign(new Error('source is missing'), { code: 'ENOENT', path: '/allowed/missing' }),
+  ]) {
+    it(`classifies transfer failure: ${error.message}`, async () => {
+      const schema = new Schema([withTypeName(new Field('x', new Int32(), true), 'INT')]);
+      const statement = new StatementStub(ipcSchemaOnly(schema), []);
+      Object.assign(statement, {
+        completeVolumeOperation: async () => {
+          throw error;
+        },
+      });
+      const backend = new KernelOperationBackend({ statement, context: new ClientContextStub() });
+      const actual = await backend.completeStagingOperation(['/allowed']).then(
+        () => expect.fail('transfer should fail'),
+        (failure) => failure,
+      );
+      if ('code' in error) expect(actual).to.equal(error);
+      else expect(actual).to.be.instanceOf(StagingError).with.property('message', error.message);
+    });
+  }
+
+  for (const error of [
+    Object.assign(new AuthenticationError('instruction session expired'), {
+      sqlState: '08003',
+      kernelMetadata: { httpStatus: 401, errorCode: 'SESSION_EXPIRED' },
+    }),
+    Object.assign(new ParameterError('invalid instruction request'), {
+      sqlState: '22023',
+      kernelMetadata: { httpStatus: 400 },
+    }),
+  ]) {
+    it(`preserves deferred instruction errors: ${error.message}`, async () => {
+      const schema = new Schema([withTypeName(new Field('x', new Int32(), true), 'INT')]);
+      const statement = new StatementStub(ipcSchemaOnly(schema), []);
+      Object.assign(statement, {
+        completeVolumeOperation: async () => {
+          throw error;
+        },
+      });
+      const backend = new KernelOperationBackend({ statement, context: new ClientContextStub() });
+      const actual = await backend.completeStagingOperation(['/allowed']).then(
+        () => expect.fail('instruction fetch should fail'),
+        (failure) => failure,
+      );
+      expect(actual).to.equal(error);
+      expect(actual.sqlState).to.equal(error.sqlState);
+      expect(actual.kernelMetadata).to.equal(error.kernelMetadata);
+    });
+  }
+
+  it('routes cancellation to the statement after SQL completes', async () => {
+    const schema = new Schema([withTypeName(new Field('x', new Int32(), true), 'INT')]);
+    const statement = new StatementStub(ipcSchemaOnly(schema), []);
+    let executionCancelled = false;
+    const execution = {
+      result: async () => statement,
+      cancel: async () => {
+        executionCancelled = true;
+      },
+    };
+    const backend = new KernelOperationBackend({
+      cancellableExecution: execution as any,
+      context: new ClientContextStub(),
+    });
+    await backend.getResultMetadata();
+    await backend.cancel();
+    expect(statement.cancelled).to.equal(true);
+    expect(executionCancelled).to.equal(false);
+  });
+
+  for (const outcome of ['completed', 'not_volume']) {
+    it(`${
+      outcome === 'completed' ? 'consumes completed instructions' : 'preserves raw instruction rows'
+    }`, async () => {
+      const schema = new Schema([withTypeName(new Field('x', new Int32(), true), 'INT')]);
+      const stub = new StatementStub(ipcSchemaOnly(schema), [ipcFromColumns(schema, { x: [1] })]);
+      const completeVolumeOperation = async (paths: string[], remove404: boolean) => {
+        expect(paths).to.deep.equal(['/allowed']);
+        expect(remove404).to.equal(true);
+        return outcome;
+      };
+      Object.assign(stub, { isVolumeOperation: true, completeVolumeOperation });
+      const backend = new KernelOperationBackend({ statement: stub, context: new ClientContextStub() });
+      expect((await backend.getResultMetadata()).isStagingOperation).to.equal(true);
+      await backend.completeStagingOperation(['/allowed']);
+      expect((await backend.fetchChunk({ limit: 100 })).length).to.equal(outcome === 'completed' ? 0 : 1);
+      expect(await backend.hasMore()).to.equal(false);
+    });
+  }
 });

@@ -372,3 +372,34 @@ describe('KernelErrorMapping.decodeNapiKernelError — cause chain', () => {
     expect(err.cause).to.equal(undefined);
   });
 });
+
+for (const [raw, kind, expected] of [
+  [2, 'NotFound', 'ENOENT'],
+  [undefined, 'PermissionDenied', 'EACCES'],
+  [0, 'PermissionDenied', 'EACCES'],
+  [undefined, 'Unrecognized', 'EIO'],
+  [1000000, 'NotFound', 'ENOENT'],
+  [1000000, 'Unrecognized', 'EIO'],
+] as const) {
+  it(`preserves local file error code and path for ${kind}/${raw}`, () => {
+    const error = decodeNapiKernelError(
+      new Error(
+        `__databricks_error__:${JSON.stringify({
+          code: 'NotFound',
+          message: 'Local file does not exist',
+          localOsError: raw,
+          localErrorKind: kind,
+          localPath: '/allowed/missing',
+          sqlState: 'HY000',
+          queryId: 'query-id',
+        })}`,
+      ),
+    ) as NodeJS.ErrnoException;
+    expect(error.code).to.equal(expected);
+    expect(error.path).to.equal('/allowed/missing');
+    expect(error.errno).to.be.lessThan(0);
+    expect(error).to.have.property('kernelMetadata').with.property('queryId', 'query-id');
+    expect(error).to.have.property('cause').that.is.instanceOf(Error);
+    expect(error).not.to.have.property('sqlState');
+  });
+}
