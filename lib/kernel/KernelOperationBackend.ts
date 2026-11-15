@@ -330,34 +330,19 @@ export default class KernelOperationBackend implements IOperationBackend {
       }
       return await slicer.fetchNext({ limit, disableBuffering });
     } catch (err) {
-      // The napi fetch contract leaves the stream in an unspecified state on
-      // error ("call close() and discard"). Close the statement so the server
-      // reclaims it promptly — best-effort, so a close failure never masks the
-      // original fetch error — then surface a typed kernel error.
-      //
-      // If close() ALSO fails, kernelClose has reset isClosed back to false and
-      // the kernel-side statement handle is now leaked (the stream is already
-      // wedged, so nothing downstream forces another close). We still don't
-      // mask the original fetch error, but log the close failure at warn so
-      // the leak is diagnosable rather than completely invisible.
-      await kernelClose(this.lifecycle, this.lifecycleHandle, this.context, this._id).catch((closeErr) => {
-        const cause = closeErr instanceof Error ? closeErr.message : String(closeErr);
-        this.context
-          .getLogger()
-          .log(
-            LogLevel.warn,
-            `kernel fetch-error cleanup: close() failed for operation ${this._id}; the server-side ` +
-              `statement may leak until the session is closed. Cause: ${cause}`,
-          );
-      });
-      throw decodeNapiKernelError(err);
+      throw await this.fetchFailure(err);
     }
   }
 
   public async hasMore(): Promise<boolean> {
     failIfNotActive(this.lifecycle);
-    const slicer = await this.getResultSlicer();
-    return slicer.hasMore();
+    try {
+      // `hasMore()` prefetches the next batch, so it fails like `fetchChunk()`.
+      const slicer = await this.getResultSlicer();
+      return await slicer.hasMore();
+    } catch (err) {
+      throw await this.fetchFailure(err);
+    }
   }
 
   public async getResultMetadata(): Promise<ResultMetadata> {
@@ -426,7 +411,7 @@ export default class KernelOperationBackend implements IOperationBackend {
       // `numModifiedRows` from the inline count on the terminal response), so
       // surface them — mirroring the sync path. Reading them does not fetch the
       // result.
-      const state = statusStringToOperationState(await this.asyncStatement.status());
+      const state = await this.pollAsyncStatus();
       if (state === OperationState.Succeeded) {
         this.asyncSucceeded = true;
         return { state, hasResultSet: true, ...(await this.readRichStatusFields()) };
@@ -624,7 +609,7 @@ export default class KernelOperationBackend implements IOperationBackend {
       failIfNotActive(this.lifecycle);
 
       // eslint-disable-next-line no-await-in-loop
-      const state = statusStringToOperationState(await this.asyncStatement!.status());
+      const state = await this.pollAsyncStatus();
       // Record success before the progress callback runs, so a callback that
       // throws on the Succeeded tick still leaves `isFinished()` true.
       if (state === OperationState.Succeeded) {
@@ -722,6 +707,19 @@ export default class KernelOperationBackend implements IOperationBackend {
   }
 
   /**
+   * One `AsyncStatement.status()` poll. A failed poll (e.g. retries exhausted on
+   * a 5xx) rejects with the binding's error envelope, which is decoded here like
+   * every other napi call.
+   */
+  private async pollAsyncStatus(): Promise<OperationState> {
+    try {
+      return statusStringToOperationState(await this.asyncStatement!.status());
+    } catch (err) {
+      throw decodeNapiKernelError(err);
+    }
+  }
+
+  /**
    * Drive `awaitResult()` on a Failed statement to surface the kernel's typed
    * SQL-error envelope. Falls back to a generic error if `awaitResult()`
    * unexpectedly resolves instead of rejecting.
@@ -736,20 +734,29 @@ export default class KernelOperationBackend implements IOperationBackend {
   }
 
   /**
-   * Best-effort close of the kernel statement when the poll loop ends on a
-   * server-driven terminal error (Failed/Cancelled/Closed/Unknown/Timeout).
-   * Without it the kernel-side statement handle leaks until session close (the
-   * poll loop, unlike `fetchChunk`, otherwise just throws). Never masks the
-   * original error; warn-logs a close failure so the leak is diagnosable.
+   * A failed fetch leaves the napi stream in an unspecified state ("call close()
+   * and discard"), so close the statement, then return the decoded error to throw.
    */
-  private async bestEffortClose(): Promise<void> {
+  private async fetchFailure(err: unknown): Promise<Error> {
+    await this.bestEffortClose('fetch-error');
+    return decodeNapiKernelError(err);
+  }
+
+  /**
+   * Best-effort close of the kernel statement when the poll loop ends on a
+   * server-driven terminal error (Failed/Cancelled/Closed/Unknown/Timeout) or a
+   * fetch fails. Without it the kernel-side statement handle leaks until session
+   * close. Never masks the original error; warn-logs a close failure so the leak
+   * is diagnosable.
+   */
+  private async bestEffortClose(cleanup: 'poll-loop' | 'fetch-error' = 'poll-loop'): Promise<void> {
     await kernelClose(this.lifecycle, this.lifecycleHandle, this.context, this._id).catch((closeErr) => {
       const cause = closeErr instanceof Error ? closeErr.message : String(closeErr);
       this.context
         .getLogger()
         .log(
           LogLevel.warn,
-          `kernel poll-loop cleanup: close() failed for operation ${this._id}; the server-side ` +
+          `kernel ${cleanup} cleanup: close() failed for operation ${this._id}; the server-side ` +
             `statement may leak until the session is closed. Cause: ${cause}`,
         );
     });

@@ -15,6 +15,7 @@
 import { expect } from 'chai';
 import sinon from 'sinon';
 import Int64 from 'node-int64';
+import { tableFromArrays, tableToIPC } from 'apache-arrow';
 import expectNativeConnectionOptions from './_helpers/nativeOptions';
 import KernelBackend from '../../../lib/kernel/KernelBackend';
 import KernelSessionBackend from '../../../lib/kernel/KernelSessionBackend';
@@ -122,6 +123,8 @@ class FakeAsyncStatement {
 
   public awaitResultError: Error | null = null;
 
+  public statusError: Error | null = null;
+
   // Successive status() returns drain this queue; the last value sticks.
   private readonly states: string[];
 
@@ -136,6 +139,9 @@ class FakeAsyncStatement {
 
   public async status(): Promise<string> {
     this.statusCalls += 1;
+    if (this.statusError) {
+      throw this.statusError;
+    }
     return this.states.length > 1 ? (this.states.shift() as string) : this.states[0];
   }
 
@@ -1463,6 +1469,61 @@ describe('KernelOperationBackend — async (submitStatement) path', () => {
     }
     expect(thrown).to.be.instanceOf(HiveDriverError);
     expect((thrown as Error).message).to.match(/TABLE_OR_VIEW_NOT_FOUND/);
+  });
+
+  it('waitUntilReady() and status() decode a failed status poll instead of leaking the envelope', async () => {
+    const envelope = `__databricks_error__:${JSON.stringify({
+      code: 'Internal',
+      httpStatus: 500,
+      message: 'HTTP 500: Internal Server Error',
+    })}`;
+    for (const call of ['waitUntilReady', 'status'] as const) {
+      const stmt = new FakeAsyncStatement('Running');
+      stmt.statusError = new Error(envelope);
+      const op = makeAsyncOp(stmt);
+      let thrown: unknown;
+      try {
+        // eslint-disable-next-line no-await-in-loop
+        await (call === 'waitUntilReady' ? op.waitUntilReady() : op.status(false));
+      } catch (err) {
+        thrown = err;
+      }
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const err = thrown as any;
+      expect(err, call).to.be.instanceOf(HiveDriverError);
+      expect(err.message, call).to.equal('HTTP 500: Internal Server Error');
+      expect(err.kernelMetadata?.httpStatus, call).to.equal(500);
+      expect(err.cause?.message, call).to.equal('Internal: HTTP 500: Internal Server Error');
+    }
+  });
+
+  // `hasMoreRows()` before the first fetch is what prefetches the first batch.
+  it('hasMoreRows() decodes a failed batch fetch and closes the statement', async () => {
+    const envelope = `__databricks_error__:${JSON.stringify({
+      code: 'Internal',
+      httpStatus: 500,
+      message: 'HTTP 500: Internal Server Error',
+    })}`;
+    const ipcBytes = Buffer.from(tableToIPC(tableFromArrays({ x: Int32Array.from([1, 2]) }), 'stream'));
+    const handle = new FakeNativeStatement();
+    handle.schema = () => ({ ipcBytes });
+    handle.fetchNextBatch = async () => {
+      throw new Error(envelope);
+    };
+    const stmt = new FakeAsyncStatement('Succeeded', handle);
+    const op = new DBSQLOperation({ backend: makeAsyncOp(stmt), context: makeContext() });
+    let thrown: unknown;
+    try {
+      await op.hasMoreRows();
+    } catch (err) {
+      thrown = err;
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const err = thrown as any;
+    expect(err).to.be.instanceOf(HiveDriverError);
+    expect(err.message).to.equal('HTTP 500: Internal Server Error');
+    expect(err.kernelMetadata?.httpStatus).to.equal(500);
+    expect(stmt.closed, 'the wedged statement is closed').to.equal(true);
   });
 
   // A server-driven terminal state MUST throw OperationStateError (not a plain
