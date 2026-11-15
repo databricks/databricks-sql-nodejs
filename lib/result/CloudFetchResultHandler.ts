@@ -147,7 +147,7 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
     const deadlineAt = this.downloadDeadline();
     let currentLink = link;
     let { response, body } = await this.fetch(currentLink.fileLink, { headers: currentLink.httpHeaders }, deadlineAt);
-    // Each link refresh counts as one more attempt against `retryMaxAttempts`
+    // At most `retryMaxAttempts` URLs per download; each `fetch` retries its URL under its own budget
     for (let attempt = 1; LINK_REFRESH_STATUSES.has(response.status) && attempt < retryMaxAttempts; attempt += 1) {
       // eslint-disable-next-line no-await-in-loop
       const freshLink = await this.refreshLink(currentLink, response.status);
@@ -197,11 +197,11 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
     return retriesTimeout > 0 ? Date.now() + retriesTimeout : undefined;
   }
 
-  // `deadlineAt` is shared by a download and its link refreshes
+  // `deadlineAt` is shared by a download and its link refreshes; `undefined` means no deadline
   private async fetch(
     url: RequestInfo,
-    init?: RequestInit,
-    deadlineAt: number | undefined = this.downloadDeadline(),
+    init: RequestInit,
+    deadlineAt: number | undefined,
   ): Promise<{ response: Response; body?: ArrayBuffer }> {
     const connectionProvider = await this.context.getConnectionProvider();
     let requestUrl = url;

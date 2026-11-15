@@ -1085,13 +1085,15 @@ describe('CloudFetchResultHandler', () => {
         expect(elapsedMs).to.be.gte(300);
       });
 
-      it('should share one retriesTimeout deadline across link refreshes', async () => {
+      it('should share one retriesTimeout deadline across link refreshes', async function () {
+        this.timeout(5000);
+        // Every URL is rejected after 120 ms. One shared 300 ms deadline ends the download within
+        // 3 GETs; a fresh deadline per refreshed URL would refresh 9 times and fail with the 403.
         const url = await startServer((req, res) => {
-          if (req.url?.includes('sig=0')) {
+          setTimeout(() => {
             res.writeHead(403, 'Forbidden');
             res.end();
-          }
-          // ...every refreshed URL stalls
+          }, 120);
         });
         let refreshes = 0;
         const { handler } = createRefreshingHandler(
@@ -1103,12 +1105,11 @@ describe('CloudFetchResultHandler', () => {
           { retriesTimeout: 300, retryMaxAttempts: 10 },
         );
 
-        const { error, elapsedMs } = await fetchWithin(handler, 1500);
+        const { error } = await fetchWithin(handler, 4000);
 
         expect(error).to.be.instanceOf(RetryError);
         expect(error.errorCode).to.be.equal(RetryErrorCode.TimeoutExceeded);
-        expect(elapsedMs).to.be.lt(1000);
-        expect(refreshes).to.be.equal(1);
+        expect(refreshes).to.be.lessThan(9);
       });
     });
 

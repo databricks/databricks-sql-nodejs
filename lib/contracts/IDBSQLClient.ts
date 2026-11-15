@@ -71,9 +71,11 @@ export type ConnectionOptions = {
   path: string;
   userAgentEntry?: string;
   /**
-   * Request timeout in milliseconds. On the Thrift backend it is also the inactivity timeout
-   * of each CloudFetch download attempt: an attempt that receives nothing for this long is
-   * aborted and retried. Default 900000 (15 minutes).
+   * Timeout in milliseconds. Thrift: how long each request may wait for its response headers,
+   * and then for its body (default 900000, 15 minutes; `0` disables it). It is also the
+   * inactivity timeout of each CloudFetch download attempt: an attempt that receives nothing
+   * for this long is aborted and retried. Kernel: the socket read timeout, used only when
+   * positive; otherwise the kernel keeps its 120-second default.
    */
   socketTimeout?: number;
   proxy?: ProxyOptions;
