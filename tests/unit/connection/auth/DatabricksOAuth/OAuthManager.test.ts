@@ -671,6 +671,18 @@ describe('AzureOAuthManager tenant discovery', () => {
     ]);
   });
 
+  it('discovers the tenant when azureTenantId is empty or whitespace', async () => {
+    for (const azureTenantId of ['', '   ']) {
+      discoverStub.resetHistory();
+      oidcConfigUrls.length = 0;
+      await makeManager({ azureTenantId }).getToken();
+      expect(discoverStub.calledOnce).to.be.true;
+      expect(oidcConfigUrls).to.deep.equal([
+        'https://login.microsoftonline.com/discovered-tenant/v2.0/.well-known/openid-configuration',
+      ]);
+    }
+  });
+
   it('keeps /organizations for U2M', async () => {
     const mgr = makeManager({ flow: OAuthFlow.U2M, clientSecret: undefined });
     await (mgr as unknown as { getClient(): Promise<unknown> }).getClient();

@@ -112,6 +112,14 @@ describe('discoverAzureTenantId', () => {
     await expectAuthError(discoverAzureTenantId(base), 'HTTP 200 without a redirect');
   });
 
+  it('fails when a non-redirect response carries a Location header', async () => {
+    respond = (req, res) => {
+      res.writeHead(200, { Location: 'https://login.microsoftonline.com/tenant-xyz/oauth2/authorize' });
+      res.end();
+    };
+    await expectAuthError(discoverAzureTenantId(base), 'HTTP 200 without a redirect');
+  });
+
   it('wraps a network failure with the azureTenantId hint', async () => {
     const closed = http.createServer();
     await new Promise<void>((resolve) => {
