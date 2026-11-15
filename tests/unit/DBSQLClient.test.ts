@@ -879,6 +879,7 @@ describe('DBSQLClient retry-policy ConnectionOptions', () => {
     expect(client.getConfig().retriesTimeout).to.equal(15 * 60 * 1000);
     expect(client.getConfig().retryDelayMin).to.equal(1000);
     expect(client.getConfig().retryDelayMax).to.equal(60 * 1000);
+    expect(client.getConfig().socketTimeout).to.equal(15 * 60 * 1000);
 
     await client.connect({
       ...connectOptions,
@@ -886,12 +887,23 @@ describe('DBSQLClient retry-policy ConnectionOptions', () => {
       retriesTimeout: 5000,
       retryDelayMin: 100,
       retryDelayMax: 500,
+      socketTimeout: 30000,
     });
 
     expect(client.getConfig().retryMaxAttempts).to.equal(2);
     expect(client.getConfig().retriesTimeout).to.equal(5000);
     expect(client.getConfig().retryDelayMin).to.equal(100);
     expect(client.getConfig().retryDelayMax).to.equal(500);
+    // Read by the Thrift CloudFetch download idle timeout
+    expect(client.getConfig().socketTimeout).to.equal(30000);
+  });
+
+  it('ingests socketTimeout: 0 from connect() into ClientConfig', async () => {
+    const client = new DBSQLClient();
+
+    await client.connect({ ...connectOptions, socketTimeout: 0 });
+
+    expect(client.getConfig().socketTimeout).to.equal(0);
   });
 
   it('keeps defaults when retry-policy options are omitted', async () => {
@@ -903,6 +915,7 @@ describe('DBSQLClient retry-policy ConnectionOptions', () => {
     expect(client.getConfig().retriesTimeout).to.equal(15 * 60 * 1000);
     expect(client.getConfig().retryDelayMin).to.equal(1000);
     expect(client.getConfig().retryDelayMax).to.equal(60 * 1000);
+    expect(client.getConfig().socketTimeout).to.equal(15 * 60 * 1000);
   });
 });
 
