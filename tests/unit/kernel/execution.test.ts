@@ -15,6 +15,7 @@
 import { expect } from 'chai';
 import sinon from 'sinon';
 import Int64 from 'node-int64';
+import { tableFromArrays, tableToIPC } from 'apache-arrow';
 import expectNativeConnectionOptions from './_helpers/nativeOptions';
 import KernelBackend from '../../../lib/kernel/KernelBackend';
 import KernelSessionBackend from '../../../lib/kernel/KernelSessionBackend';
@@ -1494,6 +1495,35 @@ describe('KernelOperationBackend — async (submitStatement) path', () => {
       expect(err.kernelMetadata?.httpStatus, call).to.equal(500);
       expect(err.cause?.message, call).to.equal('Internal: HTTP 500: Internal Server Error');
     }
+  });
+
+  // `hasMoreRows()` before the first fetch is what prefetches the first batch.
+  it('hasMoreRows() decodes a failed batch fetch and closes the statement', async () => {
+    const envelope = `__databricks_error__:${JSON.stringify({
+      code: 'Internal',
+      httpStatus: 500,
+      message: 'HTTP 500: Internal Server Error',
+    })}`;
+    const ipcBytes = Buffer.from(tableToIPC(tableFromArrays({ x: Int32Array.from([1, 2]) }), 'stream'));
+    const handle = new FakeNativeStatement();
+    handle.schema = () => ({ ipcBytes });
+    handle.fetchNextBatch = async () => {
+      throw new Error(envelope);
+    };
+    const stmt = new FakeAsyncStatement('Succeeded', handle);
+    const op = new DBSQLOperation({ backend: makeAsyncOp(stmt), context: makeContext() });
+    let thrown: unknown;
+    try {
+      await op.hasMoreRows();
+    } catch (err) {
+      thrown = err;
+    }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const err = thrown as any;
+    expect(err).to.be.instanceOf(HiveDriverError);
+    expect(err.message).to.equal('HTTP 500: Internal Server Error');
+    expect(err.kernelMetadata?.httpStatus).to.equal(500);
+    expect(stmt.closed, 'the wedged statement is closed').to.equal(true);
   });
 
   // A server-driven terminal state MUST throw OperationStateError (not a plain
