@@ -1487,8 +1487,12 @@ describe('KernelOperationBackend — async (submitStatement) path', () => {
       } catch (err) {
         thrown = err;
       }
-      expect(thrown, call).to.be.instanceOf(HiveDriverError);
-      expect((thrown as Error).message, call).to.equal('HTTP 500: Internal Server Error');
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const err = thrown as any;
+      expect(err, call).to.be.instanceOf(HiveDriverError);
+      expect(err.message, call).to.equal('HTTP 500: Internal Server Error');
+      expect(err.kernelMetadata?.httpStatus, call).to.equal(500);
+      expect(err.cause?.message, call).to.equal('Internal: HTTP 500: Internal Server Error');
     }
   });
 
