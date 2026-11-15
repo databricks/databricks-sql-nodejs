@@ -229,6 +229,35 @@ describe('RowSetProvider', () => {
       expect(maxInFlight).to.equal(1);
     });
 
+    it('skips a refresh whose caller gave up while it waited for a page fetch', async () => {
+      const context = new ClientContextStub();
+      const provider = new RowSetProvider(context, makeOperationHandle(), [], false);
+      context.driver.fetchResultsResp = linksResponse('https://storage/0?sig=old', 0, 100);
+      await provider.fetchNext({ limit: 1000 });
+
+      let releasePage!: () => void;
+      const pageHeld = new Promise<void>((resolve) => {
+        releasePage = resolve;
+      });
+      const fetchResults = sinon.stub(context.driver, 'fetchResults').callsFake(async () => {
+        await pageHeld;
+        return linksResponse('https://storage/100?sig=a', 100, 50);
+      });
+      const page = provider.fetchNext({ limit: 1000 });
+      const controller = new AbortController();
+      const refresh = provider.refreshLinks(new Int64(0), new Int64(100), controller.signal);
+      const reason = new Error('download timed out');
+      controller.abort(reason);
+      releasePage();
+
+      expect(await refresh.catch((error) => error)).to.equal(reason);
+      await page;
+      expect(fetchResults.callCount).to.equal(1);
+      // The skipped refresh didn't move the cursor, so the next page isn't requested by offset
+      await provider.fetchNext({ limit: 1000 });
+      expect(fetchResults.secondCall.args[0].startRowOffset).to.be.undefined;
+    });
+
     it('returns no links for an operation closed by direct results', async () => {
       const context = new ClientContextStub();
       const fetchResults = sinon.spy(context.driver, 'fetchResults');

@@ -2,6 +2,7 @@ import { expect, AssertionError } from 'chai';
 import sinon, { SinonStub } from 'sinon';
 import http from 'http';
 import { AddressInfo } from 'net';
+import { PassThrough } from 'stream';
 import Int64 from 'node-int64';
 import { compressFrameSync } from 'lz4-napi';
 import { Request, Response } from 'node-fetch';
@@ -9,8 +10,15 @@ import { ShouldRetryResult } from '../../../lib/connection/contracts/IRetryPolic
 import { HttpTransactionDetails } from '../../../lib/connection/contracts/IConnectionProvider';
 import { LogLevel } from '../../../lib/contracts/IDBSQLLogger';
 import CloudFetchResultHandler from '../../../lib/result/CloudFetchResultHandler';
+import RowSetProvider from '../../../lib/result/RowSetProvider';
 import ResultsProviderStub from '../.stubs/ResultsProviderStub';
-import { TRowSet, TSparkArrowResultLink, TStatusCode } from '../../../thrift/TCLIService_types';
+import {
+  TFetchResultsResp,
+  TOperationType,
+  TRowSet,
+  TSparkArrowResultLink,
+  TStatusCode,
+} from '../../../thrift/TCLIService_types';
 import { ArrowBatch } from '../../../lib/result/utils';
 import RetryError, { RetryErrorCode } from '../../../lib/errors/RetryError';
 
@@ -1119,13 +1127,15 @@ describe('CloudFetchResultHandler', () => {
           res.writeHead(403, 'Forbidden');
           res.end();
         });
+        let refreshed: Promise<unknown> = Promise.resolve();
         const { handler, refreshLinks } = createRefreshingHandler(
           makeLink(`${url}?sig=0`),
-          async () => {
-            await new Promise((resolve) => {
+          () => {
+            const links = new Promise<void>((resolve) => {
               setTimeout(resolve, 400);
-            });
-            return [makeLink(`${url}?sig=1`)];
+            }).then(() => [makeLink(`${url}?sig=1`)]);
+            refreshed = links;
+            return links;
           },
           { retriesTimeout: 300 },
         );
@@ -1138,9 +1148,176 @@ describe('CloudFetchResultHandler', () => {
           'CloudFetch result download failed: Retry timeout exceeded (last error: HTTP 403: Forbidden)',
         );
         expect(refreshLinks.callCount).to.be.equal(1);
-        // No doomed GET of the refreshed URL
+        // The late refresh doesn't resume the download with a doomed GET of the refreshed URL
+        await refreshed;
+        await new Promise((resolve) => {
+          setImmediate(resolve);
+        });
         expect(hits).to.be.equal(1);
       });
+
+      it('should time out on schedule while a link refresh never returns', async () => {
+        const url = await startServer((req, res) => {
+          res.writeHead(403, 'Forbidden');
+          res.end();
+        });
+        const { handler, refreshLinks } = createRefreshingHandler(
+          makeLink(`${url}?sig=0`),
+          () => new Promise(() => {}),
+          { retriesTimeout: 100 },
+        );
+
+        const { error, elapsedMs } = await fetchWithin(handler, 1000);
+
+        expect(error).to.be.instanceOf(RetryError);
+        expect(error.errorCode).to.be.equal(RetryErrorCode.TimeoutExceeded);
+        expect(error.message).to.be.equal(
+          'CloudFetch result download failed: Retry timeout exceeded (last error: HTTP 403: Forbidden)',
+        );
+        expect(elapsedMs).to.be.lt(500);
+        // The refresh is told that the download gave up
+        expect(refreshLinks.firstCall.args[2].aborted).to.be.true;
+      });
+
+      it('should not leak the rejection of a link refresh that fails after retriesTimeout', async () => {
+        const url = await startServer((req, res) => {
+          res.writeHead(403, 'Forbidden');
+          res.end();
+        });
+        let refreshed: Promise<unknown> = Promise.resolve();
+        const { handler } = createRefreshingHandler(
+          makeLink(`${url}?sig=0`),
+          () => {
+            const links = new Promise<never>((_, reject) => {
+              setTimeout(() => reject(new Error('FetchResults failed')), 200);
+            });
+            refreshed = links.catch(() => undefined);
+            return links;
+          },
+          { retriesTimeout: 100 },
+        );
+        const unhandled: Array<unknown> = [];
+        const onUnhandled = (reason: unknown) => unhandled.push(reason);
+        process.on('unhandledRejection', onUnhandled);
+        try {
+          const { error } = await fetchWithin(handler, 1000);
+          expect(error.errorCode).to.be.equal(RetryErrorCode.TimeoutExceeded);
+          await refreshed;
+          await new Promise((resolve) => {
+            setTimeout(resolve, 10);
+          });
+        } finally {
+          process.removeListener('unhandledRejection', onUnhandled);
+        }
+        expect(unhandled).to.deep.equal([]);
+      });
+
+      it('should time out on schedule while its link refresh waits for another FetchResults call', async () => {
+        const url = await startServer((req, res) => {
+          res.writeHead(403, 'Forbidden');
+          res.end();
+        });
+        const context = new BaseClientContextStub({ cloudFetchConcurrentDownloads: 1, retriesTimeout: 100 });
+        sinon
+          .stub(context.connectionProvider, 'getRetryPolicy')
+          .callsFake(async (options) => new HttpRetryPolicy(context, options));
+        const page = (resultLinks: Array<TSparkArrowResultLink>): TFetchResultsResp => ({
+          status: { statusCode: TStatusCode.SUCCESS_STATUS },
+          hasMoreRows: true,
+          results: { startRowOffset: new Int64(0), rows: [], resultLinks },
+        });
+        let releasePage!: () => void;
+        const pageHeld = new Promise<void>((resolve) => {
+          releasePage = resolve;
+        });
+        const fetchResults = sinon.stub(context.driver, 'fetchResults');
+        fetchResults.onFirstCall().resolves(page([makeLink(`${url}?sig=0`)]));
+        // The next page's FetchResults hangs, and the link refresh is queued behind it
+        fetchResults.onSecondCall().callsFake(async () => {
+          await pageHeld;
+          return page([]);
+        });
+        fetchResults.resolves(page([makeLink(`${url}?sig=1`)]));
+        const operationHandle = {
+          operationId: { guid: Buffer.alloc(16), secret: Buffer.alloc(16) },
+          operationType: TOperationType.EXECUTE_STATEMENT,
+          hasResultSet: true,
+        };
+        const handler = new CloudFetchResultHandler(context, new RowSetProvider(context, operationHandle, [], false), {
+          lz4Compressed: false,
+          status: { statusCode: TStatusCode.SUCCESS_STATUS },
+        });
+
+        const first = fetchWithin(handler, 1000);
+        const second = handler.fetchNext({ limit: 10000 });
+        const { error, elapsedMs } = await first;
+
+        expect(error).to.be.instanceOf(RetryError);
+        expect(error.errorCode).to.be.equal(RetryErrorCode.TimeoutExceeded);
+        expect(elapsedMs).to.be.lt(500);
+
+        releasePage();
+        await second;
+        // The abandoned refresh was skipped when its turn came: FetchResults ran only for the two pages
+        expect(fetchResults.callCount).to.be.equal(2);
+      });
+    });
+
+    it('should include a body read after the retry loop in the deadline', async () => {
+      // A retry policy that returns a response without running the attempt leaves its body unread
+      const context = new ClientContextStub({ cloudFetchConcurrentDownloads: 1, retriesTimeout: 100 });
+      const stalledBody = new PassThrough();
+      stalledBody.write(Buffer.alloc(10));
+      context.invokeWithRetryStub.callsFake(async () => ({
+        request: new Request('http://localhost/chunk'),
+        response: new Response(stalledBody, { status: 200 }),
+      }));
+      const rowSet: TRowSet = {
+        startRowOffset: new Int64(0),
+        rows: [],
+        resultLinks: [
+          {
+            fileLink: 'http://localhost/chunk',
+            expiryTime: new Int64(defaultLinkExpiryTime),
+            rowCount: new Int64(1),
+            startRowOffset: new Int64(0),
+            bytesNum: new Int64(0),
+          },
+        ],
+      };
+      const handler = new CloudFetchResultHandler(context, new ResultsProviderStub([rowSet], undefined), {
+        lz4Compressed: false,
+        status: { statusCode: TStatusCode.SUCCESS_STATUS },
+      });
+
+      const { error, elapsedMs } = await fetchWithin(handler, 1000);
+
+      expect(error).to.be.instanceOf(RetryError);
+      expect(error.errorCode).to.be.equal(RetryErrorCode.TimeoutExceeded);
+      expect(elapsedMs).to.be.lt(500);
+    });
+
+    it('should clear the deadline timer when a download completes', async () => {
+      const body = Buffer.concat([sampleArrowSchema, sampleArrowBatch]);
+      const url = await startServer((req, res) => {
+        res.end(body);
+      });
+      const handler = createHandler(url, { retriesTimeout: 4321 });
+      const setTimeoutSpy = sinon.spy(global, 'setTimeout');
+      const clearTimeoutSpy = sinon.spy(global, 'clearTimeout');
+      try {
+        const { error } = await fetchWithin(handler, 1500);
+        expect(error).to.be.undefined;
+        const deadlineTimers = setTimeoutSpy
+          .getCalls()
+          .filter((call) => call.args[1] === 4321)
+          .map((call) => call.returnValue);
+        expect(deadlineTimers).to.have.length(1);
+        expect(clearTimeoutSpy.calledWith(deadlineTimers[0])).to.be.true;
+      } finally {
+        setTimeoutSpy.restore();
+        clearTimeoutSpy.restore();
+      }
     });
 
     it('should not enforce a deadline when retriesTimeout is not positive', async () => {
