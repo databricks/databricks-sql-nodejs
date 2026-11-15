@@ -304,8 +304,8 @@ export class AzureOAuthManager extends OAuthManager {
   }
 
   protected getOIDCConfigUrl(): string {
-    // Use logical OR so empty / whitespace-only azureTenantId also falls back to /organizations/
-    // (`??` only substitutes for null/undefined, leaving `''` to produce a malformed `//v2.0/...` URL).
+    // Use logical OR so an empty / whitespace-only azureTenantId also falls back to the discovered tenant
+    // (M2M), then /organizations/ (`??` would keep `''` and produce a malformed `//v2.0/...` URL).
     const tenantPath = this.options.azureTenantId?.trim() || this.discoveredTenantId || 'organizations';
     return `https://login.microsoftonline.com/${tenantPath}/v2.0/.well-known/openid-configuration`;
   }
