@@ -984,6 +984,35 @@ describe('CloudFetchResultHandler', () => {
         expect(error.message).to.be.equal('CloudFetch HTTP error 403 Forbidden');
       });
 
+      [
+        {
+          name: 'only a link for other rows',
+          links: (url: string) => [{ ...makeLink(`${url}?sig=other`), startRowOffset: new Int64(8) }],
+        },
+        { name: 'no links', links: () => [] },
+      ].forEach(({ name, links }) => {
+        it(`should fail with the HTTP error when the refresh returns ${name}`, async () => {
+          const hits: Array<string> = [];
+          const url = await startServer((req, res) => {
+            hits.push(req.url ?? '');
+            if (req.url?.includes('sig=old')) {
+              res.writeHead(403, 'Forbidden');
+              res.end();
+            } else {
+              res.end(body);
+            }
+          });
+          const { handler, refreshLinks } = createRefreshingHandler(makeLink(`${url}?sig=old`), () => links(url));
+
+          const { error } = await fetchWithin(handler, 1500);
+
+          expect(error?.message).to.be.equal('CloudFetch HTTP error 403 Forbidden');
+          expect(refreshLinks.callCount).to.be.equal(1);
+          // Another chunk's link must never be downloaded in place of the rejected one
+          expect(hits).to.deep.eq(['/chunk?sig=old']);
+        });
+      });
+
       it('should count link refreshes against retryMaxAttempts', async () => {
         const url = await startServer((req, res) => {
           res.writeHead(403, 'Forbidden');
