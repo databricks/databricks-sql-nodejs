@@ -155,6 +155,12 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
         break;
       }
       currentLink = freshLink;
+      // The refresh RPC isn't bounded by the deadline; if it ran past it, report the rejected response
+      if (deadlineAt !== undefined && Date.now() >= deadlineAt) {
+        throw CloudFetchResultHandler.describeDownloadError(
+          new RetryError(RetryErrorCode.TimeoutExceeded, { response }),
+        );
+      }
       // eslint-disable-next-line no-await-in-loop
       ({ response, body } = await this.fetch(currentLink.fileLink, { headers: currentLink.httpHeaders }, deadlineAt));
     }

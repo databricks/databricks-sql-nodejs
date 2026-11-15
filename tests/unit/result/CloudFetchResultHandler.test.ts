@@ -918,7 +918,7 @@ describe('CloudFetchResultHandler', () => {
       // Like `createHandler`, with a source that can refresh links
       function createRefreshingHandler(
         link: TSparkArrowResultLink,
-        refreshedLinks: () => Array<TSparkArrowResultLink>,
+        refreshedLinks: () => Array<TSparkArrowResultLink> | Promise<Array<TSparkArrowResultLink>>,
         configOverrides: Partial<ClientConfig> = {},
       ) {
         const context = new BaseClientContextStub({ cloudFetchConcurrentDownloads: 1, ...configOverrides });
@@ -1110,6 +1110,36 @@ describe('CloudFetchResultHandler', () => {
         expect(error).to.be.instanceOf(RetryError);
         expect(error.errorCode).to.be.equal(RetryErrorCode.TimeoutExceeded);
         expect(refreshes).to.be.lessThan(9);
+      });
+
+      it('should time out with the rejected response as the cause when a refresh outlasts retriesTimeout', async () => {
+        let hits = 0;
+        const url = await startServer((req, res) => {
+          hits += 1;
+          res.writeHead(403, 'Forbidden');
+          res.end();
+        });
+        const { handler, refreshLinks } = createRefreshingHandler(
+          makeLink(`${url}?sig=0`),
+          async () => {
+            await new Promise((resolve) => {
+              setTimeout(resolve, 400);
+            });
+            return [makeLink(`${url}?sig=1`)];
+          },
+          { retriesTimeout: 300 },
+        );
+
+        const { error } = await fetchWithin(handler, 1500);
+
+        expect(error).to.be.instanceOf(RetryError);
+        expect(error.errorCode).to.be.equal(RetryErrorCode.TimeoutExceeded);
+        expect(error.message).to.be.equal(
+          'CloudFetch result download failed: Retry timeout exceeded (last error: HTTP 403: Forbidden)',
+        );
+        expect(refreshLinks.callCount).to.be.equal(1);
+        // No doomed GET of the refreshed URL
+        expect(hits).to.be.equal(1);
       });
     });
 
