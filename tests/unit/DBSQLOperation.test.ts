@@ -1,6 +1,7 @@
 import { AssertionError, expect } from 'chai';
 import sinon from 'sinon';
 import Int64 from 'node-int64';
+import { Response } from 'node-fetch';
 import {
   TOperationHandle,
   TOperationState,
@@ -25,6 +26,7 @@ import ArrowResultConverter from '../../lib/result/ArrowResultConverter';
 import ArrowResultHandler from '../../lib/result/ArrowResultHandler';
 import CloudFetchResultHandler from '../../lib/result/CloudFetchResultHandler';
 import ResultSlicer from '../../lib/result/ResultSlicer';
+import { THTTPException } from '../../lib/connection/connections/ThriftHttpConnection';
 
 import ClientContextStub from './.stubs/ClientContextStub';
 import { createOperationForTest } from './.stubs/createOperationForTest';
@@ -688,6 +690,28 @@ describe('DBSQLOperation', () => {
       await flush();
       const closing = operation.close();
       failPoll(abortedRequest());
+      await flush();
+      closeRequest.resolve(context.driver.closeOperationResp);
+
+      await closing;
+      await expectStateError(fetching, OperationStateErrorCode.Closed);
+    });
+
+    it('should report a status poll that got HTTP 404 for the closed statement as closed', async () => {
+      // The server can also answer the poll with 404 once the close released the statement.
+      const notFound = new THTTPException(
+        new Response(undefined, {
+          status: 404,
+          headers: { 'x-thriftserver-error-message': 'RESOURCE_DOES_NOT_EXIST' },
+        }),
+      );
+      const { context, operation, failPoll } = runningOperation();
+      const closeRequest = pending(sinon.stub(context.driver, 'closeOperation'));
+
+      const fetching = operation.fetchAll();
+      await flush();
+      const closing = operation.close();
+      failPoll(notFound);
       await flush();
       closeRequest.resolve(context.driver.closeOperationResp);
 
