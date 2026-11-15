@@ -666,7 +666,7 @@ describe('DBSQLOperation', () => {
       }
     }
 
-    it('should report a status poll failed by close() as closed', async () => {
+    it('should report a status poll failed after close() succeeded as closed', async () => {
       const { operation, getOperationStatus, failPoll } = runningOperation();
 
       const fetching = operation.fetchAll();
@@ -675,6 +675,21 @@ describe('DBSQLOperation', () => {
 
       const closing = operation.close();
       failPoll(abortedRequest());
+
+      await closing;
+      await expectStateError(fetching, OperationStateErrorCode.Closed);
+    });
+
+    it('should report a status poll that failed while close() was pending as closed once the close succeeded', async () => {
+      const { context, operation, failPoll } = runningOperation();
+      const closeRequest = pending(sinon.stub(context.driver, 'closeOperation'));
+
+      const fetching = operation.fetchAll();
+      await flush();
+      const closing = operation.close();
+      failPoll(abortedRequest());
+      await flush();
+      closeRequest.resolve(context.driver.closeOperationResp);
 
       await closing;
       await expectStateError(fetching, OperationStateErrorCode.Closed);
