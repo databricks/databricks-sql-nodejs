@@ -57,8 +57,10 @@ export default class DBSQLOperation implements IOperation {
 
   private cancelled: boolean = false;
 
-  // The latest close or cancel request (see `clientStopError`).
-  private stopRequest?: Promise<Status>;
+  // The latest close and cancel requests (see `clientStopError`).
+  private closeRequest?: Promise<Status>;
+
+  private cancelRequest?: Promise<Status>;
 
   public readonly _data?: unknown;
 
@@ -215,8 +217,8 @@ export default class DBSQLOperation implements IOperation {
     if (this.closed || this.cancelled) {
       return Status.success();
     }
-    this.stopRequest = this.backend.cancel();
-    const result = await this.stopRequest;
+    this.cancelRequest = this.backend.cancel();
+    const result = await this.cancelRequest;
     this.cancelled = true;
     this.onClose?.();
     return result;
@@ -235,10 +237,10 @@ export default class DBSQLOperation implements IOperation {
     if (this.closed || this.cancelled) {
       return Status.success();
     }
-    this.stopRequest = this.backend.close();
+    this.closeRequest = this.backend.close();
     let result: Status;
     try {
-      result = await this.stopRequest;
+      result = await this.closeRequest;
     } catch (error: any) {
       // Until the statement finished, closing it is what stops it server-side,
       // so the failure is the caller's to handle (and the close can be retried).
@@ -398,12 +400,13 @@ export default class DBSQLOperation implements IOperation {
    * or cancelled while the call was in flight. Such a call fails with whatever
    * the server answers for the released statement (Thrift answers an in-flight
    * GetOperationStatus with HTTP 409 ABORTED), so report the client's action,
-   * but only once that close or cancel has succeeded.
+   * but only once that close or cancel has succeeded. Both are awaited: a
+   * cancel and a close (e.g. from `session.close()`) can overlap.
    */
   private async clientStopError(): Promise<OperationStateError | undefined> {
-    // `closeInternal` / `cancelInternal` awaited the same request first, so
+    // `closeInternal` / `cancelInternal` awaited the same requests first, so
     // their flags are already updated when this resumes.
-    await this.stopRequest?.catch(() => undefined);
+    await Promise.all([this.closeRequest, this.cancelRequest].map((request) => request?.catch(() => undefined)));
     if (this.closed) {
       return new OperationStateError(OperationStateErrorCode.Closed);
     }
