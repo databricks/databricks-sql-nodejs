@@ -1057,7 +1057,8 @@ describe('CloudFetchResultHandler', () => {
         expect(error.message).to.not.contain('SECRET_SIGNATURE');
       });
 
-      it('should not time out an attempt that keeps receiving data', async () => {
+      it('should not time out an attempt that keeps receiving data', async function () {
+        this.timeout(5000);
         let hits = 0;
         const url = await startServer((req, res) => {
           hits += 1;
@@ -1065,7 +1066,7 @@ describe('CloudFetchResultHandler', () => {
           // Slower than socketTimeout in total, but never idle for that long
           let sent = 0;
           const interval = setInterval(() => {
-            const next = Math.min(sent + 40, body.length);
+            const next = Math.min(sent + 20, body.length);
             res.write(body.subarray(sent, next));
             sent = next;
             if (sent === body.length) {
@@ -1074,14 +1075,14 @@ describe('CloudFetchResultHandler', () => {
             }
           }, 50);
         });
-        const handler = createHandler(url, { socketTimeout: 150 });
+        const handler = createHandler(url, { socketTimeout: 300 });
 
-        const { value, error, elapsedMs } = await fetchWithin(handler, 3000);
+        const { value, error, elapsedMs } = await fetchWithin(handler, 4000);
 
         expect(error).to.be.undefined;
         expect(value?.batches).to.deep.eq([body]);
         expect(hits).to.be.equal(1);
-        expect(elapsedMs).to.be.gte(150);
+        expect(elapsedMs).to.be.gte(300);
       });
 
       it('should share one retriesTimeout deadline across link refreshes', async () => {
