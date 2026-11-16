@@ -148,10 +148,9 @@ export default class KernelSessionBackend implements ISessionBackend {
    *     `query_tags` key (the same wire shape Thrift's `serializeQueryTags`
    *     produces), merged with any explicit `statementConf`.
    *
-   * Still rejected (genuinely unsupported on kernel, rather than silently
-   * dropped): `useCloudFetch` (governed by the kernel `ResultConfig`, not a
-   * per-statement knob), `useLZ4Compression` (kernel owns result compression),
-   * while `stagingAllowedLocalPath` is applied by the facade. `maxRows` is applied by
+   * `useCloudFetch` and `useLZ4Compression` are logged and ignored because the
+   * kernel owns result fetching and compression. `stagingAllowedLocalPath` is
+   * applied by the facade. `maxRows` is applied by
    * the facade at fetch time, so it is intentionally not handled here.
    */
   public async executeStatement(statement: string, options: ExecuteStatementOptions): Promise<IOperationBackend> {
