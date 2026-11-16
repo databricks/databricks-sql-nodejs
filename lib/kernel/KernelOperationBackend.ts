@@ -258,9 +258,8 @@ export default class KernelOperationBackend implements IOperationBackend {
     this.cancellableExecution = cancellableExecution;
     this.blockingStatement = statement;
     // Lifecycle surface. The async/metadata handles expose both cancel/close.
-    // The sync-execute path uses a composite: `cancel()` always routes to the
-    // cancellable execution (lock-free, interrupts a running `result()`
-    // mid-compute and is a no-op once terminal); `close()` closes the resolved
+    // The sync-execute path uses a composite so SQL execution and subsequent
+    // transfer completion remain cancellable. `close()` closes the resolved
     // terminal statement once `result()` produced it, OR — if `result()` is
     // still in flight — proactively cancels the running execution so the server
     // stops computing immediately rather than running on until the kernel's
