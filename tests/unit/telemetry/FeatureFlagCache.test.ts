@@ -16,8 +16,11 @@
 
 import { expect } from 'chai';
 import sinon from 'sinon';
+import http from 'http';
+import { AddressInfo } from 'net';
 import { Response } from 'node-fetch';
 import FeatureFlagCache from '../../../lib/FeatureFlagCache';
+import HttpRetryPolicy from '../../../lib/connection/connections/HttpRetryPolicy';
 import ClientContextStub from '../.stubs/ClientContextStub';
 import { LogLevel } from '../../../lib/contracts/IDBSQLLogger';
 
@@ -272,6 +275,42 @@ describe('FeatureFlagCache', () => {
       expect(result).to.be.false;
 
       fetchStub.restore();
+    });
+
+    it('should not wait for Retry-After before retrying the flags request', async () => {
+      // connect() waits for the flags, so a Retry-After from the endpoint must not stretch the retries
+      clock.restore();
+      let hits = 0;
+      const server = http.createServer((req, res) => {
+        hits += 1;
+        if (hits === 1) {
+          res.writeHead(503, { 'Retry-After': '60' });
+          res.end();
+        } else {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ flags: [] }));
+        }
+      });
+      await new Promise<void>((resolve) => {
+        server.listen(0, '127.0.0.1', resolve);
+      });
+      try {
+        const context = new ClientContextStub({ retryDelayMin: 1, retryDelayMax: 60_000 });
+        sinon.stub(context.connectionProvider, 'getRetryPolicy').callsFake(async () => new HttpRetryPolicy(context));
+        const cache = new FeatureFlagCache(context);
+        const { port } = server.address() as AddressInfo;
+
+        const started = Date.now();
+        const response = await (cache as any).fetchWithRetry(`http://127.0.0.1:${port}/`, { method: 'GET' });
+
+        expect(response.status).to.equal(200);
+        expect(hits).to.equal(2);
+        expect(Date.now() - started).to.be.lt(1000);
+      } finally {
+        server.closeAllConnections();
+        server.close();
+        clock = sinon.useFakeTimers();
+      }
     });
   });
 

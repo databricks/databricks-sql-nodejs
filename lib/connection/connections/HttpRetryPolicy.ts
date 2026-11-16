@@ -163,13 +163,17 @@ export default class HttpRetryPolicy implements IRetryPolicy<HttpTransactionDeta
       throw new RetryError(RetryErrorCode.AttemptsExceeded, details);
     }
 
-    // If possible, use `Retry-After` header as a floor for a backoff algorithm
+    // Wait as long as `Retry-After` asks (up to retryDelayMax), but don't start a wait that would end after
+    // retriesTimeout, as the kernel does. Without the header, back off exponentially.
     const retryAfterHeader = this.getRetryAfterHeader(details, clientConfig.retryDelayMin);
-    const retryAfter = this.getBackoffDelay(
-      this.attempt,
-      retryAfterHeader ?? clientConfig.retryDelayMin,
-      clientConfig.retryDelayMax,
-    );
+    if (retryAfterHeader !== undefined) {
+      const retryAfter = Math.min(retryAfterHeader, clientConfig.retryDelayMax);
+      if (Date.now() - this.startTime + retryAfter > clientConfig.retriesTimeout) {
+        throw new RetryError(RetryErrorCode.TimeoutExceeded, details);
+      }
+      return { shouldRetry: true, retryAfter };
+    }
+    const retryAfter = this.getBackoffDelay(this.attempt, clientConfig.retryDelayMin, clientConfig.retryDelayMax);
 
     return { shouldRetry: true, retryAfter };
   }
@@ -243,12 +247,12 @@ export default class HttpRetryPolicy implements IRetryPolicy<HttpTransactionDeta
     // Value from `Retry-After` header is used when:
     // 1. it's available and is non-empty
     // 2. it could be parsed as a number, and is greater than zero
-    // 3. additionally, we clamp it to not be smaller than minimal retry delay
+    // 3. additionally, we clamp it to not be smaller than minimal retry delay (in milliseconds)
     const header = response.headers.get('Retry-After') || '';
     if (header !== '') {
       const value = Number(header);
       if (Number.isFinite(value) && value > 0) {
-        return Math.max(delayMin, value);
+        return Math.max(delayMin, value * 1000);
       }
     }
     return undefined;

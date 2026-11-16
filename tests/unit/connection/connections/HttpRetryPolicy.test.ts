@@ -34,18 +34,20 @@ describe('HttpRetryPolicy', () => {
     // Missing `Retry-After` header
     expect(policy['getRetryAfterHeader'](createStub({}), retryDelayMin)).to.be.undefined;
 
-    // Valid `Retry-After`, several header name variants
-    expect(policy['getRetryAfterHeader'](createStub({ 'Retry-After': '10' }), retryDelayMin)).to.equal(10);
-    expect(policy['getRetryAfterHeader'](createStub({ 'retry-after': '10' }), retryDelayMin)).to.equal(10);
-    expect(policy['getRetryAfterHeader'](createStub({ 'RETRY-AFTER': '10' }), retryDelayMin)).to.equal(10);
+    // Valid `Retry-After` in seconds, several header name variants, returned in milliseconds
+    expect(policy['getRetryAfterHeader'](createStub({ 'Retry-After': '10' }), retryDelayMin)).to.equal(10_000);
+    expect(policy['getRetryAfterHeader'](createStub({ 'retry-after': '10' }), retryDelayMin)).to.equal(10_000);
+    expect(policy['getRetryAfterHeader'](createStub({ 'RETRY-AFTER': '10' }), retryDelayMin)).to.equal(10_000);
 
     // Invalid header values (non-numeric, negative)
     expect(policy['getRetryAfterHeader'](createStub({ 'Retry-After': 'test' }), retryDelayMin)).to.be.undefined;
     expect(policy['getRetryAfterHeader'](createStub({ 'Retry-After': '-10' }), retryDelayMin)).to.be.undefined;
 
     // It should not be smaller than min value, but can be greater than max value
-    expect(policy['getRetryAfterHeader'](createStub({ 'Retry-After': '1' }), retryDelayMin)).to.equal(retryDelayMin);
-    expect(policy['getRetryAfterHeader'](createStub({ 'Retry-After': '200' }), retryDelayMin)).to.equal(200);
+    expect(policy['getRetryAfterHeader'](createStub({ 'Retry-After': '0.001' }), retryDelayMin)).to.equal(
+      retryDelayMin,
+    );
+    expect(policy['getRetryAfterHeader'](createStub({ 'Retry-After': '200' }), retryDelayMin)).to.equal(200_000);
   });
 
   it('should check if HTTP transaction is safe to retry', async () => {
@@ -103,35 +105,65 @@ describe('HttpRetryPolicy', () => {
       expect(result.shouldRetry).to.be.false;
     });
 
-    it('should use `Retry-After` header as a base for backoff', async () => {
-      const context = new ClientContextStub({ retryDelayMin: 3, retryDelayMax: 100, retryMaxAttempts: 10 });
+    it('should wait as long as `Retry-After` asks, within retryDelayMin and retryDelayMax', async () => {
+      const context = new ClientContextStub({ retryDelayMin: 1000, retryDelayMax: 60_000, retryMaxAttempts: 10 });
       const policy = new HttpRetryPolicy(context);
 
       function createStub(headers: HeadersInit) {
         return {
           request: new Request('http://localhost'),
-          response: new Response(undefined, { status: 500, headers }),
+          response: new Response(undefined, { status: 503, headers }),
         };
       }
 
-      const result1 = await policy.shouldRetry(createStub({ 'Retry-After': '5' }));
-      expect(result1.shouldRetry).to.be.true;
-      if (result1.shouldRetry) {
-        expect(result1.retryAfter).to.equal(10);
+      // The header is the wait, whatever the attempt (no exponential growth)
+      expect(await policy.shouldRetry(createStub({ 'Retry-After': '5' }))).to.deep.equal({
+        shouldRetry: true,
+        retryAfter: 5_000,
+      });
+      expect(await policy.shouldRetry(createStub({ 'Retry-After': '30' }))).to.deep.equal({
+        shouldRetry: true,
+        retryAfter: 30_000,
+      });
+      // Clamped up to retryDelayMin and down to retryDelayMax
+      expect(await policy.shouldRetry(createStub({ 'Retry-After': '0.2' }))).to.deep.equal({
+        shouldRetry: true,
+        retryAfter: 1_000,
+      });
+      expect(await policy.shouldRetry(createStub({ 'Retry-After': '600' }))).to.deep.equal({
+        shouldRetry: true,
+        retryAfter: 60_000,
+      });
+    });
+
+    it('should not wait for a `Retry-After` that would end after retriesTimeout', async () => {
+      const shortBudget = { retryDelayMin: 1000, retryDelayMax: 60_000, retriesTimeout: 5000 };
+
+      function createStub(retryAfter: string) {
+        return {
+          request: new Request('http://localhost', { method: 'POST' }),
+          response: new Response(undefined, { status: 429, headers: { 'Retry-After': retryAfter } }),
+        };
       }
 
-      const result2 = await policy.shouldRetry(createStub({ 'Retry-After': '8' }));
-      expect(result2.shouldRetry).to.be.true;
-      if (result2.shouldRetry) {
-        expect(result2.retryAfter).to.equal(32);
+      const operation = sinon.stub().resolves(createStub('60'));
+      const started = Date.now();
+      try {
+        await new HttpRetryPolicy(new ClientContextStub(shortBudget)).invokeWithRetry(operation);
+        expect.fail('It should throw an error');
+      } catch (error) {
+        if (error instanceof AssertionError || !(error instanceof Error)) {
+          throw error;
+        }
+        expect(error).to.be.instanceOf(RetryError);
+        expect((error as RetryError).errorCode).to.equal(RetryErrorCode.TimeoutExceeded);
       }
+      expect(operation.callCount).to.equal(1);
+      expect(Date.now() - started).to.be.lt(1000);
 
-      policy['attempt'] = 4;
-      const result3 = await policy.shouldRetry(createStub({ 'Retry-After': '10' }));
-      expect(result3.shouldRetry).to.be.true;
-      if (result3.shouldRetry) {
-        expect(result3.retryAfter).to.equal(100);
-      }
+      // A wait that fits is kept
+      const fitting = new HttpRetryPolicy(new ClientContextStub(shortBudget));
+      expect(await fitting.shouldRetry(createStub('3'))).to.deep.equal({ shouldRetry: true, retryAfter: 3000 });
     });
 
     it('should use backoff when `Retry-After` header is missing', async () => {

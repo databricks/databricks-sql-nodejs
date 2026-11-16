@@ -5,7 +5,8 @@ import RetryError from '../../errors/RetryError';
 
 // Raised before a connection exists, so no request bytes were written. Failures on a connected
 // socket (ECONNRESET, EPIPE, timeouts, ...) are excluded: the server may already have the request.
-const UNSENT_REQUEST_ERROR_CODES = new Set(['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN']);
+// ENOTFOUND is permanent, as in HttpRetryPolicy.
+const UNSENT_REQUEST_ERROR_CODES = new Set(['ECONNREFUSED', 'EAI_AGAIN']);
 
 // For operations that are not safe to repeat: retries only requests that never left the client, and a
 // 503 with `Retry-After`, where the server asks for a retry without running the request (as in the kernel).

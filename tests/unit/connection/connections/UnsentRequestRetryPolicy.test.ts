@@ -33,7 +33,7 @@ async function expectRejection(promise: Promise<unknown>): Promise<unknown> {
 }
 
 describe('UnsentRequestRetryPolicy', () => {
-  for (const code of ['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN']) {
+  for (const code of ['ECONNREFUSED', 'EAI_AGAIN']) {
     it(`retries ${code}, which is raised before the request is sent`, async () => {
       const operation = sinon.stub();
       operation.onCall(0).rejects(systemError(code));
@@ -53,6 +53,7 @@ describe('UnsentRequestRetryPolicy', () => {
     ['EHOSTUNREACH', systemError('EHOSTUNREACH')],
     ['a body timeout', new FetchError('Response timeout while trying to fetch', 'body-timeout')],
     ['a premature close', new Error('Premature close')],
+    ['ENOTFOUND, a host name that does not resolve', systemError('ENOTFOUND')],
   ];
 
   for (const [label, error] of sentRequestErrors) {
@@ -96,6 +97,15 @@ describe('UnsentRequestRetryPolicy', () => {
 
     expect(result.response.status).to.equal(200);
     expect(operation.callCount).to.equal(2);
+  });
+
+  it('waits the Retry-After delay before retrying a 503, with the default config', async () => {
+    const policy = new UnsentRequestRetryPolicy(new ClientContextStub());
+
+    expect(await policy.shouldRetry(statusResponse(503, { 'Retry-After': '5' }))).to.deep.equal({
+      shouldRetry: true,
+      retryAfter: 5_000,
+    });
   });
 
   it('throws a RetryError once a persistent 503 with Retry-After runs out of attempts', async () => {

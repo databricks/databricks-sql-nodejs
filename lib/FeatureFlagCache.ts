@@ -239,7 +239,11 @@ export default class FeatureFlagCache {
     const requestConfig: RequestInit = { agent, ...init };
     const result = await retryPolicy.invokeWithRetry(() => {
       const request = new Request(url, requestConfig);
-      return fetch(request).then((response) => ({ request, response }));
+      return fetch(request).then((response) => {
+        // connect() waits for the flags, so back off as usual instead of for as long as `Retry-After` asks
+        response.headers.delete('Retry-After');
+        return { request, response };
+      });
     });
     return result.response;
   }
