@@ -291,6 +291,7 @@ describe('FeatureFlagCache', () => {
       });
       try {
         const context = new ClientContextStub({ retryDelayMin: 1, retryDelayMax: 2 });
+        // A real retry policy, so the test fails if the fetch goes back to retrying through it
         sinon.stub(context.connectionProvider, 'getRetryPolicy').callsFake(async () => new HttpRetryPolicy(context));
         const cache = new FeatureFlagCache(context);
         const { port } = server.address() as AddressInfo;

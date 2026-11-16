@@ -4,6 +4,7 @@ import { expect } from 'chai';
 import { FetchError } from 'node-fetch';
 import HttpConnection from '../../../../lib/connection/connections/HttpConnection';
 import ThriftHttpConnection, { THTTPException } from '../../../../lib/connection/connections/ThriftHttpConnection';
+import { ClientConfig } from '../../../../lib/contracts/IClientContext';
 import ClientContextStub from '../../.stubs/ClientContextStub';
 
 // Header-only Thrift binary messages: enough for method-name detection and for the fake `recv_*` below.
@@ -107,8 +108,12 @@ class RefusingAgent extends http.Agent {
   }
 }
 
-async function createThriftConnection(port: number, agent: http.Agent): Promise<ThriftHttpConnection> {
-  const context = new ClientContextStub({ retryDelayMin: 1, retryDelayMax: 2, retryMaxAttempts: 3 });
+async function createThriftConnection(
+  port: number,
+  agent: http.Agent,
+  config: Partial<ClientConfig>,
+): Promise<ThriftHttpConnection> {
+  const context = new ClientContextStub({ retryDelayMin: 1, retryDelayMax: 2, retryMaxAttempts: 3, ...config });
   // A short socketTimeout, so a stalled response becomes a request timeout quickly
   const httpConnection = new HttpConnection({ host: '127.0.0.1', port, path: '/', socketTimeout: 300 }, context);
   httpConnection['httpAgent'] = agent;
@@ -148,7 +153,7 @@ describe('ThriftHttpConnection retries', () => {
     cleanup.splice(0).forEach((fn) => fn());
   });
 
-  async function setup(actions: ServerAction[], refusals: number) {
+  async function setup(actions: ServerAction[], refusals: number, config: Partial<ClientConfig> = {}) {
     const closedPort = await getClosedPort();
     const server = await startServer(actions);
     const agent = new RefusingAgent(refusals, closedPort);
@@ -156,7 +161,7 @@ describe('ThriftHttpConnection retries', () => {
       () => server.close(),
       () => agent.destroy(),
     );
-    const connection = await createThriftConnection(server.port, agent);
+    const connection = await createThriftConnection(server.port, agent, config);
     return { server, agent, connection };
   }
 
@@ -242,6 +247,15 @@ describe('ThriftHttpConnection retries', () => {
 
     expect(error.message).to.equal('Request timed out');
     expect(server.requests).to.equal(3);
+  });
+
+  it('fails with "Request timed out" when the first timeout uses up retriesTimeout, as with the defaults', async () => {
+    const { server, connection } = await setup(['stall', 'reply'], 0, { retriesTimeout: 300 });
+
+    const error = await expectRejection(send(connection, 'OpenSession', 1));
+
+    expect(error.message).to.equal('Request timed out');
+    expect(server.requests).to.equal(1);
   });
 
   it('does not retry ExecuteStatement after a request timeout', async () => {
