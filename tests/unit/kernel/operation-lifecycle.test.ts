@@ -516,6 +516,46 @@ describe('DBSQLOperation over KernelOperationBackend — close after the result 
   });
 });
 
+describe('KernelOperationBackend — close() during an in-flight fetch', () => {
+  for (const fetch of ['fetchChunk', 'hasMore'] as const) {
+    it(`${fetch}() reports OperationStateError(Closed) when close() invalidates the result handle`, async () => {
+      const ipcBytes = Buffer.from(tableToIPC(tableFromArrays({ x: Int32Array.from([1]) }), 'stream'));
+      let closed: () => void = () => {};
+      const closeDone = new Promise<void>((resolve) => {
+        closed = resolve;
+      });
+      const statement = {
+        cancel: sinon.stub().resolves(),
+        close: sinon.stub().resolves(),
+        schema: () => ({ ipcBytes }),
+        // The kernel empties the handle's stream on close(), so the pending fetch fails.
+        fetchNextBatch: async () => {
+          await closeDone;
+          const payload = JSON.stringify({
+            code: 'InvalidStatementHandle',
+            message: 'AsyncResultHandle already closed',
+          });
+          throw new Error(`__databricks_error__:${payload}`);
+        },
+      };
+      const backend = new KernelOperationBackend({ statement, context: new ClientContextStub(), id: 'kernel-op' });
+
+      const inflight = fetch === 'fetchChunk' ? backend.fetchChunk({ limit: 10 }) : backend.hasMore();
+      await backend.close();
+      closed();
+
+      let thrown: unknown;
+      try {
+        await inflight;
+      } catch (err) {
+        thrown = err;
+      }
+      expect(thrown).to.be.instanceOf(OperationStateError);
+      expect((thrown as OperationStateError).errorCode).to.equal(OperationStateErrorCode.Closed);
+    });
+  }
+});
+
 describe('DBSQLSession over KernelSessionBackend — close right after execution', () => {
   const closeFailure = () =>
     new Error(`__databricks_error__:${JSON.stringify({ code: 'NotFound', message: 'HTTP 404 Not Found' })}`);

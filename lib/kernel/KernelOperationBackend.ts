@@ -330,6 +330,9 @@ export default class KernelOperationBackend implements IOperationBackend {
       }
       return await slicer.fetchNext({ limit, disableBuffering });
     } catch (err) {
+      // A local close()/cancel() can invalidate the kernel result handle
+      // mid-fetch; report the lifecycle state, not the handle error.
+      failIfNotActive(this.lifecycle);
       throw await this.fetchFailure(err);
     }
   }
@@ -341,6 +344,7 @@ export default class KernelOperationBackend implements IOperationBackend {
       const slicer = await this.getResultSlicer();
       return await slicer.hasMore();
     } catch (err) {
+      failIfNotActive(this.lifecycle);
       throw await this.fetchFailure(err);
     }
   }
