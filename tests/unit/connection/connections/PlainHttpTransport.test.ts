@@ -146,9 +146,7 @@ describe('DBSQLClient plain HTTP transport', () => {
     const handler = new CloudFetchResultHandler(client, new ResultsProviderStub([], undefined), {
       status: { statusCode: TStatusCode.SUCCESS_STATUS },
     });
-    await expectTlsAttempt(() =>
-      handler['fetch'](`https://127.0.0.1:${port}/chunk?X-Amz-Signature=secret`, {}, undefined),
-    );
+    await expectTlsAttempt(() => handler['fetch'](`https://127.0.0.1:${port}/chunk?X-Amz-Signature=secret`));
 
     await client.close();
     // The HTTPS attempt never reached the server as an HTTP request.

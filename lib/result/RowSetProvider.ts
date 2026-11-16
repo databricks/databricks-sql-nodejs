@@ -157,22 +157,13 @@ export default class RowSetProvider implements IResultsProvider<TRowSet | undefi
   /**
    * Fetches fresh result links starting at `startRowOffset`, e.g. to replace a presigned
    * URL that cloud storage rejected. Returns no links when the operation is already closed.
-   * A refresh whose `signal` is aborted while it waits for an earlier fetch is skipped, so that
-   * its RPC doesn't hold up later fetches; it rejects with the abort reason.
    */
-  public async refreshLinks(
-    startRowOffset: Int64,
-    maxRows: Int64,
-    signal?: AbortSignal,
-  ): Promise<Array<TSparkArrowResultLink>> {
+  public async refreshLinks(startRowOffset: Int64, maxRows: Int64): Promise<Array<TSparkArrowResultLink>> {
     if (this.returnOnlyPrefetchedResults) {
       return [];
     }
     const driver = await this.context.getDriver();
     const response = await this.serializeFetch(async () => {
-      if (signal?.aborted) {
-        throw signal.reason;
-      }
       this.fetchByOffset = true;
       return driver.fetchResults({
         operationHandle: this.operationHandle,

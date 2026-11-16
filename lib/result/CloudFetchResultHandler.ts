@@ -27,8 +27,7 @@ const MAX_TIMER_DELAY_MS = 2 ** 31 - 1;
 const LINK_REFRESH_STATUSES: ReadonlySet<number> = new Set([401, 403, 404]);
 
 interface LinkRefresher {
-  // An aborted `signal` means the caller gave up; a refresh still queued may then be skipped
-  refreshLinks(startRowOffset: Int64, maxRows: Int64, signal?: AbortSignal): Promise<Array<TSparkArrowResultLink>>;
+  refreshLinks(startRowOffset: Int64, maxRows: Int64): Promise<Array<TSparkArrowResultLink>>;
 }
 
 function canRefreshLinks(source: unknown): source is LinkRefresher {
@@ -67,24 +66,10 @@ class DownloadDeadline {
     if (!signal) {
       return promise;
     }
-    return new Promise<T>((resolve, reject) => {
-      const onExpired = () => reject(signal.reason);
-      if (signal.aborted) {
-        onExpired();
-      } else {
-        signal.addEventListener('abort', onExpired, { once: true });
-      }
-      promise.then(
-        (value) => {
-          signal.removeEventListener('abort', onExpired);
-          resolve(value);
-        },
-        (error) => {
-          signal.removeEventListener('abort', onExpired);
-          reject(error);
-        },
-      );
+    const expired = new Promise<never>((_, reject) => {
+      signal.addEventListener('abort', () => reject(signal.reason), { once: true });
     });
+    return Promise.race([promise, expired]);
   }
 
   public clear(): void {
@@ -219,12 +204,10 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
     // At most `retryMaxAttempts` URLs per download; each `fetch` retries its URL under its own budget
     for (let attempt = 1; LINK_REFRESH_STATUSES.has(response.status) && attempt < retryMaxAttempts; attempt += 1) {
       // eslint-disable-next-line no-await-in-loop
-      const freshLink = await this.refreshLink(currentLink, response.status, deadline.signal);
+      const freshLink = await this.refreshLink(currentLink, response.status);
       if (!freshLink) {
         break;
       }
-      // The download already failed if the refresh outlasted the deadline; don't GET the fresh URL
-      deadline.throwIfExpired();
       currentLink = freshLink;
       // eslint-disable-next-line no-await-in-loop
       ({ response, body } = await this.fetch(currentLink.fileLink, { headers: currentLink.httpHeaders }, deadline));
@@ -232,8 +215,6 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
     if (!response.ok) {
       throw new Error(`CloudFetch HTTP error ${response.status} ${response.statusText}`);
     }
-    // A download that outlasted the deadline was already reported as failed
-    deadline.throwIfExpired();
     // `body` is always set when `response.ok` is true — `fetch` reads it inside
     // the retried block on success.
     const result = body!;
@@ -252,11 +233,7 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
   }
 
   /** Asks the server for a fresh link to the rows of `link`; `undefined` if there is none. */
-  private async refreshLink(
-    link: TSparkArrowResultLink,
-    status: number,
-    signal: AbortSignal | undefined,
-  ): Promise<TSparkArrowResultLink | undefined> {
+  private async refreshLink(link: TSparkArrowResultLink, status: number): Promise<TSparkArrowResultLink | undefined> {
     if (!canRefreshLinks(this.source)) {
       return undefined;
     }
@@ -264,13 +241,13 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
     this.context
       .getLogger()
       .log(LogLevel.debug, `CloudFetch download got HTTP ${status}; refreshing the link at row offset ${offset}`);
-    const links = await this.source.refreshLinks(link.startRowOffset, link.rowCount, signal);
+    const links = await this.source.refreshLinks(link.startRowOffset, link.rowCount);
     return links.find((candidate) => candidate.startRowOffset.toNumber() === offset);
   }
 
   private async fetch(
     url: RequestInfo,
-    init: RequestInit,
+    init?: RequestInit,
     deadline: DownloadDeadline = new DownloadDeadline(0),
   ): Promise<{ response: Response; body?: ArrayBuffer }> {
     const connectionProvider = await this.context.getConnectionProvider();
