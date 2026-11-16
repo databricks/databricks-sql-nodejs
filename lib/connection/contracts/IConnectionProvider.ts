@@ -5,14 +5,8 @@ import IRetryPolicy from './IRetryPolicy';
 export interface HttpTransactionDetails {
   request: Request;
   response: Response;
-}
-
-export interface HttpRetryPolicyOptions {
-  /**
-   * Also retry 4xx responses, except these statuses. For idempotent GETs of presigned
-   * URLs (CloudFetch), where a 4xx from storage does not mean the request was wrong.
-   */
-  retryClientErrorsExcept?: ReadonlySet<number>;
+  // Set by the caller to retry this response whatever its status
+  retryable?: boolean;
 }
 
 export default interface IConnectionProvider {
@@ -26,5 +20,5 @@ export default interface IConnectionProvider {
 
   setHeaders(headers: HeadersInit): void;
 
-  getRetryPolicy(options?: HttpRetryPolicyOptions): Promise<IRetryPolicy<HttpTransactionDetails>>;
+  getRetryPolicy(): Promise<IRetryPolicy<HttpTransactionDetails>>;
 }

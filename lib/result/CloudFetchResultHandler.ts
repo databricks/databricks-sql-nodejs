@@ -1,5 +1,4 @@
 import fetch, { RequestInfo, RequestInit, Request, Response } from 'node-fetch';
-import Int64 from 'node-int64';
 import { TGetResultSetMetadataResp, TRowSet, TSparkArrowResultLink } from '../../thrift/TCLIService_types';
 import HiveDriverError from '../errors/HiveDriverError';
 import RetryError, { RetryErrorCode } from '../errors/RetryError';
@@ -21,61 +20,9 @@ type SettledDownload = { ok: true; batch: ArrowBatch } | { ok: false; error: unk
 // Largest delay `setTimeout` accepts; longer values fire immediately, so they are clamped.
 const MAX_TIMER_DELAY_MS = 2 ** 31 - 1;
 
-// Statuses that mean the presigned URL itself was rejected (expired or invalid signature; GCS
-// answers 404 for an expired one). Retrying the same URL can't succeed, so the link is refreshed.
-// Other 4xx responses are retried with the same URL.
-const LINK_REFRESH_STATUSES: ReadonlySet<number> = new Set([401, 403, 404]);
-
-interface LinkRefresher {
-  refreshLinks(startRowOffset: Int64, maxRows: Int64): Promise<Array<TSparkArrowResultLink>>;
-}
-
-function canRefreshLinks(source: unknown): source is LinkRefresher {
-  return typeof (source as Partial<LinkRefresher> | undefined)?.refreshLinks === 'function';
-}
-
-// The `retriesTimeout` deadline of one download: its GET attempts, the backoff between them and
-// its link refreshes. On expiry `signal` is aborted with a `TimeoutExceeded` error.
-class DownloadDeadline {
-  public readonly signal?: AbortSignal;
-
-  // Reported as the cause of the timeout error
-  public lastFailure: unknown;
-
-  private readonly timer?: NodeJS.Timeout;
-
-  constructor(timeoutMs: number) {
-    if (timeoutMs > 0) {
-      const controller = new AbortController();
-      this.signal = controller.signal;
-      this.timer = setTimeout(() => {
-        controller.abort(new RetryError(RetryErrorCode.TimeoutExceeded, this.lastFailure));
-      }, Math.min(timeoutMs, MAX_TIMER_DELAY_MS));
-    }
-  }
-
-  public throwIfExpired(): void {
-    if (this.signal?.aborted) {
-      throw this.signal.reason;
-    }
-  }
-
-  // Settles like `promise`, or rejects with the timeout error as soon as the deadline expires
-  public race<T>(promise: Promise<T>): Promise<T> {
-    const { signal } = this;
-    if (!signal) {
-      return promise;
-    }
-    const expired = new Promise<never>((_, reject) => {
-      signal.addEventListener('abort', () => reject(signal.reason), { once: true });
-    });
-    return Promise.race([promise, expired]);
-  }
-
-  public clear(): void {
-    clearTimeout(this.timer);
-  }
-}
+// A one-shot 401/403/404 from cloud storage is retried with the same URL, like 429 and 5xx.
+// Other 4xx responses fail the download.
+const SAME_URL_RETRY_STATUSES: ReadonlySet<number> = new Set([401, 403, 404]);
 
 export default class CloudFetchResultHandler implements IResultsProvider<ArrowBatch> {
   private readonly context: IClientContext;
@@ -184,34 +131,8 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
       throw new Error('CloudFetch link has expired');
     }
 
-    // The retry policy checks `retriesTimeout` only between attempts, so it is enforced as one
-    // deadline over the whole download, including stalled attempts and link refreshes (#520)
-    const deadline = new DownloadDeadline(this.context.getConfig().retriesTimeout);
-    try {
-      return await deadline.race(this.download(link, deadline));
-    } catch (error) {
-      throw CloudFetchResultHandler.describeDownloadError(error);
-    } finally {
-      deadline.clear();
-    }
-  }
-
-  private async download(link: TSparkArrowResultLink, deadline: DownloadDeadline): Promise<ArrowBatch> {
     const startTime = Date.now();
-    const { retryMaxAttempts } = this.context.getConfig();
-    let currentLink = link;
-    let { response, body } = await this.fetch(currentLink.fileLink, { headers: currentLink.httpHeaders }, deadline);
-    // At most `retryMaxAttempts` URLs per download; each `fetch` retries its URL under its own budget
-    for (let attempt = 1; LINK_REFRESH_STATUSES.has(response.status) && attempt < retryMaxAttempts; attempt += 1) {
-      // eslint-disable-next-line no-await-in-loop
-      const freshLink = await this.refreshLink(currentLink, response.status);
-      if (!freshLink) {
-        break;
-      }
-      currentLink = freshLink;
-      // eslint-disable-next-line no-await-in-loop
-      ({ response, body } = await this.fetch(currentLink.fileLink, { headers: currentLink.httpHeaders }, deadline));
-    }
+    const { response, body } = await this.fetch(link.fileLink, { headers: link.httpHeaders });
     if (!response.ok) {
       throw new Error(`CloudFetch HTTP error ${response.status} ${response.statusText}`);
     }
@@ -232,38 +153,31 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
     };
   }
 
-  /** Asks the server for a fresh link to the rows of `link`; `undefined` if there is none. */
-  private async refreshLink(link: TSparkArrowResultLink, status: number): Promise<TSparkArrowResultLink | undefined> {
-    if (!canRefreshLinks(this.source)) {
-      return undefined;
-    }
-    const offset = link.startRowOffset.toNumber();
-    this.context
-      .getLogger()
-      .log(LogLevel.debug, `CloudFetch download got HTTP ${status}; refreshing the link at row offset ${offset}`);
-    const links = await this.source.refreshLinks(link.startRowOffset, link.rowCount);
-    return links.find((candidate) => candidate.startRowOffset.toNumber() === offset);
-  }
-
-  private async fetch(
-    url: RequestInfo,
-    init?: RequestInit,
-    deadline: DownloadDeadline = new DownloadDeadline(0),
-  ): Promise<{ response: Response; body?: ArrayBuffer }> {
+  private async fetch(url: RequestInfo, init?: RequestInit): Promise<{ response: Response; body?: ArrayBuffer }> {
     const connectionProvider = await this.context.getConnectionProvider();
     let requestUrl = url;
     if (typeof requestUrl !== 'string') {
       requestUrl = 'href' in requestUrl ? requestUrl.href : requestUrl.url;
     }
     const agent = await connectionProvider.getAgent(requestUrl);
-    const retryPolicy = await connectionProvider.getRetryPolicy({ retryClientErrorsExcept: LINK_REFRESH_STATUSES });
-    const { socketTimeout } = this.context.getConfig();
+    const retryPolicy = await connectionProvider.getRetryPolicy();
+    const { retriesTimeout, socketTimeout } = this.context.getConfig();
     // `socketTimeout` is an inactivity timeout for each attempt: an attempt that receives
     // nothing for that long is aborted and retried like a network timeout.
     const idleTimeoutMs = socketTimeout > 0 ? Math.min(socketTimeout, MAX_TIMER_DELAY_MS) : undefined;
 
     const requestConfig: RequestInit = { agent, ...init };
-    const { signal } = deadline;
+    // The retry policy checks `retriesTimeout` only between attempts, so a stalled attempt
+    // (headers or body never arrive) would block forever. Enforce it as a deadline over the
+    // whole download - every attempt plus the backoff between them - and abort the in-flight
+    // request and any pending backoff sleep when it expires (#520). Non-positive values keep
+    // the deadline off.
+    const deadlineMs = retriesTimeout > 0 ? Math.min(retriesTimeout, MAX_TIMER_DELAY_MS) : undefined;
+    // Aborted only once, by the deadline, so a single controller serves every attempt and backoff.
+    const controller = deadlineMs === undefined ? undefined : new AbortController();
+    let timeoutError: RetryError | undefined;
+    let lastFailure: unknown;
+    let timer: NodeJS.Timeout | undefined;
 
     // Read the body inside the retried block. CloudFetch downloads are large
     // GETs against pre-signed cloud-storage URLs that frequently surface
@@ -271,54 +185,78 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
     // Pulling `arrayBuffer()` in here lets the retry policy treat those
     // body-stream failures the same as connect-time failures.
     let downloaded: ArrayBuffer | undefined;
-    // An expired deadline aborts the in-flight request and rejects a pending backoff sleep
-    const result = await retryPolicy.invokeWithRetry(async () => {
-      // The timeout error is not retryable, so this also ends the retry loop when the
-      // deadline expired during a backoff sleep or aborted the attempt.
-      deadline.throwIfExpired();
-      downloaded = undefined;
-      // Aborted by the deadline or when the attempt goes idle
-      const attempt = new AbortController();
-      const abortAttempt = () => attempt.abort();
-      signal?.addEventListener('abort', abortAttempt, { once: true });
-      let attemptTimedOut = false;
-      let idleTimer: NodeJS.Timeout | undefined;
-      const restartIdleTimer = () => {
-        if (idleTimeoutMs !== undefined) {
-          clearTimeout(idleTimer);
-          idleTimer = setTimeout(() => {
-            attemptTimedOut = true;
-            attempt.abort();
-          }, idleTimeoutMs);
+    let result: { request: Request; response: Response };
+    try {
+      const download = retryPolicy.invokeWithRetry(async () => {
+        // The timeout error is not retryable, so this also ends the retry loop when the
+        // deadline expired during a backoff sleep or aborted the attempt.
+        if (timeoutError) {
+          throw timeoutError;
         }
-      };
-      restartIdleTimer();
-      const request = new Request(url, {
-        ...requestConfig,
-        signal: attempt.signal as unknown as RequestInit['signal'],
-      });
-      try {
-        const response = await fetch(request);
+        downloaded = undefined;
+        // Aborted by the deadline or when the attempt goes idle
+        const attempt = new AbortController();
+        const abortAttempt = () => attempt.abort();
+        controller?.signal.addEventListener('abort', abortAttempt, { once: true });
+        let attemptTimedOut = false;
+        let idleTimer: NodeJS.Timeout | undefined;
+        const restartIdleTimer = () => {
+          if (idleTimeoutMs !== undefined) {
+            clearTimeout(idleTimer);
+            idleTimer = setTimeout(() => {
+              attemptTimedOut = true;
+              attempt.abort();
+            }, idleTimeoutMs);
+          }
+        };
         restartIdleTimer();
-        if (response.ok) {
-          const bodyRead = response.arrayBuffer();
-          response.body.on('data', restartIdleTimer);
-          downloaded = await bodyRead;
-        } else {
-          deadline.lastFailure = { request, response };
+        const request = new Request(url, {
+          ...requestConfig,
+          signal: attempt.signal as unknown as RequestInit['signal'],
+        });
+        try {
+          const response = await fetch(request);
+          restartIdleTimer();
+          if (response.ok) {
+            const bodyRead = response.arrayBuffer();
+            response.body.on('data', restartIdleTimer);
+            downloaded = await bodyRead;
+          } else {
+            lastFailure = { request, response };
+          }
+          return { request, response, retryable: SAME_URL_RETRY_STATUSES.has(response.status) };
+        } catch (error) {
+          if (timeoutError) {
+            throw timeoutError;
+          }
+          lastFailure = attemptTimedOut
+            ? Object.assign(new Error('CloudFetch download attempt timed out'), { code: 'ETIMEDOUT' })
+            : error;
+          throw lastFailure;
+        } finally {
+          clearTimeout(idleTimer);
+          controller?.signal.removeEventListener('abort', abortAttempt);
         }
-        return { request, response };
-      } catch (error) {
-        deadline.throwIfExpired();
-        deadline.lastFailure = attemptTimedOut
-          ? Object.assign(new Error('CloudFetch download attempt timed out'), { code: 'ETIMEDOUT' })
-          : error;
-        throw deadline.lastFailure;
-      } finally {
-        clearTimeout(idleTimer);
-        signal?.removeEventListener('abort', abortAttempt);
+      }, controller?.signal);
+
+      if (deadlineMs === undefined) {
+        result = await download;
+      } else {
+        const deadline = new Promise<never>((_, reject) => {
+          timer = setTimeout(() => {
+            timeoutError = new RetryError(RetryErrorCode.TimeoutExceeded, lastFailure);
+            // Aborts the in-flight request, and rejects a pending backoff sleep with `timeoutError`
+            controller?.abort(timeoutError);
+            reject(timeoutError);
+          }, deadlineMs);
+        });
+        result = await Promise.race([download, deadline]);
       }
-    }, signal);
+    } catch (error) {
+      throw CloudFetchResultHandler.describeDownloadError(error);
+    } finally {
+      clearTimeout(timer);
+    }
     // Fall back to reading the body here if the retry policy returned a
     // response without consuming it via our operation (e.g. unit-test stubs
     // that hand back a pre-baked Response without invoking the operation
