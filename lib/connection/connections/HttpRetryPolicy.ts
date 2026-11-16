@@ -36,8 +36,36 @@ const RETRYABLE_NETWORK_ERROR_CODES = new Set([
   'EHOSTUNREACH',
   'ENETUNREACH',
   'EPIPE',
-  'ENOTFOUND',
   'EAI_AGAIN',
+]);
+
+// Retrying can't fix these, so they are thrown at once, as in the kernel: the client's certificate
+// verification (OpenSSL's X509 codes as Node names them, and its hostname check) and a host name that
+// doesn't resolve (`ENOTFOUND`; a temporary DNS failure is `EAI_AGAIN`).
+const PERMANENT_NETWORK_ERROR_CODES = new Set([
+  'CERT_CHAIN_TOO_LONG',
+  'CERT_HAS_EXPIRED',
+  'CERT_NOT_YET_VALID',
+  'CERT_REJECTED',
+  'CERT_REVOKED',
+  'CERT_SIGNATURE_FAILURE',
+  'CERT_UNTRUSTED',
+  'DEPTH_ZERO_SELF_SIGNED_CERT',
+  'ERROR_IN_CERT_NOT_AFTER_FIELD',
+  'ERROR_IN_CERT_NOT_BEFORE_FIELD',
+  'ERR_TLS_CERT_ALTNAME_FORMAT',
+  'ERR_TLS_CERT_ALTNAME_INVALID',
+  'HOSTNAME_MISMATCH',
+  'INVALID_CA',
+  'INVALID_PURPOSE',
+  'PATH_LENGTH_EXCEEDED',
+  'SELF_SIGNED_CERT_IN_CHAIN',
+  'UNABLE_TO_DECODE_ISSUER_PUBLIC_KEY',
+  'UNABLE_TO_DECRYPT_CERT_SIGNATURE',
+  'UNABLE_TO_GET_ISSUER_CERT',
+  'UNABLE_TO_GET_ISSUER_CERT_LOCALLY',
+  'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
+  'ENOTFOUND',
 ]);
 
 // Fallback message patterns for errors that don't carry an errno. node-fetch surfaces
@@ -172,6 +200,10 @@ export default class HttpRetryPolicy implements IRetryPolicy<HttpTransactionDeta
     }
     const candidate = error as { code?: string; type?: string; message?: string };
 
+    if (typeof candidate.code === 'string' && PERMANENT_NETWORK_ERROR_CODES.has(candidate.code)) {
+      return false;
+    }
+
     // node-fetch FetchError surfaces low-level network failures with `type: 'system'`
     // and a body-stream timeout with `type: 'body-timeout'`. Both should be retried;
     // `request-timeout` is converted to a Thrift TApplicationException upstream so
@@ -197,7 +229,8 @@ export default class HttpRetryPolicy implements IRetryPolicy<HttpTransactionDeta
     const result =
       // Retry on all codes below 100
       statusCode < 100 ||
-      // ...and on `429 Too Many Requests`
+      // ...and on `408 Request Timeout` and `429 Too Many Requests`
+      statusCode === 408 ||
       statusCode === 429 ||
       // ...and on all `5xx` codes except for `501 Not Implemented`
       (statusCode >= 500 && statusCode !== 501);

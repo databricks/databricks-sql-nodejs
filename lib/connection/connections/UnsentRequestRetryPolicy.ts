@@ -7,7 +7,8 @@ import RetryError from '../../errors/RetryError';
 // socket (ECONNRESET, EPIPE, timeouts, ...) are excluded: the server may already have the request.
 const UNSENT_REQUEST_ERROR_CODES = new Set(['ECONNREFUSED', 'ENOTFOUND', 'EAI_AGAIN']);
 
-// For operations that are not safe to repeat: retries only requests that never left the client.
+// For operations that are not safe to repeat: retries only requests that never left the client, and a
+// 503 with `Retry-After`, where the server asks for a retry without running the request (as in the kernel).
 export default class UnsentRequestRetryPolicy extends HttpRetryPolicy {
   public async invokeWithRetry(operation: RetryableOperation<HttpTransactionDetails>): Promise<HttpTransactionDetails> {
     try {
@@ -21,8 +22,8 @@ export default class UnsentRequestRetryPolicy extends HttpRetryPolicy {
     }
   }
 
-  protected isRetryable(): boolean {
-    return false;
+  protected isRetryable({ response }: HttpTransactionDetails): boolean {
+    return response.status === 503 && response.headers.has('Retry-After');
   }
 
   protected isRetryableNetworkError(error: unknown): boolean {

@@ -64,9 +64,9 @@ describe('HttpRetryPolicy', () => {
     }
 
     // Status codes between 100 (including) and 500 (excluding) should not be retried
-    // The only exception is 429 (Too many requests)
+    // The only exceptions are 408 (Request Timeout) and 429 (Too many requests)
     for (let status = 100; status < 500; status += 1) {
-      const expectedResult = status === 429 ? true : false;
+      const expectedResult = status === 408 || status === 429;
       expect(policy['isRetryable'](createStub(status))).to.equal(expectedResult);
     }
 
@@ -398,6 +398,67 @@ describe('HttpRetryPolicy', () => {
         expect((error as RetryError).errorCode).to.equal(RetryErrorCode.AttemptsExceeded);
         expect((error as RetryError).payload).to.equal(fetchError);
         expect(operation.callCount).to.equal(clientConfig.retryMaxAttempts);
+      }
+    });
+
+    describe('network error classification', () => {
+      function systemError(code: string): FetchError {
+        return new FetchError(`request to https://example.com failed, reason: ${code}`, 'system', {
+          code,
+        } as unknown as NodeJS.ErrnoException);
+      }
+
+      function createPolicy() {
+        return new HttpRetryPolicy(new ClientContextStub({ retryDelayMin: 1, retryDelayMax: 2, retryMaxAttempts: 5 }));
+      }
+
+      // Certificate verification failures and a host name that doesn't resolve
+      for (const code of [
+        'DEPTH_ZERO_SELF_SIGNED_CERT',
+        'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
+        'SELF_SIGNED_CERT_IN_CHAIN',
+        'CERT_HAS_EXPIRED',
+        'ERR_TLS_CERT_ALTNAME_INVALID',
+        'ENOTFOUND',
+      ]) {
+        it(`throws ${code} at once, without retrying`, async () => {
+          const error = systemError(code);
+          const operation = sinon.stub().rejects(error);
+
+          try {
+            await createPolicy().invokeWithRetry(operation);
+            expect.fail('It should throw the error');
+          } catch (e) {
+            if (e instanceof AssertionError) {
+              throw e;
+            }
+            expect(e).to.equal(error);
+          }
+          expect(operation.callCount).to.equal(1);
+        });
+      }
+
+      // Transient connect/DNS failures, a TLS alert sent by the server, and unavailable revocation data
+      for (const code of [
+        'ECONNREFUSED',
+        'ECONNRESET',
+        'EAI_AGAIN',
+        'ERR_SSL_TLSV13_ALERT_CERTIFICATE_REQUIRED',
+        'UNABLE_TO_GET_CRL',
+      ]) {
+        it(`retries ${code}`, async () => {
+          const operation = sinon.stub();
+          operation.onCall(0).rejects(systemError(code));
+          operation.onCall(1).resolves({
+            request: new Request('http://localhost'),
+            response: new Response(undefined, { status: 200 }),
+          });
+
+          const result = await createPolicy().invokeWithRetry(operation);
+
+          expect(result.response.status).to.equal(200);
+          expect(operation.callCount).to.equal(2);
+        });
       }
     });
 

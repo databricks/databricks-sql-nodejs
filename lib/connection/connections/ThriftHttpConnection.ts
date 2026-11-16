@@ -76,6 +76,8 @@ type ThriftClient = {
 };
 
 const retryableThriftMethods = new Set([
+  // A repeated OpenSession leaves at most an unused session, which the server expires
+  'OpenSession',
   'GetOperationStatus',
   'CancelOperation',
   'CloseOperation',
@@ -93,7 +95,8 @@ const retryableThriftMethods = new Set([
   'GetCrossReference',
 ]);
 
-// Not safe to repeat once the server may have the request, so retried only if it was never sent
+// Not safe to repeat once the server may have run the request, so retried only if it was never sent or
+// the server rejected it unrun (see UnsentRequestRetryPolicy)
 const unsentRequestRetryableThriftMethods = new Set(['ExecuteStatement']);
 
 export default class ThriftHttpConnection extends EventEmitter {

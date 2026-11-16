@@ -64,9 +64,20 @@ describe('UnsentRequestRetryPolicy', () => {
     });
   }
 
-  for (const status of [429, 500, 503]) {
-    it(`does not retry an HTTP ${status} response`, async () => {
-      const details = { request: new Request('http://localhost'), response: new Response(undefined, { status }) };
+  function statusResponse(status: number, headers: Record<string, string> = {}) {
+    return { request: new Request('http://localhost'), response: new Response(undefined, { status, headers }) };
+  }
+
+  for (const [status, headers] of [
+    [429, {}],
+    [500, {}],
+    [503, {}],
+    [500, { 'Retry-After': '1' }],
+  ] as const) {
+    it(`does not retry an HTTP ${status} response ${
+      Object.keys(headers).length ? 'with' : 'without'
+    } Retry-After`, async () => {
+      const details = statusResponse(status, headers);
       const policy = createPolicy();
       const operation = sinon.stub().resolves(details);
 
@@ -75,6 +86,27 @@ describe('UnsentRequestRetryPolicy', () => {
       expect(operation.callCount).to.equal(1);
     });
   }
+
+  it('retries an HTTP 503 with Retry-After, which the server did not run', async () => {
+    const operation = sinon.stub();
+    operation.onCall(0).resolves(statusResponse(503, { 'Retry-After': '1' }));
+    operation.onCall(1).resolves(okResponse());
+
+    const result = await createPolicy().invokeWithRetry(operation);
+
+    expect(result.response.status).to.equal(200);
+    expect(operation.callCount).to.equal(2);
+  });
+
+  it('throws a RetryError once a persistent 503 with Retry-After runs out of attempts', async () => {
+    const operation = sinon.stub().resolves(statusResponse(503, { 'Retry-After': '1' }));
+
+    const error = await expectRejection(createPolicy(3).invokeWithRetry(operation));
+
+    expect(error).to.be.instanceOf(RetryError);
+    expect((error as RetryError).errorCode).to.equal(RetryErrorCode.AttemptsExceeded);
+    expect(operation.callCount).to.equal(3);
+  });
 
   it('rethrows the original error once max attempts is reached', async () => {
     const error = systemError('ECONNREFUSED');

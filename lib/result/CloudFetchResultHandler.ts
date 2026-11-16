@@ -1,4 +1,4 @@
-import fetch, { RequestInfo, RequestInit, Request, Response } from 'node-fetch';
+import fetch, { FetchError, RequestInfo, RequestInit, Request, Response } from 'node-fetch';
 import { TGetResultSetMetadataResp, TRowSet, TSparkArrowResultLink } from '../../thrift/TCLIService_types';
 import HiveDriverError from '../errors/HiveDriverError';
 import RetryError, { RetryErrorCode } from '../errors/RetryError';
@@ -244,10 +244,12 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
    * only the error code / type. Raw network-error messages are deliberately NOT copied, because
    * node-fetch embeds the presigned (credential-bearing) request URL in them.
    * The same error instance, class, error code and payload (including the node-fetch
-   * `Request` / `Response` objects) are kept. Errors other than `RetryError` are returned unchanged.
+   * `Request` / `Response` objects) are kept. A node-fetch error thrown without retrying (e.g. an
+   * untrusted certificate) gets the same prefix, with its code in place of its message. Other errors
+   * are returned unchanged.
    */
   private static describeDownloadError(error: unknown): unknown {
-    if (!(error instanceof RetryError)) {
+    if (!(error instanceof RetryError) && !(error instanceof FetchError)) {
       return error;
     }
 
@@ -259,7 +261,7 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
     }
 
     let cause: string | undefined;
-    const { payload } = error;
+    const payload = error instanceof RetryError ? error.payload : error;
     if (payload instanceof Error) {
       const { code, type } = payload as Error & { code?: unknown; type?: unknown };
       if (typeof code === 'string' && code) {
@@ -281,7 +283,10 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
     // where the retry policy gave up. V8 bakes the message into the `stack` header at construction
     // time, so rewrite that header too — otherwise loggers that print `err.stack` miss the context.
     const originalHeader = `${error.name}: ${error.message}`;
-    const message = `${prefix}${error.message}${cause ? ` (last error: ${cause})` : ''}`;
+    const message =
+      error instanceof RetryError
+        ? `${prefix}${error.message}${cause ? ` (last error: ${cause})` : ''}`
+        : `${prefix}${cause}`;
     error.message = message;
     if (typeof error.stack === 'string' && error.stack.startsWith(originalHeader)) {
       error.stack = `${error.name}: ${message}${error.stack.slice(originalHeader.length)}`;

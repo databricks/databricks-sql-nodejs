@@ -748,9 +748,12 @@ describe('CloudFetchResultHandler', () => {
 
     // Real `HttpRetryPolicy` and node-fetch against a local server, so the deadline is exercised
     // across actual attempts, backoff sleeps and sockets.
-    function createHandler(fileLink: string, configOverrides: Partial<ClientConfig>) {
+    function createHandler(fileLink: string, configOverrides: Partial<ClientConfig>, agent?: http.Agent) {
       const context = new BaseClientContextStub({ cloudFetchConcurrentDownloads: 1, ...configOverrides });
       sinon.stub(context.connectionProvider, 'getRetryPolicy').callsFake(async () => new HttpRetryPolicy(context));
+      if (agent) {
+        sinon.stub(context.connectionProvider, 'getAgent').resolves(agent);
+      }
       const rowSet: TRowSet = {
         startRowOffset: new Int64(0),
         rows: [],
@@ -788,6 +791,22 @@ describe('CloudFetchResultHandler', () => {
       }
       return { ...outcome, elapsedMs: Date.now() - startedAt };
     }
+
+    it('should not leak the presigned URL from a network error that is not retried', async () => {
+      // Every lookup fails as for a host that doesn't resolve, which is thrown without retrying
+      const agent = new http.Agent({
+        lookup: (hostname: string, options: unknown, callback: Function) =>
+          callback(Object.assign(new Error(`getaddrinfo ENOTFOUND ${hostname}`), { code: 'ENOTFOUND' })),
+      } as unknown as http.AgentOptions);
+      const handler = createHandler('http://storage.example.invalid/chunk?sig=SECRET_SIGNATURE', {}, agent);
+
+      const { error } = await fetchWithin(handler, 1500);
+      agent.destroy();
+
+      expect(error.code).to.be.equal('ENOTFOUND');
+      expect(error.message).to.be.equal('CloudFetch result download failed: network error ENOTFOUND');
+      expect(error.stack).to.not.contain('SECRET_SIGNATURE');
+    });
 
     it('should fail a download whose response headers never arrive with a timeout error', async () => {
       const closedRequests: Array<Promise<void>> = [];
