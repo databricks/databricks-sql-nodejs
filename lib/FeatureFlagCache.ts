@@ -14,8 +14,9 @@
  * limitations under the License.
  */
 
-import fetch, { RequestInit, Response, Request } from 'node-fetch';
+import fetch, { RequestInit, Response, Request, FetchError } from 'node-fetch';
 import IClientContext from './contracts/IClientContext';
+import RetryError, { RetryErrorCode } from './errors/RetryError';
 import { LogLevel } from './contracts/IDBSQLLogger';
 import IAuthentication from './connection/contracts/IAuthentication';
 import { buildTelemetryUrl, normalizeHeaders } from './telemetry/telemetryUtils';
@@ -195,7 +196,7 @@ export default class FeatureFlagCache {
 
       logger.log(LogLevel.debug, `Fetching feature flags from ${endpoint}`);
 
-      const response = await this.sendRequest(endpoint, {
+      const response = await this.fetchWithRetry(endpoint, {
         method: 'GET',
         headers,
         timeout: 10000,
@@ -231,11 +232,29 @@ export default class FeatureFlagCache {
     }
   }
 
-  // A single attempt, as in the kernel: connect() waits for the flags, which fall back to defaults on failure.
-  private async sendRequest(url: string, init: RequestInit): Promise<Response> {
+  /** Retries transient failures using the connection's retry policy. */
+  private async fetchWithRetry(url: string, init: RequestInit): Promise<Response> {
     const connectionProvider = await this.context.getConnectionProvider();
     const agent = await connectionProvider.getAgent(url);
-    return fetch(new Request(url, { agent, ...init }));
+    const retryPolicy = await connectionProvider.getRetryPolicy();
+    const requestConfig: RequestInit = { agent, ...init };
+    const result = await retryPolicy.invokeWithRetry(() => {
+      const request = new Request(url, requestConfig);
+      // connect() waits for the flags, so back off as usual instead of for as long as `Retry-After` asks, and
+      // don't repeat a request that already waited out its timeout (the policy rethrows a RetryError as is)
+      return fetch(request).then(
+        (response) => {
+          response.headers.delete('Retry-After');
+          return { request, response };
+        },
+        (error) => {
+          throw error instanceof FetchError && error.type === 'request-timeout'
+            ? new RetryError(RetryErrorCode.TimeoutExceeded, error)
+            : error;
+        },
+      );
+    });
+    return result.response;
   }
 
   private async getAuthHeaders(): Promise<Record<string, string>> {

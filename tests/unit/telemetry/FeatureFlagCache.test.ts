@@ -21,6 +21,7 @@ import { AddressInfo } from 'net';
 import { Response } from 'node-fetch';
 import FeatureFlagCache from '../../../lib/FeatureFlagCache';
 import HttpRetryPolicy from '../../../lib/connection/connections/HttpRetryPolicy';
+import RetryError from '../../../lib/errors/RetryError';
 import ClientContextStub from '../.stubs/ClientContextStub';
 import { LogLevel } from '../../../lib/contracts/IDBSQLLogger';
 
@@ -263,12 +264,12 @@ describe('FeatureFlagCache', () => {
       const host = 'test-host.databricks.com';
 
       // Stub the network seam so the test is deterministic. The real
-      // `sendRequest` makes an HTTP call with a 10s timeout to the
+      // `fetchWithRetry` makes an HTTP call with a 10s timeout to the
       // (bogus) host; under mocha's 2s default this passed only when the
       // DNS failure happened to resolve quickly — flaky across runners /
       // Node versions (it timed out on Node 14/16/18 in CI). The behavior
       // under test is just that `fetchFeatureFlags` resolves to `false`.
-      const fetchStub = sinon.stub(cache as any, 'sendRequest').rejects(new Error('network disabled in test'));
+      const fetchStub = sinon.stub(cache as any, 'fetchWithRetry').rejects(new Error('network disabled in test'));
 
       cache.getOrCreateContext(host);
       const result = await cache.getBoolean(host, 'flag');
@@ -277,32 +278,74 @@ describe('FeatureFlagCache', () => {
       fetchStub.restore();
     });
 
-    it('should make a single attempt, even when the endpoint asks for a retry', async () => {
-      // As in the kernel: connect() waits for the flags, and a failure falls back to the defaults
+    it('should not wait for Retry-After before retrying the flags request', async () => {
+      // connect() waits for the flags, so a Retry-After from the endpoint must not stretch the retries
       clock.restore();
       let hits = 0;
       const server = http.createServer((req, res) => {
         hits += 1;
-        res.writeHead(503, { 'Retry-After': '1' });
-        res.end();
+        if (hits === 1) {
+          res.writeHead(503, { 'Retry-After': '60' });
+          res.end();
+        } else {
+          res.writeHead(200, { 'Content-Type': 'application/json' });
+          res.end(JSON.stringify({ flags: [] }));
+        }
       });
       await new Promise<void>((resolve) => {
         server.listen(0, '127.0.0.1', resolve);
       });
       try {
-        const context = new ClientContextStub({ retryDelayMin: 1, retryDelayMax: 2 });
-        // A real retry policy, so the test fails if the fetch goes back to retrying through it
+        const context = new ClientContextStub({ retryDelayMin: 1, retryDelayMax: 60_000 });
         sinon.stub(context.connectionProvider, 'getRetryPolicy').callsFake(async () => new HttpRetryPolicy(context));
         const cache = new FeatureFlagCache(context);
         const { port } = server.address() as AddressInfo;
 
-        const response = await (cache as any).sendRequest(`http://127.0.0.1:${port}/`, { method: 'GET' });
+        const started = Date.now();
+        const response = await (cache as any).fetchWithRetry(`http://127.0.0.1:${port}/`, { method: 'GET' });
 
-        expect(response.status).to.equal(503);
+        expect(response.status).to.equal(200);
+        expect(hits).to.equal(2);
+        expect(Date.now() - started).to.be.lt(1000);
+      } finally {
+        server.closeAllConnections();
+        server.close();
+        clock = sinon.useFakeTimers();
+      }
+    });
+
+    it('should not repeat a flags request that timed out', async () => {
+      // Each attempt waits out the request timeout, so retrying it would stretch connect()
+      clock.restore();
+      let hits = 0;
+      const server = http.createServer(() => {
+        hits += 1;
+      });
+      await new Promise<void>((resolve) => {
+        server.listen(0, '127.0.0.1', resolve);
+      });
+      try {
+        const context = new ClientContextStub({ retryDelayMin: 1, retryDelayMax: 2, retryMaxAttempts: 3 });
+        sinon.stub(context.connectionProvider, 'getRetryPolicy').callsFake(async () => new HttpRetryPolicy(context));
+        const cache = new FeatureFlagCache(context);
+        const { port } = server.address() as AddressInfo;
+
+        let error: unknown;
+        try {
+          await (cache as any).fetchWithRetry(`http://127.0.0.1:${port}/`, { method: 'GET', timeout: 100 });
+        } catch (e) {
+          error = e;
+        }
+
+        expect(error).to.be.instanceOf(RetryError);
         expect(hits).to.equal(1);
       } finally {
         server.closeAllConnections();
         server.close();
+        // Let node-fetch finish the aborted request (it clears its timer) before faking timers again
+        await new Promise<void>((resolve) => {
+          setTimeout(resolve, 10);
+        });
         clock = sinon.useFakeTimers();
       }
     });
@@ -379,7 +422,7 @@ describe('FeatureFlagCache', () => {
         customHeaders: { 'x-databricks-org-id': '12345678901234' },
       } as any);
       const cache = new FeatureFlagCache(context);
-      const stub = sinon.stub(cache as any, 'sendRequest').returns(makeJsonResponse({ flags: [] }));
+      const stub = sinon.stub(cache as any, 'fetchWithRetry').returns(makeJsonResponse({ flags: [] }));
 
       await (cache as any).fetchFeatureFlags('host.example.com');
 
@@ -392,7 +435,7 @@ describe('FeatureFlagCache', () => {
     it('does not set x-databricks-org-id when customHeaders is empty', async () => {
       const context = new ClientContextStub();
       const cache = new FeatureFlagCache(context);
-      const stub = sinon.stub(cache as any, 'sendRequest').returns(makeJsonResponse({ flags: [] }));
+      const stub = sinon.stub(cache as any, 'fetchWithRetry').returns(makeJsonResponse({ flags: [] }));
 
       await (cache as any).fetchFeatureFlags('host.example.com');
 
@@ -424,7 +467,7 @@ describe('FeatureFlagCache', () => {
     ];
     const cache = new FeatureFlagCache(new ClientContextStub());
     cache.getOrCreateContext('test-host');
-    const fetchStub = sinon.stub(cache as any, 'sendRequest').resolves(
+    const fetchStub = sinon.stub(cache as any, 'fetchWithRetry').resolves(
       new Response(
         JSON.stringify({
           flags: cases.map(([, value], index) => ({ name: String(index), value })),
@@ -454,8 +497,8 @@ describe('FeatureFlagCache', () => {
           ttl_seconds: 60,
         }),
       );
-    const firstFetch = sinon.stub(first as any, 'sendRequest').resolves(response('true'));
-    const currentFetch = sinon.stub(current as any, 'sendRequest').resolves(response('FALSE'));
+    const firstFetch = sinon.stub(first as any, 'fetchWithRetry').resolves(response('true'));
+    const currentFetch = sinon.stub(current as any, 'fetchWithRetry').resolves(response('FALSE'));
     expect(await Promise.all([first.getBoolean('host-a', 'flag'), current.getBoolean('host-b', 'flag')])).to.deep.equal(
       [true, true],
     );
