@@ -64,6 +64,7 @@ describe('discoverAzureTenantId', () => {
   });
 
   after(async () => {
+    server.closeAllConnections();
     await new Promise<void>((resolve) => {
       server.close(() => resolve());
     });
@@ -72,6 +73,29 @@ describe('discoverAzureTenantId', () => {
   beforeEach(() => {
     paths.length = 0;
   });
+
+  // Resolves when the server side of the next connection closes; the responses below never end on
+  // their own, so only the client destroying its socket closes it.
+  function nextConnectionClosed(): Promise<void> {
+    return new Promise((resolve) => {
+      server.once('connection', (socket) => socket.once('close', () => resolve()));
+    });
+  }
+
+  function agentSocketCount(agent: http.Agent): number {
+    return [agent.sockets, agent.freeSockets].reduce(
+      (count, pool) => count + Object.values(pool).reduce((n, sockets) => n + (sockets?.length ?? 0), 0),
+      0,
+    );
+  }
+
+  async function expectSocketReleased(closed: Promise<void>, agent: http.Agent): Promise<void> {
+    await closed;
+    await new Promise((resolve) => {
+      setImmediate(resolve);
+    });
+    expect(agentSocketCount(agent)).to.equal(0);
+  }
 
   it('reads the tenant from the first /aad/auth redirect without following it', async () => {
     respond = (req, res) => {
@@ -100,6 +124,72 @@ describe('discoverAzureTenantId', () => {
       expect(connections).to.equal(1);
     } finally {
       server.off('connection', onConnection);
+      agent.destroy();
+    }
+  });
+
+  it('aborts a stalled redirect body and returns the tenant from the headers', async function () {
+    // The body drain is bounded at 1 s; without the abort, discovery waits 30 s and keeps the socket.
+    this.timeout(10000);
+    respond = (req, res) => {
+      res.writeHead(302, { Location: 'https://login.microsoftonline.com/tenant-xyz/oauth2/authorize' });
+      res.write('x');
+    };
+    const closed = nextConnectionClosed();
+    const agent = new http.Agent({ keepAlive: true });
+    try {
+      expect(await discoverAzureTenantId(base, agent)).to.equal('tenant-xyz');
+      await expectSocketReleased(closed, agent);
+    } finally {
+      agent.destroy();
+    }
+  });
+
+  it('returns the tenant and releases the socket when the redirect body fails mid-stream', async () => {
+    respond = (req, res) => {
+      res.writeHead(302, { Location: 'https://login.microsoftonline.com/tenant-xyz/oauth2/authorize' });
+      res.write('x', () => res.socket?.destroy());
+    };
+    const closed = nextConnectionClosed();
+    const agent = new http.Agent({ keepAlive: true });
+    try {
+      expect(await discoverAzureTenantId(base, agent)).to.equal('tenant-xyz');
+      await expectSocketReleased(closed, agent);
+    } finally {
+      agent.destroy();
+    }
+  });
+
+  it('aborts when the redirect body cannot be decoded', async () => {
+    // node-fetch rejects the body read without closing the request, so the drain must abort it.
+    respond = (req, res) => {
+      res.writeHead(302, {
+        Location: 'https://login.microsoftonline.com/tenant-xyz/oauth2/authorize',
+        'Content-Encoding': 'gzip',
+      });
+      res.write('not gzip');
+    };
+    const closed = nextConnectionClosed();
+    const agent = new http.Agent({ keepAlive: true });
+    try {
+      expect(await discoverAzureTenantId(base, agent)).to.equal('tenant-xyz');
+      await expectSocketReleased(closed, agent);
+    } finally {
+      agent.destroy();
+    }
+  });
+
+  it('aborts with the azureTenantId hint when the response headers never arrive', async () => {
+    respond = () => {};
+    const closed = nextConnectionClosed();
+    const agent = new http.Agent({ keepAlive: true });
+    try {
+      await expectAuthError(
+        discoverAzureTenantId(base, agent, { headers: 100, bodyDrain: 100 }),
+        'failed (timed out); pass azureTenantId',
+      );
+      await expectSocketReleased(closed, agent);
+    } finally {
       agent.destroy();
     }
   });
