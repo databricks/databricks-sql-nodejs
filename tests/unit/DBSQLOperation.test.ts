@@ -620,17 +620,21 @@ describe('DBSQLOperation', () => {
 
     const flush = () => new Promise((resolve) => setTimeout(resolve, 0));
 
-    // Makes `stub` return a request that stays pending until settled here.
+    // Makes `stub` return requests that stay pending until settled here;
+    // `resolve` / `reject` settle the latest one, `calls[i]` the i-th.
     function pending<T>(stub: sinon.SinonStub) {
-      const request = { resolve: (_value: T) => {}, reject: (_error: Error) => {} };
+      const calls: Array<{ resolve: (value: T) => void; reject: (error: Error) => void }> = [];
       stub.callsFake(
         () =>
           new Promise<T>((resolve, reject) => {
-            request.resolve = resolve;
-            request.reject = reject;
+            calls.push({ resolve, reject });
           }),
       );
-      return request;
+      return {
+        calls,
+        resolve: (value: T) => calls[calls.length - 1].resolve(value),
+        reject: (error: Error) => calls[calls.length - 1].reject(error),
+      };
     }
 
     function runningOperation() {
@@ -804,6 +808,25 @@ describe('DBSQLOperation', () => {
 
       await cancelling;
       await expectStateError(fetching, OperationStateErrorCode.Canceled);
+    });
+
+    it('should report closed when a second close() that overlapped a successful one failed', async () => {
+      const { context, operation, failPoll } = runningOperation();
+      const closeRequests = pending(sinon.stub(context.driver, 'closeOperation'));
+
+      const fetching = operation.fetchAll();
+      await flush();
+      const closing = operation.close();
+      const closingAgain = operation.close();
+      failPoll(abortedRequest());
+      await flush();
+      expect(closeRequests.calls).to.have.lengthOf(2);
+      closeRequests.calls[1].reject(new Error('close failed'));
+      await expectFailure(() => closingAgain);
+      closeRequests.calls[0].resolve(context.driver.closeOperationResp);
+
+      await closing;
+      await expectStateError(fetching, OperationStateErrorCode.Closed);
     });
 
     it('should report a result fetch failed by close() as closed', async () => {

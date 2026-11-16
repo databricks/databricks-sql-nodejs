@@ -57,10 +57,8 @@ export default class DBSQLOperation implements IOperation {
 
   private cancelled: boolean = false;
 
-  // The latest close and cancel requests (see `clientStopError`).
-  private closeRequest?: Promise<Status>;
-
-  private cancelRequest?: Promise<Status>;
+  // Close and cancel requests in flight (see `clientStopError`).
+  private readonly stopRequests = new Set<Promise<Status>>();
 
   public readonly _data?: unknown;
 
@@ -217,8 +215,7 @@ export default class DBSQLOperation implements IOperation {
     if (this.closed || this.cancelled) {
       return Status.success();
     }
-    this.cancelRequest = this.backend.cancel();
-    const result = await this.cancelRequest;
+    const result = await this.trackStopRequest(this.backend.cancel());
     this.cancelled = true;
     this.onClose?.();
     return result;
@@ -237,10 +234,9 @@ export default class DBSQLOperation implements IOperation {
     if (this.closed || this.cancelled) {
       return Status.success();
     }
-    this.closeRequest = this.backend.close();
     let result: Status;
     try {
-      result = await this.closeRequest;
+      result = await this.trackStopRequest(this.backend.close());
     } catch (error: any) {
       // Until the statement finished, closing it is what stops it server-side,
       // so the failure is the caller's to handle (and the close can be retried).
@@ -400,13 +396,15 @@ export default class DBSQLOperation implements IOperation {
    * or cancelled while the call was in flight. Such a call fails with whatever
    * the server answers for the released statement (Thrift answers an in-flight
    * GetOperationStatus with HTTP 409 ABORTED), so report the client's action,
-   * but only once that close or cancel has succeeded. Both are awaited: a
-   * cancel and a close (e.g. from `session.close()`) can overlap.
+   * but only once that close or cancel has succeeded. Every request in flight
+   * is awaited: closes and cancels can overlap (e.g. a caller's own `close()`
+   * or `cancel()` alongside `session.close()`).
    */
   private async clientStopError(): Promise<OperationStateError | undefined> {
-    // `closeInternal` / `cancelInternal` awaited the same requests first, so
-    // their flags are already updated when this resumes.
-    await Promise.all([this.closeRequest, this.cancelRequest].map((request) => request?.catch(() => undefined)));
+    // `closeInternal` / `cancelInternal` awaited these requests first, so
+    // their flags are already updated when this resumes. A settled request
+    // leaves the set in the job just before its caller updates the flag.
+    await Promise.all(Array.from(this.stopRequests, (request) => request.catch(() => undefined)));
     if (this.closed) {
       return new OperationStateError(OperationStateErrorCode.Closed);
     }
@@ -414,6 +412,16 @@ export default class DBSQLOperation implements IOperation {
       return new OperationStateError(OperationStateErrorCode.Canceled);
     }
     return undefined;
+  }
+
+  // Keeps `request` in `stopRequests` until it settles.
+  private trackStopRequest(request: Promise<Status>): Promise<Status> {
+    this.stopRequests.add(request);
+    const untrack = () => {
+      this.stopRequests.delete(request);
+    };
+    request.then(untrack, untrack);
+    return request;
   }
 
   private async waitUntilReadyThroughBackend(options?: WaitUntilReadyOptions) {
