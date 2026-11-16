@@ -323,7 +323,10 @@ export function decodeNapiKernelError(err: unknown): Error {
       IsADirectory: 'EISDIR',
       DirectoryNotEmpty: 'ENOTEMPTY',
     };
-    const raw = typeof envelope.localOsError === 'number' ? envelope.localOsError : undefined;
+    const raw =
+      typeof envelope.localOsError === 'number' && Number.isSafeInteger(envelope.localOsError)
+        ? envelope.localOsError
+        : undefined;
     const systemCode = process.platform !== 'win32' && raw ? getSystemErrorName(-Math.abs(raw)) : undefined;
     const localCode =
       systemCode && /^E[A-Z0-9]+$/.test(systemCode) ? systemCode : kindCodes[envelope.localErrorKind] ?? 'EIO';
