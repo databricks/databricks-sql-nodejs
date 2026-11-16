@@ -380,6 +380,8 @@ for (const [raw, kind, expected] of [
   [undefined, 'Unrecognized', 'EIO'],
   [1000000, 'NotFound', 'ENOENT'],
   [1000000, 'Unrecognized', 'EIO'],
+  [1.5, 'NotFound', 'ENOENT'],
+  [Number.MAX_SAFE_INTEGER + 1, 'Unrecognized', 'EIO'],
 ] as const) {
   it(`preserves local file error code and path for ${kind}/${raw}`, () => {
     const error = decodeNapiKernelError(
