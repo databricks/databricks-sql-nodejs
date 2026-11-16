@@ -211,6 +211,29 @@ describe('BaseCommand', () => {
     });
   });
 
+  it('should name a request timeout once retries run out', async () => {
+    const context = new ClientContextStub({ retryDelayMin: 1, retryDelayMax: 2, retryMaxAttempts: 3 });
+    const command = new CustomCommand(
+      new ThriftClientStub(context, async () => {
+        throw new FetchError('network timeout at: http://localhost/', 'request-timeout');
+      }),
+      context,
+    );
+
+    try {
+      await command.execute({});
+      expect.fail('It should throw an error');
+    } catch (error) {
+      if (error instanceof AssertionError || !(error instanceof Error)) {
+        throw error;
+      }
+      expect(error).to.be.instanceof(HiveDriverError);
+      expect(error.message).to.equal(
+        'Hive driver: request-timeout when connecting to resource. Max retry count exceeded.',
+      );
+    }
+  });
+
   it('should name the network error code once retries run out', async () => {
     const context = new ClientContextStub({ retryDelayMin: 1, retryDelayMax: 2, retryMaxAttempts: 3 });
     const command = new CustomCommand(

@@ -1081,7 +1081,7 @@ describe('DBSQLClient feature flag lifecycle', () => {
         .stub(DatabricksOAuth.prototype, 'authenticate')
         .resolves({ Authorization: 'Bearer oauth-token' });
       const fetch = sinon
-        .stub(FeatureFlagCache.prototype as any, 'fetchWithRetry')
+        .stub(FeatureFlagCache.prototype as any, 'sendRequest')
         .resolves(new Response(JSON.stringify({ flags: [{ name: 'sampleLimit', value: '42' }] })));
       const connect = sinon.stub(ThriftBackend.prototype, 'connect').resolves();
       sinon.stub(ThriftBackend.prototype, 'close').resolves();
@@ -1114,7 +1114,7 @@ describe('DBSQLClient feature flag lifecycle', () => {
   }
 
   it('continues connecting when the flag GET fails', async () => {
-    const fetch = sinon.stub(FeatureFlagCache.prototype as any, 'fetchWithRetry').rejects(new Error('offline'));
+    const fetch = sinon.stub(FeatureFlagCache.prototype as any, 'sendRequest').rejects(new Error('offline'));
     const connect = sinon.stub(ThriftBackend.prototype, 'connect').resolves();
     sinon.stub(ThriftBackend.prototype, 'close').resolves();
     const client = new DBSQLClient();

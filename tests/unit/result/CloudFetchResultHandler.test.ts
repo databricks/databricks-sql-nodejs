@@ -5,7 +5,7 @@ import { AddressInfo } from 'net';
 import Int64 from 'node-int64';
 import { compressFrameSync } from 'lz4-napi';
 import { Request, Response } from 'node-fetch';
-import { ShouldRetryResult } from '../../../lib/connection/contracts/IRetryPolicy';
+import { RetryRequestClass, ShouldRetryResult } from '../../../lib/connection/contracts/IRetryPolicy';
 import { HttpTransactionDetails } from '../../../lib/connection/contracts/IConnectionProvider';
 import { LogLevel } from '../../../lib/contracts/IDBSQLLogger';
 import CloudFetchResultHandler from '../../../lib/result/CloudFetchResultHandler';
@@ -750,7 +750,9 @@ describe('CloudFetchResultHandler', () => {
     // across actual attempts, backoff sleeps and sockets.
     function createHandler(fileLink: string, configOverrides: Partial<ClientConfig>, agent?: http.Agent) {
       const context = new BaseClientContextStub({ cloudFetchConcurrentDownloads: 1, ...configOverrides });
-      sinon.stub(context.connectionProvider, 'getRetryPolicy').callsFake(async () => new HttpRetryPolicy(context));
+      sinon
+        .stub(context.connectionProvider, 'getRetryPolicy')
+        .callsFake(async (requestClass?: RetryRequestClass) => new HttpRetryPolicy(context, requestClass));
       if (agent) {
         sinon.stub(context.connectionProvider, 'getAgent').resolves(agent);
       }
@@ -792,19 +794,48 @@ describe('CloudFetchResultHandler', () => {
       return { ...outcome, elapsedMs: Date.now() - startedAt };
     }
 
-    it('should not leak the presigned URL from a network error that is not retried', async () => {
-      // Every lookup fails as for a host that doesn't resolve, which is thrown without retrying
-      const agent = new http.Agent({
-        lookup: (hostname: string, options: unknown, callback: Function) =>
-          callback(Object.assign(new Error(`getaddrinfo ENOTFOUND ${hostname}`), { code: 'ENOTFOUND' })),
+    // An agent whose every connection fails with `code` before any request is sent
+    function failingAgent(code: string, onLookup = () => {}) {
+      return new http.Agent({
+        lookup: (hostname: string, options: unknown, callback: Function) => {
+          onLookup();
+          callback(Object.assign(new Error(`${code} ${hostname}`), { code }));
+        },
       } as unknown as http.AgentOptions);
+    }
+
+    it('should not leak the presigned URL from a network error that is not retried', async () => {
+      // A certificate failure is thrown without retrying
+      const agent = failingAgent('CERT_HAS_EXPIRED');
       const handler = createHandler('http://storage.example.invalid/chunk?sig=SECRET_SIGNATURE', {}, agent);
 
       const { error } = await fetchWithin(handler, 1500);
       agent.destroy();
 
-      expect(error.code).to.be.equal('ENOTFOUND');
-      expect(error.message).to.be.equal('CloudFetch result download failed: network error ENOTFOUND');
+      expect(error.code).to.be.equal('CERT_HAS_EXPIRED');
+      expect(error.message).to.be.equal('CloudFetch result download failed: network error CERT_HAS_EXPIRED');
+      expect(error.stack).to.not.contain('SECRET_SIGNATURE');
+    });
+
+    it('should retry a download whose host does not resolve, as the kernel', async () => {
+      let lookups = 0;
+      const agent = failingAgent('ENOTFOUND', () => {
+        lookups += 1;
+      });
+      const handler = createHandler(
+        'http://storage.example.invalid/chunk?sig=SECRET_SIGNATURE',
+        { retryDelayMin: 1, retryDelayMax: 2, retryMaxAttempts: 3 },
+        agent,
+      );
+
+      const { error } = await fetchWithin(handler, 1500);
+      agent.destroy();
+
+      expect(lookups).to.be.equal(3);
+      expect(error).to.be.instanceOf(RetryError);
+      expect(error.message).to.be.equal(
+        'CloudFetch result download failed: Max retry count exceeded (last error: network error ENOTFOUND)',
+      );
       expect(error.stack).to.not.contain('SECRET_SIGNATURE');
     });
 

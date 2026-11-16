@@ -195,7 +195,7 @@ export default class FeatureFlagCache {
 
       logger.log(LogLevel.debug, `Fetching feature flags from ${endpoint}`);
 
-      const response = await this.fetchWithRetry(endpoint, {
+      const response = await this.sendRequest(endpoint, {
         method: 'GET',
         headers,
         timeout: 10000,
@@ -231,21 +231,11 @@ export default class FeatureFlagCache {
     }
   }
 
-  /** Retries transient failures using the connection's retry policy. */
-  private async fetchWithRetry(url: string, init: RequestInit): Promise<Response> {
+  // A single attempt, as in the kernel: connect() waits for the flags, which fall back to defaults on failure.
+  private async sendRequest(url: string, init: RequestInit): Promise<Response> {
     const connectionProvider = await this.context.getConnectionProvider();
     const agent = await connectionProvider.getAgent(url);
-    const retryPolicy = await connectionProvider.getRetryPolicy();
-    const requestConfig: RequestInit = { agent, ...init };
-    const result = await retryPolicy.invokeWithRetry(() => {
-      const request = new Request(url, requestConfig);
-      return fetch(request).then((response) => {
-        // connect() waits for the flags, so back off as usual instead of for as long as `Retry-After` asks
-        response.headers.delete('Retry-After');
-        return { request, response };
-      });
-    });
-    return result.response;
+    return fetch(new Request(url, { agent, ...init }));
   }
 
   private async getAuthHeaders(): Promise<Record<string, string>> {

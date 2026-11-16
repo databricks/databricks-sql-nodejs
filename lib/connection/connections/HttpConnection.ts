@@ -11,7 +11,7 @@ import { LogLevel } from '../../contracts/IDBSQLLogger';
 import HiveDriverError from '../../errors/HiveDriverError';
 
 import ThriftHttpConnection from './ThriftHttpConnection';
-import IRetryPolicy from '../contracts/IRetryPolicy';
+import IRetryPolicy, { RetryRequestClass } from '../contracts/IRetryPolicy';
 import HttpRetryPolicy from './HttpRetryPolicy';
 import UnsentRequestRetryPolicy from './UnsentRequestRetryPolicy';
 
@@ -227,7 +227,7 @@ export default class HttpConnection implements IConnectionProvider {
     return this.connection;
   }
 
-  public async getRetryPolicy(): Promise<IRetryPolicy<HttpTransactionDetails>> {
-    return new HttpRetryPolicy(this.context);
+  public async getRetryPolicy(requestClass?: RetryRequestClass): Promise<IRetryPolicy<HttpTransactionDetails>> {
+    return new HttpRetryPolicy(this.context, requestClass);
   }
 }

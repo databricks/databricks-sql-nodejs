@@ -60,22 +60,16 @@ describe('HttpRetryPolicy', () => {
       };
     }
 
-    // Status codes below 100 can be retried
-    for (let status = 1; status < 100; status += 1) {
-      expect(policy['isRetryable'](createStub(status))).to.be.true;
+    // As the kernel's idempotent strategy: every status except success, redirects and these rejections
+    const nonRetryable = [400, 401, 403, 404, 405, 409, 410, 411, 412, 413, 414, 415, 416];
+    for (let status = 1; status < 1000; status += 1) {
+      const expectedResult = !(status >= 200 && status < 400) && !nonRetryable.includes(status);
+      expect(policy['isRetryable'](createStub(status)), `status ${status}`).to.equal(expectedResult);
     }
 
-    // Status codes between 100 (including) and 500 (excluding) should not be retried
-    // The only exceptions are 408 (Request Timeout) and 429 (Too many requests)
-    for (let status = 100; status < 500; status += 1) {
-      const expectedResult = status === 408 || status === 429;
-      expect(policy['isRetryable'](createStub(status))).to.equal(expectedResult);
-    }
-
-    // Status codes above 500 can be retried, except for 501
-    for (let status = 500; status < 1000; status += 1) {
-      const expectedResult = status === 501 ? false : true;
-      expect(policy['isRetryable'](createStub(status))).to.equal(expectedResult);
+    // Statuses whose class changed to match the kernel
+    for (const status of [402, 406, 407, 417, 422, 425, 431, 451, 501]) {
+      expect(policy['isRetryable'](createStub(status)), `status ${status}`).to.be.true;
     }
   });
 
@@ -440,11 +434,42 @@ describe('HttpRetryPolicy', () => {
         } as unknown as NodeJS.ErrnoException);
       }
 
-      function createPolicy() {
-        return new HttpRetryPolicy(new ClientContextStub({ retryDelayMin: 1, retryDelayMax: 2, retryMaxAttempts: 5 }));
+      function createPolicy(requestClass?: 'rpc' | 'cloudFetch') {
+        return new HttpRetryPolicy(
+          new ClientContextStub({ retryDelayMin: 1, retryDelayMax: 2, retryMaxAttempts: 5 }),
+          requestClass,
+        );
       }
 
-      // Certificate verification failures and a host name that doesn't resolve
+      async function expectThrownAtOnce(error: Error, requestClass?: 'rpc' | 'cloudFetch') {
+        const operation = sinon.stub().rejects(error);
+        try {
+          await createPolicy(requestClass).invokeWithRetry(operation);
+          expect.fail('It should throw the error');
+        } catch (e) {
+          if (e instanceof AssertionError) {
+            throw e;
+          }
+          expect(e).to.equal(error);
+        }
+        expect(operation.callCount).to.equal(1);
+      }
+
+      async function expectRetried(error: Error, requestClass?: 'rpc' | 'cloudFetch') {
+        const operation = sinon.stub();
+        operation.onCall(0).rejects(error);
+        operation.onCall(1).resolves({
+          request: new Request('http://localhost'),
+          response: new Response(undefined, { status: 200 }),
+        });
+
+        const result = await createPolicy(requestClass).invokeWithRetry(operation);
+
+        expect(result.response.status).to.equal(200);
+        expect(operation.callCount).to.equal(2);
+      }
+
+      // Certificate verification failures, and for RPCs a host name that doesn't resolve
       for (const code of [
         'DEPTH_ZERO_SELF_SIGNED_CERT',
         'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
@@ -453,21 +478,7 @@ describe('HttpRetryPolicy', () => {
         'ERR_TLS_CERT_ALTNAME_INVALID',
         'ENOTFOUND',
       ]) {
-        it(`throws ${code} at once, without retrying`, async () => {
-          const error = systemError(code);
-          const operation = sinon.stub().rejects(error);
-
-          try {
-            await createPolicy().invokeWithRetry(operation);
-            expect.fail('It should throw the error');
-          } catch (e) {
-            if (e instanceof AssertionError) {
-              throw e;
-            }
-            expect(e).to.equal(error);
-          }
-          expect(operation.callCount).to.equal(1);
-        });
+        it(`throws ${code} at once on an RPC, without retrying`, () => expectThrownAtOnce(systemError(code)));
       }
 
       // Transient connect/DNS failures, a TLS alert sent by the server, and unavailable revocation data
@@ -478,20 +489,17 @@ describe('HttpRetryPolicy', () => {
         'ERR_SSL_TLSV13_ALERT_CERTIFICATE_REQUIRED',
         'UNABLE_TO_GET_CRL',
       ]) {
-        it(`retries ${code}`, async () => {
-          const operation = sinon.stub();
-          operation.onCall(0).rejects(systemError(code));
-          operation.onCall(1).resolves({
-            request: new Request('http://localhost'),
-            response: new Response(undefined, { status: 200 }),
-          });
-
-          const result = await createPolicy().invokeWithRetry(operation);
-
-          expect(result.response.status).to.equal(200);
-          expect(operation.callCount).to.equal(2);
-        });
+        it(`retries ${code}`, () => expectRetried(systemError(code)));
       }
+
+      it('retries a request timeout on an RPC, as the kernel', () =>
+        expectRetried(new FetchError('network timeout at: https://example.com', 'request-timeout')));
+
+      // As the kernel's CloudFetch chunk retry: everything but certificate failures
+      it('retries ENOTFOUND on a CloudFetch download', () => expectRetried(systemError('ENOTFOUND'), 'cloudFetch'));
+
+      it('throws a certificate failure at once on a CloudFetch download', () =>
+        expectThrownAtOnce(systemError('CERT_HAS_EXPIRED'), 'cloudFetch'));
     });
 
     it('should cancel a pending backoff sleep when the signal is aborted', async () => {

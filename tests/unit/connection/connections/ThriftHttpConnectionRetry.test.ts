@@ -23,6 +23,7 @@ const REPLY = 2;
 type ServerAction =
   | 'reply'
   | 'close-after-request'
+  | 'stall'
   | 'status-408'
   | 'status-429'
   | 'status-503'
@@ -45,6 +46,8 @@ async function startServer(actions: ServerAction[]): Promise<TestServer> {
       if (action === 'close-after-request') {
         // The full request has been received; drop the connection without a response
         req.socket.destroy();
+      } else if (action === 'stall') {
+        // Never respond; the client's request timeout ends it
       } else if (action === 'status-503-retry-after') {
         res.writeHead(503, { 'Retry-After': '1' });
         res.end();
@@ -106,7 +109,8 @@ class RefusingAgent extends http.Agent {
 
 async function createThriftConnection(port: number, agent: http.Agent): Promise<ThriftHttpConnection> {
   const context = new ClientContextStub({ retryDelayMin: 1, retryDelayMax: 2, retryMaxAttempts: 3 });
-  const httpConnection = new HttpConnection({ host: '127.0.0.1', port, path: '/' }, context);
+  // A short socketTimeout, so a stalled response becomes a request timeout quickly
+  const httpConnection = new HttpConnection({ host: '127.0.0.1', port, path: '/', socketTimeout: 300 }, context);
   httpConnection['httpAgent'] = agent;
   return httpConnection.getThriftConnection();
 }
@@ -188,7 +192,7 @@ describe('ThriftHttpConnection retries', () => {
     expect(server.requests).to.equal(2);
   });
 
-  for (const status of ['status-503', 'status-429', 'status-408'] as const) {
+  for (const status of ['status-503', 'status-408'] as const) {
     it(`does not retry ExecuteStatement on an HTTP error status (${status})`, async () => {
       const { server, connection } = await setup([status], 0);
 
@@ -200,14 +204,16 @@ describe('ThriftHttpConnection retries', () => {
     });
   }
 
-  it('retries ExecuteStatement on a 503 with Retry-After, which the server did not run', async () => {
-    const { server, connection } = await setup(['status-503-retry-after', 'reply'], 0);
+  for (const status of ['status-503-retry-after', 'status-429'] as const) {
+    it(`retries ExecuteStatement when the server rejects it without running it (${status})`, async () => {
+      const { server, connection } = await setup([status, 'reply'], 0);
 
-    const result = await send(connection, 'ExecuteStatement', 1);
+      const result = await send(connection, 'ExecuteStatement', 1);
 
-    expect(result).to.equal('ExecuteStatement result');
-    expect(server.requests).to.equal(2);
-  });
+      expect(result).to.equal('ExecuteStatement result');
+      expect(server.requests).to.equal(2);
+    });
+  }
 
   for (const status of ['status-503', 'status-429', 'status-408'] as const) {
     it(`retries OpenSession on a transient HTTP error (${status})`, async () => {
@@ -219,6 +225,24 @@ describe('ThriftHttpConnection retries', () => {
       expect(server.requests).to.equal(2);
     });
   }
+
+  it('retries OpenSession after a request timeout, as the kernel', async () => {
+    const { server, connection } = await setup(['stall', 'reply'], 0);
+
+    const result = await send(connection, 'OpenSession', 1);
+
+    expect(result).to.equal('OpenSession result');
+    expect(server.requests).to.equal(2);
+  });
+
+  it('does not retry ExecuteStatement after a request timeout', async () => {
+    const { server, connection } = await setup(['stall', 'reply'], 0);
+
+    const error = await expectRejection(send(connection, 'ExecuteStatement', 1));
+
+    expect(error.message).to.equal('Request timed out');
+    expect(server.requests).to.equal(1);
+  });
 
   it('retries OpenSession when the connection is refused', async () => {
     const { server, agent, connection } = await setup(['reply'], 1);

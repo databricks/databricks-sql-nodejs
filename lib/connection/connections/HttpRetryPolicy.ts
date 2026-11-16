@@ -1,4 +1,4 @@
-import IRetryPolicy, { ShouldRetryResult, RetryableOperation } from '../contracts/IRetryPolicy';
+import IRetryPolicy, { ShouldRetryResult, RetryableOperation, RetryRequestClass } from '../contracts/IRetryPolicy';
 import { HttpTransactionDetails } from '../contracts/IConnectionProvider';
 import IClientContext from '../../contracts/IClientContext';
 import RetryError, { RetryErrorCode } from '../../errors/RetryError';
@@ -39,10 +39,8 @@ const RETRYABLE_NETWORK_ERROR_CODES = new Set([
   'EAI_AGAIN',
 ]);
 
-// Retrying can't fix these, so they are thrown at once, as in the kernel: the client's certificate
-// verification (OpenSSL's X509 codes as Node names them, and its hostname check) and a host name that
-// doesn't resolve (`ENOTFOUND`; a temporary DNS failure is `EAI_AGAIN`).
-const PERMANENT_NETWORK_ERROR_CODES = new Set([
+// The client's certificate verification (OpenSSL's X509 codes as Node names them, and its hostname check)
+const CERTIFICATE_ERROR_CODES = [
   'CERT_CHAIN_TOO_LONG',
   'CERT_HAS_EXPIRED',
   'CERT_NOT_YET_VALID',
@@ -65,8 +63,47 @@ const PERMANENT_NETWORK_ERROR_CODES = new Set([
   'UNABLE_TO_GET_ISSUER_CERT',
   'UNABLE_TO_GET_ISSUER_CERT_LOCALLY',
   'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
-  'ENOTFOUND',
-]);
+];
+
+// Which statuses and network errors are retried matches the kernel (databricks-sql-kernel src/client/retry.rs
+// and the CloudFetch chunk retry); backoff and budget stay Node's.
+// Network errors retrying can't fix, thrown at once: certificate failures, and for RPCs a host name that doesn't
+// resolve (`ENOTFOUND`; a temporary DNS failure is `EAI_AGAIN`). The kernel retries CloudFetch downloads on it.
+const PERMANENT_NETWORK_ERROR_CODES: Record<RetryRequestClass, Set<string>> = {
+  rpc: new Set([...CERTIFICATE_ERROR_CODES, 'ENOTFOUND']),
+  cloudFetch: new Set(CERTIFICATE_ERROR_CODES),
+};
+
+// Idempotent requests retry every status except these (the kernel's IDEMPOTENT_NON_RETRYABLE); non-idempotent
+// ones only a 429, or a 503 with `Retry-After`.
+const IDEMPOTENT_NON_RETRYABLE_STATUSES = new Set([400, 401, 403, 404, 405, 409, 410, 411, 412, 413, 414, 415, 416]);
+
+export function isRetryableStatus({ response }: HttpTransactionDetails, idempotent: boolean): boolean {
+  const { status } = response;
+  if (status >= 200 && status < 400) {
+    return false;
+  }
+  if (idempotent) {
+    return !IDEMPOTENT_NON_RETRYABLE_STATUSES.has(status);
+  }
+  return status === 429 || (status === 503 && response.headers.has('Retry-After'));
+}
+
+// A failure to connect (the kernel's `is_connect`), so the request never left the client and even a
+// non-idempotent one can be retried. Node reports these as `connect <CODE> <address>`, or as a socket closed
+// before the TLS handshake finished.
+export function isConnectError(error: unknown): boolean {
+  const { code, message } = (error ?? {}) as { code?: unknown; message?: unknown };
+  if (typeof code !== 'string' || PERMANENT_NETWORK_ERROR_CODES.rpc.has(code)) {
+    return false;
+  }
+  return (
+    code === 'ECONNREFUSED' ||
+    code === 'EAI_AGAIN' ||
+    (typeof message === 'string' &&
+      (message.includes(`connect ${code}`) || message.includes('before secure TLS connection was established')))
+  );
+}
 
 // Fallback message patterns for errors that don't carry an errno. node-fetch surfaces
 // "socket hang up" as a generic FetchError, and "Premature close" when the response
@@ -81,10 +118,13 @@ export default class HttpRetryPolicy implements IRetryPolicy<HttpTransactionDeta
 
   private attempt: number;
 
-  constructor(context: IClientContext) {
+  private readonly requestClass: RetryRequestClass;
+
+  constructor(context: IClientContext, requestClass: RetryRequestClass = 'rpc') {
     this.context = context;
     this.startTime = Date.now();
     this.attempt = 0;
+    this.requestClass = requestClass;
   }
 
   public async shouldRetry(details: HttpTransactionDetails): Promise<ShouldRetryResult> {
@@ -204,15 +244,14 @@ export default class HttpRetryPolicy implements IRetryPolicy<HttpTransactionDeta
     }
     const candidate = error as { code?: string; type?: string; message?: string };
 
-    if (typeof candidate.code === 'string' && PERMANENT_NETWORK_ERROR_CODES.has(candidate.code)) {
+    if (typeof candidate.code === 'string' && PERMANENT_NETWORK_ERROR_CODES[this.requestClass].has(candidate.code)) {
       return false;
     }
 
-    // node-fetch FetchError surfaces low-level network failures with `type: 'system'`
-    // and a body-stream timeout with `type: 'body-timeout'`. Both should be retried;
-    // `request-timeout` is converted to a Thrift TApplicationException upstream so
-    // we don't need to retry it here.
-    if (candidate.type === 'system' || candidate.type === 'body-timeout') {
+    // node-fetch FetchError surfaces low-level network failures with `type: 'system'`, no response
+    // within the request timeout as `request-timeout` (retried like the kernel's `is_timeout`), and a
+    // body-stream timeout as `body-timeout`.
+    if (candidate.type === 'system' || candidate.type === 'request-timeout' || candidate.type === 'body-timeout') {
       return true;
     }
 
@@ -227,19 +266,8 @@ export default class HttpRetryPolicy implements IRetryPolicy<HttpTransactionDeta
     return false;
   }
 
-  protected isRetryable({ response }: HttpTransactionDetails): boolean {
-    const statusCode = response.status;
-
-    const result =
-      // Retry on all codes below 100
-      statusCode < 100 ||
-      // ...and on `408 Request Timeout` and `429 Too Many Requests`
-      statusCode === 408 ||
-      statusCode === 429 ||
-      // ...and on all `5xx` codes except for `501 Not Implemented`
-      (statusCode >= 500 && statusCode !== 501);
-
-    return result;
+  protected isRetryable(details: HttpTransactionDetails): boolean {
+    return isRetryableStatus(details, true);
   }
 
   protected getRetryAfterHeader({ response }: HttpTransactionDetails, delayMin: number): number | undefined {

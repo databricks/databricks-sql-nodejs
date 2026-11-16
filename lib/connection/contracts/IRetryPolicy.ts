@@ -9,6 +9,9 @@ export type ShouldRetryResult =
 
 export type RetryableOperation<R> = () => Promise<R>;
 
+// Request classes whose retried network errors differ (see HttpRetryPolicy)
+export type RetryRequestClass = 'rpc' | 'cloudFetch';
+
 export default interface IRetryPolicy<R> {
   shouldRetry(details: R): Promise<ShouldRetryResult>;
 

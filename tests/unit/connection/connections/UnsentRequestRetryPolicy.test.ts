@@ -33,10 +33,23 @@ async function expectRejection(promise: Promise<unknown>): Promise<unknown> {
 }
 
 describe('UnsentRequestRetryPolicy', () => {
-  for (const code of ['ECONNREFUSED', 'EAI_AGAIN']) {
-    it(`retries ${code}, which is raised before the request is sent`, async () => {
+  // Failures to connect (the kernel's `is_connect`): the request never left the client
+  const connectErrors: Array<[string, Error]> = [
+    ['ECONNREFUSED', systemError('ECONNREFUSED', 'connect ECONNREFUSED 10.0.0.1:443')],
+    ['EAI_AGAIN', systemError('EAI_AGAIN', 'getaddrinfo EAI_AGAIN example.com')],
+    ['a connect timeout', systemError('ETIMEDOUT', 'connect ETIMEDOUT 10.0.0.1:443')],
+    ['an unreachable host', systemError('EHOSTUNREACH', 'connect EHOSTUNREACH 10.0.0.1:443')],
+    ['an unreachable network', systemError('ENETUNREACH', 'connect ENETUNREACH 10.0.0.1:443')],
+    [
+      'a socket closed during the TLS handshake',
+      systemError('ECONNRESET', 'Client network socket disconnected before secure TLS connection was established'),
+    ],
+  ];
+
+  for (const [label, error] of connectErrors) {
+    it(`retries ${label}, which is raised before the request is sent`, async () => {
       const operation = sinon.stub();
-      operation.onCall(0).rejects(systemError(code));
+      operation.onCall(0).rejects(error);
       operation.onCall(1).resolves(okResponse());
 
       const result = await createPolicy().invokeWithRetry(operation);
@@ -49,11 +62,12 @@ describe('UnsentRequestRetryPolicy', () => {
   const sentRequestErrors: Array<[string, Error]> = [
     ['ECONNRESET (socket hang up)', systemError('ECONNRESET', 'socket hang up')],
     ['EPIPE', systemError('EPIPE')],
-    ['ETIMEDOUT', systemError('ETIMEDOUT')],
-    ['EHOSTUNREACH', systemError('EHOSTUNREACH')],
+    ['ETIMEDOUT on a connected socket', systemError('ETIMEDOUT', 'read ETIMEDOUT')],
+    ['EHOSTUNREACH on a connected socket', systemError('EHOSTUNREACH', 'write EHOSTUNREACH')],
     ['a body timeout', new FetchError('Response timeout while trying to fetch', 'body-timeout')],
     ['a premature close', new Error('Premature close')],
     ['ENOTFOUND, a host name that does not resolve', systemError('ENOTFOUND')],
+    ['a request timeout', new FetchError('network timeout at: https://example.com', 'request-timeout')],
   ];
 
   for (const [label, error] of sentRequestErrors) {
@@ -70,9 +84,12 @@ describe('UnsentRequestRetryPolicy', () => {
   }
 
   for (const [status, headers] of [
-    [429, {}],
     [500, {}],
+    [501, {}],
+    [502, {}],
     [503, {}],
+    [504, {}],
+    [408, {}],
     [500, { 'Retry-After': '1' }],
   ] as const) {
     it(`does not retry an HTTP ${status} response ${
@@ -88,16 +105,22 @@ describe('UnsentRequestRetryPolicy', () => {
     });
   }
 
-  it('retries an HTTP 503 with Retry-After, which the server did not run', async () => {
-    const operation = sinon.stub();
-    operation.onCall(0).resolves(statusResponse(503, { 'Retry-After': '1' }));
-    operation.onCall(1).resolves(okResponse());
+  for (const [label, rejection] of [
+    ['an HTTP 503 with Retry-After', statusResponse(503, { 'Retry-After': '1' })],
+    ['an HTTP 429', statusResponse(429)],
+    ['an HTTP 429 with Retry-After', statusResponse(429, { 'Retry-After': '1' })],
+  ] as const) {
+    it(`retries ${label}, which the server did not run`, async () => {
+      const operation = sinon.stub();
+      operation.onCall(0).resolves(rejection);
+      operation.onCall(1).resolves(okResponse());
 
-    const result = await createPolicy().invokeWithRetry(operation);
+      const result = await createPolicy().invokeWithRetry(operation);
 
-    expect(result.response.status).to.equal(200);
-    expect(operation.callCount).to.equal(2);
-  });
+      expect(result.response.status).to.equal(200);
+      expect(operation.callCount).to.equal(2);
+    });
+  }
 
   it('waits the Retry-After delay before retrying a 503, with the default config', async () => {
     const policy = new UnsentRequestRetryPolicy(new ClientContextStub());

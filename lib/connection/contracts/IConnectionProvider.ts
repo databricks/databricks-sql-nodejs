@@ -1,6 +1,6 @@
 import http from 'http';
 import { HeadersInit, Request, Response } from 'node-fetch';
-import IRetryPolicy from './IRetryPolicy';
+import IRetryPolicy, { RetryRequestClass } from './IRetryPolicy';
 
 export interface HttpTransactionDetails {
   request: Request;
@@ -18,5 +18,5 @@ export default interface IConnectionProvider {
 
   setHeaders(headers: HeadersInit): void;
 
-  getRetryPolicy(): Promise<IRetryPolicy<HttpTransactionDetails>>;
+  getRetryPolicy(requestClass?: RetryRequestClass): Promise<IRetryPolicy<HttpTransactionDetails>>;
 }

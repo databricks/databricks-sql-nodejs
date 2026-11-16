@@ -1,15 +1,11 @@
-import HttpRetryPolicy from './HttpRetryPolicy';
+import HttpRetryPolicy, { isConnectError, isRetryableStatus } from './HttpRetryPolicy';
 import { HttpTransactionDetails } from '../contracts/IConnectionProvider';
 import { RetryableOperation } from '../contracts/IRetryPolicy';
 import RetryError from '../../errors/RetryError';
 
-// Raised before a connection exists, so no request bytes were written. Failures on a connected
-// socket (ECONNRESET, EPIPE, timeouts, ...) are excluded: the server may already have the request.
-// ENOTFOUND is permanent, as in HttpRetryPolicy.
-const UNSENT_REQUEST_ERROR_CODES = new Set(['ECONNREFUSED', 'EAI_AGAIN']);
-
-// For operations that are not safe to repeat: retries only requests that never left the client, and a
-// 503 with `Retry-After`, where the server asks for a retry without running the request (as in the kernel).
+// For operations that are not safe to repeat: retries only requests the server didn't run, as the kernel's
+// non-idempotent strategy does: a failure to connect, a 429, or a 503 with `Retry-After`. Failures on a
+// connected socket (ECONNRESET, EPIPE, timeouts, ...) are not retried: the server may already have the request.
 export default class UnsentRequestRetryPolicy extends HttpRetryPolicy {
   public async invokeWithRetry(operation: RetryableOperation<HttpTransactionDetails>): Promise<HttpTransactionDetails> {
     try {
@@ -23,12 +19,11 @@ export default class UnsentRequestRetryPolicy extends HttpRetryPolicy {
     }
   }
 
-  protected isRetryable({ response }: HttpTransactionDetails): boolean {
-    return response.status === 503 && response.headers.has('Retry-After');
+  protected isRetryable(details: HttpTransactionDetails): boolean {
+    return isRetryableStatus(details, false);
   }
 
   protected isRetryableNetworkError(error: unknown): boolean {
-    const code = (error as { code?: unknown } | undefined)?.code;
-    return typeof code === 'string' && UNSENT_REQUEST_ERROR_CODES.has(code);
+    return isConnectError(error);
   }
 }

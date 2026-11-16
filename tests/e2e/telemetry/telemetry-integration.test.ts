@@ -313,7 +313,7 @@ describe('Telemetry Integration', () => {
       const client = new DBSQLClient();
 
       const fetchStub = sinon
-        .stub(FeatureFlagCache.prototype as any, 'fetchWithRetry')
+        .stub(FeatureFlagCache.prototype as any, 'sendRequest')
         .rejects(new Error('Feature flag fetch failed'));
 
       try {

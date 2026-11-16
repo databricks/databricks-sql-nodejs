@@ -156,7 +156,7 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
       requestUrl = 'href' in requestUrl ? requestUrl.href : requestUrl.url;
     }
     const agent = await connectionProvider.getAgent(requestUrl);
-    const retryPolicy = await connectionProvider.getRetryPolicy();
+    const retryPolicy = await connectionProvider.getRetryPolicy('cloudFetch');
     const { retriesTimeout } = this.context.getConfig();
 
     const requestConfig: RequestInit = { agent, ...init };
