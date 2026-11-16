@@ -330,9 +330,6 @@ export default class KernelOperationBackend implements IOperationBackend {
       }
       return await slicer.fetchNext({ limit, disableBuffering });
     } catch (err) {
-      // A local close()/cancel() can invalidate the kernel result handle
-      // mid-fetch; report the lifecycle state, not the handle error.
-      failIfNotActive(this.lifecycle);
       throw await this.fetchFailure(err);
     }
   }
@@ -344,7 +341,6 @@ export default class KernelOperationBackend implements IOperationBackend {
       const slicer = await this.getResultSlicer();
       return await slicer.hasMore();
     } catch (err) {
-      failIfNotActive(this.lifecycle);
       throw await this.fetchFailure(err);
     }
   }
@@ -740,9 +736,16 @@ export default class KernelOperationBackend implements IOperationBackend {
   /**
    * A failed fetch leaves the napi stream in an unspecified state ("call close()
    * and discard"), so close the statement, then return the decoded error to throw.
+   * A fetch that a local close()/cancel() interrupted (the kernel empties the
+   * result handle on close) reports that state instead.
    */
   private async fetchFailure(err: unknown): Promise<Error> {
+    // Read before the cleanup close, which sets `isClosed` itself.
+    const interrupted = this.lifecycle.isCancelled || this.lifecycle.isClosed;
     await this.bestEffortClose('fetch-error');
+    if (interrupted) {
+      failIfNotActive(this.lifecycle);
+    }
     return decodeNapiKernelError(err);
   }
 
