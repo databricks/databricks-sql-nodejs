@@ -365,6 +365,8 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
     if (enableFederation) {
       wrapped = new FederationProvider(wrapped, host, {
         clientId: federationClientId,
+        // The connection's agent carries `proxy` and the TLS options.
+        getAgent: async (url) => (await this.getConnectionProvider()).getAgent(url),
       });
     }
 
