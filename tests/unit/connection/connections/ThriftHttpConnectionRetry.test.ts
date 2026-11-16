@@ -108,6 +108,40 @@ class RefusingAgent extends http.Agent {
   }
 }
 
+// Keep-alive agent whose first connection tries two closed addresses, as for a host with several addresses.
+// Node fails it with an AggregateError that has a code but no message. The code is set to ETIMEDOUT, as when
+// every address times out, which a test can't wait for.
+class MultiAddressTimeoutAgent extends http.Agent {
+  public connectAttempts = 0;
+
+  constructor(private readonly closedPort: number) {
+    super({ keepAlive: true });
+  }
+
+  createConnection(options: net.NetConnectOpts): net.Socket {
+    this.connectAttempts += 1;
+    if (this.connectAttempts > 1) {
+      return net.createConnection(options);
+    }
+    const addresses = [
+      { address: '127.0.0.1', family: 4 },
+      { address: '::1', family: 6 },
+    ];
+    const connectOptions = {
+      host: 'multi-address.test',
+      port: this.closedPort,
+      autoSelectFamily: true,
+      lookup: (hostname: string, lookupOptions: unknown, callback: (error: null, results: typeof addresses) => void) =>
+        callback(null, addresses),
+    };
+    const socket = net.createConnection(connectOptions as unknown as net.NetConnectOpts);
+    socket.prependListener('error', (error: NodeJS.ErrnoException) => {
+      error.code = 'ETIMEDOUT';
+    });
+    return socket;
+  }
+}
+
 async function createThriftConnection(
   port: number,
   agent: http.Agent,
@@ -167,6 +201,22 @@ describe('ThriftHttpConnection retries', () => {
 
   it('retries ExecuteStatement when the connection is refused before the request is sent', async () => {
     const { server, agent, connection } = await setup(['reply'], 1);
+
+    const result = await send(connection, 'ExecuteStatement', 1);
+
+    expect(result).to.equal('ExecuteStatement result');
+    expect(agent.connectAttempts).to.equal(2);
+    expect(server.requests).to.equal(1);
+  });
+
+  it('retries ExecuteStatement when connecting to every address of the host times out', async () => {
+    const server = await startServer(['reply']);
+    const agent = new MultiAddressTimeoutAgent(await getClosedPort());
+    cleanup.push(
+      () => server.close(),
+      () => agent.destroy(),
+    );
+    const connection = await createThriftConnection(server.port, agent, {});
 
     const result = await send(connection, 'ExecuteStatement', 1);
 

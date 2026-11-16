@@ -14,9 +14,8 @@
  * limitations under the License.
  */
 
-import fetch, { RequestInit, Response, Request, FetchError } from 'node-fetch';
+import fetch, { RequestInit, Response, Request } from 'node-fetch';
 import IClientContext from './contracts/IClientContext';
-import RetryError, { RetryErrorCode } from './errors/RetryError';
 import { LogLevel } from './contracts/IDBSQLLogger';
 import IAuthentication from './connection/contracts/IAuthentication';
 import { buildTelemetryUrl, normalizeHeaders } from './telemetry/telemetryUtils';
@@ -53,6 +52,9 @@ export default class FeatureFlagCache {
   private readonly MIN_CACHE_DURATION_S = 60;
 
   private readonly MAX_CACHE_DURATION_S = 3600;
+
+  // The flags fetch's total time, retries included: the 10 s a single attempt could already take
+  private readonly FETCH_DEADLINE_MS = 10 * 1000;
 
   constructor(private context: IClientContext, private authProvider?: IAuthentication) {
     this.userAgent = buildUserAgentString(this.context.getConfig().userAgentEntry);
@@ -237,23 +239,13 @@ export default class FeatureFlagCache {
     const connectionProvider = await this.context.getConnectionProvider();
     const agent = await connectionProvider.getAgent(url);
     const retryPolicy = await connectionProvider.getRetryPolicy();
-    const requestConfig: RequestInit = { agent, ...init };
+    // connect() waits for the flags, so the attempts, the waits between them and reading the body share one deadline
+    const signal = AbortSignal.timeout(this.FETCH_DEADLINE_MS);
+    const requestConfig: RequestInit = { agent, ...init, signal: signal as unknown as RequestInit['signal'] };
     const result = await retryPolicy.invokeWithRetry(() => {
       const request = new Request(url, requestConfig);
-      // connect() waits for the flags, so back off as usual instead of for as long as `Retry-After` asks, and
-      // don't repeat a request that already waited out its timeout (the policy rethrows a RetryError as is)
-      return fetch(request).then(
-        (response) => {
-          response.headers.delete('Retry-After');
-          return { request, response };
-        },
-        (error) => {
-          throw error instanceof FetchError && error.type === 'request-timeout'
-            ? new RetryError(RetryErrorCode.TimeoutExceeded, error)
-            : error;
-        },
-      );
-    });
+      return fetch(request).then((response) => ({ request, response }));
+    }, signal);
     return result.response;
   }
 

@@ -90,8 +90,9 @@ export function isRetryableStatus({ response }: HttpTransactionDetails, idempote
 }
 
 // A failure to connect (the kernel's `is_connect`), so the request never left the client and even a
-// non-idempotent one can be retried. Node reports these as `connect <CODE> <address>`, or as a socket closed
-// before the TLS handshake finished.
+// non-idempotent one can be retried. Node reports these as `connect <CODE> <address>`, as a socket closed
+// before the TLS handshake finished, or, for a host with several addresses, as an AggregateError of the
+// attempts, which has a code but no message (node-fetch's reason is then empty).
 export function isConnectError(error: unknown): boolean {
   const { code, message } = (error ?? {}) as { code?: unknown; message?: unknown };
   if (typeof code !== 'string' || PERMANENT_NETWORK_ERROR_CODES.rpc.has(code)) {
@@ -101,7 +102,9 @@ export function isConnectError(error: unknown): boolean {
     code === 'ECONNREFUSED' ||
     code === 'EAI_AGAIN' ||
     (typeof message === 'string' &&
-      (message.includes(`connect ${code}`) || message.includes('before secure TLS connection was established')))
+      (message.includes(`connect ${code}`) ||
+        message.includes('before secure TLS connection was established') ||
+        message.endsWith('reason: ')))
   );
 }
 

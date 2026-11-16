@@ -21,7 +21,6 @@ import { AddressInfo } from 'net';
 import { Response } from 'node-fetch';
 import FeatureFlagCache from '../../../lib/FeatureFlagCache';
 import HttpRetryPolicy from '../../../lib/connection/connections/HttpRetryPolicy';
-import RetryError from '../../../lib/errors/RetryError';
 import ClientContextStub from '../.stubs/ClientContextStub';
 import { LogLevel } from '../../../lib/contracts/IDBSQLLogger';
 
@@ -278,77 +277,59 @@ describe('FeatureFlagCache', () => {
       fetchStub.restore();
     });
 
-    it('should not wait for Retry-After before retrying the flags request', async () => {
-      // connect() waits for the flags, so a Retry-After from the endpoint must not stretch the retries
-      clock.restore();
-      let hits = 0;
-      const server = http.createServer((req, res) => {
-        hits += 1;
-        if (hits === 1) {
+    // connect() waits for the flags, so a failing or stalled endpoint must not hold it past the fetch deadline
+    const slowEndpoints: Array<[string, http.RequestListener]> = [
+      [
+        'keeps failing and asks for long waits',
+        (req, res) => {
           res.writeHead(503, { 'Retry-After': '60' });
           res.end();
-        } else {
-          res.writeHead(200, { 'Content-Type': 'application/json' });
-          res.end(JSON.stringify({ flags: [] }));
-        }
-      });
-      await new Promise<void>((resolve) => {
-        server.listen(0, '127.0.0.1', resolve);
-      });
-      try {
-        const context = new ClientContextStub({ retryDelayMin: 1, retryDelayMax: 60_000 });
-        sinon.stub(context.connectionProvider, 'getRetryPolicy').callsFake(async () => new HttpRetryPolicy(context));
-        const cache = new FeatureFlagCache(context);
-        const { port } = server.address() as AddressInfo;
+        },
+      ],
+      ['never responds', () => {}],
+    ];
 
-        const started = Date.now();
-        const response = await (cache as any).fetchWithRetry(`http://127.0.0.1:${port}/`, { method: 'GET' });
-
-        expect(response.status).to.equal(200);
-        expect(hits).to.equal(2);
-        expect(Date.now() - started).to.be.lt(1000);
-      } finally {
-        server.closeAllConnections();
-        server.close();
-        clock = sinon.useFakeTimers();
-      }
-    });
-
-    it('should not repeat a flags request that timed out', async () => {
-      // Each attempt waits out the request timeout, so retrying it would stretch connect()
-      clock.restore();
-      let hits = 0;
-      const server = http.createServer(() => {
-        hits += 1;
-      });
-      await new Promise<void>((resolve) => {
-        server.listen(0, '127.0.0.1', resolve);
-      });
-      try {
-        const context = new ClientContextStub({ retryDelayMin: 1, retryDelayMax: 2, retryMaxAttempts: 3 });
-        sinon.stub(context.connectionProvider, 'getRetryPolicy').callsFake(async () => new HttpRetryPolicy(context));
-        const cache = new FeatureFlagCache(context);
-        const { port } = server.address() as AddressInfo;
-
-        let error: unknown;
-        try {
-          await (cache as any).fetchWithRetry(`http://127.0.0.1:${port}/`, { method: 'GET', timeout: 100 });
-        } catch (e) {
-          error = e;
-        }
-
-        expect(error).to.be.instanceOf(RetryError);
-        expect(hits).to.equal(1);
-      } finally {
-        server.closeAllConnections();
-        server.close();
-        // Let node-fetch finish the aborted request (it clears its timer) before faking timers again
-        await new Promise<void>((resolve) => {
-          setTimeout(resolve, 10);
+    for (const [label, handler] of slowEndpoints) {
+      it(`should fall back to defaults at the fetch deadline when the endpoint ${label}`, async () => {
+        clock.restore();
+        let hits = 0;
+        const server = http.createServer((req, res) => {
+          hits += 1;
+          handler(req, res);
         });
-        clock = sinon.useFakeTimers();
-      }
-    });
+        await new Promise<void>((resolve) => {
+          server.listen(0, '127.0.0.1', resolve);
+        });
+        try {
+          // The default retry settings, with a real retry policy
+          const context = new ClientContextStub();
+          sinon.stub(context.connectionProvider, 'getRetryPolicy').callsFake(async () => new HttpRetryPolicy(context));
+          const cache = new FeatureFlagCache(context);
+          (cache as any).FETCH_DEADLINE_MS = 300;
+          // The flags URL is always https, so point the real fetch at the local endpoint
+          const { port } = server.address() as AddressInfo;
+          const fetchWithRetry = (cache as any).fetchWithRetry.bind(cache);
+          sinon
+            .stub(cache as any, 'fetchWithRetry')
+            .callsFake((url: unknown, init: unknown) => fetchWithRetry(`http://127.0.0.1:${port}/`, init));
+          cache.getOrCreateContext('test-host');
+
+          const started = Date.now();
+          expect(await cache.getBoolean('test-host', 'flag', true)).to.equal(true);
+
+          expect(Date.now() - started).to.be.within(250, 1000);
+          expect(hits).to.equal(1);
+        } finally {
+          server.closeAllConnections();
+          server.close();
+          // Let node-fetch finish the aborted request (it clears its timer) before faking timers again
+          await new Promise<void>((resolve) => {
+            setTimeout(resolve, 10);
+          });
+          clock = sinon.useFakeTimers();
+        }
+      });
+    }
   });
 
   describe('Integration scenarios', () => {

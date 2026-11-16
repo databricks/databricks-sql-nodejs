@@ -44,6 +44,10 @@ describe('UnsentRequestRetryPolicy', () => {
       'a socket closed during the TLS handshake',
       systemError('ECONNRESET', 'Client network socket disconnected before secure TLS connection was established'),
     ],
+    // A host with several addresses: Node's AggregateError has the code but no message
+    ['a connect timeout on every address', systemError('ETIMEDOUT', '')],
+    ['an unreachable host on every address', systemError('EHOSTUNREACH', '')],
+    ['an unreachable network on every address', systemError('ENETUNREACH', '')],
   ];
 
   for (const [label, error] of connectErrors) {
