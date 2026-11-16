@@ -12,6 +12,7 @@ import InputBufferUnderrunError from 'thrift/lib/nodejs/lib/thrift/input_buffer_
 import IRetryPolicy from '../contracts/IRetryPolicy';
 import { HttpTransactionDetails } from '../contracts/IConnectionProvider';
 import NullRetryPolicy from './NullRetryPolicy';
+import RetryError from '../../errors/RetryError';
 
 export class THTTPException extends Thrift.TApplicationException {
   public readonly statusCode: unknown;
@@ -201,6 +202,14 @@ export default class ThriftHttpConnection extends EventEmitter {
         )(buffer);
       })
       .catch((error) => {
+        // A request that timed out on every attempt still fails as a timeout
+        if (
+          error instanceof RetryError &&
+          error.payload instanceof FetchError &&
+          error.payload.type === 'request-timeout'
+        ) {
+          error = error.payload;
+        }
         if (error instanceof FetchError) {
           if (error.type === 'request-timeout') {
             error = new Thrift.TApplicationException(

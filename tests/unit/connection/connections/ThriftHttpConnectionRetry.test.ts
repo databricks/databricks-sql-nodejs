@@ -235,6 +235,15 @@ describe('ThriftHttpConnection retries', () => {
     expect(server.requests).to.equal(2);
   });
 
+  it('fails an OpenSession that times out on every attempt with "Request timed out"', async () => {
+    const { server, connection } = await setup(['stall', 'stall', 'stall'], 0);
+
+    const error = await expectRejection(send(connection, 'OpenSession', 1));
+
+    expect(error.message).to.equal('Request timed out');
+    expect(server.requests).to.equal(3);
+  });
+
   it('does not retry ExecuteStatement after a request timeout', async () => {
     const { server, connection } = await setup(['stall', 'reply'], 0);
 

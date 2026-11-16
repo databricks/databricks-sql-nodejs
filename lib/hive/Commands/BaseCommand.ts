@@ -27,10 +27,9 @@ export default abstract class BaseCommand<ClientType> {
         ) {
           statusCode = error.payload.response.status;
         }
-        // After network errors, name the last one's code (e.g. ECONNREFUSED) or type (request-timeout)
-        const { code, type } = (error.payload ?? {}) as { code?: unknown; type?: unknown };
-        const networkCause = [code, type].find((value) => typeof value === 'string' && value);
-        const cause = statusCode ?? networkCause ?? 'Error';
+        // After network errors, name the last one's code (e.g. ECONNREFUSED) instead of a status
+        const code = (error.payload as { code?: unknown } | null | undefined)?.code;
+        const cause = statusCode ?? (typeof code === 'string' && code ? code : 'Error');
 
         switch (error.errorCode) {
           case RetryErrorCode.AttemptsExceeded:
