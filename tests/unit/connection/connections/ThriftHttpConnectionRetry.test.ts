@@ -31,6 +31,7 @@ type ServerAction =
   | 'reply'
   | 'close-after-request'
   | 'stall'
+  | 'status-099'
   | 'status-408'
   | 'status-429'
   | 'status-501'
@@ -58,6 +59,9 @@ async function startServer(actions: ServerAction[]): Promise<TestServer> {
         req.socket.destroy();
       } else if (action === 'stall') {
         // Never respond; the client's request timeout ends it
+      } else if (action === 'status-099') {
+        // ServerResponse rejects a status below 100, so write the status line itself
+        req.socket.end('HTTP/1.1 099 X\r\nContent-Length: 0\r\n\r\n');
       } else if (action === 'status-503-retry-after') {
         res.writeHead(503, { 'Retry-After': '1', 'x-thriftserver-error-message': ERROR_DETAIL });
         res.end();
@@ -406,16 +410,21 @@ describe('ThriftHttpConnection retries', () => {
     });
 
     // Retried before, so they keep failing with the RetryError
-    it('keeps the RetryError for an idempotent RPC on a 503', async () => {
-      const { server, connection } = await setup(['status-503', 'status-503', 'status-503'], 0);
+    for (const [action, status] of [
+      ['status-503', 503],
+      ['status-099', 99],
+    ] as const) {
+      it(`keeps the RetryError for an idempotent RPC on a ${status}`, async () => {
+        const { server, connection } = await setup([action, action, action], 0);
 
-      const error = await expectRejection(send(connection, 'GetOperationStatus', 1));
+        const error = await expectRejection(send(connection, 'GetOperationStatus', 1));
 
-      expect(error).to.be.instanceOf(RetryError);
-      expect(error.errorCode).to.equal(RetryErrorCode.AttemptsExceeded);
-      expect(error.payload.response.status).to.equal(503);
-      expect(server.requests).to.equal(3);
-    });
+        expect(error).to.be.instanceOf(RetryError);
+        expect(error.errorCode).to.equal(RetryErrorCode.AttemptsExceeded);
+        expect(error.payload.response.status).to.equal(status);
+        expect(server.requests).to.equal(3);
+      });
+    }
 
     it('keeps the RetryError for an idempotent RPC whose connection is refused', async () => {
       const { agent, connection } = await setup([], Infinity);

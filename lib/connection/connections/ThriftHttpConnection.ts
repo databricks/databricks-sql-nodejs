@@ -101,8 +101,9 @@ const retryableThriftMethods = new Set([
 const nonIdempotentRetryableThriftMethods = new Set(['ExecuteStatement']);
 
 // Once retries run out, fail with the last attempt's error, as without retries: THTTPException (status and server
-// detail) or the network error. Idempotent RPCs other than OpenSession have always retried a 429, a 5xx other than
-// 501 and a network error other than a request timeout; those keep the RetryError (a HiveDriverError in BaseCommand).
+// detail) or the network error. Idempotent RPCs other than OpenSession have always retried a status below 100, a 429,
+// a 5xx other than 501 and a network error other than a request timeout; those keep the RetryError (a HiveDriverError
+// in BaseCommand).
 function getRetryExhaustedError(thriftMethod: string | undefined, error: RetryError): unknown {
   const { payload } = error;
   const response = (payload as { response?: unknown } | undefined)?.response;
@@ -113,7 +114,7 @@ function getRetryExhaustedError(thriftMethod: string | undefined, error: RetryEr
     retryableThriftMethods.has(thriftMethod) &&
     (status === undefined
       ? !(payload instanceof FetchError && payload.type === 'request-timeout')
-      : status === 429 || (status >= 500 && status !== 501));
+      : status < 100 || status === 429 || (status >= 500 && status !== 501));
   if (alwaysRetried) {
     return error;
   }
