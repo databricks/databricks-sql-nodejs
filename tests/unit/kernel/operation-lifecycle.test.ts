@@ -517,7 +517,11 @@ describe('DBSQLOperation over KernelOperationBackend — close after the result 
 });
 
 describe('KernelOperationBackend — close()/cancel() during an in-flight fetch', () => {
-  function inflightFetch(fetch: 'fetchChunk' | 'hasMore', close: sinon.SinonStub) {
+  function inflightFetch(
+    fetch: 'fetchChunk' | 'hasMore',
+    close: sinon.SinonStub,
+    kernelError = { code: 'InvalidStatementHandle', message: 'AsyncResultHandle already closed' },
+  ) {
     const ipcBytes = Buffer.from(tableToIPC(tableFromArrays({ x: Int32Array.from([1]) }), 'stream'));
     let interrupted: () => void = () => {};
     const interruptDone = new Promise<void>((resolve) => {
@@ -530,11 +534,7 @@ describe('KernelOperationBackend — close()/cancel() during an in-flight fetch'
       // The kernel empties the handle's stream on close(), so the pending fetch fails.
       fetchNextBatch: async () => {
         await interruptDone;
-        const payload = JSON.stringify({
-          code: 'InvalidStatementHandle',
-          message: 'AsyncResultHandle already closed',
-        });
-        throw new Error(`__databricks_error__:${payload}`);
+        throw new Error(`__databricks_error__:${JSON.stringify(kernelError)}`);
       },
     };
     const backend = new KernelOperationBackend({ statement, context: new ClientContextStub(), id: 'kernel-op' });
@@ -596,6 +596,23 @@ describe('KernelOperationBackend — close()/cancel() during an in-flight fetch'
       });
     }
   }
+
+  it('reports the fetch error to concurrent fetches that fail without a close() or cancel()', async () => {
+    const { statement, backend, inflight, interrupted } = inflightFetch('fetchChunk', sinon.stub().resolves(), {
+      code: 'NetworkError',
+      message: 'connection reset',
+    });
+    const second = backend.hasMore();
+    interrupted();
+
+    // The first failure's cleanup close sets `isClosed` before the second failure is handled.
+    for (const thrown of await Promise.all([rejectionOf(inflight), rejectionOf(second)])) {
+      expect(thrown).to.be.instanceOf(HiveDriverError);
+      expect(thrown).not.to.be.instanceOf(OperationStateError);
+      expect((thrown as Error).message).to.equal('connection reset');
+    }
+    expect(statement.close.calledOnce).to.equal(true);
+  });
 });
 
 describe('DBSQLSession over KernelSessionBackend — close right after execution', () => {

@@ -745,8 +745,8 @@ export default class KernelOperationBackend implements IOperationBackend {
    * result handle on close) reports that state instead.
    */
   private async fetchFailure(err: unknown): Promise<Error> {
-    // Read before the cleanup close, which sets `isClosed` itself.
-    const interrupted = this.lifecycle.isCancelled || this.lifecycle.isClosed || this.closeRequested;
+    // Not `isClosed`: cleanup closes (this one, or a concurrent fetch's) set it too.
+    const interrupted = this.lifecycle.isCancelled || this.closeRequested;
     await this.bestEffortClose('fetch-error');
     if (interrupted) {
       // Not failIfNotActive(): a failed cleanup close leaves `isClosed` false.
