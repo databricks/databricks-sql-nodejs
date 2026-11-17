@@ -22,3 +22,8 @@ native/kernel/index.js
 # conventions, not this repo's prettier profile. Reflowing them would mangle the
 # carefully-wrapped prompt text.
 .bot
+
+# Engine-managed learning files use the engine's canonical format.
+.claude/knowledge/learning-log.md
+.claude/knowledge/lessons.md
+.claude/knowledge/journal
