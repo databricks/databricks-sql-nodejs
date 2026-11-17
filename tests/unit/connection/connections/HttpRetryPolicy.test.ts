@@ -476,6 +476,8 @@ describe('HttpRetryPolicy', () => {
         'SELF_SIGNED_CERT_IN_CHAIN',
         'CERT_HAS_EXPIRED',
         'ERR_TLS_CERT_ALTNAME_INVALID',
+        // Node's code for the X509 errors it doesn't name
+        'UNSPECIFIED',
         'ENOTFOUND',
       ]) {
         it(`throws ${code} at once on an RPC, without retrying`, () => expectThrownAtOnce(systemError(code)));
@@ -498,8 +500,10 @@ describe('HttpRetryPolicy', () => {
       // As the kernel's CloudFetch chunk retry: everything but certificate failures
       it('retries ENOTFOUND on a CloudFetch download', () => expectRetried(systemError('ENOTFOUND'), 'cloudFetch'));
 
-      it('throws a certificate failure at once on a CloudFetch download', () =>
-        expectThrownAtOnce(systemError('CERT_HAS_EXPIRED'), 'cloudFetch'));
+      for (const code of ['CERT_HAS_EXPIRED', 'UNSPECIFIED']) {
+        it(`throws a certificate failure (${code}) at once on a CloudFetch download`, () =>
+          expectThrownAtOnce(systemError(code), 'cloudFetch'));
+      }
     });
 
     it('should cancel a pending backoff sleep when the signal is aborted', async () => {

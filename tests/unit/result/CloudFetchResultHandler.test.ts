@@ -804,18 +804,28 @@ describe('CloudFetchResultHandler', () => {
       } as unknown as http.AgentOptions);
     }
 
-    it('should not leak the presigned URL from a network error that is not retried', async () => {
-      // A certificate failure is thrown without retrying
-      const agent = failingAgent('CERT_HAS_EXPIRED');
-      const handler = createHandler('http://storage.example.invalid/chunk?sig=SECRET_SIGNATURE', {}, agent);
+    // A certificate failure is thrown without retrying (`UNSPECIFIED`: an X509 error Node doesn't name)
+    for (const code of ['CERT_HAS_EXPIRED', 'UNSPECIFIED']) {
+      it(`should not retry or leak the presigned URL from a certificate failure (${code})`, async () => {
+        let lookups = 0;
+        const agent = failingAgent(code, () => {
+          lookups += 1;
+        });
+        const handler = createHandler(
+          'http://storage.example.invalid/chunk?sig=SECRET_SIGNATURE',
+          { retryDelayMin: 1, retryDelayMax: 2, retryMaxAttempts: 3 },
+          agent,
+        );
 
-      const { error } = await fetchWithin(handler, 1500);
-      agent.destroy();
+        const { error } = await fetchWithin(handler, 1500);
+        agent.destroy();
 
-      expect(error.code).to.be.equal('CERT_HAS_EXPIRED');
-      expect(error.message).to.be.equal('CloudFetch result download failed: network error CERT_HAS_EXPIRED');
-      expect(error.stack).to.not.contain('SECRET_SIGNATURE');
-    });
+        expect(lookups).to.be.equal(1);
+        expect(error.code).to.be.equal(code);
+        expect(error.message).to.be.equal(`CloudFetch result download failed: network error ${code}`);
+        expect(error.stack).to.not.contain('SECRET_SIGNATURE');
+      });
+    }
 
     it('should retry a download whose host does not resolve, as the kernel', async () => {
       let lookups = 0;

@@ -39,7 +39,9 @@ const RETRYABLE_NETWORK_ERROR_CODES = new Set([
   'EAI_AGAIN',
 ]);
 
-// The client's certificate verification (OpenSSL's X509 codes as Node names them, and its hostname check)
+// The client's certificate verification (OpenSSL's X509 codes as Node names them, and its hostname check).
+// Node reports every X509 code it doesn't name as `UNSPECIFIED` (ncrypto's X509Pointer::ErrorCode), e.g. a CA
+// without keyCertSign or a SHA-1 signature; the kernel doesn't retry any certificate verification failure either.
 const CERTIFICATE_ERROR_CODES = [
   'CERT_CHAIN_TOO_LONG',
   'CERT_HAS_EXPIRED',
@@ -63,6 +65,7 @@ const CERTIFICATE_ERROR_CODES = [
   'UNABLE_TO_GET_ISSUER_CERT',
   'UNABLE_TO_GET_ISSUER_CERT_LOCALLY',
   'UNABLE_TO_VERIFY_LEAF_SIGNATURE',
+  'UNSPECIFIED',
 ];
 
 // Which statuses and network errors are retried matches the kernel (databricks-sql-kernel src/client/retry.rs

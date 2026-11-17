@@ -1,5 +1,10 @@
+import { execFileSync } from 'child_process';
+import fs from 'fs';
 import http from 'http';
+import https from 'https';
 import net, { AddressInfo } from 'net';
+import os from 'os';
+import path from 'path';
 import { expect } from 'chai';
 import { FetchError } from 'node-fetch';
 import HttpConnection from '../../../../lib/connection/connections/HttpConnection';
@@ -422,5 +427,78 @@ describe('ThriftHttpConnection retries', () => {
       expect(error.payload.code).to.equal('ECONNREFUSED');
       expect(agent.connectAttempts).to.equal(3);
     });
+  });
+});
+
+describe('ThriftHttpConnection with a certificate that fails verification', () => {
+  // A trusted self-signed `localhost` certificate with an unknown critical extension, generated per run so no
+  // private key is committed. OpenSSL rejects it as "unhandled critical extension", which Node reports as
+  // `UNSPECIFIED` because it has no name for that X509 error.
+  let cert = '';
+  let key = '';
+
+  before(function () {
+    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dbsql-cert-'));
+    try {
+      execFileSync(
+        'openssl',
+        [
+          'req',
+          '-x509',
+          '-newkey',
+          'ec',
+          '-pkeyopt',
+          'ec_paramgen_curve:prime256v1',
+          '-nodes',
+          '-days',
+          '1',
+          '-subj',
+          '/CN=localhost',
+          '-addext',
+          'subjectAltName=DNS:localhost,IP:127.0.0.1',
+          '-addext',
+          '1.3.6.1.4.1.55555.1=critical,ASN1:UTF8String:x',
+          '-keyout',
+          path.join(dir, 'key.pem'),
+          '-out',
+          path.join(dir, 'cert.pem'),
+        ],
+        { stdio: 'ignore' },
+      );
+      cert = fs.readFileSync(path.join(dir, 'cert.pem'), 'utf8');
+      key = fs.readFileSync(path.join(dir, 'key.pem'), 'utf8');
+    } catch {
+      this.skip(); // openssl is not available
+    } finally {
+      fs.rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  it('fails OpenSession at once with the certificate error Node reports as UNSPECIFIED', async () => {
+    let connections = 0;
+    const server = https.createServer({ cert, key }, (req, res) => res.end());
+    server.on('connection', () => {
+      connections += 1;
+    });
+    await new Promise<void>((resolve) => {
+      server.listen(0, '127.0.0.1', resolve);
+    });
+    const context = new ClientContextStub({ retryDelayMin: 1, retryDelayMax: 2, retryMaxAttempts: 3 });
+    const { port } = server.address() as AddressInfo;
+    const httpConnection = new HttpConnection({ host: 'localhost', port, path: '/', https: true, ca: cert }, context);
+    try {
+      const connection = await httpConnection.getThriftConnection();
+
+      const error = await expectRejection(send(connection, 'OpenSession', 1));
+
+      expect(error).to.be.instanceOf(FetchError);
+      expect(error.code).to.equal('UNSPECIFIED');
+      expect(error.message).to.contain('unhandled critical extension');
+      expect(connections).to.equal(1);
+    } finally {
+      (await httpConnection.getAgent())?.destroy();
+      server.closeAllConnections();
+      server.close();
+    }
   });
 });
