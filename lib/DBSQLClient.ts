@@ -195,6 +195,19 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
   constructor(options?: ClientOptions) {
     super();
     this.config = DBSQLClient.getDefaultConfig();
+    // Explicit 10 must override the kernel default of 16.
+    let cloudFetchConcurrentDownloads: number | undefined;
+    Object.defineProperty(this.config, 'cloudFetchConcurrentDownloads', {
+      enumerable: true,
+      configurable: true,
+      get: () => {
+        if (cloudFetchConcurrentDownloads !== undefined) return cloudFetchConcurrentDownloads;
+        return this.backend instanceof KernelBackend ? 16 : 10;
+      },
+      set: (value: number) => {
+        cloudFetchConcurrentDownloads = value;
+      },
+    });
     this.logger = options?.logger ?? DBSQLClient.getDefaultLogger();
     this.logger.log(LogLevel.info, 'Created DBSQLClient');
   }

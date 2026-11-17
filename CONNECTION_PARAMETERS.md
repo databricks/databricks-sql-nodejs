@@ -133,10 +133,13 @@ the presigned URLs returned by the server on both backends.
 ## CloudFetch download window
 
 Set `client.getConfig().cloudFetchConcurrentDownloads` before `openSession()`
-to tune downloads on either backend (default 10). Kernel sessions snapshot this
+to tune downloads on either backend (default 16 on the kernel, 10 on Thrift). Kernel sessions snapshot this
 value at open; changes apply to subsequent sessions. Thrift reads it on each
 fetch. Kernel mode requires a positive safe integer and rejects invalid values
 at session open. Values above 256 are clamped by the kernel.
+
+Before connecting, an unset value reads as 10; it reads as 16 while connected
+through the kernel. Explicit assignments, including 10 before connecting, are retained.
 
 The kernel bounds downloading and queued chunks ahead of consumption, excluding
 consumer buffers. This is not a byte limit. An explicit

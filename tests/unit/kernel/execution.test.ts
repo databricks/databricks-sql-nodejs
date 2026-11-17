@@ -557,7 +557,7 @@ describe('KernelBackend', () => {
     expectNativeConnectionOptions(args, {
       hostName: 'workspace.example',
       httpPath: '/sql/1.0/warehouses/xyz',
-      sessionConf: { cloudfetch_max_chunks_in_memory: '10' },
+      sessionConf: { cloudfetch_max_chunks_in_memory: '16' },
       authMode: 'Pat',
       token: 'dapi-token',
       intervalsAsString: true,
@@ -754,7 +754,7 @@ describe('KernelBackend', () => {
       await backend.openSession({ configuration });
       const conf = (binding.openSessionStub.firstCall.args[0] as { sessionConf?: Record<string, string> }).sessionConf;
       expect(conf?.cloudfetch_enabled).to.equal(useCloudFetch === false ? 'false' : undefined);
-      expect(conf?.cloudfetch_max_chunks_in_memory).to.equal('10');
+      expect(conf?.cloudfetch_max_chunks_in_memory).to.equal('16');
       expect(conf?.can_cloud_download).to.equal(undefined);
       expect(conf?.TIMEZONE).to.equal('UTC');
       expect(configuration).to.deep.equal({ TIMEZONE: 'UTC' });
@@ -764,6 +764,7 @@ describe('KernelBackend', () => {
   for (const [window, override] of [
     [1, undefined],
     [4, undefined],
+    [10, undefined],
     [1000, undefined],
     [4, 'cloudfetch_max_chunks_in_memory'],
     [4, 'CLOUDFETCH_MAX_CHUNKS_IN_MEMORY'],
@@ -839,7 +840,7 @@ describe('KernelBackend', () => {
         [key]: 'true',
         TIMEZONE: 'UTC',
         cloudfetch_enabled: 'false',
-        cloudfetch_max_chunks_in_memory: '10',
+        cloudfetch_max_chunks_in_memory: '16',
       });
       expect(configuration).to.deep.equal({ [key]: 'true', TIMEZONE: 'UTC' });
     });
@@ -917,7 +918,7 @@ describe('KernelBackend', () => {
       token: 't',
       catalog: 'main',
       schema: 'default',
-      sessionConf: { 'spark.sql.execution.arrow.enabled': 'true', cloudfetch_max_chunks_in_memory: '10' },
+      sessionConf: { 'spark.sql.execution.arrow.enabled': 'true', cloudfetch_max_chunks_in_memory: '16' },
     });
 
     // And the SQL still threads through executeStatement (now with no

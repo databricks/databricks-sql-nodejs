@@ -20,7 +20,7 @@ export interface ClientConfig {
   retryDelayMax: number; // in milliseconds
 
   useCloudFetch: boolean;
-  /** Download window (default 10). Kernel sessions snapshot it at openSession;
+  /** Download window (Thrift 10, connected kernel 16). Kernel sessions snapshot it at openSession;
    * it bounds downloading and queued chunks ahead of consumption, excluding
    * consumer buffers. It is not a byte limit. */
   cloudFetchConcurrentDownloads: number;
