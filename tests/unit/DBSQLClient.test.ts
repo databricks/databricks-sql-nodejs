@@ -308,6 +308,30 @@ describe('DBSQLClient.connect', () => {
     logSpy.restore();
   });
 
+  for (const [useKernel, configuredWindow, expectedWindow] of [
+    [false, undefined, 10],
+    [true, undefined, 16],
+    [true, 10, 10],
+  ] as const) {
+    it(`resolves the download window for kernel=${useKernel}, setting=${configuredWindow}`, async () => {
+      const client = new DBSQLClient();
+      expect(client.getConfig().cloudFetchConcurrentDownloads).to.equal(10);
+      if (configuredWindow !== undefined) {
+        client.getConfig().cloudFetchConcurrentDownloads = configuredWindow;
+      }
+      sinon.stub(KernelNativeLoader, 'getKernelNative').returns({} as any);
+      sinon.stub(KernelBackend.prototype, 'connect').resolves();
+      sinon.stub(KernelBackend.prototype, 'close').resolves();
+      try {
+        await client.connect({ ...connectOptions, telemetryEnabled: false, useKernel } as any);
+        expect(client.getConfig().cloudFetchConcurrentDownloads).to.equal(expectedWindow);
+      } finally {
+        await client.close();
+      }
+      expect(client.getConfig().cloudFetchConcurrentDownloads).to.equal(10);
+    });
+  }
+
   it('useKernel: true routes to KernelBackend and leaves `backend` unset when connect() throws', async () => {
     const client = new DBSQLClient();
 
@@ -333,6 +357,7 @@ describe('DBSQLClient.connect', () => {
     // failed connect, so the next openSession surfaces "not connected" rather
     // than the KernelBackend's own connect/auth error.
     expect((client as any).backend).to.equal(undefined);
+    expect(client.getConfig().cloudFetchConcurrentDownloads).to.equal(10);
 
     try {
       await client.openSession();
