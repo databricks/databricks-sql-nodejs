@@ -5,6 +5,7 @@ import { FetchError } from 'node-fetch';
 import HttpConnection from '../../../../lib/connection/connections/HttpConnection';
 import ThriftHttpConnection, { THTTPException } from '../../../../lib/connection/connections/ThriftHttpConnection';
 import { ClientConfig } from '../../../../lib/contracts/IClientContext';
+import RetryError, { RetryErrorCode } from '../../../../lib/errors/RetryError';
 import ClientContextStub from '../../.stubs/ClientContextStub';
 
 // Header-only Thrift binary messages: enough for method-name detection and for the fake `recv_*` below.
@@ -27,8 +28,11 @@ type ServerAction =
   | 'stall'
   | 'status-408'
   | 'status-429'
+  | 'status-501'
   | 'status-503'
   | 'status-503-retry-after';
+
+const ERROR_DETAIL = 'server error detail';
 
 interface TestServer {
   port: number;
@@ -50,10 +54,10 @@ async function startServer(actions: ServerAction[]): Promise<TestServer> {
       } else if (action === 'stall') {
         // Never respond; the client's request timeout ends it
       } else if (action === 'status-503-retry-after') {
-        res.writeHead(503, { 'Retry-After': '1' });
+        res.writeHead(503, { 'Retry-After': '1', 'x-thriftserver-error-message': ERROR_DETAIL });
         res.end();
       } else if (action.startsWith('status-')) {
-        res.writeHead(Number(action.slice('status-'.length)));
+        res.writeHead(Number(action.slice('status-'.length)), { 'x-thriftserver-error-message': ERROR_DETAIL });
         res.end();
       } else {
         const body = Buffer.concat(chunks);
@@ -345,5 +349,78 @@ describe('ThriftHttpConnection retries', () => {
 
     expect(result).to.equal('GetOperationStatus result');
     expect(server.requests).to.equal(2);
+  });
+
+  describe('once retries run out', () => {
+    function expectHttpError(error: any, status: number) {
+      expect(error).to.be.instanceOf(THTTPException);
+      expect(error.statusCode).to.equal(status);
+      expect(error.message).to.equal(`Received a response with a bad HTTP status code: ${status}: ${ERROR_DETAIL}`);
+    }
+
+    // Requests that weren't retried before fail as they did then
+    for (const [method, action, status] of [
+      ['OpenSession', 'status-503', 503],
+      ['OpenSession', 'status-429', 429],
+      ['OpenSession', 'status-501', 501],
+      ['GetOperationStatus', 'status-408', 408],
+      ['GetOperationStatus', 'status-501', 501],
+      ['ExecuteStatement', 'status-429', 429],
+      ['ExecuteStatement', 'status-503-retry-after', 503],
+    ] as const) {
+      it(`fails ${method} with the last HTTP error (${action})`, async () => {
+        const { server, connection } = await setup([action, action, action], 0);
+
+        const error = await expectRejection(send(connection, method, 1));
+
+        expectHttpError(error, status);
+        expect(server.requests).to.equal(3);
+      });
+    }
+
+    it('fails OpenSession with the connection error', async () => {
+      const { server, agent, connection } = await setup([], Infinity);
+
+      const error = await expectRejection(send(connection, 'OpenSession', 1));
+
+      expect(error).to.be.instanceOf(FetchError);
+      expect(error.code).to.equal('ECONNREFUSED');
+      expect(agent.connectAttempts).to.equal(3);
+      expect(server.requests).to.equal(0);
+    });
+
+    it('fails OpenSession with the network error when the connection closes after the request', async () => {
+      const action = 'close-after-request';
+      const { server, connection } = await setup([action, action, action], 0);
+
+      const error = await expectRejection(send(connection, 'OpenSession', 1));
+
+      expect(error).to.be.instanceOf(FetchError);
+      expect(error.code).to.equal('ECONNRESET');
+      expect(server.requests).to.equal(3);
+    });
+
+    // Retried before, so they keep failing with the RetryError
+    it('keeps the RetryError for an idempotent RPC on a 503', async () => {
+      const { server, connection } = await setup(['status-503', 'status-503', 'status-503'], 0);
+
+      const error = await expectRejection(send(connection, 'GetOperationStatus', 1));
+
+      expect(error).to.be.instanceOf(RetryError);
+      expect(error.errorCode).to.equal(RetryErrorCode.AttemptsExceeded);
+      expect(error.payload.response.status).to.equal(503);
+      expect(server.requests).to.equal(3);
+    });
+
+    it('keeps the RetryError for an idempotent RPC whose connection is refused', async () => {
+      const { agent, connection } = await setup([], Infinity);
+
+      const error = await expectRejection(send(connection, 'GetOperationStatus', 1));
+
+      expect(error).to.be.instanceOf(RetryError);
+      expect(error.errorCode).to.equal(RetryErrorCode.AttemptsExceeded);
+      expect(error.payload.code).to.equal('ECONNREFUSED');
+      expect(agent.connectAttempts).to.equal(3);
+    });
   });
 });

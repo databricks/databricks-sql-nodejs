@@ -1,6 +1,6 @@
 import { expect, AssertionError } from 'chai';
 import sinon from 'sinon';
-import { FetchError, Request, Response } from 'node-fetch';
+import { Request, Response } from 'node-fetch';
 import { Thrift } from 'thrift';
 import HiveDriverError from '../../../../lib/errors/HiveDriverError';
 import BaseCommand from '../../../../lib/hive/Commands/BaseCommand';
@@ -209,31 +209,6 @@ describe('BaseCommand', () => {
         expect(methodCallCount).to.equal(4); // 3 failed attempts + 1 succeeded
       });
     });
-  });
-
-  it('should name the network error code once retries run out', async () => {
-    const context = new ClientContextStub({ retryDelayMin: 1, retryDelayMax: 2, retryMaxAttempts: 3 });
-    const command = new CustomCommand(
-      new ThriftClientStub(context, async () => {
-        throw new FetchError('request to http://localhost/ failed, reason: connect ECONNREFUSED', 'system', {
-          code: 'ECONNREFUSED',
-        } as unknown as NodeJS.ErrnoException);
-      }),
-      context,
-    );
-
-    try {
-      await command.execute({});
-      expect.fail('It should throw an error');
-    } catch (error) {
-      if (error instanceof AssertionError || !(error instanceof Error)) {
-        throw error;
-      }
-      expect(error).to.be.instanceof(HiveDriverError);
-      expect(error.message).to.equal(
-        'Hive driver: ECONNREFUSED when connecting to resource. Max retry count exceeded.',
-      );
-    }
   });
 
   it(`should re-throw unrecognized HTTP errors`, async () => {

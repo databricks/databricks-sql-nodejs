@@ -100,6 +100,26 @@ const retryableThriftMethods = new Set([
 // the server rejected it unrun (see NonIdempotentRequestRetryPolicy)
 const nonIdempotentRetryableThriftMethods = new Set(['ExecuteStatement']);
 
+// Once retries run out, fail with the last attempt's error, as without retries: THTTPException (status and server
+// detail) or the network error. Idempotent RPCs other than OpenSession have always retried a 429, a 5xx other than
+// 501 and a network error other than a request timeout; those keep the RetryError (a HiveDriverError in BaseCommand).
+function getRetryExhaustedError(thriftMethod: string | undefined, error: RetryError): unknown {
+  const { payload } = error;
+  const response = (payload as { response?: unknown } | undefined)?.response;
+  const status = response instanceof Response ? response.status : undefined;
+  const alwaysRetried =
+    thriftMethod !== undefined &&
+    thriftMethod !== 'OpenSession' &&
+    retryableThriftMethods.has(thriftMethod) &&
+    (status === undefined
+      ? !(payload instanceof FetchError && payload.type === 'request-timeout')
+      : status === 429 || (status >= 500 && status !== 501));
+  if (alwaysRetried) {
+    return error;
+  }
+  return response instanceof Response ? new THTTPException(response) : payload ?? error;
+}
+
 export default class ThriftHttpConnection extends EventEmitter {
   private readonly url: string;
 
@@ -168,9 +188,13 @@ export default class ThriftHttpConnection extends EventEmitter {
     // transient network error — the body Buffer is captured via closure so the
     // post-retry caller still gets it.
     let responseBuffer: Buffer | undefined;
+    let thriftMethodName: string | undefined;
 
     this.getThriftMethodName(data)
-      .then((thriftMethod) => this.getRetryPolicy(thriftMethod))
+      .then((thriftMethod) => {
+        thriftMethodName = thriftMethod;
+        return this.getRetryPolicy(thriftMethod);
+      })
       .then((retryPolicy) => {
         const makeRequest = async () => {
           responseBuffer = undefined;
@@ -202,13 +226,8 @@ export default class ThriftHttpConnection extends EventEmitter {
         )(buffer);
       })
       .catch((error) => {
-        // A request that timed out on every attempt still fails as a timeout
-        if (
-          error instanceof RetryError &&
-          error.payload instanceof FetchError &&
-          error.payload.type === 'request-timeout'
-        ) {
-          error = error.payload;
+        if (error instanceof RetryError) {
+          error = getRetryExhaustedError(thriftMethodName, error);
         }
         if (error instanceof FetchError) {
           if (error.type === 'request-timeout') {

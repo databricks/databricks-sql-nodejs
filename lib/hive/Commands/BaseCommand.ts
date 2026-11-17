@@ -27,15 +27,16 @@ export default abstract class BaseCommand<ClientType> {
         ) {
           statusCode = error.payload.response.status;
         }
-        // After network errors, name the last one's code (e.g. ECONNREFUSED) instead of a status
-        const code = (error.payload as { code?: unknown } | null | undefined)?.code;
-        const cause = statusCode ?? (typeof code === 'string' && code ? code : 'Error');
 
         switch (error.errorCode) {
           case RetryErrorCode.AttemptsExceeded:
-            throw new HiveDriverError(`Hive driver: ${cause} when connecting to resource. Max retry count exceeded.`);
+            throw new HiveDriverError(
+              `Hive driver: ${statusCode ?? 'Error'} when connecting to resource. Max retry count exceeded.`,
+            );
           case RetryErrorCode.TimeoutExceeded:
-            throw new HiveDriverError(`Hive driver: ${cause} when connecting to resource. Retry timeout exceeded.`);
+            throw new HiveDriverError(
+              `Hive driver: ${statusCode ?? 'Error'} when connecting to resource. Retry timeout exceeded.`,
+            );
           // no default
         }
       }
