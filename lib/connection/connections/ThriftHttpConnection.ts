@@ -61,7 +61,7 @@ interface ThriftHttpConnectionOptions {
   transport?: TTransportType;
   protocol?: TProtocolConstructor;
   getRetryPolicy(): Promise<IRetryPolicy<HttpTransactionDetails>>;
-  getUnsentRequestRetryPolicy?(): Promise<IRetryPolicy<HttpTransactionDetails>>;
+  getNonIdempotentRequestRetryPolicy?(): Promise<IRetryPolicy<HttpTransactionDetails>>;
 }
 
 // This type describes a shape of internals of Thrift client object.
@@ -97,8 +97,8 @@ const retryableThriftMethods = new Set([
 ]);
 
 // Not safe to repeat once the server may have run the request, so retried only if it was never sent or
-// the server rejected it unrun (see UnsentRequestRetryPolicy)
-const unsentRequestRetryableThriftMethods = new Set(['ExecuteStatement']);
+// the server rejected it unrun (see NonIdempotentRequestRetryPolicy)
+const nonIdempotentRetryableThriftMethods = new Set(['ExecuteStatement']);
 
 export default class ThriftHttpConnection extends EventEmitter {
   private readonly url: string;
@@ -132,10 +132,10 @@ export default class ThriftHttpConnection extends EventEmitter {
     }
     if (
       thriftMethodName &&
-      unsentRequestRetryableThriftMethods.has(thriftMethodName) &&
-      this.options.getUnsentRequestRetryPolicy
+      nonIdempotentRetryableThriftMethods.has(thriftMethodName) &&
+      this.options.getNonIdempotentRequestRetryPolicy
     ) {
-      return this.options.getUnsentRequestRetryPolicy();
+      return this.options.getNonIdempotentRequestRetryPolicy();
     }
     // Don't retry everything that is not explicitly allowed to retry
     return new NullRetryPolicy();

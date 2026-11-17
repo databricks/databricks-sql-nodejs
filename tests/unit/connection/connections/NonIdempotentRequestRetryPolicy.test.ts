@@ -1,7 +1,7 @@
 import { expect, AssertionError } from 'chai';
 import sinon from 'sinon';
 import { Request, Response, FetchError } from 'node-fetch';
-import UnsentRequestRetryPolicy from '../../../../lib/connection/connections/UnsentRequestRetryPolicy';
+import NonIdempotentRequestRetryPolicy from '../../../../lib/connection/connections/NonIdempotentRequestRetryPolicy';
 import RetryError, { RetryErrorCode } from '../../../../lib/errors/RetryError';
 
 import ClientContextStub from '../../.stubs/ClientContextStub';
@@ -17,7 +17,9 @@ function okResponse() {
 }
 
 function createPolicy(retryMaxAttempts = 5) {
-  return new UnsentRequestRetryPolicy(new ClientContextStub({ retryDelayMin: 1, retryDelayMax: 2, retryMaxAttempts }));
+  return new NonIdempotentRequestRetryPolicy(
+    new ClientContextStub({ retryDelayMin: 1, retryDelayMax: 2, retryMaxAttempts }),
+  );
 }
 
 async function expectRejection(promise: Promise<unknown>): Promise<unknown> {
@@ -32,7 +34,7 @@ async function expectRejection(promise: Promise<unknown>): Promise<unknown> {
   return expect.fail('It should throw an error');
 }
 
-describe('UnsentRequestRetryPolicy', () => {
+describe('NonIdempotentRequestRetryPolicy', () => {
   // Failures to connect (the kernel's `is_connect`): the request never left the client
   const connectErrors: Array<[string, Error]> = [
     ['ECONNREFUSED', systemError('ECONNREFUSED', 'connect ECONNREFUSED 10.0.0.1:443')],
@@ -127,7 +129,7 @@ describe('UnsentRequestRetryPolicy', () => {
   }
 
   it('waits the Retry-After delay before retrying a 503, with the default config', async () => {
-    const policy = new UnsentRequestRetryPolicy(new ClientContextStub());
+    const policy = new NonIdempotentRequestRetryPolicy(new ClientContextStub());
 
     expect(await policy.shouldRetry(statusResponse(503, { 'Retry-After': '5' }))).to.deep.equal({
       shouldRetry: true,
@@ -155,7 +157,7 @@ describe('UnsentRequestRetryPolicy', () => {
 
   it('rethrows the original error once the retry timeout is exceeded', async () => {
     const error = systemError('ECONNREFUSED');
-    const policy = new UnsentRequestRetryPolicy(
+    const policy = new NonIdempotentRequestRetryPolicy(
       new ClientContextStub({ retryDelayMin: 1, retryDelayMax: 2, retryMaxAttempts: 100, retriesTimeout: 0 }),
     );
     const operation = sinon.stub().rejects(error);

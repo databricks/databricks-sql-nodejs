@@ -6,7 +6,7 @@ import RetryError from '../../errors/RetryError';
 // For operations that are not safe to repeat: retries only requests the server didn't run, as the kernel's
 // non-idempotent strategy does: a failure to connect, a 429, or a 503 with `Retry-After`. Failures on a
 // connected socket (ECONNRESET, EPIPE, timeouts, ...) are not retried: the server may already have the request.
-export default class UnsentRequestRetryPolicy extends HttpRetryPolicy {
+export default class NonIdempotentRequestRetryPolicy extends HttpRetryPolicy {
   public async invokeWithRetry(operation: RetryableOperation<HttpTransactionDetails>): Promise<HttpTransactionDetails> {
     try {
       return await super.invokeWithRetry(operation);
