@@ -225,6 +225,10 @@ export default class KernelOperationBackend implements IOperationBackend {
   // synchronous terminal-state accessor, so the observed success is retained.
   private asyncSucceeded = false;
 
+  // Set by close() and kept when its RPC fails (which resets `isClosed`): the
+  // kernel closes the result handle either way.
+  private closeRequested = false;
+
   constructor({
     asyncStatement,
     statement,
@@ -464,6 +468,7 @@ export default class KernelOperationBackend implements IOperationBackend {
   }
 
   public async close(): Promise<Status> {
+    this.closeRequested = true;
     return kernelClose(this.lifecycle, this.lifecycleHandle, this.context, this._id);
   }
 
@@ -736,9 +741,19 @@ export default class KernelOperationBackend implements IOperationBackend {
   /**
    * A failed fetch leaves the napi stream in an unspecified state ("call close()
    * and discard"), so close the statement, then return the decoded error to throw.
+   * A fetch that a local close()/cancel() interrupted (the kernel empties the
+   * result handle on close) reports that state instead.
    */
   private async fetchFailure(err: unknown): Promise<Error> {
+    // Not `isClosed`: cleanup closes (this one, or a concurrent fetch's) set it too.
+    const interrupted = this.lifecycle.isCancelled || this.closeRequested;
     await this.bestEffortClose('fetch-error');
+    if (interrupted) {
+      // Not failIfNotActive(): a failed cleanup close leaves `isClosed` false.
+      return new OperationStateError(
+        this.lifecycle.isCancelled ? OperationStateErrorCode.Canceled : OperationStateErrorCode.Closed,
+      );
+    }
     return decodeNapiKernelError(err);
   }
 
