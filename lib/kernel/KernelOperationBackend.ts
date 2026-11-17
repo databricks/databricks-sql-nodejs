@@ -200,8 +200,8 @@ export default class KernelOperationBackend implements IOperationBackend {
 
   // The cancel/close surface — whichever handle backs this operation. Both
   // `AsyncStatement` and `Statement` expose `cancel()` / `close()`; the
-  // sync-execute path uses a composite that routes `cancel()` to the
-  // cancellable execution (mid-compute) and `close()` to the resolved statement.
+  // sync-execute path keeps the execution canceller for SQL and uses the
+  // resolved statement to cancel marked transfers after SQL completes.
   private readonly lifecycleHandle: KernelStatementHandle;
 
   private readonly context: IClientContext;
@@ -266,7 +266,8 @@ export default class KernelOperationBackend implements IOperationBackend {
     // drop-guard fires whenever this handle is eventually GC'd.
     this.lifecycleHandle = cancellableExecution
       ? {
-          cancel: () => (this.blockingStatement ? this.blockingStatement.cancel() : cancellableExecution.cancel()),
+          cancel: () =>
+            this.blockingStatement?.isVolumeOperation ? this.blockingStatement.cancel() : cancellableExecution.cancel(),
           close: () => (this.blockingStatement ? this.blockingStatement.close() : cancellableExecution.cancel()),
         }
       : ((asyncStatement ?? statement) as KernelStatementHandle);

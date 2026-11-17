@@ -469,25 +469,28 @@ describe('KernelOperationBackend Volume completion', () => {
     });
   }
 
-  it('routes cancellation to the statement after SQL completes', async () => {
-    const schema = new Schema([withTypeName(new Field('x', new Int32(), true), 'INT')]);
-    const statement = new StatementStub(ipcSchemaOnly(schema), []);
-    let executionCancelled = false;
-    const execution = {
-      result: async () => statement,
-      cancel: async () => {
-        executionCancelled = true;
-      },
-    };
-    const backend = new KernelOperationBackend({
-      cancellableExecution: execution as any,
-      context: new ClientContextStub(),
+  for (const isVolumeOperation of [false, true]) {
+    it(`routes ${isVolumeOperation ? 'Volume' : 'ordinary'} cancellation after SQL completes`, async () => {
+      const schema = new Schema([withTypeName(new Field('x', new Int32(), true), 'INT')]);
+      const statement = new StatementStub(ipcSchemaOnly(schema), []);
+      Object.assign(statement, { isVolumeOperation });
+      let executionCancelled = false;
+      const execution = {
+        result: async () => statement,
+        cancel: async () => {
+          executionCancelled = true;
+        },
+      };
+      const backend = new KernelOperationBackend({
+        cancellableExecution: execution as any,
+        context: new ClientContextStub(),
+      });
+      await backend.getResultMetadata();
+      await backend.cancel();
+      expect(statement.cancelled).to.equal(isVolumeOperation);
+      expect(executionCancelled).to.equal(!isVolumeOperation);
     });
-    await backend.getResultMetadata();
-    await backend.cancel();
-    expect(statement.cancelled).to.equal(true);
-    expect(executionCancelled).to.equal(false);
-  });
+  }
 
   for (const outcome of ['completed', 'not_volume']) {
     it(`${
