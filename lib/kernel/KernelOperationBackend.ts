@@ -225,6 +225,10 @@ export default class KernelOperationBackend implements IOperationBackend {
   // synchronous terminal-state accessor, so the observed success is retained.
   private asyncSucceeded = false;
 
+  // Set by close() and kept when its RPC fails (which resets `isClosed`): the
+  // kernel closes the result handle either way.
+  private closeRequested = false;
+
   constructor({
     asyncStatement,
     statement,
@@ -464,6 +468,7 @@ export default class KernelOperationBackend implements IOperationBackend {
   }
 
   public async close(): Promise<Status> {
+    this.closeRequested = true;
     return kernelClose(this.lifecycle, this.lifecycleHandle, this.context, this._id);
   }
 
@@ -741,10 +746,13 @@ export default class KernelOperationBackend implements IOperationBackend {
    */
   private async fetchFailure(err: unknown): Promise<Error> {
     // Read before the cleanup close, which sets `isClosed` itself.
-    const interrupted = this.lifecycle.isCancelled || this.lifecycle.isClosed;
+    const interrupted = this.lifecycle.isCancelled || this.lifecycle.isClosed || this.closeRequested;
     await this.bestEffortClose('fetch-error');
     if (interrupted) {
-      failIfNotActive(this.lifecycle);
+      // Not failIfNotActive(): a failed cleanup close leaves `isClosed` false.
+      return new OperationStateError(
+        this.lifecycle.isCancelled ? OperationStateErrorCode.Canceled : OperationStateErrorCode.Closed,
+      );
     }
     return decodeNapiKernelError(err);
   }

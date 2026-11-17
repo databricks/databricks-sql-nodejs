@@ -517,6 +517,40 @@ describe('DBSQLOperation over KernelOperationBackend — close after the result 
 });
 
 describe('KernelOperationBackend — close()/cancel() during an in-flight fetch', () => {
+  function inflightFetch(fetch: 'fetchChunk' | 'hasMore', close: sinon.SinonStub) {
+    const ipcBytes = Buffer.from(tableToIPC(tableFromArrays({ x: Int32Array.from([1]) }), 'stream'));
+    let interrupted: () => void = () => {};
+    const interruptDone = new Promise<void>((resolve) => {
+      interrupted = resolve;
+    });
+    const statement = {
+      cancel: sinon.stub().resolves(),
+      close,
+      schema: () => ({ ipcBytes }),
+      // The kernel empties the handle's stream on close(), so the pending fetch fails.
+      fetchNextBatch: async () => {
+        await interruptDone;
+        const payload = JSON.stringify({
+          code: 'InvalidStatementHandle',
+          message: 'AsyncResultHandle already closed',
+        });
+        throw new Error(`__databricks_error__:${payload}`);
+      },
+    };
+    const backend = new KernelOperationBackend({ statement, context: new ClientContextStub(), id: 'kernel-op' });
+    const inflight = fetch === 'fetchChunk' ? backend.fetchChunk({ limit: 10 }) : backend.hasMore();
+    return { statement, backend, inflight, interrupted };
+  }
+
+  async function rejectionOf(promise: Promise<unknown>): Promise<unknown> {
+    try {
+      await promise;
+    } catch (err) {
+      return err;
+    }
+    return undefined;
+  }
+
   const cases = [
     { action: 'close', code: OperationStateErrorCode.Closed },
     { action: 'cancel', code: OperationStateErrorCode.Canceled },
@@ -524,41 +558,41 @@ describe('KernelOperationBackend — close()/cancel() during an in-flight fetch'
   for (const { action, code } of cases) {
     for (const fetch of ['fetchChunk', 'hasMore'] as const) {
       it(`${fetch}() reports OperationStateError(${code}) after ${action}() and closes the statement once`, async () => {
-        const ipcBytes = Buffer.from(tableToIPC(tableFromArrays({ x: Int32Array.from([1]) }), 'stream'));
-        let interrupted: () => void = () => {};
-        const interruptDone = new Promise<void>((resolve) => {
-          interrupted = resolve;
-        });
-        const statement = {
-          cancel: sinon.stub().resolves(),
-          close: sinon.stub().resolves(),
-          schema: () => ({ ipcBytes }),
-          // The kernel empties the handle's stream on close(), so the pending fetch fails.
-          fetchNextBatch: async () => {
-            await interruptDone;
-            const payload = JSON.stringify({
-              code: 'InvalidStatementHandle',
-              message: 'AsyncResultHandle already closed',
-            });
-            throw new Error(`__databricks_error__:${payload}`);
-          },
-        };
-        const backend = new KernelOperationBackend({ statement, context: new ClientContextStub(), id: 'kernel-op' });
+        const { statement, backend, inflight, interrupted } = inflightFetch(fetch, sinon.stub().resolves());
 
-        const inflight = fetch === 'fetchChunk' ? backend.fetchChunk({ limit: 10 }) : backend.hasMore();
         await (action === 'close' ? backend.close() : backend.cancel());
         interrupted();
 
-        let thrown: unknown;
-        try {
-          await inflight;
-        } catch (err) {
-          thrown = err;
-        }
+        const thrown = await rejectionOf(inflight);
         expect(thrown).to.be.instanceOf(OperationStateError);
         expect((thrown as OperationStateError).errorCode).to.equal(code);
         // A cancel leaves the statement for the fetch-failure cleanup to close.
         expect(statement.close.calledOnce).to.equal(true);
+      });
+    }
+  }
+
+  // The kernel empties the handle even when the close RPC fails (async_statement.rs:398-414 at
+  // dac32e2); a retried close() then resolves (391-393). Also cover a retry that fails again.
+  for (const retry of ['resolves', 'rejects'] as const) {
+    for (const fetch of ['fetchChunk', 'hasMore'] as const) {
+      it(`${fetch}() reports OperationStateError(${OperationStateErrorCode.Closed}) after a failed close() whose retry ${retry}`, async () => {
+        const close = sinon
+          .stub()
+          .rejects(new Error(`__databricks_error__:${JSON.stringify({ code: 'NotFound', message: 'HTTP 404' })}`));
+        if (retry === 'resolves') {
+          close.onSecondCall().resolves();
+        }
+        const { statement, backend, inflight, interrupted } = inflightFetch(fetch, close);
+
+        expect(await rejectionOf(backend.close())).to.be.instanceOf(Error);
+        interrupted();
+
+        const thrown = await rejectionOf(inflight);
+        expect(thrown).to.be.instanceOf(OperationStateError);
+        expect((thrown as OperationStateError).errorCode).to.equal(OperationStateErrorCode.Closed);
+        // The failed close() and one fetch-failure cleanup close.
+        expect(statement.close.calledTwice).to.equal(true);
       });
     }
   }
