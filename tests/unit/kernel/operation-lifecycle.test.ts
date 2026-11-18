@@ -698,6 +698,7 @@ describe('DBSQLSession over KernelSessionBackend — close right after execution
     expect(thrown).to.be.instanceOf(Error);
     expect(connection.close.called).to.equal(false);
     expect(session['operations']['items'].size).to.equal(1);
+    expect(asyncStatement.close.calledTwice).to.equal(true);
   });
 
   for (const cancelFails of [false, true]) {
@@ -712,24 +713,42 @@ describe('DBSQLSession over KernelSessionBackend — close right after execution
       const awaitingResult = new Promise<void>((resolve) => {
         started = resolve;
       });
+      let releaseClose!: () => void;
+      const nativeClosed = new Promise<void>((resolve) => {
+        releaseClose = resolve;
+      });
+      let closingStarted!: () => void;
+      const nativeClosing = new Promise<void>((resolve) => {
+        closingStarted = resolve;
+      });
       asyncStatement.awaitResult.callsFake(() => {
         started();
         return pendingResult;
       });
       asyncStatement.cancel.callsFake(async () => {
         rejectResult(cancelled);
+        await new Promise((resolve) => setImmediate(resolve));
         if (cancelFails) throw new Error('cancel response failed');
       });
       asyncStatement.close.callsFake(async () => {
         await pendingResult.catch(() => {});
+        closingStarted();
+        await nativeClosed;
       });
       const executing = session.executeStatement('SELECT slow', { stagingAllowedLocalPath: ['/allowed'] }).then(
         () => expect.fail('execution should be cancelled'),
         (error) => error,
       );
       await awaitingResult;
-      await session.close();
-      await session.close();
+      const closing = session.close();
+      await nativeClosing;
+      await new Promise((resolve) => setImmediate(resolve));
+      try {
+        expect(connection.close.called).to.equal(false);
+      } finally {
+        releaseClose();
+      }
+      await closing;
 
       expect(await executing).to.equal(cancelled);
       expect(asyncStatement.cancel.calledOnce).to.equal(true);
