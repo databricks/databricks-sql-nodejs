@@ -1,6 +1,6 @@
 # Lessons
 
-<!-- distilled-through: none -->
+<!-- distilled-through: 2026-11-18 -->
 
 ## Configuration and authentication
 - L-0001 (3×, #457): Trace option support through DBSQLClient, auth adapters and each transport. Type declarations and class comments do not establish forwarding; shared preparation can precede backend-specific filtering.
@@ -77,3 +77,4 @@
 - L-0064 (1×, #566): Scrub JFrog and OIDC request credentials inside the model-driven step; modifying GITHUB_ENV does not unset its inherited environment.
 - L-0065 (1×, #566): Build after installs that omit prepare so generated lib/version.ts exists before tests/type checks.
 - L-0066 (1×, #566 #562): Serialize branch-editing bot flows with one per-PR concurrency group and restore dependency-setup lockfile rewrites before agent edits.
+- L-0067 (1×, #621 #620): GitHub Actions expressions allow hyphens in dot-dereferenced names; do not flag or rewrite `${{ inputs.some-name }}` as subtraction.
