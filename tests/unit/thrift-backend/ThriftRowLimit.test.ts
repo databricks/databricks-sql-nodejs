@@ -13,6 +13,7 @@ import {
   TTypeId,
 } from '../../../thrift/TCLIService_types';
 import { RowMode } from '../../../lib/contracts/IDBSQLSession';
+import StatusError from '../../../lib/errors/StatusError';
 import ClientContextStub from '../.stubs/ClientContextStub';
 import { createSessionForTest } from '../.stubs/createSessionForTest';
 
@@ -55,6 +56,29 @@ function createContext(resultFormat: TSparkRowSetType): ClientContextStub {
 
 describe('Thrift rowLimit source budgets', () => {
   afterEach(() => sinon.restore());
+
+  for (const method of ['fetchAll', 'hasMoreRows'] as const) {
+    it(`reports an already-prefetched error before zero-cap ${method}`, async () => {
+      const context = createContext(TSparkRowSetType.ARROW_BASED_SET);
+      context.driver.executeStatementResp.directResults = {
+        resultSet: { status: { statusCode: TStatusCode.ERROR_STATUS, errorMessage: 'direct fetch failed' } },
+      };
+      const fetch = sinon.spy(context.driver, 'fetchResults');
+      const session = createSessionForTest({ handle: sessionHandle, context });
+      try {
+        await assert.rejects(
+          async () => {
+            const operation = await session.executeStatement('SELECT id FROM range(6)', { rowLimit: 0 });
+            await operation[method]();
+          },
+          (error: unknown) => error instanceof StatusError && error.message === 'direct fetch failed',
+        );
+        expect(fetch.called).to.be.false;
+      } finally {
+        await session.close();
+      }
+    });
+  }
 
   for (const disableBuffering of [false, true]) {
     for (const prefetched of [false, true]) {

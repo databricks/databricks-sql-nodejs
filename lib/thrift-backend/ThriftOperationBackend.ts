@@ -136,6 +136,10 @@ export default class ThriftOperationBackend implements IOperationBackend {
       this.processOperationStatusResponse(directResults.operationStatus);
     }
 
+    if (rowLimit === 0 && directResults?.resultSet) {
+      Status.assert(directResults.resultSet.status);
+    }
+
     this._data = new RowSetProvider(
       this.context,
       this.operationHandle,
