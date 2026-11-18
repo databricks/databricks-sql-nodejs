@@ -3,6 +3,7 @@ import { DBSQLClient } from '../../../lib';
 import DBSQLOperation from '../../../lib/DBSQLOperation';
 import { LogLevel } from '../../../lib/contracts/IDBSQLLogger';
 import { ResultFormat } from '../../../lib/contracts/ResultMetadata';
+import { tryGetKernelNative } from '../../../lib/kernel/KernelNativeLoader';
 import config from '../utils/config';
 
 describe('Concurrent result fetching', () => {
@@ -13,7 +14,8 @@ describe('Concurrent result fetching', () => {
       { cloudFetch: true, options: {} },
     ]) {
       const delivery = cloudFetch ? 'CloudFetch' : `inline, ${JSON.stringify(options)}`;
-      it(`returns each id once across overlapping fetchAll calls (${
+      const test = useKernel && !tryGetKernelNative() ? it.skip : it;
+      test(`returns each id once across overlapping fetchAll calls (${
         useKernel ? 'kernel' : 'thrift'
       }, ${delivery})`, async () => {
         const messages: string[] = [];
