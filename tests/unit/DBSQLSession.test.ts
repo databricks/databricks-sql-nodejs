@@ -8,6 +8,7 @@ import DBSQLOperation from '../../lib/DBSQLOperation';
 import { PrimaryKeysRequest } from '../../lib/contracts/IDBSQLSession';
 import ISessionBackend from '../../lib/contracts/ISessionBackend';
 import ParameterError from '../../lib/errors/ParameterError';
+import { LogLevel } from '../../lib/contracts/IDBSQLLogger';
 import { DBSQLParameter } from '../../lib/DBSQLParameter';
 import { TSessionHandle, TProtocolVersion, TOperationState, TStatusCode } from '../../thrift/TCLIService_types';
 import ClientContextStub from './.stubs/ClientContextStub';
@@ -78,6 +79,40 @@ describe('DBSQLSession', () => {
       const session = createSessionForTest({ handle: sessionHandleStub, context: new ClientContextStub() });
       const result = await session.executeStatement('SELECT * FROM table', { maxRows: null });
       expect(result).instanceOf(DBSQLOperation);
+    });
+
+    for (const rowLimit of [7, 0, undefined]) {
+      it(`should ${rowLimit === undefined ? 'omit an unset' : `forward ${rowLimit} as the`} rowLimit`, async () => {
+        const context = new ClientContextStub();
+        const driver = sinon.spy(context.driver);
+        const logger = sinon.spy(context.logger, 'log');
+        const session = createSessionForTest({ handle: sessionHandleStub, context });
+
+        await session.executeStatement('SELECT * FROM table', { rowLimit, maxRows: 100 });
+
+        expect(driver.executeStatement.callCount).to.equal(1);
+        const request = driver.executeStatement.firstCall.args[0];
+        if (rowLimit === undefined) {
+          expect(request.resultRowLimit).to.not.exist;
+        } else {
+          expect(request.resultRowLimit).to.be.instanceOf(Int64);
+          expect(request.resultRowLimit?.toNumber()).to.equal(rowLimit);
+        }
+        expect(request.getDirectResults?.maxRows.toNumber()).to.equal(100);
+        expect(logger.calledWith(LogLevel.warn)).to.be.false;
+      });
+    }
+
+    it('should warn only about statementConf when rowLimit is also set', async () => {
+      const context = new ClientContextStub();
+      const logger = sinon.spy(context.logger, 'log');
+      const session = createSessionForTest({ handle: sessionHandleStub, context });
+
+      await session.executeStatement('SELECT 1', { rowLimit: 7, statementConf: {} });
+
+      const warnings = logger.getCalls().filter((call) => call.args[0] === LogLevel.warn);
+      expect(warnings).to.have.lengthOf(1);
+      expect(warnings[0].args[1]).to.include('statementConf').and.not.include('rowLimit');
     });
 
     describe('Arrow support', () => {

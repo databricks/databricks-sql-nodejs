@@ -217,7 +217,7 @@ telemetry implementation, so only the options explicitly forwarded by
 | `namedParameters`         | `Record<string, DBSQLParameter \| DBSQLParameterValue>` |   ✅   |   ✅   | —             | Named SQL parameters. Cannot be combined with non-empty `ordinalParameters`. Thrift requires a protocol that supports parameterized queries.                              |
 | `ordinalParameters`       | `Array<DBSQLParameter \| DBSQLParameterValue>`          |   ✅   |   ✅   | —             | Positional SQL parameters. Cannot be combined with non-empty `namedParameters`.                                                                                           |
 | `queryTags`               | `Record<string, string \| null \| undefined>`           |   ✅   |   ✅   | —             | Serialized into the per-statement `query_tags` conf overlay on both.                                                                                                      |
-| `rowLimit`                | `number`                                                |   ❌   |   ✅   | —             | Kernel-only server-side row cap. Thrift logs and ignores it.                                                                                                              |
+| `rowLimit`                | `number`                                                |   ✅   |   ✅   | —             | Per-statement server-side row cap, separate from `maxRows` fetch sizing. Omitted by default (no driver-imposed cap).                                                      |
 | `statementConf`           | `Record<string, string>`                                |   ❌   |   ✅   | —             | Kernel-only per-statement Spark conf overlay. Structured `queryTags` overwrite its `query_tags` key when non-empty.                                                       |
 
 ## Metadata-operation request parameters
@@ -249,6 +249,6 @@ volume operations.
 
 Kernel-only capabilities include connection-pool sizing, proxy bypass hosts,
 independent TLS hostname verification, optional U2M disk caching, and
-per-statement `rowLimit`/`statementConf`.
+per-statement `statementConf`.
 
 The Kernel path remains internal and unstable; its behavior may change.

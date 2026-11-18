@@ -48,9 +48,8 @@ export type ExecuteStatementOptions = {
    */
   queryTags?: Record<string, string | null | undefined>;
   /**
-   * kernel-only: server-side row cap for this statement (kernel `row_limit`). The
-   * Thrift backend has no execute-time server cap, so this is a no-op there;
-   * use `maxRows` for the cross-backend client-side fetch limit.
+   * Per-statement server-side row cap on both backends. Omitted by default (no
+   * driver-imposed cap). Distinct from `maxRows`, which controls fetch-page size.
    */
   rowLimit?: number;
   /**
