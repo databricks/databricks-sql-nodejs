@@ -207,7 +207,9 @@ export default class KernelOperationBackend implements IOperationBackend {
 
   private readonly rowMode?: RowMode;
 
-  private resultSlicer?: ResultSlicer<any>;
+  private resultSlicer?: Promise<ResultSlicer<any>>;
+
+  private resultConsumption: Promise<void> = Promise.resolve();
 
   private resultsProvider?: KernelResultsProvider;
 
@@ -328,11 +330,13 @@ export default class KernelOperationBackend implements IOperationBackend {
       return [];
     }
     try {
-      const slicer = await this.getResultSlicer();
-      if (isClosed?.()) {
-        return [];
-      }
-      return await slicer.fetchNext({ limit, disableBuffering });
+      return await this.withResultLock(async () => {
+        const slicer = await this.getResultSlicer();
+        if (isClosed?.()) {
+          return [];
+        }
+        return slicer.fetchNext({ limit, disableBuffering });
+      });
     } catch (err) {
       throw await this.fetchFailure(err);
     }
@@ -342,8 +346,10 @@ export default class KernelOperationBackend implements IOperationBackend {
     failIfNotActive(this.lifecycle);
     try {
       // `hasMore()` prefetches the next batch, so it fails like `fetchChunk()`.
-      const slicer = await this.getResultSlicer();
-      return await slicer.hasMore();
+      return await this.withResultLock(async () => {
+        const slicer = await this.getResultSlicer();
+        return slicer.hasMore();
+      });
     } catch (err) {
       throw await this.fetchFailure(err);
     }
@@ -838,10 +844,26 @@ export default class KernelOperationBackend implements IOperationBackend {
     return this.fetchHandlePromise;
   }
 
-  private async getResultSlicer(): Promise<ResultSlicer<any>> {
-    if (this.resultSlicer) {
-      return this.resultSlicer;
+  private withResultLock<T>(consume: () => Promise<T>): Promise<T> {
+    const result = this.resultConsumption.then(consume);
+    this.resultConsumption = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
+  }
+
+  private getResultSlicer(): Promise<ResultSlicer<any>> {
+    if (!this.resultSlicer) {
+      this.resultSlicer = this.createResultSlicer().catch((error) => {
+        this.resultSlicer = undefined;
+        throw error;
+      });
     }
+    return this.resultSlicer;
+  }
+
+  private async createResultSlicer(): Promise<ResultSlicer<any>> {
     const metadata = await this.getResultMetadata();
     const handle = await this.getFetchHandle();
     // KernelResultsProvider consumes only `fetchNextBatch`; both the async result
@@ -856,7 +878,6 @@ export default class KernelOperationBackend implements IOperationBackend {
       disableRowMaterialization: this.context.getConfig().disableRowMaterialization ?? false,
       rowMode: this.rowMode,
     });
-    this.resultSlicer = new ResultSlicer(this.context, converter);
-    return this.resultSlicer;
+    return new ResultSlicer(this.context, converter);
   }
 }
