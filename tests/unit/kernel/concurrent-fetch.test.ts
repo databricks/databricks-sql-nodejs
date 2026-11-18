@@ -84,7 +84,7 @@ describe('Kernel concurrent result consumption through DBSQLOperation', () => {
     });
   }
 
-  it('serializes Arrow converter prefetch on an initialized pipeline', async () => {
+  it('preserves unread Arrow rows when consumers await different source batches', async () => {
     const { operation, backend, context } = createOperation();
     const batches = [
       [0, 1],
@@ -95,6 +95,16 @@ describe('Kernel concurrent result consumption through DBSQLOperation', () => {
       rowCount: ids.length,
     }));
     const source = new ResultsProviderStub(batches, { batches: [], rowCount: 0 });
+    const releases: Array<() => void> = [];
+    const gates = batches.map(() => new Promise<void>((resolve) => releases.push(resolve)));
+    const fetchNext = source.fetchNext.bind(source);
+    let next = 0;
+    sinon.stub(source, 'fetchNext').callsFake(async () => {
+      const gate = gates[next++];
+      const batch = await fetchNext();
+      await gate;
+      return batch;
+    });
     const converter = new ArrowResultConverter(context, source, {
       schema: {
         columns: [
@@ -103,10 +113,13 @@ describe('Kernel concurrent result consumption through DBSQLOperation', () => {
       },
     });
     sinon.stub(backend as any, 'getResultSlicer').resolves(new ResultSlicer(context, converter));
-    const chunks = await Promise.all([
+    const pending = Promise.all([
       operation.fetchChunk({ maxRows: 100, disableBuffering: true }),
       operation.fetchChunk({ maxRows: 100, disableBuffering: true }),
     ]);
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    releases.forEach((release) => release());
+    const chunks = await pending;
     while (await operation.hasMoreRows()) {
       chunks.push(await operation.fetchChunk({ maxRows: 100, disableBuffering: true }));
     }
