@@ -1,6 +1,7 @@
 import { expect } from 'chai';
 import sinon from 'sinon';
 import { tableFromArrays, tableToIPC } from 'apache-arrow';
+import DBSQLOperation from '../../../lib/DBSQLOperation';
 import KernelOperationBackend from '../../../lib/kernel/KernelOperationBackend';
 import OperationStateError, { OperationStateErrorCode } from '../../../lib/errors/OperationStateError';
 import ArrowResultConverter from '../../../lib/result/ArrowResultConverter';
@@ -26,38 +27,64 @@ function createStatement() {
   };
 }
 
-describe('Kernel concurrent result consumption', () => {
+function createOperation() {
+  const context = new ClientContextStub();
+  const statement = createStatement();
+  const backend = new KernelOperationBackend({ statement, context });
+  const operation = new DBSQLOperation({ backend, context });
+  return { operation, backend, context, statement };
+}
+
+describe('Kernel concurrent result consumption through DBSQLOperation', () => {
   it('constructs one result pipeline for concurrent first readers', async () => {
-    const backend = new KernelOperationBackend({ statement: createStatement(), context: new ClientContextStub() });
-    const [first, second] = await Promise.all([backend['getResultSlicer'](), backend['getResultSlicer']()]);
+    const { operation, backend } = createOperation();
+    const getResultSlicer = sinon.spy(backend as any, 'getResultSlicer');
+    await Promise.all([operation.fetchChunk({ maxRows: 1 }), operation.fetchChunk({ maxRows: 1 })]);
+    const [first, second] = await Promise.all(getResultSlicer.returnValues);
     expect(first).to.equal(second);
   });
 
-  for (const fetch of ['fetchChunk', 'hasMore'] as const) {
-    it(`rejects a queued ${fetch} after close without touching the cursor`, async () => {
-      const statement = createStatement();
-      const backend = new KernelOperationBackend({ statement, context: new ClientContextStub() });
+  it('releases a failed read so the next waiter observes cleanup before touching the cursor', async () => {
+    const { operation, statement } = createOperation();
+    statement.fetchNextBatch.rejects(new Error('fetch failed'));
+    const outcomes = await Promise.allSettled([operation.fetchChunk(), operation.fetchChunk()]);
+    expect(outcomes.map((outcome) => outcome.status)).to.deep.equal(['rejected', 'rejected']);
+    if (outcomes[0].status === 'rejected' && outcomes[1].status === 'rejected') {
+      expect(outcomes[0].reason.message).to.equal('fetch failed');
+      expect(outcomes[1].reason).to.be.instanceOf(OperationStateError);
+      expect(outcomes[1].reason.errorCode).to.equal(OperationStateErrorCode.Closed);
+    }
+    expect(statement.fetchNextBatch.callCount).to.equal(1);
+    expect(statement.close.callCount).to.equal(1);
+  });
+
+  for (const fetch of ['fetchChunk', 'hasMoreRows'] as const) {
+    it(`honors close for queued ${fetch} without touching the cursor`, async () => {
+      const { operation, backend, statement } = createOperation();
       await backend['getResultSlicer']();
       let release!: () => void;
-      backend['resultConsumption'] = new Promise<void>((resolve) => {
+      (operation as any).resultConsumption = new Promise<void>((resolve) => {
         release = resolve;
       });
-      const pending = fetch === 'fetchChunk' ? backend.fetchChunk({ limit: 100 }) : backend.hasMore();
-      await backend.close();
+      const pending = fetch === 'fetchChunk' ? operation.fetchChunk({ maxRows: 100 }) : operation.hasMoreRows();
+      await operation.close();
       release();
       const [outcome] = await Promise.allSettled([pending]);
-      expect(outcome.status).to.equal('rejected');
-      if (outcome.status === 'rejected') {
-        expect(outcome.reason).to.be.instanceOf(OperationStateError);
-        expect(outcome.reason.errorCode).to.equal(OperationStateErrorCode.Closed);
+      if (fetch === 'hasMoreRows') {
+        expect(outcome).to.deep.equal({ status: 'fulfilled', value: false });
+      } else {
+        expect(outcome.status).to.equal('rejected');
+        if (outcome.status === 'rejected') {
+          expect(outcome.reason).to.be.instanceOf(OperationStateError);
+          expect(outcome.reason.errorCode).to.equal(OperationStateErrorCode.Closed);
+        }
       }
       expect(statement.fetchNextBatch.called).to.equal(false);
     });
   }
 
   it('serializes Arrow converter prefetch on an initialized pipeline', async () => {
-    const context = new ClientContextStub();
-    const backend = new KernelOperationBackend({ statement: createStatement(), context });
+    const { operation, backend, context } = createOperation();
     const batches = [
       [0, 1],
       [2, 3],
@@ -76,11 +103,11 @@ describe('Kernel concurrent result consumption', () => {
     });
     sinon.stub(backend as any, 'getResultSlicer').resolves(new ResultSlicer(context, converter));
     const chunks = await Promise.all([
-      backend.fetchChunk({ limit: 100, disableBuffering: true }),
-      backend.fetchChunk({ limit: 100, disableBuffering: true }),
+      operation.fetchChunk({ maxRows: 100, disableBuffering: true }),
+      operation.fetchChunk({ maxRows: 100, disableBuffering: true }),
     ]);
-    while (await backend.hasMore()) {
-      chunks.push(await backend.fetchChunk({ limit: 100, disableBuffering: true }));
+    while (await operation.hasMoreRows()) {
+      chunks.push(await operation.fetchChunk({ maxRows: 100, disableBuffering: true }));
     }
     expect(chunks.flat().map((row: any) => row.id)).to.deep.equal([0, 1, 2, 3, 4, 5]);
   });
@@ -88,13 +115,16 @@ describe('Kernel concurrent result consumption', () => {
   for (const initialized of [false, true]) {
     for (const limit of [1, 4, 100]) {
       it(`returns an exact union with overlapping chunks (initialized=${initialized}, limit=${limit})`, async () => {
-        const backend = new KernelOperationBackend({ statement: createStatement(), context: new ClientContextStub() });
+        const { operation } = createOperation();
         if (initialized) {
-          await backend.hasMore();
+          await operation.hasMoreRows();
         }
-        const chunks = await Promise.all([backend.fetchChunk({ limit }), backend.fetchChunk({ limit })]);
-        while (await backend.hasMore()) {
-          chunks.push(await backend.fetchChunk({ limit }));
+        const chunks = await Promise.all([
+          operation.fetchChunk({ maxRows: limit }),
+          operation.fetchChunk({ maxRows: limit }),
+        ]);
+        while (await operation.hasMoreRows()) {
+          chunks.push(await operation.fetchChunk({ maxRows: limit }));
         }
         const ids = chunks.flat().map((row: any) => row.id);
         expect(ids.sort((left, right) => left - right)).to.deep.equal([0, 1, 2, 3, 4, 5, 6, 7, 8]);
@@ -103,15 +133,15 @@ describe('Kernel concurrent result consumption', () => {
   }
 
   it('does not lose prefetched rows when hasMore overlaps unbuffered reads', async () => {
-    const backend = new KernelOperationBackend({ statement: createStatement(), context: new ClientContextStub() });
+    const { operation } = createOperation();
     const [, first, second] = await Promise.all([
-      backend.hasMore(),
-      backend.fetchChunk({ limit: 1, disableBuffering: true }),
-      backend.fetchChunk({ limit: 1, disableBuffering: true }),
+      operation.hasMoreRows(),
+      operation.fetchChunk({ maxRows: 1, disableBuffering: true }),
+      operation.fetchChunk({ maxRows: 1, disableBuffering: true }),
     ]);
     const chunks = [first, second];
-    while (await backend.hasMore()) {
-      chunks.push(await backend.fetchChunk({ limit: 1, disableBuffering: true }));
+    while (await operation.hasMoreRows()) {
+      chunks.push(await operation.fetchChunk({ maxRows: 1, disableBuffering: true }));
     }
     expect(chunks.flat().map((row: any) => row.id)).to.deep.equal([0, 1, 2, 3, 4, 5, 6, 7, 8]);
   });

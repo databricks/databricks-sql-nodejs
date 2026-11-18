@@ -1,6 +1,8 @@
 import { expect } from 'chai';
 import { DBSQLClient } from '../../lib';
+import DBSQLOperation from '../../lib/DBSQLOperation';
 import { LogLevel } from '../../lib/contracts/IDBSQLLogger';
+import { ResultFormat } from '../../lib/contracts/ResultMetadata';
 import config from './utils/config';
 
 describe('Concurrent result fetching', () => {
@@ -10,12 +12,10 @@ describe('Concurrent result fetching', () => {
       { cloudFetch: false, options: { maxRows: 17 } },
       { cloudFetch: true, options: {} },
     ]) {
-      const knownThriftGap = cloudFetch && !useKernel;
-      const test = knownThriftGap ? it.skip : it;
       const delivery = cloudFetch ? 'CloudFetch' : `inline, ${JSON.stringify(options)}`;
-      test(`returns each id once across overlapping fetchAll calls (${useKernel ? 'kernel' : 'thrift'}, ${delivery}${
-        knownThriftGap ? '; known Thrift gap' : ''
-      })`, async () => {
+      it(`returns each id once across overlapping fetchAll calls (${
+        useKernel ? 'kernel' : 'thrift'
+      }, ${delivery})`, async () => {
         const messages: string[] = [];
         const client = new DBSQLClient({
           logger: {
@@ -44,8 +44,11 @@ describe('Concurrent result fetching', () => {
                 Array.from({ length: rowCount }, (unused, index) => index),
               );
               expect(await operation.hasMoreRows()).to.equal(false);
-              if (cloudFetch) {
+              if (cloudFetch && useKernel) {
                 expect(messages.some((message) => message.includes('Using CloudFetch reader:'))).to.equal(true);
+              } else if (cloudFetch) {
+                const metadata = await (operation as DBSQLOperation).getResultMetadata();
+                expect(metadata.resultFormat).to.equal(ResultFormat.UrlBased);
               }
             } finally {
               await operation.close();

@@ -597,7 +597,7 @@ describe('KernelOperationBackend — close()/cancel() during an in-flight fetch'
     }
   }
 
-  it('reports the fetch error and rejects queued readers after cleanup closes the statement', async () => {
+  it('reports the fetch error to concurrent fetches that fail without a close() or cancel()', async () => {
     const { statement, backend, inflight, interrupted } = inflightFetch('fetchChunk', sinon.stub().resolves(), {
       code: 'NetworkError',
       message: 'connection reset',
@@ -605,12 +605,12 @@ describe('KernelOperationBackend — close()/cancel() during an in-flight fetch'
     const second = backend.hasMore();
     interrupted();
 
-    const [failure, queuedFailure] = await Promise.all([rejectionOf(inflight), rejectionOf(second)]);
-    expect(failure).to.be.instanceOf(HiveDriverError);
-    expect(failure).not.to.be.instanceOf(OperationStateError);
-    expect((failure as Error).message).to.equal('connection reset');
-    expect(queuedFailure).to.be.instanceOf(OperationStateError);
-    expect((queuedFailure as OperationStateError).errorCode).to.equal(OperationStateErrorCode.Closed);
+    // The first failure's cleanup close sets `isClosed` before the second failure is handled.
+    for (const thrown of await Promise.all([rejectionOf(inflight), rejectionOf(second)])) {
+      expect(thrown).to.be.instanceOf(HiveDriverError);
+      expect(thrown).not.to.be.instanceOf(OperationStateError);
+      expect((thrown as Error).message).to.equal('connection reset');
+    }
     expect(statement.close.calledOnce).to.equal(true);
   });
 });

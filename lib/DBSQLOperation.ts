@@ -62,6 +62,8 @@ export default class DBSQLOperation implements IOperation {
 
   private metadata?: ResultMetadata;
 
+  private resultConsumption: Promise<void> = Promise.resolve();
+
   private startTime: number = Date.now();
 
   private pollCount: number = 0;
@@ -156,19 +158,23 @@ export default class DBSQLOperation implements IOperation {
     }
 
     await this.waitUntilReadyThroughBackend(options);
-    await this.failIfClosed();
+    return this.withResultLock(async () => {
+      await this.failIfClosed();
 
-    const defaultMaxRows = this.context.getConfig().fetchChunkDefaultMaxRows;
-    const limit = options?.maxRows ?? defaultMaxRows;
-    const result = await this.backend.fetchChunk({
-      limit,
-      disableBuffering: options?.disableBuffering,
-      isClosed: () => this.closed || this.cancelled,
+      const defaultMaxRows = this.context.getConfig().fetchChunkDefaultMaxRows;
+      const limit = options?.maxRows ?? defaultMaxRows;
+      const result = await this.backend.fetchChunk({
+        limit,
+        disableBuffering: options?.disableBuffering,
+        isClosed: () => this.closed || this.cancelled,
+      });
+      await this.failIfClosed();
+
+      this.context
+        .getLogger()
+        .log(LogLevel.debug, `Fetched chunk of size: ${limit} from operation with id: ${this.id}`);
+      return result;
     });
-    await this.failIfClosed();
-
-    this.context.getLogger().log(LogLevel.debug, `Fetched chunk of size: ${limit} from operation with id: ${this.id}`);
-    return result;
   }
 
   /**
@@ -291,7 +297,12 @@ export default class DBSQLOperation implements IOperation {
       }
 
       // If we fetched all the data from server - check if there's anything buffered in result handler
-      return this.backend.hasMore();
+      return this.withResultLock(async () => {
+        if (this.closed || this.cancelled) {
+          return false;
+        }
+        return this.backend.hasMore();
+      });
     });
   }
 
@@ -359,6 +370,15 @@ export default class DBSQLOperation implements IOperation {
       this.metadata = await this.backend.getResultMetadata();
       return synthesizeThriftResultSetMetadata(this.metadata);
     });
+  }
+
+  private withResultLock<T>(consume: () => Promise<T>): Promise<T> {
+    const result = this.resultConsumption.then(consume);
+    this.resultConsumption = result.then(
+      () => undefined,
+      () => undefined,
+    );
+    return result;
   }
 
   /**
