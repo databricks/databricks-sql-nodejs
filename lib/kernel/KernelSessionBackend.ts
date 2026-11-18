@@ -143,7 +143,7 @@ export default class KernelSessionBackend implements ISessionBackend {
    *   - `queryTimeout` → NO-OP on kernel (SQL Warehouses use `STATEMENT_TIMEOUT`);
    *     never forwarded to the kernel and never applied as a client-side
    *     deadline — see the note in `executeStatement`;
-   *   - `rowLimit` → `rowLimit` (kernel-only server-side row cap);
+   *   - `rowLimit` → `rowLimit` (server-side row cap);
    *   - `queryTags` → serialised into the conf overlay's reserved
    *     `query_tags` key (the same wire shape Thrift's `serializeQueryTags`
    *     produces), merged with any explicit `statementConf`.

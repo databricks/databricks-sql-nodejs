@@ -81,14 +81,17 @@ describe('DBSQLSession', () => {
       expect(result).instanceOf(DBSQLOperation);
     });
 
-    for (const rowLimit of [7, 0, undefined]) {
+    for (const rowLimit of [7, 0, undefined, '100', null]) {
       it(`should ${rowLimit === undefined ? 'omit an unset' : `forward ${rowLimit} as the`} rowLimit`, async () => {
         const context = new ClientContextStub();
         const driver = sinon.spy(context.driver);
         const logger = sinon.spy(context.logger, 'log');
         const session = createSessionForTest({ handle: sessionHandleStub, context });
 
-        await session.executeStatement('SELECT * FROM table', { rowLimit, maxRows: 100 });
+        await session.executeStatement('SELECT * FROM table', {
+          rowLimit: rowLimit as number | undefined,
+          maxRows: 100,
+        });
 
         expect(driver.executeStatement.callCount).to.equal(1);
         const request = driver.executeStatement.firstCall.args[0];
@@ -96,7 +99,7 @@ describe('DBSQLSession', () => {
           expect(request.resultRowLimit).to.not.exist;
         } else {
           expect(request.resultRowLimit).to.be.instanceOf(Int64);
-          expect(request.resultRowLimit?.toNumber()).to.equal(rowLimit);
+          expect(request.resultRowLimit?.toNumber()).to.equal(Number(rowLimit));
         }
         expect(request.getDirectResults?.maxRows.toNumber()).to.equal(100);
         expect(logger.calledWith(LogLevel.warn)).to.be.false;

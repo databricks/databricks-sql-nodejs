@@ -220,6 +220,9 @@ telemetry implementation, so only the options explicitly forwarded by
 | `rowLimit`                | `number`                                                |   ✅   |   ✅   | —             | Per-statement server-side row cap, separate from `maxRows` fetch sizing. Omitted by default (no driver-imposed cap).                                                      |
 | `statementConf`           | `Record<string, string>`                                |   ❌   |   ✅   | —             | Kernel-only per-statement Spark conf overlay. Structured `queryTags` overwrite its `query_tags` key when non-empty.                                                       |
 
+Thrift sends `resultRowLimit` without a protocol-version gate, as JDBC and Python do.
+Servers that do not support this field ignore it.
+
 ## Metadata-operation request parameters
 
 The public session metadata methods also accept request objects. These are not

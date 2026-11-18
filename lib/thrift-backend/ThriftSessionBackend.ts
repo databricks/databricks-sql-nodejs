@@ -198,7 +198,7 @@ export default class ThriftSessionBackend implements ISessionBackend {
       sessionHandle: this.sessionHandle,
       statement,
       queryTimeout: options.queryTimeout ? numberToInt64(options.queryTimeout) : undefined,
-      resultRowLimit: options.rowLimit !== undefined ? numberToInt64(options.rowLimit) : undefined,
+      resultRowLimit: options.rowLimit !== undefined ? numberToInt64(Number(options.rowLimit)) : undefined,
       runAsync: true,
       ...getDirectResultsOptions(options.maxRows, clientConfig),
       ...getArrowOptions(clientConfig, this.serverProtocolVersion),
