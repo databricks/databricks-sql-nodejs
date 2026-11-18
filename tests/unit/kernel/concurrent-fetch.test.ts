@@ -67,6 +67,7 @@ describe('Kernel concurrent result consumption through DBSQLOperation', () => {
         release = resolve;
       });
       const pending = fetch === 'fetchChunk' ? operation.fetchChunk({ maxRows: 100 }) : operation.hasMoreRows();
+      await new Promise<void>((resolve) => setImmediate(resolve));
       await operation.close();
       release();
       const [outcome] = await Promise.allSettled([pending]);
