@@ -199,10 +199,9 @@ export type ConnectionOptions = {
   enableGeoSpatialSupport?: boolean;
 
   /**
-   * Kernel backend only. Negotiate HTTP/2 over HTTPS with HTTP/1.1 fallback.
-   * Defaults to true in the kernel. Set false to force HTTP/1.1 for all
-   * kernel-owned HTTPS requests, including authentication and downloads.
-   * Configured proxies, including environment proxy variables, force HTTP/1.1 for the entire kernel client.
+   * Negotiate HTTP/2 for all kernel HTTPS traffic, with HTTP/1.1 fallback.
+   * Defaults to true. False or a configured proxy forces HTTP/1.1,
+   * including bypassed destinations. Applies only with useKernel: true.
    */
   enableHttp2?: boolean;
 

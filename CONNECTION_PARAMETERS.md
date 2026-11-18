@@ -79,6 +79,7 @@ Per-statement `useCloudFetch` overrides remain unsupported on the kernel backend
 | Option                      | Type                     | Thrift | Kernel | Default Value       | Note                                                                                                                                                                                                                                            |
 | --------------------------- | ------------------------ | :----: | :----: | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `socketTimeout`             | `number` (ms)            |   ✅   |   ⚠️   | `900000` / `120000` | Kernel forwards only positive values. `0` means no timeout on Thrift but is omitted on Kernel, which then keeps its 120-second default.                                                                                                         |
+| `enableHttp2`               | `boolean`                |   ❌   |   ✅   | `true`              | Negotiate HTTP/2 for all kernel HTTPS traffic, with HTTP/1.1 fallback. `false` or an explicit/environment proxy forces HTTP/1.1, including bypassed hosts.                                                                                      |
 | `proxy`                     | `ProxyOptions`           |   ✅   |   ⚠️   | —                   | `{protocol, host, port, auth}`. Kernel supports HTTP/HTTPS proxies only; Thrift also supports the declared SOCKS variants.                                                                                                                      |
 | `noProxy` (internal)        | `string`                 |   ❌   |   ⚠️   | —                   | Runtime-only Kernel bypass list, forwarded as `bypassHosts` only when an explicit `proxy` is also supplied.                                                                                                                                     |
 | `customHeaders`             | `Record<string, string>` |   ✅   |   ✅   | —                   | Sent on workspace, telemetry and feature-flag requests, not OAuth. Workspace calls ignore caller `Authorization`, `User-Agent`, `Content-Type`, `Content-Length`, `Transfer-Encoding`, `Connection`; Kernel also ignores `x-databricks-org-id`. |
@@ -101,15 +102,6 @@ disabling verification.
 | `clientCert`                                | `Buffer \| string` |   ✅   |   ✅   | —             | Public mTLS client certificate. Must be paired with `clientKey`.                                                                              |
 | `clientKey`                                 | `Buffer \| string` |   ✅   |   ✅   | —             | Public mTLS private key. Must be paired with `clientCert`; PKCS#8 is recommended for Kernel portability.                                      |
 | `clientCertPem` / `clientKeyPem` (internal) | `Buffer \| string` |   ❌   |   ✅   | —             | Runtime-only Kernel aliases for the public mTLS pair. They take precedence over `clientCert`/`clientKey` when both pairs are supplied.        |
-
-## HTTP protocol
-
-For kernel connections, `enableHttp2` is an optional boolean that defaults to
-`true` in the kernel. HTTPS requests negotiate HTTP/2 and fall back to HTTP/1.1
-when the peer does not support HTTP/2. Set `enableHttp2: false` to force HTTP/1.1
-for all kernel-owned HTTPS requests, including authentication, SQL requests,
-result downloads, and telemetry. Configured proxies, including environment proxy variables, force HTTP/1.1 for the
-entire kernel client.
 
 ## Plain HTTP transport
 
