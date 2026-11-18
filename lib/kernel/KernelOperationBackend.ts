@@ -499,7 +499,12 @@ export default class KernelOperationBackend implements IOperationBackend {
   }
 
   public async close(): Promise<Status> {
+    const wasCloseRequested = this.closeRequested;
     this.closeRequested = true;
+    if (!wasCloseRequested && this.asyncStatement && this.fetchHandlePromise && !this.asyncSucceeded) {
+      // Native close queues behind awaitResult; the detached canceller interrupts it.
+      await this.asyncStatement.cancel().catch(() => {});
+    }
     return kernelClose(this.lifecycle, this.lifecycleHandle, this.context, this._id);
   }
 

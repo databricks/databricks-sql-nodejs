@@ -700,6 +700,46 @@ describe('DBSQLSession over KernelSessionBackend — close right after execution
     expect(session['operations']['items'].size).to.equal(1);
   });
 
+  for (const cancelFails of [false, true]) {
+    it(`closes pending staging execution when cancel ${cancelFails ? 'fails' : 'succeeds'}`, async () => {
+      const { session, connection, asyncStatement } = kernelSession('Running');
+      const cancelled = new OperationStateError(OperationStateErrorCode.Canceled);
+      let rejectResult!: (error: Error) => void;
+      const pendingResult = new Promise<never>((_, reject) => {
+        rejectResult = reject;
+      });
+      let started!: () => void;
+      const awaitingResult = new Promise<void>((resolve) => {
+        started = resolve;
+      });
+      asyncStatement.awaitResult.callsFake(() => {
+        started();
+        return pendingResult;
+      });
+      asyncStatement.cancel.callsFake(async () => {
+        rejectResult(cancelled);
+        if (cancelFails) throw new Error('cancel response failed');
+      });
+      asyncStatement.close.callsFake(async () => {
+        await pendingResult.catch(() => {});
+      });
+      const executing = session.executeStatement('SELECT slow', { stagingAllowedLocalPath: ['/allowed'] }).then(
+        () => expect.fail('execution should be cancelled'),
+        (error) => error,
+      );
+      await awaitingResult;
+      await session.close();
+      await session.close();
+
+      expect(await executing).to.equal(cancelled);
+      expect(asyncStatement.cancel.calledOnce).to.equal(true);
+      expect(asyncStatement.cancel.calledBefore(asyncStatement.close)).to.equal(true);
+      expect(asyncStatement.close.calledOnce).to.equal(true);
+      expect(connection.close.calledOnce).to.equal(true);
+      expect(session['operations']['items'].size).to.equal(0);
+    });
+  }
+
   it('retains success observed by status() on a running statement', async () => {
     const { session, connection, asyncStatement } = kernelSession('Succeeded');
     const operation = await session.executeStatement('SELECT slow');
