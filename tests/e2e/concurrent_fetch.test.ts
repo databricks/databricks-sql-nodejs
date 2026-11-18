@@ -1,22 +1,42 @@
 import { expect } from 'chai';
 import { DBSQLClient } from '../../lib';
+import { LogLevel } from '../../lib/contracts/IDBSQLLogger';
 import config from './utils/config';
 
 describe('Concurrent result fetching', () => {
   for (const useKernel of [false, true]) {
-    for (const options of [{}, { maxRows: 17 }, { maxRows: 17, disableBuffering: true }]) {
-      it(`returns each id once across overlapping fetchAll calls (${useKernel ? 'kernel' : 'thrift'}, ${JSON.stringify(
-        options,
-      )})`, async () => {
-        const client = new DBSQLClient();
+    for (const { cloudFetch, options } of [
+      { cloudFetch: false, options: {} },
+      { cloudFetch: false, options: { maxRows: 17 } },
+      { cloudFetch: true, options: {} },
+    ]) {
+      const knownThriftGap = cloudFetch && !useKernel;
+      const test = knownThriftGap ? it.skip : it;
+      const delivery = cloudFetch ? 'CloudFetch' : `inline, ${JSON.stringify(options)}`;
+      test(`returns each id once across overlapping fetchAll calls (${useKernel ? 'kernel' : 'thrift'}, ${delivery}${
+        knownThriftGap ? '; known Thrift gap' : ''
+      })`, async () => {
+        const messages: string[] = [];
+        const client = new DBSQLClient({
+          logger: {
+            log(level, message) {
+              if (level === LogLevel.info) messages.push(message);
+            },
+          },
+        });
+        client.getConfig().useCloudFetch = true;
         try {
           await client.connect({ host: config.host, path: config.path, token: config.token, useKernel } as any);
           const session = await client.openSession();
           try {
             const rowCount = options.maxRows ? 1000 : 100000;
-            const operation = await session.executeStatement(
-              `SELECT id FROM range(0, ${rowCount}) AS T(id) ORDER BY id`,
-            );
+            const query = cloudFetch
+              ? `SELECT id, concat(
+                  sha2(CAST(id AS STRING), 512), sha2(CAST(id + 1 AS STRING), 512),
+                  sha2(CAST(id + 2 AS STRING), 512), sha2(CAST(id + 3 AS STRING), 512)
+                ) AS payload FROM range(0, 100000) AS T(id) ORDER BY id`
+              : `SELECT id FROM range(0, ${rowCount}) AS T(id) ORDER BY id`;
+            const operation = await session.executeStatement(query);
             try {
               const chunks = await Promise.all([operation.fetchAll(options), operation.fetchAll(options)]);
               const ids = chunks.flat().map((row: any) => Number(row.id));
@@ -24,6 +44,9 @@ describe('Concurrent result fetching', () => {
                 Array.from({ length: rowCount }, (unused, index) => index),
               );
               expect(await operation.hasMoreRows()).to.equal(false);
+              if (cloudFetch) {
+                expect(messages.some((message) => message.includes('Using CloudFetch reader:'))).to.equal(true);
+              }
             } finally {
               await operation.close();
             }

@@ -331,6 +331,7 @@ export default class KernelOperationBackend implements IOperationBackend {
     }
     try {
       return await this.withResultLock(async () => {
+        failIfNotActive(this.lifecycle);
         const slicer = await this.getResultSlicer();
         if (isClosed?.()) {
           return [];
@@ -347,6 +348,7 @@ export default class KernelOperationBackend implements IOperationBackend {
     try {
       // `hasMore()` prefetches the next batch, so it fails like `fetchChunk()`.
       return await this.withResultLock(async () => {
+        failIfNotActive(this.lifecycle);
         const slicer = await this.getResultSlicer();
         return slicer.hasMore();
       });

@@ -2,7 +2,7 @@ import { expect } from 'chai';
 import sinon from 'sinon';
 import { tableFromArrays, tableToIPC } from 'apache-arrow';
 import KernelOperationBackend from '../../../lib/kernel/KernelOperationBackend';
-import KernelResultsProvider from '../../../lib/kernel/KernelResultsProvider';
+import OperationStateError, { OperationStateErrorCode } from '../../../lib/errors/OperationStateError';
 import ArrowResultConverter from '../../../lib/result/ArrowResultConverter';
 import ResultSlicer from '../../../lib/result/ResultSlicer';
 import { TTypeId } from '../../../thrift/TCLIService_types';
@@ -27,37 +27,33 @@ function createStatement() {
 }
 
 describe('Kernel concurrent result consumption', () => {
-  it('shares one provider prime between concurrent hasMore calls', async () => {
-    const statement = createStatement();
-    const provider = new KernelResultsProvider(statement);
-    expect(await Promise.all([provider.hasMore(), provider.hasMore()])).to.deep.equal([true, true]);
-    expect(statement.fetchNextBatch.callCount).to.equal(1);
-    let rows = 0;
-    while (await provider.hasMore()) {
-      rows += (await provider.fetchNext({ limit: 100 })).rowCount;
-    }
-    expect(rows).to.equal(9);
-  });
-
-  it('releases the provider prime after a rejection', async () => {
-    const statement = createStatement();
-    const failure = new Error('fetch failed');
-    statement.fetchNextBatch.onFirstCall().rejects(failure);
-    const provider = new KernelResultsProvider(statement);
-    const outcomes = await Promise.allSettled([provider.hasMore(), provider.hasMore()]);
-    expect(outcomes).to.deep.equal([
-      { status: 'rejected', reason: failure },
-      { status: 'rejected', reason: failure },
-    ]);
-    expect(await provider.hasMore()).to.equal(true);
-    expect((await provider.fetchNext({ limit: 100 })).rowCount).to.equal(3);
-  });
-
   it('constructs one result pipeline for concurrent first readers', async () => {
     const backend = new KernelOperationBackend({ statement: createStatement(), context: new ClientContextStub() });
     const [first, second] = await Promise.all([backend['getResultSlicer'](), backend['getResultSlicer']()]);
     expect(first).to.equal(second);
   });
+
+  for (const fetch of ['fetchChunk', 'hasMore'] as const) {
+    it(`rejects a queued ${fetch} after close without touching the cursor`, async () => {
+      const statement = createStatement();
+      const backend = new KernelOperationBackend({ statement, context: new ClientContextStub() });
+      await backend['getResultSlicer']();
+      let release!: () => void;
+      backend['resultConsumption'] = new Promise<void>((resolve) => {
+        release = resolve;
+      });
+      const pending = fetch === 'fetchChunk' ? backend.fetchChunk({ limit: 100 }) : backend.hasMore();
+      await backend.close();
+      release();
+      const [outcome] = await Promise.allSettled([pending]);
+      expect(outcome.status).to.equal('rejected');
+      if (outcome.status === 'rejected') {
+        expect(outcome.reason).to.be.instanceOf(OperationStateError);
+        expect(outcome.reason.errorCode).to.equal(OperationStateErrorCode.Closed);
+      }
+      expect(statement.fetchNextBatch.called).to.equal(false);
+    });
+  }
 
   it('serializes Arrow converter prefetch on an initialized pipeline', async () => {
     const context = new ClientContextStub();

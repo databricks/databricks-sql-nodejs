@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Kernel backend: overlapping `fetchAll()`, `fetchChunk()` and `hasMoreRows()` calls on one operation no longer lose rows. Result consumption is serialized per operation without rejecting concurrent callers.
+- Kernel backend only: serialize overlapping `fetchAll()`, `fetchChunk()` and `hasMoreRows()` calls per operation so inline Arrow and CloudFetch results do not lose rows; queued readers honor close/cancel state. Thrift is unchanged: inline/single-page overlap is exact, but concurrent CloudFetch consumption remains a known gap.
 - The Thrift token federation exchange (`enableTokenFederation`) now goes through the connection's agent, so `proxy`, `checkServerCertificate`, `customCaCert` and `clientCert`/`clientKey` apply to it. Previously it connected directly with Node's default agent, so behind a required proxy the exchange failed and the driver fell back to the original token. (#611)
 - Kernel backend: a failed status poll while waiting for a statement (a `runAsync: true` statement, or a default execution that outlives the server's inline wait) and a failed result fetch in `hasMoreRows()` now throw the mapped driver error, such as `HiveDriverError: HTTP 500: Internal Server Error` once retries on HTTP 5xx run out, instead of a raw `Error` whose message is the internal `__databricks_error__:{...}` envelope. As in `fetchChunk()`, a failed fetch in `hasMoreRows()` also closes the statement. (#608)
 - Honor `cloudFetchConcurrentDownloads` when opening kernel sessions, with a default window of 16 and explicit chunk-setting overrides. Values other than positive safe integers raise `HiveDriverError` at session open.

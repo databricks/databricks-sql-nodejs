@@ -54,8 +54,6 @@ export default class KernelResultsProvider implements IResultsProvider<ArrowBatc
   // extra round-trip. Set by `prime()` (lazy) and by `fetchNext`.
   private prefetched?: ArrowBatch;
 
-  private priming?: Promise<void>;
-
   // Set once the kernel returns `null` from `fetchNextBatch()`.
   private exhausted = false;
 
@@ -90,16 +88,7 @@ export default class KernelResultsProvider implements IResultsProvider<ArrowBatc
   // or mark the stream exhausted. Used by both `hasMore` and `fetchNext`
   // to keep one batch buffered ahead so `hasMore` is accurate without
   // re-asking the kernel.
-  private prime(): Promise<void> {
-    if (!this.priming) {
-      this.priming = this.primeInternal().finally(() => {
-        this.priming = undefined;
-      });
-    }
-    return this.priming;
-  }
-
-  private async primeInternal(): Promise<void> {
+  private async prime(): Promise<void> {
     // Loop rather than self-recurse: a long run of empty batches drains
     // iteratively toward the null sentinel without building a deep promise
     // chain.
