@@ -216,6 +216,8 @@ export default class ArrowResultConverter implements IResultsProvider<Array<any>
   // Remaining rows in current Arrow batch (not the record batch!)
   private remainingRows: number = 0;
 
+  private remainingRowLimit?: number;
+
   // This is the next (!!) record batch to be read. It is unset only in two cases:
   // - prior to the first call to `fetchNext`
   // - when no more data available
@@ -236,7 +238,13 @@ export default class ArrowResultConverter implements IResultsProvider<Array<any>
       preserveBigNumericPrecision = false,
       disableRowMaterialization = false,
       rowMode = 'object',
-    }: { preserveBigNumericPrecision?: boolean; disableRowMaterialization?: boolean; rowMode?: RowMode } = {},
+      rowLimit,
+    }: {
+      preserveBigNumericPrecision?: boolean;
+      disableRowMaterialization?: boolean;
+      rowMode?: RowMode;
+      rowLimit?: number;
+    } = {},
   ) {
     this.context = context;
     this.source = source;
@@ -244,13 +252,14 @@ export default class ArrowResultConverter implements IResultsProvider<Array<any>
     this.preserveBigNumericPrecision = preserveBigNumericPrecision;
     this.disableRowMaterialization = disableRowMaterialization;
     this.rowMode = rowMode;
+    this.remainingRowLimit = rowLimit;
     if (rowMode === 'object' && !disableRowMaterialization) {
       warnOnDuplicateColumnNames(context, this.schema);
     }
   }
 
   public async hasMore() {
-    if (this.schema.length === 0) {
+    if (this.schema.length === 0 || this.remainingRowLimit === 0) {
       return false;
     }
     if (this.prefetchedRecordBatch) {
@@ -260,7 +269,7 @@ export default class ArrowResultConverter implements IResultsProvider<Array<any>
   }
 
   public async fetchNext(options: ResultsProviderFetchNextOptions) {
-    if (this.schema.length === 0) {
+    if (this.schema.length === 0 || this.remainingRowLimit === 0) {
       return [];
     }
 
@@ -280,7 +289,7 @@ export default class ArrowResultConverter implements IResultsProvider<Array<any>
       this.prefetchedRecordBatch = undefined;
       // Get table rows, but not more than remaining count. When materialization
       // is disabled, skip `toArray()`/`getRows()` and return dense `null` placeholders.
-      const batchRows = Math.min(batch.numRows, this.remainingRows);
+      const batchRows = Math.min(batch.numRows, this.remainingRows, this.remainingRowLimit ?? Infinity);
       let result: Array<any>;
       if (this.disableRowMaterialization) {
         result = new Array(batchRows).fill(null);
@@ -288,14 +297,17 @@ export default class ArrowResultConverter implements IResultsProvider<Array<any>
         result = this.getRowArrays(batch, batchRows);
       } else {
         const table = new Table(batch);
-        result = this.getRows(table.schema, table.toArray().slice(0, this.remainingRows));
+        result = this.getRows(table.schema, table.toArray().slice(0, batchRows));
       }
 
       // Reduce remaining rows count by a count of rows we just processed.
       // If the remaining count reached zero - we're done with current arrow
       // batch, so discard the batch reader
       this.remainingRows -= result.length;
-      if (this.remainingRows === 0) {
+      if (this.remainingRowLimit !== undefined) {
+        this.remainingRowLimit -= result.length;
+      }
+      if (this.remainingRows === 0 || this.remainingRowLimit === 0) {
         this.recordBatchReader = undefined;
       }
 
@@ -313,6 +325,10 @@ export default class ArrowResultConverter implements IResultsProvider<Array<any>
   // This method pulls the next item from source if needed, initializes a record batch reader and
   // gets the next item from it - until either reaches end of data or finds a non-empty record batch
   private async prefetch(options: ResultsProviderFetchNextOptions) {
+    if (this.remainingRowLimit === 0) {
+      return;
+    }
+
     // This loop will be executed until a next non-empty record batch is retrieved
     // Another implicit loop condition (end of data) is checked in the loop body
     while (!this.prefetchedRecordBatch) {

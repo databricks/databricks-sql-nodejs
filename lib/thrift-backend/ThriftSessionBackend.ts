@@ -227,7 +227,11 @@ export default class ThriftSessionBackend implements ISessionBackend {
     }
 
     const response = await driver.executeStatement(request);
-    return this.createOperationBackend(response, { rowMode: options.rowMode, rowLimit });
+    return this.createOperationBackend(response, {
+      rowMode: options.rowMode,
+      rowLimit,
+      stagingAllowed: options.stagingAllowedLocalPath !== undefined,
+    });
   }
 
   public async getTypeInfo(request: TypeInfoRequest): Promise<IOperationBackend> {
@@ -382,7 +386,8 @@ export default class ThriftSessionBackend implements ISessionBackend {
       functionCatalog,
       rowMode,
       rowLimit,
-    }: { functionCatalog?: string | null; rowMode?: RowMode; rowLimit?: number } = {},
+      stagingAllowed,
+    }: { functionCatalog?: string | null; rowMode?: RowMode; rowLimit?: number; stagingAllowed?: boolean } = {},
   ): IOperationBackend {
     Status.assert(response.status);
     const handle = definedOrError(response.operationHandle);
@@ -393,6 +398,7 @@ export default class ThriftSessionBackend implements ISessionBackend {
       functionCatalog,
       rowMode,
       rowLimit,
+      stagingAllowed,
     });
   }
 }

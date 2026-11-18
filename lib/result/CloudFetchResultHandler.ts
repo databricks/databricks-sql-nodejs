@@ -35,16 +35,20 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
 
   private chunkIndex: number = 0;
 
+  private remainingRows?: number;
+
   constructor(
     context: IClientContext,
     source: IResultsProvider<TRowSet | undefined>,
     metadata: TGetResultSetMetadataResp,
     statementId?: string,
+    rowLimit?: number,
   ) {
     this.context = context;
     this.source = source;
     this.isLZ4Compressed = metadata.lz4Compressed ?? false;
     this.statementId = statementId;
+    this.remainingRows = rowLimit;
 
     if (this.isLZ4Compressed && !LZ4()) {
       throw new HiveDriverError('Cannot handle LZ4 compressed result: module `lz4-napi` not installed');
@@ -55,15 +59,23 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
     if (this.pendingLinks.length > 0 || this.downloadTasks.length > 0) {
       return true;
     }
-    return this.source.hasMore();
+    return this.remainingRows !== 0 && this.source.hasMore();
   }
 
   public async fetchNext(options: ResultsProviderFetchNextOptions) {
-    const data = await this.source.fetchNext(options);
+    if (this.remainingRows !== 0) {
+      const data = await this.source.fetchNext(options);
 
-    data?.resultLinks?.forEach((link) => {
-      this.pendingLinks.push(link);
-    });
+      for (const link of data?.resultLinks ?? []) {
+        if (this.remainingRows === 0) {
+          break;
+        }
+        this.pendingLinks.push(link);
+        if (this.remainingRows !== undefined) {
+          this.remainingRows = Math.max(0, this.remainingRows - link.rowCount.toNumber(true));
+        }
+      }
+    }
 
     const clientConfig = this.context.getConfig();
     const freeTaskSlotsCount = clientConfig.cloudFetchConcurrentDownloads - this.downloadTasks.length;

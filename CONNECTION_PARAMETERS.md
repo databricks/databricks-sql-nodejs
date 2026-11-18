@@ -225,7 +225,9 @@ Thrift also enforces the total cap client-side across fetches and all result for
 including on servers that ignore this field. It applies `Number` coercion (`null`/`NaN`
 become zero), truncates toward zero, then requires `0..2147483646`; out-of-range
 values and infinities throw `ParameterError` before any statement request. Zero
-returns no rows. Kernel behavior is unchanged.
+returns no rows. Arrow/CloudFetch prefetch stops at the cap. The Thrift client
+does not cap internal staging instructions when `stagingAllowedLocalPath` enables
+a transfer. Kernel validation happens on the server; its behavior is unchanged.
 
 ## Metadata-operation request parameters
 

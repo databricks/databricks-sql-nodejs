@@ -38,6 +38,7 @@ interface ThriftOperationBackendOptions {
   emptyResultOnNotFound?: TTableSchema;
   rowMode?: RowMode;
   rowLimit?: number;
+  stagingAllowed?: boolean;
 }
 
 async function delay(ms?: number): Promise<void> {
@@ -108,6 +109,8 @@ export default class ThriftOperationBackend implements IOperationBackend {
 
   private remainingRows?: number;
 
+  private readonly stagingAllowed?: boolean;
+
   constructor({
     handle,
     directResults,
@@ -116,6 +119,7 @@ export default class ThriftOperationBackend implements IOperationBackend {
     emptyResultOnNotFound,
     rowMode,
     rowLimit,
+    stagingAllowed,
   }: ThriftOperationBackendOptions) {
     this.operationHandle = handle;
     this.context = context;
@@ -123,6 +127,7 @@ export default class ThriftOperationBackend implements IOperationBackend {
     this.emptyResultOnNotFound = emptyResultOnNotFound;
     this.rowMode = rowMode;
     this.remainingRows = rowLimit;
+    this.stagingAllowed = stagingAllowed;
     this.metadata = directResults?.resultSetMetadata;
 
     const useOnlyPrefetchedResults = Boolean(directResults?.closeOperation);
@@ -204,7 +209,7 @@ export default class ThriftOperationBackend implements IOperationBackend {
     }
 
     let rows = await resultHandler.fetchNext({
-      limit: this.remainingRows === undefined ? limit : Math.min(limit, this.remainingRows),
+      limit: this.remainingRows === undefined ? limit : Math.min(Number(limit), this.remainingRows),
       disableBuffering,
     });
     if (this.remainingRows !== undefined) {
@@ -314,7 +319,11 @@ export default class ThriftOperationBackend implements IOperationBackend {
   }
 
   public async getResultMetadata(): Promise<ResultMetadata> {
-    return this.adaptResultMetadata(await this.thriftResultMetadataResponse());
+    const metadata = await this.thriftResultMetadataResponse();
+    if (this.stagingAllowed && metadata.isStagingOperation) {
+      this.remainingRows = undefined;
+    }
+    return this.adaptResultMetadata(metadata);
   }
 
   public getCachedResultMetadata(): ResultMetadata | undefined {
@@ -408,18 +417,20 @@ export default class ThriftOperationBackend implements IOperationBackend {
               preserveBigNumericPrecision: this.context.getConfig().preserveBigNumericPrecision ?? false,
               disableRowMaterialization: this.context.getConfig().disableRowMaterialization ?? false,
               rowMode: this.rowMode,
+              rowLimit: this.remainingRows,
             },
           );
           break;
         case TSparkRowSetType.URL_BASED_SET:
           resultSource = new ArrowResultConverter(
             this.context,
-            new CloudFetchResultHandler(this.context, this._data, metadata, this.id),
+            new CloudFetchResultHandler(this.context, this._data, metadata, this.id, this.remainingRows),
             metadata,
             {
               preserveBigNumericPrecision: this.context.getConfig().preserveBigNumericPrecision ?? false,
               disableRowMaterialization: this.context.getConfig().disableRowMaterialization ?? false,
               rowMode: this.rowMode,
+              rowLimit: this.remainingRows,
             },
           );
           break;
