@@ -1,9 +1,9 @@
 import { expect } from 'chai';
-import { DBSQLClient } from '../../lib';
-import DBSQLOperation from '../../lib/DBSQLOperation';
-import { LogLevel } from '../../lib/contracts/IDBSQLLogger';
-import { ResultFormat } from '../../lib/contracts/ResultMetadata';
-import config from './utils/config';
+import { DBSQLClient } from '../../../lib';
+import DBSQLOperation from '../../../lib/DBSQLOperation';
+import { LogLevel } from '../../../lib/contracts/IDBSQLLogger';
+import { ResultFormat } from '../../../lib/contracts/ResultMetadata';
+import config from '../utils/config';
 
 describe('Concurrent result fetching', () => {
   for (const useKernel of [false, true]) {
@@ -24,7 +24,7 @@ describe('Concurrent result fetching', () => {
             },
           },
         });
-        client.getConfig().useCloudFetch = cloudFetch;
+        client.getConfig().useCloudFetch = useKernel || cloudFetch;
         try {
           await client.connect({ host: config.host, path: config.path, token: config.token, useKernel } as any);
           const session = await client.openSession();
@@ -44,8 +44,9 @@ describe('Concurrent result fetching', () => {
                 Array.from({ length: rowCount }, (unused, index) => index),
               );
               expect(await operation.hasMoreRows()).to.equal(false);
-              if (cloudFetch && useKernel) {
-                expect(messages.some((message) => message.includes('Using CloudFetch reader:'))).to.equal(true);
+              if (useKernel) {
+                const reader = cloudFetch ? 'CloudFetch' : 'inline Arrow';
+                expect(messages.some((message) => message.includes(`Using ${reader} reader:`))).to.equal(true);
               } else if (cloudFetch) {
                 const metadata = await (operation as DBSQLOperation).getResultMetadata();
                 expect(metadata.resultFormat).to.equal(ResultFormat.UrlBased);
