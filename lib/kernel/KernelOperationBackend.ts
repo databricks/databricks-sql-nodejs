@@ -200,8 +200,8 @@ export default class KernelOperationBackend implements IOperationBackend {
 
   // The cancel/close surface — whichever handle backs this operation. Both
   // `AsyncStatement` and `Statement` expose `cancel()` / `close()`; the
-  // sync-execute path keeps the execution canceller for SQL and uses the
-  // resolved statement to cancel marked transfers after SQL completes.
+  // sync-execute path uses a composite that routes `cancel()` to the
+  // cancellable execution (mid-compute) and `close()` to the resolved statement.
   private readonly lifecycleHandle: KernelStatementHandle;
 
   private readonly context: IClientContext;
@@ -260,16 +260,16 @@ export default class KernelOperationBackend implements IOperationBackend {
     this.cancellableExecution = cancellableExecution;
     this.blockingStatement = statement;
     // Lifecycle surface. The async/metadata handles expose both cancel/close.
-    // The sync-execute path uses a composite so SQL execution and subsequent
-    // transfer completion remain cancellable. `close()` closes the resolved
+    // The sync-execute path uses a composite: `cancel()` always routes to the
+    // cancellable execution (lock-free, interrupts a running `result()`
+    // mid-compute and is a no-op once terminal); `close()` closes the resolved
     // terminal statement once `result()` produced it, OR — if `result()` is
     // still in flight — proactively cancels the running execution so the server
     // stops computing immediately rather than running on until the kernel's
     // drop-guard fires whenever this handle is eventually GC'd.
     this.lifecycleHandle = cancellableExecution
       ? {
-          cancel: () =>
-            this.blockingStatement?.isVolumeOperation ? this.blockingStatement.cancel() : cancellableExecution.cancel(),
+          cancel: () => cancellableExecution.cancel(),
           close: () => (this.blockingStatement ? this.blockingStatement.close() : cancellableExecution.cancel()),
         }
       : ((asyncStatement ?? statement) as KernelStatementHandle);
