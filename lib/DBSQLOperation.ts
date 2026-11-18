@@ -58,6 +58,8 @@ export default class DBSQLOperation implements IOperation {
 
   private cancelled: boolean = false;
 
+  private closePromise?: Promise<Status>;
+
   public readonly _data?: unknown;
 
   private metadata?: ResultMetadata;
@@ -219,8 +221,14 @@ export default class DBSQLOperation implements IOperation {
    * is logged and reported in the returned status's `info` instead of thrown.
    * @throws {StatusError}
    */
-  public async close(): Promise<Status> {
-    return this.withErrorTelemetry(() => this.closeInternal());
+  public close(): Promise<Status> {
+    if (!this.closePromise) {
+      this.closePromise = this.withErrorTelemetry(() => this.closeInternal()).catch((error) => {
+        this.closePromise = undefined;
+        throw error;
+      });
+    }
+    return this.closePromise;
   }
 
   private async closeInternal(): Promise<Status> {
