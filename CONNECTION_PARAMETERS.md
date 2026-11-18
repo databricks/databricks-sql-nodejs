@@ -225,9 +225,12 @@ Thrift also enforces the total cap client-side across fetches and all result for
 including on servers that ignore this field. It applies `Number` coercion (`null`/`NaN`
 become zero), truncates toward zero, then requires `0..2147483646`; out-of-range
 values and infinities throw `ParameterError` before any statement request. Zero
-returns no rows. Arrow/CloudFetch prefetch stops at the cap. The Thrift client
-does not cap internal staging instructions when `stagingAllowedLocalPath` enables
-a transfer. Kernel validation happens on the server; its behavior is unchanged.
+returns no rows. Arrow/CloudFetch prefetch stops at the cap. When
+`stagingAllowedLocalPath` is set, Thrift sends `Math.max(normalizedRowLimit, 1)`
+for an explicitly set limit so the server preserves the staging instruction row;
+an unset limit remains omitted. The Thrift client still caps ordinary results at the
+requested limit and exempts internal staging instructions from that cap. Kernel
+validation happens on the server; its behavior is unchanged.
 
 ## Metadata-operation request parameters
 

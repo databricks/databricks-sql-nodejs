@@ -55,8 +55,11 @@ export type ExecuteStatementOptions = {
    * become zero), followed by truncation toward zero. On Thrift, the resulting
    * integer must be in 0..2147483646; otherwise executeStatement throws
    * ParameterError before sending the request. The kernel validates on the server.
-   * Zero returns no rows (unlike JDBC's unlimited setMaxRows(0)). The Thrift client
-   * exempts internal staging instructions when stagingAllowedLocalPath enables a transfer.
+   * Zero returns no rows (unlike JDBC's unlimited setMaxRows(0)). When
+   * stagingAllowedLocalPath is set, Thrift sends at least one for a set rowLimit
+   * to preserve the staging instruction row; an unset limit remains omitted.
+   * The Thrift client still caps ordinary results at the requested limit and exempts
+   * internal staging instructions from that cap.
    * Thrift previously ignored this option.
    */
   rowLimit?: number;

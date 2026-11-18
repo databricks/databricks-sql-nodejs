@@ -1,10 +1,12 @@
 import { expect } from 'chai';
+import assert from 'assert';
 import fs from 'fs';
 import path from 'path';
 import os from 'os';
 import * as uuid from 'uuid';
 import { DBSQLClient } from '../../lib';
 import StagingError from '../../lib/errors/StagingError';
+import { ResultFormat } from '../../lib/contracts/ResultMetadata';
 
 import config from './utils/config';
 
@@ -92,6 +94,52 @@ describe('Staging Test', () => {
       }
     } finally {
       fs.rmSync(localFile, { force: true });
+    }
+  });
+
+  it('put, get and remove staging data with zero rowLimit and default Arrow', async () => {
+    const { catalog, schema, volume } = config;
+    const client = new DBSQLClient();
+    expect(client.getConfig().arrowEnabled).to.be.true;
+    const stagingFileName = `/Volumes/${catalog}/${schema}/${volume}/${uuid.v4()}.csv`;
+    const localFile = path.join(localPath, `${uuid.v4()}.csv`);
+    const expectedData = 'zero-row cap staging regression';
+    const stagingOptions = { stagingAllowedLocalPath: [localPath] };
+    const options = { ...stagingOptions, rowLimit: 0 };
+    fs.writeFileSync(localFile, expectedData);
+    try {
+      await client.connect({ host: config.host, path: config.path, token: config.token });
+      const session = await client.openSession({ initialCatalog: catalog, initialSchema: schema });
+      try {
+        const put = await session.executeStatement(`PUT '${localFile}' INTO '${stagingFileName}' OVERWRITE`, options);
+        try {
+          expect((await put.getResultMetadata()).resultFormat).to.equal(ResultFormat.ArrowBased);
+        } finally {
+          await put.close();
+        }
+        fs.rmSync(localFile);
+        const get = await session.executeStatement(`GET '${stagingFileName}' TO '${localFile}'`, options);
+        try {
+          expect(fs.readFileSync(localFile, 'utf8')).to.equal(expectedData);
+        } finally {
+          await get.close();
+        }
+        const remove = await session.executeStatement(`REMOVE '${stagingFileName}'`, options);
+        await remove.close();
+        await assert.rejects(
+          session.executeStatement(`GET '${stagingFileName}' TO '${localFile}'`, stagingOptions),
+          (error: unknown) => error instanceof StagingError && error.message.includes('404'),
+        );
+      } finally {
+        try {
+          const cleanup = await session.executeStatement(`REMOVE '${stagingFileName}'`, stagingOptions);
+          await cleanup.close();
+        } finally {
+          await session.close();
+        }
+      }
+    } finally {
+      await client.close();
     }
   });
 

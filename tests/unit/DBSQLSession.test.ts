@@ -106,6 +106,24 @@ describe('DBSQLSession', () => {
       });
     }
 
+    for (const rowLimit of [0, 1, 7, 2147483646, undefined, null, NaN, 3.9]) {
+      it(`reserves a staging instruction row on the wire for rowLimit ${rowLimit}`, async () => {
+        const context = new ClientContextStub();
+        const execute = sinon.spy(context.driver, 'executeStatement');
+        const session = createSessionForTest({ handle: sessionHandleStub, context });
+        await session.executeStatement('SELECT 1', {
+          rowLimit: rowLimit as number | undefined,
+          stagingAllowedLocalPath: '/tmp',
+        });
+        const wireLimit = execute.firstCall.args[0].resultRowLimit;
+        if (rowLimit === undefined) {
+          expect(wireLimit).to.not.exist;
+        } else {
+          expect(wireLimit?.toNumber()).to.equal(Math.max(Math.trunc(Number(rowLimit) || 0), 1));
+        }
+      });
+    }
+
     for (const rowLimit of [2 ** 64, 2 ** 31, 2147483647, -1, Infinity, -Infinity, '18446744073709551616']) {
       it(`should reject out-of-range rowLimit ${rowLimit} before sending a request`, async () => {
         const context = new ClientContextStub();
