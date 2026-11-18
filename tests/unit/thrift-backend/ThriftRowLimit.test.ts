@@ -64,16 +64,20 @@ describe('Thrift rowLimit source budgets', () => {
         resultSet: { status: { statusCode: TStatusCode.ERROR_STATUS, errorMessage: 'direct fetch failed' } },
       };
       const fetch = sinon.spy(context.driver, 'fetchResults');
+      const close = sinon.spy(context.driver, 'closeOperation');
       const session = createSessionForTest({ handle: sessionHandle, context });
       try {
-        await assert.rejects(
-          async () => {
-            const operation = await session.executeStatement('SELECT id FROM range(6)', { rowLimit: 0 });
-            await operation[method]();
-          },
-          (error: unknown) => error instanceof StatusError && error.message === 'direct fetch failed',
-        );
-        expect(fetch.called).to.be.false;
+        const operation = await session.executeStatement('SELECT id FROM range(6)', { rowLimit: 0 });
+        try {
+          await assert.rejects(
+            operation[method](),
+            (error: unknown) => error instanceof StatusError && error.message === 'direct fetch failed',
+          );
+          expect(fetch.called).to.be.false;
+        } finally {
+          await operation.close();
+        }
+        expect(close.calledOnce).to.be.true;
       } finally {
         await session.close();
       }

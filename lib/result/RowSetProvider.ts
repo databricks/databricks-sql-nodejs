@@ -125,6 +125,10 @@ export default class RowSetProvider implements IResultsProvider<TRowSet | undefi
     this.returnOnlyPrefetchedResults = returnOnlyPrefetchedResults;
   }
 
+  public validatePrefetchedResults(): void {
+    this.prefetchedResults.forEach((response) => Status.assert(response.status));
+  }
+
   private processFetchResponse(response: TFetchResultsResp): TRowSet | undefined {
     Status.assert(response.status);
     this.fetchOrientation = TFetchOrientation.FETCH_NEXT;

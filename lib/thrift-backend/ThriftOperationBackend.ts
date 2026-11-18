@@ -136,10 +136,6 @@ export default class ThriftOperationBackend implements IOperationBackend {
       this.processOperationStatusResponse(directResults.operationStatus);
     }
 
-    if (rowLimit === 0 && directResults?.resultSet) {
-      Status.assert(directResults.resultSet.status);
-    }
-
     this._data = new RowSetProvider(
       this.context,
       this.operationHandle,
@@ -183,6 +179,7 @@ export default class ThriftOperationBackend implements IOperationBackend {
     isClosed?: () => boolean;
   }): Promise<Array<object>> {
     if (this.remainingRows === 0) {
+      this._data.validatePrefetchedResults();
       return [];
     }
 
@@ -232,6 +229,7 @@ export default class ThriftOperationBackend implements IOperationBackend {
 
   public async hasMore(): Promise<boolean> {
     if (this.remainingRows === 0) {
+      this._data.validatePrefetchedResults();
       return false;
     }
 
