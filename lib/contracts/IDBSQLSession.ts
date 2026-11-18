@@ -50,11 +50,12 @@ export type ExecuteStatementOptions = {
   /**
    * Per-statement server-side row cap on both backends. Omitted by default (no
    * driver-imposed cap). Distinct from `maxRows`, which controls fetch-page size.
-   * On Thrift, values truncate to integers in 0..2147483646; zero returns no rows
-   * (unlike JDBC's unlimited setMaxRows(0)). Out-of-range values and infinities
-   * fail executeStatement; Thrift previously ignored this option. Runtime
-   * coercion matches the kernel: numeric strings become numbers; null and NaN
-   * produce a zero-row cap, as do values that truncate to zero.
+   * Thrift also enforces the total cap locally across fetches and result formats.
+   * It applies Number coercion (numeric strings become numbers, null/NaN become
+   * zero), then truncates toward zero. The resulting integer must be in
+   * 0..2147483646; otherwise executeStatement throws ParameterError before sending
+   * the request. Zero returns no rows (unlike JDBC's unlimited setMaxRows(0)).
+   * Thrift previously ignored this option. Kernel behavior is unchanged.
    */
   rowLimit?: number;
   /**

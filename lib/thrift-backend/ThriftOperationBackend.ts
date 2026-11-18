@@ -37,6 +37,7 @@ interface ThriftOperationBackendOptions {
   functionCatalog?: string | null;
   emptyResultOnNotFound?: TTableSchema;
   rowMode?: RowMode;
+  rowLimit?: number;
 }
 
 async function delay(ms?: number): Promise<void> {
@@ -105,6 +106,8 @@ export default class ThriftOperationBackend implements IOperationBackend {
 
   private resultHandler?: ResultSlicer<any>;
 
+  private remainingRows?: number;
+
   constructor({
     handle,
     directResults,
@@ -112,12 +115,14 @@ export default class ThriftOperationBackend implements IOperationBackend {
     functionCatalog,
     emptyResultOnNotFound,
     rowMode,
+    rowLimit,
   }: ThriftOperationBackendOptions) {
     this.operationHandle = handle;
     this.context = context;
     this.functionCatalog = functionCatalog;
     this.emptyResultOnNotFound = emptyResultOnNotFound;
     this.rowMode = rowMode;
+    this.remainingRows = rowLimit;
     this.metadata = directResults?.resultSetMetadata;
 
     const useOnlyPrefetchedResults = Boolean(directResults?.closeOperation);
@@ -168,6 +173,10 @@ export default class ThriftOperationBackend implements IOperationBackend {
     disableBuffering?: boolean;
     isClosed?: () => boolean;
   }): Promise<Array<object>> {
+    if (this.remainingRows === 0) {
+      return [];
+    }
+
     const resultHandler = await this.getResultHandler();
 
     // All the library code is Promise-based, however, since Promises are microtasks,
@@ -194,7 +203,16 @@ export default class ThriftOperationBackend implements IOperationBackend {
       return [];
     }
 
-    const rows = await resultHandler.fetchNext({ limit, disableBuffering });
+    let rows = await resultHandler.fetchNext({
+      limit: this.remainingRows === undefined ? limit : Math.min(limit, this.remainingRows),
+      disableBuffering,
+    });
+    if (this.remainingRows !== undefined) {
+      if (rows.length > this.remainingRows) {
+        rows = rows.slice(0, this.remainingRows);
+      }
+      this.remainingRows -= rows.length;
+    }
     if (this.functionCatalog === undefined) {
       return rows;
     }
@@ -204,6 +222,10 @@ export default class ThriftOperationBackend implements IOperationBackend {
   }
 
   public async hasMore(): Promise<boolean> {
+    if (this.remainingRows === 0) {
+      return false;
+    }
+
     const resultHandler = await this.getResultHandler();
     return resultHandler.hasMore();
   }

@@ -181,6 +181,11 @@ export default class ThriftSessionBackend implements ISessionBackend {
   }
 
   public async executeStatement(statement: string, options: ExecuteStatementOptions): Promise<IOperationBackend> {
+    const rowLimit = options.rowLimit === undefined ? undefined : Math.trunc(Number(options.rowLimit) || 0);
+    if (rowLimit !== undefined && (!Number.isFinite(rowLimit) || rowLimit < 0 || rowLimit > 2147483646)) {
+      throw new ParameterError('rowLimit must be between 0 and 2147483646');
+    }
+
     const driver = await this.context.getDriver();
     const clientConfig = this.context.getConfig();
 
@@ -198,7 +203,7 @@ export default class ThriftSessionBackend implements ISessionBackend {
       sessionHandle: this.sessionHandle,
       statement,
       queryTimeout: options.queryTimeout ? numberToInt64(options.queryTimeout) : undefined,
-      resultRowLimit: options.rowLimit !== undefined ? numberToInt64(Number(options.rowLimit)) : undefined,
+      resultRowLimit: rowLimit !== undefined ? numberToInt64(rowLimit) : undefined,
       runAsync: true,
       ...getDirectResultsOptions(options.maxRows, clientConfig),
       ...getArrowOptions(clientConfig, this.serverProtocolVersion),
@@ -222,7 +227,7 @@ export default class ThriftSessionBackend implements ISessionBackend {
     }
 
     const response = await driver.executeStatement(request);
-    return this.createOperationBackend(response, { rowMode: options.rowMode });
+    return this.createOperationBackend(response, { rowMode: options.rowMode, rowLimit });
   }
 
   public async getTypeInfo(request: TypeInfoRequest): Promise<IOperationBackend> {
@@ -373,7 +378,11 @@ export default class ThriftSessionBackend implements ISessionBackend {
 
   private createOperationBackend(
     response: OperationResponseShape,
-    { functionCatalog, rowMode }: { functionCatalog?: string | null; rowMode?: RowMode } = {},
+    {
+      functionCatalog,
+      rowMode,
+      rowLimit,
+    }: { functionCatalog?: string | null; rowMode?: RowMode; rowLimit?: number } = {},
   ): IOperationBackend {
     Status.assert(response.status);
     const handle = definedOrError(response.operationHandle);
@@ -383,6 +392,7 @@ export default class ThriftSessionBackend implements ISessionBackend {
       context: this.context,
       functionCatalog,
       rowMode,
+      rowLimit,
     });
   }
 }

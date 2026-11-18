@@ -221,7 +221,11 @@ telemetry implementation, so only the options explicitly forwarded by
 | `statementConf`           | `Record<string, string>`                                |   ❌   |   ✅   | —             | Kernel-only per-statement Spark conf overlay. Structured `queryTags` overwrite its `query_tags` key when non-empty.                                                       |
 
 Thrift sends `resultRowLimit` without a protocol-version gate, as JDBC and Python do.
-Servers that do not support this field ignore it.
+Thrift also enforces the total cap client-side across fetches and all result formats,
+including on servers that ignore this field. It applies `Number` coercion (`null`/`NaN`
+become zero), truncates toward zero, then requires `0..2147483646`; out-of-range
+values and infinities throw `ParameterError` before any statement request. Zero
+returns no rows. Kernel behavior is unchanged.
 
 ## Metadata-operation request parameters
 

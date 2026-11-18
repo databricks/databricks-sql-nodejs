@@ -81,7 +81,7 @@ describe('DBSQLSession', () => {
       expect(result).instanceOf(DBSQLOperation);
     });
 
-    for (const rowLimit of [7, 0, undefined, '100', null]) {
+    for (const rowLimit of [7, 0, 2147483646, undefined, '100', null, NaN, 3.9, -0.5]) {
       it(`should ${rowLimit === undefined ? 'omit an unset' : `forward ${rowLimit} as the`} rowLimit`, async () => {
         const context = new ClientContextStub();
         const driver = sinon.spy(context.driver);
@@ -99,12 +99,79 @@ describe('DBSQLSession', () => {
           expect(request.resultRowLimit).to.not.exist;
         } else {
           expect(request.resultRowLimit).to.be.instanceOf(Int64);
-          expect(request.resultRowLimit?.toNumber()).to.equal(Number(rowLimit));
+          expect(request.resultRowLimit?.toNumber()).to.equal(Math.trunc(Number(rowLimit) || 0));
         }
         expect(request.getDirectResults?.maxRows.toNumber()).to.equal(100);
         expect(logger.calledWith(LogLevel.warn)).to.be.false;
       });
     }
+
+    for (const rowLimit of [2 ** 64, 2 ** 31, 2147483647, -1, Infinity, -Infinity, '18446744073709551616']) {
+      it(`should reject out-of-range rowLimit ${rowLimit} before sending a request`, async () => {
+        const context = new ClientContextStub();
+        const execute = sinon.spy(context.driver, 'executeStatement');
+        const session = createSessionForTest({ handle: sessionHandleStub, context });
+
+        try {
+          await session.executeStatement('SELECT 1', { rowLimit: rowLimit as number });
+          expect.fail('Expected ParameterError');
+        } catch (error) {
+          expect(error).to.be.instanceOf(ParameterError);
+          expect((error as Error).message).to.equal('rowLimit must be between 0 and 2147483646');
+        }
+        expect(execute.called).to.be.false;
+      });
+    }
+
+    describe('total rowLimit with column-based results', () => {
+      for (const disableBuffering of [false, true]) {
+        for (const prefetched of [false, true]) {
+          for (const rowLimit of [0, 3, 5, 6, 8, undefined]) {
+            it(`caps ${rowLimit} rows across pages (disableBuffering=${disableBuffering}, prefetched=${prefetched})`, async () => {
+              const context = new ClientContextStub({ arrowEnabled: false });
+              context.driver.executeStatementResp.operationHandle!.hasResultSet = true;
+              const page = (values: string[]) => ({
+                status: { statusCode: TStatusCode.SUCCESS_STATUS },
+                hasMoreRows: false,
+                results: {
+                  startRowOffset: new Int64(0),
+                  rows: [],
+                  columns: [{ stringVal: { values, nulls: Buffer.alloc(0) } }],
+                },
+              });
+              const firstPage = { ...page(['a', 'b']), hasMoreRows: true };
+              const fetch = sinon.stub(context.driver, 'fetchResults');
+              if (prefetched) {
+                context.driver.executeStatementResp.directResults = { resultSet: firstPage };
+                fetch.onFirstCall().resolves({ ...page(['c', 'd']), hasMoreRows: true });
+                fetch.onSecondCall().resolves(page(['e', 'f']));
+              } else {
+                fetch.onFirstCall().resolves(firstPage);
+                fetch.onSecondCall().resolves({ ...page(['c', 'd']), hasMoreRows: true });
+                fetch.onThirdCall().resolves(page(['e', 'f']));
+              }
+              fetch.resolves(page([]));
+              const session = createSessionForTest({ handle: sessionHandleStub, context });
+              const operation = await session.executeStatement('SELECT test FROM table', { rowLimit });
+              const rows: object[] = [];
+              while (await operation.hasMoreRows()) {
+                rows.push(...(await operation.fetchChunk({ maxRows: 2, disableBuffering })));
+              }
+              const expected = ['a', 'b', 'c', 'd', 'e', 'f'].slice(0, rowLimit).map((test) => ({ test }));
+              expect(rows).to.deep.equal(expected);
+              expect(await operation.hasMoreRows()).to.be.false;
+              const fetchCount = fetch.callCount;
+              expect(await operation.fetchChunk({ maxRows: 2, disableBuffering })).to.deep.equal([]);
+              expect(await operation.fetchAll()).to.deep.equal([]);
+              expect(fetch.callCount).to.equal(fetchCount);
+              if (rowLimit === 0) {
+                expect(fetchCount).to.equal(0);
+              }
+            });
+          }
+        }
+      }
+    });
 
     it('should warn only about statementConf when rowLimit is also set', async () => {
       const context = new ClientContextStub();
