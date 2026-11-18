@@ -24,7 +24,7 @@ describe('Concurrent result fetching', () => {
             },
           },
         });
-        client.getConfig().useCloudFetch = true;
+        client.getConfig().useCloudFetch = cloudFetch;
         try {
           await client.connect({ host: config.host, path: config.path, token: config.token, useKernel } as any);
           const session = await client.openSession();

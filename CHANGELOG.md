@@ -2,9 +2,9 @@
 
 ## Unreleased
 
-- Serialize concurrent fetches on one operation across the Thrift and kernel backends so overlapping `fetchAll()`, `fetchChunk()` and `hasMoreRows()` calls return every row exactly once with inline Arrow and CloudFetch when all reads succeed. After a failed Thrift read, other readers may continue past that read's rows, matching existing retry-after-error behavior; the kernel closes the statement on a failed fetch. Queued readers honor close/cancel state.
-- Concurrent readers on one operation split the result stream with no call-order guarantee.
-- A concurrent `hasMoreRows()` waits for an in-flight fetch before checking for more rows.
+- Serialize concurrent fetches on one operation across the Thrift and kernel backends so overlapping `fetchAll()`, `fetchChunk()` and `hasMoreRows()` calls return every row exactly once with inline Arrow and CloudFetch when all reads succeed. After a failed Thrift read, other readers may continue past that read's rows, matching existing retry-after-error behavior; the kernel closes the statement on a failed fetch. Queued readers honor close/cancel state. (#622)
+- Concurrent readers on one operation split the result stream with no call-order guarantee. (#622)
+- A concurrent `hasMoreRows()` waits for an in-flight fetch before checking for more rows. (#622)
 - The Thrift token federation exchange (`enableTokenFederation`) now goes through the connection's agent, so `proxy`, `checkServerCertificate`, `customCaCert` and `clientCert`/`clientKey` apply to it. Previously it connected directly with Node's default agent, so behind a required proxy the exchange failed and the driver fell back to the original token. (#611)
 - Kernel backend: a failed status poll while waiting for a statement (a `runAsync: true` statement, or a default execution that outlives the server's inline wait) and a failed result fetch in `hasMoreRows()` now throw the mapped driver error, such as `HiveDriverError: HTTP 500: Internal Server Error` once retries on HTTP 5xx run out, instead of a raw `Error` whose message is the internal `__databricks_error__:{...}` envelope. As in `fetchChunk()`, a failed fetch in `hasMoreRows()` also closes the statement. (#608)
 - Honor `cloudFetchConcurrentDownloads` when opening kernel sessions, with a default window of 16 and explicit chunk-setting overrides. Values other than positive safe integers raise `HiveDriverError` at session open.
