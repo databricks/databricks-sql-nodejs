@@ -202,7 +202,7 @@ export type ConnectionOptions = {
    * Kernel backend only. Negotiate HTTP/2 over HTTPS with HTTP/1.1 fallback.
    * Defaults to true in the kernel. Set false to force HTTP/1.1 for all
    * kernel-owned HTTPS requests, including authentication and downloads.
-   * Configured proxies force HTTP/1.1 for the entire kernel client.
+   * Configured proxies, including environment proxy variables, force HTTP/1.1 for the entire kernel client.
    */
   enableHttp2?: boolean;
 

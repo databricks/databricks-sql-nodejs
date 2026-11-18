@@ -108,7 +108,7 @@ For kernel connections, `enableHttp2` is an optional boolean that defaults to
 `true` in the kernel. HTTPS requests negotiate HTTP/2 and fall back to HTTP/1.1
 when the peer does not support HTTP/2. Set `enableHttp2: false` to force HTTP/1.1
 for all kernel-owned HTTPS requests, including authentication, SQL requests,
-result downloads, and telemetry. Configured proxies force HTTP/1.1 for the
+result downloads, and telemetry. Configured proxies, including environment proxy variables, force HTTP/1.1 for the
 entire kernel client.
 
 ## Plain HTTP transport
