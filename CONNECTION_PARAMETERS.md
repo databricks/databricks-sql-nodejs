@@ -102,6 +102,14 @@ disabling verification.
 | `clientKey`                                 | `Buffer \| string` |   ✅   |   ✅   | —             | Public mTLS private key. Must be paired with `clientCert`; PKCS#8 is recommended for Kernel portability.                                      |
 | `clientCertPem` / `clientKeyPem` (internal) | `Buffer \| string` |   ❌   |   ✅   | —             | Runtime-only Kernel aliases for the public mTLS pair. They take precedence over `clientCert`/`clientKey` when both pairs are supplied.        |
 
+## HTTP protocol
+
+For kernel connections, `enableHttp2` is an optional boolean that defaults to
+`true` in the kernel. HTTPS requests negotiate HTTP/2 and fall back to HTTP/1.1
+when the peer does not support HTTP/2. Set `enableHttp2: false` to force HTTP/1.1
+for all kernel-owned HTTPS requests, including authentication, SQL requests,
+result downloads, and telemetry.
+
 ## Plain HTTP transport
 
 Set `https: false` to connect to `host` over plain HTTP, for example through a

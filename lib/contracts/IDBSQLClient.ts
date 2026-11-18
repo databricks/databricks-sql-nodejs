@@ -199,6 +199,13 @@ export type ConnectionOptions = {
   enableGeoSpatialSupport?: boolean;
 
   /**
+   * Kernel backend only. Negotiate HTTP/2 over HTTPS with HTTP/1.1 fallback.
+   * Defaults to true in the kernel. Set false to force HTTP/1.1 for all
+   * kernel-owned HTTPS requests, including authentication and downloads.
+   */
+  enableHttp2?: boolean;
+
+  /**
    * Extra HTTP headers sent on every request to the workspace (session,
    * statement and metadata calls, on both backends) and on driver-owned
    * telemetry and feature-flag requests. Not applied to OAuth/OIDC token

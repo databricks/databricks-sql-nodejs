@@ -24,6 +24,25 @@ import HiveDriverError from '../../../lib/errors/HiveDriverError';
 
 const PAT = { host: 'h.databricks.com', path: '/sql/1.0/warehouses/abc', token: 'dapi-x' };
 
+describe('Kernel HTTP/2 configuration', () => {
+  it('leaves the protocol default to the kernel', () => {
+    expect(buildKernelConnectionOptions(PAT)).not.to.have.property('enableHttp2');
+  });
+
+  for (const enableHttp2 of [true, false]) {
+    it(`preserves enableHttp2=${enableHttp2}`, () => {
+      expect(buildKernelConnectionOptions({ ...PAT, enableHttp2 }).enableHttp2).to.equal(enableHttp2);
+    });
+  }
+
+  for (const enableHttp2 of ['false', 0, 1, null]) {
+    it(`rejects enableHttp2=${JSON.stringify(enableHttp2)}`, () => {
+      const options = { ...PAT, enableHttp2 } as unknown as ConnectionOptions;
+      expect(() => buildKernelConnectionOptions(options)).to.throw(HiveDriverError, 'enableHttp2');
+    });
+  }
+});
+
 // Cast helper: the kernel connection-tuning/TLS options live on the internal
 // surface, so tests build untyped option literals.
 const opts = (extra: Record<string, unknown>) => ({ ...PAT, ...extra } as unknown as ConnectionOptions);
