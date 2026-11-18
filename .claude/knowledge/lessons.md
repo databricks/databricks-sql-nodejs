@@ -70,7 +70,7 @@
 - L-0059 (1×, #611): Every auxiliary HTTP request, including OAuth, exchange and CloudFetch, must use the connection provider's getAgent to honor proxy/TLS settings.
 
 ## Bot workflow and CI
-- L-0060 (2×, #499): Use explicit bracket notation for hyphenated dispatch input names and string-typed numeric knobs in workflows also triggered by schedule.
+- L-0060 (1×, #499): In bot workflows with both schedule and workflow_dispatch triggers, keep numeric input knobs string-typed and parse them downstream.
 - L-0061 (2×, #499): Omit unused prompt-file keys to use engine defaults; MODEL_ENDPOINT must name concrete serving-endpoints/model/invocations, not anthropic/invocations.
 - L-0062 (2×, #499): Respect author-tool restrictions on workflow edits and route blocked fixes to a human. Verify actual remote branch HEAD before reporting a change as pushed.
 - L-0063 (1×, #538): osv-scanner ignoreUntil must be an unquoted TOML date literal.
