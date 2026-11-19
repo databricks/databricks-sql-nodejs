@@ -664,9 +664,9 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
   }
 
   // Also usable after driver auth/transport setup, before selecting a backend.
-  private getFeatureFlagCache(): FeatureFlagCache {
+  private getFeatureFlagCache(options?: ConnectionOptions, authProvider?: IAuthentication): FeatureFlagCache {
     if (!this.featureFlagCache) {
-      this.featureFlagCache = new FeatureFlagCache(this);
+      this.featureFlagCache = new FeatureFlagCache(this, authProvider, options);
       this.featureFlagCache.getOrCreateContext(this.host!);
     }
     return this.featureFlagCache;
@@ -787,7 +787,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
     const internalOptions = options as ConnectionOptions & InternalConnectionOptions;
     const useKernel = internalOptions.useKernel === true;
     if (!useKernel) {
-      this.getFeatureFlagCache();
+      this.getFeatureFlagCache(options, authProvider);
     }
     const backend = useKernel
       ? new KernelBackend({ context: this })

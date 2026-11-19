@@ -26,6 +26,7 @@ describe('FeatureFlagCache', () => {
 
   beforeEach(() => {
     (FeatureFlagCache as any).sharedContexts.clear();
+    (FeatureFlagCache as any).idleContexts.clear();
     clock = sinon.useFakeTimers();
   });
 
@@ -408,11 +409,11 @@ describe('FeatureFlagCache', () => {
     expect(fetchStub.calledOnce).to.be.true;
   });
 
-  it('shares values per workspace, refreshes with the current caller, and defaults on failure', async () => {
+  it('shares values for the same host and workspace, refreshes with the current caller, and defaults on failure', async () => {
     const first = new FeatureFlagCache(new ClientContextStub({ customHeaders: { 'x-databricks-org-id': '1' } }));
     const current = new FeatureFlagCache(new ClientContextStub({ customHeaders: { 'X-Databricks-Org-Id': '1' } }));
     const other = new FeatureFlagCache(new ClientContextStub({ customHeaders: { 'x-databricks-org-id': '2' } }));
-    expect(first.getOrCreateContext('host-a')).to.equal(current.getOrCreateContext('host-b'));
+    expect(first.getOrCreateContext('host-a')).to.equal(current.getOrCreateContext('host-a'));
     expect(other.getOrCreateContext('host-a')).to.not.equal(first.getOrCreateContext('host-a'));
     const response = (value: string) =>
       new Response(
@@ -423,18 +424,18 @@ describe('FeatureFlagCache', () => {
       );
     const firstFetch = sinon.stub(first as any, 'fetchWithRetry').resolves(response('true'));
     const currentFetch = sinon.stub(current as any, 'fetchWithRetry').resolves(response('FALSE'));
-    expect(await Promise.all([first.getBoolean('host-a', 'flag'), current.getBoolean('host-b', 'flag')])).to.deep.equal(
+    expect(await Promise.all([first.getBoolean('host-a', 'flag'), current.getBoolean('host-a', 'flag')])).to.deep.equal(
       [true, true],
     );
     expect(currentFetch.called).to.be.false;
     clock.tick(61000);
-    expect(await current.getBoolean('host-b', 'flag', true)).to.be.false;
+    expect(await current.getBoolean('host-a', 'flag', true)).to.be.false;
     expect(firstFetch.calledOnce).to.be.true;
     expect(currentFetch.calledOnce).to.be.true;
     clock.tick(61000);
     currentFetch.rejects(new Error('offline'));
-    expect(await current.getBoolean('host-b', 'flag', true)).to.be.true;
-    expect(await current.getBoolean('host-b', 'flag')).to.be.false;
+    expect(await current.getBoolean('host-a', 'flag', true)).to.be.true;
+    expect(await current.getBoolean('host-a', 'flag')).to.be.false;
     expect(currentFetch.calledTwice).to.be.true;
   });
 });

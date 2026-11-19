@@ -14,38 +14,53 @@
  * limitations under the License.
  */
 
-import fetch, { RequestInit, Response, Request } from 'node-fetch';
+import { createHash } from 'crypto';
+import fetch, { Headers, RequestInit, Response, Request } from 'node-fetch';
 import IClientContext from './contracts/IClientContext';
 import { LogLevel } from './contracts/IDBSQLLogger';
 import IAuthentication from './connection/contracts/IAuthentication';
 import { buildTelemetryUrl, normalizeHeaders } from './telemetry/telemetryUtils';
 import buildUserAgentString from './utils/buildUserAgentString';
 import driverVersion from './version';
+import { ConnectionOptions } from './contracts/IDBSQLClient';
 
 export interface FeatureFlagContext {
   flags?: Map<string, string>;
   fetchPromise?: Promise<void>;
-  lastFetched?: Date;
+  lastFetched?: number;
+  cacheable?: boolean;
   refCount: number;
   cacheDuration: number;
 }
 
 /**
- * Shared feature-flag values per workspace.
+ * Shared feature-flag values per request identity.
  * Acquire/release a context per consumer; each reader uses its caller's auth.
  * Responsibilities:
  *   - dedupe in-flight fetches (thundering-herd protection);
- *   - ref-count so context goes away when the last consumer closes;
+ *   - retain bounded successful responses until their original expiry;
  *   - clamp server-provided TTL into a safe band.
  *
- * Workspace ID partitions SPOG traffic; normalized host is the fallback.
+ * Workspace routing, authentication, and transport settings partition responses.
  */
 export default class FeatureFlagCache {
   private static sharedContexts = new Map<string, FeatureFlagContext>();
 
+  private static idleContexts = new Map<string, FeatureFlagContext>();
+
+  private static authenticationIds = new WeakMap<IAuthentication, number>();
+
+  private static nextAuthenticationId = 0;
+
+  private static readonly MAX_IDLE_CONTEXTS = 100;
+
   private contexts = FeatureFlagCache.sharedContexts;
 
   private readonly userAgent: string;
+
+  private readonly scope: string;
+
+  private readonly retainIdle: boolean;
 
   private readonly CACHE_DURATION_MS = 15 * 60 * 1000;
 
@@ -53,24 +68,66 @@ export default class FeatureFlagCache {
 
   private readonly MAX_CACHE_DURATION_S = 3600;
 
-  constructor(private context: IClientContext, private authProvider?: IAuthentication) {
+  constructor(
+    private context: IClientContext,
+    private authProvider?: IAuthentication,
+    connectionOptions?: ConnectionOptions,
+  ) {
     this.userAgent = buildUserAgentString(this.context.getConfig().userAgentEntry);
+    const authentication = this.authProvider ?? this.context.getAuthProvider?.();
+    const tokenAuth =
+      !authProvider &&
+      connectionOptions !== undefined &&
+      (connectionOptions.authType === undefined || connectionOptions.authType === 'access-token');
+    let authenticationId: number | undefined;
+    if (authentication && !tokenAuth) {
+      authenticationId = FeatureFlagCache.authenticationIds.get(authentication);
+      if (authenticationId === undefined) {
+        authenticationId = FeatureFlagCache.nextAuthenticationId;
+        FeatureFlagCache.nextAuthenticationId += 1;
+        FeatureFlagCache.authenticationIds.set(authentication, authenticationId);
+      }
+    }
+    this.retainIdle = tokenAuth || !authentication;
+    this.scope = createHash('sha256')
+      .update(
+        JSON.stringify([
+          this.userAgent,
+          [...new Headers(this.context.getConfig().customHeaders ?? {}).entries()],
+          tokenAuth ? connectionOptions?.token ?? 'anonymous' : authenticationId,
+          connectionOptions?.https,
+          connectionOptions?.port,
+          connectionOptions?.proxy,
+          connectionOptions?.customCaCert,
+          connectionOptions?.clientCert,
+          connectionOptions?.clientKey,
+          connectionOptions?.checkServerCertificate,
+        ]),
+      )
+      .digest('hex');
   }
 
   private cacheKey(host: string): string {
-    const headers = this.context.getConfig().customHeaders ?? {};
-    const workspace = Object.entries(headers).find(([name]) => name.toLowerCase() === 'x-databricks-org-id')?.[1];
-    return workspace ? `workspace:${workspace}` : `host:${buildTelemetryUrl(host, '') ?? host}`;
+    return JSON.stringify([buildTelemetryUrl(host, '') ?? host, this.scope]);
+  }
+
+  private isExpired(ctx: FeatureFlagContext): boolean {
+    return ctx.lastFetched === undefined || performance.now() - ctx.lastFetched > ctx.cacheDuration;
   }
 
   getOrCreateContext(host: string): FeatureFlagContext {
     const key = this.cacheKey(host);
     let ctx = this.contexts.get(key);
     if (!ctx) {
-      ctx = {
-        refCount: 0,
-        cacheDuration: this.CACHE_DURATION_MS,
-      };
+      const idle = FeatureFlagCache.idleContexts.get(key);
+      FeatureFlagCache.idleContexts.delete(key);
+      ctx =
+        idle && !this.isExpired(idle)
+          ? idle
+          : {
+              refCount: 0,
+              cacheDuration: this.CACHE_DURATION_MS,
+            };
       this.contexts.set(key, ctx);
     }
     ctx.refCount += 1;
@@ -84,6 +141,17 @@ export default class FeatureFlagCache {
       ctx.refCount -= 1;
       if (ctx.refCount <= 0) {
         this.contexts.delete(key);
+        if (this.retainIdle && ctx.cacheable && !ctx.fetchPromise && !this.isExpired(ctx)) {
+          const idle = FeatureFlagCache.idleContexts;
+          for (const [idleKey, value] of idle) {
+            if (this.isExpired(value)) idle.delete(idleKey);
+          }
+          idle.delete(key);
+          idle.set(key, ctx);
+          while (idle.size > FeatureFlagCache.MAX_IDLE_CONTEXTS) {
+            idle.delete(idle.keys().next().value!);
+          }
+        }
       }
     }
   }
@@ -96,14 +164,14 @@ export default class FeatureFlagCache {
       return undefined;
     }
 
-    const isExpired = !ctx.lastFetched || Date.now() - ctx.lastFetched.getTime() > ctx.cacheDuration;
+    const isExpired = this.isExpired(ctx);
 
     if (isExpired) {
       if (!ctx.fetchPromise) {
         ctx.fetchPromise = this.fetchFeatureFlags(host)
           .then((flags) => {
             ctx.flags = flags;
-            ctx.lastFetched = new Date();
+            ctx.lastFetched = performance.now();
           })
           .catch((error: any) => {
             logger.log(LogLevel.debug, `Error fetching feature flag: ${error.message}`);
@@ -175,6 +243,7 @@ export default class FeatureFlagCache {
   private async fetchFeatureFlags(host: string): Promise<Map<string, string>> {
     const logger = this.context.getLogger();
     const ctx = this.contexts.get(this.cacheKey(host));
+    if (ctx) ctx.cacheable = false;
 
     try {
       const endpoint = buildTelemetryUrl(
@@ -209,6 +278,11 @@ export default class FeatureFlagCache {
       const data: any = await response.json();
 
       if (data && data.flags && Array.isArray(data.flags)) {
+        if (ctx) {
+          ctx.cacheable = data.flags.every(
+            (flag: any) => typeof flag?.name === 'string' && typeof flag.value === 'string',
+          );
+        }
         if (ctx && Number.isFinite(data.ttl_seconds) && data.ttl_seconds > 0) {
           const clampedTtl = Math.max(this.MIN_CACHE_DURATION_S, Math.min(this.MAX_CACHE_DURATION_S, data.ttl_seconds));
           ctx.cacheDuration = clampedTtl * 1000;
