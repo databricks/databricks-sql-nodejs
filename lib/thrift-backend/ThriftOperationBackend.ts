@@ -105,6 +105,8 @@ export default class ThriftOperationBackend implements IOperationBackend {
 
   private resultHandler?: ResultSlicer<any>;
 
+  private fetchFailed = false;
+
   constructor({
     handle,
     directResults,
@@ -168,6 +170,10 @@ export default class ThriftOperationBackend implements IOperationBackend {
     disableBuffering?: boolean;
     isClosed?: () => boolean;
   }): Promise<Array<object>> {
+    this.failIfFetchFailed();
+    if (Math.abs(limit) > 2 ** 64) {
+      throw new RangeError('maxRows is outside Int64 range');
+    }
     const resultHandler = await this.getResultHandler();
 
     // All the library code is Promise-based, however, since Promises are microtasks,
@@ -194,18 +200,31 @@ export default class ThriftOperationBackend implements IOperationBackend {
       return [];
     }
 
-    const rows = await resultHandler.fetchNext({ limit, disableBuffering });
-    if (this.functionCatalog === undefined) {
-      return rows;
-    }
+    try {
+      const rows = await resultHandler.fetchNext({ limit, disableBuffering });
+      if (this.functionCatalog === undefined) {
+        return rows;
+      }
 
-    // Native GetFunctions leaves FUNCTION_CAT empty; match JDBC and kernel.
-    return rows.map((row) => (row === null ? row : { ...row, FUNCTION_CAT: this.functionCatalog }));
+      // Native GetFunctions leaves FUNCTION_CAT empty; match JDBC and kernel.
+      return rows.map((row) => (row === null ? row : { ...row, FUNCTION_CAT: this.functionCatalog }));
+    } catch (error) {
+      this.fetchFailed = true;
+      await this.close().catch(() => undefined);
+      throw error;
+    }
   }
 
   public async hasMore(): Promise<boolean> {
+    this.failIfFetchFailed();
     const resultHandler = await this.getResultHandler();
     return resultHandler.hasMore();
+  }
+
+  private failIfFetchFailed(): void {
+    if (this.fetchFailed) {
+      throw new OperationStateError(OperationStateErrorCode.Error);
+    }
   }
 
   public async status(progress: boolean): Promise<OperationStatus> {
