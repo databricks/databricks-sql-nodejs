@@ -318,6 +318,127 @@ describe('Arrow row materialization', () => {
       );
     });
 
+    for (const numeric of [
+      {
+        name: 'BIGINT',
+        type: () => new arrow.Int64(),
+        thriftType: TTypeId.BIGINT_TYPE,
+        values: [BigInt('9007199254740993'), BigInt('-9223372036854775808'), BigInt(0)],
+        expected: [BigInt('9007199254740993'), BigInt('-9223372036854775808'), BigInt(0)],
+      },
+      {
+        name: 'DECIMAL',
+        type: () => new arrow.Decimal(4, 38, 128),
+        thriftType: TTypeId.DECIMAL_TYPE,
+        values: [decimal('90071992547409931234'), decimal('-12500'), decimal('0')],
+        expected: ['9007199254740993.1234', '-1.2500', '0.0000'],
+        // Dictionary decimals retain the legacy unscaled string representation.
+        dictionaryExpected: ['90071992547409931234', '-12500', '0'],
+      },
+    ]) {
+      for (const dictionaryEncoded of [false, true]) {
+        it(`matches legacy precise ${numeric.name} in scalars and containers (${rowMode}, dictionary=${dictionaryEncoded})`, async () => {
+          const type = () =>
+            dictionaryEncoded ? new arrow.Dictionary(numeric.type(), new arrow.Int32()) : numeric.type();
+          const [positive, negative, zero] = numeric.values;
+          const [expectedPositive, expectedNegative, expectedZero] =
+            (dictionaryEncoded && numeric.dictionaryExpected) || numeric.expected;
+          const columns: Column[] = [
+            {
+              field: new arrow.Field('scalar', type(), true),
+              thriftType: numeric.thriftType,
+              values: [positive, null, negative, positive, zero],
+              expected: [expectedPositive, null, expectedNegative, expectedPositive, expectedZero],
+            },
+            {
+              field: new arrow.Field('struct', new arrow.Struct([new arrow.Field('value', type(), true)]), true),
+              thriftType: TTypeId.STRUCT_TYPE,
+              values: [{ value: positive }, null, { value: null }, { value: negative }, { value: zero }],
+              expected: [
+                { value: expectedPositive },
+                null,
+                { value: null },
+                { value: expectedNegative },
+                { value: expectedZero },
+              ],
+            },
+            {
+              field: new arrow.Field('list', new arrow.List(new arrow.Field('element', type(), true)), true),
+              thriftType: TTypeId.ARRAY_TYPE,
+              values: [[positive, null, negative, positive, zero], null, [], [null], [negative]],
+              expected: [
+                [expectedPositive, null, expectedNegative, expectedPositive, expectedZero],
+                null,
+                [],
+                [null],
+                [expectedNegative],
+              ],
+            },
+            {
+              field: new arrow.Field(
+                'map',
+                new arrow.Map_(
+                  new arrow.Field(
+                    'entries',
+                    new arrow.Struct<{ key: arrow.Utf8; value: ReturnType<typeof type> }>([
+                      new arrow.Field('key', new arrow.Utf8(), false),
+                      new arrow.Field('value', type(), true),
+                    ]),
+                    false,
+                  ),
+                ),
+                true,
+              ),
+              thriftType: TTypeId.MAP_TYPE,
+              values: [
+                new Map<string, any>([
+                  ['positive', positive],
+                  ['missing', null],
+                  ['negative', negative],
+                  ['repeated', positive],
+                  ['zero', zero],
+                ]),
+                null,
+                new Map(),
+                new Map([['missing', null]]),
+                new Map([['negative', negative]]),
+              ],
+              expected: [
+                {
+                  positive: expectedPositive,
+                  missing: null,
+                  negative: expectedNegative,
+                  repeated: expectedPositive,
+                  zero: expectedZero,
+                },
+                null,
+                {},
+                { missing: null },
+                { negative: expectedNegative },
+              ],
+            },
+          ];
+          const converter = converterFor(columns, rowMode, true);
+          const rows = await converter.fetchNext({ limit: 100 });
+          const expected = columns[0].values.map((_, rowIndex) => {
+            const values = columns.map((column) => column.expected[rowIndex]);
+            return rowMode === 'array'
+              ? values
+              : Object.fromEntries(columns.map((column, index) => [column.field.name, values[index]]));
+          });
+          deepStrictEqual(rows, expected);
+          const table = arrow.tableFromIPC(ipc(columns));
+          const legacyRows = (converter as any).getObjectRows(table.schema, table.toArray());
+          deepStrictEqual(
+            rows,
+            rowMode === 'array'
+              ? legacyRows.map((row: any) => columns.map((column) => row[column.field.name]))
+              : legacyRows,
+          );
+        });
+      }
+    }
+
     for (const type of [new arrow.Binary(), new arrow.FixedSizeBinary(2)]) {
       it(`copies ${type} values out of the batch (${rowMode})`, async () => {
         const columns: Column[] = [
