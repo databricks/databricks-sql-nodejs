@@ -24,6 +24,7 @@ import DBSQLSession from '../../../lib/DBSQLSession';
 import DBSQLOperation from '../../../lib/DBSQLOperation';
 import asyncDisposable from '../../../lib/asyncDisposable';
 import { KernelNativeBinding, KernelConnection, KernelStatement } from '../../../lib/kernel/KernelNativeLoader';
+import { VolumeCompletion } from '../../../native/kernel';
 import IClientContext, { ClientConfig } from '../../../lib/contracts/IClientContext';
 import { CrossReferenceRequest, PrimaryKeysRequest } from '../../../lib/contracts/IDBSQLSession';
 import IDBSQLLogger, { LogLevel } from '../../../lib/contracts/IDBSQLLogger';
@@ -43,8 +44,8 @@ import { DBSQLParameter, DBSQLParameterType } from '../../../lib/DBSQLParameter'
 class FakeNativeStatement implements KernelStatement {
   public readonly isVolumeOperation = false;
 
-  public async completeVolumeOperation(): Promise<string> {
-    return 'not_volume';
+  public async completeVolumeOperation(): Promise<VolumeCompletion> {
+    return VolumeCompletion.NotVolume;
   }
 
   public closed = false;

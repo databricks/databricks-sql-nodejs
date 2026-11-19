@@ -46,10 +46,6 @@ import KernelOperationBackend from '../../../lib/kernel/KernelOperationBackend';
 import OperationStateError, { OperationStateErrorCode } from '../../../lib/errors/OperationStateError';
 import HiveDriverError from '../../../lib/errors/HiveDriverError';
 import { TOperationState } from '../../../thrift/TCLIService_types';
-import TelemetryEventEmitter from '../../../lib/telemetry/TelemetryEventEmitter';
-import MetricsAggregator from '../../../lib/telemetry/MetricsAggregator';
-import DatabricksTelemetryExporter from '../../../lib/telemetry/DatabricksTelemetryExporter';
-import { TelemetryEventType } from '../../../lib/telemetry/types';
 
 class TestLogger implements IDBSQLLogger {
   public readonly entries: Array<{ level: LogLevel; message: string }> = [];
@@ -651,7 +647,7 @@ describe('DBSQLSession over KernelSessionBackend — close right after execution
     const context = new ClientContextStub();
     const backend = new KernelSessionBackend({ connection: connection as unknown as KernelConnection, context });
     const session = new DBSQLSession({ backend, context });
-    return { session, connection, terminalStatement, asyncStatement, context };
+    return { session, connection, terminalStatement, asyncStatement };
   }
 
   it('closes the operation and session when execution returned a completed statement', async () => {
@@ -702,141 +698,6 @@ describe('DBSQLSession over KernelSessionBackend — close right after execution
     expect(thrown).to.be.instanceOf(Error);
     expect(connection.close.called).to.equal(false);
     expect(session['operations']['items'].size).to.equal(1);
-    expect(asyncStatement.close.calledTwice).to.equal(true);
-  });
-
-  for (const cancelFails of [false, true]) {
-    it(`closes pending staging execution when cancel ${cancelFails ? 'fails' : 'succeeds'}`, async () => {
-      const { session, connection, asyncStatement, context } = kernelSession('Running');
-      context.configOverrides.telemetryEnabled = true;
-      const exporter = sinon.createStubInstance(DatabricksTelemetryExporter);
-      const aggregator = new MetricsAggregator(context, exporter);
-      const emitter = new TelemetryEventEmitter(context);
-      for (const type of Object.values(TelemetryEventType)) {
-        emitter.on(type, (event) => aggregator.processEvent(event));
-      }
-      context.telemetryEmitter = emitter;
-      context.telemetryAggregator = aggregator;
-      const completion = sinon.spy(emitter, 'emitStatementComplete');
-      const cancelled = new OperationStateError(OperationStateErrorCode.Canceled);
-      const handle = { ...emptyResultHandle(), completeVolumeOperation: sinon.stub().resolves('not_volume') };
-      let resolveResult!: (value: typeof handle) => void;
-      let rejectResult!: (error: Error) => void;
-      const pendingResult = new Promise<typeof handle>((resolve, reject) => {
-        resolveResult = resolve;
-        rejectResult = reject;
-      });
-      let started!: () => void;
-      const awaitingResult = new Promise<void>((resolve) => {
-        started = resolve;
-      });
-      let releaseClose!: () => void;
-      const nativeClosed = new Promise<void>((resolve) => {
-        releaseClose = resolve;
-      });
-      let closingStarted!: () => void;
-      const nativeClosing = new Promise<void>((resolve) => {
-        closingStarted = resolve;
-      });
-      asyncStatement.awaitResult.callsFake(() => {
-        started();
-        return pendingResult;
-      });
-      asyncStatement.cancel.callsFake(async () => {
-        if (!cancelFails) rejectResult(cancelled);
-        await new Promise((resolve) => setImmediate(resolve));
-        if (cancelFails) throw new Error('cancel response failed');
-      });
-      asyncStatement.close.callsFake(async () => {
-        await pendingResult.catch(() => {});
-        closingStarted();
-        await nativeClosed;
-      });
-      const settled = sinon.spy();
-      const executing = session
-        .executeStatement('SELECT slow', { stagingAllowedLocalPath: ['/allowed'] })
-        .then(
-          (operation) => operation,
-          (error) => error,
-        )
-        .then((outcome) => {
-          settled();
-          return outcome;
-        });
-      await awaitingResult;
-      const closing = session.close();
-      if (cancelFails) {
-        await new Promise((resolve) => setImmediate(resolve));
-        expect(settled.called).to.equal(false);
-        expect(connection.close.called).to.equal(false);
-        resolveResult(handle);
-      }
-      await nativeClosing;
-      await new Promise((resolve) => setImmediate(resolve));
-      try {
-        expect(connection.close.called).to.equal(false);
-      } finally {
-        releaseClose();
-      }
-      await closing;
-      const outcome = await executing;
-      await aggregator.close();
-
-      if (cancelFails) {
-        expect(outcome).to.be.instanceOf(DBSQLOperation);
-        expect((outcome as DBSQLOperation)['cancelled']).to.equal(false);
-        expect(handle.completeVolumeOperation.calledOnceWith(['/allowed'], true)).to.equal(true);
-      } else {
-        expect(outcome).to.equal(cancelled);
-      }
-      expect(completion.callCount).to.equal(1);
-      expect(
-        exporter.export
-          .getCalls()
-          .flatMap((call) => call.args[0])
-          .filter((metric) => metric.metricType === 'statement'),
-      ).to.have.lengthOf(1);
-      expect(asyncStatement.cancel.calledOnce).to.equal(true);
-      expect(asyncStatement.cancel.calledBefore(asyncStatement.close)).to.equal(true);
-      expect(asyncStatement.close.calledOnce).to.equal(true);
-      expect(connection.close.calledOnce).to.equal(true);
-      expect(session['operations']['items'].size).to.equal(0);
-    });
-  }
-
-  it('finalizes close when polling observes closure before native disposal finishes', async () => {
-    const { session, asyncStatement, context } = kernelSession('Running');
-    context.configOverrides.telemetryEnabled = true;
-    const emitter = sinon.createStubInstance(TelemetryEventEmitter);
-    const aggregator = sinon.createStubInstance(MetricsAggregator);
-    context.telemetryEmitter = emitter;
-    context.telemetryAggregator = aggregator;
-    let releaseClose!: () => void;
-    asyncStatement.close.returns(
-      new Promise<void>((resolve) => {
-        releaseClose = resolve;
-      }),
-    );
-    const operation = await session.executeStatement('SELECT slow');
-    let polled!: () => void;
-    const firstPoll = new Promise<void>((resolve) => {
-      polled = resolve;
-    });
-    const polling = operation.finished({ callback: () => polled() }).catch((error) => error);
-    await firstPoll;
-    const closing = operation.close();
-    try {
-      expect(await polling)
-        .to.be.instanceOf(OperationStateError)
-        .with.property('errorCode', OperationStateErrorCode.Closed);
-    } finally {
-      releaseClose();
-    }
-    await closing;
-    expect(emitter.emitStatementComplete.calledOnce).to.equal(true);
-    expect(aggregator.completeStatement.calledOnceWith(operation.id)).to.equal(true);
-    expect(session['operations']['items'].size).to.equal(0);
-    await session.close();
   });
 
   it('retains success observed by status() on a running statement', async () => {

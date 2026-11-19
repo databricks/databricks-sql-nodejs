@@ -236,8 +236,6 @@ export default class KernelOperationBackend implements IOperationBackend {
   // kernel closes the result handle either way.
   private closeRequested = false;
 
-  private closePromise?: Promise<Status>;
-
   constructor({
     asyncStatement,
     statement,
@@ -500,22 +498,9 @@ export default class KernelOperationBackend implements IOperationBackend {
     return kernelCancel(this.lifecycle, this.lifecycleHandle, this.context, this._id);
   }
 
-  public close(): Promise<Status> {
-    if (!this.closePromise) {
-      const wasCloseRequested = this.closeRequested;
-      this.closeRequested = true;
-      this.closePromise = (async () => {
-        if (!wasCloseRequested && this.asyncStatement && this.fetchHandlePromise && !this.asyncSucceeded) {
-          // Native close queues behind awaitResult; the detached canceller interrupts it.
-          await this.asyncStatement.cancel().catch(() => {});
-        }
-        return kernelClose(this.lifecycle, this.lifecycleHandle, this.context, this._id);
-      })().catch((error) => {
-        this.closePromise = undefined;
-        throw error;
-      });
-    }
-    return this.closePromise;
+  public async close(): Promise<Status> {
+    this.closeRequested = true;
+    return kernelClose(this.lifecycle, this.lifecycleHandle, this.context, this._id);
   }
 
   // ---------------------------------------------------------------------------

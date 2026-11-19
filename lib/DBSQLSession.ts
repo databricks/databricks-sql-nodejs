@@ -113,13 +113,8 @@ export default class DBSQLSession implements IDBSQLSession {
         ? options.stagingAllowedLocalPath
         : [options.stagingAllowedLocalPath];
       if (opBackend.completeStagingOperation) {
-        try {
-          await this.runBackend(() => opBackend.completeStagingOperation!(allowedLocalPath));
-          return operation;
-        } catch (error) {
-          await operation.close().catch(() => {});
-          throw error;
-        }
+        await this.runBackend(() => opBackend.completeStagingOperation!(allowedLocalPath));
+        return operation;
       }
       const metadata = await operation.getResultMetadata();
       if (metadata.isStagingOperation) {

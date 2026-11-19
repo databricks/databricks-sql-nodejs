@@ -41,7 +41,6 @@ import KernelOperationBackend from '../../../lib/kernel/KernelOperationBackend';
 import { TTypeId } from '../../../thrift/TCLIService_types';
 import ClientContextStub from '../.stubs/ClientContextStub';
 import ParameterError from '../../../lib/errors/ParameterError';
-import AuthenticationError from '../../../lib/errors/AuthenticationError';
 import StagingError from '../../../lib/errors/StagingError';
 
 // Minimal stub of the napi `Statement` surface that emits a precomputed
@@ -422,17 +421,6 @@ describe('KernelOperationBackend Volume completion', () => {
         kernelMetadata: { httpStatus: 403, errorCode: 'VOLUME_STORAGE_HTTP_ERROR' },
       }),
       staging: true,
-    },
-    {
-      error: Object.assign(new Error('source is missing'), { code: 'ENOENT', path: '/allowed/missing' }),
-      staging: false,
-    },
-    {
-      error: Object.assign(new AuthenticationError('instruction session expired'), {
-        sqlState: '08003',
-        kernelMetadata: { httpStatus: 401, errorCode: 'SESSION_EXPIRED' },
-      }),
-      staging: false,
     },
     {
       error: Object.assign(new ParameterError('invalid instruction request'), {
