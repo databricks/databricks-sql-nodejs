@@ -1,3 +1,4 @@
+import { deepStrictEqual } from 'assert';
 import { expect } from 'chai';
 import sinon from 'sinon';
 import * as arrow from 'apache-arrow';
@@ -22,16 +23,30 @@ interface Column {
 
 function ipc(columns: Column[]): Buffer {
   const fields = columns.map((column) => column.field);
+  const uniqueFields = fields.map(
+    (field, index) => new arrow.Field(`column${index}`, field.type, field.nullable, field.metadata),
+  );
   const data = arrow.makeData({
-    type: new arrow.Struct(fields),
+    type: new arrow.Struct(uniqueFields),
     children: columns.map((column) => arrow.vectorFromArray(column.values, column.field.type).data[0]),
     length: columns[0].values.length,
     nullCount: 0,
   });
-  return Buffer.from(arrow.tableToIPC(new arrow.Table(new arrow.RecordBatch(new arrow.Schema(fields), data))));
+  const batch = new arrow.RecordBatch(new arrow.Schema(uniqueFields), data);
+  Object.assign(batch, { schema: new arrow.Schema(fields) });
+  const writer = new arrow.RecordBatchStreamWriter();
+  writer.write(batch);
+  writer.finish();
+  return Buffer.from(writer.toUint8Array(true));
 }
 
-function converterFor(columns: Column[], rowMode: RowMode, preserveBigNumericPrecision = false, rowCount?: number) {
+function converterFor(
+  columns: Column[],
+  rowMode: RowMode,
+  preserveBigNumericPrecision = false,
+  rowCount?: number,
+  schemaColumns: readonly Column[] = columns,
+) {
   return new ArrowResultConverter(
     new ClientContextStub(),
     new ResultsProviderStub<ArrowBatch>([{ batches: [ipc(columns)], rowCount: rowCount ?? columns[0].values.length }], {
@@ -40,7 +55,7 @@ function converterFor(columns: Column[], rowMode: RowMode, preserveBigNumericPre
     }),
     {
       schema: {
-        columns: columns.map((column, index) => ({
+        columns: schemaColumns.map((column, index) => ({
           columnName: column.field.name,
           position: index + 1,
           typeDesc: { types: [{ primitiveEntry: { type: column.thriftType } }] },
@@ -149,7 +164,8 @@ describe('Arrow row materialization', () => {
             ],
           })),
         ];
-        const result = await converterFor(columns, rowMode, preservePrecision).fetchNext({ limit: 100 });
+        const converter = converterFor(columns, rowMode, preservePrecision);
+        const result = await converter.fetchNext({ limit: 100 });
         const expected = [0, 1, 2].map((rowIndex) => {
           const values = columns.map(
             (column) => (preservePrecision ? column.precise ?? column.expected : column.expected)[rowIndex],
@@ -158,10 +174,47 @@ describe('Arrow row materialization', () => {
             ? values
             : Object.fromEntries(columns.map((column, index) => [column.field.name, values[index]]));
         });
-        expect(result).to.deep.equal(expected);
-        const binaryIndex = columns.findIndex((column) => column.field.name === 'binary0');
-        const binary = rowMode === 'array' ? result[0][binaryIndex] : result[0].binary0;
-        expect(Buffer.isBuffer(binary)).to.be.true;
+        deepStrictEqual(result, expected);
+        const table = arrow.tableFromIPC(ipc(columns));
+        const legacyRows = (converter as any).getObjectRows(table.schema, table.toArray());
+        deepStrictEqual(
+          result,
+          rowMode === 'array'
+            ? legacyRows.map((row: any) => columns.map((column) => row[column.field.name]))
+            : legacyRows,
+        );
+      });
+
+      it(`retains complex and user-defined Thrift casts (${rowMode}, precision=${preservePrecision})`, async () => {
+        const columns: Column[] = [
+          {
+            field: new arrow.Field('array', new arrow.Utf8()),
+            thriftType: TTypeId.ARRAY_TYPE,
+            values: ['[1,null]', null, '[]'],
+            expected: [[1, null], null, []],
+          },
+          ...[TTypeId.MAP_TYPE, TTypeId.STRUCT_TYPE].map((thriftType) => ({
+            field: new arrow.Field(`complex${thriftType}`, new arrow.Utf8()),
+            thriftType,
+            values: ['{"value":7}', null, '{}'],
+            expected: [{ value: 7 }, null, {}],
+          })),
+          ...[TTypeId.USER_DEFINED_TYPE, TTypeId.UNION_TYPE].map((thriftType) => ({
+            field: new arrow.Field(`custom${thriftType}`, new arrow.Int32()),
+            thriftType,
+            values: [7, null, -1],
+            expected: ['7', null, '-1'],
+          })),
+        ];
+        const rows = await converterFor(columns, rowMode, preservePrecision).fetchNext({ limit: 100 });
+        deepStrictEqual(
+          rows,
+          [0, 1, 2].map((rowIndex) =>
+            rowMode === 'array'
+              ? columns.map((column) => column.expected[rowIndex])
+              : Object.fromEntries(columns.map((column) => [column.field.name, column.expected[rowIndex]])),
+          ),
+        );
       });
     }
 
@@ -265,35 +318,104 @@ describe('Arrow row materialization', () => {
       );
     });
 
-    it(`copies binary values out of the batch (${rowMode})`, async () => {
-      const columns: Column[] = [
-        {
-          field: new arrow.Field('value', new arrow.Binary()),
-          thriftType: TTypeId.BINARY_TYPE,
-          values: [new Uint8Array([1, 2])],
-          expected: [Buffer.from([1, 2])],
-        },
-      ];
-      const converter = converterFor(columns, rowMode);
-      const batch = arrow.tableFromIPC(ipc(columns)).batches[0];
-      const first = (converter as any).getRows(batch, 1);
-      const firstValue = rowMode === 'array' ? first[0][0] : first[0].value;
-      firstValue[0] = 255;
-      expect(batch.getChildAt(0)?.get(0)).to.deep.equal(new Uint8Array([1, 2]));
+    for (const type of [new arrow.Binary(), new arrow.FixedSizeBinary(2)]) {
+      it(`copies ${type} values out of the batch (${rowMode})`, async () => {
+        const columns: Column[] = [
+          {
+            field: new arrow.Field('value', type),
+            thriftType: TTypeId.BINARY_TYPE,
+            values: [new Uint8Array([1, 2])],
+            expected: [Buffer.from([1, 2])],
+          },
+        ];
+        const converter = converterFor(columns, rowMode);
+        const batch = arrow.tableFromIPC(ipc(columns)).batches[0];
+        const first = (converter as any).getRows(batch, 1);
+        const firstValue = rowMode === 'array' ? first[0][0] : first[0].value;
+        expect(Buffer.isBuffer(firstValue)).to.be.true;
+        firstValue[0] = 255;
+        expect(batch.getChildAt(0)?.get(0)).to.deep.equal(new Uint8Array([1, 2]));
+      });
+    }
+  }
+
+  for (const column of [
+    {
+      field: new arrow.Field('__proto__', new arrow.Int32()),
+      thriftType: TTypeId.INT_TYPE,
+      values: [null, 7],
+      expected: [null, 7],
+    },
+    {
+      field: new arrow.Field('__proto__', new arrow.TimestampMillisecond()),
+      thriftType: TTypeId.TIMESTAMP_TYPE,
+      values: [null, 7],
+      expected: [null, new Date(7)],
+    },
+    {
+      field: new arrow.Field('__proto__', new arrow.Struct([new arrow.Field('value', new arrow.Int32())])),
+      thriftType: TTypeId.STRUCT_TYPE,
+      values: [null, { value: 7 }],
+      expected: [null, { value: 7 }],
+    },
+  ]) {
+    it(`retains the legacy __proto__ behavior for ${column.field.type} in object mode`, async () => {
+      const converter = converterFor([column], 'object');
+      const rows = await converter.fetchNext({ limit: 100 });
+      const table = arrow.tableFromIPC(ipc([column]));
+      deepStrictEqual(rows, (converter as any).getObjectRows(table.schema, table.toArray()));
+      for (const row of rows) {
+        expect(Object.keys(row)).to.deep.equal([]);
+        if (!arrow.DataType.isStruct(column.field.type)) {
+          expect(Object.getPrototypeOf(row)).to.equal(Object.prototype);
+        }
+      }
     });
   }
 
-  it('retains the legacy __proto__ column behavior in object mode', async () => {
-    const columns: Column[] = [
-      {
-        field: new arrow.Field('__proto__', new arrow.Int32()),
-        thriftType: TTypeId.INT_TYPE,
-        values: [7],
-        expected: [7],
-      },
-    ];
-    const [row] = await converterFor(columns, 'object').fetchNext({ limit: 100 });
-    expect(Object.keys(row)).to.deep.equal([]);
-    expect(Object.getPrototypeOf(row)).to.equal(Object.prototype);
-  });
+  const ordinaryColumns: Column[] = [
+    {
+      field: new arrow.Field('number', new arrow.Float64()),
+      thriftType: TTypeId.DOUBLE_TYPE,
+      values: [7, null],
+      expected: [7, null],
+    },
+    {
+      field: new arrow.Field('text', new arrow.Utf8()),
+      thriftType: TTypeId.STRING_TYPE,
+      values: ['value', null],
+      expected: ['value', null],
+    },
+  ];
+  const duplicateColumns: Column[] = [
+    { ...ordinaryColumns[0], field: new arrow.Field('same', new arrow.Float64()) },
+    {
+      field: new arrow.Field('same', new arrow.Int64(), true, new Map([[DURATION_UNIT_METADATA_KEY, 'SECOND']])),
+      thriftType: TTypeId.INTERVAL_DAY_TIME_TYPE,
+      values: [BigInt(1), null],
+      expected: ['0 00:00:01.000000000', null],
+    },
+  ];
+  for (const [name, columns, schemaColumns] of [
+    ['duplicate names with different types', duplicateColumns, duplicateColumns],
+    ['permuted Thrift names', ordinaryColumns, [...ordinaryColumns].reverse()],
+    ['narrower Thrift schema', ordinaryColumns, ordinaryColumns.slice(0, 1)],
+    [
+      'wider Thrift schema',
+      ordinaryColumns,
+      [...ordinaryColumns, { ...ordinaryColumns[0], field: new arrow.Field('extra', new arrow.Float64()) }],
+    ],
+  ] as const) {
+    it(`retains legacy object-mode conversion for ${name}`, async () => {
+      const converter = converterFor(columns, 'object', false, undefined, schemaColumns);
+      const table = arrow.tableFromIPC(ipc(columns));
+      const expected = (converter as any).getObjectRows(table.schema, table.toArray());
+      const rows = await converter.fetchNext({ limit: 100 });
+      deepStrictEqual(rows, expected);
+      rows.forEach((row, index) => {
+        deepStrictEqual(Object.keys(row), Object.keys(expected[index]));
+        expect(Object.getPrototypeOf(row)).to.equal(Object.prototype);
+      });
+    });
+  }
 });
