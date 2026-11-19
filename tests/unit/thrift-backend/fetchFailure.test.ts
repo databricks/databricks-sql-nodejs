@@ -11,7 +11,7 @@ import {
   TStatusCode,
   TTypeId,
 } from '../../../thrift/TCLIService_types';
-import OperationStateError, { OperationStateErrorCode } from '../../../lib/errors/OperationStateError';
+import HiveDriverError from '../../../lib/errors/HiveDriverError';
 import StatusError from '../../../lib/errors/StatusError';
 import CloudFetchResultHandler from '../../../lib/result/CloudFetchResultHandler';
 import { LogLevel } from '../../../lib/contracts/IDBSQLLogger';
@@ -46,7 +46,7 @@ describe('Thrift fetch failure', () => {
       closeFails ? 'fails' : 'succeeds'
     }`, async () => {
       const { context, operation } = setup();
-      const fetchError = new Error('exhausted fetch retries');
+      const fetchError = new HiveDriverError('exhausted fetch retries');
       const fetch = sinon.stub(context.driver, 'fetchResults').callThrough();
       fetch.onFirstCall().rejects(fetchError);
       const close = sinon.stub(context.driver, 'closeOperation').callThrough();
@@ -67,8 +67,8 @@ describe('Thrift fetch failure', () => {
         await read().then(
           () => expect.fail('later reads must not recover a suffix'),
           (error) => {
-            expect(error).to.be.instanceOf(OperationStateError);
-            expect(error.errorCode).to.equal(OperationStateErrorCode.Error);
+            expect(error).to.equal(fetchError);
+            expect(error).to.be.instanceOf(HiveDriverError);
           },
         );
       }
@@ -96,6 +96,10 @@ describe('Thrift fetch failure', () => {
         expect(rejectedWith).to.equal(fetchError);
         await fetching;
         expect(close.callCount).to.equal(1);
+        await operation.hasMoreRows().then(
+          () => expect.fail('later reads must fail while cleanup is pending'),
+          (error) => expect(error).to.equal(fetchError),
+        );
 
         let closed = false;
         const closing = operation.close().then((status) => {
@@ -158,7 +162,7 @@ describe('Thrift fetch failure', () => {
       expect(unhandled).to.deep.equal([]);
       await operation.fetchChunk().then(
         () => expect.fail('later reads must remain terminal'),
-        (error) => expect(error).to.be.instanceOf(OperationStateError),
+        (error) => expect(error).to.equal(fetchError),
       );
     } finally {
       process.removeListener('unhandledRejection', onUnhandled);
@@ -264,7 +268,7 @@ describe('Thrift fetch failure', () => {
         },
       ],
     };
-    const fetchError = new Error('trailing prefetch failed');
+    const fetchError = new HiveDriverError('trailing prefetch failed');
     const fetch = sinon.stub(context.driver, 'fetchResults').resolves({
       status: context.driver.fetchResultsResp.status,
       hasMoreRows: false,
@@ -291,8 +295,7 @@ describe('Thrift fetch failure', () => {
       await read().then(
         () => expect.fail('later reads must not resume the consumed Arrow cursor'),
         (error) => {
-          expect(error).to.be.instanceOf(OperationStateError);
-          expect(error.errorCode).to.equal(OperationStateErrorCode.Error);
+          expect(error).to.equal(fetchError);
         },
       );
     }
@@ -314,8 +317,7 @@ describe('Thrift fetch failure', () => {
       await operation.fetchChunk().then(
         () => expect.fail('later reads must fail'),
         (error) => {
-          expect(error).to.be.instanceOf(OperationStateError);
-          expect(error.errorCode).to.equal(OperationStateErrorCode.Error);
+          expect(error).to.equal(downloadError);
         },
       );
       expect(close.callCount).to.equal(1);

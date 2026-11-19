@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Any failed Thrift `FetchResults` call or CloudFetch download makes the operation terminal: later reads throw `OperationStateError`, and callers must re-execute the statement (`FetchResults` is not retried). Cleanup runs in the background under the existing close retry budget, logs failures safely, and shares its request with `close()`; argument handling and kernel behavior are unchanged.
+- Any failed Thrift `FetchResults` call or CloudFetch download makes the operation terminal: later reads rethrow the original fetch error, and callers must re-execute the statement (`FetchResults` is not retried). Cleanup runs in the background under the existing close retry budget, logs failures safely, and shares its request with `close()`; argument handling and kernel behavior are unchanged.
 
 - The Thrift token federation exchange (`enableTokenFederation`) now goes through the connection's agent, so `proxy`, `checkServerCertificate`, `customCaCert` and `clientCert`/`clientKey` apply to it. Previously it connected directly with Node's default agent, so behind a required proxy the exchange failed and the driver fell back to the original token. (#611)
 - Kernel backend: a failed status poll while waiting for a statement (a `runAsync: true` statement, or a default execution that outlives the server's inline wait) and a failed result fetch in `hasMoreRows()` now throw the mapped driver error, such as `HiveDriverError: HTTP 500: Internal Server Error` once retries on HTTP 5xx run out, instead of a raw `Error` whose message is the internal `__databricks_error__:{...}` envelope. As in `fetchChunk()`, a failed fetch in `hasMoreRows()` also closes the statement. (#608)

@@ -107,6 +107,8 @@ export default class ThriftOperationBackend implements IOperationBackend {
 
   private fetchFailed = false;
 
+  private fetchError?: unknown;
+
   private closePromise?: Promise<Status>;
 
   constructor({
@@ -212,6 +214,7 @@ export default class ThriftOperationBackend implements IOperationBackend {
         throw error;
       }
       if (!this.fetchFailed) {
+        this.fetchError = error;
         this.fetchFailed = true;
         this.close()
           .catch((closeError) => {
@@ -238,7 +241,7 @@ export default class ThriftOperationBackend implements IOperationBackend {
 
   private failIfFetchFailed(): void {
     if (this.fetchFailed) {
-      throw new OperationStateError(OperationStateErrorCode.Error);
+      throw this.fetchError;
     }
   }
 
