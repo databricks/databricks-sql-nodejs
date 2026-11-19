@@ -306,7 +306,7 @@ class TelemetryClient implements IClientContext {
    * Drain pending metrics and tear down owned resources. Called by
    * `TelemetryClientProvider.releaseClient` when refCount hits zero.
    */
-  async close(): Promise<void> {
+  async close(cancelPendingExports: boolean = false): Promise<void> {
     if (this.closed) return;
     this.closed = true;
     this.logger.log(LogLevel.debug, `Closing TelemetryClient for host: ${this.host}`);
@@ -316,7 +316,7 @@ class TelemetryClient implements IClientContext {
       this.logger.log(LogLevel.debug, `TelemetryClient aggregator close error: ${(err as Error).message}`);
     }
     try {
-      this.exporter.dispose();
+      this.exporter.dispose(cancelPendingExports);
     } catch (err) {
       this.logger.log(LogLevel.debug, `TelemetryClient exporter dispose error: ${(err as Error).message}`);
     }

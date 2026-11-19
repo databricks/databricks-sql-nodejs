@@ -19,6 +19,7 @@ import fetch, { RequestInit, Response, Request } from 'node-fetch';
 import IClientContext from '../contracts/IClientContext';
 import { LogLevel } from '../contracts/IDBSQLLogger';
 import IAuthentication from '../connection/contracts/IAuthentication';
+import IConnectionProvider from '../connection/contracts/IConnectionProvider';
 import AuthenticationError from '../errors/AuthenticationError';
 import HiveDriverError from '../errors/HiveDriverError';
 import { TelemetryMetric, DEFAULT_TELEMETRY_CONFIG } from './types';
@@ -125,6 +126,10 @@ export default class DatabricksTelemetryExporter {
 
   private authMissingWarned = false;
 
+  private readonly abortController = new AbortController();
+
+  private connectionProvider?: Promise<IConnectionProvider>;
+
   constructor(
     private context: IClientContext,
     private host: string,
@@ -156,8 +161,17 @@ export default class DatabricksTelemetryExporter {
    * the last consumer on its host; multi-consumer refcounting on the
    * registry will land in the consumer-wiring PR.
    */
-  dispose(): void {
+  dispose(cancelPendingExports: boolean = false): void {
+    if (cancelPendingExports) {
+      this.abortController.abort();
+    }
     this.circuitBreakerRegistry.removeCircuitBreaker(this.host);
+  }
+
+  detachContext(): void {
+    this.authProvider = this.authProvider ?? this.context.getAuthProvider?.();
+    this.connectionProvider = this.context.getConnectionProvider();
+    this.connectionProvider.catch(() => {});
   }
 
   async export(metrics: TelemetryMetric[]): Promise<void> {
@@ -207,10 +221,12 @@ export default class DatabricksTelemetryExporter {
 
     /* eslint-disable no-await-in-loop */
     for (let attempt = 0; attempt < totalAttempts; attempt += 1) {
+      if (this.abortController.signal.aborted) return;
       try {
         await this.exportInternal(metrics);
         return;
       } catch (error: any) {
+        if (this.abortController.signal.aborted) return;
         lastError = error;
 
         if (
@@ -299,6 +315,7 @@ export default class DatabricksTelemetryExporter {
       headers,
       body,
       timeout: 10000,
+      signal: this.abortController.signal as unknown as RequestInit['signal'],
     });
 
     if (!response.ok) {
@@ -333,7 +350,7 @@ export default class DatabricksTelemetryExporter {
   }
 
   private async sendRequest(url: string, init: RequestInit): Promise<Response> {
-    const connectionProvider = await this.context.getConnectionProvider();
+    const connectionProvider = await (this.connectionProvider ?? this.context.getConnectionProvider());
     const agent = await connectionProvider.getAgent(url);
     // Do NOT route through `connectionProvider.getRetryPolicy()` here. That
     // policy is bounded by the customer's `retriesTimeout` (15 min default)
@@ -472,7 +489,16 @@ export default class DatabricksTelemetryExporter {
 
   private sleep(ms: number): Promise<void> {
     return new Promise((resolve) => {
-      setTimeout(resolve, ms);
+      const { signal } = this.abortController;
+      let timer: NodeJS.Timeout;
+      const finish = (): void => {
+        clearTimeout(timer);
+        signal.removeEventListener('abort', finish);
+        resolve();
+      };
+      timer = setTimeout(finish, ms);
+      if (signal.aborted) finish();
+      else signal.addEventListener('abort', finish, { once: true });
     });
   }
 }

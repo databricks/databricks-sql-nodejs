@@ -28,6 +28,8 @@ interface TelemetryClientHolder {
 // in logs rather than silently growing the map.
 const MAX_CLIENTS_SOFT_LIMIT = 128;
 
+const MAX_PENDING_CLOSES = 32;
+
 /**
  * Process-wide registry of `TelemetryClient`s, one per host. Multiple
  * `DBSQLClient` instances connecting to the same host share the same
@@ -46,6 +48,8 @@ class TelemetryClientProvider {
   private static instance: TelemetryClientProvider | undefined;
 
   private clients = new Map<string, TelemetryClientHolder>();
+
+  private pendingCloses = new Set<Promise<void>>();
 
   private softLimitWarned = false;
 
@@ -118,7 +122,7 @@ class TelemetryClientProvider {
    * Release `context`'s registration. When the last `DBSQLClient` releases,
    * the underlying `TelemetryClient.close()` runs and the entry is removed.
    */
-  async releaseClient(context: IClientContext, host: string): Promise<void> {
+  async releaseClient(context: IClientContext, host: string, waitForTelemetry: boolean = true): Promise<void> {
     const logger = context.getLogger();
     const key = TelemetryClientProvider.normalizeHostKey(host);
     const holder = this.clients.get(key);
@@ -146,12 +150,24 @@ class TelemetryClientProvider {
       // getOrCreateClient creates a fresh instance rather than receiving
       // this closing one.
       this.clients.delete(key);
-      try {
-        await holder.client.close();
-        logger.log(LogLevel.debug, `Closed and removed TelemetryClient for host: ${host}`);
-      } catch (error) {
-        const msg = error instanceof Error ? error.message : String(error);
-        logger.log(LogLevel.debug, `Error releasing TelemetryClient: ${msg}`);
+      const background = !waitForTelemetry && this.pendingCloses.size < MAX_PENDING_CLOSES;
+      if (background) {
+        holder.client.getExporter().detachContext();
+      }
+      const closing = (async () => {
+        try {
+          await holder.client.close(!waitForTelemetry);
+          logger.log(LogLevel.debug, `Closed and removed TelemetryClient for host: ${host}`);
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : String(error);
+          logger.log(LogLevel.debug, `Error releasing TelemetryClient: ${msg}`);
+        }
+      })();
+      if (background) {
+        this.pendingCloses.add(closing);
+        closing.finally(() => this.pendingCloses.delete(closing)).catch(() => {});
+      } else {
+        await closing;
       }
     }
   }

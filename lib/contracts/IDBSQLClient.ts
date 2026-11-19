@@ -10,6 +10,17 @@ export interface ClientOptions {
   logger?: IDBSQLLogger;
 }
 
+export interface ClientCloseOptions {
+  /**
+   * Wait for the final Thrift telemetry export (default true). With false,
+   * export runs in the background for up to telemetryCloseTimeoutMs (2s by
+   * default); a full background queue falls back to waiting. process.exit()
+   * or a frozen runtime can lose that batch. Native kernel session cleanup,
+   * including its telemetry flush, is always awaited.
+   */
+  waitForTelemetry?: boolean;
+}
+
 type AuthOptions =
   | {
       authType?: 'access-token';
@@ -319,5 +330,5 @@ export default interface IDBSQLClient {
 
   openSession(request?: OpenSessionRequest): Promise<IDBSQLSession>;
 
-  close(): Promise<void>;
+  close(options?: ClientCloseOptions): Promise<void>;
 }

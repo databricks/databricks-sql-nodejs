@@ -5,7 +5,12 @@ import tls from 'tls';
 
 import { EventEmitter } from 'events';
 import TCLIService from '../thrift/TCLIService';
-import IDBSQLClient, { ClientOptions, ConnectionOptions, OpenSessionRequest } from './contracts/IDBSQLClient';
+import IDBSQLClient, {
+  ClientOptions,
+  ClientCloseOptions,
+  ConnectionOptions,
+  OpenSessionRequest,
+} from './contracts/IDBSQLClient';
 import IDriver from './contracts/IDriver';
 import IClientContext, { ClientConfig } from './contracts/IClientContext';
 import IThriftClient from './contracts/IThriftClient';
@@ -946,8 +951,10 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
    * telemetry buffered between flush ticks is lost if the process exits
    * without calling `close()`. Long-lived applications should `await` this
    * method on shutdown so the aggregator drains its remaining metrics.
+   * `waitForTelemetry: false` opts into a bounded background Thrift export;
+   * explicit process exit or runtime suspension can lose the final batch.
    */
-  public async close(): Promise<void> {
+  public async close(options: ClientCloseOptions = {}): Promise<void> {
     try {
       await this.sessions.closeAll();
       await this.backend?.close();
@@ -957,13 +964,9 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
 
     this.backend = undefined;
 
-    // Cleanup telemetry. Releasing our refcount on the shared TelemetryClient
-    // is awaited because the underlying close() drains the final HTTP POST —
-    // a caller doing `await client.close(); process.exit(0)` would otherwise
-    // truncate the in-flight request when this is the last refcount holder.
     if (this.host && this.telemetryClient) {
       try {
-        await TelemetryClientProvider.getInstance().releaseClient(this, this.host);
+        await TelemetryClientProvider.getInstance().releaseClient(this, this.host, options.waitForTelemetry);
       } catch (error: any) {
         this.logger.log(LogLevel.debug, `Telemetry cleanup error: ${error.message}`);
       }
