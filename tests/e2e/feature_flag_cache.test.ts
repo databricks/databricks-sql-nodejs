@@ -1,26 +1,28 @@
 import { expect } from 'chai';
-import { channel } from 'diagnostics_channel';
+import sinon from 'sinon';
 import { DBSQLClient } from '../../lib';
 import config from './utils/config';
 import FeatureFlagCache from '../../lib/FeatureFlagCache';
 
 describe('Thrift feature flags across idle reconnects', () => {
+  let sharedContexts: sinon.SinonStub;
+  let idleContexts: sinon.SinonStub;
+
   beforeEach(() => {
-    (FeatureFlagCache as any).idleContexts.clear();
+    sharedContexts = sinon.stub(FeatureFlagCache as any, 'sharedContexts').value(new Map());
+    idleContexts = sinon.stub(FeatureFlagCache as any, 'idleContexts').value(new Map());
+  });
+
+  afterEach(() => {
+    idleContexts.restore();
+    sharedContexts.restore();
   });
 
   for (const reuseClient of [false, true]) {
     it(`reuses flags and preserves results when ${
       reuseClient ? 'reconnecting a client' : 'creating another client'
     }`, async () => {
-      let requests = 0;
-      const onRequest = ({ request }: any) => {
-        if (request.method === 'GET' && request.path.includes('/connector-service/feature-flags/NODEJS/')) {
-          requests += 1;
-        }
-      };
-      const requestsChannel = channel('http.client.request.start');
-      requestsChannel.subscribe(onRequest);
+      const fetch = sinon.spy(FeatureFlagCache.prototype as any, 'fetchFeatureFlags');
       let client = new DBSQLClient();
       let enabled: boolean | undefined;
       try {
@@ -52,9 +54,9 @@ describe('Thrift feature flags across idle reconnects', () => {
         };
         await cycle(0);
         await cycle(1);
-        expect(requests).to.equal(1);
+        expect(fetch.callCount).to.equal(1);
       } finally {
-        requestsChannel.unsubscribe(onRequest);
+        fetch.restore();
       }
     });
   }

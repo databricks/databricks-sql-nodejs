@@ -1,7 +1,7 @@
 import { expect } from 'chai';
 import sinon from 'sinon';
 import { Response } from 'node-fetch';
-import FeatureFlagCache from '../../../lib/FeatureFlagCache';
+import FeatureFlagCache, { FeatureFlagContext } from '../../../lib/FeatureFlagCache';
 import ClientContextStub from '../.stubs/ClientContextStub';
 import { ConnectionOptions } from '../../../lib/contracts/IDBSQLClient';
 import DBSQLClient from '../../../lib/DBSQLClient';
@@ -33,6 +33,17 @@ describe('FeatureFlagCache idle retention', () => {
 
   function response(value = 'true', ttl = 60) {
     return new Response(JSON.stringify({ flags: [{ name: 'flag', value }], ttl_seconds: ttl }));
+  }
+
+  function expectRetainedContext(context: FeatureFlagContext, value = 'true') {
+    expect(context).to.have.all.keys('flags', 'fetchPromise', 'lastFetched', 'cacheable', 'refCount', 'cacheDuration');
+    expect(context.flags).to.be.instanceOf(Map);
+    expect([...context.flags!]).to.deep.equal([['flag', value]]);
+    expect(context.fetchPromise).to.be.undefined;
+    expect(context.lastFetched).to.be.a('number');
+    expect(context.cacheable).to.equal(true);
+    expect(context.refCount).to.equal(0);
+    expect(context.cacheDuration).to.be.a('number').and.greaterThan(0);
   }
 
   it('reuses a successful response after the last consumer closes', async () => {
@@ -77,6 +88,133 @@ describe('FeatureFlagCache idle retention', () => {
     await cache.getBoolean(host, 'flag');
     expect(fetch.callCount).to.equal(1);
     cache.releaseContext(host);
+  });
+
+  it('expires from fetch time even when release occurs 50 seconds later', async () => {
+    const fetch = sinon.stub(FeatureFlagCache.prototype as any, 'fetchWithRetry');
+    fetch.onFirstCall().resolves(response());
+    fetch.onSecondCall().resolves(response('false'));
+    const first = makeCache();
+    first.getOrCreateContext(host);
+    expect(await first.getBoolean(host, 'flag')).to.equal(true);
+    clock.tick(50000);
+    first.releaseContext(host);
+    clock.tick(9999);
+    const beforeExpiry = makeCache();
+    beforeExpiry.getOrCreateContext(host);
+    expect(await beforeExpiry.getBoolean(host, 'flag')).to.equal(true);
+    expect(fetch.callCount).to.equal(1);
+    beforeExpiry.releaseContext(host);
+    clock.tick(2);
+    const afterExpiry = makeCache();
+    afterExpiry.getOrCreateContext(host);
+    expect(await afterExpiry.getBoolean(host, 'flag')).to.equal(false);
+    expect(fetch.callCount).to.equal(2);
+    afterExpiry.releaseContext(host);
+  });
+
+  for (const ttl of [undefined, 0, '3600']) {
+    it(`restores the default TTL when a reused context refreshes with ttl_seconds=${ttl}`, async () => {
+      const fetch = sinon.stub(FeatureFlagCache.prototype as any, 'fetchWithRetry');
+      fetch.onFirstCall().resolves(response('true', 3600));
+      fetch
+        .onSecondCall()
+        .resolves(new Response(JSON.stringify({ flags: [{ name: 'flag', value: 'false' }], ttl_seconds: ttl })));
+      fetch.onThirdCall().resolves(response());
+      const first = makeCache();
+      first.getOrCreateContext(host);
+      await first.getBoolean(host, 'flag');
+      first.releaseContext(host);
+      clock.tick(1000);
+      const reused = makeCache();
+      const context = reused.getOrCreateContext(host);
+      clock.tick(3600000);
+      expect(await reused.getBoolean(host, 'flag')).to.equal(false);
+      expect(context.cacheDuration).to.equal(15 * 60 * 1000);
+      reused.releaseContext(host);
+      clock.tick(15 * 60 * 1000 + 1);
+      const refreshed = makeCache();
+      refreshed.getOrCreateContext(host);
+      expect(await refreshed.getBoolean(host, 'flag')).to.equal(true);
+      expect(fetch.callCount).to.equal(3);
+      refreshed.releaseContext(host);
+    });
+  }
+
+  it('waits for a shared refresh even when its TTL resets to a longer default', async () => {
+    let complete!: (response: Response) => void;
+    const fetch = sinon.stub(FeatureFlagCache.prototype as any, 'fetchWithRetry');
+    fetch.onFirstCall().resolves(response());
+    fetch.onSecondCall().returns(
+      new Promise<Response>((resolve) => {
+        complete = resolve;
+      }),
+    );
+    const cache = makeCache();
+    cache.getOrCreateContext(host);
+    expect(await cache.getBoolean(host, 'flag')).to.equal(true);
+    clock.tick(61000);
+    const firstRead = cache.getBoolean(host, 'flag');
+    await clock.tickAsync(0);
+    let settled = false;
+    const secondRead = cache.getBoolean(host, 'flag').then((value) => {
+      settled = true;
+      return value;
+    });
+    await clock.tickAsync(0);
+    expect(settled).to.equal(false);
+    complete(response('false'));
+    expect(await Promise.all([firstRead, secondRead])).to.deep.equal([false, false]);
+    expect(fetch.callCount).to.equal(2);
+    cache.releaseContext(host);
+  });
+
+  it('does not retain a reused context after a failed refresh', async () => {
+    const fetch = sinon.stub(FeatureFlagCache.prototype as any, 'fetchWithRetry');
+    fetch.onFirstCall().resolves(response('true', 3600));
+    fetch.onSecondCall().resolves(new Response('{}', { status: 500 }));
+    fetch.onThirdCall().resolves(response('false'));
+    const first = makeCache();
+    first.getOrCreateContext(host);
+    await first.getBoolean(host, 'flag');
+    first.releaseContext(host);
+    const reused = makeCache();
+    const context = reused.getOrCreateContext(host);
+    clock.tick(3600001);
+    expect(await reused.getBoolean(host, 'flag')).to.equal(false);
+    expect(context.cacheDuration).to.equal(15 * 60 * 1000);
+    reused.releaseContext(host);
+    expect((FeatureFlagCache as any).idleContexts.size).to.equal(0);
+    const next = makeCache();
+    next.getOrCreateContext(host);
+    expect(await next.getBoolean(host, 'flag')).to.equal(false);
+    expect(fetch.callCount).to.equal(3);
+    next.releaseContext(host);
+  });
+
+  it('evicts the oldest idle key and moves a re-released key to the end', async () => {
+    const fetch = sinon.stub(FeatureFlagCache.prototype as any, 'fetchWithRetry').callsFake(async () => response());
+    const visit = async (workspace: number) => {
+      const cache = makeCache({ customHeaders: { 'x-databricks-org-id': String(workspace) } });
+      cache.getOrCreateContext(host);
+      expect(await cache.getBoolean(host, 'flag')).to.equal(true);
+      cache.releaseContext(host);
+    };
+    for (let workspace = 0; workspace < 100; workspace += 1) await visit(workspace);
+    expect(fetch.callCount).to.equal(100);
+    await visit(0);
+    expect(fetch.callCount).to.equal(100);
+    await visit(100);
+    const idle = (FeatureFlagCache as any).idleContexts as Map<string, FeatureFlagContext>;
+    expect(idle.size).to.equal(100);
+    expect(idle.has('workspace:0')).to.equal(true);
+    expect(idle.has('workspace:1')).to.equal(false);
+    expect(idle.has('workspace:100')).to.equal(true);
+    expect(idle.keys().next().value).to.equal('workspace:2');
+    await visit(0);
+    expect(fetch.callCount).to.equal(101);
+    await visit(1);
+    expect(fetch.callCount).to.equal(102);
   });
 
   it('preserves every typed reader and null/missing defaults after close', async () => {
@@ -187,7 +325,7 @@ describe('FeatureFlagCache idle retention', () => {
     expect(nextAuth.authenticate.callCount).to.equal(1);
     expect(nextFetch.callCount).to.equal(1);
     next.releaseContext('third.databricks.com');
-    expect(JSON.stringify([...(FeatureFlagCache as any).idleContexts])).to.not.contain('secret');
+    expectRetainedContext(original, 'false');
   });
 
   it('canonicalizes fallback hosts across an idle reconnect', async () => {
@@ -353,7 +491,7 @@ describe('FeatureFlagCache idle retention', () => {
     }
     expect((FeatureFlagCache as any).sharedContexts.size).to.equal(0);
     expect((FeatureFlagCache as any).idleContexts.size).to.equal(100);
-    expect(JSON.stringify([...(FeatureFlagCache as any).idleContexts])).to.not.contain('secret-identity');
+    for (const context of (FeatureFlagCache as any).idleContexts.values()) expectRetainedContext(context);
     clock.tick(61000);
     const next = makeCache();
     next.getOrCreateContext(host);

@@ -123,7 +123,7 @@ export default class FeatureFlagCache {
 
     const isExpired = this.isExpired(ctx);
 
-    if (isExpired) {
+    if (ctx.fetchPromise || isExpired) {
       if (!ctx.fetchPromise) {
         ctx.fetchPromise = this.fetchFeatureFlags(host)
           .then((flags) => {
@@ -200,7 +200,10 @@ export default class FeatureFlagCache {
   private async fetchFeatureFlags(host: string): Promise<Map<string, string>> {
     const logger = this.context.getLogger();
     const ctx = this.contexts.get(this.cacheKey(host));
-    if (ctx) ctx.cacheable = false;
+    if (ctx) {
+      ctx.cacheable = false;
+      ctx.cacheDuration = this.CACHE_DURATION_MS;
+    }
 
     try {
       const endpoint = buildTelemetryUrl(
