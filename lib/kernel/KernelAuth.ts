@@ -862,15 +862,10 @@ function buildKernelHostName(options: ConnectionOptions, logger?: IDBSQLLogger):
   const port = explicitPort(options.port);
   const scheme = /^https?:\/\//i.exec(options.host)?.[0] ?? '';
   const authority = options.host.slice(scheme.length).replace(/\/$/, '');
-  // A path, query or fragment in host cannot take a port: it is rejected when the port would be
-  // folded in (https: false, or HTTPS with a non-443 port) or when the host carries an embedded
-  // port after the path (`h.io/path:8443`), before that embedded port can be read. With no port,
-  // or with 443 over HTTPS and no embedded port, the host is passed through unchanged, as on origin/main.
-  if (
-    port !== undefined &&
-    /[/?#]/.test(authority) &&
-    (options.https === false || port !== 443 || EMBEDDED_PORT_RE.test(authority))
-  ) {
+  // A path, query or fragment in host cannot take a folded port: it is rejected when the port would
+  // be folded in (https: false, or HTTPS with a non-443 port). With no port, or with 443 over HTTPS,
+  // the host is passed through unchanged, as on origin/main (including `h.io/path:8443`).
+  if (port !== undefined && /[/?#]/.test(authority) && (options.https === false || port !== 443)) {
     throw new HiveDriverError(
       `kernel backend: host ${JSON.stringify(options.host)} has a path, query or fragment, so \`port\` ${port} ` +
         'cannot be applied to it. Use a bare host or host:port.',

@@ -173,6 +173,9 @@ describe('KernelAuth connection options — port folding', () => {
     [{ host: 'h.databricks.com/x', port: 443 }, 'h.databricks.com/x'],
     [{ host: 'https://h.databricks.com/x', port: 443 }, 'https://h.databricks.com/x'],
     [{ host: 'h.databricks.com/x', port: 443, https: true }, 'h.databricks.com/x'],
+    // An embedded port after a path, with no folded port, passes through as on origin/main.
+    [{ host: 'h.io/path:8443' }, 'h.io/path:8443'],
+    [{ host: 'h.io/path:8443', port: 443 }, 'h.io/path:8443'],
     [{ host: 'h.databricks.com', port: 3015, https: false }, 'http://h.databricks.com:3015'],
     [{ host: 'localhost', port: 80, https: false }, 'http://localhost:80'],
     [{ host: 'localhost', port: '3015', https: false }, 'http://localhost:3015'],
@@ -208,9 +211,10 @@ describe('KernelAuth connection options — port folding', () => {
     [{ host: 'https://h.databricks.com/x', port: 8443 }, /has a path, query or fragment/],
     [{ host: 'h.databricks.com?x', port: 8443 }, /has a path, query or fragment/],
     [{ host: 'h.databricks.com#x', port: 3015, https: false }, /has a path, query or fragment/],
-    // An embedded port after a path must not slip through the embedded-port parse.
-    [{ host: 'h.io/path:8443', port: 443 }, /has a path, query or fragment/],
+    // A folded port (explicit non-443, or https: false) on a path host is rejected, including
+    // when the host also carries an embedded port after the path.
     [{ host: 'h.io/path:8443', port: 8443 }, /has a path, query or fragment/],
+    [{ host: 'h.io/path:8443', port: 443, https: false }, /has a path, query or fragment/],
     [{ host: 'h.databricks.com:70000' }, /outside 1\.\.65535/],
   ];
   it('rejects invalid ports and unfoldable hosts', () => {
