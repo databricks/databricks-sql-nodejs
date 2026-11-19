@@ -26,6 +26,9 @@ const { isArrowBigNumSymbol, bigNumToBigInt } = arrowUtils;
 
 type ArrowSchema = Schema<TypeMap>;
 type ArrowSchemaField = Field<DataType<Type, TypeMap>>;
+type ValueConverter = (value: any) => any;
+
+const identity: ValueConverter = (value) => value;
 
 /**
  * Metadata key carrying the original Arrow `Duration` time unit on fields
@@ -284,11 +287,8 @@ export default class ArrowResultConverter implements IResultsProvider<Array<any>
       let result: Array<any>;
       if (this.disableRowMaterialization) {
         result = new Array(batchRows).fill(null);
-      } else if (this.rowMode === 'array') {
-        result = this.getRowArrays(batch, batchRows);
       } else {
-        const table = new Table(batch);
-        result = this.getRows(table.schema, table.toArray().slice(0, this.remainingRows));
+        result = this.getRows(batch, batchRows);
       }
 
       // Reduce remaining rows count by a count of rows we just processed.
@@ -349,7 +349,7 @@ export default class ArrowResultConverter implements IResultsProvider<Array<any>
     }
   }
 
-  private getRows(schema: ArrowSchema, rows: Array<StructRow | MapRow>): Array<any> {
+  private getObjectRows(schema: ArrowSchema, rows: Array<StructRow | MapRow>): Array<any> {
     return rows.map((row) => {
       // First, convert native Arrow values to corresponding plain JS objects
       const record = this.convertArrowTypes(row, undefined, schema.fields, undefined);
@@ -358,27 +358,77 @@ export default class ArrowResultConverter implements IResultsProvider<Array<any>
     });
   }
 
-  // Reads cells by column index, so same-named columns are all kept. Fields come from the
-  // batch data type: `RecordBatch.schema` merges same-named fields into one type.
-  private getRowArrays(batch: RecordBatch<TypeMap>, rowCount: number): Array<Array<any>> {
-    const fields: Array<ArrowSchemaField> = batch.data.type.children;
+  private getRows(batch: RecordBatch<TypeMap>, rowCount: number): Array<any> {
+    const arrayRows = this.rowMode === 'array';
+    const fields: Array<ArrowSchemaField> = arrayRows ? batch.data.type.children : batch.schema.fields;
+    const names = this.schema.map((column) => column.columnName);
+    if (
+      !arrayRows &&
+      (new Set(names).size !== names.length ||
+        names.includes('__proto__') ||
+        fields.length !== names.length ||
+        fields.some((field, index) => field.name !== names[index]))
+    ) {
+      const table = new Table(batch);
+      return this.getObjectRows(table.schema, table.toArray().slice(0, rowCount));
+    }
     const vectors = this.schema.map((column, index) => batch.getChildAt(index));
-    const rows: Array<Array<any>> = [];
-    for (let i = 0; i < rowCount; i += 1) {
-      const row: Array<any> = [];
-      for (let j = 0; j < this.schema.length; j += 1) {
-        const field = fields[j];
-        const value = this.convertArrowTypes(
-          vectors[j]?.get(i) ?? null,
-          field?.type,
-          field?.type.children || [],
-          field,
-        );
-        row.push(this.convertThriftColumnValue(this.schema[j], value));
+    const keys = arrayRows ? names.map((name, index) => index) : names;
+    const converters = this.schema.map((column, index) => {
+      const convert = this.getArrowValueConverter(fields[index]);
+      const descriptor = column.typeDesc.types[0]?.primitiveEntry;
+      const thriftType =
+        this.preserveBigNumericPrecision &&
+        (descriptor?.type === TTypeId.DECIMAL_TYPE || descriptor?.type === TTypeId.BIGINT_TYPE)
+          ? undefined
+          : descriptor;
+      return (value: any) => (value === null ? null : convertThriftValue(thriftType, convert(value)));
+    });
+    const rows: Array<any> = new Array(rowCount);
+    for (let rowIndex = 0; rowIndex < rowCount; rowIndex += 1) {
+      const row: any = arrayRows ? [] : {};
+      for (let columnIndex = 0; columnIndex < names.length; columnIndex += 1) {
+        const value = converters[columnIndex](vectors[columnIndex]?.get(rowIndex) ?? null);
+        row[keys[columnIndex]] = value;
       }
-      rows.push(row);
+      rows[rowIndex] = row;
     }
     return rows;
+  }
+
+  private getArrowValueConverter(field?: ArrowSchemaField): ValueConverter {
+    const valueType = field?.type;
+    if (DataType.isTimestamp(valueType)) {
+      return (value) => new Date(value);
+    }
+    if (DataType.isInterval(valueType)) {
+      return (value) => formatArrowInterval(value, valueType);
+    }
+    if (DataType.isDecimal(valueType)) {
+      return this.preserveBigNumericPrecision
+        ? (value) => bigNumDecimalToString(bigNumToBigInt(value), valueType.scale)
+        : (value) => Number(bigNumToBigInt(value)) / 10 ** valueType.scale;
+    }
+    if (DataType.isBinary(valueType) || DataType.isFixedSizeBinary(valueType)) {
+      return (value) => Buffer.from(value);
+    }
+    if (DataType.isInt(valueType) && valueType.bitWidth === 64) {
+      const durationUnit = field?.metadata.get(DURATION_UNIT_METADATA_KEY);
+      if (durationUnit) {
+        return (value) => formatDurationToIntervalDayTime(value, durationUnit);
+      }
+      return this.preserveBigNumericPrecision ? identity : Number;
+    }
+    if (
+      DataType.isBool(valueType) ||
+      DataType.isInt(valueType) ||
+      DataType.isFloat(valueType) ||
+      DataType.isUtf8(valueType) ||
+      DataType.isDate(valueType)
+    ) {
+      return identity;
+    }
+    return (value) => this.convertArrowTypes(value, valueType, valueType?.children || [], field);
   }
 
   private convertArrowTypes(
@@ -524,21 +574,5 @@ export default class ArrowResultConverter implements IResultsProvider<Array<any>
     });
 
     return result;
-  }
-
-  // Per-cell equivalent of `convertThriftTypes`, used by array rows. Kept separate so
-  // the default object path stays as is.
-  private convertThriftColumnValue(column: TColumnDesc, value: any): any {
-    if (value === null) {
-      return null;
-    }
-    const typeDescriptor = column.typeDesc.types[0]?.primitiveEntry;
-    if (
-      this.preserveBigNumericPrecision &&
-      (typeDescriptor?.type === TTypeId.DECIMAL_TYPE || typeDescriptor?.type === TTypeId.BIGINT_TYPE)
-    ) {
-      return value;
-    }
-    return convertThriftValue(typeDescriptor, value);
   }
 }
