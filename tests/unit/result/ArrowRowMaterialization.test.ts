@@ -362,14 +362,24 @@ describe('Arrow row materialization', () => {
     it(`retains the legacy __proto__ behavior for ${column.field.type} in object mode`, async () => {
       const converter = converterFor([column], 'object');
       const rows = await converter.fetchNext({ limit: 100 });
-      const table = arrow.tableFromIPC(ipc([column]));
-      deepStrictEqual(rows, (converter as any).getObjectRows(table.schema, table.toArray()));
-      for (const row of rows) {
-        expect(Object.keys(row)).to.deep.equal([]);
-        if (!arrow.DataType.isStruct(column.field.type)) {
-          expect(Object.getPrototypeOf(row)).to.equal(Object.prototype);
-        }
-      }
+      const structColumn = arrow.DataType.isStruct(column.field.type);
+      deepStrictEqual(
+        rows.map((row) => ({
+          hasPlainPrototype: Object.getPrototypeOf(row) === Object.prototype,
+          hasStructRowPrototype: Object.getPrototypeOf(row) === arrow.StructRow.prototype,
+          keys: Object.keys(row),
+          value: row.value,
+        })),
+        [
+          { hasPlainPrototype: true, hasStructRowPrototype: false, keys: [], value: undefined },
+          {
+            hasPlainPrototype: !structColumn,
+            hasStructRowPrototype: structColumn,
+            keys: [],
+            value: undefined,
+          },
+        ],
+      );
     });
   }
 
@@ -388,7 +398,7 @@ describe('Arrow row materialization', () => {
     },
   ];
   const duplicateColumns: Column[] = [
-    { ...ordinaryColumns[0], field: new arrow.Field('same', new arrow.Float64()) },
+    { ...ordinaryColumns[0], field: new arrow.Field('same', new arrow.Float64()), values: [7.5, null] },
     {
       field: new arrow.Field('same', new arrow.Int64(), true, new Map([[DURATION_UNIT_METADATA_KEY, 'SECOND']])),
       thriftType: TTypeId.INTERVAL_DAY_TIME_TYPE,
@@ -410,7 +420,9 @@ describe('Arrow row materialization', () => {
       const converter = converterFor(columns, 'object', false, undefined, schemaColumns);
       const table = arrow.tableFromIPC(ipc(columns));
       const expected = (converter as any).getObjectRows(table.schema, table.toArray());
+      const fallback = sinon.spy(converter as any, 'getObjectRows');
       const rows = await converter.fetchNext({ limit: 100 });
+      sinon.assert.calledOnce(fallback);
       deepStrictEqual(rows, expected);
       rows.forEach((row, index) => {
         deepStrictEqual(Object.keys(row), Object.keys(expected[index]));

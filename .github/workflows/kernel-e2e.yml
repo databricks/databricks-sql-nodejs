@@ -160,7 +160,7 @@ jobs:
           # Run when the kernel driver layer, the napi binding contract, kernel
           # e2e tests, this workflow, the kernel revision pin, or core deps
           # move.
-          if echo "$CHANGED" | grep -qE "^(lib/kernel/|native/kernel/|tests/e2e/kernel/|tests/unit/kernel/|\.github/workflows/kernel-e2e\.yml|KERNEL_REV|package\.json|package-lock\.json)"; then
+          if echo "$CHANGED" | grep -qE "^(lib/kernel/|lib/result/|native/kernel/|tests/e2e/kernel/|tests/e2e/utils/rowMaterialization\.ts|tests/unit/kernel/|\.github/workflows/kernel-e2e\.yml|KERNEL_REV|package\.json|package-lock\.json)"; then
             echo "run_tests=true" >> "$GITHUB_OUTPUT"
           else
             echo "run_tests=false" >> "$GITHUB_OUTPUT"
@@ -410,6 +410,6 @@ jobs:
               completed_at: new Date().toISOString(),
               output: {
                 title: 'Skipped — no kernel-relevant changes',
-                summary: 'No files under lib/kernel/, native/kernel/, tests/e2e/kernel/, tests/unit/kernel/, KERNEL_REV, package.json, or package-lock.json changed.'
+                summary: 'No files under lib/kernel/, lib/result/, native/kernel/, tests/e2e/kernel/, tests/e2e/utils/rowMaterialization.ts, tests/unit/kernel/, KERNEL_REV, package.json, or package-lock.json changed.'
               }
             });
