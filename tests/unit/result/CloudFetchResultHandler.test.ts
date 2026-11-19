@@ -1,5 +1,6 @@
 import { expect, AssertionError } from 'chai';
 import sinon, { SinonStub } from 'sinon';
+import { execFileSync } from 'child_process';
 import http from 'http';
 import { PassThrough } from 'stream';
 import { AddressInfo } from 'net';
@@ -807,6 +808,41 @@ describe('CloudFetchResultHandler', () => {
       expect(body.listenerCount('data')).to.eq(0);
       expect(body.listenerCount('end')).to.eq(0);
       expect(body.listeners('error')).to.deep.eq(errorsBefore);
+    });
+
+    it('handles late body errors without application error handlers or unhandled rejections', function () {
+      this.timeout(15000);
+      const script = `
+        const assert = require('assert').strict;
+        const { PassThrough } = require('stream');
+        const { Response } = require('node-fetch');
+        const Handler = require('./lib/result/CloudFetchResultHandler').default;
+        (async () => {
+          const body = new PassThrough();
+          const response = new Response(body);
+          const originalErrors = body.listeners('error');
+          assert.equal(originalErrors.length, 1);
+          const reading = Handler.prototype.readBody.call({}, response);
+          body.end(Buffer.from('result bytes'));
+          assert.equal((await reading).toString(), 'result bytes');
+          assert.equal(response.bodyUsed, true);
+          assert.equal(body.listenerCount('data'), 0);
+          assert.equal(body.listenerCount('end'), 0);
+          await new Promise((resolve) => setImmediate(() => {
+            body.emit('error', new Error('late body error'));
+            resolve();
+          }));
+          await new Promise((resolve) => setImmediate(resolve));
+          assert.deepEqual(body.listeners('error'), originalErrors);
+          process.stdout.write('late body error handled\\n');
+        })().catch((error) => { console.error(error); process.exitCode = 1; });
+      `;
+      const output = execFileSync(
+        process.execPath,
+        ['--unhandled-rejections=strict', '--require', 'ts-node/register', '-e', script],
+        { cwd: process.cwd(), encoding: 'utf8', timeout: 10000, stdio: 'pipe' },
+      );
+      expect(output).to.eq('late body error handled\n');
     });
   });
 
