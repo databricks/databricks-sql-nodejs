@@ -183,6 +183,14 @@ describe('FeatureFlagCache idle retention', () => {
     cache.releaseContext('other.databricks.com');
   });
 
+  it('does not alias an absent token with a literal anonymous token', () => {
+    const anonymous = makeCache({ token: undefined });
+    const token = makeCache({ token: 'anonymous' });
+    expect(anonymous.getOrCreateContext(host)).to.not.equal(token.getOrCreateContext(host));
+    anonymous.releaseContext(host);
+    token.releaseContext(host);
+  });
+
   it('canonicalizes host and custom header casing and order', () => {
     const first = makeCache({}, { customHeaders: { 'X-Route': 'a', 'X-Databricks-Org-Id': '1' } });
     const next = makeCache({}, { customHeaders: { 'x-databricks-org-id': '1', 'x-route': 'a' } });

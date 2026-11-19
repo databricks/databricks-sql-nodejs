@@ -15,7 +15,7 @@
  */
 
 import { createHash } from 'crypto';
-import fetch, { Headers, RequestInit, Response, Request } from 'node-fetch';
+import fetch, { RequestInit, Response, Request } from 'node-fetch';
 import IClientContext from './contracts/IClientContext';
 import { LogLevel } from './contracts/IDBSQLLogger';
 import IAuthentication from './connection/contracts/IAuthentication';
@@ -93,8 +93,10 @@ export default class FeatureFlagCache {
       .update(
         JSON.stringify([
           this.userAgent,
-          [...new Headers(this.context.getConfig().customHeaders ?? {}).entries()],
-          tokenAuth ? connectionOptions?.token ?? 'anonymous' : authenticationId,
+          Object.entries(this.context.getConfig().customHeaders ?? {})
+            .map(([name, value]) => [name.toLowerCase(), value])
+            .sort(([left], [right]) => left.localeCompare(right)),
+          tokenAuth ? connectionOptions?.token : authenticationId,
           connectionOptions?.https,
           connectionOptions?.port,
           connectionOptions?.proxy,
