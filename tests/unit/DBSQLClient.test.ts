@@ -234,6 +234,19 @@ describe('DBSQLClient.connect', () => {
     expect(connectionOptions.port).to.equal(3015);
   });
 
+  it('treats a falsy port as the default (443 over HTTPS, 80 over HTTP), as the kernel path does', async () => {
+    const client = new DBSQLClient();
+
+    for (const port of [0, Number.NaN, undefined, null, '', false]) {
+      const label = String(port);
+      expect(client['getConnectionOptions']({ ...connectOptions, port: port as any }).port, label).to.equal(443);
+      expect(
+        client['getConnectionOptions']({ ...connectOptions, port: port as any, https: false }).port,
+        label,
+      ).to.equal(80);
+    }
+  });
+
   it('should only switch to plain HTTP for an explicit https: false', async () => {
     const client = new DBSQLClient();
 
