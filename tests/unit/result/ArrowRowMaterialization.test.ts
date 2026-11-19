@@ -73,6 +73,109 @@ function decimal(value: string): Uint32Array {
 
 describe('Arrow row materialization', () => {
   for (const rowMode of ['object', 'array'] as const) {
+    it(`preserves Decimal128 rounding, signs and scales (${rowMode})`, async () => {
+      const unscaled = [
+        '0',
+        '1',
+        '-1',
+        '4294967295',
+        '-4294967295',
+        '4294967296',
+        '-4294967296',
+        '9007199254740991',
+        '-9007199254740991',
+        '9007199254740992',
+        '-9007199254740992',
+        '9007199254740993',
+        '-9007199254740993',
+        '18446744073709551615',
+        '-18446744073709551615',
+        '18446744073709551616',
+        '-18446744073709551616',
+        '79228162514264337593543950336',
+        '-79228162514264337593543950336',
+        '99999999999999999999999999999999999999',
+        '-99999999999999999999999999999999999999',
+        null,
+      ];
+      const columns: Column[] = [-2, 0, 2, 18, 38].map((scale) => ({
+        field: new arrow.Field(`decimal${scale}`, new arrow.Decimal(scale, 38, 128)),
+        thriftType: TTypeId.DECIMAL_TYPE,
+        values: unscaled.map((value) => (value === null ? null : decimal(value))),
+        expected: unscaled.map((value) => (value === null ? null : Number(value) / 10 ** scale)),
+      }));
+      const converter = converterFor(columns, rowMode);
+      const expected = unscaled.map((value, rowIndex) =>
+        rowMode === 'array'
+          ? columns.map((column) => column.expected[rowIndex])
+          : Object.fromEntries(columns.map((column) => [column.field.name, column.expected[rowIndex]])),
+      );
+      deepStrictEqual(await converter.fetchNext({ limit: 100 }), expected);
+      const batch = arrow.tableFromIPC(ipc(columns)).batches[0];
+      deepStrictEqual((converter as any).getRows(batch.slice(3, 15), 8), expected.slice(3, 11));
+      const legacyRows = (converter as any).getObjectRows(batch.schema, batch.toArray());
+      deepStrictEqual(
+        rowMode === 'array'
+          ? legacyRows.map((row: any) => columns.map((column) => row[column.field.name]))
+          : legacyRows,
+        expected,
+      );
+    });
+
+    it(`preserves nested numeric decimals and nulls (${rowMode})`, async () => {
+      const amount = new arrow.Decimal(2, 38, 128);
+      const array = new arrow.List(new arrow.Field('element', amount));
+      const columns: Column[] = [
+        {
+          field: new arrow.Field('array', array),
+          thriftType: TTypeId.ARRAY_TYPE,
+          values: [[decimal('-4294967297'), null, decimal('9007199254740993')], null, []],
+          expected: [[-42949672.97, null, Number('9007199254740993') / 100], null, []],
+        },
+        {
+          field: new arrow.Field(
+            'struct',
+            new arrow.Struct([new arrow.Field('amount', amount), new arrow.Field('items', array)]),
+          ),
+          thriftType: TTypeId.STRUCT_TYPE,
+          values: [{ amount: decimal('-1'), items: [null, decimal('4294967296')] }, null, { amount: null, items: [] }],
+          expected: [{ amount: -0.01, items: [null, 42949672.96] }, null, { amount: null, items: [] }],
+        },
+        {
+          field: new arrow.Field(
+            'map',
+            new arrow.Map_(
+              new arrow.Field(
+                'entries',
+                new arrow.Struct<{ key: arrow.Utf8; value: arrow.Decimal }>([
+                  new arrow.Field('key', new arrow.Utf8()),
+                  new arrow.Field('value', amount),
+                ]),
+              ),
+            ),
+          ),
+          thriftType: TTypeId.MAP_TYPE,
+          values: [
+            new Map([
+              ['negative', decimal('-9007199254740991')],
+              ['null', null],
+            ]),
+            null,
+            new Map(),
+          ],
+          expected: [{ negative: Number('-9007199254740991') / 100, null: null }, null, {}],
+        },
+      ];
+      deepStrictEqual(
+        await converterFor(columns, rowMode).fetchNext({ limit: 100 }),
+        [0, 1, 2].map((rowIndex) =>
+          rowMode === 'array'
+            ? columns.map((column) => column.expected[rowIndex])
+            : Object.fromEntries(columns.map((column) => [column.field.name, column.expected[rowIndex]])),
+        ),
+      );
+    });
+
     for (const preservePrecision of [false, true]) {
       it(`preserves scalar values, types and nulls (${rowMode}, precision=${preservePrecision})`, async () => {
         const timestamp = new Date('2026-01-02T03:04:05.000Z');
