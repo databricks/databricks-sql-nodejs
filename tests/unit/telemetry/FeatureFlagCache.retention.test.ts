@@ -192,6 +192,29 @@ describe('FeatureFlagCache idle retention', () => {
     next.releaseContext(host);
   });
 
+  for (const [name, body, status] of [
+    ['HTTP failure', '{}', 503],
+    ['missing flags', '{}', 200],
+    ['invalid JSON', '{', 200],
+  ] as Array<[string, string, number]>) {
+    it(`preserves a shorter retry cadence after ${name}`, async () => {
+      const fetch = sinon.stub(FeatureFlagCache.prototype as any, 'fetchWithRetry');
+      fetch.onFirstCall().resolves(response());
+      fetch.onSecondCall().resolves(new Response(body, { status }));
+      fetch.onThirdCall().resolves(response());
+      const cache = makeCache();
+      const context = cache.getOrCreateContext(host);
+      expect(await cache.getBoolean(host, 'flag')).to.equal(true);
+      clock.tick(61000);
+      expect(await cache.getBoolean(host, 'flag')).to.equal(false);
+      expect(context.cacheDuration).to.equal(60000);
+      clock.tick(60001);
+      expect(await cache.getBoolean(host, 'flag')).to.equal(true);
+      expect(fetch.callCount).to.equal(3);
+      cache.releaseContext(host);
+    });
+  }
+
   it('evicts the oldest idle key and moves a re-released key to the end', async () => {
     const fetch = sinon.stub(FeatureFlagCache.prototype as any, 'fetchWithRetry').callsFake(async () => response());
     const visit = async (workspace: number) => {

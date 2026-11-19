@@ -200,6 +200,7 @@ export default class FeatureFlagCache {
   private async fetchFeatureFlags(host: string): Promise<Map<string, string>> {
     const logger = this.context.getLogger();
     const ctx = this.contexts.get(this.cacheKey(host));
+    const previousCacheDuration = ctx?.cacheDuration ?? this.CACHE_DURATION_MS;
     if (ctx) {
       ctx.cacheable = false;
       ctx.cacheDuration = this.CACHE_DURATION_MS;
@@ -262,6 +263,10 @@ export default class FeatureFlagCache {
       // Preserve the existing policy: use consumer defaults until the next TTL.
       // Retrying on every read would add request latency during an outage.
       return new Map();
+    } finally {
+      if (ctx && !ctx.cacheable) {
+        ctx.cacheDuration = Math.min(previousCacheDuration, this.CACHE_DURATION_MS);
+      }
     }
   }
 
