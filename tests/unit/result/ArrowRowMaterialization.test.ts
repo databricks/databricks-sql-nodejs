@@ -73,11 +73,14 @@ function decimal(value: string): Uint32Array {
 
 describe('Arrow row materialization', () => {
   for (const rowMode of ['object', 'array'] as const) {
-    it(`avoids decimal string conversion for safe signed values (${rowMode})`, () => {
-      const unscaled = ['0', '1', '-1', '4294967297', '-4294967297', '9007199254740991', '-9007199254740991'];
+    it(`skips BigInt conversion only for safe-integer decimals (${rowMode})`, () => {
+      const safe = ['0', '1', '-1', '4294967297', '-4294967297', '9007199254740991', '-9007199254740991'];
+      // The BigInt fallback reads `byteLength`; these must take it.
+      const unsafe = ['9007199254740993', '-9007199254740993', '18446744073709551616'];
+      const unscaled = [...safe, ...unsafe];
       const columns: Column[] = [
         {
-          field: new arrow.Field('amount', new arrow.Decimal(2, 18, 128)),
+          field: new arrow.Field('amount', new arrow.Decimal(2, 38, 128)),
           thriftType: TTypeId.DECIMAL_TYPE,
           values: unscaled.map(decimal),
           expected: unscaled.map((value) => Number(value) / 100),
@@ -93,14 +96,17 @@ describe('Arrow row materialization', () => {
       });
       const sandbox = sinon.createSandbox();
       try {
-        sandbox.stub(vector, 'get').callsFake((index) => values[index]);
+        const get = sandbox.stub(vector, 'get').callsFake((index) => values[index]);
         sandbox.stub(batch, 'getChildAt').returns(vector);
         const converter = converterFor(columns, rowMode);
         deepStrictEqual(
           (converter as any).getRows(batch, values.length),
           columns[0].expected.map((amount) => (rowMode === 'array' ? [amount] : { amount })),
         );
-        byteLengthReads.forEach((read) => sinon.assert.notCalled(read));
+        // The stubbed values must be the ones converted, or the byteLength checks prove nothing.
+        sinon.assert.callCount(get, values.length);
+        byteLengthReads.slice(0, safe.length).forEach((read) => sinon.assert.notCalled(read));
+        byteLengthReads.slice(safe.length).forEach((read) => sinon.assert.called(read));
       } finally {
         sandbox.restore();
       }
