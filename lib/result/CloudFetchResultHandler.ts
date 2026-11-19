@@ -1,4 +1,5 @@
 import fetch, { RequestInfo, RequestInit, Request, Response } from 'node-fetch';
+import { Readable } from 'stream';
 import { TGetResultSetMetadataResp, TRowSet, TSparkArrowResultLink } from '../../thrift/TCLIService_types';
 import HiveDriverError from '../errors/HiveDriverError';
 import RetryError, { RetryErrorCode } from '../errors/RetryError';
@@ -149,6 +150,26 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
     };
   }
 
+  private async readBody(response: Response): Promise<Buffer> {
+    const { body } = response;
+    if (!(body instanceof Readable)) {
+      return response.buffer();
+    }
+    const events = ['data', 'end', 'error'];
+    const existing = events.map((event) => body.listeners(event));
+    const result = response.buffer();
+    const added = events.map((event, index) =>
+      body.listeners(event).filter((listener) => !existing[index].includes(listener)),
+    );
+    try {
+      return await result;
+    } finally {
+      events.forEach((event, index) => {
+        added[index].forEach((listener) => body.removeListener(event, listener as () => void));
+      });
+    }
+  }
+
   private async fetch(url: RequestInfo, init?: RequestInit): Promise<{ response: Response; body?: Buffer }> {
     const connectionProvider = await this.context.getConnectionProvider();
     let requestUrl = url;
@@ -194,7 +215,7 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
         try {
           const response = await fetch(request);
           if (response.ok) {
-            downloaded = await response.buffer();
+            downloaded = await this.readBody(response);
           } else {
             lastFailure = { request, response };
           }
@@ -232,7 +253,7 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
     // callback). In production the body is always read inside the retried
     // block above, so this path is a no-op.
     if (downloaded === undefined && result.response.ok) {
-      downloaded = await result.response.buffer();
+      downloaded = await this.readBody(result.response);
     }
     return { response: result.response, body: downloaded };
   }

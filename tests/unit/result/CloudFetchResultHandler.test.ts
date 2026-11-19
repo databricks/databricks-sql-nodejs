@@ -1,6 +1,7 @@
 import { expect, AssertionError } from 'chai';
 import sinon, { SinonStub } from 'sinon';
 import http from 'http';
+import { PassThrough } from 'stream';
 import { AddressInfo } from 'net';
 import Int64 from 'node-int64';
 import { compressFrameSync } from 'lz4-napi';
@@ -752,6 +753,63 @@ describe('CloudFetchResultHandler', () => {
     },
   );
 
+  describe('response body retention', () => {
+    function createHandler(response: Response) {
+      const context = new ClientContextStub({ cloudFetchConcurrentDownloads: 1 });
+      context.invokeWithRetryStub.resolves({ request: new Request('http://localhost'), response });
+      return new CloudFetchResultHandler(context, new ResultsProviderStub([sampleRowSet1], undefined), {
+        status: { statusCode: TStatusCode.SUCCESS_STATUS },
+      });
+    }
+
+    it('releases consumed body listeners without removing existing or later listeners', async () => {
+      const body = new PassThrough();
+      const response = new Response(body);
+      const existing = ['data', 'end', 'error'].map((event) => {
+        const listener = sinon.spy();
+        body.on(event, listener);
+        return listener;
+      });
+      const later = sinon.spy();
+      body.once('data', () => body.on('error', later));
+      const errorsBefore = body.listeners('error');
+      const handler = createHandler(response);
+      setImmediate(() => body.end(sampleArrowBatch));
+
+      const batch = await handler.fetchNext({ limit: 10000 });
+
+      expect(batch.batches).to.deep.eq([sampleArrowBatch]);
+      expect(response.bodyUsed).to.be.true;
+      expect(body.listeners('data')).to.deep.eq([existing[0]]);
+      expect(body.listeners('end')).to.deep.eq([existing[1]]);
+      expect(body.listeners('error')).to.deep.eq([...errorsBefore, later]);
+      body.emit('error', new Error('late stream error'));
+      expect(existing[2].calledOnce).to.be.true;
+      expect(later.calledOnce).to.be.true;
+    });
+
+    it('releases body reader listeners when consumption rejects', async () => {
+      const body = new PassThrough();
+      const response = new Response(body);
+      const errorsBefore = body.listeners('error');
+      const handler = createHandler(response);
+      setImmediate(() => body.destroy(new Error('body interrupted')));
+
+      let thrown: unknown;
+      try {
+        await handler.fetchNext({ limit: 10000 });
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown).to.be.instanceOf(Error);
+      expect(response.bodyUsed).to.be.true;
+      expect(body.listenerCount('data')).to.eq(0);
+      expect(body.listenerCount('end')).to.eq(0);
+      expect(body.listeners('error')).to.deep.eq(errorsBefore);
+    });
+  });
+
   describe('download deadline', () => {
     let server: http.Server | undefined;
 
@@ -840,6 +898,8 @@ describe('CloudFetchResultHandler', () => {
         expect(buffer.calledOnce).to.be.true;
         expect(arrayBuffer.called).to.be.false;
         expect(buffer.firstCall.thisValue.body).to.have.property('pipe').that.is.a('function');
+        expect(buffer.firstCall.thisValue.body.listenerCount('data')).to.eq(0);
+        expect(buffer.firstCall.thisValue.body.listenerCount('end')).to.eq(0);
         const downloaded = await buffer.firstCall.returnValue;
         expect(downloaded).to.deep.eq(body);
         expect(downloaded.length).to.be.lt(Buffer.poolSize >>> 1);
