@@ -244,7 +244,9 @@ export default class ThriftHttpConnection extends EventEmitter {
     });
   }
 
-  private handleThriftResponse(transportWithData: TTransport) {
+  private handleThriftResponse(
+    transportWithData: TTransport & { borrow?(): { readIndex: number; writeIndex: number } },
+  ) {
     if (!this.client) {
       throw new Thrift.TApplicationException(Thrift.TApplicationExceptionType.INTERNAL_ERROR, 'Client not available');
     }
@@ -277,6 +279,10 @@ export default class ThriftHttpConnection extends EventEmitter {
             Thrift.TApplicationExceptionType.WRONG_METHOD_NAME,
             'Received a response to an unknown RPC function',
           );
+        }
+        const remaining = transportWithData.borrow?.();
+        if (remaining && remaining.readIndex === remaining.writeIndex) {
+          break;
         }
       }
     } catch (error) {
