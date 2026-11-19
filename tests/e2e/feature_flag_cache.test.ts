@@ -2,8 +2,13 @@ import { expect } from 'chai';
 import { channel } from 'diagnostics_channel';
 import { DBSQLClient } from '../../lib';
 import config from './utils/config';
+import FeatureFlagCache from '../../lib/FeatureFlagCache';
 
 describe('Thrift feature flags across idle reconnects', () => {
+  beforeEach(() => {
+    (FeatureFlagCache as any).idleContexts.clear();
+  });
+
   for (const reuseClient of [false, true]) {
     it(`reuses flags and preserves results when ${
       reuseClient ? 'reconnecting a client' : 'creating another client'

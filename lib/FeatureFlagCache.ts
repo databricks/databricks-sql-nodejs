@@ -14,7 +14,6 @@
  * limitations under the License.
  */
 
-import { createHash } from 'crypto';
 import fetch, { RequestInit, Response, Request } from 'node-fetch';
 import IClientContext from './contracts/IClientContext';
 import { LogLevel } from './contracts/IDBSQLLogger';
@@ -22,7 +21,6 @@ import IAuthentication from './connection/contracts/IAuthentication';
 import { buildTelemetryUrl, normalizeHeaders } from './telemetry/telemetryUtils';
 import buildUserAgentString from './utils/buildUserAgentString';
 import driverVersion from './version';
-import { ConnectionOptions } from './contracts/IDBSQLClient';
 
 export interface FeatureFlagContext {
   flags?: Map<string, string>;
@@ -34,23 +32,19 @@ export interface FeatureFlagContext {
 }
 
 /**
- * Shared feature-flag values per request identity.
+ * Shared feature-flag values per workspace.
  * Acquire/release a context per consumer; each reader uses its caller's auth.
  * Responsibilities:
  *   - dedupe in-flight fetches (thundering-herd protection);
  *   - retain bounded successful responses until their original expiry;
  *   - clamp server-provided TTL into a safe band.
  *
- * Workspace routing, authentication, and transport settings partition responses.
+ * Workspace ID partitions SPOG traffic; normalized host is the fallback.
  */
 export default class FeatureFlagCache {
   private static sharedContexts = new Map<string, FeatureFlagContext>();
 
   private static idleContexts = new Map<string, FeatureFlagContext>();
-
-  private static authenticationIds = new WeakMap<IAuthentication, number>();
-
-  private static nextAuthenticationId = 0;
 
   private static readonly MAX_IDLE_CONTEXTS = 100;
 
@@ -58,59 +52,20 @@ export default class FeatureFlagCache {
 
   private readonly userAgent: string;
 
-  private readonly scope: string;
-
-  private readonly retainIdle: boolean;
-
   private readonly CACHE_DURATION_MS = 15 * 60 * 1000;
 
   private readonly MIN_CACHE_DURATION_S = 60;
 
   private readonly MAX_CACHE_DURATION_S = 3600;
 
-  constructor(
-    private context: IClientContext,
-    private authProvider?: IAuthentication,
-    connectionOptions?: ConnectionOptions,
-  ) {
+  constructor(private context: IClientContext, private authProvider?: IAuthentication) {
     this.userAgent = buildUserAgentString(this.context.getConfig().userAgentEntry);
-    const authentication = this.authProvider ?? this.context.getAuthProvider?.();
-    const tokenAuth =
-      !authProvider &&
-      connectionOptions !== undefined &&
-      (connectionOptions.authType === undefined || connectionOptions.authType === 'access-token');
-    let authenticationId: number | undefined;
-    if (authentication && !tokenAuth) {
-      authenticationId = FeatureFlagCache.authenticationIds.get(authentication);
-      if (authenticationId === undefined) {
-        authenticationId = FeatureFlagCache.nextAuthenticationId;
-        FeatureFlagCache.nextAuthenticationId += 1;
-        FeatureFlagCache.authenticationIds.set(authentication, authenticationId);
-      }
-    }
-    this.retainIdle = tokenAuth || !authentication;
-    this.scope = createHash('sha256')
-      .update(
-        JSON.stringify([
-          this.userAgent,
-          Object.entries(this.context.getConfig().customHeaders ?? {})
-            .map(([name, value]) => [name.toLowerCase(), value])
-            .sort(([left], [right]) => left.localeCompare(right)),
-          tokenAuth ? connectionOptions?.token : authenticationId,
-          connectionOptions?.https,
-          connectionOptions?.port,
-          connectionOptions?.proxy,
-          connectionOptions?.customCaCert,
-          connectionOptions?.clientCert,
-          connectionOptions?.clientKey,
-          connectionOptions?.checkServerCertificate,
-        ]),
-      )
-      .digest('hex');
   }
 
   private cacheKey(host: string): string {
-    return JSON.stringify([buildTelemetryUrl(host, '') ?? host, this.scope]);
+    const headers = this.context.getConfig().customHeaders ?? {};
+    const workspace = Object.entries(headers).find(([name]) => name.toLowerCase() === 'x-databricks-org-id')?.[1];
+    return workspace ? `workspace:${workspace}` : `host:${buildTelemetryUrl(host, '') ?? host}`;
   }
 
   private isExpired(ctx: FeatureFlagContext): boolean {
@@ -143,7 +98,7 @@ export default class FeatureFlagCache {
       ctx.refCount -= 1;
       if (ctx.refCount <= 0) {
         this.contexts.delete(key);
-        if (this.retainIdle && ctx.cacheable && !ctx.fetchPromise && !this.isExpired(ctx)) {
+        if (ctx.cacheable && !ctx.fetchPromise && !this.isExpired(ctx)) {
           const idle = FeatureFlagCache.idleContexts;
           for (const [idleKey, value] of idle) {
             if (this.isExpired(value)) idle.delete(idleKey);

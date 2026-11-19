@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-Reuse successful Thrift feature-flag responses across access-token connections with the same host, headers, and transport settings until the original TTL expires. Idle responses are bounded and do not retain connections or timers.
+Reuse successful Thrift feature-flag responses across connections to the same workspace (or host), using the existing sharing key for every auth type. Idle responses are bounded and expire at the original server TTL (currently up to one hour), as for a long-lived client; they do not retain connections or timers.
 
 - The Thrift token federation exchange (`enableTokenFederation`) now goes through the connection's agent, so `proxy`, `checkServerCertificate`, `customCaCert` and `clientCert`/`clientKey` apply to it. Previously it connected directly with Node's default agent, so behind a required proxy the exchange failed and the driver fell back to the original token. (#611)
 - Kernel backend: a failed status poll while waiting for a statement (a `runAsync: true` statement, or a default execution that outlives the server's inline wait) and a failed result fetch in `hasMoreRows()` now throw the mapped driver error, such as `HiveDriverError: HTTP 500: Internal Server Error` once retries on HTTP 5xx run out, instead of a raw `Error` whose message is the internal `__databricks_error__:{...}` envelope. As in `fetchChunk()`, a failed fetch in `hasMoreRows()` also closes the statement. (#608)

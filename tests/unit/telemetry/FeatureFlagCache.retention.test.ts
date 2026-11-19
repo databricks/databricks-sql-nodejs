@@ -7,6 +7,8 @@ import { ConnectionOptions } from '../../../lib/contracts/IDBSQLClient';
 import DBSQLClient from '../../../lib/DBSQLClient';
 import ThriftBackend from '../../../lib/thrift-backend/ThriftBackend';
 import TelemetryClientProvider from '../../../lib/telemetry/TelemetryClientProvider';
+import DatabricksOAuth from '../../../lib/connection/auth/DatabricksOAuth';
+import StaticTokenProvider from '../../../lib/connection/auth/tokenProvider/StaticTokenProvider';
 
 describe('FeatureFlagCache idle retention', () => {
   const host = 'cache.databricks.com';
@@ -25,8 +27,8 @@ describe('FeatureFlagCache idle retention', () => {
     clock.restore();
   });
 
-  function makeCache(overrides: Partial<ConnectionOptions> = {}, config: any = {}, auth?: any) {
-    return new FeatureFlagCache(new ClientContextStub(config), auth, { ...options, ...overrides } as ConnectionOptions);
+  function makeCache(config: any = {}, auth?: any) {
+    return new FeatureFlagCache(new ClientContextStub(config), auth);
   }
 
   function response(value = 'true', ttl = 60) {
@@ -146,72 +148,126 @@ describe('FeatureFlagCache idle retention', () => {
     });
   }
 
-  for (const [name, overrides, config] of [
-    ['token', { token: 'identity-b' }, {}],
-    ['workspace', {}, { customHeaders: { 'x-databricks-org-id': '2' } }],
-    ['user agent', {}, { userAgentEntry: 'other-app' }],
-    ['custom header', {}, { customHeaders: { 'X-Custom': 'other' } }],
-    ['server trust', { checkServerCertificate: false }, {}],
-    ['custom CA', { customCaCert: 'ca-other' }, {}],
-    ['client certificate', { clientCert: 'cert-other', clientKey: 'key-other' }, {}],
-    ['proxy', { proxy: { protocol: 'http', host: 'proxy.test', port: 8080 } }, {}],
-    ['protocol', { https: false }, {}],
-    ['port', { port: 8443 }, {}],
-  ] as Array<[string, Partial<ConnectionOptions>, any]>) {
-    it(`partitions active and idle responses by ${name}`, async () => {
-      const first = makeCache();
-      sinon.stub(first as any, 'fetchWithRetry').resolves(response());
-      const original = first.getOrCreateContext(host);
-      await first.getBoolean(host, 'flag');
-      const other = makeCache(overrides, config);
-      expect(other.getOrCreateContext(host)).to.not.equal(original);
-      other.releaseContext(host);
-      first.releaseContext(host);
-      const next = makeCache(overrides, config);
-      const fetch = sinon.stub(next as any, 'fetchWithRetry').resolves(response('false'));
-      next.getOrCreateContext(host);
-      expect(await next.getBoolean(host, 'flag')).to.equal(false);
-      expect(fetch.callCount).to.equal(1);
-      next.releaseContext(host);
-    });
-  }
-
-  it('includes the host even when the workspace is the same', () => {
-    const cache = makeCache({}, { customHeaders: { 'x-databricks-org-id': '1' } });
-    expect(cache.getOrCreateContext(host)).to.not.equal(cache.getOrCreateContext('other.databricks.com'));
-    cache.releaseContext(host);
-    cache.releaseContext('other.databricks.com');
+  it('partitions active and idle responses by workspace or normalized host, as on main', async () => {
+    const fetch = sinon.stub(FeatureFlagCache.prototype as any, 'fetchWithRetry').callsFake(async () => response());
+    const caches = [makeCache(), makeCache(), makeCache({ customHeaders: { 'x-databricks-org-id': '1' } })];
+    const hosts = [host, 'other.databricks.com', host];
+    const contexts = caches.map((cache, index) => cache.getOrCreateContext(hosts[index]));
+    expect(new Set(contexts).size).to.equal(3);
+    await Promise.all(caches.map((cache, index) => cache.getBoolean(hosts[index], 'flag')));
+    expect(fetch.callCount).to.equal(3);
+    caches.forEach((cache, index) => cache.releaseContext(hosts[index]));
+    expect((FeatureFlagCache as any).idleContexts.size).to.equal(3);
   });
 
-  it('does not alias an absent token with a literal anonymous token', () => {
-    const anonymous = makeCache({ token: undefined });
-    const token = makeCache({ token: 'anonymous' });
-    expect(anonymous.getOrCreateContext(host)).to.not.equal(token.getOrCreateContext(host));
-    anonymous.releaseContext(host);
-    token.releaseContext(host);
-  });
-
-  it('canonicalizes host and custom header casing and order', () => {
-    const first = makeCache({}, { customHeaders: { 'X-Route': 'a', 'X-Databricks-Org-Id': '1' } });
-    const next = makeCache({}, { customHeaders: { 'x-databricks-org-id': '1', 'x-route': 'a' } });
-    expect(first.getOrCreateContext(host)).to.equal(next.getOrCreateContext(`https://${host.toUpperCase()}:443/`));
+  it('shares active and idle workspace values across hosts, providers and non-routing headers', async () => {
+    const firstAuth = { authenticate: sinon.stub().resolves({ Authorization: 'Bearer first-secret' }) };
+    const nextAuth = { authenticate: sinon.stub().resolves({ Authorization: 'Bearer next-secret' }) };
+    const first = makeCache({ customHeaders: { 'x-databricks-org-id': '1', 'X-Custom': 'first' } }, firstAuth);
+    const next = makeCache(
+      { customHeaders: { 'X-Databricks-Org-Id': '1', 'X-Custom': 'next' }, userAgentEntry: 'other-app' },
+      nextAuth,
+    );
+    const fetch = sinon.stub(first as any, 'fetchWithRetry').resolves(response());
+    const nextFetch = sinon.stub(next as any, 'fetchWithRetry').resolves(response('false'));
+    const original = first.getOrCreateContext(host);
+    expect(next.getOrCreateContext('other.databricks.com')).to.equal(original);
+    expect(
+      await Promise.all([first.getBoolean(host, 'flag'), next.getBoolean('other.databricks.com', 'flag')]),
+    ).to.deep.equal([true, true]);
     first.releaseContext(host);
+    next.releaseContext('other.databricks.com');
+    clock.tick(2000);
+    expect(next.getOrCreateContext('third.databricks.com')).to.equal(original);
+    expect(await next.getBoolean('third.databricks.com', 'flag')).to.equal(true);
+    expect(fetch.callCount).to.equal(1);
+    expect(nextFetch.callCount).to.equal(0);
+    clock.tick(58001);
+    expect(await next.getBoolean('third.databricks.com', 'flag')).to.equal(false);
+    expect(nextAuth.authenticate.callCount).to.equal(1);
+    expect(nextFetch.callCount).to.equal(1);
+    next.releaseContext('third.databricks.com');
+    expect(JSON.stringify([...(FeatureFlagCache as any).idleContexts])).to.not.contain('secret');
+  });
+
+  it('canonicalizes fallback hosts across an idle reconnect', async () => {
+    const first = makeCache();
+    sinon.stub(first as any, 'fetchWithRetry').resolves(response());
+    const original = first.getOrCreateContext(host);
+    await first.getBoolean(host, 'flag');
+    first.releaseContext(host);
+    const next = makeCache();
+    expect(next.getOrCreateContext(`https://${host.toUpperCase()}:443/`)).to.equal(original);
     next.releaseContext(host);
   });
 
-  it('never retains a dynamic or deprecated authentication provider across close', async () => {
-    const auth = { authenticate: sinon.stub().resolves({ Authorization: 'Bearer changing-token' }) };
-    for (let iteration = 0; iteration < 2; iteration += 1) {
-      const cache = makeCache({}, {}, auth);
-      const fetch = sinon.stub(cache as any, 'fetchWithRetry').resolves(response(iteration === 0 ? 'true' : 'false'));
-      cache.getOrCreateContext(host);
-      expect(await cache.getBoolean(host, 'flag')).to.equal(iteration === 0);
+  for (const authType of [
+    'access-token',
+    'databricks-oauth',
+    'token-provider',
+    'external-token',
+    'static-token',
+    'custom',
+  ]) {
+    it(`deduplicates 50 distinct ${authType} clients before and after idle`, async () => {
+      const oauth = sinon.stub(DatabricksOAuth.prototype, 'authenticate').resolves({ Authorization: 'Bearer oauth' });
+      sinon.stub(ThriftBackend.prototype, 'connect').resolves();
+      sinon.stub(ThriftBackend.prototype, 'close').resolves();
+      const fetch = sinon.stub(FeatureFlagCache.prototype as any, 'fetchWithRetry').callsFake(async () => response());
+      const burst = async () => {
+        const clients = Array.from({ length: 50 }, () => new DBSQLClient({ logger: { log: () => {} } }));
+        await Promise.all(
+          clients.map((client, index) => {
+            const common = { host, path: options.path, telemetryEnabled: false };
+            const token = `distinct-secret-${index}`;
+            let connection: ConnectionOptions;
+            switch (authType) {
+              case 'databricks-oauth':
+                connection = { ...common, authType, oauthClientId: 'test-id', oauthClientSecret: 'test-secret' };
+                break;
+              case 'token-provider':
+                connection = {
+                  ...common,
+                  authType,
+                  tokenProvider: new StaticTokenProvider(token),
+                  enableTokenFederation: false,
+                };
+                break;
+              case 'external-token':
+                connection = { ...common, authType, getToken: async () => token, enableTokenFederation: false };
+                break;
+              case 'static-token':
+                connection = { ...common, authType, staticToken: token, enableTokenFederation: false };
+                break;
+              case 'custom':
+                connection = {
+                  ...common,
+                  authType,
+                  provider: { authenticate: async () => ({ Authorization: `Bearer ${token}` }) },
+                };
+                break;
+              default:
+                connection = { ...common, token };
+            }
+            return client.connect(connection);
+          }),
+        );
+        expect(
+          await Promise.all(clients.map((client) => (client as any).getFeatureFlagCache().getBoolean(host, 'flag'))),
+        ).to.deep.equal(Array(50).fill(true));
+        expect((FeatureFlagCache as any).sharedContexts.size).to.equal(1);
+        await Promise.all(clients.map((client) => client.close()));
+      };
+      await burst();
       expect(fetch.callCount).to.equal(1);
-      cache.releaseContext(host);
-    }
-    expect((FeatureFlagCache as any).idleContexts.size).to.equal(0);
-    expect(auth.authenticate.callCount).to.equal(2);
-  });
+      clock.tick(2000);
+      await burst();
+      expect(fetch.callCount).to.equal(1);
+      expect(oauth.callCount).to.equal(authType === 'databricks-oauth' ? 1 : 0);
+      expect((FeatureFlagCache as any).sharedContexts.size).to.equal(0);
+      expect((FeatureFlagCache as any).idleContexts.size).to.equal(1);
+    });
+  }
 
   for (const [name, body, status] of [
     ['missing flags', {}, 200],
@@ -282,10 +338,15 @@ describe('FeatureFlagCache idle retention', () => {
     expect((FeatureFlagCache as any).idleContexts.size).to.equal(0);
   });
 
-  it('bounds retained contexts after 1000 distinct identities without retaining credentials', async () => {
+  it('bounds retained contexts after 1000 distinct workspaces without retaining credentials', async () => {
     sinon.stub(FeatureFlagCache.prototype as any, 'fetchWithRetry').callsFake(async () => response());
     for (let iteration = 0; iteration < 1000; iteration += 1) {
-      const cache = makeCache({ token: `secret-identity-${iteration}` });
+      const cache = makeCache(
+        { customHeaders: { 'x-databricks-org-id': String(iteration) } },
+        {
+          authenticate: async () => ({ Authorization: 'Bearer secret-identity' }),
+        },
+      );
       cache.getOrCreateContext(host);
       expect(await cache.getBoolean(host, 'flag')).to.equal(true);
       cache.releaseContext(host);

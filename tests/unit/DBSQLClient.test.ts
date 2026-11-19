@@ -1110,7 +1110,7 @@ describe('DBSQLClient feature flag lifecycle', () => {
         .resolves({ Authorization: 'Bearer oauth-token' });
       const fetch = sinon
         .stub(FeatureFlagCache.prototype as any, 'fetchWithRetry')
-        .callsFake(async () => new Response(JSON.stringify({ flags: [{ name: 'sampleLimit', value: '42' }] })));
+        .resolves(new Response(JSON.stringify({ flags: [{ name: 'sampleLimit', value: '42' }] })));
       const connect = sinon.stub(ThriftBackend.prototype, 'connect').resolves();
       sinon.stub(ThriftBackend.prototype, 'close').resolves();
       const clients = [new DBSQLClient(), new DBSQLClient()];
@@ -1129,15 +1129,15 @@ describe('DBSQLClient feature flag lifecycle', () => {
         }),
       );
       expect(connect.callCount).to.equal(2);
-      expect(fetch.callCount).to.equal(oauth ? 2 : 1);
+      expect(fetch.callCount).to.equal(1);
       const { headers } = fetch.firstCall.args[1];
       expect(headers.Authorization).to.equal(oauth ? 'Bearer oauth-token' : `Bearer ${options.token}`);
       expect(headers['x-databricks-org-id']).to.equal('123');
-      expect(auth.callCount).to.equal(oauth ? 2 : 0);
+      expect(auth.callCount).to.equal(oauth ? 1 : 0);
       await clients[0].close();
-      expect(contexts.size).to.equal(1);
+      expect(contexts.has('workspace:123')).to.be.true;
       await clients[1].close();
-      expect(contexts.size).to.equal(0);
+      expect(contexts.has('workspace:123')).to.be.false;
     });
   }
 
@@ -1167,7 +1167,7 @@ describe('DBSQLClient feature flag lifecycle', () => {
       } catch (caught) {
         expect(caught).to.equal(error);
       }
-      expect(contexts.size).to.equal(0);
+      expect(contexts.has('workspace:123')).to.be.false;
     });
   }
 });
