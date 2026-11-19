@@ -6,6 +6,7 @@ import OAuthToken from './OAuthToken';
 import AuthorizationCode from './AuthorizationCode';
 import { OAuthScope, OAuthScopes, defaultOAuthScopes, scopeDelimiter } from './OAuthScope';
 import IClientContext from '../../../contracts/IClientContext';
+import IConnectionProvider from '../../contracts/IConnectionProvider';
 
 export enum OAuthFlow {
   U2M = 'U2M',
@@ -21,6 +22,7 @@ export interface OAuthManagerOptions {
   clientSecret?: string;
   useDatabricksOAuthInAzure?: boolean;
   context: IClientContext;
+  connectionProvider?: IConnectionProvider;
 }
 
 function getDatabricksOIDCUrl(host: string): string {
@@ -61,7 +63,7 @@ export default abstract class OAuthManager {
   protected async getClient(): Promise<BaseClient> {
     // Obtain http agent each time when we need an OAuth client
     // to ensure that we always use a valid agent instance
-    const connectionProvider = await this.context.getConnectionProvider();
+    const connectionProvider = this.options.connectionProvider ?? (await this.context.getConnectionProvider());
     // openid-client picks `http`/`https` by each request's URL, so the agent must
     // match that URL's protocol rather than the SQL transport's.
     this.agent = await connectionProvider.getAgent('https:');

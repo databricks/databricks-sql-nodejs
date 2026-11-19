@@ -22,6 +22,7 @@ describe('client close telemetry lifecycle', function closeSuite() {
         try {
           const cycle = async (): Promise<void> => {
             await client.connect({ host: config.host, path: config.path, token: config.token, ...{ useKernel } });
+            if (!useKernel) expect(client.getTelemetryStats()).not.to.equal(undefined);
             const session = await client.openSession();
             const operation = await session.executeStatement(
               'SELECT id, CAST(NULL AS STRING) AS missing, id % 2 = 0 AS even FROM range(12) ORDER BY id LIMIT 3',

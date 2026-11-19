@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-Add opt-in `client.close({ waitForTelemetry: false })` for bounded background Thrift telemetry export. The default still awaits export; explicit process exit or runtime suspension can lose the background batch.
+Add opt-in `client.close({ waitForTelemetry: false })` for background Thrift telemetry export; the default remains awaited. Background mode abandons exports and retries still active at `telemetryCloseTimeoutMs` (2s by default), even in a live process; explicit exit or runtime suspension can also lose batches, and no public hook drains detached exports.
 
 - The Thrift token federation exchange (`enableTokenFederation`) now goes through the connection's agent, so `proxy`, `checkServerCertificate`, `customCaCert` and `clientCert`/`clientKey` apply to it. Previously it connected directly with Node's default agent, so behind a required proxy the exchange failed and the driver fell back to the original token. (#611)
 - Kernel backend: a failed status poll while waiting for a statement (a `runAsync: true` statement, or a default execution that outlives the server's inline wait) and a failed result fetch in `hasMoreRows()` now throw the mapped driver error, such as `HiveDriverError: HTTP 500: Internal Server Error` once retries on HTTP 5xx run out, instead of a raw `Error` whose message is the internal `__databricks_error__:{...}` envelope. As in `fetchChunk()`, a failed fetch in `hasMoreRows()` also closes the statement. (#608)

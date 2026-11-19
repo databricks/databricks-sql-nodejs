@@ -14,9 +14,11 @@ export interface ClientCloseOptions {
   /**
    * Wait for the final Thrift telemetry export (default true). With false,
    * export runs in the background for up to telemetryCloseTimeoutMs (2s by
-   * default); a full background queue falls back to waiting. process.exit()
-   * or a frozen runtime can lose that batch. Native kernel session cleanup,
-   * including its telemetry flush, is always awaited.
+   * default); a full background queue falls back to waiting. Exports and retries
+   * still active at the deadline are abandoned even in a live process. Explicit
+   * process.exit() or runtime suspension can also lose batches. No public hook
+   * drains previously detached batches. Native kernel session cleanup, including
+   * its telemetry flush, is always awaited.
    */
   waitForTelemetry?: boolean;
 }

@@ -2,12 +2,20 @@ import { expect } from 'chai';
 import sinon from 'sinon';
 import http from 'http';
 import { AddressInfo } from 'net';
+import fetch, { RequestInfo, RequestInit } from 'node-fetch';
+import { Issuer } from 'openid-client';
 import DBSQLClient from '../../../lib/DBSQLClient';
+import FeatureFlagCache from '../../../lib/FeatureFlagCache';
+import FederationProvider, {
+  setFederationFetchForTest,
+} from '../../../lib/connection/auth/tokenProvider/FederationProvider';
+import OAuthToken from '../../../lib/connection/auth/DatabricksOAuth/OAuthToken';
 import TelemetryClientProvider from '../../../lib/telemetry/TelemetryClientProvider';
 import TelemetryClient from '../../../lib/telemetry/TelemetryClient';
 import { TelemetryEventType } from '../../../lib/telemetry/types';
 import { LogLevel } from '../../../lib/contracts/IDBSQLLogger';
 import ClientContextStub from '../.stubs/ClientContextStub';
+import { createAccessToken } from '../.stubs/OAuth';
 
 describe('background telemetry close', () => {
   const host = 'close-test.cloud.databricks.com';
@@ -94,6 +102,35 @@ describe('background telemetry close', () => {
     await client.close({ waitForTelemetry: false });
     expect(clock.countTimers()).to.equal(0);
   });
+
+  for (const options of [null, 0, { waitForTelemetry: null }, { waitForTelemetry: 0 }, { waitForTelemetry: '' }]) {
+    it(`requires explicit false to detach telemetry: ${JSON.stringify(options)}`, async () => {
+      const context = makeContext();
+      const client = new DBSQLClient({ logger: context.logger });
+      Object.assign(client, {
+        host,
+        authProvider: context.getAuthProvider(),
+        connectionProvider: context.connectionProvider,
+      });
+      const shared = provider.getOrCreateClient(client, host);
+      Object.assign(client, { telemetryClient: shared });
+      const request = delayedRequest(shared);
+      addConnection(shared);
+      let closed = false;
+      const closing = client.close(options as any).then(() => {
+        closed = true;
+      });
+      await clock.tickAsync(49);
+      expect(closed).to.equal(false);
+      expect(provider.getRefCount(host)).to.equal(0);
+      await clock.tickAsync(1);
+      await closing;
+      expect(request.calledOnce).to.equal(true);
+      expect(shared.isClosed()).to.equal(true);
+      expect(provider.getActiveClients().size).to.equal(0);
+      expect(clock.countTimers()).to.equal(0);
+    });
+  }
 
   it('leaves other registrations active and close/reopen uses independent exporters', async () => {
     const first = makeContext();
@@ -184,6 +221,8 @@ describe('background telemetry close', () => {
     expect(signal?.aborted).to.equal(false);
     await clock.tickAsync(1);
     expect(signal?.aborted).to.equal(true);
+    expect(clock.countTimers()).to.equal(0);
+    expect(log.getCalls().some((call) => String(call.args[1]).startsWith('Telemetry export error:'))).to.equal(false);
     await clock.tickAsync(60000);
     expect(request.calledOnce).to.equal(true);
     expect(log.getCalls().filter((call) => call.args[0] === LogLevel.error)).to.have.length(0);
@@ -204,6 +243,7 @@ describe('background telemetry close', () => {
     addConnection(client);
     await provider.releaseClient(context, host, false);
     await clock.tickAsync(100);
+    expect(clock.countTimers()).to.equal(0);
     await clock.tickAsync(60000);
     expect(request.calledOnce).to.equal(true);
     expect(clock.countTimers()).to.equal(0);
@@ -212,14 +252,154 @@ describe('background telemetry close', () => {
 
   it('handles a rejected detached transport without an unhandled rejection', async () => {
     const context = makeContext();
+    const unhandled: unknown[] = [];
+    const onRejection = (reason: unknown): void => {
+      unhandled.push(reason);
+    };
+    process.on('unhandledRejection', onRejection);
+    sinon
+      .stub(context.getAuthProvider()!, 'authenticate')
+      .callsFake(() => new Promise((resolve) => setTimeout(() => resolve({ Authorization: 'Bearer mock' }), 50)));
     sinon.stub(context, 'getConnectionProvider').rejects(new Error('transport unavailable'));
     const client = provider.getOrCreateClient(context, host);
     addConnection(client);
-    await provider.releaseClient(context, host, false);
-    await clock.tickAsync(100);
-    expect((provider as any).pendingCloses.size).to.equal(0);
-    expect(clock.countTimers()).to.equal(0);
+    try {
+      await provider.releaseClient(context, host, false);
+      await clock.tickAsync(25);
+      expect(unhandled).to.deep.equal([]);
+      await clock.tickAsync(75);
+      expect(unhandled).to.deep.equal([]);
+      expect((provider as any).pendingCloses.size).to.equal(0);
+      expect(clock.countTimers()).to.equal(0);
+    } finally {
+      process.off('unhandledRejection', onRejection);
+    }
   });
+});
+
+describe('background close built-in authentication', () => {
+  const host = 'close-auth.cloud.databricks.com';
+  let server: http.Server;
+  let endpoint: string;
+  let client: DBSQLClient;
+  let requests: Array<{ path?: string; authorization?: string; body: string }>;
+  let finishAuth: () => void;
+  let authenticated: Promise<void>;
+  const refreshedToken = createAccessToken(Math.floor(Date.now() / 1000) + 3600);
+
+  beforeEach(async () => {
+    TelemetryClientProvider.__resetInstanceForTests();
+    sinon.stub(FeatureFlagCache.prototype as any, 'fetchFeatureFlags').resolves(new Map());
+    sinon.stub(FeatureFlagCache.prototype, 'getBoolean').resolves(true);
+    authenticated = new Promise<void>((resolve) => {
+      finishAuth = resolve;
+    });
+    requests = [];
+    server = http.createServer((request, response) => {
+      let body = '';
+      request.on('data', (chunk) => {
+        body += chunk;
+      });
+      request.on('end', () => {
+        requests.push({ path: request.url, authorization: request.headers.authorization, body });
+        response.setHeader('Content-Type', 'application/json');
+        response.end(
+          request.url === '/oidc/v1/token'
+            ? JSON.stringify({ access_token: refreshedToken, refresh_token: 'next-refresh', token_type: 'Bearer' })
+            : '{}',
+        );
+      });
+    });
+    await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
+    endpoint = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
+    client = new DBSQLClient({ logger: new ClientContextStub().logger });
+  });
+
+  afterEach(async () => {
+    finishAuth();
+    await client.close();
+    await Promise.all([...(TelemetryClientProvider.getInstance() as any).pendingCloses]);
+    server.closeAllConnections();
+    await new Promise<void>((resolve) => server.close(() => resolve()));
+    setFederationFetchForTest();
+    sinon.restore();
+    TelemetryClientProvider.__resetInstanceForTests();
+  });
+
+  async function closeAndExport(): Promise<void> {
+    const shared = (client as any).telemetryClient as TelemetryClient;
+    expect(shared).not.to.equal(undefined);
+    const exporter = shared.getExporter() as any;
+    const sendRequest = exporter.sendRequest.bind(exporter);
+    sinon
+      .stub(exporter, 'sendRequest')
+      .callsFake((_url: unknown, init: unknown) => sendRequest(`${endpoint}/telemetry-ext`, init));
+    shared.getAggregator().processEvent({
+      eventType: TelemetryEventType.CONNECTION_OPEN,
+      timestamp: Date.now(),
+      sessionId: 'built-in-auth',
+    });
+    await client.close({ waitForTelemetry: false });
+    expect((client as any).connectionProvider).to.equal(undefined);
+    finishAuth();
+    await Promise.all([...(TelemetryClientProvider.getInstance() as any).pendingCloses]);
+    expect(requests.map((request) => request.path)).to.deep.equal(['/oidc/v1/token', '/telemetry-ext']);
+    expect(requests[1].authorization).to.equal(`Bearer ${refreshedToken}`);
+  }
+
+  it('exchanges a foreign JWT after close instead of exporting the original token', async () => {
+    const getToken = FederationProvider.prototype.getToken;
+    sinon
+      .stub(FederationProvider.prototype, 'getToken')
+      .callsFake(async function delayedFederation(this: FederationProvider) {
+        await authenticated;
+        return getToken.call(this);
+      });
+    const externalToken = `header.${Buffer.from(JSON.stringify({ iss: 'https://external-idp.example' })).toString(
+      'base64url',
+    )}.signature`;
+    await client.connect({
+      host,
+      path: '/',
+      authType: 'static-token',
+      staticToken: externalToken,
+      enableTokenFederation: true,
+    });
+    const transport = await client.getConnectionProvider();
+    const federationFetch = async (url: RequestInfo, init?: RequestInit) => {
+      expect(init?.agent).to.equal(await transport.getAgent(String(url)));
+      return fetch(`${endpoint}/oidc/v1/token`, { ...init, agent: await transport.getAgent(endpoint) });
+    };
+    setFederationFetchForTest(federationFetch as unknown as typeof fetch);
+    await closeAndExport();
+    expect(new URLSearchParams(requests[0].body).get('subject_token')).to.equal(externalToken);
+  });
+
+  for (const oauthClientSecret of [undefined, 'mock-secret']) {
+    it(`refreshes expired OAuth ${oauthClientSecret ? 'M2M' : 'U2M'} after close`, async () => {
+      sinon
+        .stub(Issuer, 'discover')
+        .resolves(new Issuer({ issuer: `https://${host}/oidc`, token_endpoint: `${endpoint}/oidc/v1/token` }));
+      await client.connect({
+        host,
+        path: '/',
+        authType: 'databricks-oauth',
+        oauthClientId: 'mock-client',
+        oauthClientSecret,
+        persistence: {
+          read: async () => {
+            await authenticated;
+            return new OAuthToken(createAccessToken(1), 'previous-refresh');
+          },
+          persist: async () => {},
+        },
+      });
+      await closeAndExport();
+      expect(new URLSearchParams(requests[0].body).get('grant_type')).to.equal(
+        oauthClientSecret ? 'client_credentials' : 'refresh_token',
+      );
+    });
+  }
 });
 
 describe('background close HTTP transport', () => {

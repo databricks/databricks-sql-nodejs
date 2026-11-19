@@ -329,6 +329,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
           useDatabricksOAuthInAzure: options.useDatabricksOAuthInAzure,
           scopes: options.oauthScopes,
           context: this,
+          connectionProvider: this.connectionProvider,
         });
       case 'custom':
         return options.provider;
@@ -381,10 +382,11 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
 
     // Optionally wrap with federation
     if (enableFederation) {
+      const { connectionProvider } = this;
       wrapped = new FederationProvider(wrapped, host, {
         clientId: federationClientId,
         // The connection's agent carries `proxy` and the TLS options.
-        getAgent: async (url) => (await this.getConnectionProvider()).getAgent(url),
+        getAgent: async (url) => (connectionProvider ?? (await this.getConnectionProvider())).getAgent(url),
       });
     }
 
@@ -782,9 +784,9 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
     // hit endpoints that don't carry the workspace in their URL path.
     this.config.customHeaders = this.buildCustomHeaders(options.path, options.customHeaders);
 
-    this.authProvider = this.createAuthProvider(options, authProvider);
-
     this.connectionProvider = this.createConnectionProvider(options);
+
+    this.authProvider = this.createAuthProvider(options, authProvider);
 
     // M0: `useKernel` is consumed via a non-exported internal-options cast so it
     // doesn't ship in the public `.d.ts`. Mirrors Python's `kwargs.get("use_kernel")`
@@ -952,9 +954,12 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
    * without calling `close()`. Long-lived applications should `await` this
    * method on shutdown so the aggregator drains its remaining metrics.
    * `waitForTelemetry: false` opts into a bounded background Thrift export;
-   * explicit process exit or runtime suspension can lose the final batch.
+   * exports and retries still active at the close deadline are abandoned even
+   * in a live process. Explicit exit or runtime suspension can also lose batches.
+   * No public hook drains previously detached batches.
    */
   public async close(options: ClientCloseOptions = {}): Promise<void> {
+    const waitForTelemetry = options?.waitForTelemetry !== false;
     try {
       await this.sessions.closeAll();
       await this.backend?.close();
@@ -966,7 +971,7 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
 
     if (this.host && this.telemetryClient) {
       try {
-        await TelemetryClientProvider.getInstance().releaseClient(this, this.host, options.waitForTelemetry);
+        await TelemetryClientProvider.getInstance().releaseClient(this, this.host, waitForTelemetry);
       } catch (error: any) {
         this.logger.log(LogLevel.debug, `Telemetry cleanup error: ${error.message}`);
       }
