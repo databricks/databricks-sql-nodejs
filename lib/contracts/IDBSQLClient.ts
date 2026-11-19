@@ -112,6 +112,20 @@ export type ConnectionOptions = {
   checkServerCertificate?: boolean;
 
   /**
+   * Check the server certificate chain against its certificate revocation lists.
+   * Kernel backend only (`useKernel: true`); default `false`. Setting it on the
+   * Thrift backend throws `HiveDriverError`.
+   */
+  checkCertificateRevocation?: boolean;
+
+  /**
+   * Accept a server certificate whose revocation status cannot be determined (for
+   * example, the CRL endpoint is unreachable). Kernel backend only; default `false`.
+   * Setting it on the Thrift backend throws `HiveDriverError`.
+   */
+  acceptUndeterminedRevocation?: boolean;
+
+  /**
    * PEM-encoded CA certificate (string or `Buffer`) added to the trust store
    * **on top of** the built-in roots — for TLS-inspecting proxies or on-prem
    * internal CAs. Because it is additive, connections to public Databricks

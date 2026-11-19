@@ -93,14 +93,16 @@ Per-statement `useCloudFetch` overrides remain unsupported on the kernel backend
 Both backends verify server certificates by default. Prefer `customCaCert` to
 disabling verification.
 
-| Option                                      | Type               | Thrift | Kernel | Default Value | Note                                                                                                                                          |
-| ------------------------------------------- | ------------------ | :----: | :----: | ------------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `checkServerCertificate`                    | `boolean`          |   ✅   |   ✅   | `true`        | Master verification toggle. `false` disables chain and hostname verification.                                                                 |
-| `checkServerCertificateHostname` (internal) | `boolean`          |   ❌   |   ✅   | — / `true`    | Independent Kernel hostname-vs-SNI check; no-op when `checkServerCertificate` is `false`.                                                     |
-| `customCaCert`                              | `Buffer \| string` |   ✅   |   ✅   | —             | Additional PEM CA. Thrift uses Node bundled roots plus `NODE_EXTRA_CA_CERTS`, then appends this CA; Kernel adds it to its normal trust roots. |
-| `clientCert`                                | `Buffer \| string` |   ✅   |   ✅   | —             | Public mTLS client certificate. Must be paired with `clientKey`.                                                                              |
-| `clientKey`                                 | `Buffer \| string` |   ✅   |   ✅   | —             | Public mTLS private key. Must be paired with `clientCert`; PKCS#8 is recommended for Kernel portability.                                      |
-| `clientCertPem` / `clientKeyPem` (internal) | `Buffer \| string` |   ❌   |   ✅   | —             | Runtime-only Kernel aliases for the public mTLS pair. They take precedence over `clientCert`/`clientKey` when both pairs are supplied.        |
+| Option                                      | Type               | Thrift | Kernel | Default Value | Note                                                                                                                                                                 |
+| ------------------------------------------- | ------------------ | :----: | :----: | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `checkServerCertificate`                    | `boolean`          |   ✅   |   ✅   | `true`        | Master verification toggle. `false` disables chain and hostname verification.                                                                                        |
+| `checkCertificateRevocation`                | `boolean`          |   ❌   |   ✅   | `false`       | Kernel only. Checks the server certificate chain against its CRLs. Setting it on Thrift throws `HiveDriverError`.                                                    |
+| `acceptUndeterminedRevocation`              | `boolean`          |   ❌   |   ✅   | `false`       | Kernel only. Accepts a chain whose revocation status cannot be determined (for example, an unreachable CRL endpoint). Setting it on Thrift throws `HiveDriverError`. |
+| `checkServerCertificateHostname` (internal) | `boolean`          |   ❌   |   ✅   | — / `true`    | Independent Kernel hostname-vs-SNI check; no-op when `checkServerCertificate` is `false`.                                                                            |
+| `customCaCert`                              | `Buffer \| string` |   ✅   |   ✅   | —             | Additional PEM CA. Thrift uses Node bundled roots plus `NODE_EXTRA_CA_CERTS`, then appends this CA; Kernel adds it to its normal trust roots.                        |
+| `clientCert`                                | `Buffer \| string` |   ✅   |   ✅   | —             | Public mTLS client certificate. Must be paired with `clientKey`.                                                                                                     |
+| `clientKey`                                 | `Buffer \| string` |   ✅   |   ✅   | —             | Public mTLS private key. Must be paired with `clientCert`; PKCS#8 is recommended for Kernel portability.                                                             |
+| `clientCertPem` / `clientKeyPem` (internal) | `Buffer \| string` |   ❌   |   ✅   | —             | Runtime-only Kernel aliases for the public mTLS pair. They take precedence over `clientCert`/`clientKey` when both pairs are supplied.                               |
 
 ## Plain HTTP transport
 

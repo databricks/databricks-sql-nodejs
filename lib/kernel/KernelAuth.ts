@@ -204,6 +204,10 @@ export interface KernelTlsOptions {
    * `tls_verify_hostname`.
    */
   checkServerCertificateHostname?: boolean;
+  /** Check the server certificate chain against its CRLs (kernel napi `checkCertificateRevocation`). Forwarded only when true. */
+  checkCertificateRevocation?: boolean;
+  /** Accept a chain whose revocation status cannot be determined (kernel napi `acceptUndeterminedRevocation`). Forwarded only when true. */
+  acceptUndeterminedRevocation?: boolean;
   /** PEM-encoded CA bytes to add to the trust store. */
   customCaCert?: Buffer;
   /**
@@ -408,6 +412,15 @@ export function buildKernelTlsOptions(options: ConnectionOptions): KernelTlsOpti
 
   if (checkServerCertificateHostname !== undefined) {
     tls.checkServerCertificateHostname = checkServerCertificateHostname;
+  }
+
+  // Revocation checks are opt-in: forward only when enabled, so a default connection
+  // keeps working with kernel binaries that predate the napi fields.
+  if (merged.checkCertificateRevocation === true) {
+    tls.checkCertificateRevocation = true;
+  }
+  if (merged.acceptUndeterminedRevocation === true) {
+    tls.acceptUndeterminedRevocation = true;
   }
 
   if (customCaCert !== undefined) {

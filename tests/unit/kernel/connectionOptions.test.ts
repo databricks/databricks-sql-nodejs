@@ -21,6 +21,7 @@ import {
 } from '../../../lib/kernel/KernelAuth';
 import { ConnectionOptions } from '../../../lib/contracts/IDBSQLClient';
 import HiveDriverError from '../../../lib/errors/HiveDriverError';
+import DBSQLClient from '../../../lib/DBSQLClient';
 
 const PAT = { host: 'h.databricks.com', path: '/sql/1.0/warehouses/abc', token: 'dapi-x' };
 
@@ -481,4 +482,46 @@ describe('KernelAuth retry options — buildKernelRetryOptions', () => {
     expect(r.retryMinWaitSecs).to.equal(0);
     expect(r.retryOverallTimeoutSecs).to.equal(0);
   });
+});
+
+describe('KernelAuth certificate revocation options (AC-R9)', () => {
+  // [connection options, expected TLS options forwarded to napi]. Each flag is
+  // forwarded only when true, so a default connection stays unchanged.
+  const cases: Array<[Record<string, unknown>, Record<string, boolean>]> = [
+    [{}, {}],
+    [{ checkCertificateRevocation: false }, {}],
+    [{ acceptUndeterminedRevocation: false }, {}],
+    [{ checkCertificateRevocation: true }, { checkCertificateRevocation: true }],
+    [{ acceptUndeterminedRevocation: true }, { acceptUndeterminedRevocation: true }],
+    [
+      { checkCertificateRevocation: true, acceptUndeterminedRevocation: true },
+      { checkCertificateRevocation: true, acceptUndeterminedRevocation: true },
+    ],
+  ];
+  it('forwards each revocation option to the kernel only when true', () => {
+    for (const [extra, want] of cases) {
+      expect(buildKernelTlsOptions(opts(extra)), JSON.stringify(extra)).to.deep.equal(want);
+    }
+  });
+});
+
+describe('DBSQLClient certificate revocation requires the kernel backend (AC-R9)', () => {
+  for (const extra of [{ checkCertificateRevocation: true }, { acceptUndeterminedRevocation: true }]) {
+    it(`rejects ${JSON.stringify(extra)} on the Thrift backend before connecting`, async () => {
+      let caught: unknown;
+      try {
+        await new DBSQLClient().connect({
+          host: 'h.databricks.com',
+          path: '/sql/1.0/warehouses/abc',
+          token: 'dapi-x',
+          authType: 'access-token',
+          ...extra,
+        } as unknown as ConnectionOptions);
+      } catch (e) {
+        caught = e;
+      }
+      expect(caught).to.be.instanceOf(HiveDriverError);
+      expect((caught as Error).message).to.match(/require the kernel backend/);
+    });
+  }
 });

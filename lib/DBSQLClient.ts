@@ -786,6 +786,11 @@ export default class DBSQLClient extends EventEmitter implements IDBSQLClient, I
     // pattern (see databricks-sql-python/src/databricks/sql/session.py).
     const internalOptions = options as ConnectionOptions & InternalConnectionOptions;
     const useKernel = internalOptions.useKernel === true;
+    if (!useKernel && (options.checkCertificateRevocation === true || options.acceptUndeterminedRevocation === true)) {
+      throw new HiveDriverError(
+        'DBSQLClient: certificate revocation checks (`checkCertificateRevocation`, `acceptUndeterminedRevocation`) require the kernel backend (`useKernel: true`).',
+      );
+    }
     if (!useKernel) {
       this.getFeatureFlagCache();
     }
