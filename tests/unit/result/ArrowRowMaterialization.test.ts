@@ -208,5 +208,92 @@ describe('Arrow row materialization', () => {
       expect(spy.callCount).to.equal(1);
       expect(await converter.hasMore()).to.equal(false);
     });
+
+    it(`rebuilds converters when a later batch changes its Arrow type (${rowMode})`, async () => {
+      const columns: Column[] = [
+        {
+          field: new arrow.Field('value', new arrow.Int32()),
+          thriftType: TTypeId.TIMESTAMP_TYPE,
+          values: [7, null],
+          expected: [7, null],
+        },
+      ];
+      const converter = new ArrowResultConverter(
+        new ClientContextStub(),
+        new ResultsProviderStub<ArrowBatch>(
+          [
+            { batches: [ipc(columns)], rowCount: 2 },
+            {
+              batches: [ipc([{ ...columns[0], field: new arrow.Field('value', new arrow.TimestampMillisecond()) }])],
+              rowCount: 2,
+            },
+          ],
+          { batches: [], rowCount: 0 },
+        ),
+        {
+          schema: {
+            columns: [
+              {
+                columnName: 'value',
+                position: 1,
+                typeDesc: { types: [{ primitiveEntry: { type: TTypeId.TIMESTAMP_TYPE } }] },
+              },
+            ],
+          },
+        },
+        { rowMode },
+      );
+      expect(await converter.fetchNext({ limit: 100 })).to.deep.equal(
+        rowMode === 'array' ? [[7], [null]] : [{ value: 7 }, { value: null }],
+      );
+      expect(await converter.fetchNext({ limit: 100 })).to.deep.equal(
+        rowMode === 'array' ? [[new Date(7)], [null]] : [{ value: new Date(7) }, { value: null }],
+      );
+    });
+
+    it(`keeps dictionary conversion semantics (${rowMode})`, async () => {
+      const columns: Column[] = [
+        {
+          field: new arrow.Field('value', new arrow.Dictionary(new arrow.TimestampMillisecond(), new arrow.Int32())),
+          thriftType: TTypeId.TIMESTAMP_TYPE,
+          values: [7, null, 7],
+          expected: [7, null, 7],
+        },
+      ];
+      expect(await converterFor(columns, rowMode).fetchNext({ limit: 100 })).to.deep.equal(
+        rowMode === 'array' ? [[7], [null], [7]] : [{ value: 7 }, { value: null }, { value: 7 }],
+      );
+    });
+
+    it(`copies binary values out of the batch (${rowMode})`, async () => {
+      const columns: Column[] = [
+        {
+          field: new arrow.Field('value', new arrow.Binary()),
+          thriftType: TTypeId.BINARY_TYPE,
+          values: [new Uint8Array([1, 2])],
+          expected: [Buffer.from([1, 2])],
+        },
+      ];
+      const converter = converterFor(columns, rowMode);
+      const batch = arrow.tableFromIPC(ipc(columns)).batches[0];
+      const first = (converter as any).getRows(batch, 1);
+      const firstValue = rowMode === 'array' ? first[0][0] : first[0].value;
+      firstValue[0] = 255;
+      expect(batch.getChildAt(0)?.get(0)).to.deep.equal(new Uint8Array([1, 2]));
+    });
   }
+
+  it('retains the legacy __proto__ column behavior in object mode', async () => {
+    const columns: Column[] = [
+      {
+        field: new arrow.Field('__proto__', new arrow.Int32()),
+        thriftType: TTypeId.INT_TYPE,
+        values: [7],
+        expected: [7],
+      },
+    ];
+    const [row] = await converterFor(columns, 'object').fetchNext({ limit: 100 });
+    expect(Object.keys(row)).to.deep.equal([]);
+    expect(Object.getPrototypeOf(row)).to.equal(Object.prototype);
+  });
 });
