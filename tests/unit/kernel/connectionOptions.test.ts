@@ -200,8 +200,14 @@ describe('KernelAuth connection options — port folding', () => {
       ],
     ),
     [{ host: 'h.databricks.com/x', port: 8443 }, /has a path, query or fragment/],
+    [{ host: 'h.databricks.com/x', port: 443 }, /has a path, query or fragment/], // DBSQLClient always supplies 443
+    [{ host: 'h.databricks.com/x/', port: 8443 }, /has a path, query or fragment/],
+    [{ host: 'https://h.databricks.com/x', port: 8443 }, /has a path, query or fragment/],
     [{ host: 'h.databricks.com?x', port: 8443 }, /has a path, query or fragment/],
     [{ host: 'h.databricks.com#x', port: 3015, https: false }, /has a path, query or fragment/],
+    // An embedded port after a path must not slip through the embedded-port parse.
+    [{ host: 'h.io/path:8443', port: 443 }, /has a path, query or fragment/],
+    [{ host: 'h.io/path:8443', port: 8443 }, /has a path, query or fragment/],
     [{ host: 'h.databricks.com:70000' }, /outside 1\.\.65535/],
   ];
   it('rejects invalid ports and unfoldable hosts', () => {

@@ -862,6 +862,14 @@ function buildKernelHostName(options: ConnectionOptions, logger?: IDBSQLLogger):
   const port = explicitPort(options.port);
   const scheme = /^https?:\/\//i.exec(options.host)?.[0] ?? '';
   const authority = options.host.slice(scheme.length).replace(/\/$/, '');
+  // A path, query or fragment in host never connected (the kernel puts its API paths after it),
+  // so with an explicit port it is rejected here, before any embedded-port parse can accept it.
+  if (port !== undefined && /[/?#]/.test(authority)) {
+    throw new HiveDriverError(
+      `kernel backend: host ${JSON.stringify(options.host)} has a path, query or fragment, so \`port\` ${port} ` +
+        'cannot be applied to it. Use a bare host or host:port.',
+    );
+  }
   const match = EMBEDDED_PORT_RE.exec(authority);
   const embedded = match ? Number(match[2]) : undefined;
   if (embedded !== undefined && (embedded < 1 || embedded > 65535)) {
@@ -878,12 +886,6 @@ function buildKernelHostName(options: ConnectionOptions, logger?: IDBSQLLogger):
   // Fold a port into a bare host. `https: false` always folds a supplied port, while HTTPS
   // folds only a non-default one (443 is the default and adds nothing).
   if (embedded === undefined && port !== undefined && (options.https === false || port !== 443)) {
-    if (/[/?#]/.test(authority)) {
-      throw new HiveDriverError(
-        `kernel backend: host ${JSON.stringify(options.host)} has a path, query or fragment, so \`port\` ${port} ` +
-          'cannot be added to it. Use a bare host.',
-      );
-    }
     const hostPort = `${bracketIpv6(authority)}:${port}`;
     return options.https === false ? `http://${hostPort}` : `${scheme}${hostPort}`;
   }
