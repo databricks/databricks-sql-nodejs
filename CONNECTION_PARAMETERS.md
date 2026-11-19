@@ -38,15 +38,15 @@ backend (the default), the **SEA / Kernel** backend, or both.
 
 ## Connection identity and backend selection
 
-| Option                  | Type      | Thrift | Kernel | Default Value | Note                                                                                   |
-| ----------------------- | --------- | :----: | :----: | ------------- | -------------------------------------------------------------------------------------- |
-| `host`                  | `string`  |   ✅   |   ✅   | — (required)  | Required on both.                                                                      |
-| `path`                  | `string`  |   ✅   |   ✅   | — (required)  | Kernel also derives `x-databricks-org-id` from a `?o=<id>` query parameter.            |
-| `port`                  | `number`  |   ✅   |   ⚠️   | `443` / —     | Kernel uses it only with `https: false`; otherwise put a non-default port in `host`.   |
-| `https`                 | `boolean` |   ✅   |   ✅   | `true`        | `false` selects plain HTTP; see [Plain HTTP transport](#plain-http-transport).         |
-| `userAgentEntry`        | `string`  |   ✅   |   ✅   | —             | Folded into the connector `User-Agent` on both.                                        |
-| `useKernel` (internal)  | `boolean` |   —    |   —    | `false`       | Selects the backend: `false`/omitted → Thrift, `true` → Kernel.                        |
-| `clientId` (deprecated) | `string`  |   ✅   |   ✅   | —             | Runtime-only alias for `userAgentEntry`. `userAgentEntry` wins when both are supplied. |
+| Option                  | Type      | Thrift | Kernel | Default Value | Note                                                                                                                                                                                                                                                                          |
+| ----------------------- | --------- | :----: | :----: | ------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `host`                  | `string`  |   ✅   |   ✅   | — (required)  | Required on both.                                                                                                                                                                                                                                                             |
+| `path`                  | `string`  |   ✅   |   ✅   | — (required)  | Kernel also derives `x-databricks-org-id` from a `?o=<id>` query parameter.                                                                                                                                                                                                   |
+| `port`                  | `number`  |   ✅   |   ✅   | `443` / —     | Kernel folds a non-default port into `host` over HTTPS and with `https: false` (a bare IPv6 host is bracketed); a port also in `host` must match. With OAuth, the kernel uses the same `host:port` for its OAuth endpoints; Thrift keeps OAuth on the bare `host` (port 443). |
+| `https`                 | `boolean` |   ✅   |   ✅   | `true`        | `false` selects plain HTTP; see [Plain HTTP transport](#plain-http-transport).                                                                                                                                                                                                |
+| `userAgentEntry`        | `string`  |   ✅   |   ✅   | —             | Folded into the connector `User-Agent` on both.                                                                                                                                                                                                                               |
+| `useKernel` (internal)  | `boolean` |   —    |   —    | `false`       | Selects the backend: `false`/omitted → Thrift, `true` → Kernel.                                                                                                                                                                                                               |
+| `clientId` (deprecated) | `string`  |   ✅   |   ✅   | —             | Runtime-only alias for `userAgentEntry`. `userAgentEntry` wins when both are supplied.                                                                                                                                                                                        |
 
 Set `client.getConfig().useCloudFetch = false` (default `true`) before opening a session to fetch
 complete results without cloud-storage downloads. On the kernel backend this

@@ -127,8 +127,72 @@ describe('KernelAuth connection options — https transport', () => {
     );
     // Same URL shape as the Thrift transport, which also requires brackets.
     expect(buildKernelConnectionOptions(opts({ host: '::1', port: 3015, https: false })).hostName).to.equal(
-      'http://::1:3015',
+      'http://[::1]:3015',
     );
+  });
+});
+
+describe('KernelAuth connection options — port folding', () => {
+  const hostName = (extra: Record<string, unknown>) => buildKernelConnectionOptions(opts(extra)).hostName;
+
+  // [connection options, expected hostName] for HTTPS (default) and https: false.
+  const accepted: Array<[Record<string, unknown>, string]> = [
+    [{ port: 8443 }, 'h.databricks.com:8443'],
+    [{ port: 8443, https: true }, 'h.databricks.com:8443'],
+    [{ port: '8443' }, 'h.databricks.com:8443'], // a decimal string is accepted, as on Thrift
+    [{ port: 443 }, 'h.databricks.com'], // no :443 suffix
+    [{ port: 0 }, 'h.databricks.com'], // zero means the default, as on Thrift
+    [{}, 'h.databricks.com'],
+    [{ host: 'h.databricks.com:8443' }, 'h.databricks.com:8443'],
+    [{ host: 'h.databricks.com:8443', port: 8443 }, 'h.databricks.com:8443'],
+    [{ host: 'https://h.databricks.com', port: 8443 }, 'https://h.databricks.com:8443'],
+    [{ host: '[::1]', port: 8443 }, '[::1]:8443'],
+    [{ host: '[::1]:8443', port: 8443 }, '[::1]:8443'],
+    [{ host: '::1', port: 8443 }, '[::1]:8443'], // bare IPv6 is bracketed
+    [{ host: '::1', port: 443 }, '::1'],
+    [{ host: 'h.databricks.com', port: 3015, https: false }, 'http://h.databricks.com:3015'],
+    [{ host: 'localhost', port: 80, https: false }, 'http://localhost:80'],
+    [{ host: 'localhost', port: '3015', https: false }, 'http://localhost:3015'],
+    [{ host: '::1', port: 3015, https: false }, 'http://[::1]:3015'], // bare IPv6 is bracketed
+    [{ host: '::1', https: false }, 'http://::1'], // no port: unchanged
+    [{ host: 'http://localhost:3015', https: false }, 'http://localhost:3015'],
+  ];
+  it('folds the port into the host as the table specifies', () => {
+    for (const [extra, want] of accepted) {
+      expect(hostName(extra), JSON.stringify(extra)).to.equal(want);
+    }
+  });
+
+  // [connection options, message] that must throw HiveDriverError.
+  const badPorts: unknown[] = [
+    65536,
+    -1,
+    1.5,
+    Number.NaN,
+    Number.POSITIVE_INFINITY,
+    true,
+    'abc',
+    '8443x',
+    '',
+    '-1',
+    '65536',
+  ];
+  const rejected: Array<[Record<string, unknown>, RegExp]> = [
+    ...badPorts.flatMap(
+      (port): Array<[Record<string, unknown>, RegExp]> => [
+        [{ port }, /must be an integer between 1 and 65535/],
+        [{ port, https: false }, /must be an integer between 1 and 65535/],
+      ],
+    ),
+    [{ host: 'h.databricks.com:7000', port: 8443 }, /carries port 7000 but `port` is 8443/],
+    [{ host: 'h.databricks.com:8443', port: 443 }, /carries port 8443 but `port` is 443/],
+    [{ host: '[::1]:7000', port: 8443 }, /carries port 7000/],
+    [{ host: 'h.databricks.com:70000' }, /outside 1\.\.65535/],
+  ];
+  it('rejects invalid ports and port conflicts', () => {
+    for (const [extra, message] of rejected) {
+      expect(() => hostName(extra), JSON.stringify(extra)).to.throw(HiveDriverError, message);
+    }
   });
 });
 

@@ -830,20 +830,54 @@ export function buildKernelProxyOptions(options: ConnectionOptions): KernelProxy
   return { proxy: out };
 }
 
-// The kernel prepends `https://` to a bare host but keeps an explicit scheme.
-// It otherwise ignores `port`, so carry it into the URL unless `host` already has one.
-function buildKernelHostName(options: ConnectionOptions): string {
-  if (options.https !== false) {
-    return options.host;
+// `name:port` or `[ipv6]:port`; a bare IPv6 literal like `::1` has no port.
+const EMBEDDED_PORT_RE = /^(\[[^\]]+\]|[^:]+):(\d+)$/;
+
+// An unset, null or zero port means the default, as on Thrift (`options.port || 443`).
+// A decimal string such as `'8443'` is accepted, as Thrift accepts it.
+function validateKernelPort(port: unknown): number | undefined {
+  if (port === undefined || port === null) return undefined;
+  let value = Number.NaN;
+  if (typeof port === 'number') value = port;
+  else if (typeof port === 'string' && /^[0-9]+$/.test(port)) value = Number(port);
+  if (value === 0) return undefined;
+  if (!Number.isInteger(value) || value < 1 || value > 65535) {
+    throw new HiveDriverError(`kernel backend: \`port\` must be an integer between 1 and 65535; got ${String(port)}.`);
   }
-  // The kernel accepts a full URL in `host`, so drop an existing `http://` or
-  // `https://` scheme before applying HTTP (`https: false` selects the scheme).
-  // Then strip a trailing `/` like the Thrift URL builder does.
-  const host = options.host.replace(/^https?:\/\//i, '').replace(/\/$/, '');
-  // `name:port` or `[ipv6]:port`; a bare IPv6 literal like `::1` has no port.
-  const hasPort = /^(\[[^\]]+\]|[^:]+):\d+$/.test(host);
-  const port = options.port && !hasPort ? `:${options.port}` : '';
-  return `http://${host}${port}`;
+  return value;
+}
+
+// A bare IPv6 literal (colons, no brackets) needs brackets before a port is appended.
+const bracketIpv6 = (authority: string): string =>
+  authority.includes(':') && !authority.startsWith('[') ? `[${authority}]` : authority;
+
+// The kernel prepends `https://` to a bare host and keeps an explicit scheme, but it
+// ignores the separate `port`, so a supplied port is folded into the host here.
+// HTTPS: a bare host is unchanged unless the port is non-default (not 443).
+// `https: false`: the scheme is http:// and a supplied port is always folded in.
+// A port in both `host` and `port` must agree.
+function buildKernelHostName(options: ConnectionOptions): string {
+  const port = validateKernelPort(options.port);
+  const scheme = /^https?:\/\//i.exec(options.host)?.[0] ?? '';
+  const authority = options.host.slice(scheme.length).replace(/\/$/, '');
+  const match = EMBEDDED_PORT_RE.exec(authority);
+  const embedded = match ? Number(match[2]) : undefined;
+  if (embedded !== undefined && (embedded < 1 || embedded > 65535)) {
+    throw new HiveDriverError(`kernel backend: host carries port ${embedded}, which is outside 1..65535.`);
+  }
+  if (port !== undefined && embedded !== undefined && embedded !== port) {
+    throw new HiveDriverError(
+      `kernel backend: host ${JSON.stringify(options.host)} carries port ${embedded} but \`port\` is ${port}. ` +
+        'Set the port in one place only.',
+    );
+  }
+  if (options.https === false) {
+    return port !== undefined && embedded === undefined
+      ? `http://${bracketIpv6(authority)}:${port}`
+      : `http://${authority}`;
+  }
+  if (port === undefined || port === 443 || embedded !== undefined) return options.host;
+  return `${scheme}${bracketIpv6(authority)}:${port}`;
 }
 
 export function buildKernelConnectionOptions(options: ConnectionOptions): KernelNativeConnectionOptions {
