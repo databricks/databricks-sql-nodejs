@@ -254,6 +254,4 @@ The Kernel path remains internal and unstable; its behavior may change.
 
 With the kernel backend, supplying `stagingAllowedLocalPath` completes Volume
 transfers before `executeStatement` resolves and consumes instruction rows.
-Omitting the option returns raw instructions without file effects. Unlike the
-Thrift backend’s lexical path check, the kernel also rejects symlink targets
-outside the configured roots while permitting symlinks within them.
+Omitting the option returns raw instructions without file effects.
