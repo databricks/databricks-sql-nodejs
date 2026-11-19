@@ -333,6 +333,7 @@ describe('HttpConnection through an HTTP CONNECT proxy', () => {
 
   let proxy: http.Server;
   let proxyConnects = 0;
+  let proxyAuthorization: string | undefined;
   const tunnels = new Set<net.Socket>();
 
   const agents: Array<http.Agent | undefined> = [];
@@ -381,6 +382,7 @@ describe('HttpConnection through an HTTP CONNECT proxy', () => {
     proxy = http.createServer();
     proxy.on('connect', (req: http.IncomingMessage, clientSocket: net.Socket, head: Buffer) => {
       proxyConnects += 1;
+      proxyAuthorization = req.headers['proxy-authorization'];
       const upstream = net.connect(Number(String(req.url).split(':')[1]), '127.0.0.1', () => {
         clientSocket.write('HTTP/1.1 200 Connection Established\r\n\r\n');
         upstream.write(head);
@@ -404,6 +406,7 @@ describe('HttpConnection through an HTTP CONNECT proxy', () => {
     serverRequests = 0;
     clientCertCN = undefined;
     proxyConnects = 0;
+    proxyAuthorization = undefined;
   });
 
   afterEach(() => {
@@ -508,4 +511,37 @@ describe('HttpConnection through an HTTP CONNECT proxy', () => {
     expect(serverRequests).to.equal(1);
     expect(clientCertCN).to.equal('localhost');
   });
+
+  const proxyAuthCases = [
+    { name: 'ordinary credentials', username: 'proxy-user', password: 'proxy-password' },
+    { name: 'an empty password', username: 'proxy-user', password: '' },
+    { name: 'an omitted password', username: 'proxy-user', password: undefined },
+    ...['username', 'password'].flatMap((component) =>
+      ['/', '#', '?', '@'].map((character) => ({
+        name: `${character} in the ${component}`,
+        username: 'proxy-user',
+        password: 'proxy-password',
+        [component]: `before${character}after`,
+      })),
+    ),
+    { name: 'reserved characters in both components', username: 'user/#?@', password: 'password/#?@' },
+  ];
+
+  for (const { name, username, password } of proxyAuthCases) {
+    it(`should preserve proxy Basic authentication with ${name}`, async () => {
+      await post({
+        ca: cert,
+        proxy: {
+          protocol: 'http',
+          host: '127.0.0.1',
+          port: (proxy.address() as net.AddressInfo).port,
+          auth: { username, password },
+        },
+      });
+
+      expect(proxyAuthorization).to.equal(`Basic ${Buffer.from(`${username}:${password ?? ''}`).toString('base64')}`);
+      expect(proxyConnects).to.equal(1);
+      expect(serverRequests).to.equal(1);
+    });
+  }
 });

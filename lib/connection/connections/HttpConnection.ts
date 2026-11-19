@@ -183,7 +183,7 @@ export default class HttpConnection implements IConnectionProvider {
 
   private createProxyAgent(proxyOptions: ProxyOptions): ProxyAgent {
     const proxyAuth = proxyOptions.auth?.username
-      ? `${proxyOptions.auth.username}:${proxyOptions.auth?.password ?? ''}@`
+      ? `${encodeURIComponent(proxyOptions.auth.username)}:${encodeURIComponent(proxyOptions.auth?.password ?? '')}@`
       : '';
     const proxyUrl = `${proxyOptions.protocol}://${proxyAuth}${proxyOptions.host}:${proxyOptions.port}`;
 
