@@ -2,6 +2,7 @@ import { expect, AssertionError } from 'chai';
 import sinon, { SinonStub } from 'sinon';
 import { execFileSync } from 'child_process';
 import http from 'http';
+import path from 'path';
 import { PassThrough } from 'stream';
 import { AddressInfo } from 'net';
 import Int64 from 'node-int64';
@@ -812,11 +813,13 @@ describe('CloudFetchResultHandler', () => {
 
     it('handles late body errors without application error handlers or unhandled rejections', function () {
       this.timeout(15000);
+      const repoRoot = path.resolve(__dirname, '../../..');
+      const handlerPath = path.join(repoRoot, 'lib/result/CloudFetchResultHandler');
       const script = `
         const assert = require('assert').strict;
         const { PassThrough } = require('stream');
         const { Response } = require('node-fetch');
-        const Handler = require('./lib/result/CloudFetchResultHandler').default;
+        const Handler = require(${JSON.stringify(handlerPath)}).default;
         (async () => {
           const body = new PassThrough();
           const response = new Response(body);
@@ -839,8 +842,8 @@ describe('CloudFetchResultHandler', () => {
       `;
       const output = execFileSync(
         process.execPath,
-        ['--unhandled-rejections=strict', '--require', 'ts-node/register', '-e', script],
-        { cwd: process.cwd(), encoding: 'utf8', timeout: 10000, stdio: 'pipe' },
+        ['--unhandled-rejections=strict', '--require', require.resolve('ts-node/register'), '-e', script],
+        { cwd: repoRoot, encoding: 'utf8', timeout: 10000, stdio: 'pipe' },
       );
       expect(output).to.eq('late body error handled\n');
     });
@@ -936,6 +939,7 @@ describe('CloudFetchResultHandler', () => {
         expect(buffer.firstCall.thisValue.body).to.have.property('pipe').that.is.a('function');
         expect(buffer.firstCall.thisValue.body.listenerCount('data')).to.eq(0);
         expect(buffer.firstCall.thisValue.body.listenerCount('end')).to.eq(0);
+        expect(buffer.firstCall.thisValue.body.listenerCount('error')).to.eq(1);
         const downloaded = await buffer.firstCall.returnValue;
         expect(downloaded).to.deep.eq(body);
         expect(downloaded.length).to.be.lt(Buffer.poolSize >>> 1);
