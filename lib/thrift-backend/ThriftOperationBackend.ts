@@ -107,7 +107,7 @@ export default class ThriftOperationBackend implements IOperationBackend {
 
   private fetchFailed = false;
 
-  private fetchFailureClose?: Promise<Status>;
+  private closePromise?: Promise<Status>;
 
   constructor({
     handle,
@@ -211,19 +211,20 @@ export default class ThriftOperationBackend implements IOperationBackend {
       if (isFetchArgumentError(error)) {
         throw error;
       }
-      this.fetchFailed = true;
-      if (!this.fetchFailureClose) {
-        this.fetchFailureClose = this.close();
-        this.fetchFailureClose.catch((closeError) => {
-          const cause = typeof closeError?.message === 'string' ? closeError.message : String(closeError);
-          this.context
-            .getLogger()
-            .log(
-              LogLevel.warn,
-              `Thrift fetch-error cleanup: close() failed for operation ${this.id}; the server-side ` +
-                `statement may leak until the session is closed. Cause: ${cause}`,
-            );
-        });
+      if (!this.fetchFailed) {
+        this.fetchFailed = true;
+        this.close()
+          .catch((closeError) => {
+            const cause = typeof closeError?.message === 'string' ? closeError.message : String(closeError);
+            this.context
+              .getLogger()
+              .log(
+                LogLevel.warn,
+                `Thrift fetch-error cleanup: close() failed for operation ${this.id}; the server-side ` +
+                  `statement may leak until the session is closed. Cause: ${cause}`,
+              );
+          })
+          .catch(() => undefined);
       }
       throw error;
     }
@@ -388,9 +389,18 @@ export default class ThriftOperationBackend implements IOperationBackend {
   }
 
   public async close(): Promise<Status> {
-    if (this.fetchFailureClose) {
-      return this.fetchFailureClose;
+    if (!this.closePromise) {
+      this.closePromise = this.closeInternal().catch((error) => {
+        if (!this.fetchFailed && !this.isFinished()) {
+          this.closePromise = undefined;
+        }
+        throw error;
+      });
     }
+    return this.closePromise;
+  }
+
+  private async closeInternal(): Promise<Status> {
     this.context.getLogger().log(LogLevel.debug, `Closing operation with id: ${this.id}`);
     const driver = await this.context.getDriver();
     const response =

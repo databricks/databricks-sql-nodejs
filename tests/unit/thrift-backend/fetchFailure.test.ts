@@ -4,6 +4,7 @@ import Int64 from 'node-int64';
 import sinon from 'sinon';
 import {
   TCloseOperationResp,
+  TFetchResultsResp,
   TOperationState,
   TOperationType,
   TSparkRowSetType,
@@ -129,6 +130,94 @@ describe('Thrift fetch failure', () => {
       }
     });
   }
+
+  it('contains a throwing logger after background cleanup fails', async () => {
+    const { context, operation } = setup();
+    const fetchError = new Error('fetch failed');
+    const loggerError = new Error('logger sink closed');
+    const unhandled: unknown[] = [];
+    const onUnhandled = (error: unknown) => {
+      unhandled.push(error);
+    };
+    sinon.stub(context.driver, 'fetchResults').rejects(fetchError);
+    sinon.stub(context.driver, 'closeOperation').rejects(new Error('cleanup failed'));
+    const log = sinon.stub(context.logger, 'log').callsFake((level) => {
+      if (level === LogLevel.warn) {
+        throw loggerError;
+      }
+    });
+    process.on('unhandledRejection', onUnhandled);
+    try {
+      await operation.fetchChunk().then(
+        () => expect.fail('fetch should fail'),
+        (error) => expect(error).to.equal(fetchError),
+      );
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      await new Promise<void>((resolve) => setImmediate(resolve));
+      expect(log.calledWith(LogLevel.warn, sinon.match('fetch-error cleanup'))).to.be.true;
+      expect(unhandled).to.deep.equal([]);
+      await operation.fetchChunk().then(
+        () => expect.fail('later reads must remain terminal'),
+        (error) => expect(error).to.be.instanceOf(OperationStateError),
+      );
+    } finally {
+      process.removeListener('unhandledRejection', onUnhandled);
+    }
+  });
+
+  it('reuses an explicit close already in flight when a fetch fails', async () => {
+    const clock = sinon.useFakeTimers();
+    const { context, operation } = setup();
+    const fetchError = new Error('operation is closing');
+    const pendingFetch = sinon.promise<TFetchResultsResp>();
+    const pendingClose = sinon.promise<TCloseOperationResp>();
+    const fetch = sinon.stub(context.driver, 'fetchResults').returns(pendingFetch);
+    const close = sinon.stub(context.driver, 'closeOperation').returns(pendingClose);
+    close.onSecondCall().rejects(new Error('operation already closed'));
+    const log = sinon.spy(context.logger, 'log');
+    let rejectedWith: unknown;
+    try {
+      const fetching = operation.fetchChunk().catch((error) => {
+        rejectedWith = error;
+      });
+      await clock.runAllAsync();
+      expect(fetch.callCount).to.equal(1);
+      const closing = operation.close();
+      await clock.runAllAsync();
+      expect(close.callCount).to.equal(1);
+
+      pendingFetch.reject(fetchError);
+      await clock.runAllAsync();
+      expect(rejectedWith).to.equal(fetchError);
+      await fetching;
+      expect(close.callCount).to.equal(1);
+      pendingClose.resolve(context.driver.closeOperationResp);
+      expect((await closing).isSuccess).to.be.true;
+      expect(log.calledWith(LogLevel.warn)).to.be.false;
+    } finally {
+      if (pendingFetch.status === 'pending') {
+        pendingFetch.resolve(context.driver.fetchResultsResp);
+      }
+      if (pendingClose.status === 'pending') {
+        pendingClose.resolve(context.driver.closeOperationResp);
+      }
+      clock.restore();
+    }
+  });
+
+  it('allows an unfinished explicit close to be retried after failure', async () => {
+    const { context, operation } = setup();
+    context.driver.getOperationStatusResp.operationState = TOperationState.RUNNING_STATE;
+    const closeError = new Error('close failed');
+    const close = sinon.stub(context.driver, 'closeOperation').callThrough();
+    close.onFirstCall().rejects(closeError);
+    await operation.close().then(
+      () => expect.fail('unfinished close failure should reject'),
+      (error) => expect(error).to.equal(closeError),
+    );
+    expect((await operation.close()).isSuccess).to.be.true;
+    expect(close.callCount).to.equal(2);
+  });
 
   it('keeps the operation usable after an invalid maxRows', async () => {
     const { context, operation } = setup();
