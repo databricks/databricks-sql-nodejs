@@ -110,6 +110,8 @@ export default class DBSQLOperation implements IOperation {
 
   /**
    * Fetches all data
+   * A failed Thrift result fetch is terminal; later reads replay the same error object.
+   * Re-execute the statement instead of retrying the read.
    * @public
    * @param options - maxRows property can be set to limit chunk size
    * @returns Array of data with length equal to option.maxRows
@@ -137,6 +139,8 @@ export default class DBSQLOperation implements IOperation {
 
   /**
    * Fetches chunk of data
+   * A failed Thrift result fetch is terminal; later reads replay the same error object.
+   * Re-execute the statement instead of retrying the read.
    * @public
    * @param options - maxRows property sets chunk size
    * @returns Array of data with length equal to option.maxRows

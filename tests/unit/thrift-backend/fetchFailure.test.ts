@@ -76,7 +76,7 @@ describe('Thrift fetch failure', () => {
       expect(close.callCount).to.equal(1);
     });
 
-    it(`reports the fetch error without waiting for cleanup and reuses its ${
+    it(`reports the fetch error without waiting and shares pending cleanup's ${
       closeFails ? 'failure' : 'success'
     } on close`, async () => {
       const clock = sinon.useFakeTimers();
@@ -96,10 +96,12 @@ describe('Thrift fetch failure', () => {
         expect(rejectedWith).to.equal(fetchError);
         await fetching;
         expect(close.callCount).to.equal(1);
-        await operation.hasMoreRows().then(
+        const laterRead = operation.hasMoreRows().then(
           () => expect.fail('later reads must fail while cleanup is pending'),
           (error) => expect(error).to.equal(fetchError),
         );
+        await clock.runAllAsync();
+        await laterRead;
 
         let closed = false;
         const closing = operation.close().then((status) => {
@@ -134,6 +136,64 @@ describe('Thrift fetch failure', () => {
       }
     });
   }
+
+  it('yields to a zero-delay timer between latched read rejections', async () => {
+    const { context, operation } = setup();
+    const fetchError = new HiveDriverError('transient fetch failed');
+    const fetch = sinon.stub(context.driver, 'fetchResults').rejects(fetchError);
+    await operation.fetchChunk().then(
+      () => expect.fail('fetch should fail'),
+      (error) => expect(error).to.equal(fetchError),
+    );
+
+    for (const method of ['fetchChunk', 'fetchAll', 'hasMoreRows'] as const) {
+      await operation[method]().then(
+        () => expect.fail('later reads must fail'),
+        (error) => expect(error).to.equal(fetchError),
+      );
+      let timerFired = false;
+      const timer = new Promise<void>((resolve) => {
+        setTimeout(() => {
+          timerFired = true;
+          resolve();
+        }, 0);
+      });
+      try {
+        await operation[method]().then(
+          () => expect.fail('later reads must fail'),
+          (error) => expect(error).to.equal(fetchError),
+        );
+        expect(timerFired, `${method} must not starve macrotasks`).to.be.true;
+      } finally {
+        await timer;
+      }
+    }
+    expect(fetch.callCount).to.equal(1);
+  });
+
+  it('makes a fresh explicit close attempt after background cleanup fails', async () => {
+    const { context, operation } = setup();
+    const fetchError = new HiveDriverError('fetch failed');
+    sinon.stub(context.driver, 'fetchResults').rejects(fetchError);
+    const close = sinon.stub(context.driver, 'closeOperation').callThrough();
+    close.onFirstCall().rejects(new Error('cleanup failed during outage'));
+    const log = sinon.spy(context.logger, 'log');
+    await operation.fetchChunk().then(
+      () => expect.fail('fetch should fail'),
+      (error) => expect(error).to.equal(fetchError),
+    );
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(close.callCount).to.equal(1);
+    expect(log.calledWith(LogLevel.warn, sinon.match('fetch-error cleanup'))).to.be.true;
+
+    const status = await operation.close();
+    expect(close.callCount).to.equal(2);
+    expect(status.isSuccess).to.be.true;
+    expect(status.info).to.deep.equal([]);
+    expect(log.calledWith(LogLevel.warn, sinon.match('Failed to close finished operation'))).to.be.false;
+    await operation.close();
+    expect(close.callCount).to.equal(2);
+  });
 
   it('contains a throwing logger after background cleanup fails', async () => {
     const { context, operation } = setup();

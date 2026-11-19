@@ -174,7 +174,6 @@ export default class ThriftOperationBackend implements IOperationBackend {
     disableBuffering?: boolean;
     isClosed?: () => boolean;
   }): Promise<Array<object>> {
-    this.failIfFetchFailed();
     const resultHandler = await this.getResultHandler();
 
     // All the library code is Promise-based, however, since Promises are microtasks,
@@ -190,6 +189,7 @@ export default class ThriftOperationBackend implements IOperationBackend {
     await new Promise<void>((resolve) => {
       setTimeout(resolve, 0);
     });
+    this.failIfFetchFailed();
 
     // Mid-flight cancel/close probe. The pre-refactor facade had a
     // `failIfClosed()` between metadata-prep and the data RPC; that guard moved
@@ -234,7 +234,10 @@ export default class ThriftOperationBackend implements IOperationBackend {
   }
 
   public async hasMore(): Promise<boolean> {
-    this.failIfFetchFailed();
+    if (this.fetchFailed) {
+      await delay(0);
+      this.failIfFetchFailed();
+    }
     const resultHandler = await this.getResultHandler();
     return resultHandler.hasMore();
   }
@@ -393,11 +396,8 @@ export default class ThriftOperationBackend implements IOperationBackend {
 
   public async close(): Promise<Status> {
     if (!this.closePromise) {
-      this.closePromise = this.closeInternal().catch((error) => {
-        if (!this.fetchFailed && !this.isFinished()) {
-          this.closePromise = undefined;
-        }
-        throw error;
+      this.closePromise = this.closeInternal().finally(() => {
+        this.closePromise = undefined;
       });
     }
     return this.closePromise;
