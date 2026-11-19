@@ -19,7 +19,7 @@ import Status from '../dto/Status';
 import { LogLevel } from '../contracts/IDBSQLLogger';
 import OperationStateError, { OperationStateErrorCode } from '../errors/OperationStateError';
 import IResultsProvider from '../result/IResultsProvider';
-import RowSetProvider from '../result/RowSetProvider';
+import RowSetProvider, { isFetchArgumentError } from '../result/RowSetProvider';
 import JsonResultHandler from '../result/JsonResultHandler';
 import ArrowResultHandler from '../result/ArrowResultHandler';
 import CloudFetchResultHandler from '../result/CloudFetchResultHandler';
@@ -107,6 +107,8 @@ export default class ThriftOperationBackend implements IOperationBackend {
 
   private fetchFailed = false;
 
+  private fetchFailureClose?: Promise<Status>;
+
   constructor({
     handle,
     directResults,
@@ -171,9 +173,6 @@ export default class ThriftOperationBackend implements IOperationBackend {
     isClosed?: () => boolean;
   }): Promise<Array<object>> {
     this.failIfFetchFailed();
-    if (Math.abs(limit) > 2 ** 64) {
-      throw new RangeError('maxRows is outside Int64 range');
-    }
     const resultHandler = await this.getResultHandler();
 
     // All the library code is Promise-based, however, since Promises are microtasks,
@@ -209,8 +208,23 @@ export default class ThriftOperationBackend implements IOperationBackend {
       // Native GetFunctions leaves FUNCTION_CAT empty; match JDBC and kernel.
       return rows.map((row) => (row === null ? row : { ...row, FUNCTION_CAT: this.functionCatalog }));
     } catch (error) {
+      if (isFetchArgumentError(error)) {
+        throw error;
+      }
       this.fetchFailed = true;
-      await this.close().catch(() => undefined);
+      if (!this.fetchFailureClose) {
+        this.fetchFailureClose = this.close();
+        this.fetchFailureClose.catch((closeError) => {
+          const cause = typeof closeError?.message === 'string' ? closeError.message : String(closeError);
+          this.context
+            .getLogger()
+            .log(
+              LogLevel.warn,
+              `Thrift fetch-error cleanup: close() failed for operation ${this.id}; the server-side ` +
+                `statement may leak until the session is closed. Cause: ${cause}`,
+            );
+        });
+      }
       throw error;
     }
   }
@@ -374,6 +388,9 @@ export default class ThriftOperationBackend implements IOperationBackend {
   }
 
   public async close(): Promise<Status> {
+    if (this.fetchFailureClose) {
+      return this.fetchFailureClose;
+    }
     this.context.getLogger().log(LogLevel.debug, `Closing operation with id: ${this.id}`);
     const driver = await this.context.getDriver();
     const response =

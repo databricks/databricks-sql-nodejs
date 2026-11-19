@@ -1,13 +1,24 @@
 import { expect } from 'chai';
+import { Table, tableFromArrays, tableToIPC } from 'apache-arrow';
+import Int64 from 'node-int64';
 import sinon from 'sinon';
-import { TOperationState, TOperationType, TSparkRowSetType } from '../../../thrift/TCLIService_types';
+import {
+  TCloseOperationResp,
+  TOperationState,
+  TOperationType,
+  TSparkRowSetType,
+  TStatusCode,
+  TTypeId,
+} from '../../../thrift/TCLIService_types';
 import OperationStateError, { OperationStateErrorCode } from '../../../lib/errors/OperationStateError';
+import StatusError from '../../../lib/errors/StatusError';
 import CloudFetchResultHandler from '../../../lib/result/CloudFetchResultHandler';
+import { LogLevel } from '../../../lib/contracts/IDBSQLLogger';
 import ClientContextStub from '../.stubs/ClientContextStub';
 import { createOperationForTest } from '../.stubs/createOperationForTest';
 
 describe('Thrift fetch failure', () => {
-  function setup() {
+  function setup(directResults = false) {
     const context = new ClientContextStub();
     context.driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
     const operation = createOperationForTest({
@@ -17,6 +28,14 @@ describe('Thrift fetch failure', () => {
         operationType: TOperationType.EXECUTE_STATEMENT,
         hasResultSet: true,
       },
+      directResults: directResults
+        ? {
+            operationStatus: context.driver.getOperationStatusResp,
+            resultSetMetadata: context.driver.getResultSetMetadataResp,
+            resultSet: context.driver.fetchResultsResp,
+            closeOperation: context.driver.closeOperationResp,
+          }
+        : undefined,
     });
     return { context, operation };
   }
@@ -55,6 +74,60 @@ describe('Thrift fetch failure', () => {
       expect(fetch.callCount).to.equal(1);
       expect(close.callCount).to.equal(1);
     });
+
+    it(`reports the fetch error without waiting for cleanup and reuses its ${
+      closeFails ? 'failure' : 'success'
+    } on close`, async () => {
+      const clock = sinon.useFakeTimers();
+      const cleanup = sinon.promise<TCloseOperationResp>();
+      const { context, operation } = setup();
+      const fetchError = new Error('fetch failed');
+      const cleanupError = new StatusError({ statusCode: TStatusCode.ERROR_STATUS, errorMessage: 'cleanup failed' });
+      sinon.stub(context.driver, 'fetchResults').rejects(fetchError);
+      const close = sinon.stub(context.driver, 'closeOperation').returns(cleanup);
+      const log = sinon.spy(context.logger, 'log');
+      let rejectedWith: unknown;
+      try {
+        const fetching = operation.fetchChunk().catch((error) => {
+          rejectedWith = error;
+        });
+        await clock.runAllAsync();
+        expect(rejectedWith).to.equal(fetchError);
+        await fetching;
+        expect(close.callCount).to.equal(1);
+
+        let closed = false;
+        const closing = operation.close().then((status) => {
+          closed = true;
+          return status;
+        });
+        await clock.runAllAsync();
+        expect(closed).to.be.false;
+        expect(close.callCount).to.equal(1);
+
+        if (closeFails) {
+          cleanup.reject(cleanupError);
+        } else {
+          cleanup.resolve(context.driver.closeOperationResp);
+        }
+        const status = await closing;
+        expect(status.isSuccess).to.be.true;
+        expect(status.info).to.deep.equal(closeFails ? ['Failed to close operation: cleanup failed'] : []);
+        expect(
+          log.calledWith(
+            LogLevel.warn,
+            sinon.match('fetch-error cleanup').and(sinon.match(operation.id)).and(sinon.match('cleanup failed')),
+          ),
+        ).to.equal(closeFails);
+        await operation.close();
+        expect(close.callCount).to.equal(1);
+      } finally {
+        if (cleanup.status === 'pending') {
+          cleanup.resolve(context.driver.closeOperationResp);
+        }
+        clock.restore();
+      }
+    });
   }
 
   it('keeps the operation usable after an invalid maxRows', async () => {
@@ -71,16 +144,71 @@ describe('Thrift fetch failure', () => {
     expect(await operation.fetchChunk({ maxRows: 3 })).to.deep.equal([{ test: 'a' }, { test: 'b' }, { test: 'c' }]);
   });
 
-  it('does not consume buffered rows when maxRows is invalid', async () => {
+  for (const maxRows of [Infinity, Number.MAX_VALUE]) {
+    for (const method of ['fetchChunk', 'fetchAll'] as const) {
+      it(`preserves direct-result ${method} with maxRows=${maxRows}`, async () => {
+        const { context, operation } = setup(true);
+        const fetch = sinon.spy(context.driver, 'fetchResults');
+        expect(await operation[method]({ maxRows })).to.deep.equal([{ test: 'a' }, { test: 'b' }, { test: 'c' }]);
+        expect(fetch.called).to.be.false;
+      });
+    }
+  }
+
+  it('fails after consuming an Arrow batch when trailing prefetch rejects', async () => {
     const { context, operation } = setup();
+    const table = new Table([
+      ...tableFromArrays({ id: new Int32Array([0, 1]) }).batches,
+      ...tableFromArrays({ id: new Int32Array([2, 3]) }).batches,
+    ]);
+    const ipc = Buffer.from(tableToIPC(table, 'stream'));
+    const schemaLength = 8 + ipc.readInt32LE(4);
+    context.driver.getResultSetMetadataResp.resultFormat = TSparkRowSetType.ARROW_BASED_SET;
+    context.driver.getResultSetMetadataResp.arrowSchema = ipc.subarray(0, schemaLength);
+    context.driver.getResultSetMetadataResp.schema = {
+      columns: [
+        {
+          columnName: 'id',
+          typeDesc: { types: [{ primitiveEntry: { type: TTypeId.INT_TYPE } }] },
+          position: 1,
+          comment: '',
+        },
+      ],
+    };
+    const fetchError = new Error('trailing prefetch failed');
+    const fetch = sinon.stub(context.driver, 'fetchResults').resolves({
+      status: context.driver.fetchResultsResp.status,
+      hasMoreRows: false,
+    });
+    fetch.onFirstCall().resolves({
+      status: context.driver.fetchResultsResp.status,
+      hasMoreRows: true,
+      results: {
+        startRowOffset: new Int64(0),
+        rows: [],
+        arrowBatches: [{ batch: ipc.subarray(schemaLength), rowCount: new Int64(4) }],
+      },
+    });
+    fetch.onSecondCall().rejects(fetchError);
     const close = sinon.spy(context.driver, 'closeOperation');
-    expect(await operation.fetchChunk({ maxRows: 1 })).to.deep.equal([{ test: 'a' }]);
-    await operation.fetchChunk({ maxRows: Number.MAX_VALUE }).then(
-      () => expect.fail('maxRows should be outside the Int64 range'),
-      (error) => expect(error).to.be.instanceOf(RangeError),
+
+    expect(await operation.fetchChunk({ maxRows: 2 })).to.deep.equal([{ id: 0 }, { id: 1 }]);
+    expect(fetch.callCount).to.equal(1);
+    await operation.fetchChunk({ maxRows: 2 }).then(
+      () => expect.fail('trailing prefetch should fail'),
+      (error) => expect(error).to.equal(fetchError),
     );
-    expect(close.called).to.be.false;
-    expect(await operation.fetchChunk({ maxRows: 2 })).to.deep.equal([{ test: 'b' }, { test: 'c' }]);
+    for (const read of [() => operation.fetchChunk(), () => operation.fetchAll(), () => operation.hasMoreRows()]) {
+      await read().then(
+        () => expect.fail('later reads must not resume the consumed Arrow cursor'),
+        (error) => {
+          expect(error).to.be.instanceOf(OperationStateError);
+          expect(error.errorCode).to.equal(OperationStateErrorCode.Error);
+        },
+      );
+    }
+    expect(fetch.callCount).to.equal(2);
+    expect(close.callCount).to.equal(1);
   });
 
   it('fails after a CloudFetch provider error during fetchAll', async () => {

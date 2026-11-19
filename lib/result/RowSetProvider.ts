@@ -17,6 +17,12 @@ export enum FetchType {
   Logs = 1,
 }
 
+const fetchArgumentErrors = new WeakSet<Error>();
+
+export function isFetchArgumentError(error: unknown): boolean {
+  return error instanceof Error && fetchArgumentErrors.has(error);
+}
+
 /**
  * Rough byte count for a single `TColumn`. Used only for telemetry — exact
  * wire size isn't worth a deserialization pass. Fixed-width values are
@@ -150,10 +156,19 @@ export default class RowSetProvider implements IResultsProvider<TRowSet | undefi
 
     const driver = await this.context.getDriver();
     const startTime = Date.now();
+    let maxRows: Int64;
+    try {
+      maxRows = new Int64(limit);
+    } catch (error) {
+      if (error instanceof Error) {
+        fetchArgumentErrors.add(error);
+      }
+      throw error;
+    }
     const response = await driver.fetchResults({
       operationHandle: this.operationHandle,
       orientation: this.fetchOrientation,
-      maxRows: new Int64(limit),
+      maxRows,
       fetchType: FetchType.Data,
     });
     const latencyMs = Date.now() - startTime;
