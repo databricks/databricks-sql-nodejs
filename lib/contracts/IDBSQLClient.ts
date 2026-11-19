@@ -199,9 +199,10 @@ export type ConnectionOptions = {
   enableGeoSpatialSupport?: boolean;
 
   /**
-   * Negotiate HTTP/2 for all kernel HTTPS traffic, with HTTP/1.1 fallback.
+   * Negotiate HTTP/2 for session HTTPS traffic, with HTTP/1.1 fallback.
    * Defaults to true. False or a configured proxy forces HTTP/1.1,
    * including bypassed destinations. Applies only with useKernel: true.
+   * Telemetry may reuse an earlier session's HTTP client for the same host.
    */
   enableHttp2?: boolean;
 
