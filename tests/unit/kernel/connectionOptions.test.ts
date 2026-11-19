@@ -168,7 +168,11 @@ describe('KernelAuth connection options — port folding', () => {
     [{ host: 'https://h.databricks.com/', port: 8443 }, 'https://h.databricks.com:8443'],
     [{ host: 'h.databricks.com:8443/' }, 'h.databricks.com:8443'],
     [{ host: 'h.databricks.com/' }, 'h.databricks.com'],
-    [{ host: 'h.databricks.com/x' }, 'h.databricks.com/x'], // no port: unchanged, as before
+    // A path host with no port, or with 443 over HTTPS, is not folded: passed through unchanged, as before.
+    [{ host: 'h.databricks.com/x' }, 'h.databricks.com/x'],
+    [{ host: 'h.databricks.com/x', port: 443 }, 'h.databricks.com/x'],
+    [{ host: 'https://h.databricks.com/x', port: 443 }, 'https://h.databricks.com/x'],
+    [{ host: 'h.databricks.com/x', port: 443, https: true }, 'h.databricks.com/x'],
     [{ host: 'h.databricks.com', port: 3015, https: false }, 'http://h.databricks.com:3015'],
     [{ host: 'localhost', port: 80, https: false }, 'http://localhost:80'],
     [{ host: 'localhost', port: '3015', https: false }, 'http://localhost:3015'],
@@ -200,7 +204,6 @@ describe('KernelAuth connection options — port folding', () => {
       ],
     ),
     [{ host: 'h.databricks.com/x', port: 8443 }, /has a path, query or fragment/],
-    [{ host: 'h.databricks.com/x', port: 443 }, /has a path, query or fragment/], // DBSQLClient always supplies 443
     [{ host: 'h.databricks.com/x/', port: 8443 }, /has a path, query or fragment/],
     [{ host: 'https://h.databricks.com/x', port: 8443 }, /has a path, query or fragment/],
     [{ host: 'h.databricks.com?x', port: 8443 }, /has a path, query or fragment/],
