@@ -725,6 +725,32 @@ describe('CloudFetchResultHandler', () => {
     expect(batches).to.deep.eq([sampleArrowBatch]);
   });
 
+  [Buffer.alloc(0), Buffer.from([0, 255, 128, 42]), Buffer.from([99, 0, 255, 128, 42, 98]).subarray(1, 5)].forEach(
+    (body, index) => {
+      it(`should reuse the exact response buffer without copying (${index})`, async () => {
+        const context = new ClientContextStub({ cloudFetchConcurrentDownloads: 1 });
+        const rowSetProvider = new ResultsProviderStub([sampleRowSet1], undefined);
+        const result = new CloudFetchResultHandler(context, rowSetProvider, {
+          lz4Compressed: false,
+          status: { statusCode: TStatusCode.SUCCESS_STATUS },
+        });
+        const response = new Response(body, { status: 200 });
+        const buffer = sinon.spy(response, 'buffer');
+        const arrayBuffer = sinon.spy(response, 'arrayBuffer');
+        context.invokeWithRetryStub.resolves({ request: new Request('localhost'), response });
+
+        const { batches, rowCount } = await result.fetchNext({ limit: 10000 });
+
+        expect(batches).to.have.lengthOf(1);
+        expect(batches[0]).to.equal(body);
+        expect(batches[0].byteLength).to.equal(body.byteLength);
+        expect(rowCount).to.equal(1);
+        expect(buffer.calledOnce).to.be.true;
+        expect(arrayBuffer.called).to.be.false;
+      });
+    },
+  );
+
   describe('download deadline', () => {
     let server: http.Server | undefined;
 
