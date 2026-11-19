@@ -13,8 +13,10 @@ export interface ClientOptions {
 export interface ClientCloseOptions {
   /**
    * Wait for the final Thrift telemetry export (default true). With false,
-   * export runs in the background for up to telemetryCloseTimeoutMs (2s by
-   * default); a full background queue falls back to waiting. Exports and retries
+   * built-in access-token/PAT auth exports in the background up to
+   * telemetryCloseTimeoutMs (2s by default). All other auth providers (OAuth,
+   * token adapters/federation, custom) and a full queue retain the awaited path; no
+   * exchange or refresh work is detached. Background exports and retries
    * still active at the deadline are abandoned even in a live process. Explicit
    * process.exit() or runtime suspension can also lose batches. No public hook
    * drains previously detached batches. Native kernel session cleanup, including

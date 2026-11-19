@@ -49,7 +49,7 @@ class TelemetryClient implements IClientContext {
 
   private readonly logger: IDBSQLLogger;
 
-  private readonly config: ClientConfig;
+  private config: ClientConfig;
 
   private readonly circuitBreakerRegistry: CircuitBreakerRegistry;
 
@@ -302,11 +302,17 @@ class TelemetryClient implements IClientContext {
     return this.closed;
   }
 
+  detachContext(): boolean {
+    if (!this.exporter.detachContext()) return false;
+    this.config = { ...this.config, customHeaders: this.config.customHeaders && { ...this.config.customHeaders } };
+    return true;
+  }
+
   /**
    * Drain pending metrics and tear down owned resources. Called by
    * `TelemetryClientProvider.releaseClient` when refCount hits zero.
    */
-  async close(cancelPendingExports: boolean = false): Promise<void> {
+  async close(): Promise<void> {
     if (this.closed) return;
     this.closed = true;
     this.logger.log(LogLevel.debug, `Closing TelemetryClient for host: ${this.host}`);
@@ -316,7 +322,7 @@ class TelemetryClient implements IClientContext {
       this.logger.log(LogLevel.debug, `TelemetryClient aggregator close error: ${(err as Error).message}`);
     }
     try {
-      this.exporter.dispose(cancelPendingExports);
+      this.exporter.dispose();
     } catch (err) {
       this.logger.log(LogLevel.debug, `TelemetryClient exporter dispose error: ${(err as Error).message}`);
     }

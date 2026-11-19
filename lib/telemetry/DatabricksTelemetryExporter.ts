@@ -20,6 +20,7 @@ import IClientContext from '../contracts/IClientContext';
 import { LogLevel } from '../contracts/IDBSQLLogger';
 import IAuthentication from '../connection/contracts/IAuthentication';
 import IConnectionProvider from '../connection/contracts/IConnectionProvider';
+import PlainHttpAuthentication from '../connection/auth/PlainHttpAuthentication';
 import AuthenticationError from '../errors/AuthenticationError';
 import HiveDriverError from '../errors/HiveDriverError';
 import { TelemetryMetric, DEFAULT_TELEMETRY_CONFIG } from './types';
@@ -126,7 +127,7 @@ export default class DatabricksTelemetryExporter {
 
   private authMissingWarned = false;
 
-  private readonly abortController = new AbortController();
+  private abortController?: AbortController;
 
   private connectionProvider?: Promise<IConnectionProvider>;
 
@@ -161,17 +162,23 @@ export default class DatabricksTelemetryExporter {
    * the last consumer on its host; multi-consumer refcounting on the
    * registry will land in the consumer-wiring PR.
    */
-  dispose(cancelPendingExports: boolean = false): void {
-    if (cancelPendingExports) {
-      this.abortController.abort();
-    }
+  dispose(): void {
+    this.abortController?.abort();
     this.circuitBreakerRegistry.removeCircuitBreaker(this.host);
   }
 
-  detachContext(): void {
-    this.authProvider = this.authProvider ?? this.context.getAuthProvider?.();
+  detachContext(): boolean {
+    const authProvider = this.authProvider ?? this.context.getAuthProvider?.();
+    if (
+      !(authProvider instanceof PlainHttpAuthentication) ||
+      authProvider.authenticate !== PlainHttpAuthentication.prototype.authenticate
+    )
+      return false;
+    this.authProvider = authProvider;
+    this.abortController = new AbortController();
     this.connectionProvider = this.context.getConnectionProvider();
     this.connectionProvider.catch(() => {});
+    return true;
   }
 
   async export(metrics: TelemetryMetric[]): Promise<void> {
@@ -221,12 +228,12 @@ export default class DatabricksTelemetryExporter {
 
     /* eslint-disable no-await-in-loop */
     for (let attempt = 0; attempt < totalAttempts; attempt += 1) {
-      if (this.abortController.signal.aborted) return;
+      if (this.abortController?.signal.aborted) return;
       try {
         await this.exportInternal(metrics);
         return;
       } catch (error: any) {
-        if (this.abortController.signal.aborted) return;
+        if (this.abortController?.signal.aborted) return;
         lastError = error;
 
         if (
@@ -315,7 +322,7 @@ export default class DatabricksTelemetryExporter {
       headers,
       body,
       timeout: 10000,
-      signal: this.abortController.signal as unknown as RequestInit['signal'],
+      ...(this.abortController ? { signal: this.abortController.signal as unknown as RequestInit['signal'] } : {}),
     });
 
     if (!response.ok) {
@@ -488,8 +495,12 @@ export default class DatabricksTelemetryExporter {
   }
 
   private sleep(ms: number): Promise<void> {
+    if (!this.abortController)
+      return new Promise((resolve) => {
+        setTimeout(resolve, ms);
+      });
+    const { signal } = this.abortController;
     return new Promise((resolve) => {
-      const { signal } = this.abortController;
       let timer: NodeJS.Timeout;
       const finish = (): void => {
         clearTimeout(timer);

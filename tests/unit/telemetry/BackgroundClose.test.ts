@@ -10,6 +10,7 @@ import FederationProvider, {
   setFederationFetchForTest,
 } from '../../../lib/connection/auth/tokenProvider/FederationProvider';
 import OAuthToken from '../../../lib/connection/auth/DatabricksOAuth/OAuthToken';
+import PlainHttpAuthentication from '../../../lib/connection/auth/PlainHttpAuthentication';
 import TelemetryClientProvider from '../../../lib/telemetry/TelemetryClientProvider';
 import TelemetryClient from '../../../lib/telemetry/TelemetryClient';
 import { TelemetryEventType } from '../../../lib/telemetry/types';
@@ -41,7 +42,7 @@ describe('background telemetry close', () => {
 
   function makeContext(): ClientContextStub {
     const context = new ClientContextStub({ telemetryCloseTimeoutMs: 100, telemetryMaxRetries: 0 });
-    sinon.stub(context, 'getAuthProvider').returns({ authenticate: async () => ({ Authorization: 'Bearer mock' }) });
+    sinon.stub(context, 'getAuthProvider').returns(new PlainHttpAuthentication({ context, password: 'mock' }));
     return context;
   }
 
@@ -60,6 +61,8 @@ describe('background telemetry close', () => {
   it('preserves the awaited default and explicit true', async () => {
     for (const wait of [undefined, true]) {
       const context = makeContext();
+      const config = context.getConfig();
+      sinon.stub(context, 'getConfig').returns(config);
       const client = provider.getOrCreateClient(context, host);
       const request = delayedRequest(client);
       addConnection(client);
@@ -72,6 +75,9 @@ describe('background telemetry close', () => {
       await clock.tickAsync(1);
       await closing;
       expect(request.calledOnce).to.equal(true);
+      expect(client.getConfig()).to.equal(config);
+      expect((client.getExporter() as any).abortController).to.equal(undefined);
+      expect(request.firstCall.args[1]).not.to.have.property('signal');
     }
     expect(clock.countTimers()).to.equal(0);
   });
@@ -102,6 +108,33 @@ describe('background telemetry close', () => {
     await client.close({ waitForTelemetry: false });
     expect(clock.countTimers()).to.equal(0);
   });
+
+  for (const overriddenBuiltin of [false, true]) {
+    it(`awaits ${overriddenBuiltin ? 'overridden built-in' : 'custom'} auth without a detached close`, async () => {
+      const context = makeContext();
+      const authenticate = async () => ({ Authorization: 'Bearer custom' });
+      const auth = overriddenBuiltin
+        ? Object.assign(new PlainHttpAuthentication({ context, password: 'mock' }), { authenticate })
+        : { authenticate };
+      (context.getAuthProvider as sinon.SinonStub).returns(auth);
+      const client = provider.getOrCreateClient(context, host);
+      const request = delayedRequest(client);
+      addConnection(client);
+      let closed = false;
+      const closing = provider.releaseClient(context, host, false).then(() => {
+        closed = true;
+      });
+      await clock.tickAsync(49);
+      expect(closed).to.equal(false);
+      expect((provider as any).pendingCloses.size).to.equal(0);
+      expect((client.getExporter() as any).abortController).to.equal(undefined);
+      await clock.tickAsync(1);
+      await closing;
+      expect(request.calledOnce).to.equal(true);
+      expect(request.firstCall.args[1]).not.to.have.property('signal');
+      expect(clock.countTimers()).to.equal(0);
+    });
+  }
 
   for (const options of [null, 0, { waitForTelemetry: null }, { waitForTelemetry: 0 }, { waitForTelemetry: '' }]) {
     it(`requires explicit false to detach telemetry: ${JSON.stringify(options)}`, async () => {
@@ -257,12 +290,20 @@ describe('background telemetry close', () => {
       unhandled.push(reason);
     };
     process.on('unhandledRejection', onRejection);
-    sinon
-      .stub(context.getAuthProvider()!, 'authenticate')
-      .callsFake(() => new Promise((resolve) => setTimeout(() => resolve({ Authorization: 'Bearer mock' }), 50)));
     sinon.stub(context, 'getConnectionProvider').rejects(new Error('transport unavailable'));
+    context.configOverrides.telemetryBatchSize = 1;
     const client = provider.getOrCreateClient(context, host);
-    addConnection(client);
+    const exporter = client.getExporter() as any;
+    const sendRequest = exporter.sendRequest.bind(exporter);
+    sinon
+      .stub(exporter, 'sendRequest')
+      .callsFake((_url: unknown, init: unknown) => sendRequest('http://127.0.0.1', init));
+    (exporter.sendRequest as sinon.SinonStub)
+      .onFirstCall()
+      .callsFake(() => new Promise((resolve) => setTimeout(() => resolve({ ok: true, text: async () => '' }), 50)));
+    addConnection(client, 'in-flight');
+    await clock.tickAsync(0);
+    addConnection(client, 'queued');
     try {
       await provider.releaseClient(context, host, false);
       await clock.tickAsync(25);
@@ -282,7 +323,11 @@ describe('background close built-in authentication', () => {
   let server: http.Server;
   let endpoint: string;
   let client: DBSQLClient;
-  let requests: Array<{ path?: string; authorization?: string; body: string }>;
+  let requests: Array<{ path?: string; authorization?: string; body: string; headers: http.IncomingHttpHeaders }>;
+  let firstExportStatus: number;
+  let firstExportDelay: number;
+  let firstReceived: () => void;
+  let firstRequest: Promise<void>;
   let finishAuth: () => void;
   let authenticated: Promise<void>;
   const refreshedToken = createAccessToken(Math.floor(Date.now() / 1000) + 3600);
@@ -295,19 +340,34 @@ describe('background close built-in authentication', () => {
       finishAuth = resolve;
     });
     requests = [];
+    firstExportStatus = 200;
+    firstExportDelay = 0;
+    firstRequest = new Promise<void>((resolve) => {
+      firstReceived = resolve;
+    });
     server = http.createServer((request, response) => {
       let body = '';
       request.on('data', (chunk) => {
         body += chunk;
       });
       request.on('end', () => {
-        requests.push({ path: request.url, authorization: request.headers.authorization, body });
+        requests.push({
+          path: request.url,
+          authorization: request.headers.authorization,
+          body,
+          headers: request.headers,
+        });
         response.setHeader('Content-Type', 'application/json');
-        response.end(
+        const result =
           request.url === '/oidc/v1/token'
             ? JSON.stringify({ access_token: refreshedToken, refresh_token: 'next-refresh', token_type: 'Bearer' })
-            : '{}',
-        );
+            : '{}';
+        if (requests.length === 1) {
+          response.statusCode = firstExportStatus;
+          if (firstExportDelay) setTimeout(() => response.end(result), firstExportDelay);
+          else response.end(result);
+          firstReceived();
+        } else response.end(result);
       });
     });
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
@@ -339,15 +399,103 @@ describe('background close built-in authentication', () => {
       timestamp: Date.now(),
       sessionId: 'built-in-auth',
     });
-    await client.close({ waitForTelemetry: false });
-    expect((client as any).connectionProvider).to.equal(undefined);
+    const config = client.getConfig();
+    const transport = await client.getConnectionProvider();
+    let closed = false;
+    const closing = client.close({ waitForTelemetry: false }).then(() => {
+      closed = true;
+    });
+    await new Promise<void>((resolve) => setImmediate(resolve));
+    expect(closed).to.equal(false);
+    expect(await client.getConnectionProvider()).to.equal(transport);
+    expect(shared.getConfig()).to.equal(config);
+    expect(exporter.abortController).to.equal(undefined);
+    expect((TelemetryClientProvider.getInstance() as any).pendingCloses.size).to.equal(0);
     finishAuth();
-    await Promise.all([...(TelemetryClientProvider.getInstance() as any).pendingCloses]);
+    await closing;
+    expect((client as any).connectionProvider).to.equal(undefined);
     expect(requests.map((request) => request.path)).to.deep.equal(['/oidc/v1/token', '/telemetry-ext']);
     expect(requests[1].authorization).to.equal(`Bearer ${refreshedToken}`);
   }
 
-  it('exchanges a foreign JWT after close instead of exporting the original token', async () => {
+  for (const nextHost of [host, 'other-close-auth.cloud.databricks.com']) {
+    for (const mode of ['retry', 'second-drain']) {
+      it(`keeps detached config across ${mode} and reconnect to ${nextHost}`, async () => {
+        firstExportStatus = mode === 'retry' ? 503 : 200;
+        firstExportDelay = mode === 'second-drain' ? 30 : 0;
+        await client.connect({
+          host,
+          path: '/sql/1.0/warehouses/a?o=1111',
+          token: 'token-A',
+          customHeaders: { 'x-tenant': 'A' },
+          telemetryAuthenticatedExport: true,
+          telemetryBatchSize: mode === 'second-drain' ? 1 : 100,
+          telemetryMaxRetries: 1,
+          telemetryCloseTimeoutMs: 1000,
+        });
+        Object.assign(client.getConfig(), {
+          telemetryBackoffBaseMs: 20,
+          telemetryBackoffMaxMs: 20,
+          telemetryBackoffJitterMs: 0,
+        });
+        const originalConfig = client.getConfig();
+        const originalHeaders = originalConfig.customHeaders!;
+        const shared = (client as any).telemetryClient as TelemetryClient;
+        const exporter = shared.getExporter() as any;
+        const sendRequest = exporter.sendRequest.bind(exporter);
+        const destinations: string[] = [];
+        sinon.stub(exporter, 'sendRequest').callsFake((url: unknown, init: unknown) => {
+          destinations.push(String(url));
+          return sendRequest(`${endpoint}${new URL(String(url)).pathname}`, init);
+        });
+        const addEvent = (sessionId: string): void =>
+          shared.getAggregator().processEvent({
+            eventType: TelemetryEventType.CONNECTION_OPEN,
+            timestamp: Date.now(),
+            sessionId,
+          });
+        addEvent('workspace-a-1');
+        if (mode === 'second-drain') {
+          await firstRequest;
+          addEvent('workspace-a-2');
+        }
+        await client.close({ waitForTelemetry: false });
+        await firstRequest;
+        await client.connect({
+          host: nextHost,
+          path: '/sql/1.0/warehouses/b?o=2222',
+          token: 'token-B',
+          customHeaders: { 'x-tenant': 'B' },
+          telemetryAuthenticatedExport: false,
+          telemetryMaxRetries: 0,
+          telemetryCloseTimeoutMs: 1,
+        });
+        originalHeaders['x-tenant'] = 'mutated';
+        originalHeaders['x-databricks-org-id'] = '9999';
+        await Promise.all([...(TelemetryClientProvider.getInstance() as any).pendingCloses]);
+        await client.close();
+        expect(requests).to.have.length(2);
+        expect(destinations).to.deep.equal([`https://${host}/telemetry-ext`, `https://${host}/telemetry-ext`]);
+        for (const request of requests) {
+          expect(request.path).to.equal('/telemetry-ext');
+          expect(request.authorization).to.equal('Bearer token-A');
+          expect(request.headers['x-tenant']).to.equal('A');
+          expect(request.headers['x-databricks-org-id']).to.equal('1111');
+        }
+        const sessions = requests.map(
+          (request) => JSON.parse(JSON.parse(request.body).protoLogs[0]).entry.sql_driver_log.session_id,
+        );
+        expect(sessions).to.deep.equal(['workspace-a-1', mode === 'retry' ? 'workspace-a-1' : 'workspace-a-2']);
+        expect(shared.getConfig()).not.to.equal(originalConfig);
+        expect(shared.getConfig().customHeaders).not.to.equal(originalHeaders);
+        expect(shared.getConfig().telemetryAuthenticatedExport).to.equal(true);
+        expect(shared.getConfig().telemetryMaxRetries).to.equal(1);
+        expect(shared.getConfig().telemetryCloseTimeoutMs).to.equal(1000);
+      });
+    }
+  }
+
+  it('awaits federation before close returns instead of detaching a live exchange', async () => {
     const getToken = FederationProvider.prototype.getToken;
     sinon
       .stub(FederationProvider.prototype, 'getToken')
@@ -376,7 +524,7 @@ describe('background close built-in authentication', () => {
   });
 
   for (const oauthClientSecret of [undefined, 'mock-secret']) {
-    it(`refreshes expired OAuth ${oauthClientSecret ? 'M2M' : 'U2M'} after close`, async () => {
+    it(`awaits expired OAuth ${oauthClientSecret ? 'M2M' : 'U2M'} refresh before close returns`, async () => {
       sinon
         .stub(Issuer, 'discover')
         .resolves(new Issuer({ issuer: `https://${host}/oidc`, token_endpoint: `${endpoint}/oidc/v1/token` }));
@@ -404,9 +552,9 @@ describe('background close built-in authentication', () => {
 
 describe('background close HTTP transport', () => {
   it('uses the detached transport and credentials after the owning client is cleared', async () => {
-    let finishAuth!: () => void;
-    const authenticated = new Promise<void>((resolve) => {
-      finishAuth = resolve;
+    let finishTransport!: () => void;
+    const transportReady = new Promise<void>((resolve) => {
+      finishTransport = resolve;
     });
     let received!: (value: { authorization?: string; body: string }) => void;
     const exported = new Promise<{ authorization?: string; body: string }>((resolve) => {
@@ -429,22 +577,16 @@ describe('background close HTTP transport', () => {
     const agent = sinon.spy(context.connectionProvider, 'getAgent');
     Object.assign(client as any, {
       host: 'detached.cloud.databricks.com',
-      authProvider: {
-        authenticate: async () => {
-          await authenticated;
-          return { Authorization: 'Bearer before-close' };
-        },
-      },
+      authProvider: new PlainHttpAuthentication({ context, password: 'before-close' }),
       connectionProvider: context.connectionProvider,
     });
     const shared = provider.getOrCreateClient(client, 'detached.cloud.databricks.com');
     const exporter = shared.getExporter() as any;
     const sendRequest = exporter.sendRequest.bind(exporter);
-    const stub = sinon
-      .stub(exporter, 'sendRequest')
-      .callsFake((_url: unknown, init: unknown) =>
-        sendRequest(`http://127.0.0.1:${(server.address() as AddressInfo).port}/telemetry-ext`, init),
-      );
+    const stub = sinon.stub(exporter, 'sendRequest').callsFake(async (_url: unknown, init: unknown) => {
+      await transportReady;
+      return sendRequest(`http://127.0.0.1:${(server.address() as AddressInfo).port}/telemetry-ext`, init);
+    });
     shared.getAggregator().processEvent({
       eventType: TelemetryEventType.CONNECTION_OPEN,
       sessionId: 'detached-session',
@@ -453,7 +595,7 @@ describe('background close HTTP transport', () => {
     try {
       await provider.releaseClient(client, 'detached.cloud.databricks.com', false);
       Object.assign(client as any, { authProvider: undefined, connectionProvider: undefined });
-      finishAuth();
+      finishTransport();
       const request = await exported;
       expect(request.authorization).to.equal('Bearer before-close');
       const body = JSON.parse(request.body);
@@ -464,29 +606,30 @@ describe('background close HTTP transport', () => {
     } finally {
       stub.restore();
       agent.restore();
-      finishAuth();
+      finishTransport();
       server.closeAllConnections();
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }
   });
 
-  it('does not start a request when authentication finishes after the close deadline', async () => {
+  it('does not start a request when transport resolves after the close deadline', async () => {
     let requests = 0;
     const server = http.createServer((_request, response) => {
       requests += 1;
       response.end('{}');
     });
     await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', resolve));
-    let finishAuth!: () => void;
-    const authenticated = new Promise<void>((resolve) => {
-      finishAuth = resolve;
+    let finishTransport!: () => void;
+    const transportReady = new Promise<void>((resolve) => {
+      finishTransport = resolve;
     });
     const context = new ClientContextStub({ telemetryCloseTimeoutMs: 10 });
-    const auth = sinon.stub(context, 'getAuthProvider').returns({
-      authenticate: async () => {
-        await authenticated;
-        return { Authorization: 'Bearer late' };
-      },
+    const auth = sinon
+      .stub(context, 'getAuthProvider')
+      .returns(new PlainHttpAuthentication({ context, password: 'late' }));
+    const transport = sinon.stub(context, 'getConnectionProvider').callsFake(async () => {
+      await transportReady;
+      return context.connectionProvider;
     });
     const provider = new TelemetryClientProvider();
     const shared = provider.getOrCreateClient(context, 'late.cloud.databricks.com');
@@ -501,13 +644,14 @@ describe('background close HTTP transport', () => {
     try {
       await provider.releaseClient(context, 'late.cloud.databricks.com', false);
       await Promise.all([...(provider as any).pendingCloses]);
-      finishAuth();
+      finishTransport();
       await new Promise((resolve) => setTimeout(resolve, 20));
       expect(requests).to.equal(0);
     } finally {
-      finishAuth();
+      finishTransport();
       stub.restore();
       auth.restore();
+      transport.restore();
       server.closeAllConnections();
       await new Promise<void>((resolve) => server.close(() => resolve()));
     }

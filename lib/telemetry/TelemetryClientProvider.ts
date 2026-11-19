@@ -150,13 +150,11 @@ class TelemetryClientProvider {
       // getOrCreateClient creates a fresh instance rather than receiving
       // this closing one.
       this.clients.delete(key);
-      const background = !waitForTelemetry && this.pendingCloses.size < MAX_PENDING_CLOSES;
-      if (background) {
-        holder.client.getExporter().detachContext();
-      }
+      const background =
+        waitForTelemetry === false && this.pendingCloses.size < MAX_PENDING_CLOSES && holder.client.detachContext();
       const closing = (async () => {
         try {
-          await holder.client.close(!waitForTelemetry);
+          await holder.client.close();
           logger.log(LogLevel.debug, `Closed and removed TelemetryClient for host: ${host}`);
         } catch (error) {
           const msg = error instanceof Error ? error.message : String(error);
