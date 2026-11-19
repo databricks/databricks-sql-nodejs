@@ -73,6 +73,39 @@ function decimal(value: string): Uint32Array {
 
 describe('Arrow row materialization', () => {
   for (const rowMode of ['object', 'array'] as const) {
+    it(`avoids decimal string conversion for safe signed values (${rowMode})`, () => {
+      const unscaled = ['0', '1', '-1', '4294967297', '-4294967297', '9007199254740991', '-9007199254740991'];
+      const columns: Column[] = [
+        {
+          field: new arrow.Field('amount', new arrow.Decimal(2, 18, 128)),
+          thriftType: TTypeId.DECIMAL_TYPE,
+          values: unscaled.map(decimal),
+          expected: unscaled.map((value) => Number(value) / 100),
+        },
+      ];
+      const batch = arrow.tableFromIPC(ipc(columns)).batches[0];
+      const vector = batch.getChildAt(0)!;
+      const values = unscaled.map((value, index) => vector.get(index));
+      const byteLengthReads = values.map((value) => {
+        const read = sinon.stub().returns(value.byteLength);
+        Object.defineProperty(value, 'byteLength', { get: read });
+        return read;
+      });
+      const sandbox = sinon.createSandbox();
+      try {
+        sandbox.stub(vector, 'get').callsFake((index) => values[index]);
+        sandbox.stub(batch, 'getChildAt').returns(vector);
+        const converter = converterFor(columns, rowMode);
+        deepStrictEqual(
+          (converter as any).getRows(batch, values.length),
+          columns[0].expected.map((amount) => (rowMode === 'array' ? [amount] : { amount })),
+        );
+        byteLengthReads.forEach((read) => sinon.assert.notCalled(read));
+      } finally {
+        sandbox.restore();
+      }
+    });
+
     it(`preserves Decimal128 rounding, signs and scales (${rowMode})`, async () => {
       const unscaled = [
         '0',
