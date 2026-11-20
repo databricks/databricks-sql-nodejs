@@ -101,13 +101,8 @@ export default class DBSQLSession implements IDBSQLSession {
     const opBackend = await this.runBackend(() => this.backend.executeStatement(statement, options));
     const operation = this.wrapOperation(opBackend);
 
-    // If `stagingAllowedLocalPath` is provided - assume that operation possibly may be a staging operation.
-    // To know for sure, fetch metadata and check a `isStagingOperation` flag. If it happens that it wasn't
-    // a staging operation - not a big deal, we just fetched metadata earlier, but operation is still usable
-    // and user can get data from it.
-    // If `stagingAllowedLocalPath` is not provided - don't do anything to the operation. In a case of regular
-    // operation, everything will work as usual. In a case of staging operation, it will be processed like any
-    // other query - it will be possible to get data from it as usual, or use other operation methods.
+    // Configured staging completes through the backend or the HTTP instruction handler.
+    // Omitting local paths leaves instruction rows available as ordinary results.
     if (options.stagingAllowedLocalPath !== undefined) {
       const allowedLocalPath = Array.isArray(options.stagingAllowedLocalPath)
         ? options.stagingAllowedLocalPath

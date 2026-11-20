@@ -78,7 +78,7 @@ Per-statement `useCloudFetch` overrides remain unsupported on the kernel backend
 
 | Option                      | Type                     | Thrift | Kernel | Default Value       | Note                                                                                                                                                                                                                                            |
 | --------------------------- | ------------------------ | :----: | :----: | ------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `socketTimeout`             | `number` (ms)            |   ✅   |   ⚠️   | `900000` / `120000` | Kernel forwards only positive values. `0` means no timeout on Thrift but is omitted on Kernel, which then keeps its 120-second default.                                                                                                         |
+| `socketTimeout`             | `number` (ms)            |   ✅   |   ⚠️   | `900000` / `120000` | Kernel uses a total SQL request deadline and a storage idle timeout (15 minutes by default). Positive values set both; `0` keeps the SQL default and disables storage inactivity. Storage idle time bounds reads, upload progress and PUT response waits; redirected stream PUT resends have no idle bound.                                                                                                         |
 | `proxy`                     | `ProxyOptions`           |   ✅   |   ⚠️   | —                   | `{protocol, host, port, auth}`. Kernel supports HTTP/HTTPS proxies only; Thrift also supports the declared SOCKS variants.                                                                                                                      |
 | `noProxy` (internal)        | `string`                 |   ❌   |   ⚠️   | —                   | Runtime-only Kernel bypass list, forwarded as `bypassHosts` only when an explicit `proxy` is also supplied.                                                                                                                                     |
 | `customHeaders`             | `Record<string, string>` |   ✅   |   ✅   | —                   | Sent on workspace, telemetry and feature-flag requests, not OAuth. Workspace calls ignore caller `Authorization`, `User-Agent`, `Content-Type`, `Content-Length`, `Transfer-Encoding`, `Connection`; Kernel also ignores `x-databricks-org-id`. |
@@ -251,7 +251,3 @@ independent TLS hostname verification, optional U2M disk caching, and
 per-statement `rowLimit`/`statementConf`.
 
 The Kernel path remains internal and unstable; its behavior may change.
-
-With the kernel backend, supplying `stagingAllowedLocalPath` completes Volume
-transfers before `executeStatement` resolves and consumes instruction rows.
-Omitting the option returns raw instructions without file effects.

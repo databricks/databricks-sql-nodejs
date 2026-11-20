@@ -47,13 +47,12 @@ import { RowMode } from '../contracts/IDBSQLSession';
 import Status from '../dto/Status';
 import HiveDriverError from '../errors/HiveDriverError';
 import StagingError from '../errors/StagingError';
-import ParameterError from '../errors/ParameterError';
 import OperationStateError, { OperationStateErrorCode } from '../errors/OperationStateError';
 import ArrowResultConverter from '../result/ArrowResultConverter';
 import ResultSlicer from '../result/ResultSlicer';
 import KernelResultsProvider from './KernelResultsProvider';
 import { arrowSchemaToThriftSchema, decodeIpcSchema, patchIpcBytes } from './KernelArrowIpc';
-import { decodeNapiKernelError, ErrorWithSqlState } from './KernelErrorMapping';
+import { decodeNapiKernelError, toStagingTransferError } from './KernelErrorMapping';
 import {
   KernelStatement,
   KernelNativeAsyncStatement,
@@ -317,24 +316,18 @@ export default class KernelOperationBackend implements IOperationBackend {
 
   public async completeStagingOperation(allowedPaths: string[]): Promise<void> {
     failIfNotActive(this.lifecycle);
+    await this.waitUntilReady();
     const handle = await this.getFetchHandle();
+    let outcome;
     try {
-      const outcome = await handle.completeVolumeOperation(allowedPaths, true);
-      if (outcome === 'needs_input_stream') {
-        throw new StagingError('Volume PUT requires a local file path');
-      }
-      this.volumeCompleted = outcome === 'completed';
+      outcome = await handle.completeVolumeOperation(allowedPaths, true); // Thrift REMOVE treats missing objects as success.
     } catch (err) {
-      const mapped = decodeNapiKernelError(err);
-      const metadata = (mapped as ErrorWithSqlState).kernelMetadata;
-      if (
-        (mapped instanceof ParameterError && !metadata?.httpStatus) ||
-        metadata?.errorCode === 'VOLUME_STORAGE_HTTP_ERROR'
-      ) {
-        throw new StagingError(mapped.message);
-      }
-      throw mapped;
+      throw toStagingTransferError(decodeNapiKernelError(err));
     }
+    if (outcome === 'needs_input_stream') {
+      throw new StagingError('Volume PUT requires a local file path');
+    }
+    this.volumeCompleted = outcome === 'completed';
   }
 
   public async fetchChunk({

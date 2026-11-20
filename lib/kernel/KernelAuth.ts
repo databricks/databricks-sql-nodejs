@@ -523,14 +523,8 @@ export function buildKernelHttpOptions(options: ConnectionOptions): KernelHttpOp
   headers.push({ name: 'User-Agent', value: buildUserAgentString(userAgentEntry) });
 
   const http: KernelHttpOptions = { customHeaders: headers };
-  // Per-connection socket read timeout (ms). The public `socketTimeout`
-  // ConnectionOption maps onto the kernel napi `socketTimeoutMs`
-  // (kernel `HttpConfig::request_timeout` / reqwest `Client::timeout`).
-  // Only forward a POSITIVE value: `socketTimeout: 0` means "disabled / wait
-  // indefinitely" on the Thrift path, but forwarding `0` would make reqwest
-  // time out immediately, so we omit it and let the kernel keep its (large)
-  // default — preserving the "effectively no idle timeout" semantics.
-  if (typeof socketTimeout === 'number' && socketTimeout > 0) {
+  // Preserve zero so native storage inactivity can be disabled like Thrift.
+  if (typeof socketTimeout === 'number' && socketTimeout >= 0) {
     http.socketTimeoutMs = socketTimeout;
   }
   return http;

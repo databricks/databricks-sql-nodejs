@@ -201,9 +201,7 @@ export default class KernelSessionBackend implements ISessionBackend {
     //     the backend polls `status()` to terminal in `waitUntilReady()` and
     //     materialises results via `awaitResult()`. `queryTimeout` is a no-op
     //     here too.
-    // Configured staging completes before the facade returns, so retain inline
-    // results even when the caller requests asynchronous execution.
-    const runAsync = (options.runAsync ?? false) && options.stagingAllowedLocalPath === undefined;
+    const runAsync = options.runAsync ?? false;
     // `queryTimeout` is a NO-OP on the kernel (kernel) backend. It is the JDBC
     // `setQueryTimeout` knob which — per the option's JSDoc — is effective only
     // on Compute clusters; SQL Warehouses (what kernel targets) use the

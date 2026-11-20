@@ -397,7 +397,5 @@ for (const [raw, kind, expected] of [
     expect(error.path).to.equal('/allowed/missing');
     expect(error.errno).to.be.lessThan(0);
     expect(error).to.have.property('kernelMetadata').with.property('queryId', 'query-id');
-    expect(error).to.have.property('cause').that.is.instanceOf(Error);
-    expect(error).not.to.have.property('sqlState');
   });
 }

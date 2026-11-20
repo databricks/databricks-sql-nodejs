@@ -894,8 +894,9 @@ describe('DBSQLSession native staging dispatch', () => {
         backend: { id: 'volume-session', executeStatement: async () => op } as unknown as ISessionBackend,
         context: new ClientContextStub(),
       });
-      await session.executeStatement('REMOVE remote', configured ? { stagingAllowedLocalPath: [] } : {});
+      await session.executeStatement('REMOVE remote', configured ? { stagingAllowedLocalPath: '/tmp' } : {});
       expect(completeStagingOperation.callCount).to.equal(configured ? 1 : 0);
+      if (configured) expect(completeStagingOperation.firstCall.args).to.deep.equal([['/tmp']]);
     });
   }
 });
