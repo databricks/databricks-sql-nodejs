@@ -100,11 +100,11 @@ describe('CloudFetch', () => {
     expect(fetchedRowCount).to.be.equal(queriedRowsCount);
   });
 
-  it('should not use LZ4 compression with cloud fetch', async () => {
+  it('should use LZ4 compression with cloud fetch', async () => {
     const cloudFetchConcurrentDownloads = 5;
     const session = await openSession({
       cloudFetchConcurrentDownloads,
-      useLZ4Compression: true, // This is ignored when cloud fetch is enabled
+      useLZ4Compression: true,
     });
 
     const queriedRowsCount = 10000000; // result has to be quite big to enable CloudFetch
@@ -129,8 +129,7 @@ describe('CloudFetch', () => {
     expect(resultHandler).to.be.instanceof(ResultSlicer);
     expect(resultHandler.source).to.be.instanceof(ArrowResultConverter);
     expect(resultHandler.source.source).to.be.instanceOf(CloudFetchResultHandler);
-    // LZ4 compression should not be enabled with cloud fetch
-    expect(resultHandler.source.source.isLZ4Compressed).to.be.false;
+    expect(resultHandler.source.source.isLZ4Compressed).to.be.true;
 
     const chunk = await operation.fetchChunk({ maxRows: 100000, disableBuffering: true });
     expect(chunk.length).to.be.gt(0);

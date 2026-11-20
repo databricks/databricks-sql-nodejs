@@ -1,5 +1,7 @@
 import { expect } from 'chai';
 import sinon from 'sinon';
+import fs from 'fs';
+import path from 'path';
 import getLZ4 from '../../../lib/utils/lz4';
 
 // Exercises the lz4 loader (lib/utils/lz4.ts), which now wraps `lz4-napi`
@@ -69,9 +71,11 @@ describe('lz4 module loader', function () {
 
   it('exposes an { encode, decode } codec backed by lz4-napi frame APIs', () => {
     // Fake lz4-napi: frame APIs the adapter calls.
+    const testData = Buffer.from('Hello, World!');
+    const encoded = Buffer.from([4, 34, 77, 24, 96, 64, 130, 0, 0, 0, 0]);
     const fakeNapi = {
-      compressFrameSync: (buf: Buffer) => Buffer.from(`frame:${buf.toString()}`),
-      decompressFrameSync: (buf: Buffer) => Buffer.from(buf.toString().replace('frame:', '')),
+      compressFrameSync: sinon.stub().returns(encoded),
+      decompressFrameSync: sinon.stub().returns(testData),
     };
 
     mockNapiLoad(fakeNapi);
@@ -81,10 +85,10 @@ describe('lz4 module loader', function () {
     expect(lz4Module.encode).to.be.a('function');
     expect(lz4Module.decode).to.be.a('function');
 
-    const testData = Buffer.from('Hello, World!');
     const roundTripped = lz4Module.decode(lz4Module.encode(testData));
     expect(roundTripped.toString()).to.equal('Hello, World!');
     expect(consoleWarnStub.called).to.be.false;
+    expect(fakeNapi.decompressFrameSync.calledOnceWithExactly(encoded)).to.be.true;
   });
 
   it('returns undefined (no warning) when lz4-napi is not installed (MODULE_NOT_FOUND)', () => {
@@ -194,4 +198,54 @@ describe('lz4 frame codec (real lz4-napi)', function () {
       expect(codec!.decode(encoded).equals(payload)).to.be.true;
     }
   });
+
+  it('decodes every concatenated frame, including empty frames', () => {
+    const payloads = [Buffer.from('first'), Buffer.alloc(0), Buffer.from('second'), Buffer.from('third')];
+    const input = Buffer.concat(payloads.map((payload) => codec!.encode(payload)));
+    expect(codec!.decode(input)).to.deep.equal(Buffer.concat(payloads));
+  });
+
+  it('rejects truncated frames and trailing bytes instead of returning partial results', () => {
+    const frame = codec!.encode(Buffer.from('first'));
+    for (let length = 1; length < frame.length; length += 1) {
+      expect(() => codec!.decode(frame.subarray(0, length)), `truncated at ${length}`).to.throw();
+      expect(() => codec!.decode(Buffer.concat([frame, frame.subarray(0, length)]))).to.throw();
+    }
+    expect(() => codec!.decode(Buffer.concat([frame, Buffer.from('trailing bytes')]))).to.throw();
+  });
+
+  const fixtures: Array<{
+    linked: boolean;
+    contentChecksum: boolean;
+    blockChecksum: boolean;
+    text: string;
+    repeat: number;
+    hex: string;
+  }> = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures/lz4-frames.json'), 'utf8'));
+
+  for (const fixture of fixtures) {
+    const name = `linked=${fixture.linked}, content checksum=${fixture.contentChecksum}, block checksum=${fixture.blockChecksum}`;
+    it(`decodes reference liblz4 frames (${name})`, () => {
+      const frame = Buffer.from(fixture.hex, 'hex');
+      const payload = Buffer.from(fixture.text.repeat(fixture.repeat));
+      expect(codec!.decode(Buffer.concat([frame, frame]))).to.deep.equal(Buffer.concat([payload, payload]));
+      expect(codec!.decodeFrames(frame)).to.deep.equal([payload]);
+    });
+
+    it(`rejects corrupt reference liblz4 frames (${name})`, () => {
+      const frame = Buffer.from(fixture.hex, 'hex');
+      const offsets = [0, 14];
+      if (fixture.contentChecksum) offsets.push(frame.length - 1);
+      if (fixture.blockChecksum) offsets.push(19 + (frame.readUInt32LE(15) & 0x7fffffff));
+      for (const offset of offsets) {
+        const corrupt = Buffer.from(frame);
+        corrupt[offset] ^= 1;
+        expect(() => codec!.decode(corrupt)).to.throw();
+        expect(() => codec!.decode(Buffer.concat([frame, corrupt]))).to.throw();
+      }
+      for (let missing = 1; missing <= 8; missing += 1) {
+        expect(() => codec!.decode(frame.subarray(0, -missing))).to.throw();
+      }
+    });
+  }
 });

@@ -14,6 +14,8 @@
 // and cross-decoding both directions. We expose the same `{ encode, decode }`
 // surface the rest of the driver already calls, so call sites are unchanged.
 
+import HiveDriverError from '../errors/HiveDriverError';
+
 type Lz4Napi = {
   compressFrameSync(data: Buffer): Buffer;
   decompressFrameSync(data: Buffer): Buffer;
@@ -23,6 +25,46 @@ type Lz4Napi = {
 export interface LZ4Codec {
   encode(data: Buffer): Buffer;
   decode(data: Buffer): Buffer;
+  decodeFrames(data: Buffer): Array<Buffer>;
+}
+
+function decodeFrames(data: Buffer, napi: Lz4Napi): Array<Buffer> {
+  const frames: Array<Buffer> = [];
+  let offset = 0;
+  const advance = (size: number) => {
+    offset += size;
+    if (offset > data.length) {
+      throw new HiveDriverError('Truncated LZ4 frame');
+    }
+  };
+
+  while (offset < data.length) {
+    const start = offset;
+    advance(7);
+    if (data.readUInt32LE(start) !== 0x184d2204) {
+      throw new HiveDriverError('Invalid LZ4 frame magic');
+    }
+    const flags = data[start + 4];
+    if (flags & 0x08) advance(8);
+    if (flags & 0x01) advance(4);
+
+    let blockSize: number;
+    do {
+      advance(4);
+      blockSize = data.readUInt32LE(offset - 4);
+      if (blockSize !== 0) {
+        advance((blockSize & 0x7fffffff) + (flags & 0x10 ? 4 : 0));
+      }
+    } while (blockSize !== 0);
+    if (flags & 0x04) advance(4);
+
+    try {
+      frames.push(napi.decompressFrameSync(data.subarray(start, offset)));
+    } catch {
+      throw new HiveDriverError('Invalid LZ4 frame');
+    }
+  }
+  return frames;
 }
 
 function tryLoadLZ4Module(): LZ4Codec | undefined {
@@ -47,7 +89,11 @@ function tryLoadLZ4Module(): LZ4Codec | undefined {
   // hot path (once per Arrow batch).
   return {
     encode: (data: Buffer): Buffer => napi.compressFrameSync(data),
-    decode: (data: Buffer): Buffer => napi.decompressFrameSync(data),
+    decode: (data: Buffer): Buffer => {
+      const frames = decodeFrames(data, napi);
+      return frames.length === 1 ? frames[0] : Buffer.concat(frames);
+    },
+    decodeFrames: (data: Buffer): Array<Buffer> => decodeFrames(data, napi),
   };
 }
 

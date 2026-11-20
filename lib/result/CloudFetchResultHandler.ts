@@ -1,4 +1,5 @@
 import fetch, { RequestInfo, RequestInit, Request, Response } from 'node-fetch';
+import { RecordBatchReader } from 'apache-arrow';
 import { TGetResultSetMetadataResp, TRowSet, TSparkArrowResultLink } from '../../thrift/TCLIService_types';
 import HiveDriverError from '../errors/HiveDriverError';
 import RetryError, { RetryErrorCode } from '../errors/RetryError';
@@ -96,7 +97,14 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
 
     const { batch } = settled;
     if (this.isLZ4Compressed) {
-      batch.batches = batch.batches.map((buffer) => LZ4()!.decode(buffer));
+      batch.batches = batch.batches.flatMap((buffer) => LZ4()!.decodeFrames(buffer));
+      let decodedRowCount = 0;
+      for (const recordBatch of RecordBatchReader.from(batch.batches)) {
+        decodedRowCount += recordBatch.numRows;
+      }
+      if (decodedRowCount !== batch.rowCount) {
+        throw new HiveDriverError(`CloudFetch row count mismatch: expected ${batch.rowCount}, got ${decodedRowCount}`);
+      }
     }
     return batch;
   }
