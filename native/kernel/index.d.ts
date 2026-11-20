@@ -19,7 +19,10 @@
  */
 export declare class AsyncResultHandle {
   get isVolumeOperation(): boolean
-  /** Complete a server-marked file transfer while retaining its instruction rows. */
+  /**
+   * Runs the file transfer for a Volume PUT, GET or REMOVE result. Call before
+   * fetching; the rows stay readable afterwards.
+   */
   completeVolumeOperation(allowedPaths: Array<string>, removeNotFoundIsSuccess: boolean): Promise<VolumeCompletion>
   /**
    * Server-issued statement id. Cached at construction; readable
@@ -441,7 +444,10 @@ export declare class Connection {
  */
 export declare class Statement {
   get isVolumeOperation(): boolean
-  /** Complete a server-marked file transfer while retaining its instruction rows. */
+  /**
+   * Runs the file transfer for a Volume PUT, GET or REMOVE result. Call before
+   * fetching; the rows stay readable afterwards.
+   */
   completeVolumeOperation(allowedPaths: Array<string>, removeNotFoundIsSuccess: boolean): Promise<VolumeCompletion>
   /**
    * Server-issued statement id. Cached at construction; readable
@@ -1059,11 +1065,9 @@ export interface ConnectionOptions {
    */
   proxy?: ProxyInput
   /**
-   * SQL request deadline and Volume storage idle timeout, in milliseconds.
-   * Storage idle time bounds reads, upload progress and the PUT response wait;
-   * a redirected stream PUT resend has no idle bound.
-   * Omitted: SQL uses the kernel default; storage uses 15 minutes.
-   * Zero disables storage inactivity and keeps the SQL default.
+   * Timeout in milliseconds. SQL requests: total time for one request (kernel
+   * default when omitted or 0). Volume file transfers: time allowed without
+   * progress (15 minutes when omitted, no limit when 0).
    */
   socketTimeoutMs?: number
 }

@@ -523,7 +523,8 @@ export function buildKernelHttpOptions(options: ConnectionOptions): KernelHttpOp
   headers.push({ name: 'User-Agent', value: buildUserAgentString(userAgentEntry) });
 
   const http: KernelHttpOptions = { customHeaders: headers };
-  // Preserve zero so native storage inactivity can be disabled like Thrift.
+  // Forward 0 as well: it turns off the Volume transfer idle timeout,
+  // matching Thrift where 0 means no timeout.
   if (typeof socketTimeout === 'number' && socketTimeout >= 0) {
     http.socketTimeoutMs = socketTimeout;
   }
