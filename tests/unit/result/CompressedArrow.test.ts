@@ -90,4 +90,28 @@ describe('concatenated LZ4 Arrow results', () => {
       }
     });
   }
+
+  it('preserves complete Arrow batches in separate frames', async () => {
+    const parts = [ipc.subarray(0, -8), ipc.subarray(schemaEnd)];
+    const link = {
+      fileLink: 'http://localhost/result',
+      rowCount: new Int64(6),
+      startRowOffset: new Int64(0),
+      expiryTime: new Int64(Date.now() + 60000),
+      bytesNum: new Int64(0),
+    };
+    const handler = new CloudFetchResultHandler(
+      new ClientContextStub(),
+      new ResultsProviderStub([{ startRowOffset: new Int64(0), rows: [], resultLinks: [link] }], undefined),
+      { lz4Compressed: true, status: { statusCode: TStatusCode.SUCCESS_STATUS } },
+    );
+    sinon.stub(handler as any, 'downloadLink').resolves({
+      batches: [Buffer.concat(parts.map((part) => codec!.encode(part)))],
+      rowCount: 6,
+    });
+    const result = await handler.fetchNext({ limit: 1 });
+    expect(result.rowCount).to.equal(6);
+    expect(result.batches).to.deep.equal(parts);
+    expect(tableFromIPC(result.batches).toArray()).to.deep.equal([...table.toArray(), ...table.toArray()]);
+  });
 });
