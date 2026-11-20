@@ -19,7 +19,6 @@ import HiveDriverError from '../errors/HiveDriverError';
 type Lz4Napi = {
   compressFrameSync(data: Buffer): Buffer;
   decompressFrameSync(data: Buffer): Buffer;
-  decompressFrame(data: Buffer): Promise<Buffer>;
 };
 
 type LZ4Frame = { bytes: Buffer; index: number; offset: number; contentSize?: bigint };
@@ -29,7 +28,6 @@ export interface LZ4Codec {
   encode(data: Buffer): Buffer;
   decode(data: Buffer): Buffer;
   decodeFrames(data: Buffer): Array<Buffer>;
-  decodeFramesAsync(data: Buffer): Promise<Array<Buffer>>;
 }
 
 function frameError(frame: { index: number; offset: number }, reason: unknown): HiveDriverError {
@@ -99,18 +97,6 @@ function decodeFrames(data: Buffer, napi: Lz4Napi): Array<Buffer> {
   });
 }
 
-async function decodeFramesAsync(data: Buffer, napi: Lz4Napi): Promise<Array<Buffer>> {
-  const decoded: Array<Buffer> = [];
-  for await (const frame of readFrames(data)) {
-    try {
-      decoded.push(validateContentSize(frame, await napi.decompressFrame(frame.bytes)));
-    } catch (error) {
-      throw frameError(frame, error);
-    }
-  }
-  return decoded;
-}
-
 function tryLoadLZ4Module(): LZ4Codec | undefined {
   let napi: Lz4Napi;
   try {
@@ -138,7 +124,6 @@ function tryLoadLZ4Module(): LZ4Codec | undefined {
       return frames.length === 1 ? frames[0] : Buffer.concat(frames);
     },
     decodeFrames: (data: Buffer): Array<Buffer> => decodeFrames(data, napi),
-    decodeFramesAsync: (data: Buffer): Promise<Array<Buffer>> => decodeFramesAsync(data, napi),
   };
 }
 

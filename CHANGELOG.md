@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Decode every concatenated LZ4 frame and, with the default configuration, request LZ4 for all supported Thrift Arrow results (inline and CloudFetch) when the native codec is available. Set `useLZ4Compression: false` on the client or statement to disable compression; compressed results may arrive inline instead of CloudFetch (for example, a 200,000-row `range()` result).
+- Decode every concatenated LZ4 frame and, with defaults, request LZ4 for supported Thrift Arrow results (inline and CloudFetch) when the native codec is available; CloudFetch decoding yields between files but remains synchronous. Set `useLZ4Compression: false` on the client or statement to disable compression; compressed results may arrive inline instead of CloudFetch (for example, a 200,000-row `range()` result).
 - Avoid intermediate decimal strings when materializing Arrow DECIMAL values with safe unscaled integers, on both backends.
 - Reduce Arrow row materialization overhead on both backends by reading vectors directly and resolving scalar conversions once per batch. Object and array row values are unchanged.
 - The Thrift token federation exchange (`enableTokenFederation`) now goes through the connection's agent, so `proxy`, `checkServerCertificate`, `customCaCert` and `clientCert`/`clientKey` apply to it. Previously it connected directly with Node's default agent, so behind a required proxy the exchange failed and the driver fell back to the original token. (#611)

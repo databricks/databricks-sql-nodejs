@@ -147,43 +147,39 @@ describe('concatenated LZ4 Arrow results', () => {
     expect(tableFromIPC(result.batches).toArray()).to.deep.equal([...table.toArray(), ...table.toArray()]);
   });
 
-  it('starts bounded asynchronous decoding for prefetched files before consuming them in order', async () => {
-    const pending: Array<(buffers: Array<Buffer>) => void> = [];
-    const decode = sinon
-      .stub(codec!, 'decodeFramesAsync')
-      .callsFake(() => new Promise((resolve) => pending.push(resolve)));
-    const { handler } = createCloudFetch(compress(ipc), 3, true, 3);
-    let completed = false;
-    const first = handler.fetchNext({ limit: 10 }).then((batch) => {
-      completed = true;
-      return batch;
+  it('yields to the event loop before decoding each prefetched file', async () => {
+    let turn = 0;
+    const decodedTurns: Array<number> = [];
+    const decode = sinon.stub(codec!, 'decodeFrames').callsFake(() => {
+      decodedTurns.push(turn);
+      return [ipc];
     });
-    await new Promise(setImmediate);
-    expect(decode.callCount).to.equal(2);
-    pending[1]([ipc]);
-    await new Promise(setImmediate);
-    expect(completed).to.equal(false);
-    pending[0]([ipc]);
-    expect((await first).batches).to.deep.equal([ipc]);
-    expect((await handler.fetchNext({ limit: 10 })).batches).to.deep.equal([ipc]);
-    await new Promise(setImmediate);
+    const { handler } = createCloudFetch(compress(ipc), 3, true, 3);
+    for await (const index of [0, 1, 2]) {
+      setImmediate(() => {
+        turn = index + 1;
+      });
+      const next = handler.fetchNext({ limit: 10 });
+      expect(decode.callCount).to.equal(index);
+      expect((await next).batches).to.deep.equal([ipc]);
+      expect(decodedTurns[index]).to.equal(index + 1);
+    }
     expect(decode.callCount).to.equal(3);
-    pending[2]([ipc]);
-    expect((await handler.fetchNext({ limit: 10 })).batches).to.deep.equal([ipc]);
   });
 
-  it('handles an abandoned prefetched decode rejection and surfaces it only when consumed', async () => {
+  it('does not decode abandoned prefetched files and surfaces decode errors only when consumed', async () => {
     const unhandled: Array<unknown> = [];
     const onUnhandled = (reason: unknown) => unhandled.push(reason);
     process.on('unhandledRejection', onUnhandled);
     try {
       const error = new HiveDriverError('LZ4 frame 1 at offset 10: ContentChecksumError');
-      const decode = sinon.stub(codec!, 'decodeFramesAsync');
-      decode.onFirstCall().resolves([ipc]);
-      decode.onSecondCall().rejects(error);
+      const decode = sinon.stub(codec!, 'decodeFrames');
+      decode.onFirstCall().returns([ipc]);
+      decode.onSecondCall().throws(error);
       const { handler } = createCloudFetch(compress(ipc), 3, true, 2);
       expect((await handler.fetchNext({ limit: 10 })).batches).to.deep.equal([ipc]);
       await new Promise(setImmediate);
+      expect(decode.callCount).to.equal(1);
       expect(unhandled).to.deep.equal([]);
       let caught: unknown;
       try {

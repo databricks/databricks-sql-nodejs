@@ -94,6 +94,12 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
       throw settled.error;
     }
 
+    if (this.isLZ4Compressed && settled.batch.batches.length > 0) {
+      await new Promise<void>((resolve) => {
+        setImmediate(resolve);
+      });
+      settled.batch.batches = settled.batch.batches.flatMap((buffer) => LZ4()!.decodeFrames(buffer));
+    }
     return settled.batch;
   }
 
@@ -140,7 +146,7 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
     this.chunkIndex += 1;
 
     return {
-      batches: this.isLZ4Compressed ? await LZ4()!.decodeFramesAsync(result) : [result],
+      batches: [result],
       rowCount: link.rowCount.toNumber(true),
     };
   }
