@@ -19,52 +19,96 @@ import HiveDriverError from '../errors/HiveDriverError';
 type Lz4Napi = {
   compressFrameSync(data: Buffer): Buffer;
   decompressFrameSync(data: Buffer): Buffer;
+  decompressFrame(data: Buffer): Promise<Buffer>;
 };
+
+type LZ4Frame = { bytes: Buffer; index: number; offset: number; contentSize?: bigint };
 
 // Stable interface used across the driver (lib call sites do `LZ4()!.decode(buf)`).
 export interface LZ4Codec {
   encode(data: Buffer): Buffer;
   decode(data: Buffer): Buffer;
   decodeFrames(data: Buffer): Array<Buffer>;
+  decodeFramesAsync(data: Buffer): Promise<Array<Buffer>>;
 }
 
-function decodeFrames(data: Buffer, napi: Lz4Napi): Array<Buffer> {
-  const frames: Array<Buffer> = [];
+function frameError(frame: { index: number; offset: number }, reason: unknown): HiveDriverError {
+  return new HiveDriverError(
+    `LZ4 frame ${frame.index} at offset ${frame.offset}: ${reason instanceof Error ? reason.message : String(reason)}`,
+  );
+}
+
+function* readFrames(data: Buffer): Generator<LZ4Frame> {
   let offset = 0;
+  let index = 0;
+  let start = 0;
   const advance = (size: number) => {
     offset += size;
     if (offset > data.length) {
-      throw new HiveDriverError('Truncated LZ4 frame');
+      throw frameError({ index, offset: start }, 'Truncated LZ4 frame');
     }
   };
 
   while (offset < data.length) {
-    const start = offset;
+    start = offset;
+    const frame = { index, offset: start };
     advance(7);
     if (data.readUInt32LE(start) !== 0x184d2204) {
-      throw new HiveDriverError('Invalid LZ4 frame magic');
+      throw frameError(frame, 'Invalid LZ4 frame magic');
     }
     const flags = data[start + 4];
-    if (flags & 0x08) advance(8);
+    let contentSize: bigint | undefined;
+    if (flags & 0x08) {
+      advance(8);
+      contentSize = data.readBigUInt64LE(start + 6);
+    }
     if (flags & 0x01) advance(4);
 
     let blockSize: number;
     do {
       advance(4);
       blockSize = data.readUInt32LE(offset - 4);
+      if (blockSize === 0x80000000) {
+        throw frameError(frame, 'Invalid zero-length LZ4 block');
+      }
       if (blockSize !== 0) {
         advance((blockSize & 0x7fffffff) + (flags & 0x10 ? 4 : 0));
       }
     } while (blockSize !== 0);
     if (flags & 0x04) advance(4);
 
+    yield { ...frame, bytes: data.subarray(start, offset), contentSize };
+    index += 1;
+  }
+}
+
+function validateContentSize(frame: LZ4Frame, decoded: Buffer): Buffer {
+  if (frame.contentSize !== undefined && BigInt(decoded.length) !== frame.contentSize) {
+    throw new Error(`Content size mismatch: expected ${frame.contentSize}, got ${decoded.length}`);
+  }
+  return decoded;
+}
+
+function decodeFrames(data: Buffer, napi: Lz4Napi): Array<Buffer> {
+  return Array.from(readFrames(data), (frame) => {
     try {
-      frames.push(napi.decompressFrameSync(data.subarray(start, offset)));
-    } catch {
-      throw new HiveDriverError('Invalid LZ4 frame');
+      return validateContentSize(frame, napi.decompressFrameSync(frame.bytes));
+    } catch (error) {
+      throw frameError(frame, error);
+    }
+  });
+}
+
+async function decodeFramesAsync(data: Buffer, napi: Lz4Napi): Promise<Array<Buffer>> {
+  const decoded: Array<Buffer> = [];
+  for await (const frame of readFrames(data)) {
+    try {
+      decoded.push(validateContentSize(frame, await napi.decompressFrame(frame.bytes)));
+    } catch (error) {
+      throw frameError(frame, error);
     }
   }
-  return frames;
+  return decoded;
 }
 
 function tryLoadLZ4Module(): LZ4Codec | undefined {
@@ -94,6 +138,7 @@ function tryLoadLZ4Module(): LZ4Codec | undefined {
       return frames.length === 1 ? frames[0] : Buffer.concat(frames);
     },
     decodeFrames: (data: Buffer): Array<Buffer> => decodeFrames(data, napi),
+    decodeFramesAsync: (data: Buffer): Promise<Array<Buffer>> => decodeFramesAsync(data, napi),
   };
 }
 

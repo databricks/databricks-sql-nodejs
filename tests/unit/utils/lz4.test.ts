@@ -3,6 +3,7 @@ import sinon from 'sinon';
 import fs from 'fs';
 import path from 'path';
 import getLZ4 from '../../../lib/utils/lz4';
+import HiveDriverError from '../../../lib/errors/HiveDriverError';
 
 // Exercises the lz4 loader (lib/utils/lz4.ts), which now wraps `lz4-napi`
 // and exposes a stable { encode, decode } frame codec with a
@@ -89,6 +90,47 @@ describe('lz4 module loader', function () {
     expect(roundTripped.toString()).to.equal('Hello, World!');
     expect(consoleWarnStub.called).to.be.false;
     expect(fakeNapi.decompressFrameSync.calledOnceWithExactly(encoded)).to.be.true;
+  });
+
+  it('dispatches frames asynchronously in order with at most one native task per file', async () => {
+    const encoded = Buffer.from([4, 34, 77, 24, 96, 64, 130, 0, 0, 0, 0]);
+    const pending: Array<(decoded: Buffer) => void> = [];
+    const fakeNapi = {
+      decompressFrameSync: sinon.stub().throws(new Error('Synchronous decoder must not run')),
+      decompressFrame: sinon.stub().callsFake(() => new Promise((resolve) => pending.push(resolve))),
+    };
+    mockNapiLoad(fakeNapi);
+    const codec = loadLz4Module().default();
+    const result = codec.decodeFramesAsync(Buffer.concat([encoded, encoded]));
+    await new Promise(setImmediate);
+    expect(fakeNapi.decompressFrame.callCount).to.equal(1);
+    pending[0](Buffer.from('first'));
+    await new Promise(setImmediate);
+    expect(fakeNapi.decompressFrame.callCount).to.equal(2);
+    pending[1](Buffer.from('second'));
+    expect(await result).to.deep.equal([Buffer.from('first'), Buffer.from('second')]);
+    expect(fakeNapi.decompressFrameSync.called).to.equal(false);
+    expect(await codec.decodeFramesAsync(Buffer.alloc(0))).to.deep.equal([]);
+  });
+
+  it('rejects decoded lengths inconsistent with the declared content size on both decoders', async () => {
+    const encoded = Buffer.alloc(19);
+    encoded.writeUInt32LE(0x184d2204);
+    encoded[4] = 0x68;
+    encoded[5] = 0x40;
+    encoded.writeBigUInt64LE(BigInt(5), 6);
+    mockNapiLoad({
+      decompressFrameSync: () => Buffer.from('four'),
+      decompressFrame: async () => Buffer.from('four'),
+    });
+    const codec = loadLz4Module().default();
+    expect(() => codec.decode(encoded)).to.throw(
+      HiveDriverError,
+      'LZ4 frame 0 at offset 0: Content size mismatch: expected 5, got 4',
+    );
+    const error = await codec.decodeFramesAsync(encoded).catch((reason: unknown) => reason);
+    expect(error).to.be.instanceOf(HiveDriverError);
+    expect(error.message).to.equal('LZ4 frame 0 at offset 0: Content size mismatch: expected 5, got 4');
   });
 
   it('returns undefined (no warning) when lz4-napi is not installed (MODULE_NOT_FOUND)', () => {
@@ -199,19 +241,39 @@ describe('lz4 frame codec (real lz4-napi)', function () {
     }
   });
 
-  it('decodes every concatenated frame, including empty frames', () => {
+  it('decodes every concatenated frame, including empty frames', async () => {
     const payloads = [Buffer.from('first'), Buffer.alloc(0), Buffer.from('second'), Buffer.from('third')];
     const input = Buffer.concat(payloads.map((payload) => codec!.encode(payload)));
     expect(codec!.decode(input)).to.deep.equal(Buffer.concat(payloads));
+    expect(await codec!.decodeFramesAsync(input)).to.deep.equal(payloads);
   });
 
-  it('rejects truncated frames and trailing bytes instead of returning partial results', () => {
+  it('rejects truncated frames and trailing bytes instead of returning partial results', async () => {
     const frame = codec!.encode(Buffer.from('first'));
-    for (let length = 1; length < frame.length; length += 1) {
+    for await (const length of Array.from({ length: frame.length - 1 }, (_, index) => index + 1)) {
       expect(() => codec!.decode(frame.subarray(0, length)), `truncated at ${length}`).to.throw();
       expect(() => codec!.decode(Buffer.concat([frame, frame.subarray(0, length)]))).to.throw();
+      const error = await codec!
+        .decodeFramesAsync(Buffer.concat([frame, frame.subarray(0, length)]))
+        .catch((reason: unknown) => reason);
+      expect(error).to.be.instanceOf(HiveDriverError);
+      expect((error as Error).message).to.include(`LZ4 frame 1 at offset ${frame.length}`);
     }
     expect(() => codec!.decode(Buffer.concat([frame, Buffer.from('trailing bytes')]))).to.throw();
+    expect(
+      await codec!.decodeFramesAsync(Buffer.concat([frame, Buffer.from('trailing bytes')])).catch((error) => error),
+    ).to.be.instanceOf(HiveDriverError);
+  });
+
+  it('rejects 0x80000000 rather than letting the native decoder silently stop at it', async () => {
+    const frame = codec!.encode(Buffer.from('first'));
+    const headerLength = 7 + (frame[4] & 0x08 ? 8 : 0) + (frame[4] & 0x01 ? 4 : 0);
+    const emptyBlock = Buffer.from([0, 0, 0, 128]);
+    const corrupt = Buffer.concat([frame.subarray(0, headerLength), emptyBlock, frame.subarray(headerLength)]);
+    expect(() => codec!.decode(corrupt)).to.throw(HiveDriverError, 'Invalid zero-length LZ4 block');
+    const error = await codec!.decodeFramesAsync(Buffer.concat([frame, corrupt])).catch((reason) => reason);
+    expect(error).to.be.instanceOf(HiveDriverError);
+    expect(error.message).to.equal(`LZ4 frame 1 at offset ${frame.length}: Invalid zero-length LZ4 block`);
   });
 
   const fixtures: Array<{
@@ -227,14 +289,15 @@ describe('lz4 frame codec (real lz4-napi)', function () {
     const name = `linked=${fixture.linked}, content checksum=${fixture.contentChecksum}, block checksum=${
       fixture.blockChecksum
     }, bytes=${Buffer.byteLength(fixture.text) * fixture.repeat}`;
-    it(`decodes reference liblz4 frames (${name})`, () => {
+    it(`decodes reference liblz4 frames (${name})`, async () => {
       const frame = Buffer.from(fixture.hex, 'hex');
       const payload = Buffer.from(fixture.text.repeat(fixture.repeat));
       expect(codec!.decode(Buffer.concat([frame, frame]))).to.deep.equal(Buffer.concat([payload, payload]));
       expect(codec!.decodeFrames(frame)).to.deep.equal([payload]);
+      expect(await codec!.decodeFramesAsync(Buffer.concat([frame, frame]))).to.deep.equal([payload, payload]);
     });
 
-    it(`rejects corrupt reference liblz4 frames (${name})`, () => {
+    it(`rejects corrupt reference liblz4 frames (${name})`, async () => {
       const frame = Buffer.from(fixture.hex, 'hex');
       const blockStart = frame[4] & 0x08 ? 15 : 7;
       const offsets = [0, blockStart - 1];
@@ -242,15 +305,32 @@ describe('lz4 frame codec (real lz4-napi)', function () {
       if (fixture.blockChecksum && frame.readUInt32LE(blockStart) !== 0) {
         offsets.push(blockStart + 4 + (frame.readUInt32LE(blockStart) & 0x7fffffff));
       }
-      for (const offset of offsets) {
+      for await (const offset of offsets) {
         const corrupt = Buffer.from(frame);
         corrupt[offset] ^= 1;
         expect(() => codec!.decode(corrupt)).to.throw();
         expect(() => codec!.decode(Buffer.concat([frame, corrupt]))).to.throw();
+        const error = await codec!.decodeFramesAsync(Buffer.concat([frame, corrupt])).catch((reason) => reason);
+        expect(error).to.be.instanceOf(HiveDriverError);
+        expect(error.message).to.include(`LZ4 frame 1 at offset ${frame.length}`);
       }
       for (let missing = 1; missing <= 8; missing += 1) {
         expect(() => codec!.decode(frame.subarray(0, -missing))).to.throw();
       }
     });
   }
+
+  it('preserves the native checksum failure reason and failing frame location', async () => {
+    const frame = Buffer.from(fixtures.find((fixture) => fixture.contentChecksum)!.hex, 'hex');
+    const corrupt = Buffer.from(frame);
+    corrupt[corrupt.length - 1] ^= 1;
+    const input = Buffer.concat([frame, corrupt]);
+    expect(() => codec!.decode(input)).to.throw(
+      HiveDriverError,
+      `LZ4 frame 1 at offset ${frame.length}: ContentChecksumError`,
+    );
+    const error = await codec!.decodeFramesAsync(input).catch((reason) => reason);
+    expect(error).to.be.instanceOf(HiveDriverError);
+    expect(error.message).to.equal(`LZ4 frame 1 at offset ${frame.length}: ContentChecksumError`);
+  });
 });
