@@ -2,7 +2,17 @@ import { expect } from 'chai';
 import sinon from 'sinon';
 import Int64 from 'node-int64';
 import { Response } from 'node-fetch';
-import { Binary, Bool, Float64, Table, Utf8, tableFromIPC, tableToIPC, vectorFromArray } from 'apache-arrow';
+import {
+  Binary,
+  Bool,
+  Float64,
+  RecordBatchReader,
+  Table,
+  Utf8,
+  tableFromIPC,
+  tableToIPC,
+  vectorFromArray,
+} from 'apache-arrow';
 import ArrowResultHandler from '../../../lib/result/ArrowResultHandler';
 import CloudFetchResultHandler from '../../../lib/result/CloudFetchResultHandler';
 import ArrowResultConverter from '../../../lib/result/ArrowResultConverter';
@@ -96,6 +106,7 @@ describe('concatenated LZ4 Arrow results', () => {
   for (const compressed of [false, true]) {
     for (const expectedRows of [0, 2, 3, 4]) {
       it(`caps or validates CloudFetch rows ${expectedRows}, compressed=${compressed}`, async () => {
+        const readers = sinon.spy(RecordBatchReader, 'from');
         const { handler, context } = createCloudFetch(compressed ? compress(ipc) : ipc, expectedRows, compressed);
         const converter = new ArrowResultConverter(context, handler, { schema: thriftSchema });
         if (expectedRows <= 3) {
@@ -117,6 +128,7 @@ describe('concatenated LZ4 Arrow results', () => {
           expect(caught).to.be.instanceOf(HiveDriverError);
           expect((caught as Error).message).to.equal('Arrow row count mismatch: 1 rows missing');
         }
+        expect(readers.callCount).to.equal(expectedRows === 0 ? 0 : 1);
       });
     }
 
