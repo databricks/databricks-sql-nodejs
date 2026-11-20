@@ -94,6 +94,42 @@ describe('Arrow result append', () => {
         expect(call.returnValue).to.equal(target.rows);
       });
     });
+
+    for (const placeholders of [false, true]) {
+      it(`grows sequentially beyond the initial allocation guard (${rowMode}, placeholders=${placeholders})`, async () => {
+        const { converter, rows } = fixture(rowMode, placeholders);
+        const start = 2 ** 25 - 2;
+        let length = start;
+        const values = new Map<number, unknown>();
+        const reserved: number[] = [];
+        const target: RowTarget<any> = {
+          count: start,
+          rows: new Proxy([], {
+            get(array, property) {
+              return property === 'length' ? length : Reflect.get(array, property);
+            },
+            set(_array, property, value) {
+              if (property === 'length') {
+                reserved.push(value);
+                length = value;
+              } else {
+                const index = Number(property);
+                values.set(index, value);
+                length = Math.max(length, index + 1);
+              }
+              return true;
+            },
+          }),
+        };
+        while (await converter.hasMore()) {
+          expect(await converter.fetchNextInto({ limit: Infinity }, target, Infinity)).to.deep.equal([]);
+        }
+        expect(reserved).to.deep.equal([2 ** 25]);
+        expect(target.count).to.equal(start + rows.length);
+        expect([...values.keys()]).to.deep.equal(rows.map((_, index) => start + index));
+        expect([...values.values()]).to.deep.equal(rows);
+      });
+    }
   }
 
   it('does not read back fitted rows to copy them in the slicer', async () => {
