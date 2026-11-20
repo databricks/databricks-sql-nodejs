@@ -876,7 +876,8 @@ function buildKernelHostName(options: ConnectionOptions, logger?: IDBSQLLogger):
   if (embedded !== undefined && (embedded < 1 || embedded > 65535)) {
     throw new HiveDriverError(`kernel backend: host carries port ${embedded}, which is outside 1..65535.`);
   }
-  // 443 is the default that getConnectionOptions fills in, so it is not reported as a conflict.
+  // An explicit `port: 443` is the default port, so a host carrying its own port is not reported as
+  // a conflict (the host's port is used, with no warning). The Python and Go drivers follow the same rule.
   if (port !== undefined && port !== 443 && embedded !== undefined && embedded !== port) {
     logger?.log(
       LogLevel.warn,
