@@ -144,12 +144,12 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
     this.chunkIndex += 1;
 
     return {
-      batches: [Buffer.from(result)],
+      batches: [result],
       rowCount: link.rowCount.toNumber(true),
     };
   }
 
-  private async fetch(url: RequestInfo, init?: RequestInit): Promise<{ response: Response; body?: ArrayBuffer }> {
+  private async fetch(url: RequestInfo, init?: RequestInit): Promise<{ response: Response; body?: Buffer }> {
     const connectionProvider = await this.context.getConnectionProvider();
     let requestUrl = url;
     if (typeof requestUrl !== 'string') {
@@ -175,9 +175,9 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
     // Read the body inside the retried block. CloudFetch downloads are large
     // GETs against pre-signed cloud-storage URLs that frequently surface
     // `socket hang up` / "Premature close" once the stream is mid-transfer.
-    // Pulling `arrayBuffer()` in here lets the retry policy treat those
+    // Pulling `buffer()` in here lets the retry policy treat those
     // body-stream failures the same as connect-time failures.
-    let downloaded: ArrayBuffer | undefined;
+    let downloaded: Buffer | undefined;
     let result: { request: Request; response: Response };
     try {
       const download = retryPolicy.invokeWithRetry(async () => {
@@ -194,7 +194,7 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
         try {
           const response = await fetch(request);
           if (response.ok) {
-            downloaded = await response.arrayBuffer();
+            downloaded = await response.buffer();
           } else {
             lastFailure = { request, response };
           }
@@ -232,7 +232,7 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
     // callback). In production the body is always read inside the retried
     // block above, so this path is a no-op.
     if (downloaded === undefined && result.response.ok) {
-      downloaded = await result.response.arrayBuffer();
+      downloaded = await result.response.buffer();
     }
     return { response: result.response, body: downloaded };
   }
