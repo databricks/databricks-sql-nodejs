@@ -3,18 +3,21 @@ import { expect } from 'chai';
 import { DBSQLClient } from '../../lib';
 import CloudFetchResultHandler from '../../lib/result/CloudFetchResultHandler';
 import IOperation from '../../lib/contracts/IOperation';
+import IDBSQLSession from '../../lib/contracts/IDBSQLSession';
 import config from './utils/config';
 
 describe('LZ4 result parity', () => {
   for (const useCloudFetch of [false, true]) {
     it(`preserves every value with CloudFetch=${useCloudFetch}`, async () => {
       const client = new DBSQLClient();
-      await client.connect({ host: config.host, path: config.path, token: config.token });
       let operation: IOperation | undefined;
-      const session = await client.openSession();
+      let session: IDBSQLSession | undefined;
       try {
+        await client.connect({ host: config.host, path: config.path, token: config.token });
+        const activeSession = await client.openSession();
+        session = activeSession;
         const read = async (useLZ4Compression: boolean) => {
-          operation = await session.executeStatement(
+          operation = await activeSession.executeStatement(
             `SELECT id, IF(id % 7 = 0, NULL, id * 0.125) AS value,
               IF(id % 5 = 0, NULL, sha2(CAST(id AS STRING), 512)) AS text,
               IF(id % 3 = 0, NULL, id % 2 = 0) AS flag
@@ -53,7 +56,7 @@ describe('LZ4 result parity', () => {
         expect(await read(true)).to.equal(uncompressed);
       } finally {
         await operation?.close();
-        await session.close();
+        await session?.close();
         await client.close();
       }
     });

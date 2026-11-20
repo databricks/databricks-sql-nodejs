@@ -224,7 +224,9 @@ describe('lz4 frame codec (real lz4-napi)', function () {
   }> = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures/lz4-frames.json'), 'utf8'));
 
   for (const fixture of fixtures) {
-    const name = `linked=${fixture.linked}, content checksum=${fixture.contentChecksum}, block checksum=${fixture.blockChecksum}`;
+    const name = `linked=${fixture.linked}, content checksum=${fixture.contentChecksum}, block checksum=${
+      fixture.blockChecksum
+    }, bytes=${Buffer.byteLength(fixture.text) * fixture.repeat}`;
     it(`decodes reference liblz4 frames (${name})`, () => {
       const frame = Buffer.from(fixture.hex, 'hex');
       const payload = Buffer.from(fixture.text.repeat(fixture.repeat));
@@ -234,9 +236,12 @@ describe('lz4 frame codec (real lz4-napi)', function () {
 
     it(`rejects corrupt reference liblz4 frames (${name})`, () => {
       const frame = Buffer.from(fixture.hex, 'hex');
-      const offsets = [0, 14];
+      const blockStart = frame[4] & 0x08 ? 15 : 7;
+      const offsets = [0, blockStart - 1];
       if (fixture.contentChecksum) offsets.push(frame.length - 1);
-      if (fixture.blockChecksum) offsets.push(19 + (frame.readUInt32LE(15) & 0x7fffffff));
+      if (fixture.blockChecksum && frame.readUInt32LE(blockStart) !== 0) {
+        offsets.push(blockStart + 4 + (frame.readUInt32LE(blockStart) & 0x7fffffff));
+      }
       for (const offset of offsets) {
         const corrupt = Buffer.from(frame);
         corrupt[offset] ^= 1;
