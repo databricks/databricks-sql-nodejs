@@ -26,6 +26,7 @@ describe('FeatureFlagCache', () => {
 
   beforeEach(() => {
     (FeatureFlagCache as any).sharedContexts.clear();
+    (FeatureFlagCache as any).idleContexts.clear();
     clock = sinon.useFakeTimers();
   });
 

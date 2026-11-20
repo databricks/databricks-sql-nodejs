@@ -92,11 +92,13 @@ describe('Telemetry Integration', () => {
   beforeEach(() => {
     TelemetryClientProvider.__resetInstanceForTests();
     flagContexts.clear();
+    (FeatureFlagCache as any).idleContexts.clear();
   });
 
   afterEach(() => {
     TelemetryClientProvider.__resetInstanceForTests();
     flagContexts.clear();
+    (FeatureFlagCache as any).idleContexts.clear();
     sinon.restore();
   });
 

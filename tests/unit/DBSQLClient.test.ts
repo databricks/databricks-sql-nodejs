@@ -1094,7 +1094,10 @@ describe('DBSQLClient feature flag lifecycle', () => {
   };
   const contexts = (FeatureFlagCache as any).sharedContexts as Map<string, unknown>;
 
-  beforeEach(() => contexts.clear());
+  beforeEach(() => {
+    contexts.clear();
+    (FeatureFlagCache as any).idleContexts.clear();
+  });
   afterEach(() => {
     sinon.restore();
     contexts.clear();
