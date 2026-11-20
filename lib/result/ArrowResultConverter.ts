@@ -192,6 +192,13 @@ export function bigNumDecimalToString(unscaled: bigint, scale: number): string {
   return `${negative ? '-' : ''}${digits.slice(0, cut)}.${digits.slice(cut)}`;
 }
 
+/**
+ * Returns the unscaled value of an Arrow Decimal128 as a number.
+ *
+ * Decimal128 is four little-endian 32-bit words. If words 2–3 are pure sign
+ * extension of word 1, the unscaled value fits in an int64, and we return it
+ * directly when it's a safe integer; otherwise fall back to `bigNumToBigInt`.
+ */
 function decimalToNumber(value: Uint32Array & Parameters<typeof bigNumToBigInt>[0]): number {
   if (value.length === 4) {
     const high = value[1] | 0;
