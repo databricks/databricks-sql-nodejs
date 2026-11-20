@@ -1,6 +1,6 @@
 # Lessons
 
-<!-- distilled-through: 2026-11-18 -->
+<!-- distilled-through: 2026-11-20 -->
 
 ## Configuration and authentication
 - L-0001 (3×, #457): Trace option support through DBSQLClient, auth adapters and each transport. Type declarations and class comments do not establish forwarding; shared preparation can precede backend-specific filtering.
@@ -49,6 +49,7 @@
 - L-0040 (1×, #596): Error telemetry may carry class, SQLSTATE and terminal/retryable status only; exclude messages, stacks, URLs and other free-form error text.
 - L-0041 (1×, #608): Decode every napi error, including status/hasMore calls. Any call that may fetch must share fetchChunk's best-effort failure cleanup, with rejecting-fake tests per call site.
 - L-0042 (1×, #619): Detect user close/cancel with dedicated persistent intent flags read before cleanup, not lifecycle.isClosed. Fetch-failure cleanup must still close cancelled operations.
+- L-0071 (1×, #633): Spy notCalled assertions proving a fast path need a positive check that the stubbed inputs were used, plus slow-path cases that do trigger the spy.
 
 ## Resources, networking and performance
 - L-0043 (1×, #497): Portable Bash with nounset must guard empty-array expansion on older shells and distinguish unset-only defaults from unset-or-empty defaults.
@@ -68,6 +69,9 @@
 - L-0057 (1×, #595): ProxyAgent needs TLS options at its top level. Verify proxy TLS/mTLS with a real CONNECT proxy and generated test certificate.
 - L-0058 (1×, #577): Merge Arrow result rows with indexed concatChunks copies. Preserve provider batches and track owned leftover slices with offsets.
 - L-0059 (1×, #611): Every auxiliary HTTP request, including OAuth, exchange and CloudFetch, must use the connection provider's getAgent to honor proxy/TLS settings.
+- L-0068 (1×, #637 #633 #628): Optimized Arrow row paths must deep-equal the legacy converter for scalar, struct/list/map, null, empty and dictionary columns in object and array modes; preserve legacy quirks (e.g. dictionary decimals).
+- L-0069 (1×, #628): Object rows keyed by server column names must fall back to the legacy path for duplicate names, __proto__, or Arrow field names/counts that mismatch the Thrift schema.
+- L-0070 (1×, #627): Zero-copy Buffer handoff to decoders must honor byteOffset/length; test pooled and subarray Buffers and never read buf.buffer whole.
 
 ## Bot workflow and CI
 - L-0060 (1×, #499): In bot workflows with both schedule and workflow_dispatch triggers, keep numeric input knobs string-typed and parse them downstream.
@@ -78,3 +82,4 @@
 - L-0065 (1×, #566): Build after installs that omit prepare so generated lib/version.ts exists before tests/type checks.
 - L-0066 (1×, #566 #562): Serialize branch-editing bot flows with one per-PR concurrency group and restore dependency-setup lockfile rewrites before agent edits.
 - L-0067 (1×, #621 #620): GitHub Actions expressions allow hyphens in dot-dereferenced names; do not flag or rewrite `${{ inputs.some-name }}` as subtraction.
+- L-0072 (1×, #628): Changes to backend-shared code (lib/result/, shared e2e utils) must be covered by the kernel-e2e workflow path filter so the kernel suite actually runs.
