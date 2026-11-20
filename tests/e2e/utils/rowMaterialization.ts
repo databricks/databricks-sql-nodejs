@@ -9,6 +9,58 @@ const largeInteger = BigInt('9007199254740993');
 export default function rowMaterializationTests(useKernel: boolean) {
   describe(`Arrow row materialization (${useKernel ? 'kernel' : 'Thrift'})`, () => {
     for (const rowMode of ['object', 'array'] as const) {
+      for (const maxRows of [1000, 20000]) {
+        for (const api of ['fetchAll', 'fetchChunk', 'iterateChunks', 'iterateRows'] as const) {
+          it(`preserves chunked rows (${rowMode}, ${api}, maxRows=${maxRows})`, async () => {
+            const client = new DBSQLClient();
+            try {
+              await client.connect({
+                host: config.host,
+                path: config.path,
+                token: config.token,
+                useKernel,
+              } as ConnectionOptions & InternalConnectionOptions);
+              const session = await client.openSession();
+              try {
+                const operation = await session.executeStatement(
+                  'SELECT CAST(id AS INT) AS id, IF(id % 17 = 0, NULL, id % 2 = 0) AS value FROM range(10003) ORDER BY id',
+                  { rowMode, maxRows: 127 },
+                );
+                try {
+                  const rows: object[] = [];
+                  if (api === 'fetchAll') {
+                    rows.push(...(await operation.fetchAll({ maxRows })));
+                  } else if (api === 'fetchChunk') {
+                    const chunk = await operation.fetchChunk({ maxRows });
+                    expect(chunk.length).to.equal(Math.min(maxRows, 10003));
+                    rows.push(...chunk, ...(await operation.fetchAll({ maxRows })));
+                  } else if (api === 'iterateChunks') {
+                    for await (const chunk of operation.iterateChunks({ maxRows })) {
+                      expect(chunk.length).to.equal(Math.min(maxRows, 10003 - rows.length));
+                      rows.push(...chunk);
+                    }
+                  } else {
+                    for await (const row of operation.iterateRows({ maxRows })) rows.push(row);
+                  }
+                  expect(rows).to.deep.equal(
+                    Array.from({ length: 10003 }, (_, id) => {
+                      const value = id % 17 === 0 ? null : id % 2 === 0;
+                      return rowMode === 'array' ? [id, value] : { id, value };
+                    }),
+                  );
+                  expect(await operation.hasMoreRows()).to.equal(false);
+                } finally {
+                  await operation.close();
+                }
+              } finally {
+                await session.close();
+              }
+            } finally {
+              await client.close();
+            }
+          });
+        }
+      }
       for (const useArrowNativeTypes of [false, true]) {
         for (const preserveBigNumericPrecision of [false, true]) {
           it(`preserves values (${rowMode}, native=${useArrowNativeTypes}, precision=${preserveBigNumericPrecision})`, async () => {
