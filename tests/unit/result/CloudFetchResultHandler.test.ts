@@ -2,8 +2,11 @@ import { expect, AssertionError } from 'chai';
 import sinon, { SinonStub } from 'sinon';
 import { execFileSync } from 'child_process';
 import http from 'http';
+import https from 'https';
 import path from 'path';
 import { PassThrough } from 'stream';
+import v8 from 'v8';
+import vm from 'vm';
 import { AddressInfo } from 'net';
 import Int64 from 'node-int64';
 import { compressFrameSync } from 'lz4-napi';
@@ -22,6 +25,22 @@ import BaseClientContextStub from '../.stubs/ClientContextStub';
 import { ClientConfig } from '../../../lib/contracts/IClientContext';
 import ConnectionProviderStub from '../.stubs/ConnectionProviderStub';
 import HttpRetryPolicy from '../../../lib/connection/connections/HttpRetryPolicy';
+import createLocalhostCertificate from '../.stubs/localhostCertificate';
+
+// `WeakRef` is newer than the ES2018 lib this project compiles against.
+const { WeakRef } = globalThis as unknown as {
+  WeakRef: new <T extends object>(target: T) => { deref(): T | undefined };
+};
+
+async function collectGarbage(): Promise<void> {
+  v8.setFlagsFromString('--expose-gc');
+  const gc = vm.runInNewContext('gc') as () => void;
+  for (let i = 0; i < 3; i += 1) {
+    // eslint-disable-next-line no-await-in-loop
+    await new Promise((resolve) => setImmediate(resolve));
+    gc();
+  }
+}
 
 const sampleArrowSchema = Buffer.from([
   255, 255, 255, 255, 208, 0, 0, 0, 16, 0, 0, 0, 0, 0, 10, 0, 14, 0, 6, 0, 13, 0, 8, 0, 10, 0, 0, 0, 0, 0, 4, 0, 16, 0,
@@ -846,6 +865,72 @@ describe('CloudFetchResultHandler', () => {
         { cwd: repoRoot, encoding: 'utf8', timeout: 10000, stdio: 'pipe' },
       );
       expect(output).to.eq('late body error handled\n');
+    });
+
+    describe('over HTTPS keep-alive', () => {
+      let server: https.Server | undefined;
+      let agent: https.Agent | undefined;
+
+      afterEach(async () => {
+        agent?.destroy();
+        agent = undefined;
+        if (server) {
+          server.closeAllConnections();
+          await new Promise<void>((resolve) => {
+            server!.close(() => resolve());
+          });
+          server = undefined;
+        }
+      });
+
+      // Real node-fetch, HttpRetryPolicy and a keep-alive https.Agent: the pooled TLS socket keeps its first request
+      // alive (see readBody), so only this path shows whether the downloaded body can be collected.
+      it('lets the downloaded body be garbage-collected while its TLS socket stays pooled', async function () {
+        this.timeout(15000);
+        const certificate = createLocalhostCertificate();
+        if (!certificate) {
+          this.skip(); // openssl is not available
+        }
+        const payload = Buffer.alloc(1024 * 1024, 7);
+        server = https.createServer({ cert: certificate.cert, key: certificate.key }, (req, res) => res.end(payload));
+        await new Promise<void>((resolve) => {
+          server!.listen(0, '127.0.0.1', () => resolve());
+        });
+        agent = new https.Agent({ keepAlive: true, ca: certificate.cert });
+        const fileLink = `https://127.0.0.1:${(server.address() as AddressInfo).port}/chunk`;
+
+        const context = new BaseClientContextStub({ cloudFetchConcurrentDownloads: 1, retriesTimeout: 10000 });
+        sinon.stub(context.connectionProvider, 'getAgent').resolves(agent);
+        sinon.stub(context.connectionProvider, 'getRetryPolicy').callsFake(async () => new HttpRetryPolicy(context));
+
+        const downloaded = await (async () => {
+          const rowSet: TRowSet = {
+            startRowOffset: new Int64(0),
+            rows: [],
+            resultLinks: [
+              {
+                fileLink,
+                expiryTime: new Int64(defaultLinkExpiryTime),
+                rowCount: new Int64(1),
+                startRowOffset: new Int64(0),
+                bytesNum: new Int64(0),
+              },
+            ],
+          };
+          const handler = new CloudFetchResultHandler(context, new ResultsProviderStub([rowSet], undefined), {
+            lz4Compressed: false,
+            status: { statusCode: TStatusCode.SUCCESS_STATUS },
+          });
+          const batch = await handler.fetchNext({ limit: 10000 });
+          expect(batch.batches).to.have.length(1);
+          expect(batch.batches[0].equals(payload)).to.be.true;
+          return new WeakRef(batch.batches[0]);
+        })();
+
+        expect(Object.values(agent.freeSockets).flat()).to.have.length(1);
+        await collectGarbage();
+        expect(downloaded.deref()).to.be.undefined;
+      });
     });
   });
 

@@ -155,8 +155,12 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
     if (!(body instanceof Readable)) {
       return response.buffer();
     }
-    // node-fetch installs readers synchronously; their error listener also retains the settled body.
-    // Remove only those readers, keeping the constructor's error handler for late stream errors.
+    // Works around a Node core retention: https.Agent#createConnection's 'session'/'close' socket listeners share a
+    // closure context with its `cb` (captured by the proxy-tunnel cleanupAndPropagate), so a pooled TLS socket pins
+    // its first ClientRequest and, through node-fetch's request 'error' closure and the Response, these body readers
+    // and the settled body. Plain HTTP and later requests on the same socket aren't pinned. node-fetch installs the
+    // readers synchronously: remove only those, keeping the constructor's error handler for late stream errors.
+    // This can go once Node no longer captures `cb` in those listeners.
     const events = ['data', 'end', 'error'];
     const existing = events.map((event) => body.listeners(event));
     const result = response.buffer();
