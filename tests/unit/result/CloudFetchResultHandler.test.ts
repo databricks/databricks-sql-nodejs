@@ -9,8 +9,9 @@ import { ShouldRetryResult } from '../../../lib/connection/contracts/IRetryPolic
 import { HttpTransactionDetails } from '../../../lib/connection/contracts/IConnectionProvider';
 import { LogLevel } from '../../../lib/contracts/IDBSQLLogger';
 import CloudFetchResultHandler from '../../../lib/result/CloudFetchResultHandler';
+import ArrowResultConverter from '../../../lib/result/ArrowResultConverter';
 import ResultsProviderStub from '../.stubs/ResultsProviderStub';
-import { TRowSet, TSparkArrowResultLink, TStatusCode } from '../../../thrift/TCLIService_types';
+import { TRowSet, TSparkArrowResultLink, TStatusCode, TTypeId } from '../../../thrift/TCLIService_types';
 import { ArrowBatch } from '../../../lib/result/utils';
 import RetryError, { RetryErrorCode } from '../../../lib/errors/RetryError';
 
@@ -725,6 +726,32 @@ describe('CloudFetchResultHandler', () => {
     expect(batches).to.deep.eq([sampleArrowBatch]);
   });
 
+  [Buffer.alloc(0), Buffer.from([0, 255, 128, 42]), Buffer.from([99, 0, 255, 128, 42, 98]).subarray(1, 5)].forEach(
+    (body, index) => {
+      it(`should reuse the fallback response buffer without copying (${index})`, async () => {
+        const context = new ClientContextStub({ cloudFetchConcurrentDownloads: 1 });
+        const rowSetProvider = new ResultsProviderStub([sampleRowSet1], undefined);
+        const result = new CloudFetchResultHandler(context, rowSetProvider, {
+          lz4Compressed: false,
+          status: { statusCode: TStatusCode.SUCCESS_STATUS },
+        });
+        const response = new Response(body, { status: 200 });
+        const buffer = sinon.spy(response, 'buffer');
+        const arrayBuffer = sinon.spy(response, 'arrayBuffer');
+        context.invokeWithRetryStub.resolves({ request: new Request('localhost'), response });
+
+        const { batches, rowCount } = await result.fetchNext({ limit: 10000 });
+
+        expect(batches).to.have.lengthOf(1);
+        expect(batches[0]).to.equal(body);
+        expect(batches[0].byteLength).to.equal(body.byteLength);
+        expect(rowCount).to.equal(1);
+        expect(buffer.calledOnce).to.be.true;
+        expect(arrayBuffer.called).to.be.false;
+      });
+    },
+  );
+
   describe('download deadline', () => {
     let server: http.Server | undefined;
 
@@ -788,6 +815,42 @@ describe('CloudFetchResultHandler', () => {
       }
       return { ...outcome, elapsedMs: Date.now() - startedAt };
     }
+
+    it('should decode a pooled Arrow response read inside the retry callback', async () => {
+      const body = Buffer.concat([sampleArrowSchema, sampleArrowBatch]);
+      const url = await startServer((req, res) => res.end(body));
+      const handler = createHandler(url, { retriesTimeout: 1000 });
+      const buffer = sinon.spy(Response.prototype, 'buffer');
+      const arrayBuffer = sinon.spy(Response.prototype, 'arrayBuffer');
+      const fetchNext = sinon.spy(handler, 'fetchNext');
+      const converter = new ArrowResultConverter(new BaseClientContextStub(), handler, {
+        schema: {
+          columns: [
+            {
+              columnName: '1',
+              typeDesc: { types: [{ primitiveEntry: { type: TTypeId.INT_TYPE } }] },
+              position: 1,
+            },
+          ],
+        },
+      });
+
+      try {
+        expect(await converter.fetchNext({ limit: 10000 })).to.deep.eq([{ 1: 1 }]);
+        expect(buffer.calledOnce).to.be.true;
+        expect(arrayBuffer.called).to.be.false;
+        expect(buffer.firstCall.thisValue.body).to.have.property('pipe').that.is.a('function');
+        const downloaded = await buffer.firstCall.returnValue;
+        expect(downloaded).to.deep.eq(body);
+        expect(downloaded.length).to.be.lt(Buffer.poolSize >>> 1);
+        expect(downloaded.buffer.byteLength).to.be.gt(downloaded.length);
+        expect((await fetchNext.firstCall.returnValue).batches[0]).to.equal(downloaded);
+      } finally {
+        fetchNext.restore();
+        arrayBuffer.restore();
+        buffer.restore();
+      }
+    });
 
     it('should fail a download whose response headers never arrive with a timeout error', async () => {
       const closedRequests: Array<Promise<void>> = [];
