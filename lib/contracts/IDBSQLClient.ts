@@ -199,6 +199,13 @@ export type ConnectionOptions = {
   enableGeoSpatialSupport?: boolean;
 
   /**
+   * Negotiate HTTP/2 for session HTTPS traffic, with HTTP/1.1 fallback.
+   * Defaults to true. False or a configured proxy forces HTTP/1.1,
+   * including bypassed destinations. Applies only with useKernel: true.
+   */
+  enableHttp2?: boolean;
+
+  /**
    * Extra HTTP headers sent on every request to the workspace (session,
    * statement and metadata calls, on both backends) and on driver-owned
    * telemetry and feature-flag requests. Not applied to OAuth/OIDC token

@@ -777,6 +777,8 @@ export interface ConnectionOptions {
    * to SEA.
    */
   enableGeoSpatialSupport?: boolean
+  /** Negotiate HTTP/2 over HTTPS by default. False or a configured proxy forces HTTP/1.1. */
+  enableHttp2?: boolean
   /**
    * Driver name reported in telemetry system configuration. Omitted ⇒
    * kernel default.

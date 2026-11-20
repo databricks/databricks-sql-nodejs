@@ -238,6 +238,7 @@ export interface KernelTlsOptions {
  * the kernel folds last-wins).
  */
 export interface KernelHttpOptions {
+  enableHttp2?: boolean;
   customHeaders?: Array<{ name: string; value: string }>;
   socketTimeoutMs?: number;
 }
@@ -523,6 +524,12 @@ export function buildKernelHttpOptions(options: ConnectionOptions): KernelHttpOp
   headers.push({ name: 'User-Agent', value: buildUserAgentString(userAgentEntry) });
 
   const http: KernelHttpOptions = { customHeaders: headers };
+  if (options.enableHttp2 !== undefined) {
+    if (typeof options.enableHttp2 !== 'boolean') {
+      throw new HiveDriverError('kernel backend: `enableHttp2` must be a boolean.');
+    }
+    http.enableHttp2 = options.enableHttp2;
+  }
   // Per-connection socket read timeout (ms). The public `socketTimeout`
   // ConnectionOption maps onto the kernel napi `socketTimeoutMs`
   // (kernel `HttpConfig::request_timeout` / reqwest `Client::timeout`).
