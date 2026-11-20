@@ -2,15 +2,22 @@ import { expect } from 'chai';
 import sinon from 'sinon';
 import Int64 from 'node-int64';
 import { Binary, Bool, Float64, Table, Utf8, tableFromIPC, tableToIPC, vectorFromArray } from 'apache-arrow';
-import { compressFrameSync } from 'lz4-napi';
 import ArrowResultHandler from '../../../lib/result/ArrowResultHandler';
 import CloudFetchResultHandler from '../../../lib/result/CloudFetchResultHandler';
 import HiveDriverError from '../../../lib/errors/HiveDriverError';
 import { TStatusCode } from '../../../thrift/TCLIService_types';
 import ResultsProviderStub from '../.stubs/ResultsProviderStub';
 import ClientContextStub from '../.stubs/ClientContextStub';
+import getLZ4 from '../../../lib/utils/lz4';
 
 describe('concatenated LZ4 Arrow results', () => {
+  let codec: ReturnType<typeof getLZ4>;
+
+  before(function () {
+    codec = getLZ4();
+    if (!codec) this.skip();
+  });
+
   const table = new Table({
     number: vectorFromArray([1, null, 3.5], new Float64()),
     text: vectorFromArray(['first', 'second', null], new Utf8()),
@@ -23,9 +30,9 @@ describe('concatenated LZ4 Arrow results', () => {
   const payload = ipc.subarray(schemaEnd);
   const compress = (bytes: Buffer) =>
     Buffer.concat([
-      compressFrameSync(bytes.subarray(0, 16)),
-      compressFrameSync(Buffer.alloc(0)),
-      compressFrameSync(bytes.subarray(16)),
+      codec!.encode(bytes.subarray(0, 16)),
+      codec!.encode(Buffer.alloc(0)),
+      codec!.encode(bytes.subarray(16)),
     ]);
 
   it('preserves inline values, types, nulls and bytes across frame boundaries', async () => {
