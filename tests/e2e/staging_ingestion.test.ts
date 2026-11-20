@@ -4,11 +4,12 @@ import path from 'path';
 import os from 'os';
 import * as uuid from 'uuid';
 import { DBSQLClient } from '../../lib';
+import { ConnectionOptions } from '../../lib/contracts/IDBSQLClient';
 import StagingError from '../../lib/errors/StagingError';
 
 import config from './utils/config';
 
-describe('Staging Test', () => {
+export default function stagingTests(connectOptions: () => ConnectionOptions) {
   const localPath = fs.mkdtempSync(path.join(os.tmpdir(), 'databricks-sql-tests-'));
 
   after(() => {
@@ -22,11 +23,7 @@ describe('Staging Test', () => {
     const { catalog, schema, volume } = config;
 
     const client = new DBSQLClient();
-    await client.connect({
-      host: config.host,
-      path: config.path,
-      token: config.token,
-    });
+    await client.connect(connectOptions());
 
     const session = await client.openSession({
       initialCatalog: catalog,
@@ -55,11 +52,7 @@ describe('Staging Test', () => {
     const { catalog, schema, volume } = config;
 
     const client = new DBSQLClient();
-    await client.connect({
-      host: config.host,
-      path: config.path,
-      token: config.token,
-    });
+    await client.connect(connectOptions());
 
     const session = await client.openSession({
       initialCatalog: catalog,
@@ -99,11 +92,7 @@ describe('Staging Test', () => {
     const { catalog, schema, volume } = config;
 
     const client = new DBSQLClient();
-    await client.connect({
-      host: config.host,
-      path: config.path,
-      token: config.token,
-    });
+    await client.connect(connectOptions());
 
     const session = await client.openSession({
       initialCatalog: catalog,
@@ -132,4 +121,12 @@ describe('Staging Test', () => {
     // Try to remove the file - it should succeed and not throw any errors
     await session.executeStatement(`REMOVE '${stagingFileName}'`, { stagingAllowedLocalPath: [localPath] });
   });
+}
+
+describe('Staging Test', () => {
+  stagingTests(() => ({
+    host: config.host,
+    path: config.path,
+    token: config.token,
+  }));
 });

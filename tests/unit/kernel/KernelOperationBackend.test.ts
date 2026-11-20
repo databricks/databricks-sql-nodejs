@@ -457,7 +457,7 @@ describe('KernelOperationBackend Volume completion', () => {
     Object.assign(statement, { completeVolumeOperation: async () => 'needs_input_stream' });
     const backend = new KernelOperationBackend({ statement, context: new ClientContextStub() });
     const error = await backend.completeStagingOperation(['/allowed']).catch((failure) => failure);
-    expect(error).to.be.instanceOf(StagingError);
+    expect(error).to.be.instanceOf(StagingError).with.property('message', 'Volume PUT requires a local file path');
   });
 
   for (const outcome of ['completed', 'not_volume']) {
