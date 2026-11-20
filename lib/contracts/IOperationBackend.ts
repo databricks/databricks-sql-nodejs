@@ -113,7 +113,8 @@ export default interface IOperationBackend {
    */
   getCachedResultMetadata?(): ResultMetadata | undefined;
 
-  /** Complete configured staging transfers before returning the operation. */
+  /** Runs the staging (Volume) file transfer.
+   * Only backends that transfer by themselves implement it. */
   completeStagingOperation?(allowedPaths: string[]): Promise<void>;
 
   /** Cancel the operation. */

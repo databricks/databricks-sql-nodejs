@@ -108,7 +108,8 @@ export default class DBSQLSession implements IDBSQLSession {
     // If `stagingAllowedLocalPath` is not provided - don't do anything to the operation. In a case of regular
     // operation, everything will work as usual. In a case of staging operation, it will be processed like any
     // other query - it will be possible to get data from it as usual, or use other operation methods.
-    // Backends with explicit staging completion handle it before metadata is fetched.
+    // A backend that runs the transfer itself (kernel) does it here;
+    // the metadata check below is the Thrift path.
     if (options.stagingAllowedLocalPath !== undefined) {
       const allowedLocalPath = Array.isArray(options.stagingAllowedLocalPath)
         ? options.stagingAllowedLocalPath
