@@ -7,3 +7,12 @@ export default interface IResultsProvider<T> {
 
   hasMore(): Promise<boolean>;
 }
+
+export interface RowTarget<T> {
+  rows: Array<T>;
+  count: number;
+}
+
+export interface RowResultsProvider<T> extends IResultsProvider<Array<T>> {
+  fetchNextInto?(options: ResultsProviderFetchNextOptions, target: RowTarget<T>, limit: number): Promise<Array<T>>;
+}

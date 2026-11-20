@@ -71,6 +71,15 @@ function decimal(value: string): Uint32Array {
   return Uint32Array.from([0, 32, 64, 96], (shift) => Number((unsigned >> BigInt(shift)) & BigInt('4294967295')));
 }
 
+async function expectAppended(converter: ArrowResultConverter, expected: unknown[]) {
+  const prefix = { prefix: true };
+  const target = { rows: [prefix] as unknown[], count: 1 };
+  const tail = await converter.fetchNextInto({ limit: 100 }, target, 2);
+  target.rows.length = target.count;
+  expect(target.rows[0]).to.equal(prefix);
+  deepStrictEqual([...target.rows.slice(1), ...tail], expected);
+}
+
 describe('Arrow row materialization', () => {
   for (const rowMode of ['object', 'array'] as const) {
     for (const preservePrecision of [false, true]) {
@@ -166,6 +175,7 @@ describe('Arrow row materialization', () => {
         ];
         const converter = converterFor(columns, rowMode, preservePrecision);
         const result = await converter.fetchNext({ limit: 100 });
+        await expectAppended(converterFor(columns, rowMode, preservePrecision), result);
         const expected = [0, 1, 2].map((rowIndex) => {
           const values = columns.map(
             (column) => (preservePrecision ? column.precise ?? column.expected : column.expected)[rowIndex],
@@ -207,6 +217,7 @@ describe('Arrow row materialization', () => {
           })),
         ];
         const rows = await converterFor(columns, rowMode, preservePrecision).fetchNext({ limit: 100 });
+        await expectAppended(converterFor(columns, rowMode, preservePrecision), rows);
         deepStrictEqual(
           rows,
           [0, 1, 2].map((rowIndex) =>
@@ -545,6 +556,7 @@ describe('Arrow row materialization', () => {
       const rows = await converter.fetchNext({ limit: 100 });
       sinon.assert.calledOnce(fallback);
       deepStrictEqual(rows, expected);
+      await expectAppended(converterFor(columns, 'object', false, undefined, schemaColumns), expected);
       rows.forEach((row, index) => {
         deepStrictEqual(Object.keys(row), Object.keys(expected[index]));
         expect(Object.getPrototypeOf(row)).to.equal(Object.prototype);

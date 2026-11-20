@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+Arrow results now materialize directly into output chunks on both backends, avoiding intermediate batch-row copies while preserving chunk sizes and row values.
+
 - Reduce Arrow row materialization overhead on both backends by reading vectors directly and resolving scalar conversions once per batch. Object and array row values are unchanged.
 - The Thrift token federation exchange (`enableTokenFederation`) now goes through the connection's agent, so `proxy`, `checkServerCertificate`, `customCaCert` and `clientCert`/`clientKey` apply to it. Previously it connected directly with Node's default agent, so behind a required proxy the exchange failed and the driver fell back to the original token. (#611)
 - Kernel backend: a failed status poll while waiting for a statement (a `runAsync: true` statement, or a default execution that outlives the server's inline wait) and a failed result fetch in `hasMoreRows()` now throw the mapped driver error, such as `HiveDriverError: HTTP 500: Internal Server Error` once retries on HTTP 5xx run out, instead of a raw `Error` whose message is the internal `__databricks_error__:{...}` envelope. As in `fetchChunk()`, a failed fetch in `hasMoreRows()` also closes the statement. (#608)

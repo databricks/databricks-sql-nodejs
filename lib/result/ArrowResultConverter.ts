@@ -19,7 +19,7 @@ import { TTableSchema, TColumnDesc, TTypeId } from '../../thrift/TCLIService_typ
 import IClientContext from '../contracts/IClientContext';
 import { RowMode } from '../contracts/IDBSQLSession';
 import HiveDriverError from '../errors/HiveDriverError';
-import IResultsProvider, { ResultsProviderFetchNextOptions } from './IResultsProvider';
+import IResultsProvider, { ResultsProviderFetchNextOptions, RowTarget } from './IResultsProvider';
 import { ArrowBatch, getSchemaColumns, convertThriftValue, warnOnDuplicateColumnNames } from './utils';
 
 const { isArrowBigNumSymbol, bigNumToBigInt } = arrowUtils;
@@ -263,6 +263,10 @@ export default class ArrowResultConverter implements IResultsProvider<Array<any>
   }
 
   public async fetchNext(options: ResultsProviderFetchNextOptions) {
+    return this.fetchNextInto(options, { rows: [], count: 0 }, 0);
+  }
+
+  public async fetchNextInto(options: ResultsProviderFetchNextOptions, target: RowTarget<any>, limit: number) {
     if (this.schema.length === 0) {
       return [];
     }
@@ -284,17 +288,31 @@ export default class ArrowResultConverter implements IResultsProvider<Array<any>
       // Get table rows, but not more than remaining count. When materialization
       // is disabled, skip `toArray()`/`getRows()` and return dense `null` placeholders.
       const batchRows = Math.min(batch.numRows, this.remainingRows);
+      const appendedRows = Math.min(batchRows, Math.max(0, limit - target.count));
+      const end = target.count + appendedRows;
+      if (end > target.rows.length && target.rows.length < 2 ** 25) {
+        const capacity = target.count === 0 ? end : Math.min(limit, Math.max(end, target.count * 2, batchRows * 32));
+        target.rows.length = Math.min(capacity, 2 ** 25);
+      }
       let result: Array<any>;
       if (this.disableRowMaterialization) {
-        result = new Array(batchRows).fill(null);
+        target.rows.fill(null, target.count, end);
+        for (let index = target.rows.length; index < end; index += 1) {
+          target.rows[index] = null;
+        }
+        result = new Array(batchRows - appendedRows).fill(null);
       } else {
-        result = this.getRows(batch, batchRows);
+        if (appendedRows > 0) {
+          this.getRows(batch, appendedRows, target.rows, 0, target.count);
+        }
+        result = appendedRows < batchRows ? this.getRows(batch, batchRows - appendedRows, undefined, appendedRows) : [];
       }
+      target.count = end;
 
       // Reduce remaining rows count by a count of rows we just processed.
       // If the remaining count reached zero - we're done with current arrow
       // batch, so discard the batch reader
-      this.remainingRows -= result.length;
+      this.remainingRows -= batchRows;
       if (this.remainingRows === 0) {
         this.recordBatchReader = undefined;
       }
@@ -358,7 +376,13 @@ export default class ArrowResultConverter implements IResultsProvider<Array<any>
     });
   }
 
-  private getRows(batch: RecordBatch<TypeMap>, rowCount: number): Array<any> {
+  private getRows(
+    batch: RecordBatch<TypeMap>,
+    rowCount: number,
+    target?: Array<any>,
+    start: number = 0,
+    offset: number = 0,
+  ): Array<any> {
     const arrayRows = this.rowMode === 'array';
     const fields: Array<ArrowSchemaField> = arrayRows ? batch.data.type.children : batch.schema.fields;
     const names = this.schema.map((column) => column.columnName);
@@ -370,7 +394,14 @@ export default class ArrowResultConverter implements IResultsProvider<Array<any>
         fields.some((field, index) => field.name !== names[index]))
     ) {
       const table = new Table(batch);
-      return this.getObjectRows(table.schema, table.toArray().slice(0, rowCount));
+      const rows = this.getObjectRows(table.schema, table.toArray().slice(start, start + rowCount));
+      if (!target) {
+        return rows;
+      }
+      for (let index = 0; index < rows.length; index += 1) {
+        target[offset + index] = rows[index];
+      }
+      return target;
     }
     const vectors = this.schema.map((column, index) => batch.getChildAt(index));
     const keys = arrayRows ? names.map((name, index) => index) : names;
@@ -384,14 +415,14 @@ export default class ArrowResultConverter implements IResultsProvider<Array<any>
           : descriptor;
       return (value: any) => (value === null ? null : convertThriftValue(thriftType, convert(value)));
     });
-    const rows: Array<any> = new Array(rowCount);
+    const rows: Array<any> = target ?? new Array(Math.min(rowCount, 2 ** 25));
     for (let rowIndex = 0; rowIndex < rowCount; rowIndex += 1) {
       const row: any = arrayRows ? [] : {};
       for (let columnIndex = 0; columnIndex < names.length; columnIndex += 1) {
-        const value = converters[columnIndex](vectors[columnIndex]?.get(rowIndex) ?? null);
+        const value = converters[columnIndex](vectors[columnIndex]?.get(start + rowIndex) ?? null);
         row[keys[columnIndex]] = value;
       }
-      rows[rowIndex] = row;
+      rows[offset + rowIndex] = row;
     }
     return rows;
   }

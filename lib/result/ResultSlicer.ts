@@ -1,5 +1,5 @@
 import IClientContext from '../contracts/IClientContext';
-import IResultsProvider, { ResultsProviderFetchNextOptions } from './IResultsProvider';
+import IResultsProvider, { ResultsProviderFetchNextOptions, RowResultsProvider } from './IResultsProvider';
 
 export interface ResultSlicerFetchNextOptions extends ResultsProviderFetchNextOptions {
   // Setting this to `true` will disable slicer, and it will return unprocessed chunks
@@ -33,7 +33,7 @@ export function concatChunks<T>(chunks: Array<Array<T>>): Array<T> {
 export default class ResultSlicer<T> implements IResultsProvider<Array<T>> {
   private readonly context: IClientContext;
 
-  private readonly source: IResultsProvider<Array<T>>;
+  private readonly source: RowResultsProvider<T>;
 
   private remainingResults: Array<T | undefined> = [];
 
@@ -90,6 +90,21 @@ export default class ResultSlicer<T> implements IResultsProvider<Array<T>> {
 
     const limit = Number(options.limit);
     const sourceOptions = { ...options, limit };
+    if (this.source.fetchNextInto && limit > 0 && (Number.isInteger(limit) || limit === Infinity)) {
+      const rows = this.remainingCount > 0 ? this.takeRemaining(limit) : [];
+      const target = { rows, count: rows.length };
+      while (target.count < limit) {
+        // eslint-disable-next-line no-await-in-loop
+        if (!(await this.source.hasMore())) {
+          break;
+        }
+        // eslint-disable-next-line no-await-in-loop
+        this.remainingResults = await this.source.fetchNextInto(sourceOptions, target, limit);
+        this.remainingOffset = 0;
+      }
+      target.rows.length = target.count;
+      return target.rows;
+    }
     const result: Array<Array<T>> = [];
     let resultsCount = 0;
 
