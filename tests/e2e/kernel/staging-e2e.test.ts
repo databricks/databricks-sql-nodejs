@@ -1,4 +1,4 @@
-import stagingTests from '../staging_ingestion.test';
+import stagingTests from '../utils/stagingTests';
 import config from '../utils/config';
 
 const kernelDescribe =
