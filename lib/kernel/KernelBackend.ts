@@ -96,7 +96,7 @@ export default class KernelBackend implements IBackend {
     // config (the same `ClientConfig` knobs the Thrift `HttpRetryPolicy` reads),
     // converted from the connector's milliseconds to the kernel's whole seconds.
     this.nativeOptions = {
-      ...buildKernelConnectionOptions(options),
+      ...buildKernelConnectionOptions(options, this.context.getLogger()),
       ...buildKernelRetryOptions(this.context.getConfig()),
       ...buildKernelTelemetryOptions(this.context.getConfig(), options, this.context.getLogger()),
     };

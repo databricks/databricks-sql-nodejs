@@ -234,6 +234,40 @@ describe('DBSQLClient.connect', () => {
     expect(connectionOptions.port).to.equal(3015);
   });
 
+  it('keeps the Thrift URL for a host with an embedded port unchanged (current behavior, not changed by the kernel fix)', async () => {
+    const client = new DBSQLClient();
+
+    // Thrift appends options.port (443 by default) after the host, so an embedded port becomes
+    // `h:8443:443`, which node-fetch rejects as an invalid URL. This pins that current behavior.
+    const https = client['getConnectionOptions']({ ...connectOptions, host: 'h.databricks.com:8443', port: 443 });
+    expect(https.host).to.equal('h.databricks.com:8443');
+    expect(https.port).to.equal(443);
+    const httpsConnection = await new HttpConnection(https, client).getThriftConnection();
+    expect(httpsConnection.url).to.equal('https://h.databricks.com:8443:443/');
+
+    const http = client['getConnectionOptions']({
+      ...connectOptions,
+      host: 'localhost:3015',
+      port: 80,
+      https: false,
+    });
+    const httpConnection = await new HttpConnection(http, client).getThriftConnection();
+    expect(httpConnection.url).to.equal('http://localhost:3015:80/');
+  });
+
+  it('treats a falsy port as the default (443 over HTTPS, 80 over HTTP), as the kernel path does', async () => {
+    const client = new DBSQLClient();
+
+    for (const port of [0, Number.NaN, undefined, null, '', false]) {
+      const label = String(port);
+      expect(client['getConnectionOptions']({ ...connectOptions, port: port as any }).port, label).to.equal(443);
+      expect(
+        client['getConnectionOptions']({ ...connectOptions, port: port as any, https: false }).port,
+        label,
+      ).to.equal(80);
+    }
+  });
+
   it('should only switch to plain HTTP for an explicit https: false', async () => {
     const client = new DBSQLClient();
 

@@ -830,23 +830,75 @@ export function buildKernelProxyOptions(options: ConnectionOptions): KernelProxy
   return { proxy: out };
 }
 
-// The kernel prepends `https://` to a bare host but keeps an explicit scheme.
-// It otherwise ignores `port`, so carry it into the URL unless `host` already has one.
-function buildKernelHostName(options: ConnectionOptions): string {
-  if (options.https !== false) {
-    return options.host;
+// `name:port` or `[ipv6]:port`; a bare IPv6 literal like `::1` has no port.
+const EMBEDDED_PORT_RE = /^(\[[^\]]+\]|[^:]+):(\d+)$/;
+
+// An explicit `port` is read as Thrift reads it (`options.port || 443`): a falsy value
+// (unset, null, '', 0, NaN, false) means the default. A truthy value must be a whole
+// port number, and a decimal string such as `'8443'` is accepted. Anything else throws,
+// as Thrift also fails on it.
+function explicitPort(port: unknown): number | undefined {
+  if (!port) return undefined;
+  let value = Number.NaN;
+  if (typeof port === 'number') value = port;
+  else if (typeof port === 'string' && /^[0-9]+$/.test(port)) value = Number(port);
+  if (value === 0) return undefined;
+  if (!Number.isInteger(value) || value < 1 || value > 65535) {
+    throw new HiveDriverError(`kernel backend: \`port\` must be an integer between 1 and 65535; got ${String(port)}.`);
   }
-  // The kernel accepts a full URL in `host`, so drop an existing `http://` or
-  // `https://` scheme before applying HTTP (`https: false` selects the scheme).
-  // Then strip a trailing `/` like the Thrift URL builder does.
-  const host = options.host.replace(/^https?:\/\//i, '').replace(/\/$/, '');
-  // `name:port` or `[ipv6]:port`; a bare IPv6 literal like `::1` has no port.
-  const hasPort = /^(\[[^\]]+\]|[^:]+):\d+$/.test(host);
-  const port = options.port && !hasPort ? `:${options.port}` : '';
-  return `http://${host}${port}`;
+  return value;
 }
 
-export function buildKernelConnectionOptions(options: ConnectionOptions): KernelNativeConnectionOptions {
+// A bare IPv6 literal (colons, no brackets) needs brackets before a port is appended.
+const bracketIpv6 = (authority: string): string =>
+  authority.includes(':') && !authority.startsWith('[') ? `[${authority}]` : authority;
+
+// The kernel keeps a `host:port` authority but has no port setter, so an explicit port is
+// folded into the host. Precedence, as on the pre-existing kernel path: a port embedded in
+// `host` always wins. The explicit `port` applies only to a bare host, and when it differs
+// from the embedded port the driver warns and connects to the embedded port. A trailing
+// "/" is dropped before any port handling, as the kernel does.
+function buildKernelHostName(options: ConnectionOptions, logger?: IDBSQLLogger): string {
+  const port = explicitPort(options.port);
+  const scheme = /^https?:\/\//i.exec(options.host)?.[0] ?? '';
+  const authority = options.host.slice(scheme.length).replace(/\/$/, '');
+  // A path, query or fragment in host cannot take a folded port: it is rejected when the port would
+  // be folded in (https: false, or HTTPS with a non-443 port). With no port, or with 443 over HTTPS,
+  // the host is passed through unchanged, as on origin/main (including `h.io/path:8443`).
+  if (port !== undefined && /[/?#]/.test(authority) && (options.https === false || port !== 443)) {
+    throw new HiveDriverError(
+      `kernel backend: host ${JSON.stringify(options.host)} has a path, query or fragment, so \`port\` ${port} ` +
+        'cannot be applied to it. Use a bare host or host:port.',
+    );
+  }
+  const match = EMBEDDED_PORT_RE.exec(authority);
+  const embedded = match ? Number(match[2]) : undefined;
+  if (embedded !== undefined && (embedded < 1 || embedded > 65535)) {
+    throw new HiveDriverError(`kernel backend: host carries port ${embedded}, which is outside 1..65535.`);
+  }
+  // An explicit `port: 443` is the default port, so a host carrying its own port is not reported as
+  // a conflict (the host's port is used, with no warning). The Python and Go drivers follow the same rule.
+  if (port !== undefined && port !== 443 && embedded !== undefined && embedded !== port) {
+    logger?.log(
+      LogLevel.warn,
+      `kernel backend: host ${JSON.stringify(options.host)} carries port ${embedded} but \`port\` is ${port}. ` +
+        `Connecting to port ${embedded}; \`port\` is ignored.`,
+    );
+  }
+  // Fold a port into a bare host. `https: false` always folds a supplied port, while HTTPS
+  // folds only a non-default one (443 is the default and adds nothing).
+  if (embedded === undefined && port !== undefined && (options.https === false || port !== 443)) {
+    const hostPort = `${bracketIpv6(authority)}:${port}`;
+    return options.https === false ? `http://${hostPort}` : `${scheme}${hostPort}`;
+  }
+  if (options.https === false) return `http://${authority}`;
+  return `${scheme}${authority}`;
+}
+
+export function buildKernelConnectionOptions(
+  options: ConnectionOptions,
+  logger?: IDBSQLLogger,
+): KernelNativeConnectionOptions {
   const { authType } = options as { authType?: string };
 
   const base: {
@@ -859,7 +911,7 @@ export function buildKernelConnectionOptions(options: ConnectionOptions): Kernel
     KernelHttpOptions &
     KernelProxyOptions &
     KernelFederationOptions = {
-    hostName: buildKernelHostName(options),
+    hostName: buildKernelHostName(options, logger),
     httpPath: prependSlash(options.path),
     // Match the NodeJS Thrift driver, which surfaces INTERVAL columns as
     // strings. The kernel defaults to native Arrow interval/duration types;
