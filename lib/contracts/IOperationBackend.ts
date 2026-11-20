@@ -113,6 +113,7 @@ export default interface IOperationBackend {
    */
   getCachedResultMetadata?(): ResultMetadata | undefined;
 
+  /** Complete configured staging transfers before returning the operation. */
   completeStagingOperation?(allowedPaths: string[]): Promise<void>;
 
   /** Cancel the operation. */

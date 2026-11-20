@@ -20,7 +20,7 @@
 export declare class AsyncResultHandle {
   get isVolumeOperation(): boolean
   /** Complete a server-marked file transfer while retaining its instruction rows. */
-  completeVolumeOperation(allowedPaths: Array<string>, removeNotFoundIsSuccess?: boolean | undefined | null): Promise<VolumeCompletion>
+  completeVolumeOperation(allowedPaths: Array<string>, removeNotFoundIsSuccess: boolean): Promise<VolumeCompletion>
   /**
    * Server-issued statement id. Cached at construction; readable
    * for log correlation. Matches the parent `AsyncStatement`'s
@@ -442,7 +442,7 @@ export declare class Connection {
 export declare class Statement {
   get isVolumeOperation(): boolean
   /** Complete a server-marked file transfer while retaining its instruction rows. */
-  completeVolumeOperation(allowedPaths: Array<string>, removeNotFoundIsSuccess?: boolean | undefined | null): Promise<VolumeCompletion>
+  completeVolumeOperation(allowedPaths: Array<string>, removeNotFoundIsSuccess: boolean): Promise<VolumeCompletion>
   /**
    * Server-issued statement id. Cached at construction; readable
    * even after `close()` so JS-side log lines can correlate against
@@ -1059,15 +1059,11 @@ export interface ConnectionOptions {
    */
   proxy?: ProxyInput
   /**
-   * Per-connection HTTP request deadline, in milliseconds. Caps a single
-   * request through response-body completion. Maps onto the kernel
-   * [`HttpConfig::request_timeout`] (the internal reqwest
-   * `Client::timeout`). Does not bound Volume storage requests or configure
-   * their inactivity limit. Storage connection setup has a separate timeout.
-   *
-   * Omitted ⇒ kernel default (120 000 ms / 120 s). Napi-rs
-   * serialises `u32` as JS `number`; the largest representable value
-   * (~49.7 days) far exceeds any sensible socket timeout.
+   * SQL request deadline and Volume storage idle timeout, in milliseconds.
+   * Storage idle time bounds reads, upload progress and the PUT response wait;
+   * a redirected stream PUT resend has no idle bound.
+   * Omitted: SQL uses the kernel default; storage uses 15 minutes.
+   * Zero disables storage inactivity and keeps the SQL default.
    */
   socketTimeoutMs?: number
 }

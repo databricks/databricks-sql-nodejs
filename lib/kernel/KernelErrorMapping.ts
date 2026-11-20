@@ -4,6 +4,16 @@ import HiveDriverError from '../errors/HiveDriverError';
 import AuthenticationError from '../errors/AuthenticationError';
 import OperationStateError, { OperationStateErrorCode } from '../errors/OperationStateError';
 import ParameterError from '../errors/ParameterError';
+import StagingError from '../errors/StagingError';
+
+const kindCodes: Record<string, string> = {
+  NotFound: 'ENOENT',
+  PermissionDenied: 'EACCES',
+  AlreadyExists: 'EEXIST',
+  NotADirectory: 'ENOTDIR',
+  IsADirectory: 'EISDIR',
+  DirectoryNotEmpty: 'ENOTEMPTY',
+};
 
 /**
  * Sentinel prefix the napi binding's `napi_err_from_kernel` puts on
@@ -111,6 +121,20 @@ function defineErrorMetadata<K extends string, V>(error: Error, key: K, value: V
     enumerable: false,
     configurable: true,
   });
+}
+
+export function toStagingTransferError(mapped: ErrorWithSqlState): ErrorWithSqlState {
+  const metadata = mapped.kernelMetadata;
+  if (
+    (mapped instanceof ParameterError && !metadata?.httpStatus) ||
+    metadata?.errorCode === 'VOLUME_STORAGE_HTTP_ERROR'
+  ) {
+    const staging = new StagingError(mapped.message);
+    if (metadata) defineErrorMetadata(staging, 'kernelMetadata', metadata);
+    if ('cause' in mapped) defineErrorMetadata(staging, 'cause', mapped.cause);
+    return staging;
+  }
+  return mapped;
 }
 
 /**
@@ -315,24 +339,16 @@ export function decodeNapiKernelError(err: unknown): Error {
 
   let jsErr = mapKernelErrorToJsError({ code, message: msg, sqlstate: sqlState });
   if (typeof envelope.localPath === 'string' && typeof envelope.localErrorKind === 'string') {
-    const kindCodes: Record<string, string> = {
-      NotFound: 'ENOENT',
-      PermissionDenied: 'EACCES',
-      AlreadyExists: 'EEXIST',
-      NotADirectory: 'ENOTDIR',
-      IsADirectory: 'EISDIR',
-      DirectoryNotEmpty: 'ENOTEMPTY',
-    };
     const raw =
       typeof envelope.localOsError === 'number' && Number.isSafeInteger(envelope.localOsError)
         ? envelope.localOsError
         : undefined;
     const systemCode = process.platform !== 'win32' && raw ? getSystemErrorName(-Math.abs(raw)) : undefined;
     const localCode =
-      systemCode && /^E[A-Z0-9]+$/.test(systemCode) ? systemCode : kindCodes[envelope.localErrorKind] ?? 'EIO';
+      systemCode && systemCode in constants.errno ? systemCode : kindCodes[envelope.localErrorKind] ?? 'EIO';
     jsErr = Object.assign(new Error(msg), {
       code: localCode,
-      errno: -((constants.errno as Record<string, number>)[localCode] ?? Math.abs(raw ?? constants.errno.EIO)),
+      errno: -(constants.errno as Record<string, number>)[localCode],
       path: envelope.localPath,
     });
   }

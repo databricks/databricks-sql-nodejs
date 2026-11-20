@@ -393,13 +393,11 @@ describe('KernelOperationBackend — M0 datatype round-trip via napi → ArrowRe
 });
 
 describe('KernelOperationBackend Volume completion', () => {
-  it('preserves SQL execution errors with HTTP metadata', async () => {
-    const error = Object.assign(new ParameterError('invalid SQL parameter'), {
-      sqlState: '22023',
-      kernelMetadata: { httpStatus: 400 },
-    });
+  it('preserves SQL execution errors', async () => {
+    const error = new ParameterError('invalid SQL parameter');
     const backend = new KernelOperationBackend({
       asyncStatement: {
+        status: async () => 'Succeeded',
         awaitResult: async () => {
           throw error;
         },
@@ -411,7 +409,6 @@ describe('KernelOperationBackend Volume completion', () => {
       (failure) => failure,
     );
     expect(actual).to.equal(error);
-    expect(actual.sqlState).to.equal('22023');
   });
 
   for (const { error, staging } of [
@@ -445,6 +442,7 @@ describe('KernelOperationBackend Volume completion', () => {
       );
       if (staging) {
         expect(actual).to.be.instanceOf(StagingError).with.property('message', error.message);
+        expect(actual.kernelMetadata).to.equal((error as any).kernelMetadata);
       } else {
         expect(actual).to.equal(error);
         if ('sqlState' in error) expect(actual.sqlState).to.equal(error.sqlState);
@@ -452,6 +450,15 @@ describe('KernelOperationBackend Volume completion', () => {
       }
     });
   }
+
+  it('rejects a stream PUT that needs input', async () => {
+    const schema = new Schema([withTypeName(new Field('x', new Int32(), true), 'INT')]);
+    const statement = new StatementStub(ipcSchemaOnly(schema), []);
+    Object.assign(statement, { completeVolumeOperation: async () => 'needs_input_stream' });
+    const backend = new KernelOperationBackend({ statement, context: new ClientContextStub() });
+    const error = await backend.completeStagingOperation(['/allowed']).catch((failure) => failure);
+    expect(error).to.be.instanceOf(StagingError);
+  });
 
   for (const outcome of ['completed', 'not_volume']) {
     it(`${
