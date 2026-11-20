@@ -165,12 +165,7 @@ describe('DBSQLSession', () => {
           }
 
           if (version >= TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V6) {
-            // Since cloud fetch is enabled, canDecompressLZ4Result should not be set
-            if (req.canDownloadResult === true) {
-              expect(req.canDecompressLZ4Result).to.not.be.true;
-            } else {
-              expect(req.canDecompressLZ4Result).to.be.true;
-            }
+            expect(req.canDecompressLZ4Result).to.be.true;
           } else {
             expect(req.canDecompressLZ4Result).to.not.be.true;
           }
@@ -194,7 +189,24 @@ describe('DBSQLSession', () => {
     });
 
     describe('LZ4 compression with cloud fetch', () => {
-      it('should not set canDecompressLZ4Result when cloud fetch is enabled (canDownloadResult=true)', async () => {
+      for (const clientSetting of [false, true]) {
+        for (const statementSetting of [undefined, false, true]) {
+          it(`honors client=${clientSetting}, statement=${statementSetting}`, async () => {
+            const context = new ClientContextStub({ useLZ4Compression: clientSetting });
+            const driver = sinon.spy(context.driver);
+            const session = createSessionForTest({
+              handle: sessionHandleStub,
+              context,
+              serverProtocolVersion: TProtocolVersion.SPARK_CLI_SERVICE_PROTOCOL_V6,
+            });
+            await session.executeStatement('SELECT 1', { useCloudFetch: true, useLZ4Compression: statementSetting });
+            expect(driver.executeStatement.firstCall.args[0].canDecompressLZ4Result).to.equal(
+              statementSetting ?? clientSetting,
+            );
+          });
+        }
+      }
+      it('should set canDecompressLZ4Result when cloud fetch is enabled (canDownloadResult=true)', async () => {
         const context = new ClientContextStub({ useLZ4Compression: true });
         const driver = sinon.spy(context.driver);
         const statement = 'SELECT * FROM table';
@@ -212,9 +224,8 @@ describe('DBSQLSession', () => {
         expect(driver.executeStatement.callCount).to.eq(1);
         const req = driver.executeStatement.firstCall.args[0];
 
-        // canDownloadResult should be true and canDecompressLZ4Result should NOT be set
         expect(req.canDownloadResult).to.be.true;
-        expect(req.canDecompressLZ4Result).to.not.be.true;
+        expect(req.canDecompressLZ4Result).to.be.true;
       });
 
       it('should set canDecompressLZ4Result when cloud fetch is disabled (canDownloadResult=false)', async () => {

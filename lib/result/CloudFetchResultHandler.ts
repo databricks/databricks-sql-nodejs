@@ -94,11 +94,13 @@ export default class CloudFetchResultHandler implements IResultsProvider<ArrowBa
       throw settled.error;
     }
 
-    const { batch } = settled;
-    if (this.isLZ4Compressed) {
-      batch.batches = batch.batches.map((buffer) => LZ4()!.decode(buffer));
+    if (this.isLZ4Compressed && settled.batch.batches.length > 0) {
+      await new Promise<void>((resolve) => {
+        setImmediate(resolve);
+      });
+      settled.batch.batches = settled.batch.batches.flatMap((buffer) => LZ4()!.decodeFrames(buffer));
     }
-    return batch;
+    return settled.batch;
   }
 
   private logDownloadMetrics(url: string, fileSizeBytes: number, downloadTimeMs: number): void {

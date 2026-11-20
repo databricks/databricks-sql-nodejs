@@ -3,6 +3,7 @@ import fs from 'fs';
 import path from 'path';
 import { Table, tableFromArrays, tableToIPC, RecordBatch, TypeMap } from 'apache-arrow';
 import ArrowResultConverter, { bigNumDecimalToString } from '../../../lib/result/ArrowResultConverter';
+import HiveDriverError from '../../../lib/errors/HiveDriverError';
 import { ArrowBatch } from '../../../lib/result/utils';
 import ResultsProviderStub from '../.stubs/ResultsProviderStub';
 import { TTableSchema, TTypeId } from '../../../thrift/TCLIService_types';
@@ -87,6 +88,28 @@ function createSampleArrowBatch<T extends TypeMap>(...recordBatches: RecordBatch
 }
 
 describe('ArrowResultConverter', () => {
+  for (const disableRowMaterialization of [false, true]) {
+    for (const batches of [sampleArrowBatch, []]) {
+      it(`rejects missing rows, materialization disabled=${disableRowMaterialization}, buffers=${batches.length}`, async () => {
+        const source = new ResultsProviderStub([{ batches, rowCount: 2 }], emptyItem);
+        const converter = new ArrowResultConverter(
+          new ClientContextStub(),
+          source,
+          { schema: sampleThriftSchema },
+          { disableRowMaterialization },
+        );
+        let caught: unknown;
+        try {
+          await converter.fetchNext({ limit: 10000 });
+        } catch (error) {
+          caught = error;
+        }
+        expect(caught).to.be.instanceOf(HiveDriverError);
+        expect((caught as Error).message).to.equal(`Arrow row count mismatch: ${batches.length ? 1 : 2} rows missing`);
+      });
+    }
+  }
+
   it('should convert data', async () => {
     const rowSetProvider = new ResultsProviderStub(
       [

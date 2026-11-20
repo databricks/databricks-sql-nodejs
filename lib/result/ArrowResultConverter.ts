@@ -346,7 +346,7 @@ export default class ArrowResultConverter implements IResultsProvider<Array<any>
         }
 
         const arrowBatch = await this.source.fetchNext(options); // eslint-disable-line no-await-in-loop
-        if (arrowBatch.batches.length > 0 && arrowBatch.rowCount > 0) {
+        if (arrowBatch.rowCount > 0) {
           const reader = RecordBatchReader.from<TypeMap>(arrowBatch.batches);
           this.recordBatchReader = reader[Symbol.iterator]();
           this.remainingRows = arrowBatch.rowCount;
@@ -359,6 +359,9 @@ export default class ArrowResultConverter implements IResultsProvider<Array<any>
       // handles readers which are already empty
       const item = this.recordBatchReader?.next() ?? { done: true, value: undefined };
       if (item.done || item.value === undefined) {
+        if (this.remainingRows > 0) {
+          throw new HiveDriverError(`Arrow row count mismatch: ${this.remainingRows} rows missing`);
+        }
         this.recordBatchReader = undefined;
       } else {
         // Skip empty batches
