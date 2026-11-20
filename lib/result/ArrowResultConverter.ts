@@ -192,6 +192,27 @@ export function bigNumDecimalToString(unscaled: bigint, scale: number): string {
   return `${negative ? '-' : ''}${digits.slice(0, cut)}.${digits.slice(cut)}`;
 }
 
+/**
+ * Returns the unscaled value of an Arrow Decimal128 as a number.
+ *
+ * Decimal128 is four little-endian 32-bit words. If words 2–3 are pure sign
+ * extension of word 1, the unscaled value fits in an int64, and we return it
+ * directly when it's a safe integer; otherwise fall back to `bigNumToBigInt`.
+ */
+function decimalToNumber(value: Uint32Array & Parameters<typeof bigNumToBigInt>[0]): number {
+  if (value.length === 4) {
+    const high = value[1] | 0;
+    const signExtension = high < 0 ? 0xffffffff : 0;
+    if (value[2] === signExtension && value[3] === signExtension) {
+      const unscaled = high * 0x100000000 + value[0];
+      if (Number.isSafeInteger(unscaled)) {
+        return unscaled;
+      }
+    }
+  }
+  return Number(bigNumToBigInt(value));
+}
+
 export default class ArrowResultConverter implements IResultsProvider<Array<any>> {
   private readonly context: IClientContext;
 
@@ -407,7 +428,7 @@ export default class ArrowResultConverter implements IResultsProvider<Array<any>
     if (DataType.isDecimal(valueType)) {
       return this.preserveBigNumericPrecision
         ? (value) => bigNumDecimalToString(bigNumToBigInt(value), valueType.scale)
-        : (value) => Number(bigNumToBigInt(value)) / 10 ** valueType.scale;
+        : (value) => decimalToNumber(value) / 10 ** valueType.scale;
     }
     if (DataType.isBinary(valueType) || DataType.isFixedSizeBinary(valueType)) {
       return (value) => Buffer.from(value);
@@ -504,18 +525,16 @@ export default class ArrowResultConverter implements IResultsProvider<Array<any>
     // Convert big number values to BigInt
     // Decimals are also represented as big numbers in Arrow, so additionally process them (convert to float)
     if (value instanceof Object && value[isArrowBigNumSymbol]) {
-      const result = bigNumToBigInt(value);
       if (DataType.isDecimal(valueType)) {
         // Preserve full precision as an exact string when requested (kernel);
         // otherwise keep the historical lossy `number` form.
-        if (this.preserveBigNumericPrecision) {
-          return bigNumDecimalToString(result, valueType.scale);
-        }
-        return Number(result) / 10 ** valueType.scale;
+        return this.preserveBigNumericPrecision
+          ? bigNumDecimalToString(bigNumToBigInt(value), valueType.scale)
+          : decimalToNumber(value) / 10 ** valueType.scale;
       }
       // A rewritten Duration Int64 surfaces as a raw `bigint`, not a BigNum
       // wrapper, so it is handled in the bigint branch below — not here.
-      return result;
+      return bigNumToBigInt(value);
     }
 
     // Convert binary data to Buffer.

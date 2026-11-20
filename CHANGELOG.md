@@ -2,7 +2,7 @@
 
 ## Unreleased
 
-- Release completed Thrift CloudFetch body-reader listeners so idle connections do not retain downloaded result buffers.
+- Avoid intermediate decimal strings when materializing Arrow DECIMAL values with safe unscaled integers, on both backends.
 - Reduce Arrow row materialization overhead on both backends by reading vectors directly and resolving scalar conversions once per batch. Object and array row values are unchanged.
 - The Thrift token federation exchange (`enableTokenFederation`) now goes through the connection's agent, so `proxy`, `checkServerCertificate`, `customCaCert` and `clientCert`/`clientKey` apply to it. Previously it connected directly with Node's default agent, so behind a required proxy the exchange failed and the driver fell back to the original token. (#611)
 - Kernel backend: a failed status poll while waiting for a statement (a `runAsync: true` statement, or a default execution that outlives the server's inline wait) and a failed result fetch in `hasMoreRows()` now throw the mapped driver error, such as `HiveDriverError: HTTP 500: Internal Server Error` once retries on HTTP 5xx run out, instead of a raw `Error` whose message is the internal `__databricks_error__:{...}` envelope. As in `fetchChunk()`, a failed fetch in `hasMoreRows()` also closes the statement. (#608)
@@ -30,6 +30,7 @@
 - `customHeaders` are now sent on every Thrift request (session, statement and metadata calls), as the kernel backend already did, instead of only on telemetry and feature-flag requests. On these requests, caller values for driver-managed headers (`Authorization`, `User-Agent`, `Content-Type`, `Content-Length`, `Transfer-Encoding`, `Connection`) are ignored on both backends, and the Thrift backend rejects header names or values that cannot be sent at connect time. (#491)
 - Error telemetry now reports only the error class name and the server SQLSTATE. It no longer includes the error message or stack trace, which could contain table and column names from the query. On the Thrift backend, `statement.complete` telemetry now also reports the result delivery format (inline Arrow, inline columnar, or CloudFetch) and whether the server LZ4-compressed the result. (#508)
 - Avoid an extra full-buffer copy when downloading Thrift CloudFetch results.
+- Release completed Thrift CloudFetch body-reader listeners so idle connections do not retain downloaded result buffers.
 
 ## 3.0.0
 
