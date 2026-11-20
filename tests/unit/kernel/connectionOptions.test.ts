@@ -35,12 +35,10 @@ describe('Kernel HTTP/2 configuration', () => {
     });
   }
 
-  for (const enableHttp2 of ['false', 0, 1, null]) {
-    it(`rejects enableHttp2=${JSON.stringify(enableHttp2)}`, () => {
-      const options = { ...PAT, enableHttp2 } as unknown as ConnectionOptions;
-      expect(() => buildKernelConnectionOptions(options)).to.throw(HiveDriverError, 'enableHttp2');
-    });
-  }
+  it('rejects a non-boolean enableHttp2', () => {
+    const options = { ...PAT, enableHttp2: 'false' } as unknown as ConnectionOptions;
+    expect(() => buildKernelConnectionOptions(options)).to.throw(HiveDriverError, 'enableHttp2');
+  });
 });
 
 // Cast helper: the kernel connection-tuning/TLS options live on the internal

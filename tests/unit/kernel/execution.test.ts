@@ -544,7 +544,6 @@ describe('KernelBackend', () => {
       path: '/sql/1.0/warehouses/xyz',
       token: 'dapi-token',
       enableGeoSpatialSupport: false,
-      enableHttp2: false,
     } as ConnectionOptions);
 
     await backend.openSession({});
@@ -563,7 +562,6 @@ describe('KernelBackend', () => {
       token: 'dapi-token',
       intervalsAsString: true,
       enableGeoSpatialSupport: false,
-      enableHttp2: false,
     });
   });
 
