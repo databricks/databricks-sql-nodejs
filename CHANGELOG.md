@@ -30,6 +30,7 @@
 - `customHeaders` are now sent on every Thrift request (session, statement and metadata calls), as the kernel backend already did, instead of only on telemetry and feature-flag requests. On these requests, caller values for driver-managed headers (`Authorization`, `User-Agent`, `Content-Type`, `Content-Length`, `Transfer-Encoding`, `Connection`) are ignored on both backends, and the Thrift backend rejects header names or values that cannot be sent at connect time. (#491)
 - Error telemetry now reports only the error class name and the server SQLSTATE. It no longer includes the error message or stack trace, which could contain table and column names from the query. On the Thrift backend, `statement.complete` telemetry now also reports the result delivery format (inline Arrow, inline columnar, or CloudFetch) and whether the server LZ4-compressed the result. (#508)
 - Avoid an extra full-buffer copy when downloading Thrift CloudFetch results.
+- Release completed Thrift CloudFetch body-reader listeners so idle connections do not retain downloaded result buffers.
 
 ## 3.0.0
 
