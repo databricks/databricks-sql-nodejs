@@ -1065,9 +1065,15 @@ export interface ConnectionOptions {
    */
   proxy?: ProxyInput
   /**
-   * Timeout in milliseconds. SQL requests: total time for one request (kernel
-   * default when omitted or 0). Volume file transfers: time allowed without
-   * progress (15 minutes when omitted, no limit when 0).
+   * Per-connection socket read timeout, in milliseconds. Caps how
+   * long a single HTTP round-trip may block waiting on the server
+   * before the request errors out. Maps onto the kernel
+   * [`HttpConfig::request_timeout`] (the internal reqwest
+   * `Client::timeout`).
+   *
+   * Omitted ⇒ kernel default (120 000 ms / 120 s). Napi-rs
+   * serialises `u32` as JS `number`; the largest representable value
+   * (~49.7 days) far exceeds any sensible socket timeout.
    */
   socketTimeoutMs?: number
 }

@@ -12,7 +12,6 @@ const kindCodes: Record<string, string> = {
   AlreadyExists: 'EEXIST',
   NotADirectory: 'ENOTDIR',
   IsADirectory: 'EISDIR',
-  DirectoryNotEmpty: 'ENOTEMPTY',
 };
 
 /**

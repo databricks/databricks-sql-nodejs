@@ -1,12 +1,18 @@
 import { expect } from 'chai';
 import { createServer } from 'node:http';
 import { AddressInfo } from 'node:net';
-import { openSession } from '../../../native/kernel';
+import { tryGetKernelNative } from '../../../lib/kernel/KernelNativeLoader';
 import DBSQLClient from '../../../lib/DBSQLClient';
 import DBSQLSession from '../../../lib/DBSQLSession';
 import KernelSessionBackend from '../../../lib/kernel/KernelSessionBackend';
 
 describe('native staging close', () => {
+  const native = tryGetKernelNative();
+  if (native === undefined) {
+    it.skip('kernel native binding not available on this platform');
+    return;
+  }
+
   it('closes a session during a pending staged statement with default options', async function () {
     this.timeout(10000);
     let polled!: () => void;
@@ -28,7 +34,7 @@ describe('native staging close', () => {
       server.listen(0, '127.0.0.1', resolve);
     });
     const context = new DBSQLClient({ logger: { log() {} } });
-    const connection = await openSession({
+    const connection = await native.openSession({
       hostName: `http://127.0.0.1:${(server.address() as AddressInfo).port}`,
       httpPath: '/sql/1.0/warehouses/wh',
       token: 'test-token',

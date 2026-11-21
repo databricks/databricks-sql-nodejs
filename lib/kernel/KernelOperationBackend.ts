@@ -407,7 +407,7 @@ export default class KernelOperationBackend implements IOperationBackend {
         // `arrowSchema` doesn't hit apache-arrow@13's `Unrecognized type
         // "Duration" (18)`. Matches what the per-batch fetch path already does.
         arrowSchema: patchIpcBytes(arrowSchemaIpc.ipcBytes),
-        isStagingOperation: Boolean(handle.isVolumeOperation),
+        isStagingOperation: handle.isVolumeOperation,
       };
       this.metadata = meta;
       return meta;
