@@ -1,5 +1,4 @@
 import stagingTests from '../utils/stagingTests';
-import config from '../utils/config';
 
 const kernelDescribe =
   process.env.DATABRICKS_PECOTESTING_SERVER_HOSTNAME &&
@@ -10,9 +9,9 @@ const kernelDescribe =
 
 kernelDescribe('Kernel Staging Test', () => {
   stagingTests(() => ({
-    host: config.host,
-    path: config.path,
-    token: config.token,
+    host: process.env.DATABRICKS_PECOTESTING_SERVER_HOSTNAME as string,
+    path: process.env.DATABRICKS_PECOTESTING_HTTP_PATH as string,
+    token: process.env.DATABRICKS_PECOTESTING_TOKEN_PERSONAL as string,
     useKernel: true,
   }));
 });

@@ -21,7 +21,7 @@ The `e2e-test` job in `.github/workflows/main.yml` runs against the minimum patc
 Per-test isolation is achieved by:
 
 - **Tables**: all DDL in tests is templated against `${E2E_TABLE_SUFFIX}`, which in CI is `${{ github.sha }}_node${{ matrix.node-suffix }}`. The matrix suffix uses underscores because dots and hyphens aren't valid within these SQL unquoted identifiers.
-- **Volume files**: `tests/e2e/staging_ingestion.test.ts` generates per-file `uuid.v4()` names. Multiple matrix entries can read/write the volume concurrently without collisions.
+- **Volume files**: `tests/e2e/utils/stagingTests.ts` generates per-file `uuid.v4()` names. Multiple matrix entries can read/write the volume concurrently without collisions.
 
 No test creates or drops the shared catalog/schema/volume. If you add a test that does, you'll need to suffix-unique the resource name too — verify before merging.
 

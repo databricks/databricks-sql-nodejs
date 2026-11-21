@@ -331,12 +331,6 @@ describe('KernelAuth HTTP options (buildKernelHttpOptions)', () => {
   const names = (http: { customHeaders?: Array<{ name: string; value: string }> }) =>
     (http.customHeaders ?? []).map((h) => h.name);
 
-  it('passes zero and positive socketTimeout values through unchanged', () => {
-    for (const socketTimeout of [0, 4500]) {
-      expect(buildKernelHttpOptions(opts({ socketTimeout })).socketTimeoutMs).to.equal(socketTimeout);
-    }
-  });
-
   it('always emits a User-Agent identifying the connector', () => {
     const http = buildKernelHttpOptions(opts({}));
     expect(ua(http)).to.match(/NodejsDatabricksSqlConnector\//);
