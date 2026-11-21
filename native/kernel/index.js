@@ -711,3 +711,4 @@ module.exports.kernelLoggingStats = nativeBinding.kernelLoggingStats
 module.exports.openSession = nativeBinding.openSession
 module.exports.setKernelLogLevel = nativeBinding.setKernelLogLevel
 module.exports.version = nativeBinding.version
+module.exports.VolumeCompletion = nativeBinding.VolumeCompletion

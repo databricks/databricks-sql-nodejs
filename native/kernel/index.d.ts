@@ -18,6 +18,12 @@
  * post-close contract.
  */
 export declare class AsyncResultHandle {
+  get isVolumeOperation(): boolean
+  /**
+   * Runs the file transfer for a Volume PUT, GET or REMOVE result. Call before
+   * fetching; the rows stay readable afterwards.
+   */
+  completeVolumeOperation(allowedPaths: Array<string>, removeNotFoundIsSuccess: boolean): Promise<VolumeCompletion>
   /**
    * Server-issued statement id. Cached at construction; readable
    * for log correlation. Matches the parent `AsyncStatement`'s
@@ -149,9 +155,8 @@ export declare class AsyncStatement {
    * re-attempting the wire call. The kernel's own `Drop`
    * fire-and-forget retry runs once in the background.
    *
-   * Also invalidates the handles `awaitResult()` returned: their
-   * `fetchNextBatch()` then rejects with `InvalidStatementHandle`,
-   * unless a fetch was in progress when `close()` ran.
+   * Also invalidates the handles `awaitResult()` returned. An operation
+   * already in flight may finish before its handle is cleared.
    */
   close(): Promise<void>
 }
@@ -438,6 +443,12 @@ export declare class Connection {
  * disposed statement can still read them.
  */
 export declare class Statement {
+  get isVolumeOperation(): boolean
+  /**
+   * Runs the file transfer for a Volume PUT, GET or REMOVE result. Call before
+   * fetching; the rows stay readable afterwards.
+   */
+  completeVolumeOperation(allowedPaths: Array<string>, removeNotFoundIsSuccess: boolean): Promise<VolumeCompletion>
   /**
    * Server-issued statement id. Cached at construction; readable
    * even after `close()` so JS-side log lines can correlate against
@@ -1325,3 +1336,9 @@ export interface TypedValueInput {
  * loaded?" probe for the JS-side loader's structured diagnostics.
  */
 export declare function version(): string
+
+export declare const enum VolumeCompletion {
+  NotVolume = 'not_volume',
+  NeedsInputStream = 'needs_input_stream',
+  Completed = 'completed'
+}

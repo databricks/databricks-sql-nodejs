@@ -46,12 +46,13 @@ import { LogLevel } from '../contracts/IDBSQLLogger';
 import { RowMode } from '../contracts/IDBSQLSession';
 import Status from '../dto/Status';
 import HiveDriverError from '../errors/HiveDriverError';
+import StagingError from '../errors/StagingError';
 import OperationStateError, { OperationStateErrorCode } from '../errors/OperationStateError';
 import ArrowResultConverter from '../result/ArrowResultConverter';
 import ResultSlicer from '../result/ResultSlicer';
 import KernelResultsProvider from './KernelResultsProvider';
 import { arrowSchemaToThriftSchema, decodeIpcSchema, patchIpcBytes } from './KernelArrowIpc';
-import { decodeNapiKernelError } from './KernelErrorMapping';
+import { decodeNapiKernelError, toStagingTransferError } from './KernelErrorMapping';
 import {
   KernelStatement,
   KernelNativeAsyncStatement,
@@ -84,7 +85,10 @@ export type KernelOperationStatement = KernelStatementHandle & Partial<KernelSta
  * (`KernelResultsProvider` → `ArrowResultConverter` → `ResultSlicer`) consumes
  * either interchangeably.
  */
-type KernelFetchHandle = Pick<KernelStatement, 'fetchNextBatch' | 'schema'>;
+type KernelFetchHandle = Pick<
+  KernelStatement,
+  'fetchNextBatch' | 'schema' | 'isVolumeOperation' | 'completeVolumeOperation'
+>;
 
 /**
  * The rich operation-status surface the kernel exposes on a terminal sync
@@ -220,6 +224,8 @@ export default class KernelOperationBackend implements IOperationBackend {
   // already-terminal statement. Drives both fetch and result-metadata.
   private fetchHandlePromise?: Promise<KernelFetchHandle>;
 
+  private volumeCompleted = false;
+
   // Async path only: set once the kernel reported the statement Succeeded (a
   // status poll, or `awaitResult()` resolving). The kernel exposes no
   // synchronous terminal-state accessor, so the observed success is retained.
@@ -308,6 +314,22 @@ export default class KernelOperationBackend implements IOperationBackend {
   // Fetch / metadata (owned by the kernel-results pipeline).
   // ---------------------------------------------------------------------------
 
+  public async completeStagingOperation(allowedPaths: string[]): Promise<void> {
+    failIfNotActive(this.lifecycle);
+    await this.waitUntilReady();
+    const handle = await this.getFetchHandle();
+    let outcome;
+    try {
+      outcome = await handle.completeVolumeOperation(allowedPaths, true); // Thrift REMOVE treats missing objects as success.
+    } catch (err) {
+      throw toStagingTransferError(decodeNapiKernelError(err));
+    }
+    if (outcome === 'needs_input_stream') {
+      throw new StagingError('Volume PUT requires a local file path');
+    }
+    this.volumeCompleted = outcome === 'completed';
+  }
+
   public async fetchChunk({
     limit,
     disableBuffering,
@@ -320,6 +342,7 @@ export default class KernelOperationBackend implements IOperationBackend {
     // Cancel-mid-fetch propagation: if cancel() has flipped the
     // lifecycle flag, fail locally without a wire round-trip.
     failIfNotActive(this.lifecycle);
+    if (this.volumeCompleted) return [];
     // Cooperative cancel (parity with ThriftOperationBackend): the facade
     // supplies `isClosed` and re-checks `failIfClosed()` after we return, so
     // bailing with `[]` at a yield point is the contract-correct way for a
@@ -340,6 +363,7 @@ export default class KernelOperationBackend implements IOperationBackend {
 
   public async hasMore(): Promise<boolean> {
     failIfNotActive(this.lifecycle);
+    if (this.volumeCompleted) return false;
     try {
       // `hasMore()` prefetches the next batch, so it fails like `fetchChunk()`.
       const slicer = await this.getResultSlicer();
@@ -383,7 +407,7 @@ export default class KernelOperationBackend implements IOperationBackend {
         // `arrowSchema` doesn't hit apache-arrow@13's `Unrecognized type
         // "Duration" (18)`. Matches what the per-batch fetch path already does.
         arrowSchema: patchIpcBytes(arrowSchemaIpc.ipcBytes),
-        isStagingOperation: false,
+        isStagingOperation: handle.isVolumeOperation,
       };
       this.metadata = meta;
       return meta;
