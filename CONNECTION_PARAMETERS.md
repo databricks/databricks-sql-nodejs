@@ -220,6 +220,10 @@ telemetry implementation, so only the options explicitly forwarded by
 | `rowLimit`                | `number`                                                |   ❌   |   ✅   | —             | Kernel-only server-side row cap. Thrift logs and ignores it.                                                                                                              |
 | `statementConf`           | `Record<string, string>`                                |   ❌   |   ✅   | —             | Kernel-only per-statement Spark conf overlay. Structured `queryTags` overwrite its `query_tags` key when non-empty.                                                       |
 
+With `stagingAllowedLocalPath`, closing the session on the kernel backend stops
+a running transfer. The Thrift backend lets it finish.
+A GET that has started copying into the destination finishes the copy.
+
 ## Metadata-operation request parameters
 
 The public session metadata methods also accept request objects. These are not

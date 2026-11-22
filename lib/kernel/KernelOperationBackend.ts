@@ -322,6 +322,11 @@ export default class KernelOperationBackend implements IOperationBackend {
     try {
       outcome = await handle.completeVolumeOperation(allowedPaths, true); // Thrift REMOVE treats missing objects as success.
     } catch (err) {
+      if (this.lifecycle.isCancelled || this.closeRequested) {
+        throw new OperationStateError(
+          this.lifecycle.isCancelled ? OperationStateErrorCode.Canceled : OperationStateErrorCode.Closed,
+        );
+      }
       throw toStagingTransferError(decodeNapiKernelError(err));
     }
     if (outcome === 'needs_input_stream') {

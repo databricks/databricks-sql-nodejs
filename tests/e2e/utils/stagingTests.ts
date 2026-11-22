@@ -10,7 +10,10 @@ import StagingError from '../../../lib/errors/StagingError';
 import config from './config';
 
 export default function stagingTests(connectOptions: () => ConnectionOptions) {
-  const localPath = fs.mkdtempSync(path.join(os.tmpdir(), 'databricks-sql-tests-'));
+  let localPath: string;
+  before(() => {
+    localPath = fs.mkdtempSync(path.join(os.tmpdir(), 'databricks-sql-tests-'));
+  });
 
   after(() => {
     fs.rmSync(localPath, {
