@@ -1,6 +1,6 @@
 # Release History
 
-## Unreleased
+## 3.1.0
 
 - Upgrade the native kernel backend to 1.5.0.
 
