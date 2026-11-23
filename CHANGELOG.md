@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Kernel backend: a custom `port` is honored over HTTPS, as on Thrift. It was dropped unless `https: false` was set. A non-default port folds into `host` (bare IPv6 hosts are bracketed); `port: 443`, a falsy `port` (`0`, `NaN`, `''`, `null`, `false`) and an omitted port leave `host` unchanged; a numeric string is accepted; a port embedded in `host` wins over a different `port` (a warning is logged); an out-of-range port throws `HiveDriverError`; a `host` with a path, query or fragment, or an empty `host`, throws when the `port` is folded into it (`https: false`, or a non-443 `port` over HTTPS). With OAuth and a non-default port, the kernel reaches its OAuth endpoints at the same `host:port`, while Thrift keeps OAuth on the bare host (documented, not guarded).
+- Upgrade the native kernel backend to 1.5.0.
 - Avoid intermediate decimal strings when materializing Arrow DECIMAL values with safe unscaled integers, on both backends.
 - Reduce Arrow row materialization overhead on both backends by reading vectors directly and resolving scalar conversions once per batch. Object and array row values are unchanged.
 - The Thrift token federation exchange (`enableTokenFederation`) now goes through the connection's agent, so `proxy`, `checkServerCertificate`, `customCaCert` and `clientCert`/`clientKey` apply to it. Previously it connected directly with Node's default agent, so behind a required proxy the exchange failed and the driver fell back to the original token. (#611)
