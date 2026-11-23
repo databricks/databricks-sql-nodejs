@@ -42,6 +42,7 @@ import { TTypeId } from '../../../thrift/TCLIService_types';
 import ClientContextStub from '../.stubs/ClientContextStub';
 import ParameterError from '../../../lib/errors/ParameterError';
 import StagingError from '../../../lib/errors/StagingError';
+import OperationStateError, { OperationStateErrorCode } from '../../../lib/errors/OperationStateError';
 
 // Minimal stub of the napi `Statement` surface that emits a precomputed
 // Arrow IPC payload per `fetchNextBatch()` call. Used to feed
@@ -459,6 +460,34 @@ describe('KernelOperationBackend Volume completion', () => {
     const error = await backend.completeStagingOperation(['/allowed']).catch((failure) => failure);
     expect(error).to.be.instanceOf(StagingError).with.property('message', 'Volume PUT requires a local file path');
   });
+
+  for (const [action, code] of [
+    ['cancel', OperationStateErrorCode.Canceled],
+    ['close', OperationStateErrorCode.Closed],
+  ] as const) {
+    it(`reports a transfer interrupted by ${action}`, async () => {
+      const schema = new Schema([withTypeName(new Field('x', new Int32(), true), 'INT')]);
+      const statement = new StatementStub(ipcSchemaOnly(schema), []);
+      let interrupt!: (error: Error) => void;
+      const started = new Promise<void>((resolve) => {
+        Object.assign(statement, {
+          completeVolumeOperation: () =>
+            new Promise((_, reject) => {
+              interrupt = reject;
+              resolve();
+            }),
+        });
+      });
+      const backend = new KernelOperationBackend({ statement, context: new ClientContextStub() });
+      const completion = backend.completeStagingOperation(['/allowed']).catch((failure) => failure);
+      await started;
+      await backend[action]();
+      interrupt(new Error('Volume transfer was cancelled'));
+      expect(await completion)
+        .to.be.instanceOf(OperationStateError)
+        .with.property('errorCode', code);
+    });
+  }
 
   for (const outcome of ['completed', 'not_volume']) {
     it(`${
