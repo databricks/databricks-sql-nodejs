@@ -857,8 +857,9 @@ const bracketIpv6 = (authority: string): string =>
 // before port detection and IPv6 bracketing, and kept in the result as on origin/main.
 const USERINFO_RE = /^[^/?#@]*@/;
 
-// The host for messages, with any userinfo replaced so credentials never reach errors or logs.
-const redactHost = (host: string): string => JSON.stringify(host.replace(/^([a-z]+:\/\/)?[^/?#@]*@/i, '$1***@'));
+// The host for messages, with everything up to the last "@" replaced so credentials never reach errors or
+// logs. The whole string is searched: a password may contain "/", "?" or "#" (e.g. `user:p/w@h`).
+const redactHost = (host: string): string => JSON.stringify(host.replace(/^([a-z]+:\/\/)?.*@/i, '$1***@'));
 
 // The kernel keeps a `host:port` authority but has no port setter, so an explicit port is
 // folded into the host. Precedence, as on the pre-existing kernel path: a port embedded in

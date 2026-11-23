@@ -241,7 +241,14 @@ describe('KernelAuth connection options — port folding', () => {
   });
 
   it('keeps credentials in host out of errors and warnings', () => {
-    for (const host of ['user:secret@h.databricks.com/x', 'https://user:secret@h.databricks.com:8443/x']) {
+    for (const host of [
+      'user:secret@h.databricks.com/x',
+      'https://user:secret@h.databricks.com:8443/x',
+      // A "/", "?" or "#" inside the password must not end the redaction early.
+      'user:secret/part@h.databricks.com',
+      'user:secret?part@h.databricks.com',
+      'https://user:secret#part@h.databricks.com',
+    ]) {
       expect(() => hostName({ host, port: 8443 }), host)
         .to.throw(HiveDriverError, /has a path, query or fragment/)
         .with.property('message')
