@@ -8,7 +8,7 @@
 - Add `Symbol.asyncDispose` and the `asyncDisposable()` helper for clients, sessions and operations.
 - Add `https: false` for plain HTTP connections over trusted local/private links.
 - Speed up Arrow row conversion and large-result fetching by reducing copying, intermediate decimal strings and batch-processing overhead.
-- Honor `oauthScopes`, stop reusing persisted tokens with different recorded scopes, and apply proxy/TLS options to token federation.
+- Thrift OAuth now honors `oauthScopes` for M2M (instead of `all-apis`) and U2M (instead of `sql offline_access`). Persisted tokens with different recorded scopes are replaced; U2M requires a new browser login. Token federation now honors proxy/TLS options.
 - **Proxy TLS compatibility:** honor custom CAs, mTLS and certificate verification on Thrift proxy connections, including HTTPS proxies. Disable verification explicitly with `checkServerCertificate: false`; `NODE_TLS_REJECT_UNAUTHORIZED=0` no longer disables it.
 - Send `customHeaders` on all Thrift requests; reject invalid headers and prevent overrides of driver-managed headers.
 - Bound Thrift CloudFetch downloads and retry backoff by `retriesTimeout` (default 15 minutes). Abort timed-out downloads with `RetryError` / `TIMEOUT_EXCEEDED`; retry errors now include the last HTTP/network failure.
