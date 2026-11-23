@@ -217,7 +217,8 @@ export declare class CancellableExecution {
    * behind it. No-op (returns `Ok`) if `result()` already finished
    * successfully, or if no statement id has been observed yet (query still
    * in its initial submit round-trip), and idempotent against a server
-   * already in a terminal state.
+   * already in a terminal state. It still stops a Volume transfer in progress
+   * after `result()` has finished.
    */
   cancel(): Promise<void>
 }
