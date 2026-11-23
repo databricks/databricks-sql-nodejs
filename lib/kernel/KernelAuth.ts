@@ -853,6 +853,13 @@ function explicitPort(port: unknown): number | undefined {
 const bracketIpv6 = (authority: string): string =>
   authority.includes(':') && !authority.startsWith('[') ? `[${authority}]` : authority;
 
+// `user:pw@` before the host, if any. Its colon is not a host/port separator, so it is set aside
+// before port detection and IPv6 bracketing, and kept in the result as on origin/main.
+const USERINFO_RE = /^[^/?#@]*@/;
+
+// The host for messages, with any userinfo replaced so credentials never reach errors or logs.
+const redactHost = (host: string): string => JSON.stringify(host.replace(/^([a-z]+:\/\/)?[^/?#@]*@/i, '$1***@'));
+
 // The kernel keeps a `host:port` authority but has no port setter, so an explicit port is
 // folded into the host. Precedence, as on the pre-existing kernel path: a port embedded in
 // `host` always wins. The explicit `port` applies only to a bare host, and when it differs
@@ -861,13 +868,15 @@ const bracketIpv6 = (authority: string): string =>
 function buildKernelHostName(options: ConnectionOptions, logger?: IDBSQLLogger): string {
   const port = explicitPort(options.port);
   const scheme = /^https?:\/\//i.exec(options.host)?.[0] ?? '';
-  const authority = options.host.slice(scheme.length).replace(/\/$/, '');
+  const withUserinfo = options.host.slice(scheme.length).replace(/\/$/, '');
+  const userinfo = USERINFO_RE.exec(withUserinfo)?.[0] ?? '';
+  const authority = withUserinfo.slice(userinfo.length);
   // A path, query or fragment in host cannot take a folded port: it is rejected when the port would
   // be folded in (https: false, or HTTPS with a non-443 port). With no port, or with 443 over HTTPS,
   // the host is passed through unchanged, as on origin/main (including `h.io/path:8443`).
   if (port !== undefined && /[/?#]/.test(authority) && (options.https === false || port !== 443)) {
     throw new HiveDriverError(
-      `kernel backend: host ${JSON.stringify(options.host)} has a path, query or fragment, so \`port\` ${port} ` +
+      `kernel backend: host ${redactHost(options.host)} has a path, query or fragment, so \`port\` ${port} ` +
         'cannot be applied to it. Use a bare host or host:port.',
     );
   }
@@ -881,18 +890,18 @@ function buildKernelHostName(options: ConnectionOptions, logger?: IDBSQLLogger):
   if (port !== undefined && port !== 443 && embedded !== undefined && embedded !== port) {
     logger?.log(
       LogLevel.warn,
-      `kernel backend: host ${JSON.stringify(options.host)} carries port ${embedded} but \`port\` is ${port}. ` +
+      `kernel backend: host ${redactHost(options.host)} carries port ${embedded} but \`port\` is ${port}. ` +
         `Connecting to port ${embedded}; \`port\` is ignored.`,
     );
   }
   // Fold a port into a bare host. `https: false` always folds a supplied port, while HTTPS
   // folds only a non-default one (443 is the default and adds nothing).
   if (embedded === undefined && port !== undefined && (options.https === false || port !== 443)) {
-    const hostPort = `${bracketIpv6(authority)}:${port}`;
+    const hostPort = `${userinfo}${bracketIpv6(authority)}:${port}`;
     return options.https === false ? `http://${hostPort}` : `${scheme}${hostPort}`;
   }
-  if (options.https === false) return `http://${authority}`;
-  return `${scheme}${authority}`;
+  if (options.https === false) return `http://${withUserinfo}`;
+  return `${scheme}${withUserinfo}`;
 }
 
 export function buildKernelConnectionOptions(

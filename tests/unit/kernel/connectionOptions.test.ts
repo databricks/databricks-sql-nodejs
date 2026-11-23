@@ -188,6 +188,14 @@ describe('KernelAuth connection options — port folding', () => {
     [{ host: 'localhost:3015', port: 443, https: false }, 'http://localhost:3015'],
     [{ host: 'h.databricks.com:8443/', port: 443, https: false }, 'http://h.databricks.com:8443'],
     [{ host: 'h.databricks.com/', port: 8443, https: false }, 'http://h.databricks.com:8443'],
+    // Userinfo is kept as on origin/main; its colon is not read as a port or an IPv6 literal.
+    [{ host: 'user:pw@h.databricks.com' }, 'user:pw@h.databricks.com'],
+    [{ host: 'user:pw@h.databricks.com', port: 443 }, 'user:pw@h.databricks.com'],
+    [{ host: 'user:pw@h.databricks.com', port: 8443 }, 'user:pw@h.databricks.com:8443'],
+    [{ host: 'https://user:pw@h.databricks.com', port: 8443 }, 'https://user:pw@h.databricks.com:8443'],
+    [{ host: 'user:pw@h.databricks.com:8443', port: 8443 }, 'user:pw@h.databricks.com:8443'],
+    [{ host: 'user:pw@h.databricks.com', port: 3015, https: false }, 'http://user:pw@h.databricks.com:3015'],
+    [{ host: 'user:pw@::1', port: 8443 }, 'user:pw@[::1]:8443'],
   ];
   it('folds the port into the host as the table specifies', () => {
     for (const [extra, want] of accepted) {
@@ -221,6 +229,23 @@ describe('KernelAuth connection options — port folding', () => {
     for (const [extra, message] of rejected) {
       expect(() => hostName(extra), JSON.stringify(extra)).to.throw(HiveDriverError, message);
     }
+  });
+
+  it('keeps credentials in host out of errors and warnings', () => {
+    for (const host of ['user:secret@h.databricks.com/x', 'https://user:secret@h.databricks.com:8443/x']) {
+      expect(() => hostName({ host, port: 8443 }), host)
+        .to.throw(HiveDriverError, /has a path, query or fragment/)
+        .with.property('message')
+        .that.does.not.contain('secret');
+    }
+    const logs: Array<[LogLevel, string]> = [];
+    const logger = {
+      log: (level: LogLevel, message: string) => logs.push([level, message]),
+    } as unknown as IDBSQLLogger;
+    buildKernelConnectionOptions(opts({ host: 'user:secret@h.databricks.com:7000', port: 8443 }), logger);
+    expect(logs).to.have.length(1);
+    expect(logs[0][1]).to.contain('***@h.databricks.com:7000');
+    expect(logs[0][1]).to.not.contain('secret');
   });
 
   it('warns and connects to the embedded port when an explicit port differs', () => {
