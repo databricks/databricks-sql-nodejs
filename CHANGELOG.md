@@ -2,6 +2,8 @@
 
 ## Unreleased
 
+- Upgrade the native kernel backend to 1.5.0.
+
 - Avoid intermediate decimal strings when materializing Arrow DECIMAL values with safe unscaled integers, on both backends.
 - Reduce Arrow row materialization overhead on both backends by reading vectors directly and resolving scalar conversions once per batch. Object and array row values are unchanged.
 - The Thrift token federation exchange (`enableTokenFederation`) now goes through the connection's agent, so `proxy`, `checkServerCertificate`, `customCaCert` and `clientCert`/`clientKey` apply to it. Previously it connected directly with Node's default agent, so behind a required proxy the exchange failed and the driver fell back to the original token. (#611)
