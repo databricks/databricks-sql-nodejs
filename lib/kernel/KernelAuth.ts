@@ -871,6 +871,11 @@ function buildKernelHostName(options: ConnectionOptions, logger?: IDBSQLLogger):
   const withUserinfo = options.host.slice(scheme.length).replace(/\/$/, '');
   const userinfo = USERINFO_RE.exec(withUserinfo)?.[0] ?? '';
   const authority = withUserinfo.slice(userinfo.length);
+  // An empty host cannot take a port: it would reach the kernel as `:<port>`. With no port, or with 443
+  // over HTTPS, an empty host is passed through unchanged, as on origin/main.
+  if (port !== undefined && authority.trim() === '' && (options.https === false || port !== 443)) {
+    throw new HiveDriverError(`kernel backend: \`port\` ${port} needs a host, but \`host\` is empty.`);
+  }
   // A path, query or fragment in host cannot take a folded port: it is rejected when the port would
   // be folded in (https: false, or HTTPS with a non-443 port). With no port, or with 443 over HTTPS,
   // the host is passed through unchanged, as on origin/main (including `h.io/path:8443`).

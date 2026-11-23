@@ -196,6 +196,9 @@ describe('KernelAuth connection options — port folding', () => {
     [{ host: 'user:pw@h.databricks.com:8443', port: 8443 }, 'user:pw@h.databricks.com:8443'],
     [{ host: 'user:pw@h.databricks.com', port: 3015, https: false }, 'http://user:pw@h.databricks.com:3015'],
     [{ host: 'user:pw@::1', port: 8443 }, 'user:pw@[::1]:8443'],
+    // An empty host with no port, or with 443 over HTTPS, passes through as on origin/main.
+    [{ host: '' }, ''],
+    [{ host: '', port: 443 }, ''],
   ];
   it('folds the port into the host as the table specifies', () => {
     for (const [extra, want] of accepted) {
@@ -224,6 +227,12 @@ describe('KernelAuth connection options — port folding', () => {
     [{ host: 'h.io/path:8443', port: 8443 }, /has a path, query or fragment/],
     [{ host: 'h.io/path:8443', port: 443, https: false }, /has a path, query or fragment/],
     [{ host: 'h.databricks.com:70000' }, /outside 1\.\.65535/],
+    // An empty host cannot take a folded port.
+    [{ host: '', port: 8443 }, /needs a host/],
+    [{ host: '  ', port: 8443 }, /needs a host/],
+    [{ host: 'https://', port: 8443 }, /needs a host/],
+    [{ host: '', port: 3015, https: false }, /needs a host/],
+    [{ host: '', port: 443, https: false }, /needs a host/],
   ];
   it('rejects invalid ports and unfoldable hosts', () => {
     for (const [extra, message] of rejected) {
