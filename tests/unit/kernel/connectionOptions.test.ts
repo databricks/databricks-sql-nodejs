@@ -199,6 +199,9 @@ describe('KernelAuth connection options — port folding', () => {
     // An empty host with no port, or with 443 over HTTPS, passes through as on origin/main.
     [{ host: '' }, ''],
     [{ host: '', port: 443 }, ''],
+    // A path host with no folded port is not parsed for a port, even an out-of-range one after the path.
+    [{ host: 'h.io/x:99999' }, 'h.io/x:99999'],
+    [{ host: 'h.io/x:99999', port: 443 }, 'h.io/x:99999'],
   ];
   it('folds the port into the host as the table specifies', () => {
     for (const [extra, want] of accepted) {
@@ -275,6 +278,18 @@ describe('KernelAuth connection options — port folding', () => {
     expect(logs[0][0]).to.equal(LogLevel.warn);
     expect(logs[0][1]).to.contain('carries port 7000');
     expect(logs[0][1]).to.contain('`port` is 8443');
+  });
+
+  it('warns for an explicit 443 that conflicts over plain HTTP, where 443 is not the default', () => {
+    const logs: Array<[LogLevel, string]> = [];
+    const logger = {
+      log: (level: LogLevel, message: string) => logs.push([level, message]),
+    } as unknown as IDBSQLLogger;
+    const native = buildKernelConnectionOptions(opts({ host: 'localhost:3015', port: 443, https: false }), logger);
+    expect(native.hostName).to.equal('http://localhost:3015');
+    expect(logs).to.have.length(1);
+    expect(logs[0][1]).to.contain('carries port 3015');
+    expect(logs[0][1]).to.contain('`port` is 443');
   });
 
   it('does not warn when the ports agree, the explicit port is the default, or there is no logger', () => {

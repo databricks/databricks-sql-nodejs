@@ -886,14 +886,19 @@ function buildKernelHostName(options: ConnectionOptions, logger?: IDBSQLLogger):
         'cannot be applied to it. Use a bare host or host:port.',
     );
   }
-  const match = EMBEDDED_PORT_RE.exec(authority);
+  // A host with a path reaching this point takes no folded port (that case threw above), so it is passed
+  // through unchanged and its text is not parsed for a port: `h.io/x:99999` stays as it is, as on origin/main.
+  const hasPath = /[/?#]/.test(authority);
+  const match = hasPath ? null : EMBEDDED_PORT_RE.exec(authority);
   const embedded = match ? Number(match[2]) : undefined;
   if (embedded !== undefined && (embedded < 1 || embedded > 65535)) {
     throw new HiveDriverError(`kernel backend: host carries port ${embedded}, which is outside 1..65535.`);
   }
-  // An explicit `port: 443` is the default port, so a host carrying its own port is not reported as
-  // a conflict (the host's port is used, with no warning). The Python and Go drivers follow the same rule.
-  if (port !== undefined && port !== 443 && embedded !== undefined && embedded !== port) {
+  // A conflict is reported whenever the explicit `port` would otherwise be applied: always with
+  // `https: false`, and over HTTPS only for a non-443 port (443 is the HTTPS default, so it is not a
+  // conflict there). The Python and Go drivers follow the same HTTPS rule.
+  const portApplies = port !== undefined && (options.https === false || port !== 443);
+  if (portApplies && embedded !== undefined && embedded !== port) {
     logger?.log(
       LogLevel.warn,
       `kernel backend: host ${redactHost(options.host)} carries port ${embedded} but \`port\` is ${port}. ` +
@@ -902,7 +907,7 @@ function buildKernelHostName(options: ConnectionOptions, logger?: IDBSQLLogger):
   }
   // Fold a port into a bare host. `https: false` always folds a supplied port, while HTTPS
   // folds only a non-default one (443 is the default and adds nothing).
-  if (embedded === undefined && port !== undefined && (options.https === false || port !== 443)) {
+  if (embedded === undefined && portApplies) {
     const hostPort = `${userinfo}${bracketIpv6(authority)}:${port}`;
     return options.https === false ? `http://${hostPort}` : `${scheme}${hostPort}`;
   }
