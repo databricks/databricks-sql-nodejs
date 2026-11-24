@@ -220,7 +220,7 @@ export default class ThriftSessionBackend implements ISessionBackend {
       request.canDownloadResult = options.useCloudFetch ?? clientConfig.useCloudFetch;
     }
 
-    if (ProtocolVersion.supportsArrowCompression(this.serverProtocolVersion) && request.canDownloadResult !== true) {
+    if (ProtocolVersion.supportsArrowCompression(this.serverProtocolVersion)) {
       request.canDecompressLZ4Result = (options.useLZ4Compression ?? clientConfig.useLZ4Compression) && Boolean(LZ4());
     }
 

@@ -1,5 +1,10 @@
 # Release History
 
+## Unreleased
+
+- Decode every concatenated LZ4 frame and, with defaults, request LZ4 for supported Thrift Arrow results (inline and CloudFetch) when the native codec is available; CloudFetch decoding yields between files but remains synchronous. Set `useLZ4Compression: false` on the client or statement to disable compression; compressed results may arrive inline instead of CloudFetch (for example, a 200,000-row `range()` result).
+- The shared Arrow converter now raises `HiveDriverError` with `Arrow row count mismatch` instead of silently returning fewer rows than declared. This applies to every Arrow result path on both backends, including metadata, inline results and uncompressed CloudFetch.
+
 ## 3.1.0
 
 - Upgrade to [kernel 1.5.0](https://github.com/databricks/databricks-sql-kernel/releases/tag/v1.5.0): fix CloudFetch pagination, ordering and cancellation, paged inline Arrow results with CloudFetch disabled, and affected-row counts.

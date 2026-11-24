@@ -1,6 +1,9 @@
 import { expect } from 'chai';
 import sinon from 'sinon';
+import fs from 'fs';
+import path from 'path';
 import getLZ4 from '../../../lib/utils/lz4';
+import HiveDriverError from '../../../lib/errors/HiveDriverError';
 
 // Exercises the lz4 loader (lib/utils/lz4.ts), which now wraps `lz4-napi`
 // and exposes a stable { encode, decode } frame codec with a
@@ -69,9 +72,11 @@ describe('lz4 module loader', function () {
 
   it('exposes an { encode, decode } codec backed by lz4-napi frame APIs', () => {
     // Fake lz4-napi: frame APIs the adapter calls.
+    const testData = Buffer.from('Hello, World!');
+    const encoded = Buffer.from([4, 34, 77, 24, 96, 64, 130, 0, 0, 0, 0]);
     const fakeNapi = {
-      compressFrameSync: (buf: Buffer) => Buffer.from(`frame:${buf.toString()}`),
-      decompressFrameSync: (buf: Buffer) => Buffer.from(buf.toString().replace('frame:', '')),
+      compressFrameSync: sinon.stub().returns(encoded),
+      decompressFrameSync: sinon.stub().returns(testData),
     };
 
     mockNapiLoad(fakeNapi);
@@ -81,10 +86,26 @@ describe('lz4 module loader', function () {
     expect(lz4Module.encode).to.be.a('function');
     expect(lz4Module.decode).to.be.a('function');
 
-    const testData = Buffer.from('Hello, World!');
     const roundTripped = lz4Module.decode(lz4Module.encode(testData));
     expect(roundTripped.toString()).to.equal('Hello, World!');
     expect(consoleWarnStub.called).to.be.false;
+    expect(fakeNapi.decompressFrameSync.calledOnceWithExactly(encoded)).to.be.true;
+  });
+
+  it('rejects decoded lengths inconsistent with the declared content size', () => {
+    const encoded = Buffer.alloc(19);
+    encoded.writeUInt32LE(0x184d2204);
+    encoded[4] = 0x68;
+    encoded[5] = 0x40;
+    encoded.writeBigUInt64LE(BigInt(5), 6);
+    mockNapiLoad({
+      decompressFrameSync: () => Buffer.from('four'),
+    });
+    const codec = loadLz4Module().default();
+    expect(() => codec.decode(encoded)).to.throw(
+      HiveDriverError,
+      'LZ4 frame 0 at offset 0: Content size mismatch: expected 5, got 4',
+    );
   });
 
   it('returns undefined (no warning) when lz4-napi is not installed (MODULE_NOT_FOUND)', () => {
@@ -193,5 +214,90 @@ describe('lz4 frame codec (real lz4-napi)', function () {
       }
       expect(codec!.decode(encoded).equals(payload)).to.be.true;
     }
+  });
+
+  it('decodes every concatenated frame, including empty frames', () => {
+    const payloads = [Buffer.from('first'), Buffer.alloc(0), Buffer.from('second'), Buffer.from('third')];
+    const input = Buffer.concat(payloads.map((payload) => codec!.encode(payload)));
+    expect(codec!.decode(input)).to.deep.equal(Buffer.concat(payloads));
+    expect(codec!.decodeFrames(input)).to.deep.equal(payloads);
+  });
+
+  it('rejects truncated frames and trailing bytes instead of returning partial results', () => {
+    const frame = codec!.encode(Buffer.from('first'));
+    for (let length = 1; length < frame.length; length += 1) {
+      expect(() => codec!.decode(frame.subarray(0, length)), `truncated at ${length}`).to.throw();
+      expect(() => codec!.decode(Buffer.concat([frame, frame.subarray(0, length)]))).to.throw(
+        HiveDriverError,
+        `LZ4 frame 1 at offset ${frame.length}`,
+      );
+    }
+    expect(() => codec!.decode(Buffer.concat([frame, Buffer.from('trailing bytes')]))).to.throw();
+  });
+
+  it('rejects 0x80000000 rather than letting the native decoder silently stop at it', () => {
+    const frame = codec!.encode(Buffer.from('first'));
+    const headerLength = 7 + (frame[4] & 0x08 ? 8 : 0) + (frame[4] & 0x01 ? 4 : 0);
+    const emptyBlock = Buffer.from([0, 0, 0, 128]);
+    const corrupt = Buffer.concat([frame.subarray(0, headerLength), emptyBlock, frame.subarray(headerLength)]);
+    expect(() => codec!.decode(corrupt)).to.throw(HiveDriverError, 'Invalid zero-length LZ4 block');
+    expect(() => codec!.decode(Buffer.concat([frame, corrupt]))).to.throw(
+      HiveDriverError,
+      `LZ4 frame 1 at offset ${frame.length}: Invalid zero-length LZ4 block`,
+    );
+  });
+
+  const fixtures: Array<{
+    linked: boolean;
+    contentChecksum: boolean;
+    blockChecksum: boolean;
+    text: string;
+    repeat: number;
+    hex: string;
+  }> = JSON.parse(fs.readFileSync(path.join(__dirname, 'fixtures/lz4-frames.json'), 'utf8'));
+
+  for (const fixture of fixtures) {
+    const name = `linked=${fixture.linked}, content checksum=${fixture.contentChecksum}, block checksum=${
+      fixture.blockChecksum
+    }, bytes=${Buffer.byteLength(fixture.text) * fixture.repeat}`;
+    it(`decodes reference liblz4 frames (${name})`, () => {
+      const frame = Buffer.from(fixture.hex, 'hex');
+      const payload = Buffer.from(fixture.text.repeat(fixture.repeat));
+      expect(codec!.decode(Buffer.concat([frame, frame]))).to.deep.equal(Buffer.concat([payload, payload]));
+      expect(codec!.decodeFrames(frame)).to.deep.equal([payload]);
+    });
+
+    it(`rejects corrupt reference liblz4 frames (${name})`, () => {
+      const frame = Buffer.from(fixture.hex, 'hex');
+      const blockStart = frame[4] & 0x08 ? 15 : 7;
+      const offsets = [0, blockStart - 1];
+      if (fixture.contentChecksum) offsets.push(frame.length - 1);
+      if (fixture.blockChecksum && frame.readUInt32LE(blockStart) !== 0) {
+        offsets.push(blockStart + 4 + (frame.readUInt32LE(blockStart) & 0x7fffffff));
+      }
+      for (const offset of offsets) {
+        const corrupt = Buffer.from(frame);
+        corrupt[offset] ^= 1;
+        expect(() => codec!.decode(corrupt)).to.throw();
+        expect(() => codec!.decode(Buffer.concat([frame, corrupt]))).to.throw(
+          HiveDriverError,
+          `LZ4 frame 1 at offset ${frame.length}`,
+        );
+      }
+      for (let missing = 1; missing <= 8; missing += 1) {
+        expect(() => codec!.decode(frame.subarray(0, -missing))).to.throw();
+      }
+    });
+  }
+
+  it('preserves the native checksum failure reason and failing frame location', () => {
+    const frame = Buffer.from(fixtures.find((fixture) => fixture.contentChecksum)!.hex, 'hex');
+    const corrupt = Buffer.from(frame);
+    corrupt[corrupt.length - 1] ^= 1;
+    const input = Buffer.concat([frame, corrupt]);
+    expect(() => codec!.decode(input)).to.throw(
+      HiveDriverError,
+      `LZ4 frame 1 at offset ${frame.length}: ContentChecksumError`,
+    );
   });
 });
