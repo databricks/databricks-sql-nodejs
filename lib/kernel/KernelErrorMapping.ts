@@ -122,12 +122,15 @@ function defineErrorMetadata<K extends string, V>(error: Error, key: K, value: V
   });
 }
 
+const STAGING_ERROR_CODES = new Set([
+  'VOLUME_STORAGE_HTTP_ERROR',
+  'VOLUME_PATH_NOT_ALLOWED',
+  'VOLUME_INVALID_INSTRUCTION',
+]);
+
 export function toStagingTransferError(mapped: ErrorWithSqlState): ErrorWithSqlState {
   const metadata = mapped.kernelMetadata;
-  if (
-    (mapped instanceof ParameterError && !metadata?.httpStatus) ||
-    metadata?.errorCode === 'VOLUME_STORAGE_HTTP_ERROR'
-  ) {
+  if (metadata?.errorCode && STAGING_ERROR_CODES.has(metadata.errorCode)) {
     const staging = new StagingError(mapped.message);
     if (metadata) defineErrorMetadata(staging, 'kernelMetadata', metadata);
     if ('cause' in mapped) defineErrorMetadata(staging, 'cause', mapped.cause);

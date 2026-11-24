@@ -413,7 +413,18 @@ describe('KernelOperationBackend Volume completion', () => {
   });
 
   for (const { error, staging } of [
-    { error: new ParameterError('path is not allowed'), staging: true },
+    {
+      error: Object.assign(new ParameterError('path is not allowed'), {
+        kernelMetadata: { errorCode: 'VOLUME_PATH_NOT_ALLOWED' },
+      }),
+      staging: true,
+    },
+    {
+      error: Object.assign(new ParameterError('invalid Volume instruction'), {
+        kernelMetadata: { errorCode: 'VOLUME_INVALID_INSTRUCTION' },
+      }),
+      staging: true,
+    },
     {
       error: Object.assign(new Error('storage HTTP 403'), {
         kernelMetadata: { httpStatus: 403, errorCode: 'VOLUME_STORAGE_HTTP_ERROR' },
