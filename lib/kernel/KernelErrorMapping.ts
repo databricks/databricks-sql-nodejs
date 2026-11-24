@@ -348,6 +348,7 @@ export function decodeNapiKernelError(err: unknown): Error {
     const systemCode = process.platform !== 'win32' && raw ? getSystemErrorName(-Math.abs(raw)) : undefined;
     const localCode =
       systemCode && systemCode in constants.errno ? systemCode : kindCodes[envelope.localErrorKind] ?? 'EIO';
+    // Shaped like a Node fs error, which carries no sqlState.
     jsErr = Object.assign(new Error(msg), {
       code: localCode,
       errno: -(constants.errno as Record<string, number>)[localCode],
