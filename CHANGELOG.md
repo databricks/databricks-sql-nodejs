@@ -1,5 +1,9 @@
 # Release History
 
+## Unreleased
+
+- Reuse successful Thrift feature-flag responses across connections to the same workspace (or host) for every auth type, retaining at most 100 idle responses until their original server TTL (currently up to one hour) without keeping connections or timers. For sequential reconnects, `CONNECTION_OPEN` telemetry latency now includes a TLS handshake (~70 ms), so this metric can rise while total connect+openSession latency falls. (#630)
+
 ## 3.1.0
 
 - Upgrade to [kernel 1.5.0](https://github.com/databricks/databricks-sql-kernel/releases/tag/v1.5.0): fix CloudFetch pagination, ordering and cancellation, paged inline Arrow results with CloudFetch disabled, and affected-row counts.

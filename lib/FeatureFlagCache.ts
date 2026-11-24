@@ -25,7 +25,8 @@ import driverVersion from './version';
 export interface FeatureFlagContext {
   flags?: Map<string, string>;
   fetchPromise?: Promise<void>;
-  lastFetched?: Date;
+  lastFetched?: number;
+  cacheable?: boolean;
   refCount: number;
   cacheDuration: number;
 }
@@ -35,13 +36,17 @@ export interface FeatureFlagContext {
  * Acquire/release a context per consumer; each reader uses its caller's auth.
  * Responsibilities:
  *   - dedupe in-flight fetches (thundering-herd protection);
- *   - ref-count so context goes away when the last consumer closes;
+ *   - retain bounded successful responses until their original expiry;
  *   - clamp server-provided TTL into a safe band.
  *
  * Workspace ID partitions SPOG traffic; normalized host is the fallback.
  */
 export default class FeatureFlagCache {
   private static sharedContexts = new Map<string, FeatureFlagContext>();
+
+  private static idleContexts = new Map<string, FeatureFlagContext>();
+
+  private static readonly MAX_IDLE_CONTEXTS = 100;
 
   private contexts = FeatureFlagCache.sharedContexts;
 
@@ -63,14 +68,23 @@ export default class FeatureFlagCache {
     return workspace ? `workspace:${workspace}` : `host:${buildTelemetryUrl(host, '') ?? host}`;
   }
 
+  private isExpired(ctx: FeatureFlagContext): boolean {
+    return ctx.lastFetched === undefined || performance.now() - ctx.lastFetched > ctx.cacheDuration;
+  }
+
   getOrCreateContext(host: string): FeatureFlagContext {
     const key = this.cacheKey(host);
     let ctx = this.contexts.get(key);
     if (!ctx) {
-      ctx = {
-        refCount: 0,
-        cacheDuration: this.CACHE_DURATION_MS,
-      };
+      const idle = FeatureFlagCache.idleContexts.get(key);
+      FeatureFlagCache.idleContexts.delete(key);
+      ctx =
+        idle && !this.isExpired(idle)
+          ? idle
+          : {
+              refCount: 0,
+              cacheDuration: this.CACHE_DURATION_MS,
+            };
       this.contexts.set(key, ctx);
     }
     ctx.refCount += 1;
@@ -84,6 +98,17 @@ export default class FeatureFlagCache {
       ctx.refCount -= 1;
       if (ctx.refCount <= 0) {
         this.contexts.delete(key);
+        if (ctx.cacheable && !ctx.fetchPromise && !this.isExpired(ctx)) {
+          const idle = FeatureFlagCache.idleContexts;
+          for (const [idleKey, value] of idle) {
+            if (this.isExpired(value)) idle.delete(idleKey);
+          }
+          idle.delete(key);
+          idle.set(key, ctx);
+          while (idle.size > FeatureFlagCache.MAX_IDLE_CONTEXTS) {
+            idle.delete(idle.keys().next().value!);
+          }
+        }
       }
     }
   }
@@ -96,14 +121,14 @@ export default class FeatureFlagCache {
       return undefined;
     }
 
-    const isExpired = !ctx.lastFetched || Date.now() - ctx.lastFetched.getTime() > ctx.cacheDuration;
+    const isExpired = this.isExpired(ctx);
 
-    if (isExpired) {
+    if (ctx.fetchPromise || isExpired) {
       if (!ctx.fetchPromise) {
         ctx.fetchPromise = this.fetchFeatureFlags(host)
           .then((flags) => {
             ctx.flags = flags;
-            ctx.lastFetched = new Date();
+            ctx.lastFetched = performance.now();
           })
           .catch((error: any) => {
             logger.log(LogLevel.debug, `Error fetching feature flag: ${error.message}`);
@@ -175,6 +200,11 @@ export default class FeatureFlagCache {
   private async fetchFeatureFlags(host: string): Promise<Map<string, string>> {
     const logger = this.context.getLogger();
     const ctx = this.contexts.get(this.cacheKey(host));
+    const previousCacheDuration = ctx?.cacheDuration ?? this.CACHE_DURATION_MS;
+    if (ctx) {
+      ctx.cacheable = false;
+      ctx.cacheDuration = this.CACHE_DURATION_MS;
+    }
 
     try {
       const endpoint = buildTelemetryUrl(
@@ -209,6 +239,11 @@ export default class FeatureFlagCache {
       const data: any = await response.json();
 
       if (data && data.flags && Array.isArray(data.flags)) {
+        if (ctx) {
+          ctx.cacheable = data.flags.every(
+            (flag: any) => typeof flag?.name === 'string' && typeof flag.value === 'string',
+          );
+        }
         if (ctx && Number.isFinite(data.ttl_seconds) && data.ttl_seconds > 0) {
           const clampedTtl = Math.max(this.MIN_CACHE_DURATION_S, Math.min(this.MAX_CACHE_DURATION_S, data.ttl_seconds));
           ctx.cacheDuration = clampedTtl * 1000;
@@ -228,6 +263,10 @@ export default class FeatureFlagCache {
       // Preserve the existing policy: use consumer defaults until the next TTL.
       // Retrying on every read would add request latency during an outage.
       return new Map();
+    } finally {
+      if (ctx && !ctx.cacheable) {
+        ctx.cacheDuration = Math.min(previousCacheDuration, this.CACHE_DURATION_MS);
+      }
     }
   }
 
