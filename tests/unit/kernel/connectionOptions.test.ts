@@ -112,8 +112,14 @@ describe('KernelAuth connection options — port passthrough', () => {
     [{ host: 'h.databricks.com:7000', port: 8443 }, 'h.databricks.com:7000', 8443],
     [{ host: 'h.io/path:8443', port: 8443 }, 'h.io/path:8443', 8443],
     [{ host: '', port: 8443 }, '', 8443],
+    // An explicit port is always sent; the kernel decides whether it is the default for the
+    // effective scheme, including an `http://` already in host with https unset.
+    [{ port: 443 }, 'h.databricks.com', 443],
+    [{ port: 443, https: true }, 'h.databricks.com', 443],
+    [{ port: 80, https: false }, 'http://h.databricks.com', 80],
+    [{ host: 'http://localhost', port: 443 }, 'http://localhost', 443],
   ];
-  it('passes the host through unchanged and sends a non-default port', () => {
+  it('passes the host through unchanged and sends any explicit port', () => {
     for (const [extra, wantHost, wantPort] of sent) {
       const got = native(extra);
       expect(got.hostName, JSON.stringify(extra)).to.equal(wantHost);
@@ -121,8 +127,7 @@ describe('KernelAuth connection options — port passthrough', () => {
     }
   });
 
-  // No `port` key at all: unset, falsy, the HTTPS default 443, or the plain-HTTP default 80.
-  // The kernel treats the scheme default as a no-op, so the driver leaves it out.
+  // No `port` key at all: unset or falsy, which means the default, as on Thrift.
   const omitted: Array<[Record<string, unknown>, string]> = [
     [{}, 'h.databricks.com'],
     [{ port: undefined }, 'h.databricks.com'],
@@ -131,14 +136,11 @@ describe('KernelAuth connection options — port passthrough', () => {
     [{ port: '' }, 'h.databricks.com'],
     [{ port: false }, 'h.databricks.com'],
     [{ port: Number.NaN }, 'h.databricks.com'],
-    [{ port: 443 }, 'h.databricks.com'],
-    [{ port: 443, https: true }, 'h.databricks.com'],
     [{ port: 0, https: false }, 'http://h.databricks.com'],
     [{ port: Number.NaN, https: false }, 'http://h.databricks.com'],
-    [{ port: 80, https: false }, 'http://h.databricks.com'],
     [{ host: 'h.databricks.com:8443' }, 'h.databricks.com:8443'], // port only in host
   ];
-  it('sends no port when the port is unset, falsy, or the scheme default', () => {
+  it('sends no port when the port is unset or falsy', () => {
     for (const [extra, wantHost] of omitted) {
       const got = native(extra);
       expect(got.hostName, JSON.stringify(extra)).to.equal(wantHost);

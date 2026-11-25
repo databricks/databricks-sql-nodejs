@@ -865,15 +865,11 @@ function buildKernelHostName(options: ConnectionOptions): string {
   return `http://${options.host.replace(/^https?:\/\//i, '')}`;
 }
 
-// The port sent to the kernel, or `undefined` when none should be sent. An unset port
-// means the default. The default for the scheme the driver uses (443 over HTTPS, 80 over
-// plain HTTP) is omitted, because the kernel treats it as a no-op. Any other port is sent,
-// including 443 over plain HTTP, where 443 is not the default.
+// The port sent to the kernel, or `undefined` for the default. Any explicit port is sent as
+// is: the kernel knows the effective scheme (including an `http://` already in `host`) and
+// treats that scheme's default port (443 for https, 80 for http) as a no-op.
 function buildKernelPort(options: ConnectionOptions): number | undefined {
-  const port = explicitPort(options.port);
-  if (port === undefined) return undefined;
-  const schemeDefault = options.https === false ? 80 : 443;
-  return port === schemeDefault ? undefined : port;
+  return explicitPort(options.port);
 }
 
 export function buildKernelConnectionOptions(options: ConnectionOptions): KernelNativeConnectionOptions {
