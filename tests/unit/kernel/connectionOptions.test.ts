@@ -21,7 +21,6 @@ import {
 } from '../../../lib/kernel/KernelAuth';
 import { ConnectionOptions } from '../../../lib/contracts/IDBSQLClient';
 import HiveDriverError from '../../../lib/errors/HiveDriverError';
-import IDBSQLLogger, { LogLevel } from '../../../lib/contracts/IDBSQLLogger';
 
 const PAT = { host: 'h.databricks.com', path: '/sql/1.0/warehouses/abc', token: 'dapi-x' };
 
@@ -65,242 +64,97 @@ describe('KernelAuth connection options — geospatial result representation', (
 });
 
 describe('KernelAuth connection options — https transport', () => {
+  const hostName = (extra: Record<string, unknown>) => buildKernelConnectionOptions(opts(extra)).hostName;
+
   it('forwards host unchanged by default (kernel prepends https://)', () => {
-    expect(buildKernelConnectionOptions(opts({})).hostName).to.equal('h.databricks.com');
-    expect(buildKernelConnectionOptions(opts({ https: true })).hostName).to.equal('h.databricks.com');
+    expect(hostName({})).to.equal('h.databricks.com');
+    expect(hostName({ https: true })).to.equal('h.databricks.com');
   });
 
   it('selects plain HTTP via an explicit http:// host when https is false', () => {
-    expect(buildKernelConnectionOptions(opts({ https: false })).hostName).to.equal('http://h.databricks.com');
+    expect(hostName({ https: false })).to.equal('http://h.databricks.com');
+    expect(hostName({ host: 'localhost:3015', https: false })).to.equal('http://localhost:3015');
   });
 
-  it('carries the port into the http:// host (matching the Thrift URL)', () => {
-    expect(buildKernelConnectionOptions(opts({ host: 'localhost', port: 3015, https: false })).hostName).to.equal(
-      'http://localhost:3015',
-    );
-    // A port already embedded in `host` (the kernel convention) is preserved.
-    expect(buildKernelConnectionOptions(opts({ host: 'localhost:3015', https: false })).hostName).to.equal(
-      'http://localhost:3015',
-    );
-  });
-
-  it('does not double the port when it is set in both host and port', () => {
-    expect(buildKernelConnectionOptions(opts({ host: 'localhost:3015', port: 3015, https: false })).hostName).to.equal(
-      'http://localhost:3015',
-    );
-    expect(buildKernelConnectionOptions(opts({ host: '[::1]:3015', port: 3015, https: false })).hostName).to.equal(
-      'http://[::1]:3015',
-    );
-  });
-
-  it('strips a trailing slash from host before adding the port (matching Thrift)', () => {
-    expect(buildKernelConnectionOptions(opts({ host: 'localhost/', port: 3015, https: false })).hostName).to.equal(
-      'http://localhost:3015',
-    );
-    expect(buildKernelConnectionOptions(opts({ host: 'localhost:3015/', port: 3015, https: false })).hostName).to.equal(
-      'http://localhost:3015',
-    );
-  });
-
-  const hostName = (extra: Record<string, unknown>) => buildKernelConnectionOptions(opts(extra)).hostName;
-
-  it('normalizes an existing http:// scheme in host instead of prefixing it again', () => {
+  it('replaces an existing http(s):// scheme in host with http:// when https is false', () => {
     expect(hostName({ host: 'http://localhost:3015', https: false })).to.equal('http://localhost:3015');
-    expect(hostName({ host: 'http://localhost:3015', port: 3015, https: false })).to.equal('http://localhost:3015');
-    expect(hostName({ host: 'HTTP://localhost', port: 3015, https: false })).to.equal('http://localhost:3015');
-    expect(hostName({ host: 'http://localhost:3015/', https: false })).to.equal('http://localhost:3015');
-  });
-
-  it('replaces an existing https:// scheme in host with http:// when https is false', () => {
+    expect(hostName({ host: 'HTTP://localhost', https: false })).to.equal('http://localhost');
     expect(hostName({ host: 'https://localhost:3015', https: false })).to.equal('http://localhost:3015');
-    expect(hostName({ host: 'https://localhost', port: 3015, https: false })).to.equal('http://localhost:3015');
-    expect(hostName({ host: 'https://[::1]:3015', port: 3015, https: false })).to.equal('http://[::1]:3015');
+    expect(hostName({ host: 'https://[::1]:3015', https: false })).to.equal('http://[::1]:3015');
   });
 
   it('forwards a full-URL host unchanged when https is not false', () => {
     expect(hostName({ host: 'https://h.databricks.com' })).to.equal('https://h.databricks.com');
     expect(hostName({ host: 'http://localhost:3015', https: true })).to.equal('http://localhost:3015');
   });
-
-  it('does not mistake an IPv6 literal for an embedded port', () => {
-    expect(buildKernelConnectionOptions(opts({ host: '[::1]', port: 3015, https: false })).hostName).to.equal(
-      'http://[::1]:3015',
-    );
-    // Same URL shape as the Thrift transport, which also requires brackets.
-    expect(buildKernelConnectionOptions(opts({ host: '::1', port: 3015, https: false })).hostName).to.equal(
-      'http://[::1]:3015',
-    );
-  });
 });
 
-describe('KernelAuth connection options — port folding', () => {
-  const hostName = (extra: Record<string, unknown>) => buildKernelConnectionOptions(opts(extra)).hostName;
+describe('KernelAuth connection options — port passthrough', () => {
+  const native = (extra: Record<string, unknown>) =>
+    buildKernelConnectionOptions(opts(extra)) as { hostName: string; port?: number };
 
-  // [connection options, expected hostName] for HTTPS (default) and https: false.
-  // An embedded host port always wins; the explicit port applies only to a bare host.
-  const accepted: Array<[Record<string, unknown>, string]> = [
-    [{ port: 8443 }, 'h.databricks.com:8443'],
-    [{ port: 8443, https: true }, 'h.databricks.com:8443'],
-    [{ port: '8443' }, 'h.databricks.com:8443'], // a decimal string is accepted, as on Thrift
-    [{ port: 443 }, 'h.databricks.com'], // no :443 suffix
-    // Falsy means the default, as on Thrift (`options.port || 443`); never a throw.
+  // [connection options, expected hostName, expected native port]. The host is passed through
+  // unchanged, and the kernel folds the port into it, so these are not folded here.
+  const sent: Array<[Record<string, unknown>, string, number]> = [
+    [{ port: 8443 }, 'h.databricks.com', 8443],
+    [{ port: 8443, https: true }, 'h.databricks.com', 8443],
+    [{ port: '8443' }, 'h.databricks.com', 8443], // a decimal string is accepted, as on Thrift
+    [{ port: 3015, https: false }, 'http://h.databricks.com', 3015],
+    [{ port: 443, https: false }, 'http://h.databricks.com', 443], // 443 is not the plain-HTTP default
+    [{ host: 'localhost', port: 3015, https: false }, 'http://localhost', 3015],
+    [{ host: 'https://h.databricks.com', port: 8443 }, 'https://h.databricks.com', 8443],
+    [{ host: 'h.databricks.com/', port: 8443 }, 'h.databricks.com/', 8443],
+    [{ host: '::1', port: 8443 }, '::1', 8443], // not bracketed here; the kernel brackets it
+    [{ host: '::1', port: 3015, https: false }, 'http://::1', 3015],
+    [{ host: 'user:pw@h.databricks.com', port: 8443 }, 'user:pw@h.databricks.com', 8443],
+    // A port already in host is left for the kernel to resolve; the driver sends both values.
+    [{ host: 'h.databricks.com:8443', port: 8443 }, 'h.databricks.com:8443', 8443],
+    [{ host: 'h.databricks.com:7000', port: 8443 }, 'h.databricks.com:7000', 8443],
+    [{ host: 'h.io/path:8443', port: 8443 }, 'h.io/path:8443', 8443],
+    [{ host: '', port: 8443 }, '', 8443],
+  ];
+  it('passes the host through unchanged and sends a non-default port', () => {
+    for (const [extra, wantHost, wantPort] of sent) {
+      const got = native(extra);
+      expect(got.hostName, JSON.stringify(extra)).to.equal(wantHost);
+      expect(got.port, JSON.stringify(extra)).to.equal(wantPort);
+    }
+  });
+
+  // No `port` key at all: unset, falsy, the HTTPS default 443, or the plain-HTTP default 80.
+  // The kernel treats the scheme default as a no-op, so the driver leaves it out.
+  const omitted: Array<[Record<string, unknown>, string]> = [
+    [{}, 'h.databricks.com'],
+    [{ port: undefined }, 'h.databricks.com'],
+    [{ port: null }, 'h.databricks.com'],
     [{ port: 0 }, 'h.databricks.com'],
     [{ port: '' }, 'h.databricks.com'],
-    [{ port: null }, 'h.databricks.com'],
-    [{ port: undefined }, 'h.databricks.com'],
-    [{ port: Number.NaN }, 'h.databricks.com'],
     [{ port: false }, 'h.databricks.com'],
+    [{ port: Number.NaN }, 'h.databricks.com'],
+    [{ port: 443 }, 'h.databricks.com'],
+    [{ port: 443, https: true }, 'h.databricks.com'],
+    [{ port: 0, https: false }, 'http://h.databricks.com'],
     [{ port: Number.NaN, https: false }, 'http://h.databricks.com'],
-    [{}, 'h.databricks.com'],
-    [{ host: 'h.databricks.com:8443' }, 'h.databricks.com:8443'],
-    [{ host: 'h.databricks.com:8443', port: 8443 }, 'h.databricks.com:8443'],
-    // A port embedded in host wins over a different explicit port (warned, not thrown).
-    [{ host: 'h.databricks.com:8443', port: 443 }, 'h.databricks.com:8443'],
-    [{ host: 'h.databricks.com:7000', port: 8443 }, 'h.databricks.com:7000'],
-    [{ host: '[::1]:7000', port: 8443 }, '[::1]:7000'],
-    [{ host: 'https://h.databricks.com', port: 8443 }, 'https://h.databricks.com:8443'],
-    [{ host: '[::1]', port: 8443 }, '[::1]:8443'],
-    [{ host: '[::1]:8443', port: 8443 }, '[::1]:8443'],
-    [{ host: '::1', port: 8443 }, '[::1]:8443'], // bare IPv6 is bracketed
-    [{ host: '::1', port: 443 }, '::1'],
-    // Trailing "/" is dropped before port handling; a host with no port is otherwise unchanged.
-    [{ host: 'h.databricks.com/', port: 8443 }, 'h.databricks.com:8443'],
-    [{ host: 'https://h.databricks.com/', port: 8443 }, 'https://h.databricks.com:8443'],
-    [{ host: 'h.databricks.com:8443/' }, 'h.databricks.com:8443'],
-    [{ host: 'h.databricks.com/' }, 'h.databricks.com'],
-    // A path host with no port, or with 443 over HTTPS, is not folded: passed through unchanged, as before.
-    [{ host: 'h.databricks.com/x' }, 'h.databricks.com/x'],
-    [{ host: 'h.databricks.com/x', port: 443 }, 'h.databricks.com/x'],
-    [{ host: 'https://h.databricks.com/x', port: 443 }, 'https://h.databricks.com/x'],
-    [{ host: 'h.databricks.com/x', port: 443, https: true }, 'h.databricks.com/x'],
-    // An embedded port after a path, with no folded port, passes through as on origin/main.
-    [{ host: 'h.io/path:8443' }, 'h.io/path:8443'],
-    [{ host: 'h.io/path:8443', port: 443 }, 'h.io/path:8443'],
-    [{ host: 'h.databricks.com', port: 3015, https: false }, 'http://h.databricks.com:3015'],
-    [{ host: 'localhost', port: 80, https: false }, 'http://localhost:80'],
-    [{ host: 'localhost', port: '3015', https: false }, 'http://localhost:3015'],
-    [{ host: '::1', port: 3015, https: false }, 'http://[::1]:3015'], // bare IPv6 is bracketed
-    [{ host: '::1', https: false }, 'http://::1'], // no port: unchanged
-    [{ host: 'http://localhost:3015', https: false }, 'http://localhost:3015'],
-    // Reviewer cases: the embedded port wins over the explicit one, on both transports' shape.
-    [{ host: 'h.databricks.com:8443', port: 443, https: true }, 'h.databricks.com:8443'],
-    [{ host: 'localhost:3015', port: 80, https: false }, 'http://localhost:3015'],
-    [{ host: 'localhost:3015', port: 443, https: false }, 'http://localhost:3015'],
-    [{ host: 'h.databricks.com:8443/', port: 443, https: false }, 'http://h.databricks.com:8443'],
-    [{ host: 'h.databricks.com/', port: 8443, https: false }, 'http://h.databricks.com:8443'],
-    // Userinfo is kept as on origin/main; its colon is not read as a port or an IPv6 literal.
-    [{ host: 'user:pw@h.databricks.com' }, 'user:pw@h.databricks.com'],
-    [{ host: 'user:pw@h.databricks.com', port: 443 }, 'user:pw@h.databricks.com'],
-    [{ host: 'user:pw@h.databricks.com', port: 8443 }, 'user:pw@h.databricks.com:8443'],
-    [{ host: 'https://user:pw@h.databricks.com', port: 8443 }, 'https://user:pw@h.databricks.com:8443'],
-    [{ host: 'user:pw@h.databricks.com:8443', port: 8443 }, 'user:pw@h.databricks.com:8443'],
-    [{ host: 'user:pw@h.databricks.com', port: 3015, https: false }, 'http://user:pw@h.databricks.com:3015'],
-    [{ host: 'user:pw@::1', port: 8443 }, 'user:pw@[::1]:8443'],
-    // An empty host with no port, or with 443 over HTTPS, passes through as on origin/main.
-    [{ host: '' }, ''],
-    [{ host: '', port: 443 }, ''],
-    // A path host with no folded port is not parsed for a port, even an out-of-range one after the path.
-    [{ host: 'h.io/x:99999' }, 'h.io/x:99999'],
-    [{ host: 'h.io/x:99999', port: 443 }, 'h.io/x:99999'],
+    [{ port: 80, https: false }, 'http://h.databricks.com'],
+    [{ host: 'h.databricks.com:8443' }, 'h.databricks.com:8443'], // port only in host
   ];
-  it('folds the port into the host as the table specifies', () => {
-    for (const [extra, want] of accepted) {
-      expect(hostName(extra), JSON.stringify(extra)).to.equal(want);
+  it('sends no port when the port is unset, falsy, or the scheme default', () => {
+    for (const [extra, wantHost] of omitted) {
+      const got = native(extra);
+      expect(got.hostName, JSON.stringify(extra)).to.equal(wantHost);
+      expect(got, JSON.stringify(extra)).to.not.have.property('port');
     }
   });
 
-  // [connection options, message] that must throw HiveDriverError: truthy invalid ports
-  // (Thrift also fails on these), a path/query/fragment that would take a folded port, and
-  // out-of-range embedded ports.
+  // Truthy values that are not a whole port number throw HiveDriverError before any native call,
+  // as Thrift does. The kernel does not see these.
   const badPorts: unknown[] = [65536, -1, 1.5, Number.POSITIVE_INFINITY, true, 'abc', '8443x', '-1', '65536'];
-  const rejected: Array<[Record<string, unknown>, RegExp]> = [
-    ...badPorts.flatMap(
-      (port): Array<[Record<string, unknown>, RegExp]> => [
-        [{ port }, /must be an integer between 1 and 65535/],
-        [{ port, https: false }, /must be an integer between 1 and 65535/],
-      ],
-    ),
-    [{ host: 'h.databricks.com/x', port: 8443 }, /has a path, query or fragment/],
-    [{ host: 'h.databricks.com/x/', port: 8443 }, /has a path, query or fragment/],
-    [{ host: 'https://h.databricks.com/x', port: 8443 }, /has a path, query or fragment/],
-    [{ host: 'h.databricks.com?x', port: 8443 }, /has a path, query or fragment/],
-    [{ host: 'h.databricks.com#x', port: 3015, https: false }, /has a path, query or fragment/],
-    // A folded port (explicit non-443, or https: false) on a path host is rejected, including
-    // when the host also carries an embedded port after the path.
-    [{ host: 'h.io/path:8443', port: 8443 }, /has a path, query or fragment/],
-    [{ host: 'h.io/path:8443', port: 443, https: false }, /has a path, query or fragment/],
-    [{ host: 'h.databricks.com:70000' }, /outside 1\.\.65535/],
-    // An empty host cannot take a folded port.
-    [{ host: '', port: 8443 }, /needs a host/],
-    [{ host: '  ', port: 8443 }, /needs a host/],
-    [{ host: 'https://', port: 8443 }, /needs a host/],
-    [{ host: '', port: 3015, https: false }, /needs a host/],
-    [{ host: '', port: 443, https: false }, /needs a host/],
-  ];
-  it('rejects invalid ports and unfoldable hosts', () => {
-    for (const [extra, message] of rejected) {
-      expect(() => hostName(extra), JSON.stringify(extra)).to.throw(HiveDriverError, message);
+  it('rejects a truthy invalid port, with or without https: false', () => {
+    for (const port of badPorts) {
+      for (const extra of [{ port }, { port, https: false }]) {
+        expect(() => native(extra), String(port)).to.throw(HiveDriverError, /must be an integer between 1 and 65535/);
+      }
     }
-  });
-
-  it('keeps credentials in host out of errors and warnings', () => {
-    for (const host of [
-      'user:secret@h.databricks.com/x',
-      'https://user:secret@h.databricks.com:8443/x',
-      // A "/", "?" or "#" inside the password must not end the redaction early.
-      'user:secret/part@h.databricks.com',
-      'user:secret?part@h.databricks.com',
-      'https://user:secret#part@h.databricks.com',
-    ]) {
-      expect(() => hostName({ host, port: 8443 }), host)
-        .to.throw(HiveDriverError, /has a path, query or fragment/)
-        .with.property('message')
-        .that.does.not.contain('secret');
-    }
-    const logs: Array<[LogLevel, string]> = [];
-    const logger = {
-      log: (level: LogLevel, message: string) => logs.push([level, message]),
-    } as unknown as IDBSQLLogger;
-    buildKernelConnectionOptions(opts({ host: 'user:secret@h.databricks.com:7000', port: 8443 }), logger);
-    expect(logs).to.have.length(1);
-    expect(logs[0][1]).to.contain('***@h.databricks.com:7000');
-    expect(logs[0][1]).to.not.contain('secret');
-  });
-
-  it('warns and connects to the embedded port when an explicit port differs', () => {
-    const logs: Array<[LogLevel, string]> = [];
-    const logger = {
-      log: (level: LogLevel, message: string) => logs.push([level, message]),
-    } as unknown as IDBSQLLogger;
-    const native = buildKernelConnectionOptions(opts({ host: 'h.databricks.com:7000', port: 8443 }), logger);
-    expect(native.hostName).to.equal('h.databricks.com:7000');
-    expect(logs).to.have.length(1);
-    expect(logs[0][0]).to.equal(LogLevel.warn);
-    expect(logs[0][1]).to.contain('carries port 7000');
-    expect(logs[0][1]).to.contain('`port` is 8443');
-  });
-
-  it('warns for an explicit 443 that conflicts over plain HTTP, where 443 is not the default', () => {
-    const logs: Array<[LogLevel, string]> = [];
-    const logger = {
-      log: (level: LogLevel, message: string) => logs.push([level, message]),
-    } as unknown as IDBSQLLogger;
-    const native = buildKernelConnectionOptions(opts({ host: 'localhost:3015', port: 443, https: false }), logger);
-    expect(native.hostName).to.equal('http://localhost:3015');
-    expect(logs).to.have.length(1);
-    expect(logs[0][1]).to.contain('carries port 3015');
-    expect(logs[0][1]).to.contain('`port` is 443');
-  });
-
-  it('does not warn when the ports agree, the explicit port is the default, or there is no logger', () => {
-    const logs: Array<[LogLevel, string]> = [];
-    const logger = {
-      log: (level: LogLevel, message: string) => logs.push([level, message]),
-    } as unknown as IDBSQLLogger;
-    buildKernelConnectionOptions(opts({ host: 'h.databricks.com:8443', port: 8443 }), logger);
-    buildKernelConnectionOptions(opts({ host: 'h.databricks.com:8443', port: 443 }), logger);
-    buildKernelConnectionOptions(opts({ host: 'h.databricks.com:7000', port: 8443 }));
-    expect(logs).to.have.length(0);
   });
 });
 
