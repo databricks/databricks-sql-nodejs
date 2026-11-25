@@ -271,8 +271,9 @@ export interface KernelFederationOptions {
 
 /**
  * Connection port forwarded to the napi binding's `ConnectionOptions.port`.
- * The kernel folds it into the host (`fold_host_port`). Only sent when it is
- * not the default for the scheme the driver uses (see `buildKernelPort`).
+ * The kernel folds it into the host (`fold_host_port`). Any explicit port is
+ * sent, 443 included; the kernel treats the scheme's default as a no-op (see
+ * `buildKernelPort`).
  */
 export interface KernelPortOptions {
   port?: number;
