@@ -269,12 +269,23 @@ export interface KernelFederationOptions {
   identityFederationClientId?: string;
 }
 
+/**
+ * Connection port forwarded to the napi binding's `ConnectionOptions.port`.
+ * The kernel folds it into the host (`fold_host_port`). Any explicit port is
+ * sent, 443 included; the kernel treats the scheme's default as a no-op (see
+ * `buildKernelPort`).
+ */
+export interface KernelPortOptions {
+  port?: number;
+}
+
 export type KernelNativeConnectionOptions = KernelSessionDefaults &
   KernelTlsOptions &
   KernelHttpOptions &
   KernelTelemetryOptions &
   KernelProxyOptions &
   KernelFederationOptions &
+  KernelPortOptions &
   (
     | {
         hostName: string;
@@ -830,20 +841,36 @@ export function buildKernelProxyOptions(options: ConnectionOptions): KernelProxy
   return { proxy: out };
 }
 
-// The kernel prepends `https://` to a bare host but keeps an explicit scheme.
-// It otherwise ignores `port`, so carry it into the URL unless `host` already has one.
-function buildKernelHostName(options: ConnectionOptions): string {
-  if (options.https !== false) {
-    return options.host;
+// An explicit `port` is read as Thrift reads it (`options.port || 443`): a falsy value
+// (unset, null, '', 0, NaN, false) means the default. A truthy value must be a whole
+// port number, and a decimal string such as `'8443'` is accepted. Anything else throws,
+// as Thrift also fails on it.
+function explicitPort(port: unknown): number | undefined {
+  if (!port) return undefined;
+  let value = Number.NaN;
+  if (typeof port === 'number') value = port;
+  else if (typeof port === 'string' && /^[0-9]+$/.test(port)) value = Number(port);
+  if (value === 0) return undefined;
+  if (!Number.isInteger(value) || value < 1 || value > 65535) {
+    throw new HiveDriverError(`kernel backend: \`port\` must be an integer between 1 and 65535; got ${String(port)}.`);
   }
-  // The kernel accepts a full URL in `host`, so drop an existing `http://` or
-  // `https://` scheme before applying HTTP (`https: false` selects the scheme).
-  // Then strip a trailing `/` like the Thrift URL builder does.
-  const host = options.host.replace(/^https?:\/\//i, '').replace(/\/$/, '');
-  // `name:port` or `[ipv6]:port`; a bare IPv6 literal like `::1` has no port.
-  const hasPort = /^(\[[^\]]+\]|[^:]+):\d+$/.test(host);
-  const port = options.port && !hasPort ? `:${options.port}` : '';
-  return `http://${host}${port}`;
+  return value;
+}
+
+// The host is passed through as given. The kernel owns port folding, IPv6 bracketing,
+// userinfo and path checks, and trailing-slash handling, and it prepends `https://` to a
+// bare host. The one rewrite left here is plain HTTP: `https: false` sends an explicit
+// `http://` scheme, and the kernel's scheme-based default port then applies.
+function buildKernelHostName(options: ConnectionOptions): string {
+  if (options.https !== false) return options.host;
+  return `http://${options.host.replace(/^https?:\/\//i, '')}`;
+}
+
+// The port sent to the kernel, or `undefined` for the default. Any explicit port is sent as
+// is: the kernel knows the effective scheme (including an `http://` already in `host`) and
+// treats that scheme's default port (443 for https, 80 for http) as a no-op.
+function buildKernelPort(options: ConnectionOptions): number | undefined {
+  return explicitPort(options.port);
 }
 
 export function buildKernelConnectionOptions(options: ConnectionOptions): KernelNativeConnectionOptions {
@@ -858,7 +885,8 @@ export function buildKernelConnectionOptions(options: ConnectionOptions): Kernel
   } & KernelTlsOptions &
     KernelHttpOptions &
     KernelProxyOptions &
-    KernelFederationOptions = {
+    KernelFederationOptions &
+    KernelPortOptions = {
     hostName: buildKernelHostName(options),
     httpPath: prependSlash(options.path),
     // Match the NodeJS Thrift driver, which surfaces INTERVAL columns as
@@ -880,6 +908,12 @@ export function buildKernelConnectionOptions(options: ConnectionOptions): Kernel
     // HTTP(S) proxy — the same `ConnectionOptions.proxy` the Thrift path uses.
     ...buildKernelProxyOptions(options),
   };
+
+  // Omitted when no port is set; any explicit port, 443 and 80 included, is sent.
+  const port = buildKernelPort(options);
+  if (port !== undefined) {
+    base.port = port;
+  }
 
   if (options.enableGeoSpatialSupport !== undefined) {
     if (typeof options.enableGeoSpatialSupport !== 'boolean') {

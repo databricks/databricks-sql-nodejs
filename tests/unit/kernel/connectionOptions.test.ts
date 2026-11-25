@@ -64,71 +64,99 @@ describe('KernelAuth connection options — geospatial result representation', (
 });
 
 describe('KernelAuth connection options — https transport', () => {
+  const hostName = (extra: Record<string, unknown>) => buildKernelConnectionOptions(opts(extra)).hostName;
+
   it('forwards host unchanged by default (kernel prepends https://)', () => {
-    expect(buildKernelConnectionOptions(opts({})).hostName).to.equal('h.databricks.com');
-    expect(buildKernelConnectionOptions(opts({ https: true })).hostName).to.equal('h.databricks.com');
+    expect(hostName({})).to.equal('h.databricks.com');
+    expect(hostName({ https: true })).to.equal('h.databricks.com');
   });
 
   it('selects plain HTTP via an explicit http:// host when https is false', () => {
-    expect(buildKernelConnectionOptions(opts({ https: false })).hostName).to.equal('http://h.databricks.com');
+    expect(hostName({ https: false })).to.equal('http://h.databricks.com');
+    expect(hostName({ host: 'localhost:3015', https: false })).to.equal('http://localhost:3015');
   });
 
-  it('carries the port into the http:// host (matching the Thrift URL)', () => {
-    expect(buildKernelConnectionOptions(opts({ host: 'localhost', port: 3015, https: false })).hostName).to.equal(
-      'http://localhost:3015',
-    );
-    // A port already embedded in `host` (the kernel convention) is preserved.
-    expect(buildKernelConnectionOptions(opts({ host: 'localhost:3015', https: false })).hostName).to.equal(
-      'http://localhost:3015',
-    );
-  });
-
-  it('does not double the port when it is set in both host and port', () => {
-    expect(buildKernelConnectionOptions(opts({ host: 'localhost:3015', port: 3015, https: false })).hostName).to.equal(
-      'http://localhost:3015',
-    );
-    expect(buildKernelConnectionOptions(opts({ host: '[::1]:3015', port: 3015, https: false })).hostName).to.equal(
-      'http://[::1]:3015',
-    );
-  });
-
-  it('strips a trailing slash from host before adding the port (matching Thrift)', () => {
-    expect(buildKernelConnectionOptions(opts({ host: 'localhost/', port: 3015, https: false })).hostName).to.equal(
-      'http://localhost:3015',
-    );
-    expect(buildKernelConnectionOptions(opts({ host: 'localhost:3015/', port: 3015, https: false })).hostName).to.equal(
-      'http://localhost:3015',
-    );
-  });
-
-  const hostName = (extra: Record<string, unknown>) => buildKernelConnectionOptions(opts(extra)).hostName;
-
-  it('normalizes an existing http:// scheme in host instead of prefixing it again', () => {
+  it('replaces an existing http(s):// scheme in host with http:// when https is false', () => {
     expect(hostName({ host: 'http://localhost:3015', https: false })).to.equal('http://localhost:3015');
-    expect(hostName({ host: 'http://localhost:3015', port: 3015, https: false })).to.equal('http://localhost:3015');
-    expect(hostName({ host: 'HTTP://localhost', port: 3015, https: false })).to.equal('http://localhost:3015');
-    expect(hostName({ host: 'http://localhost:3015/', https: false })).to.equal('http://localhost:3015');
-  });
-
-  it('replaces an existing https:// scheme in host with http:// when https is false', () => {
+    expect(hostName({ host: 'HTTP://localhost', https: false })).to.equal('http://localhost');
     expect(hostName({ host: 'https://localhost:3015', https: false })).to.equal('http://localhost:3015');
-    expect(hostName({ host: 'https://localhost', port: 3015, https: false })).to.equal('http://localhost:3015');
-    expect(hostName({ host: 'https://[::1]:3015', port: 3015, https: false })).to.equal('http://[::1]:3015');
+    expect(hostName({ host: 'https://[::1]:3015', https: false })).to.equal('http://[::1]:3015');
   });
 
   it('forwards a full-URL host unchanged when https is not false', () => {
     expect(hostName({ host: 'https://h.databricks.com' })).to.equal('https://h.databricks.com');
     expect(hostName({ host: 'http://localhost:3015', https: true })).to.equal('http://localhost:3015');
   });
+});
 
-  it('does not mistake an IPv6 literal for an embedded port', () => {
-    expect(buildKernelConnectionOptions(opts({ host: '[::1]', port: 3015, https: false })).hostName).to.equal(
-      'http://[::1]:3015',
-    );
-    // Same URL shape as the Thrift transport, which also requires brackets.
-    expect(buildKernelConnectionOptions(opts({ host: '::1', port: 3015, https: false })).hostName).to.equal(
-      'http://::1:3015',
-    );
+describe('KernelAuth connection options — port passthrough', () => {
+  const native = (extra: Record<string, unknown>) =>
+    buildKernelConnectionOptions(opts(extra)) as { hostName: string; port?: number };
+
+  // [connection options, expected hostName, expected native port]. The host is passed through
+  // unchanged, and the kernel folds the port into it, so these are not folded here.
+  const sent: Array<[Record<string, unknown>, string, number]> = [
+    [{ port: 8443 }, 'h.databricks.com', 8443],
+    [{ port: 8443, https: true }, 'h.databricks.com', 8443],
+    [{ port: '8443' }, 'h.databricks.com', 8443], // a decimal string is accepted, as on Thrift
+    [{ port: 3015, https: false }, 'http://h.databricks.com', 3015],
+    [{ port: 443, https: false }, 'http://h.databricks.com', 443], // 443 is not the plain-HTTP default
+    [{ host: 'localhost', port: 3015, https: false }, 'http://localhost', 3015],
+    [{ host: 'https://h.databricks.com', port: 8443 }, 'https://h.databricks.com', 8443],
+    [{ host: 'h.databricks.com/', port: 8443 }, 'h.databricks.com/', 8443],
+    [{ host: '::1', port: 8443 }, '::1', 8443], // not bracketed here; the kernel brackets it
+    [{ host: '::1', port: 3015, https: false }, 'http://::1', 3015],
+    [{ host: 'user:pw@h.databricks.com', port: 8443 }, 'user:pw@h.databricks.com', 8443],
+    // A port already in host is left for the kernel to resolve; the driver sends both values.
+    [{ host: 'h.databricks.com:8443', port: 8443 }, 'h.databricks.com:8443', 8443],
+    [{ host: 'h.databricks.com:7000', port: 8443 }, 'h.databricks.com:7000', 8443],
+    [{ host: 'h.io/path:8443', port: 8443 }, 'h.io/path:8443', 8443],
+    [{ host: '', port: 8443 }, '', 8443],
+    // An explicit port is always sent; the kernel decides whether it is the default for the
+    // effective scheme, including an `http://` already in host with https unset.
+    [{ port: 443 }, 'h.databricks.com', 443],
+    [{ port: 443, https: true }, 'h.databricks.com', 443],
+    [{ port: 80, https: false }, 'http://h.databricks.com', 80],
+    [{ host: 'http://localhost', port: 443 }, 'http://localhost', 443],
+  ];
+  it('passes the host through unchanged and sends any explicit port', () => {
+    for (const [extra, wantHost, wantPort] of sent) {
+      const got = native(extra);
+      expect(got.hostName, JSON.stringify(extra)).to.equal(wantHost);
+      expect(got.port, JSON.stringify(extra)).to.equal(wantPort);
+    }
+  });
+
+  // No `port` key at all: unset or falsy, which means the default, as on Thrift.
+  const omitted: Array<[Record<string, unknown>, string]> = [
+    [{}, 'h.databricks.com'],
+    [{ port: undefined }, 'h.databricks.com'],
+    [{ port: null }, 'h.databricks.com'],
+    [{ port: 0 }, 'h.databricks.com'],
+    [{ port: '' }, 'h.databricks.com'],
+    [{ port: false }, 'h.databricks.com'],
+    [{ port: Number.NaN }, 'h.databricks.com'],
+    [{ port: 0, https: false }, 'http://h.databricks.com'],
+    [{ port: Number.NaN, https: false }, 'http://h.databricks.com'],
+    [{ host: 'h.databricks.com:8443' }, 'h.databricks.com:8443'], // port only in host
+  ];
+  it('sends no port when the port is unset or falsy', () => {
+    for (const [extra, wantHost] of omitted) {
+      const got = native(extra);
+      expect(got.hostName, JSON.stringify(extra)).to.equal(wantHost);
+      expect(got, JSON.stringify(extra)).to.not.have.property('port');
+    }
+  });
+
+  // Truthy values that are not a whole port number throw HiveDriverError before any native call,
+  // as Thrift does. The kernel does not see these.
+  const badPorts: unknown[] = [65536, -1, 1.5, Number.POSITIVE_INFINITY, true, 'abc', '8443x', '-1', '65536'];
+  it('rejects a truthy invalid port, with or without https: false', () => {
+    for (const port of badPorts) {
+      for (const extra of [{ port }, { port, https: false }]) {
+        expect(() => native(extra), String(port)).to.throw(HiveDriverError, /must be an integer between 1 and 65535/);
+      }
+    }
   });
 });
 

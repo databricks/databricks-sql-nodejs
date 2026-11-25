@@ -1,5 +1,9 @@
 # Release History
 
+## Unreleased
+
+- Kernel backend: a custom `port` is honored over HTTPS, as on Thrift, and with `https: false`. The kernel applies the port (kernel databricks/databricks-sql-kernel#505): a port other than the scheme default (443 over HTTPS, 80 with `https: false`) is written into `host` as `scheme://host:port`, bare IPv6 hosts are bracketed, and the default or `0` changes nothing. A port already in `host` wins, with a warning when they differ. The kernel rejects credentials, an empty `host`, or a path, query or fragment in `host` when a port is applied. The driver still treats a falsy `port` as the default, accepts a numeric string, and throws `HiveDriverError` for an invalid port. With OAuth and a non-default port, the kernel reaches its OAuth endpoints at the same `host:port`, while Thrift keeps OAuth on the bare host (documented, not guarded). Customer npm installs require a follow-up bump to a published `@databricks/databricks-sql-kernel-*` native package that reads the `port` option; an older published binding does not read it and connects to the default port.
+
 ## 3.1.0
 
 - Upgrade to [kernel 1.5.0](https://github.com/databricks/databricks-sql-kernel/releases/tag/v1.5.0): fix CloudFetch pagination, ordering and cancellation, paged inline Arrow results with CloudFetch disabled, and affected-row counts.

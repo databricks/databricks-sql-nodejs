@@ -653,6 +653,15 @@ export interface ConnectionOptions {
    */
   httpPath: string
   /**
+   * Connection port. Omitted, `0`, or the scheme default (443 for
+   * `https`, 80 for `http`) changes nothing. Any other port is folded
+   * into the host by the kernel, so the connection goes to `host:port`.
+   * The host must not carry credentials, a path, a query or a fragment,
+   * and a port already in the host wins over this one. A value that is
+   * not an integer in `0..=65535` is an `InvalidArgument` error.
+   */
+  port?: number
+  /**
    * Authentication mode. Omitted ⇒ [`AuthMode::Pat`] (back-compat:
    * existing PAT callers pass only `token`).
    */
