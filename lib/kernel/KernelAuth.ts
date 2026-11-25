@@ -909,7 +909,7 @@ export function buildKernelConnectionOptions(options: ConnectionOptions): Kernel
     ...buildKernelProxyOptions(options),
   };
 
-  // Omitted unless it is a non-default port, so the key is absent for the default.
+  // Omitted when no port is set; any explicit port, 443 and 80 included, is sent.
   const port = buildKernelPort(options);
   if (port !== undefined) {
     base.port = port;
