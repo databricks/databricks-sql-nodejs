@@ -19,6 +19,7 @@ import IClientContext from './contracts/IClientContext';
 import IOperationBackend, { IOperationBackendWaitOptions } from './contracts/IOperationBackend';
 import { ResultFormat, ResultMetadata } from './contracts/ResultMetadata';
 import ThriftOperationBackend from './thrift-backend/ThriftOperationBackend';
+import getResultSchema from './thrift-backend/resultSchema';
 import { synthesizeThriftStatus, synthesizeThriftResultSetMetadata } from './thrift-backend/wireSynthesis';
 import { mapOperationTypeToTelemetryType } from './telemetry/telemetryTypeMappers';
 import ExceptionClassifier from './telemetry/ExceptionClassifier';
@@ -308,7 +309,7 @@ export default class DBSQLOperation implements IOperation {
       this.context.getLogger().log(LogLevel.debug, `Fetching schema for operation with id: ${this.id}`);
       if (this.backend instanceof ThriftOperationBackend) {
         const metadata = await this.backend.thriftResultMetadataResponse();
-        return metadata.schema ?? null;
+        return getResultSchema(metadata) ?? null;
       }
       const metadata = await this.getResultMetadata();
       return metadata.schema ?? null;

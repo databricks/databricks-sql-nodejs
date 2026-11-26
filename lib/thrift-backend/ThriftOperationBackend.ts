@@ -29,6 +29,7 @@ import { definedOrError } from '../utils';
 import HiveDriverError from '../errors/HiveDriverError';
 import isObjectNotFound from './metadataErrors';
 import { synthesizeThriftResultSetMetadata } from './wireSynthesis';
+import getResultSchema from './resultSchema';
 
 interface ThriftOperationBackendOptions {
   handle: TOperationHandle;
@@ -482,7 +483,7 @@ export default class ThriftOperationBackend implements IOperationBackend {
   // eslint-disable-next-line class-methods-use-this
   private adaptResultMetadata(response: TGetResultSetMetadataResp): ResultMetadata {
     return {
-      schema: response.schema,
+      schema: getResultSchema(response),
       resultFormat: thriftRowSetTypeToResultFormat(definedOrError(response.resultFormat)),
       lz4Compressed: response.lz4Compressed,
       arrowSchema: response.arrowSchema,
