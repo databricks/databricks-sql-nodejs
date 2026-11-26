@@ -90,7 +90,8 @@ export default interface IOperation {
   hasMoreRows(): Promise<boolean>;
 
   /**
-   * Fetch schema
+   * Fetch schema. Statements without output, such as DDL, return a schema with
+   * no columns (on Thrift, only when Arrow results are enabled, the default).
    */
   getSchema(options?: GetSchemaOptions): Promise<TTableSchema | null>;
 

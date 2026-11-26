@@ -25,6 +25,7 @@ import ArrowResultConverter from '../../lib/result/ArrowResultConverter';
 import ArrowResultHandler from '../../lib/result/ArrowResultHandler';
 import CloudFetchResultHandler from '../../lib/result/CloudFetchResultHandler';
 import ResultSlicer from '../../lib/result/ResultSlicer';
+import { hiveSchemaToArrowSchema } from '../../lib/result/utils';
 
 import ClientContextStub from './.stubs/ClientContextStub';
 import { createOperationForTest } from './.stubs/createOperationForTest';
@@ -950,6 +951,40 @@ describe('DBSQLOperation', () => {
 
       expect(schema).to.deep.equal(directResults.resultSetMetadata?.schema);
       expect(driver.getResultSetMetadata.called).to.be.false;
+    });
+
+    it('should report no columns for statements without output', async () => {
+      const context = new ClientContextStub();
+      context.driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
+
+      // DDL on Thrift: placeholder `Result` column, Arrow schema with no fields.
+      const placeholder = {
+        columns: [
+          {
+            columnName: 'Result',
+            position: 1,
+            typeDesc: { types: [{ primitiveEntry: { type: TTypeId.STRING_TYPE } }] },
+          },
+        ],
+      };
+      const directResults: TSparkDirectResults = {
+        resultSetMetadata: {
+          status: { statusCode: TStatusCode.SUCCESS_STATUS },
+          resultFormat: TSparkRowSetType.ARROW_BASED_SET,
+          schema: placeholder,
+          arrowSchema: hiveSchemaToArrowSchema({ columns: [] }),
+        },
+      };
+      const operation = createOperationForTest({
+        handle: operationHandleStub({ hasResultSet: true }),
+        context,
+        directResults,
+      });
+
+      expect(await operation.getSchema()).to.deep.equal({ columns: [] });
+      expect((await operation.getResultMetadata()).schema).to.deep.equal({ columns: [] });
+      // The deprecated wire accessor stays verbatim.
+      expect((await operation.getMetadata()).schema).to.equal(placeholder);
     });
 
     it('should throw an error in case of a status error', async () => {
