@@ -1,6 +1,6 @@
 # Lessons
 
-<!-- distilled-through: 2026-11-18 -->
+<!-- distilled-through: 2026-11-26 -->
 
 ## Configuration and authentication
 - L-0001 (3×, #457): Trace option support through DBSQLClient, auth adapters and each transport. Type declarations and class comments do not establish forwarding; shared preparation can precede backend-specific filtering.
@@ -36,6 +36,7 @@
 - L-0029 (2×, #535 #594): Published-library overrides and lockfiles do not constrain downstream runtime dependencies. Fix declared ranges and test those ranges instead of claiming local overrides protect consumers.
 - L-0030 (1×, #535): Security pins must not downgrade an already patched resolution; verify the advisory applies to the exact package.
 - L-0031 (1×, #568): Put backend-shared code in neutral utilities. Preserve deep-import compatibility with deprecated re-export shims and smoke tests when moving modules.
+- L-0079 (1×, #650): When condensing Unreleased changelog bullets into a release section, keep backend scope (Thrift/kernel-only), old-to-new defaults and forced user actions (re-login, config change); diff each against its original.
 
 ## Errors, logging and telemetry
 - L-0032 (1×, #514): Negative tests must assert the intended error shape or message so unrelated warehouse/auth failures cannot satisfy them.
@@ -68,6 +69,8 @@
 - L-0057 (1×, #595): ProxyAgent needs TLS options at its top level. Verify proxy TLS/mTLS with a real CONNECT proxy and generated test certificate.
 - L-0058 (1×, #577): Merge Arrow result rows with indexed concatChunks copies. Preserve provider batches and track owned leftover slices with offsets.
 - L-0059 (1×, #611): Every auxiliary HTTP request, including OAuth, exchange and CloudFetch, must use the connection provider's getAgent to honor proxy/TLS settings.
+- L-0080 (1×, #634): Pooled keep-alive TLS sockets pin the first request/Response. After response.buffer(), remove only listeners that read added, in finally; keep pre-existing and constructor late-error handlers.
+- L-0081 (1×, #634): Test socket-pinned buffer retention over a real keep-alive HTTPS server/agent: assert socket stays in freeSockets, then WeakRef plus forced GC shows payload collected. Mocks and plain HTTP cannot reproduce it.
 
 ## Bot workflow and CI
 - L-0060 (1×, #499): In bot workflows with both schedule and workflow_dispatch triggers, keep numeric input knobs string-typed and parse them downstream.
