@@ -40,6 +40,9 @@ import {
 import KernelOperationBackend from '../../../lib/kernel/KernelOperationBackend';
 import { TTypeId } from '../../../thrift/TCLIService_types';
 import ClientContextStub from '../.stubs/ClientContextStub';
+import ParameterError from '../../../lib/errors/ParameterError';
+import StagingError from '../../../lib/errors/StagingError';
+import OperationStateError, { OperationStateErrorCode } from '../../../lib/errors/OperationStateError';
 
 // Minimal stub of the napi `Statement` surface that emits a precomputed
 // Arrow IPC payload per `fetchNextBatch()` call. Used to feed
@@ -388,4 +391,132 @@ describe('KernelOperationBackend — M0 datatype round-trip via napi → ArrowRe
     await backend.close();
     expect(stub.closed).to.equal(true);
   });
+});
+
+describe('KernelOperationBackend Volume completion', () => {
+  it('preserves SQL execution errors', async () => {
+    const error = new ParameterError('invalid SQL parameter');
+    const backend = new KernelOperationBackend({
+      asyncStatement: {
+        status: async () => 'Succeeded',
+        awaitResult: async () => {
+          throw error;
+        },
+      } as any,
+      context: new ClientContextStub(),
+    });
+    const actual = await backend.completeStagingOperation(['/allowed']).then(
+      () => expect.fail('execution should fail'),
+      (failure) => failure,
+    );
+    expect(actual).to.equal(error);
+  });
+
+  for (const { error, staging } of [
+    {
+      error: Object.assign(new ParameterError('path is not allowed'), {
+        kernelMetadata: { errorCode: 'VOLUME_PATH_NOT_ALLOWED' },
+      }),
+      staging: true,
+    },
+    {
+      error: Object.assign(new ParameterError('invalid Volume instruction'), {
+        kernelMetadata: { errorCode: 'VOLUME_INVALID_INSTRUCTION' },
+      }),
+      staging: true,
+    },
+    {
+      error: Object.assign(new Error('storage HTTP 403'), {
+        kernelMetadata: { httpStatus: 403, errorCode: 'VOLUME_STORAGE_HTTP_ERROR' },
+      }),
+      staging: true,
+    },
+    {
+      error: Object.assign(new ParameterError('invalid instruction request'), {
+        sqlState: '22023',
+        kernelMetadata: { httpStatus: 400 },
+      }),
+      staging: false,
+    },
+  ]) {
+    it(`maps completion failure: ${error.message}`, async () => {
+      const schema = new Schema([withTypeName(new Field('x', new Int32(), true), 'INT')]);
+      const statement = new StatementStub(ipcSchemaOnly(schema), []);
+      Object.assign(statement, {
+        completeVolumeOperation: async () => {
+          throw error;
+        },
+      });
+      const backend = new KernelOperationBackend({ statement, context: new ClientContextStub() });
+      const actual = await backend.completeStagingOperation(['/allowed']).then(
+        () => expect.fail('completion should fail'),
+        (failure) => failure,
+      );
+      if (staging) {
+        expect(actual).to.be.instanceOf(StagingError).with.property('message', error.message);
+        expect(actual.kernelMetadata).to.equal((error as any).kernelMetadata);
+      } else {
+        expect(actual).to.equal(error);
+        if ('sqlState' in error) expect(actual.sqlState).to.equal(error.sqlState);
+        if ('kernelMetadata' in error) expect(actual.kernelMetadata).to.equal(error.kernelMetadata);
+      }
+    });
+  }
+
+  it('rejects a stream PUT that needs input', async () => {
+    const schema = new Schema([withTypeName(new Field('x', new Int32(), true), 'INT')]);
+    const statement = new StatementStub(ipcSchemaOnly(schema), []);
+    Object.assign(statement, { completeVolumeOperation: async () => 'needs_input_stream' });
+    const backend = new KernelOperationBackend({ statement, context: new ClientContextStub() });
+    const error = await backend.completeStagingOperation(['/allowed']).catch((failure) => failure);
+    expect(error).to.be.instanceOf(StagingError).with.property('message', 'Volume PUT requires a local file path');
+  });
+
+  for (const [action, code] of [
+    ['cancel', OperationStateErrorCode.Canceled],
+    ['close', OperationStateErrorCode.Closed],
+  ] as const) {
+    it(`reports a transfer interrupted by ${action}`, async () => {
+      const schema = new Schema([withTypeName(new Field('x', new Int32(), true), 'INT')]);
+      const statement = new StatementStub(ipcSchemaOnly(schema), []);
+      let interrupt!: (error: Error) => void;
+      const started = new Promise<void>((resolve) => {
+        Object.assign(statement, {
+          completeVolumeOperation: () =>
+            new Promise((_, reject) => {
+              interrupt = reject;
+              resolve();
+            }),
+        });
+      });
+      const backend = new KernelOperationBackend({ statement, context: new ClientContextStub() });
+      const completion = backend.completeStagingOperation(['/allowed']).catch((failure) => failure);
+      await started;
+      await backend[action]();
+      interrupt(new Error('Volume transfer was cancelled'));
+      expect(await completion)
+        .to.be.instanceOf(OperationStateError)
+        .with.property('errorCode', code);
+    });
+  }
+
+  for (const outcome of ['completed', 'not_volume']) {
+    it(`${
+      outcome === 'completed' ? 'consumes completed instructions' : 'preserves ordinary result rows'
+    }`, async () => {
+      const schema = new Schema([withTypeName(new Field('x', new Int32(), true), 'INT')]);
+      const stub = new StatementStub(ipcSchemaOnly(schema), [ipcFromColumns(schema, { x: [1] })]);
+      const completeVolumeOperation = async (paths: string[], remove404: boolean) => {
+        expect(paths).to.deep.equal(['/allowed']);
+        expect(remove404).to.equal(true);
+        return outcome;
+      };
+      Object.assign(stub, { isVolumeOperation: outcome === 'completed', completeVolumeOperation });
+      const backend = new KernelOperationBackend({ statement: stub, context: new ClientContextStub() });
+      expect((await backend.getResultMetadata()).isStagingOperation).to.equal(outcome === 'completed');
+      await backend.completeStagingOperation(['/allowed']);
+      expect((await backend.fetchChunk({ limit: 100 })).length).to.equal(outcome === 'completed' ? 0 : 1);
+      expect(await backend.hasMore()).to.equal(false);
+    });
+  }
 });

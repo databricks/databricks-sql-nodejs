@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Release completed Thrift CloudFetch body-reader listeners so idle connections do not retain downloaded result buffers.
+- Support Volume file transfers on the kernel backend when `stagingAllowedLocalPath` is supplied. Symlink targets must remain within configured allowed roots; in-root symlinks are permitted. (#613)
 
 ## 3.1.0
 
