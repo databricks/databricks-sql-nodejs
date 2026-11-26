@@ -90,13 +90,17 @@ export default interface IOperation {
   hasMoreRows(): Promise<boolean>;
 
   /**
-   * Fetch schema. Statements without output, such as DDL, return a schema with
-   * no columns (on Thrift, only when Arrow results are enabled, the default).
+   * Fetch schema; returns null when hasResultSet is false or no schema is available.
+   * DDL returns { columns: [] } on kernel and on Thrift when Arrow metadata has
+   * no fields. Thrift retains its `Result STRING` placeholder without Arrow
+   * metadata (arrowEnabled: false or older protocols).
+   * The deprecated getMetadata() retains the Thrift wire schema unchanged.
    */
   getSchema(options?: GetSchemaOptions): Promise<TTableSchema | null>;
 
   /**
    * Fetch result-set metadata in the backend-neutral `ResultMetadata` shape.
+   * Its schema follows the same column normalization as getSchema().
    * Prefer this over the Thrift-shaped surface for new code.
    */
   getResultMetadata(): Promise<ResultMetadata>;

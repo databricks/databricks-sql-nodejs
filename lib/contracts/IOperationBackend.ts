@@ -1,5 +1,5 @@
 import Status from '../dto/Status';
-import { TOperationType } from '../../thrift/TCLIService_types';
+import { TOperationType, TTableSchema } from '../../thrift/TCLIService_types';
 import { OperationStatus } from './OperationStatus';
 import { ResultMetadata } from './ResultMetadata';
 
@@ -105,6 +105,9 @@ export default interface IOperationBackend {
 
   /** Fetch result-set metadata (schema, format, lz4 flag, arrow schema, staging flag). */
   getResultMetadata(): Promise<ResultMetadata>;
+
+  /** Column schema without requiring result-format metadata; defaults to getResultMetadata().schema. */
+  getSchema?(): Promise<TTableSchema | undefined>;
 
   /**
    * Result-set metadata if it is already on hand (direct results or an earlier

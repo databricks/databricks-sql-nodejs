@@ -2,11 +2,11 @@ import { RecordBatchReader } from 'apache-arrow';
 import { TGetResultSetMetadataResp, TTableSchema, TTypeId } from '../../thrift/TCLIService_types';
 
 function isPlaceholderSchema(schema?: TTableSchema): boolean {
-  if (schema?.columns.length !== 1) {
+  if (schema?.columns?.length !== 1) {
     return false;
   }
   const [column] = schema.columns;
-  return column.columnName === 'Result' && column.typeDesc.types[0]?.primitiveEntry?.type === TTypeId.STRING_TYPE;
+  return column?.columnName === 'Result' && column.typeDesc?.types?.[0]?.primitiveEntry?.type === TTypeId.STRING_TYPE;
 }
 
 function hasNoArrowFields(arrowSchema: Buffer): boolean {

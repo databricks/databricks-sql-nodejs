@@ -1,5 +1,9 @@
 # Release History
 
+## Unreleased
+
+- Thrift `getSchema()` and `getResultMetadata().schema` now report no columns for DDL when Arrow metadata has no fields. `getMetadata()` and responses without Arrow metadata (including `arrowEnabled: false` and older protocols) retain the `Result STRING` placeholder. (#651)
+
 ## 3.1.0
 
 - Upgrade to [kernel 1.5.0](https://github.com/databricks/databricks-sql-kernel/releases/tag/v1.5.0): fix CloudFetch pagination, ordering and cancellation, paged inline Arrow results with CloudFetch disabled, and affected-row counts.

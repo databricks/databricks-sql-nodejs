@@ -98,6 +98,8 @@ export default class ThriftOperationBackend implements IOperationBackend {
 
   private metadata?: TGetResultSetMetadataResp;
 
+  private normalizedMetadata?: TGetResultSetMetadataResp;
+
   private metadataPromise?: Promise<TGetResultSetMetadataResp>;
 
   private state: TOperationState = TOperationState.INITIALIZED_STATE;
@@ -119,7 +121,7 @@ export default class ThriftOperationBackend implements IOperationBackend {
     this.functionCatalog = functionCatalog;
     this.emptyResultOnNotFound = emptyResultOnNotFound;
     this.rowMode = rowMode;
-    this.metadata = directResults?.resultSetMetadata;
+    this.setResultMetadata(directResults?.resultSetMetadata);
 
     const useOnlyPrefetchedResults = Boolean(directResults?.closeOperation);
 
@@ -293,15 +295,19 @@ export default class ThriftOperationBackend implements IOperationBackend {
   }
 
   public async getResultMetadata(): Promise<ResultMetadata> {
-    return this.adaptResultMetadata(await this.thriftResultMetadataResponse());
+    return this.adaptResultMetadata(await this.resultMetadataResponse());
+  }
+
+  public async getSchema(): Promise<TTableSchema | undefined> {
+    return (await this.resultMetadataResponse()).schema;
   }
 
   public getCachedResultMetadata(): ResultMetadata | undefined {
-    if (!this.metadata) {
+    if (!this.normalizedMetadata) {
       return undefined;
     }
     try {
-      return this.adaptResultMetadata(this.metadata);
+      return this.adaptResultMetadata(this.normalizedMetadata);
     } catch {
       // Missing or unsupported resultFormat; the fetch path reports that error.
       return undefined;
@@ -311,10 +317,8 @@ export default class ThriftOperationBackend implements IOperationBackend {
   /**
    * Thrift-specific accessor for the raw `TGetResultSetMetadataResp`.
    *
-   * Used internally by `getResultHandler` (dispatches on Thrift `resultFormat`
-   * and passes the full Thrift response to the JSON / Arrow / CloudFetch
-   * result handlers). Also called by the public `DBSQLOperation.getMetadata()`
-   * facade (zero-loss fast path).
+   * Called by the public `DBSQLOperation.getMetadata()` facade to preserve
+   * the wire response. Internal consumers use the normalized copy.
    *
    * Not declared on `IOperationBackend` — non-Thrift backends do not implement
    * it. The facade reaches it via `instanceof ThriftOperationBackend`.
@@ -334,7 +338,7 @@ export default class ThriftOperationBackend implements IOperationBackend {
         operationHandle: this.operationHandle,
       });
       Status.assert(metadata.status);
-      this.metadata = metadata;
+      this.setResultMetadata(metadata);
       return metadata;
     })();
 
@@ -368,7 +372,7 @@ export default class ThriftOperationBackend implements IOperationBackend {
   }
 
   public async getResultHandler(): Promise<ResultSlicer<any>> {
-    const metadata = await this.thriftResultMetadataResponse();
+    const metadata = await this.resultMetadataResponse();
     const resultFormat = definedOrError(metadata.resultFormat);
 
     if (!this.resultHandler) {
@@ -434,11 +438,13 @@ export default class ThriftOperationBackend implements IOperationBackend {
           message: response.errorMessage ?? response.displayMessage ?? response.status.errorMessage,
         })}`,
       );
-      this.metadata = synthesizeThriftResultSetMetadata({
-        schema: this.emptyResultOnNotFound,
-        resultFormat: ResultFormat.ColumnBased,
-        isStagingOperation: false,
-      });
+      this.setResultMetadata(
+        synthesizeThriftResultSetMetadata({
+          schema: this.emptyResultOnNotFound,
+          resultFormat: ResultFormat.ColumnBased,
+          isStagingOperation: false,
+        }),
+      );
       this.resultHandler = new ResultSlicer(this.context, {
         fetchNext: async () => [],
         hasMore: async () => false,
@@ -480,10 +486,20 @@ export default class ThriftOperationBackend implements IOperationBackend {
     };
   }
 
+  private setResultMetadata(metadata?: TGetResultSetMetadataResp): void {
+    this.metadata = metadata;
+    this.normalizedMetadata = metadata ? { ...metadata, schema: getResultSchema(metadata) } : undefined;
+  }
+
+  private async resultMetadataResponse(): Promise<TGetResultSetMetadataResp> {
+    await this.thriftResultMetadataResponse();
+    return definedOrError(this.normalizedMetadata);
+  }
+
   // eslint-disable-next-line class-methods-use-this
   private adaptResultMetadata(response: TGetResultSetMetadataResp): ResultMetadata {
     return {
-      schema: getResultSchema(response),
+      schema: response.schema,
       resultFormat: thriftRowSetTypeToResultFormat(definedOrError(response.resultFormat)),
       lz4Compressed: response.lz4Compressed,
       arrowSchema: response.arrowSchema,

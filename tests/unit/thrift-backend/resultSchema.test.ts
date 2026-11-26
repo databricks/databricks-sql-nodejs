@@ -1,5 +1,12 @@
 import { expect } from 'chai';
-import { TGetResultSetMetadataResp, TStatusCode, TTableSchema, TTypeId } from '../../../thrift/TCLIService_types';
+import {
+  TColumnDesc,
+  TGetResultSetMetadataResp,
+  TStatusCode,
+  TTableSchema,
+  TTypeDesc,
+  TTypeId,
+} from '../../../thrift/TCLIService_types';
 import getResultSchema from '../../../lib/thrift-backend/resultSchema';
 import { hiveSchemaToArrowSchema } from '../../../lib/result/utils';
 
@@ -37,5 +44,20 @@ describe('getResultSchema', () => {
   it('returns other schemas unchanged', () => {
     const schema: TTableSchema = { columns: [stringColumn('Result', 1), stringColumn('other', 2)] };
     expect(getResultSchema(metadata(schema, hiveSchemaToArrowSchema({ columns: [] })))).to.equal(schema);
+  });
+
+  it('preserves schemas with missing required Thrift fields', () => {
+    const columnWithoutType = new TColumnDesc();
+    columnWithoutType.columnName = 'Result';
+    const schemas: TTableSchema[] = [
+      new TTableSchema(),
+      { columns: [columnWithoutType] },
+      { columns: [{ ...stringColumn('Result', 1), typeDesc: new TTypeDesc() }] },
+    ];
+    const arrowSchema = hiveSchemaToArrowSchema({ columns: [] });
+
+    for (const schema of schemas) {
+      expect(getResultSchema(metadata(schema, arrowSchema))).to.equal(schema);
+    }
   });
 });

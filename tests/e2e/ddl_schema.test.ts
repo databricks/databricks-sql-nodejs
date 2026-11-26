@@ -24,21 +24,43 @@ describe('schema of statements without output', () => {
 
       const columnsOf = async (statement: string) => {
         const operation = await session.executeStatement(statement);
-        expect(await operation.fetchAll()).to.deep.equal([]);
-        const schema = await operation.getSchema();
-        await operation.close();
-        return schema?.columns.map((column) => column.columnName);
+        try {
+          expect(await operation.fetchAll()).to.deep.equal([]);
+          const schema = await operation.getSchema();
+          return schema?.columns.map((column) => column.columnName);
+        } finally {
+          await operation.close();
+        }
       };
 
+      let cleanupError: unknown;
       try {
+        await columnsOf(`DROP TABLE IF EXISTS ${table}`);
         expect(await columnsOf(`SELECT 'sample' AS Result WHERE 1 = 0`)).to.deep.equal(['Result']);
         expect(await columnsOf(`CREATE TABLE ${table} (col1 INT)`)).to.deep.equal([]);
         expect(await columnsOf(`DROP TABLE ${table}`)).to.deep.equal([]);
       } finally {
-        const cleanup = await session.executeStatement(`DROP TABLE IF EXISTS ${table}`);
-        await cleanup.close();
-        await session.close();
-        await client.close();
+        try {
+          try {
+            const cleanup = await session.executeStatement(`DROP TABLE IF EXISTS ${table}`);
+            try {
+              await cleanup.finished();
+            } finally {
+              await cleanup.close();
+            }
+          } finally {
+            try {
+              await session.close();
+            } finally {
+              await client.close();
+            }
+          }
+        } catch (error) {
+          cleanupError = error;
+        }
+      }
+      if (cleanupError !== undefined) {
+        throw cleanupError;
       }
     });
   }

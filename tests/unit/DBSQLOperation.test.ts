@@ -29,7 +29,7 @@ import { hiveSchemaToArrowSchema } from '../../lib/result/utils';
 
 import ClientContextStub from './.stubs/ClientContextStub';
 import { createOperationForTest } from './.stubs/createOperationForTest';
-import { Type } from 'apache-arrow';
+import { RecordBatchReader, Type } from 'apache-arrow';
 
 function operationHandleStub(overrides: Partial<TOperationHandle>): TOperationHandle {
   return {
@@ -953,39 +953,53 @@ describe('DBSQLOperation', () => {
       expect(driver.getResultSetMetadata.called).to.be.false;
     });
 
-    it('should report no columns for statements without output', async () => {
-      const context = new ClientContextStub();
-      context.driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
+    for (const prefetched of [true, false]) {
+      it(`normalizes DDL schemas once with ${prefetched ? 'prefetched' : 'fetched'} metadata`, async () => {
+        const context = new ClientContextStub();
+        const driver = sinon.spy(context.driver);
+        driver.getOperationStatusResp.operationState = TOperationState.FINISHED_STATE;
 
-      // DDL on Thrift: placeholder `Result` column, Arrow schema with no fields.
-      const placeholder = {
-        columns: [
-          {
-            columnName: 'Result',
-            position: 1,
-            typeDesc: { types: [{ primitiveEntry: { type: TTypeId.STRING_TYPE } }] },
-          },
-        ],
-      };
-      const directResults: TSparkDirectResults = {
-        resultSetMetadata: {
+        // DDL on Thrift: placeholder `Result` column, Arrow schema with no fields.
+        const placeholder = {
+          columns: [
+            {
+              columnName: 'Result',
+              position: 1,
+              typeDesc: { types: [{ primitiveEntry: { type: TTypeId.STRING_TYPE } }] },
+            },
+          ],
+        };
+        const metadata = {
           status: { statusCode: TStatusCode.SUCCESS_STATUS },
           resultFormat: TSparkRowSetType.ARROW_BASED_SET,
           schema: placeholder,
           arrowSchema: hiveSchemaToArrowSchema({ columns: [] }),
-        },
-      };
-      const operation = createOperationForTest({
-        handle: operationHandleStub({ hasResultSet: true }),
-        context,
-        directResults,
-      });
+        };
+        driver.getResultSetMetadataResp = metadata;
+        const decode = sinon.spy(RecordBatchReader, 'from');
+        try {
+          const operation = createOperationForTest({
+            handle: operationHandleStub({ hasResultSet: true }),
+            context,
+            directResults: prefetched ? { resultSetMetadata: metadata } : undefined,
+          });
 
-      expect(await operation.getSchema()).to.deep.equal({ columns: [] });
-      expect((await operation.getResultMetadata()).schema).to.deep.equal({ columns: [] });
-      // The deprecated wire accessor stays verbatim.
-      expect((await operation.getMetadata()).schema).to.equal(placeholder);
-    });
+          const schema = await operation.getSchema();
+          expect(schema).to.deep.equal({ columns: [] });
+          expect(await operation.getSchema()).to.equal(schema);
+          expect((await operation.getResultMetadata()).schema).to.equal(schema);
+          // The deprecated wire accessor stays verbatim.
+          expect(await operation.getMetadata()).to.equal(metadata);
+          expect(metadata.schema).to.equal(placeholder);
+          expect(await operation.fetchAll()).to.deep.equal([]);
+          expect(driver.fetchResults.called).to.be.false;
+          expect(driver.getResultSetMetadata.callCount).to.equal(prefetched ? 0 : 1);
+          expect(decode.callCount).to.equal(1);
+        } finally {
+          decode.restore();
+        }
+      });
+    }
 
     it('should throw an error in case of a status error', async () => {
       const context = new ClientContextStub();
