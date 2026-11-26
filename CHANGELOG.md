@@ -1,5 +1,9 @@
 # Release History
 
+## Unreleased
+
+- Release completed Thrift CloudFetch body-reader listeners so idle connections do not retain downloaded result buffers.
+
 ## 3.1.0
 
 - Upgrade to [kernel 1.5.0](https://github.com/databricks/databricks-sql-kernel/releases/tag/v1.5.0): fix CloudFetch pagination, ordering and cancellation, paged inline Arrow results with CloudFetch disabled, and affected-row counts.

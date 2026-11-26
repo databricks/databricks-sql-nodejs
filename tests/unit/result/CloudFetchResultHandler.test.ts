@@ -1,6 +1,12 @@
 import { expect, AssertionError } from 'chai';
 import sinon, { SinonStub } from 'sinon';
+import { execFileSync } from 'child_process';
 import http from 'http';
+import https from 'https';
+import path from 'path';
+import { PassThrough } from 'stream';
+import v8 from 'v8';
+import vm from 'vm';
 import { AddressInfo } from 'net';
 import Int64 from 'node-int64';
 import { compressFrameSync } from 'lz4-napi';
@@ -19,6 +25,22 @@ import BaseClientContextStub from '../.stubs/ClientContextStub';
 import { ClientConfig } from '../../../lib/contracts/IClientContext';
 import ConnectionProviderStub from '../.stubs/ConnectionProviderStub';
 import HttpRetryPolicy from '../../../lib/connection/connections/HttpRetryPolicy';
+import createLocalhostCertificate from '../.stubs/localhostCertificate';
+
+// `WeakRef` is newer than the ES2018 lib this project compiles against.
+const { WeakRef } = globalThis as unknown as {
+  WeakRef: new <T extends object>(target: T) => { deref(): T | undefined };
+};
+
+async function collectGarbage(): Promise<void> {
+  v8.setFlagsFromString('--expose-gc');
+  const gc = vm.runInNewContext('gc') as () => void;
+  for (let i = 0; i < 3; i += 1) {
+    // eslint-disable-next-line no-await-in-loop
+    await new Promise((resolve) => setImmediate(resolve));
+    gc();
+  }
+}
 
 const sampleArrowSchema = Buffer.from([
   255, 255, 255, 255, 208, 0, 0, 0, 16, 0, 0, 0, 0, 0, 10, 0, 14, 0, 6, 0, 13, 0, 8, 0, 10, 0, 0, 0, 0, 0, 4, 0, 16, 0,
@@ -752,6 +774,166 @@ describe('CloudFetchResultHandler', () => {
     },
   );
 
+  describe('response body retention', () => {
+    function createHandler(response: Response) {
+      const context = new ClientContextStub({ cloudFetchConcurrentDownloads: 1 });
+      context.invokeWithRetryStub.resolves({ request: new Request('http://localhost'), response });
+      return new CloudFetchResultHandler(context, new ResultsProviderStub([sampleRowSet1], undefined), {
+        status: { statusCode: TStatusCode.SUCCESS_STATUS },
+      });
+    }
+
+    it('releases consumed body listeners without removing existing or later listeners', async () => {
+      const body = new PassThrough();
+      const response = new Response(body);
+      const existing = ['data', 'end', 'error'].map((event) => {
+        const listener = sinon.spy();
+        body.on(event, listener);
+        return listener;
+      });
+      const later = sinon.spy();
+      body.once('data', () => body.on('error', later));
+      const errorsBefore = body.listeners('error');
+      const handler = createHandler(response);
+      setImmediate(() => body.end(sampleArrowBatch));
+
+      const batch = await handler.fetchNext({ limit: 10000 });
+
+      expect(batch.batches).to.deep.eq([sampleArrowBatch]);
+      expect(response.bodyUsed).to.be.true;
+      expect(body.listeners('data')).to.deep.eq([existing[0]]);
+      expect(body.listeners('end')).to.deep.eq([existing[1]]);
+      expect(body.listeners('error')).to.deep.eq([...errorsBefore, later]);
+      body.emit('error', new Error('late stream error'));
+      expect(existing[2].calledOnce).to.be.true;
+      expect(later.calledOnce).to.be.true;
+    });
+
+    it('releases body reader listeners when consumption rejects', async () => {
+      const body = new PassThrough();
+      const response = new Response(body);
+      const errorsBefore = body.listeners('error');
+      const handler = createHandler(response);
+      setImmediate(() => body.destroy(new Error('body interrupted')));
+
+      let thrown: unknown;
+      try {
+        await handler.fetchNext({ limit: 10000 });
+      } catch (error) {
+        thrown = error;
+      }
+
+      expect(thrown).to.be.instanceOf(Error);
+      expect(response.bodyUsed).to.be.true;
+      expect(body.listenerCount('data')).to.eq(0);
+      expect(body.listenerCount('end')).to.eq(0);
+      expect(body.listeners('error')).to.deep.eq(errorsBefore);
+    });
+
+    it('handles late body errors without application error handlers or unhandled rejections', function () {
+      this.timeout(15000);
+      const repoRoot = path.resolve(__dirname, '../../..');
+      const handlerPath = path.join(repoRoot, 'lib/result/CloudFetchResultHandler');
+      const script = `
+        const assert = require('assert').strict;
+        const { PassThrough } = require('stream');
+        const { Response } = require('node-fetch');
+        const Handler = require(${JSON.stringify(handlerPath)}).default;
+        (async () => {
+          const body = new PassThrough();
+          const response = new Response(body);
+          const originalErrors = body.listeners('error');
+          assert.equal(originalErrors.length, 1);
+          const reading = Handler.prototype.readBody.call({}, response);
+          body.end(Buffer.from('result bytes'));
+          assert.equal((await reading).toString(), 'result bytes');
+          assert.equal(response.bodyUsed, true);
+          assert.equal(body.listenerCount('data'), 0);
+          assert.equal(body.listenerCount('end'), 0);
+          await new Promise((resolve) => setImmediate(() => {
+            body.emit('error', new Error('late body error'));
+            resolve();
+          }));
+          await new Promise((resolve) => setImmediate(resolve));
+          assert.deepEqual(body.listeners('error'), originalErrors);
+          process.stdout.write('late body error handled\\n');
+        })().catch((error) => { console.error(error); process.exitCode = 1; });
+      `;
+      const output = execFileSync(
+        process.execPath,
+        ['--unhandled-rejections=strict', '--require', require.resolve('ts-node/register'), '-e', script],
+        { cwd: repoRoot, encoding: 'utf8', timeout: 10000, stdio: 'pipe' },
+      );
+      expect(output).to.eq('late body error handled\n');
+    });
+
+    describe('over HTTPS keep-alive', () => {
+      let server: https.Server | undefined;
+      let agent: https.Agent | undefined;
+
+      afterEach(async () => {
+        agent?.destroy();
+        agent = undefined;
+        if (server) {
+          server.closeAllConnections();
+          await new Promise<void>((resolve) => {
+            server!.close(() => resolve());
+          });
+          server = undefined;
+        }
+      });
+
+      // Real node-fetch, HttpRetryPolicy and a keep-alive https.Agent: the pooled TLS socket keeps its first request
+      // alive (see readBody), so only this path shows whether the downloaded body can be collected.
+      it('lets the downloaded body be garbage-collected while its TLS socket stays pooled', async function () {
+        this.timeout(15000);
+        const certificate = createLocalhostCertificate();
+        if (!certificate) {
+          this.skip(); // openssl is not available
+        }
+        const payload = Buffer.alloc(1024 * 1024, 7);
+        server = https.createServer({ cert: certificate.cert, key: certificate.key }, (req, res) => res.end(payload));
+        await new Promise<void>((resolve) => {
+          server!.listen(0, '127.0.0.1', () => resolve());
+        });
+        agent = new https.Agent({ keepAlive: true, ca: certificate.cert });
+        const fileLink = `https://127.0.0.1:${(server.address() as AddressInfo).port}/chunk`;
+
+        const context = new BaseClientContextStub({ cloudFetchConcurrentDownloads: 1, retriesTimeout: 10000 });
+        sinon.stub(context.connectionProvider, 'getAgent').resolves(agent);
+        sinon.stub(context.connectionProvider, 'getRetryPolicy').callsFake(async () => new HttpRetryPolicy(context));
+
+        const downloaded = await (async () => {
+          const rowSet: TRowSet = {
+            startRowOffset: new Int64(0),
+            rows: [],
+            resultLinks: [
+              {
+                fileLink,
+                expiryTime: new Int64(defaultLinkExpiryTime),
+                rowCount: new Int64(1),
+                startRowOffset: new Int64(0),
+                bytesNum: new Int64(0),
+              },
+            ],
+          };
+          const handler = new CloudFetchResultHandler(context, new ResultsProviderStub([rowSet], undefined), {
+            lz4Compressed: false,
+            status: { statusCode: TStatusCode.SUCCESS_STATUS },
+          });
+          const batch = await handler.fetchNext({ limit: 10000 });
+          expect(batch.batches).to.have.length(1);
+          expect(batch.batches[0].equals(payload)).to.be.true;
+          return new WeakRef(batch.batches[0]);
+        })();
+
+        expect(Object.values(agent.freeSockets).flat()).to.have.length(1);
+        await collectGarbage();
+        expect(downloaded.deref()).to.be.undefined;
+      });
+    });
+  });
+
   describe('download deadline', () => {
     let server: http.Server | undefined;
 
@@ -840,6 +1022,9 @@ describe('CloudFetchResultHandler', () => {
         expect(buffer.calledOnce).to.be.true;
         expect(arrayBuffer.called).to.be.false;
         expect(buffer.firstCall.thisValue.body).to.have.property('pipe').that.is.a('function');
+        expect(buffer.firstCall.thisValue.body.listenerCount('data')).to.eq(0);
+        expect(buffer.firstCall.thisValue.body.listenerCount('end')).to.eq(0);
+        expect(buffer.firstCall.thisValue.body.listenerCount('error')).to.eq(1);
         const downloaded = await buffer.firstCall.returnValue;
         expect(downloaded).to.deep.eq(body);
         expect(downloaded.length).to.be.lt(Buffer.poolSize >>> 1);

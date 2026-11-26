@@ -1,10 +1,6 @@
-import { execFileSync } from 'child_process';
-import fs from 'fs';
 import http from 'http';
 import https from 'https';
 import net from 'net';
-import os from 'os';
-import path from 'path';
 import tls from 'tls';
 import { expect } from 'chai';
 import { ProxyAgent } from 'proxy-agent';
@@ -12,6 +8,7 @@ import HttpConnection from '../../../../lib/connection/connections/HttpConnectio
 import ThriftHttpConnection from '../../../../lib/connection/connections/ThriftHttpConnection';
 import IConnectionOptions from '../../../../lib/connection/contracts/IConnectionOptions';
 import ClientContextStub from '../../.stubs/ClientContextStub';
+import createLocalhostCertificate from '../../.stubs/localhostCertificate';
 
 describe('HttpConnection.connect', () => {
   it('should create Thrift connection', async () => {
@@ -338,38 +335,11 @@ describe('HttpConnection through an HTTP CONNECT proxy', () => {
   const agents: Array<http.Agent | undefined> = [];
 
   before(async function () {
-    const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'dbsql-proxy-tls-'));
-    try {
-      execFileSync(
-        'openssl',
-        [
-          'req',
-          '-x509',
-          '-newkey',
-          'ec',
-          '-pkeyopt',
-          'ec_paramgen_curve:prime256v1',
-          '-nodes',
-          '-days',
-          '1',
-          '-subj',
-          '/CN=localhost',
-          '-addext',
-          'subjectAltName=DNS:localhost,IP:127.0.0.1',
-          '-keyout',
-          path.join(dir, 'key.pem'),
-          '-out',
-          path.join(dir, 'cert.pem'),
-        ],
-        { stdio: 'ignore' },
-      );
-      cert = fs.readFileSync(path.join(dir, 'cert.pem'), 'utf8');
-      key = fs.readFileSync(path.join(dir, 'key.pem'), 'utf8');
-    } catch {
+    const certificate = createLocalhostCertificate();
+    if (!certificate) {
       this.skip(); // openssl is not available
-    } finally {
-      fs.rmSync(dir, { recursive: true, force: true });
     }
+    ({ cert, key } = certificate);
 
     server = https.createServer({ cert, key, requestCert: true, rejectUnauthorized: false }, (req, res) => {
       serverRequests += 1;
