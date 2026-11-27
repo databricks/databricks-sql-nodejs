@@ -1052,12 +1052,24 @@ describe('KernelSessionBackend', () => {
     expect(options.rawParams).to.deep.equal([{ sqlType: 'INTERVAL MONTH', value: '2-6' }]);
   });
 
-  it('executeStatement sends no options object on the no-params path', async () => {
-    const connection = new FakeNativeConnection();
-    const session = makeSession(connection);
-    await session.executeStatement('SELECT 1', {});
-    expect(connection.lastOptions).to.equal(undefined);
-  });
+  for (const runAsync of [false, true]) {
+    for (const [client, statement, expected] of [
+      [true, undefined, true],
+      [false, undefined, false],
+      [true, false, false],
+      [false, true, true],
+    ] as const) {
+      it(`forwards LZ4 compression with client=${client}, statement=${statement}, runAsync=${runAsync}`, async () => {
+        const connection = new FakeNativeConnection();
+        const context = makeContext();
+        context.getConfig().useLZ4Compression = client;
+        const session = new KernelSessionBackend({ connection, context });
+        await session.executeStatement('SELECT 1', { runAsync, useLZ4Compression: statement });
+        expect(connection.lastOptions).to.deep.equal({ lz4Compression: expected });
+        expect(connection.lastAsyncStatement !== undefined).to.equal(runAsync);
+      });
+    }
+  }
 
   it('executeStatement rejects mixing ordinal and named parameters with the same ParameterError as Thrift', async () => {
     const connection = new FakeNativeConnection();
@@ -1080,7 +1092,7 @@ describe('KernelSessionBackend', () => {
     await session.executeStatement('SELECT 1', { queryTimeout: 30 });
     // queryTimeout is a no-op on kernel (SQL Warehouses use STATEMENT_TIMEOUT). It
     // must NOT be mapped to the kernel's `wait_timeout` (the inline-hold window),
-    // so nothing is forwarded onto the napi options.
+    // so the napi options carry no timeout override.
     expect((connection.lastOptions as { queryTimeoutSecs?: number } | undefined)?.queryTimeoutSecs).to.equal(undefined);
   });
 
@@ -1152,12 +1164,11 @@ describe('KernelSessionBackend', () => {
 
   // Unsupported-on-kernel per-statement HINTS are NO-OPs (not errors) so Thrift-
   // targeted call sites are drop-in on the kernel path. They are kernel-governed
-  // perf/format hints (useCloudFetch / useLZ4Compression) or an unexposed feature
+  // hints (useCloudFetch) or an unexposed feature
   // (staging); ignoring them can't change results. (Parameter binding is NOT here
   // — a dropped param would change results, so it still throws; asserted above.)
   for (const { name, options } of [
     { name: 'useCloudFetch', options: { useCloudFetch: true } },
-    { name: 'useLZ4Compression', options: { useLZ4Compression: true } },
     { name: 'stagingAllowedLocalPath', options: { stagingAllowedLocalPath: '/tmp' } },
   ] as const) {
     it(`executeStatement ignores unsupported ${name} (no-op, does not throw)`, async () => {

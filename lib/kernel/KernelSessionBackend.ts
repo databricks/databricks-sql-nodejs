@@ -144,15 +144,14 @@ export default class KernelSessionBackend implements ISessionBackend {
    *     never forwarded to the kernel and never applied as a client-side
    *     deadline — see the note in `executeStatement`;
    *   - `rowLimit` → `rowLimit` (kernel-only server-side row cap);
+   *   - `useLZ4Compression` → `lz4Compression`, with the client setting as the default;
    *   - `queryTags` → serialised into the conf overlay's reserved
    *     `query_tags` key (the same wire shape Thrift's `serializeQueryTags`
    *     produces), merged with any explicit `statementConf`.
    *
-   * Still rejected (genuinely unsupported on kernel, rather than silently
-   * dropped): `useCloudFetch` (governed by the kernel `ResultConfig`, not a
-   * per-statement knob), `useLZ4Compression` (kernel owns result compression),
-   * and `stagingAllowedLocalPath` (volume operations). `maxRows` is applied by
-   * the facade at fetch time, so it is intentionally not handled here.
+   * The kernel backend logs a warning when a statement supplies `useCloudFetch`
+   * or `stagingAllowedLocalPath` and ignores those hints. The session controls
+   * CloudFetch through `ResultConfig`. The facade applies `maxRows` at fetch time.
    */
   public async executeStatement(statement: string, options: ExecuteStatementOptions): Promise<IOperationBackend> {
     this.failIfClosed();
@@ -160,7 +159,7 @@ export default class KernelSessionBackend implements ISessionBackend {
     // Per-statement options the kernel backend doesn't honour are treated as
     // NO-OPs (logged at warn), not errors — so call sites written for the Thrift
     // backend are drop-in on the kernel path. These are perf/format hints the
-    // kernel governs internally (useCloudFetch / useLZ4Compression) or a feature
+    // kernel governs internally (useCloudFetch) or a feature
     // it doesn't expose yet (staging); ignoring them cannot change query results.
     // NB: parameter binding (compound/BINARY) is deliberately NOT no-op'd — a
     // dropped param would silently change results, so it still throws.
@@ -170,14 +169,6 @@ export default class KernelSessionBackend implements ISessionBackend {
         .log(
           LogLevel.warn,
           'kernel executeStatement: ignoring per-statement `useCloudFetch` — result fetching is governed by the kernel result configuration (no-op on kernel).',
-        );
-    }
-    if (options.useLZ4Compression !== undefined) {
-      this.context
-        .getLogger()
-        .log(
-          LogLevel.warn,
-          'kernel executeStatement: ignoring per-statement `useLZ4Compression` — result compression is governed by the kernel (no-op on kernel).',
         );
     }
     if (options.stagingAllowedLocalPath !== undefined) {
@@ -224,6 +215,7 @@ export default class KernelSessionBackend implements ISessionBackend {
     // execution. So `queryTimeout` is neither forwarded to the kernel nor used as
     // a client-side deadline.
 
+    const execOptions = this.buildExecuteOptions(options);
     if (!runAsync) {
       // DEFAULT — directResults (the Thrift/JDBC model). The kernel's
       // `executeStatementDirect` runs ExecuteStatement with a bounded server
@@ -234,13 +226,9 @@ export default class KernelSessionBackend implements ISessionBackend {
       // query stays cancellable via `op.cancel()` and `close()` is a clean
       // release (no client-side drive-to-terminal). Fire-and-forget DDL/DML
       // commits because the server runs it inline during the POST.
-      const execOptions = this.buildExecuteOptions(options);
       let direct: KernelStatement | KernelNativeAsyncStatement;
       try {
-        direct =
-          execOptions === undefined
-            ? await this.connection.executeStatementDirect(statement)
-            : await this.connection.executeStatementDirect(statement, execOptions);
+        direct = await this.connection.executeStatementDirect(statement, execOptions);
       } catch (err) {
         throw this.logAndMapError('executeStatement', err);
       }
@@ -264,13 +252,9 @@ export default class KernelSessionBackend implements ISessionBackend {
 
     // Async path: submit (`wait_timeout=0s`) returns a pending handle the
     // backend polls. (`queryTimeout` is a no-op on kernel — see the note above.)
-    const execOptions = this.buildExecuteOptions(options);
     let asyncStatement;
     try {
-      asyncStatement =
-        execOptions === undefined
-          ? await this.connection.submitStatement(statement)
-          : await this.connection.submitStatement(statement, execOptions);
+      asyncStatement = await this.connection.submitStatement(statement, execOptions);
     } catch (err) {
       throw this.logAndMapError('executeStatement', err);
     }
@@ -283,12 +267,7 @@ export default class KernelSessionBackend implements ISessionBackend {
     });
   }
 
-  /**
-   * Translate the public `ExecuteStatementOptions` into the kernel napi
-   * `ExecuteOptions`, returning `undefined` when nothing is set so the
-   * no-options call shape (`executeStatement(sql)`) is preserved.
-   */
-  private buildExecuteOptions(options: ExecuteStatementOptions): KernelNativeExecuteOptions | undefined {
+  private buildExecuteOptions(options: ExecuteStatementOptions): KernelNativeExecuteOptions {
     // Positional (`?`) and named (`:name`) parameters are mutually exclusive —
     // the kernel binds one placeholder style per statement. Use the SAME error
     // type and message as the Thrift backend (`ThriftSessionBackend`) so a
@@ -299,7 +278,9 @@ export default class KernelSessionBackend implements ISessionBackend {
       throw new ParameterError('Driver does not support both ordinal and named parameters.');
     }
 
-    const execOptions: KernelNativeExecuteOptions = {};
+    const execOptions: KernelNativeExecuteOptions = {
+      lz4Compression: options.useLZ4Compression ?? this.context.getConfig().useLZ4Compression,
+    };
     // Raw binding preserves qualified SQL types such as INTERVAL MONTH.
     const rawParams = positionalParams ?? namedParams;
     if (rawParams !== undefined) {
@@ -328,7 +309,7 @@ export default class KernelSessionBackend implements ISessionBackend {
       }
     }
 
-    return Object.keys(execOptions).length > 0 ? execOptions : undefined;
+    return execOptions;
   }
 
   /** Wrap a napi metadata `Statement` (already terminal) as an operation backend. */

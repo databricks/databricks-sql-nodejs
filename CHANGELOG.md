@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Honor client and per-statement `useLZ4Compression` in the kernel backend.
 - Release completed Thrift CloudFetch body-reader listeners so idle connections do not retain downloaded result buffers.
 
 ## 3.1.0

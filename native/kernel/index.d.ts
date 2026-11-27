@@ -1132,6 +1132,8 @@ export interface ExecuteOptions {
    * `StatementSpec.row_limit`. Omitted ⇒ no driver-imposed cap.
    */
   rowLimit?: number
+  /** Request LZ4 compression for Arrow results. Omit to use the session default. */
+  lz4Compression?: boolean
   /**
    * Positional parameters, in 1-based wire order. Index `i` in this
    * Vec corresponds to the `i+1`-th `?` placeholder in the SQL.
