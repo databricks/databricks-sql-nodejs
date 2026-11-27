@@ -244,7 +244,7 @@ session parameter surface.
 
 Thrift-only capabilities include custom/token-provider authentication, custom
 OAuth persistence, SOCKS proxies, authenticated/driver-buffer telemetry knobs,
-query timeout, Direct Results `maxRows`, per-statement CloudFetch/LZ4 hints, and
+query timeout, Direct Results `maxRows`, per-statement CloudFetch hints, and
 volume operations.
 
 Kernel-only capabilities include connection-pool sizing, proxy bypass hosts,
